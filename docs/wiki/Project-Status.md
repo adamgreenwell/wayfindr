@@ -98,12 +98,16 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   switch, with a visitor-facing disclosure, a decline the widget honours, and
   the product's first automatic retention control.
 
-  **It is dormant on every install today, and deliberately so.** Nothing in the
-  dashboard writes the per-site switch yet, so no site reports and no visitor
-  sees the notice. The endpoint, the heartbeat, the disclosure and the thirty-day
-  pruner are all built and tested; what is missing is the board that makes
-  turning it on worth doing, and the toggle belongs with it. An operator switch
-  whose only effect is invisible data collection is not a feature.
+  **Off on every install until somebody turns it on.** The switch is on the site
+  page under *Live visitor presence*, behind the same permission as the masking
+  rules, and a default install reports nothing and shows no visitor a notice.
+  Turning it off again deletes the visitors it collected who never made contact,
+  and a second switch decides whether reports may name the page at all — for
+  sites whose paths carry invitation codes or reset tokens.
+
+  What is still in review is the board that reads it. An operator enabling
+  presence today is collecting for the visitor directory rather than for a live
+  view.
 
   [#747](https://github.com/adamgreenwell/wayfindr/issues/747) stays open for
   that board — who is on the site right now, on what page, for how long.

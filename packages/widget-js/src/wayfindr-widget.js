@@ -2895,10 +2895,55 @@
      */
     var siteConfigPromise = null;
 
+    /**
+     * How long anything will wait for the page-load configuration.
+     *
+     * Long enough that an ordinary slow connection still gets its answer, short
+     * enough that a stalled request is not something a visitor sits through.
+     */
+    var SITE_CONFIG_WAIT_MS = typeof options.siteConfigWaitMs === 'number'
+      ? Math.max(0, options.siteConfigWaitMs)
+      : 3000;
+
+    /** When the last configuration answer settled, or null before the first. */
+    var siteConfigSettledAt = null;
+
+    /** Past this, a settled answer is re-read rather than reused. */
+    var SITE_CONFIG_STALE_MS = typeof options.siteConfigStaleMs === 'number'
+      ? Math.max(0, options.siteConfigStaleMs)
+      : 300000;
+
     function whenSiteConfigKnown() {
-      // Resolved, never rejected: a failed read must not stop somebody starting
-      // a conversation. fetchSiteConfig()'s own catch settles the policy.
-      return siteConfigPromise ? siteConfigPromise.catch(function () {}) : Promise.resolve();
+      // Re-read when the settled answer is old. A tab left open all afternoon
+      // holds a policy from page load, so an operator switching page addresses
+      // off would still see one arrive from the next panel opening -- the
+      // heartbeat refreshes continuously, but a site that is not reporting has
+      // no heartbeat to carry it.
+      if (siteConfigSettledAt !== null && Date.now() - siteConfigSettledAt > SITE_CONFIG_STALE_MS) {
+        fetchSiteConfig();
+      }
+
+      if (!siteConfigPromise) {
+        return Promise.resolve();
+      }
+
+      // Bounded, because a fetch that STALLS never rejects. Browsers give
+      // requests no timeout of their own, so chaining bootstrap to an
+      // unresolved promise means a captive portal or a hung proxy leaves the
+      // visitor unable to open the panel or send a message at all -- the
+      // widget waiting for an optional privacy setting while somebody is
+      // trying to ask for help.
+      //
+      // Past the wait the policy is still unknown, and unknown withholds: the
+      // address is dropped rather than the request. That is the right way
+      // round -- losing page context is a worse outcome for the agent and a
+      // better one for the visitor than losing the conversation.
+      return Promise.race([
+        siteConfigPromise.catch(function () {}),
+        new Promise(function (resolve) {
+          setTimeout(resolve, SITE_CONFIG_WAIT_MS);
+        }),
+      ]);
     }
 
     /**
@@ -3462,12 +3507,16 @@
           ? presence.page_urls
           : true;
 
+        siteConfigSettledAt = Date.now();
+
         applyPresence(presence);
       }).catch(function () {
         // A site that cannot tell us its policy has not forbidden anything, so
         // page addresses go back to the behaviour every install had before
         // presence existed. Withholding them for ever on a failed lookup would
         // quietly break page context on sites that never enabled presence.
+        siteConfigSettledAt = Date.now();
+
         if (presenceReportedPageUrls === null) {
           presenceReportedPageUrls = true;
         }
