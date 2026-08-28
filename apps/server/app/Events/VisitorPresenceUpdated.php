@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Events;
 
-use App\Events\Concerns\NotBroadcastForArchivedSites;
 use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SitePresenceReporting;
@@ -22,7 +21,7 @@ use Illuminate\Queue\SerializesModels;
  */
 class VisitorPresenceUpdated implements ShouldBroadcastNow
 {
-    use Dispatchable, NotBroadcastForArchivedSites, SerializesModels;
+    use Dispatchable, SerializesModels;
 
     /**
      * The site as the DATABASE has it, read once and reused.
@@ -85,8 +84,28 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow
         )];
     }
 
-    protected function broadcastSite(): ?Site
+    /**
+     * Three ways this event stops being anybody's business.
+     *
+     * Written out rather than taken from `NotBroadcastForArchivedSites`,
+     * because that trait answers only the first of them and a class method
+     * silently overriding a trait's is how a guard quietly stops checking.
+     *
+     * The third is the one that was missing. A heartbeat committing just
+     * before `updatePresence()` takes the site lock is a legitimate write --
+     * `stamp()` saw reporting on under its own lock and wrote the row. The
+     * revocation then commits, deletes the presence-only visitors it
+     * collected, and `announce()` one statement later broadcast a row that no
+     * longer exists. An open board put that visitor back on screen, page
+     * address and all, seconds after the operator revoked the collection that
+     * produced them.
+     */
+    public function broadcastWhen(): bool
     {
-        return $this->currentSite();
+        $site = $this->currentSite();
+
+        return $site !== null
+            && ! $site->isArchived()
+            && SitePresenceReporting::for($site)->enabled;
     }
 }

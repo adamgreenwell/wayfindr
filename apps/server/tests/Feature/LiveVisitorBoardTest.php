@@ -1131,3 +1131,68 @@ test('a broadcast asks the database what the policy is, not the model it was han
         'a site archived after the request resolved it was still broadcast for'
     );
 });
+
+test('nothing is broadcast for a site that has stopped collecting', function (): void {
+    // A heartbeat that commits just before `updatePresence()` takes the site
+    // lock is a legitimate write: `stamp()` saw reporting on under its own
+    // lock, wrote the row, and returned it. The revocation then commits and
+    // deletes the presence-only visitors it collected -- and `announce()`, one
+    // statement later, broadcasts a row that no longer exists.
+    //
+    // `broadcastWhen()` refused archived sites and nothing else, so an open
+    // board put that visitor back on screen, page address and all, seconds
+    // after the operator revoked the collection that produced them.
+    $f = boardFixture();
+    $site = $f['site'];
+
+    $visitor = presentVisitor($site, 'anon-after-revocation', [
+        'metadata' => ['last_page_url' => 'https://shop.test/pricing'],
+    ]);
+
+    // Still collecting: the event is for a board to hear.
+    expect((new VisitorPresenceUpdated($site, $visitor))->broadcastWhen())->toBeTrue(
+        'a site that is collecting does not broadcast, so this proves nothing'
+    );
+
+    DB::table('sites')->where('id', $site->id)->update([
+        'settings' => json_encode(['presence' => ['enabled' => false]]),
+    ]);
+
+    expect((new VisitorPresenceUpdated($site, $visitor))->broadcastWhen())->toBeFalse(
+        'a site that has stopped collecting still broadcast a visitor to open boards'
+    );
+});
+
+test('a cleared board refuses the events already on their way to it', function (): void {
+    // `clearBoard()` empties the table and closes the socket, and closing does
+    // not cancel a message the browser has already queued. An update dispatched
+    // before the revocation therefore arrives after the rows are gone and puts
+    // the visitor -- and possibly their page address -- straight back on
+    // screen, where they stay until the next resync a minute later.
+    //
+    // `pageClosing` stopped the reconnect and nothing else.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $handler = Str::before(Str::after($source, 'function handleSocketMessage(message) {'), 'function ');
+
+    test()->assertStringContainsString(
+        'event.event === config.eventName',
+        $handler,
+        'the slice is not the message handler',
+    );
+
+    test()->assertStringContainsString(
+        'boardCleared',
+        $handler,
+        'a message queued before the revocation is still applied after it',
+    );
+
+    // And the flag is actually set where the board is cleared.
+    $clear = Str::before(Str::after($source, 'function clearBoard() {'), 'function ');
+
+    test()->assertStringContainsString(
+        'boardCleared = true;',
+        $clear,
+        'clearing the board does not record that it was cleared',
+    );
+});

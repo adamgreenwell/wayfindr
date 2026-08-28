@@ -359,6 +359,12 @@
                     refreshCount();
                 }
 
+                // This site has stopped collecting, and nothing about a visitor
+                // may reach the screen again for the life of this page. A
+                // resync is what re-establishes a board, and a resync on a
+                // revoked site renders the disabled page and clears again.
+                var boardCleared = false;
+
                 // Nobody is being watched here any more.
                 //
                 // Stops the socket as well as emptying the table: a board left
@@ -366,6 +372,14 @@
                 // in flight -- and put a visitor back on a page that has just
                 // said the site is not collecting them.
                 function clearBoard() {
+                    // Latched, because closing a socket does not cancel a
+                    // message the browser has already queued for it. An update
+                    // dispatched before the revocation arrives after the rows
+                    // are gone, and an unguarded handler puts that visitor --
+                    // and possibly their page address -- straight back on the
+                    // screen the operator has just cleared.
+                    boardCleared = true;
+
                     rows.replaceChildren();
                     presentTotal = 0;
                     refreshCount(0);
@@ -618,6 +632,12 @@
                 }
 
                 function handleSocketMessage(message) {
+                    // Everything below is about a visitor, and this site has
+                    // stopped collecting them.
+                    if (boardCleared) {
+                        return;
+                    }
+
                     var event;
 
                     try {
