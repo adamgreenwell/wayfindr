@@ -7,6 +7,7 @@ namespace App\Events;
 use App\Events\Concerns\NotBroadcastForArchivedSites;
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Sites\SitePresenceReporting;
 use App\Support\Visitors\LiveVisitorBoard;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -46,7 +47,12 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow
      */
     public function broadcastWith(): array
     {
-        return ['visitor' => LiveVisitorBoard::row($this->visitor)];
+        // The site's CURRENT policy, so a board already open is not handed an
+        // address whose collection has just been revoked.
+        return ['visitor' => LiveVisitorBoard::row(
+            $this->visitor,
+            SitePresenceReporting::for($this->site)->pageUrls,
+        )];
     }
 
     protected function broadcastSite(): ?Site

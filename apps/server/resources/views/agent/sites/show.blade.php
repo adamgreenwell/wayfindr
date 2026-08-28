@@ -1202,12 +1202,6 @@
                             Page addresses are stored with the query string removed and path segments that look like tokens replaced. That check is a good guess, not a guarantee &mdash; if this site puts invitation codes, order numbers or reset tokens in the path itself, turn this off. No page address is then kept for any visitor, whether they were browsing, opened the widget or started a conversation, and the ones already stored are deleted. The page a conversation was started from stays on that conversation, because it is part of a support record somebody wrote in about.
                         </p>
 
-                        @if ($presenceEnabled)
-                            <p class="field-help">
-                                <a href="{{ route('dashboard.sites.live', $site) }}">Open the live visitor board</a> to see who is on the site now.
-                            </p>
-                        @endif
-
                         <p class="field-help">
                             Leave presence off and nothing changes: the install records people only once they open the widget or get in touch. Turning it off later deletes the visitors it collected who never made contact.
                         </p>
@@ -1219,6 +1213,19 @@
                         <p>Account owners and admins decide whether this site watches visitors who have not made contact.</p>
                         <p>{{ $presenceEnabled ? 'It is on for this site.' : 'It is off for this site.' }}</p>
                     </div>
+                @endif
+
+                {{-- Outside the permission branch above, because the board and
+                     this link answer to different permissions. Changing the
+                     SETTING is an owner-and-admin decision; using the board is
+                     open to any agent who can view the site, which is what the
+                     route and the broadcast channel both authorise. Keeping the
+                     only link inside the admin half left the agents it was
+                     built for with no way to reach it. --}}
+                @if ($presenceEnabled)
+                    <p class="field-help">
+                        <a href="{{ route('dashboard.sites.live', $site) }}">Open the live visitor board</a> to see who is on the site now.
+                    </p>
                 @endif
             </section>
 

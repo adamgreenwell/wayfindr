@@ -969,3 +969,93 @@ test('a resync that finds presence switched off clears what it was showing', fun
         ->assertOk()
         ->assertDontSee('data-live-rows', false);
 });
+
+test('an agent who may use the board can find it', function (): void {
+    // The board authorises any agent who can view the site -- the route and the
+    // broadcast channel both say so. The only link to it sat inside the
+    // admins-only half of the presence section, and a repo-wide search finds no
+    // other way in, so the people the board was built for could not reach it.
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $link = route('dashboard.sites.live', $site);
+
+    // The agent can use it, so the agent can see the way to it.
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee($link, false);
+
+    test()->actingAs($agent)
+        ->get($link)
+        ->assertOk();
+
+    // And it is still there for the admin, who also sees the settings form.
+    test()->actingAs($admin)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee($link, false);
+
+    // Off means no board and no link, for either of them.
+    $site->forceFill(['settings' => ['presence' => ['enabled' => false]]])->save();
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertDontSee($link, false);
+});
+
+test('the board hides page addresses the moment their collection is revoked', function (): void {
+    // Turning page addresses off commits the setting first and then sweeps the
+    // stored rows, which is the safe order -- the sweep would otherwise hold a
+    // row lock per visitor across the whole table while an operator waited on a
+    // form post. The cost is a window: between the commit and the sweep
+    // reaching a row, that row still holds an address.
+    //
+    // Another agent loading or resyncing the board in that window saw
+    // addresses whose collection had been revoked, and a sweep that fails or
+    // is interrupted leaves them there indefinitely. The board answers from the
+    // policy in force rather than trusting the cleanup to have finished.
+    $f = boardFixture();
+    $site = $f['site'];
+
+    $site->forceFill([
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => false]],
+    ])->save();
+
+    // A row the sweep has not reached.
+    presentVisitor($site, 'anon-not-swept-yet', [
+        'metadata' => ['last_page_url' => 'https://shop.test/pricing'],
+    ]);
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $site))
+        ->assertOk()
+        ->assertDontSee('shop.test/pricing', false);
+
+    // The broadcast payload answers the same way; a board already open must not
+    // be handed one either.
+    $visitor = Visitor::query()->where('anonymous_id', 'anon-not-swept-yet')->sole();
+
+    $payload = (new VisitorPresenceUpdated($site->fresh(), $visitor))->broadcastWith();
+
+    expect($payload['visitor']['page_url'])->toBeNull(
+        'a realtime update carried an address whose collection had been revoked'
+    );
+
+    // With the policy on again, the same row does show it -- so the assertions
+    // above are about the policy and not about the address being absent.
+    $site->forceFill([
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ])->save();
+
+    test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $site))
+        ->assertOk()
+        ->assertSee('shop.test/pricing', false);
+});

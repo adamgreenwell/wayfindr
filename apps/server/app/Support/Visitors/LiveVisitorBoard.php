@@ -6,6 +6,7 @@ namespace App\Support\Visitors;
 
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Sites\SitePresenceReporting;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -88,6 +89,8 @@ final class LiveVisitorBoard
      */
     public static function for(Site $site): Collection
     {
+        $showPageUrls = SitePresenceReporting::for($site)->pageUrls;
+
         return self::present($site)
             ->withCount('conversations')
             ->orderByDesc('last_web_seen_at')
@@ -97,7 +100,7 @@ final class LiveVisitorBoard
             // "247 here" above the 200 most recent rather than as 200.
             ->limit(self::DISPLAY_LIMIT)
             ->get()
-            ->map(static fn (Visitor $visitor): array => self::row($visitor))
+            ->map(static fn (Visitor $visitor): array => self::row($visitor, $showPageUrls))
             ->values();
     }
 
@@ -129,14 +132,31 @@ final class LiveVisitorBoard
      *
      * @return array<string, mixed>
      */
-    public static function row(Visitor $visitor): array
+    /**
+     * @param  bool  $showPageUrls  whether the site's policy still allows an
+     *                              address to be SHOWN, which is a different
+     *                              question from whether one is stored
+     */
+    public static function row(Visitor $visitor, bool $showPageUrls = true): array
     {
         return [
             'id' => $visitor->id,
             'name' => $visitor->name,
             'email' => $visitor->email,
             'state' => VisitorPresence::stateFor($visitor->last_web_seen_at),
-            'page_url' => is_array($visitor->metadata) ? ($visitor->metadata['last_page_url'] ?? null) : null,
+            // Answered from the policy in force, not from what happens to be
+            // stored. Revoking addresses commits the setting and THEN sweeps
+            // the rows -- the safe order, since the sweep would otherwise hold
+            // a row lock per visitor across the whole table while an operator
+            // waited on a form post. Between the commit and the sweep reaching
+            // a row, that row still holds an address, and a sweep that fails or
+            // is interrupted leaves it there indefinitely.
+            //
+            // So the cleanup is what removes the data and this is what stops
+            // showing it, and the second does not wait on the first.
+            'page_url' => $showPageUrls && is_array($visitor->metadata)
+                ? ($visitor->metadata['last_page_url'] ?? null)
+                : null,
             'last_web_seen_at' => $visitor->last_web_seen_at?->toJSON(),
             'visit_started_at' => $visitor->current_visit_started_at?->toJSON(),
             // Whether this is somebody the desk has never heard from. It is the
