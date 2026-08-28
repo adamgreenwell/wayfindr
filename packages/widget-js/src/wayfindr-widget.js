@@ -2751,17 +2751,6 @@
 
         bootstrapped = true;
         applyBootstrapResult(result, settingsSeq);
-      }, function (error) {
-        // The settings ticket is handed back if it is still the newest. A
-        // bootstrap that FAILS has no settings to contribute, and leaving its
-        // sequence in place made a configuration response arriving afterwards
-        // look overtaken -- so the only successful configuration either request
-        // produced was discarded, and presence never started.
-        if (settingsSeq === presenceSettingsSequence) {
-          presenceSettingsSequence--;
-        }
-
-        throw error;
       });
 
       // Opening the panel must not surface a failure: the fallback state is
@@ -2811,7 +2800,7 @@
       // newest answer no matter what overtook it: a heartbeat carrying the
       // operator's revocation would stop reporting, and this response --
       // fetched before that revocation existed -- would then reinstate it.
-      if (bootstrapSettingsSeq !== presenceSettingsSequence) {
+      if (!settingsAnswerIsNewest(bootstrapSettingsSeq)) {
         return;
       }
 
@@ -2970,11 +2959,37 @@
     /**
      * Orders the answers that carry settings.
      *
-     * Bumped by every request that will come back with them, so a response
-     * overtaken by a later one is discarded rather than applied late. The same
-     * device the bootstrap sequence uses, and for the same reason.
+     * Two numbers, not one. `presenceSettingsSequence` issues a ticket to every
+     * request that will come back with settings; `presenceSettingsApplied` is
+     * the highest ticket whose answer has actually been applied. An answer is
+     * applied only if its ticket beats that watermark.
+     *
+     * The earlier version compared against the ISSUER and handed tickets back
+     * when a request failed, which needed the failure to know whether it was
+     * still the newest -- and got it wrong as soon as two requests failed, or
+     * failed out of order. A watermark needs no bookkeeping on failure at all:
+     * a request that never answers simply never advances it, and a late answer
+     * from an overtaken request loses on its own number.
      */
     var presenceSettingsSequence = 0;
+
+    var presenceSettingsApplied = 0;
+
+    /**
+     * Is this answer the newest one seen so far?
+     *
+     * Advances the watermark as a side effect, so two answers from the same
+     * ticket cannot both apply.
+     */
+    function settingsAnswerIsNewest(seq) {
+      if (seq <= presenceSettingsApplied) {
+        return false;
+      }
+
+      presenceSettingsApplied = seq;
+
+      return true;
+    }
 
     function refreshPresenceSettings(config) {
       // Nothing running yet: this answer STARTS it rather than being dropped.
@@ -3228,7 +3243,7 @@
         // own schedule, so responses arrive out of order -- and an older one
         // carrying `page_urls: true` would undo a newer one that turned
         // addresses off, putting them back on the wire for the life of the tab.
-        if (seq !== presenceSettingsSequence) {
+        if (!settingsAnswerIsNewest(seq)) {
           return;
         }
 
@@ -3544,7 +3559,7 @@
         // load and can be slow; a visitor who opens the panel meanwhile gets a
         // bootstrap answer that is NEWER, and applying this one afterwards
         // would reinstate settings the operator had already changed.
-        if (seq !== presenceSettingsSequence) {
+        if (!settingsAnswerIsNewest(seq)) {
           return;
         }
 
@@ -3573,15 +3588,19 @@
 
         applyPresence(presence);
       }).catch(function () {
-        // A site that cannot tell us its policy has not forbidden anything, so
-        // page addresses go back to the behaviour every install had before
-        // presence existed. Withholding them for ever on a failed lookup would
-        // quietly break page context on sites that never enabled presence.
+        // A failed read leaves the policy UNKNOWN, and unknown withholds.
+        //
+        // This used to resolve to "allowed", reasoning that a site which cannot
+        // answer has not forbidden anything. That is the wrong way round for
+        // the one setting an operator turns on BECAUSE their paths carry
+        // secrets: a rate-limited or briefly broken config endpoint would then
+        // hand out exactly the permission they had revoked. Losing page context
+        // is an agent's inconvenience; sending an address the site said not to
+        // keep is what this whole path exists to prevent.
+        //
+        // Not permanent either: bootstrap carries the settings too, and the
+        // read is retried once this answer goes stale.
         siteConfigSettledAt = Date.now();
-
-        if (presenceReportedPageUrls === null) {
-          presenceReportedPageUrls = true;
-        }
 
         // The default corner is a fine answer to a failed lookup, and no
         // answer about presence means no reporting -- which is the direction
