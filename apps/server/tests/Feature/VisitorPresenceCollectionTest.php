@@ -1877,4 +1877,102 @@ test('the settings help does not promise page reporting that is switched off', f
         ->assertSee('and which page they are on', false);
 });
 
+test('a revocation sweep overtaken by a re-enable stops instead of finishing', function (): void {
+    // The sweep runs AFTER the settings transaction commits, deliberately: it
+    // would otherwise hold a row lock per visitor across the whole table while
+    // an operator waited on a form post. The cost of that choice is that it
+    // holds no site lock while it runs.
+    //
+    // So a second operator can turn page addresses back on mid-sweep, and
+    // heartbeats immediately begin storing them again under a policy that is
+    // now perfectly valid -- and the older sweep, still walking the table,
+    // deletes them as it arrives. The operator who re-enabled watches addresses
+    // appear and vanish for as long as the first sweep takes.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-swept',
+        'metadata' => ['last_page_url' => 'https://shop.test/pricing'],
+    ]);
+
+    // The re-enable lands after the revocation commits and before the sweep
+    // reads any visitor row -- the window the sweep leaves open.
+    $reEnabled = false;
+
+    DB::listen(function ($query) use (&$reEnabled, $site): void {
+        // The sweep's own chunk query. `last_page_url` is a binding rather
+        // than SQL text, so it is the bindings that identify it.
+        if ($reEnabled || ! str_contains($query->sql, 'from "visitors"')) {
+            return;
+        }
+
+        if (! in_array('%last_page_url%', $query->bindings, true)) {
+            return;
+        }
+
+        $reEnabled = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'settings' => json_encode(['presence' => ['enabled' => true, 'page_urls' => true]]),
+        ]);
+    });
+
+    test()->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [
+            'presence_enabled' => '1',
+            'presence_page_urls' => '0',
+        ])
+        ->assertRedirect();
+
+    expect($reEnabled)->toBeTrue('the sweep never ran, so this proves nothing');
+
+    $visitor->refresh();
+
+    expect($visitor->metadata['last_page_url'] ?? null)
+        ->toBe('https://shop.test/pricing', 'a superseded revocation deleted an address collected after it');
+});
+
+test('the abuse-control guide documents the limits this install actually applies', function (): void {
+    // Operators tune throttles from this guide and nowhere else -- the config
+    // file is not shipped as an interface. It described a world in which every
+    // widget throttle was keyed by IP and site, which stopped being true when
+    // presence arrived with a per-visitor limit, an IP ceiling behind it, and
+    // two budgets on durable rows. Somebody diagnosing 429s on a shared address
+    // would have raised the one limit that was already per visitor.
+    $guide = file_get_contents(base_path('../../docs/product/widget-api-abuse-controls.md'));
+    $config = file_get_contents(config_path('wayfindr.php'));
+
+    // Every key the guide tells operators to set has to exist, with the default
+    // the guide prints beside it.
+    preg_match_all('/^(WAYFINDR_[A-Z_]+)=(\d+)$/m', $guide, $matches, PREG_SET_ORDER);
+
+    expect($matches)->not->toHaveCount(0, 'no environment overrides were parsed out of the guide');
+
+    foreach ($matches as [, $key, $documented]) {
+        test()->assertMatchesRegularExpression(
+            '/env\(\''.preg_quote($key, '/').'\',\s*'.$documented.'\)/',
+            $config,
+            $key.' is documented as '.$documented.', which is not what the config reads',
+        );
+    }
+
+    // And the presence keys specifically, because they are the ones whose
+    // absence caused this: an operator cannot discover them by reading about
+    // the routes.
+    foreach ([
+        'WAYFINDR_WIDGET_PRESENCE_PER_MINUTE',
+        'WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE',
+        'WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE',
+        'WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY',
+        'WAYFINDR_WIDGET_CONFIG_RATE_LIMIT',
+    ] as $key) {
+        test()->assertStringContainsString($key, $guide, $key.' is not in the operator guide');
+    }
+});
+
 
