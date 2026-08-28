@@ -2706,6 +2706,15 @@ test('the notice is anchored so an open panel cannot push it off the screen', as
     'the widget is not capped to the viewport, so its children can leave it');
   assert.doesNotMatch(css, /\.wayfindr-widget__presence\{[^}]*bottom:100%/,
     'the notice is still anchored above the whole widget');
+
+  // The column shrinks to fit, so `align-items` decides where the narrow
+  // children sit inside the width the widest one sets -- and the notice is much
+  // wider than the launcher. A left-positioned widget anchors the root on the
+  // left, so aligning to the inline END pushed the launcher inward by the whole
+  // difference: measured at 120px on a 375px screen, on every page of an
+  // opted-in site that put its launcher on the left.
+  assert.match(css, /\.wayfindr-widget\[data-wf-launcher="left"\]\{[^}]*align-items:flex-start/,
+    'a left-positioned launcher is aligned to the corner it is not anchored to');
 });
 
 test('a bootstrap outranks the configuration read it waited for', async (t) => {
