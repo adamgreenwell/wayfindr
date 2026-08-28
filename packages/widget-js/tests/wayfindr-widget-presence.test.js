@@ -2273,3 +2273,154 @@ test('a failed bootstrap does not bury a config answer still in flight', async (
     'a failed bootstrap discarded the configuration that did succeed',
   );
 });
+
+test('two failed requests do not strand the settings sequence', async (t) => {
+  // The earlier design handed a ticket back when a request failed, which meant
+  // the failure had to know whether it was still the newest -- and got it wrong
+  // as soon as two failed, or failed out of order. A watermark needs no
+  // bookkeeping on failure: a request that never answers never advances it.
+  let bootstrapFails = true;
+
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+  const gate = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    siteConfigWaitMs: 20,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      if (url.includes('/api/widget/appearance')) {
+        return new Promise((resolve) => {
+          gate.push(() => resolve(jsonResponse(200, {
+            data: { appearance: { position: 'right' }, presence: { reports: true, every: 45, page_urls: true } },
+          })));
+        });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return bootstrapFails ? jsonResponse(500, { message: 'no' }) : jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: { reports: true, every: 45, page_urls: true } });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  // TWO failing bootstraps, each taking a ticket, while the config is pending.
+  await widget.open();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await settle();
+
+  widget.close();
+  await widget.open();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  await settle();
+
+  // The configuration answer, older than both, finally lands.
+  gate.forEach((release) => release());
+  await settle();
+
+  assert.ok(
+    presenceCalls(calls).length > 0,
+    'two failed bootstraps stranded the sequence and buried the configuration',
+  );
+});
+
+test('a failed configuration read does not grant permission', async (t) => {
+  // Resolving a failure to "allowed" reasons that a site which cannot answer
+  // has not forbidden anything. That is the wrong way round for the one
+  // setting an operator turns on BECAUSE their paths carry secrets: a
+  // rate-limited config endpoint would hand out exactly the permission they
+  // revoked.
+  const values = new Map(Object.entries({
+    'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+    'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+  }));
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const calls = [];
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    navigator: { languages: [] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: {
+      getItem: (k) => (values.has(k) ? values.get(k) : null),
+      setItem: (k, v) => values.set(k, String(v)),
+      removeItem: (k) => values.delete(k),
+    },
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+
+      // Rate limited, which is a real way for this to fail.
+      if (url.includes('/api/widget/appearance')) {
+        return jsonResponse(429, { message: 'slow down' });
+      }
+
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      return jsonResponse(202, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await widget.open();
+  await settle();
+
+  const bootstrap = calls.filter((c) => c.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap.length > 0, 'the panel never bootstrapped, so this proves nothing');
+  assert.ok(
+    bootstrap.every((c) => !c.body.page_url),
+    'a failed configuration read granted permission to send page addresses',
+  );
+});
