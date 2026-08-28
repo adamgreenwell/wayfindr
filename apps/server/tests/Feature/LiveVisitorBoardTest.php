@@ -551,3 +551,41 @@ test('the count is not capped by the display limit', function (): void {
 
     expect(LiveVisitorBoard::countFor($f['site']))->toBe($total, 'the count includes somebody who left');
 });
+
+test('a live refresh does not replace the total with the row count', function (): void {
+    // Past the display limit the two numbers differ, and overwriting the total
+    // with the row count on the first heartbeat put the capped figure back on a
+    // page that had just rendered the real one.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $refresh = Str::before(Str::after($source, 'function refreshCount(total) {'), 'function durationFrom');
+
+    test()->assertStringContainsString(
+        'presentTotal',
+        $refresh,
+        'the slice is not refreshCount',
+    );
+
+    // The rendered total is only replaced by a number the SERVER supplied.
+    expect($refresh)->toContain("if (typeof total === 'number') {")
+        ->and($source)->toContain("var freshCount = parsed.querySelector('[data-live-count]');");
+});
+
+test('a callback from a replaced socket cannot open another', function (): void {
+    // An authorization fetch for a socket that has since been replaced can
+    // still resolve, and its failure path would schedule a reconnect while the
+    // current socket is healthy -- opening one nobody closes, and another
+    // after that.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $connect = Str::before(Str::after($source, 'function connect() {'), 'window.addEventListener');
+
+    test()->assertStringContainsString(
+        'new WebSocket(socketUrl)',
+        $connect,
+        'the slice is not connect()',
+    );
+
+    expect($connect)->toContain('var generation = ++socketGeneration;')
+        ->and($source)->toContain('activeSocket.wayfindrGeneration !== socketGeneration');
+});

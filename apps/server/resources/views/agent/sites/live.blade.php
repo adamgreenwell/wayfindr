@@ -115,11 +115,27 @@
                     return rows.querySelector('[data-live-empty]');
                 }
 
-                function refreshCount() {
+                // The uncapped total, as the server last reported it. The row
+                // count is NOT the same number once a site is past the display
+                // limit, and overwriting the total with it on the first
+                // heartbeat put the capped figure back on a page that had
+                // rendered the real one.
+                var presentTotal = countEl ? Number(countEl.textContent) || 0 : 0;
+
+                function refreshCount(total) {
                     var present = rows.querySelectorAll('[data-visitor-id]').length;
 
+                    if (typeof total === 'number') {
+                        presentTotal = total;
+                    } else if (present > presentTotal) {
+                        // A new arrival can push past the last known total; a
+                        // departure cannot lower it, because the rows below the
+                        // cap were never on this page to leave it.
+                        presentTotal = present;
+                    }
+
                     if (countEl) {
-                        countEl.textContent = String(present);
+                        countEl.textContent = String(presentTotal);
                     }
 
                     var empty = emptyRow();
@@ -324,9 +340,8 @@
 
                         return response.text();
                     }).then(function (html) {
-                        var fresh = new DOMParser()
-                            .parseFromString(html, 'text/html')
-                            .querySelector('[data-live-rows]');
+                        var parsed = new DOMParser().parseFromString(html, 'text/html');
+                        var fresh = parsed.querySelector('[data-live-rows]');
 
                         if (!fresh) {
                             return;
@@ -346,7 +361,12 @@
                         // Re-applied on top, in arrival order, so the newer
                         // state wins over the snapshot that did not have it.
                         pending.forEach(applyVisitor);
-                        refreshCount();
+
+                        // The snapshot carries the uncapped total, which is the
+                        // only place the browser can learn it.
+                        var freshCount = parsed.querySelector('[data-live-count]');
+
+                        refreshCount(freshCount ? Number(freshCount.textContent) || 0 : undefined);
                     }).catch(function () {
                         // The rows already on the page stay. A failed resync
                         // leaves the board possibly missing somebody, which is
@@ -364,6 +384,10 @@
 
                 // Orders overlapping snapshots, so only the newest is applied.
                 var resyncSequence = 0;
+
+                // Which socket is in service. A callback from an older one is
+                // answering about a connection nobody is using.
+                var socketGeneration = 0;
 
                 var socketScheme = config.scheme === 'https' ? 'wss' : 'ws';
                 var socketUrl = socketScheme + '://' + config.host + ':' + config.port + '/app/'
@@ -425,6 +449,11 @@
                         // has a window on the far side of it. The resync waits
                         // for `pusher_internal:subscription_succeeded`.
                     }).catch(function () {
+                        // Only the socket still in service may react.
+                        if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                            return;
+                        }
+
                         if (statusEl) {
                             statusEl.textContent = 'Reconnecting to live updates.';
                         }
@@ -505,7 +534,15 @@
                 }
 
                 function connect() {
+                    // Each socket carries a generation. An authorization fetch
+                    // for a socket that has since been replaced can still
+                    // resolve, and its failure path would schedule a reconnect
+                    // while the CURRENT socket is healthy -- opening another
+                    // one nobody closes, and another after that.
+                    var generation = ++socketGeneration;
+
                     socket = new WebSocket(socketUrl);
+                    socket.wayfindrGeneration = generation;
 
                     socket.addEventListener('message', handleSocketMessage);
 
