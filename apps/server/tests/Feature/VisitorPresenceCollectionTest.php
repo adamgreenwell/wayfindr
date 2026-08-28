@@ -1619,3 +1619,20 @@ test('the widget is told the retention this install applies', function (): void 
     expect(SitePresenceReporting::retentionDays())
         ->toBe(PrunePresenceVisitorsCommand::MAXIMUM_DAYS);
 });
+
+test('the settings page quotes the same retention as the visitor notice', function (): void {
+    // An operator reading "30 days" on the page where they configure this,
+    // while their install deletes after seven, is being told something untrue
+    // by the surface that exists to tell them the truth.
+    config()->set('wayfindr.presence.retention_days', 7);
+
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create(['domain' => 'shop.test']);
+
+    test()->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('deleted 7 days after they were last seen', false)
+        ->assertDontSee('deleted 30 days after they were last seen', false);
+});

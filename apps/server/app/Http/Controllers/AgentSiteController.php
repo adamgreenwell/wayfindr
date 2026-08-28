@@ -175,6 +175,11 @@ class AgentSiteController extends Controller
             'externalIssueProviders' => ExternalIssueProvider::options(),
             'presenceEnabled' => SitePresenceReporting::for($site)->enabled,
             'presencePageUrls' => SitePresenceReporting::for($site)->pageUrls,
+            // The same number the visitor's notice quotes. An operator reading
+            // "30 days" on the page where they configure this, while their
+            // install deletes after seven, is being told something untrue by
+            // the surface that exists to tell them the truth.
+            'presenceRetentionDays' => SitePresenceReporting::retentionDays(),
             'presenceEvery' => SitePresenceReporting::HEARTBEAT_SECONDS,
             'maskSelectors' => $maskSelectors,
             'maskTerms' => $maskTerms,
