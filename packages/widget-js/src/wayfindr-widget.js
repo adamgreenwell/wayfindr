@@ -2895,10 +2895,38 @@
      */
     var siteConfigPromise = null;
 
+    /**
+     * How long anything will wait for the page-load configuration.
+     *
+     * Long enough that an ordinary slow connection still gets its answer, short
+     * enough that a stalled request is not something a visitor sits through.
+     */
+    var SITE_CONFIG_WAIT_MS = typeof options.siteConfigWaitMs === 'number'
+      ? Math.max(0, options.siteConfigWaitMs)
+      : 3000;
+
     function whenSiteConfigKnown() {
-      // Resolved, never rejected: a failed read must not stop somebody starting
-      // a conversation. fetchSiteConfig()'s own catch settles the policy.
-      return siteConfigPromise ? siteConfigPromise.catch(function () {}) : Promise.resolve();
+      if (!siteConfigPromise) {
+        return Promise.resolve();
+      }
+
+      // Bounded, because a fetch that STALLS never rejects. Browsers give
+      // requests no timeout of their own, so chaining bootstrap to an
+      // unresolved promise means a captive portal or a hung proxy leaves the
+      // visitor unable to open the panel or send a message at all -- the
+      // widget waiting for an optional privacy setting while somebody is
+      // trying to ask for help.
+      //
+      // Past the wait the policy is still unknown, and unknown withholds: the
+      // address is dropped rather than the request. That is the right way
+      // round -- losing page context is a worse outcome for the agent and a
+      // better one for the visitor than losing the conversation.
+      return Promise.race([
+        siteConfigPromise.catch(function () {}),
+        new Promise(function (resolve) {
+          setTimeout(resolve, SITE_CONFIG_WAIT_MS);
+        }),
+      ]);
     }
 
     /**
