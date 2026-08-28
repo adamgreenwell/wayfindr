@@ -175,6 +175,12 @@ final class VisitorPresenceReport
             $existing = Visitor::query()
                 ->where('site_id', $site->id)
                 ->where('anonymous_id', $visitor->anonymous_id)
+                // Locked, like the branch above it. Adopting a row found here
+                // without the lock puts this write back in the race the lock
+                // exists to settle: bootstrap or a conversation committing
+                // between this SELECT and the save would have its metadata
+                // overwritten by the copy read here.
+                ->lockForUpdate()
                 ->first();
 
             if ($existing !== null) {
@@ -224,6 +230,15 @@ final class VisitorPresenceReport
      * uncommitted insert -- and only one of them ends up creating anything.
      * Counting attempts meant a replayed request could burn a day's budget on a
      * single durable row and suppress visitors who really were new.
+     *
+     * The cost of asking first and charging after is that a burst of DISTINCT
+     * ids arriving together can all pass one check and put a handful of rows
+     * past the limit. That is the direction to be wrong in, deliberately.
+     * Overshooting by the size of one burst adds rows to a table §4 prunes;
+     * under-counting makes real visitors INVISIBLE, absent from the board with
+     * nothing anywhere saying why, which is the failure this whole section
+     * keeps coming back to. Reserving atomically would need a refund path the
+     * limiter does not offer, and refunds have their own leak.
      */
     private function mayCreate(Site $site): bool
     {
