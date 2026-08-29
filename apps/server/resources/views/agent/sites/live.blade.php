@@ -520,18 +520,38 @@
                         // rows is right: the board is missing somebody, which
                         // is what it was a moment ago.
                         if (response.status === 403 || response.status === 404) {
-                            // UNCONDITIONALLY, without the sequence guard the
-                            // rest of this handler takes. That guard stops an
-                            // older snapshot's ROWS replacing newer ones, and a
-                            // denial is not a snapshot -- it is a fact about
-                            // who is watching, and it does not go stale.
+                            // The newest answer acts. An overtaken one asks
+                            // again rather than doing either obvious thing,
+                            // because both obvious things are wrong.
                             //
-                            // Two resyncs overlap, the newer one hangs, the
-                            // older comes back 404: guarded, the only answer
-                            // either of them produced is thrown away, and the
-                            // subscription keeps delivering visitors to
-                            // somebody who has been removed from the site.
-                            clearBoard('You no longer have access to this site.');
+                            // DROPPING it is the hole this branch exists to
+                            // close: if the request that overtook it never
+                            // answers, nothing acts on the denial and the
+                            // subscription goes on delivering visitor
+                            // identities to somebody removed from the site,
+                            // for as long as their tab is open. Channel
+                            // authorisation is checked at subscribe and never
+                            // again, so this is the only thing that finds out.
+                            //
+                            // OBEYING it blindly is the opposite mistake.
+                            // Access can be removed and restored while two
+                            // resyncs are in flight, and then a stale 404
+                            // shuts down a board that is now entitled to be
+                            // open.
+                            //
+                            // So it re-asks, once at a time: the delay lets the
+                            // request that overtook it land first, and the flag
+                            // keeps two denials from becoming two re-asks.
+                            if (seq === resyncSequence) {
+                                clearBoard('You no longer have access to this site.');
+                            } else if (!denialRecheckPending) {
+                                denialRecheckPending = true;
+
+                                window.setTimeout(function () {
+                                    denialRecheckPending = false;
+                                    resyncBoard();
+                                }, DENIAL_RECHECK_MS);
+                            }
 
                             return null;
                         }
@@ -611,6 +631,15 @@
                 // Holds events that arrive while a snapshot is being fetched.
                 // Null when no resync is in flight, which is most of the time.
                 var resyncBuffer = null;
+
+                // At most one outstanding re-ask for an overtaken denial, so a
+                // burst of them cannot become a burst of requests.
+                var denialRecheckPending = false;
+
+                // Long enough for the request that overtook a denial to land
+                // first, so the re-ask usually finds a settled answer rather
+                // than racing the same pair again.
+                var DENIAL_RECHECK_MS = 2000;
 
                 // Orders overlapping snapshots, so only the newest is applied.
                 var resyncSequence = 0;

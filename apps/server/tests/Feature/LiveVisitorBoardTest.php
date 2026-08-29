@@ -1289,10 +1289,25 @@ test('a board whose agent has lost access to the site shuts itself down', functi
         'return null;',
     );
 
-    test()->assertStringNotContainsString(
-        'resyncSequence',
+    // An OVERTAKEN denial is neither obeyed nor dropped.
+    //
+    // Dropping it is the original hole: if the request that overtook it never
+    // answers, nothing ever acts on the denial and the subscription lives on.
+    // Obeying it blindly is the opposite mistake -- access may have been
+    // restored, and the newer answer is the one that knows -- so a stale 404
+    // would shut down a board that is now perfectly entitled to be open.
+    //
+    // It asks again instead, and the answer to that is definitive.
+    test()->assertStringContainsString(
+        'seq === resyncSequence',
         $denial,
-        'an access denial is discarded when a newer resync has overtaken it',
+        'a denial acts without checking whether a newer answer exists',
+    );
+
+    test()->assertStringContainsString(
+        'denialRecheckPending',
+        $denial,
+        'an overtaken denial is dropped or obeyed rather than re-asked',
     );
 
     // And the route really does answer 404 for an agent who cannot see it,
