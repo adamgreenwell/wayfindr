@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Visitors;
 
+use App\Events\VisitorPresenceUpdated;
 use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SitePresenceReporting;
@@ -38,7 +39,7 @@ final class VisitorPresenceReport
             //
             // SQLite does not behave this way, which is why the suite was green
             // and the PostgreSQL run was not.
-            return DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site));
+            return $this->attempt($site, $anonymousId, $pageUrl);
         } catch (UniqueConstraintViolationException) {
             // Two first reports for the same visitor overlapped -- a page-load
             // heartbeat racing bootstrap, or two tabs opened together. Both saw
@@ -54,8 +55,63 @@ final class VisitorPresenceReport
             // would be released the moment each select finished -- and the
             // whole point of taking them is that they are still held when the
             // write happens.
-            return DB::transaction(fn (): Visitor => $this->stamp($this->resolve($site, $anonymousId), $pageUrl, $site));
+            return $this->attempt($site, $anonymousId, $pageUrl);
         }
+    }
+
+    /**
+     * One attempt: resolve, stamp, and announce only if something was written.
+     *
+     * stamp() answers null when it declines -- an archived site, presence
+     * switched off, the creation quota exhausted -- and the caller still needs
+     * a visitor to hand back, so the resolved model is kept here rather than
+     * inferred from what stamp() returned.
+     *
+     * "Did it write" cannot be read off the model. A row deleted between
+     * resolve() finding it and stamp() taking its lock leaves a model whose
+     * `exists` is still true, because nothing has told it otherwise -- and
+     * announcing that broadcasts a visitor the operator has just deleted,
+     * which an open board obediently puts back on the screen.
+     */
+    private function attempt(Site $site, string $anonymousId, ?string $pageUrl): Visitor
+    {
+        $resolved = null;
+
+        $stamped = DB::transaction(function () use (&$resolved, $site, $anonymousId, $pageUrl): ?Visitor {
+            $resolved = $this->resolve($site, $anonymousId);
+
+            return $this->stamp($resolved, $pageUrl, $site);
+        });
+
+        if ($stamped === null) {
+            return $resolved;
+        }
+
+        return $this->announce($site, $stamped);
+    }
+
+    /**
+     * Tell the boards, without letting them undo the write.
+     *
+     * The event is `ShouldBroadcastNow`, so it is dispatched synchronously --
+     * and inside the transaction a Reverb that is merely unreachable threw,
+     * rolled the visitor save back, and failed the heartbeat. Realtime being
+     * down would have stopped presence being COLLECTED, which is the wrong
+     * blast radius by a wide margin: the board is one reader of this data.
+     *
+     * So it happens after the commit, and a failure to announce is swallowed.
+     * A board that misses one arrival gets it from the next heartbeat or the
+     * next resync; a visitor whose row was never written is gone.
+     */
+    private function announce(Site $site, Visitor $visitor): Visitor
+    {
+        try {
+            event(new VisitorPresenceUpdated($site, $visitor));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $visitor;
     }
 
     private function resolve(Site $site, string $anonymousId): Visitor
@@ -66,7 +122,7 @@ final class VisitorPresenceReport
         ]);
     }
 
-    private function stamp(Visitor $visitor, ?string $pageUrl, Site $site): Visitor
+    private function stamp(Visitor $visitor, ?string $pageUrl, Site $site): ?Visitor
     {
         // The site's setting, re-read under a lock, inside the transaction that
         // writes.
@@ -100,13 +156,13 @@ final class VisitorPresenceReport
         // then suppressed by broadcastWhen(), so the row would exist with
         // nothing on any board ever showing it.
         if ($current === null || $current->isArchived()) {
-            return $visitor;
+            return null;
         }
 
         $reporting = SitePresenceReporting::for($current);
 
         if (! $reporting->enabled) {
-            return $visitor;
+            return null;
         }
 
         // The page address is decided by the LOCKED reading too, not by what
@@ -186,7 +242,7 @@ final class VisitorPresenceReport
             if ($existing !== null) {
                 $visitor = $existing;
             } elseif (! $this->mayCreate($site)) {
-                return $visitor;
+                return null;
             }
         }
 

@@ -1214,6 +1214,19 @@
                         <p>{{ $presenceEnabled ? 'It is on for this site.' : 'It is off for this site.' }}</p>
                     </div>
                 @endif
+
+                {{-- Outside the permission branch above, because the board and
+                     this link answer to different permissions. Changing the
+                     SETTING is an owner-and-admin decision; using the board is
+                     open to any agent who can view the site, which is what the
+                     route and the broadcast channel both authorise. Keeping the
+                     only link inside the admin half left the agents it was
+                     built for with no way to reach it. --}}
+                @if ($presenceEnabled)
+                    <p class="field-help">
+                        <a href="{{ route('dashboard.sites.live', $site) }}">Open the live visitor board</a> to see who is on the site now.
+                    </p>
+                @endif
             </section>
 
             <section class="section" aria-labelledby="privacy-settings-heading">

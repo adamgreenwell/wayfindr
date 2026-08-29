@@ -24,6 +24,8 @@ use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\TicketExternalIssueState;
+use App\Support\Visitors\LiveVisitorBoard;
+use App\Support\Visitors\VisitorPresence;
 use App\Support\WidgetRealtimeConfig;
 use DateTimeZone;
 use Illuminate\Http\RedirectResponse;
@@ -644,6 +646,133 @@ class AgentSiteController extends Controller
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', 'Visitor intake saved.');
+    }
+
+    /**
+     * Who is on this site right now.
+     *
+     * Its own page rather than a tab on the visitor directory, because the two
+     * answer different questions and the difference is the point: the directory
+     * is people, ordered by any contact of any kind, and this is a moment. A
+     * board that shared the directory's ordering would put somebody who emailed
+     * an hour ago above somebody reading a page this second.
+     */
+    public function live(Request $request, Site $site): View
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+
+        $agent = $request->user();
+
+        // Read as of NOW, not as of route binding.
+        //
+        // The whole revocation path downstream depends on this response
+        // dropping its `[data-live-rows]` element -- that absence is what tells
+        // an open board to clear itself. Built from the model the route
+        // resolved, a revocation committing in between rendered a full board,
+        // rows element and all, so the resync that fetched this page saw
+        // nothing wrong and carried on showing visitors.
+        $site = Site::query()->whereKey($site->getKey())->first() ?? $site;
+
+        $reporting = SitePresenceReporting::for($site);
+
+        $snapshot = $reporting->enabled && ! $site->isArchived()
+            ? LiveVisitorBoard::snapshotFor($site)
+            : ['visitors' => collect(), 'total' => 0];
+
+        return view('agent.sites.live', [
+            'agent' => $agent,
+            'account' => $agent?->account,
+            'site' => $site,
+            'reporting' => $reporting,
+            // Empty when the site does not watch, rather than "whoever the
+            // query happens to match". Contacted visitors keep reporting
+            // through bootstrap and message fetches, so an unguarded query
+            // would put a nonzero count above a paragraph explaining that the
+            // board stays empty by design.
+            'visitors' => $snapshot['visitors'],
+            // From the SAME read as the rows. Asked separately, a visitor
+            // committing between the two landed in the count and not in the
+            // table -- and the browser then counted them again when the
+            // buffered socket event replayed them as an arrival.
+            //
+            // Still uncapped past 200: the list stops there so one page stays
+            // readable, and telling an agent "200" when four hundred people
+            // are on the site is the one number here they would have taken at
+            // face value.
+            'presentCount' => $snapshot['total'],
+            'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
+            'realtime' => $this->presenceRealtimeConfig($site),
+            // Words for the script, chosen here. The socket carries a state
+            // and this page picks the sentence, which is the same rule the
+            // conversation presence payload follows: a payload broadcast to
+            // every agent watching cannot know which language each of them
+            // reads.
+            'presenceLabels' => collect(VisitorPresence::states())
+                ->mapWithKeys(fn (string $state): array => [$state => VisitorPresence::label($state)])
+                ->all(),
+        ]);
+    }
+
+    /**
+     * What the board needs to open a socket, or null if it cannot.
+     *
+     * Null disables the script entirely and the page stays what the server
+     * rendered -- correct at load, going stale quietly, which is a better
+     * failure than a board that looks live and is not.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function presenceRealtimeConfig(Site $site): ?array
+    {
+        // An archived site has no board to subscribe to: SitePresenceChannel
+        // queries `servable()` and refuses every authorization. Handing the
+        // page a config anyway meant the socket opened, the auth failed, the
+        // reconnect fired, and the agent watched "Reconnecting to live
+        // updates" for as long as they left the tab open -- retrying something
+        // that is refused by design and will never succeed.
+        if ($site->isArchived()) {
+            return null;
+        }
+
+        if ((string) config('broadcasting.default') !== 'reverb') {
+            return null;
+        }
+
+        $key = config('broadcasting.connections.reverb.key');
+        // The CLIENT host, falling back to the server one. In a containerised
+        // install the server-side address is an internal service name the
+        // browser cannot resolve, which is why the agent conversation page
+        // reads these the same way.
+        $host = config('broadcasting.connections.reverb.options.client_host')
+            ?? config('broadcasting.connections.reverb.options.host');
+        $port = config('broadcasting.connections.reverb.options.client_port')
+            ?? config('broadcasting.connections.reverb.options.port');
+        $scheme = config('broadcasting.connections.reverb.options.client_scheme')
+            ?? config('broadcasting.connections.reverb.options.scheme');
+
+        foreach ([$key, $host, $port, $scheme] as $value) {
+            if (! is_scalar($value) || (string) $value === '') {
+                return null;
+            }
+        }
+
+        return [
+            'appKey' => (string) $key,
+            'authEndpoint' => url('/broadcasting/auth'),
+            'channelName' => 'private-sites.'.$site->id.'.presence',
+            'host' => (string) $host,
+            'port' => (string) $port,
+            'scheme' => (string) $scheme,
+            'eventName' => 'visitor.presence.updated',
+            'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            // How many rows the server will ever render. The board needs it to
+            // know whether its own row count is the whole truth: at or below
+            // this, every visitor counted is on the page and a departure really
+            // does lower the total. Above it, the rows are a window and the
+            // total has to come from the server.
+            'displayLimit' => LiveVisitorBoard::DISPLAY_LIMIT,
+        ];
     }
 
     /**
