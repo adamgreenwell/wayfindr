@@ -81,7 +81,7 @@
                                         <span class="lede">Every site on this account</span>
                                     @else
                                         <span class="lede">
-                                            {{ $namedSites->pluck('name')->join(', ') }}@if ($namedSites->isNotEmpty() && $hiddenSiteCount > 0), @endif@if ($hiddenSiteCount > 0)sites you do not support@endif
+                                            {{ $namedSites->pluck('name')->join(', ') }}{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? 'sites you do not support' : '' }}
                                         </span>
                                     @endif
                                     <span class="lede">{{ $token->abilities === [] ? 'No abilities' : implode(', ', $token->abilities) }}</span>

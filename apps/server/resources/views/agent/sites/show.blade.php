@@ -1188,7 +1188,14 @@
                         </div>
 
                         <p class="field-help">
-                            With this on, the widget reports every {{ $presenceEvery }} seconds that somebody is on the site@if ($presencePageUrls), and which page they are on@endif. Visitors are told in the widget and can decline.@if ($presencePageUrls) Addresses are stored without query strings.@endif A visitor who never makes contact is deleted {{ $presenceRetentionDays }} {{ Str::plural('day', $presenceRetentionDays) }} after they were last seen.
+                            {{-- Echoes rather than inline conditionals. A Blade directive
+                                 written flush against a word character is not compiled at
+                                 all, so this paragraph shipped to stage with two directives
+                                 as literal text in it -- and the one that DID compile then
+                                 wrapped the wrong span, because its partner had been left
+                                 behind. An echo has no such adjacency rule, and reads no
+                                 worse here. --}}
+                            With this on, the widget reports every {{ $presenceEvery }} seconds that somebody is on the site{{ $presencePageUrls ? ', and which page they are on' : '' }}. Visitors are told in the widget and can decline.{{ $presencePageUrls ? ' Addresses are stored without query strings.' : '' }} A visitor who never makes contact is deleted {{ $presenceRetentionDays }} {{ Str::plural('day', $presenceRetentionDays) }} after they were last seen.
                         </p>
 
                         <div class="field field-check">

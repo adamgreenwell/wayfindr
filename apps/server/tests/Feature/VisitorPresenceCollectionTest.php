@@ -1975,4 +1975,34 @@ test('the abuse-control guide documents the limits this install actually applies
     }
 });
 
+test('the settings page renders no Blade directive as literal text', function (): void {
+    // A directive written flush against a word character -- `site@if (...)`,
+    // `on@endif` -- is not compiled at all. This page shipped to stage with a
+    // literal "@endif" and a literal "@if ($presencePageUrls)" in the presence
+    // help, and the directive that DID compile then wrapped the wrong span,
+    // because its partner had been left behind as text.
+    //
+    // The test that was supposed to cover this asserted the conditional PHRASE
+    // was present, and it was -- in both branches, with the directive sitting
+    // next to it. Asserting on the phrase could not see the residue, so this
+    // asserts on the residue.
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
 
+    foreach ([true, false] as $pageUrls) {
+        $site = Site::factory()->for($account)->create([
+            'domain' => 'shop.test',
+            'settings' => ['presence' => ['enabled' => true, 'page_urls' => $pageUrls]],
+        ]);
+
+        $html = test()->actingAs($owner)
+            ->get(route('dashboard.sites.show', $site))
+            ->assertOk()
+            ->getContent();
+
+        expect($html)->not->toMatch(
+            '/@(if|endif|else|elseif|foreach|endforeach|php|endphp|unless|endunless)\b/',
+            'a Blade directive reached the browser as text with page_urls '.var_export($pageUrls, true)
+        );
+    }
+});
