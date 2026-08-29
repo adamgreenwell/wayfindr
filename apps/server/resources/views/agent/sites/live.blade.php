@@ -6,7 +6,9 @@
     <section class="section" aria-labelledby="live-board-heading">
         <div class="section-header">
             <h2 id="live-board-heading">On the site now</h2>
-            <span class="lede" data-live-count>{{ $presentCount }}</span>
+            {{-- The server's clock, so the board can measure against the same
+                 one that stamped the rows. Refreshed by every resync. --}}
+            <span class="lede" data-live-count data-server-now="{{ now()->toJSON() }}">{{ $presentCount }}</span>
         </div>
 
         @if (! $reporting->enabled)
@@ -163,6 +165,35 @@
                     }
                 }
 
+                // The agent's clock is not the one that stamped these rows.
+                //
+                // Every timestamp on this board is server-stamped, and two of
+                // the things it does with them -- how long somebody has been
+                // here, and whether they have gone -- compared them against
+                // the WORKSTATION's clock. A machine running more than
+                // `presentMinutes` ahead therefore read every fresh heartbeat
+                // as already expired: the resync restored the rows and the
+                // fifteen-second sweep removed them again, so a busy site
+                // showed an empty board for most of every minute.
+                //
+                // Skew that large is not exotic -- a laptop resumed from
+                // suspend, a VM with no working time sync -- and the board
+                // gave no hint of what was wrong.
+                var clockOffset = 0;
+
+                function adoptServerClock(el) {
+                    var stamped = el && el.dataset ? el.dataset.serverNow : null;
+                    var at = stamped ? Date.parse(stamped) : NaN;
+
+                    if (!isNaN(at)) {
+                        clockOffset = at - Date.now();
+                    }
+                }
+
+                function serverNow() {
+                    return Date.now() + clockOffset;
+                }
+
                 function durationFrom(startedAt) {
                     if (!startedAt) {
                         return '\u2014';
@@ -174,7 +205,7 @@
                         return '\u2014';
                     }
 
-                    var seconds = Math.max(0, Math.round((Date.now() - started) / 1000));
+                    var seconds = Math.max(0, Math.round((serverNow() - started) / 1000));
 
                     if (seconds < 60) {
                         return seconds + 's';
@@ -460,7 +491,7 @@
                 // on the same cutoff the query used, so a tab left open does
                 // not slowly fill with people who left hours ago.
                 function dropDeparted() {
-                    var cutoff = Date.now() - (config.presentMinutes * 60 * 1000);
+                    var cutoff = serverNow() - (config.presentMinutes * 60 * 1000);
 
                     rows.querySelectorAll('[data-visitor-id]').forEach(function (row) {
                         var seen = row.dataset.lastSeen ? Date.parse(row.dataset.lastSeen) : NaN;
@@ -611,6 +642,11 @@
                         // held somebody the heading did not, until the next
                         // resync a minute later.
                         var freshCount = parsed.querySelector('[data-live-count]');
+
+                        // Re-read on every snapshot, so a clock that drifts
+                        // during a long session is corrected rather than fixed
+                        // at whatever it was on page load.
+                        adoptServerClock(freshCount);
 
                         refreshCount(freshCount ? Number(freshCount.textContent) || 0 : undefined);
 
@@ -876,6 +912,8 @@
                         }
                     }
                 });
+
+                adoptServerClock(countEl);
 
                 window.setInterval(dropDeparted, 15000);
 

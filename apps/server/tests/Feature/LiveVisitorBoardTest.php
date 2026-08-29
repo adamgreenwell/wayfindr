@@ -1398,3 +1398,50 @@ test('a board cleared by a revocation comes back when the revocation is undone',
     test()->assertStringContainsString('pageClosing = false;', $restore, 'the board still refuses to reconnect');
     test()->assertStringContainsString('connect();', $restore, 'the board never opens a socket again');
 });
+
+test('the board measures against the clock that stamped its rows', function (): void {
+    // Every timestamp here is server-stamped, and two things the board does
+    // with them -- how long somebody has been on the site, and whether they
+    // have gone -- compared them against the WORKSTATION's clock.
+    //
+    // An agent's machine running more than `presentMinutes` ahead therefore
+    // read every fresh heartbeat as already expired: the resync restored the
+    // rows and the fifteen-second sweep removed them again, so a busy site
+    // showed an empty board for most of every minute, with nothing on screen
+    // suggesting the clock was the problem. A laptop resumed from suspend does
+    // this.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    // Neither reading may use the raw browser clock.
+    $sweep = Str::before(Str::after($source, 'function dropDeparted() {'), 'function ');
+    $duration = Str::before(Str::after($source, 'function durationFrom(startedAt) {'), 'function ');
+
+    test()->assertStringContainsString('cutoff', $sweep, 'the slice is not dropDeparted()');
+    test()->assertStringNotContainsString('Date.now()', $sweep, 'the expiry sweep uses the agent workstation clock');
+    test()->assertStringNotContainsString('Date.now()', $duration, 'the time-on-site uses the agent workstation clock');
+    test()->assertStringContainsString('serverNow()', $sweep, 'the sweep does not use the server clock');
+    test()->assertStringContainsString('serverNow()', $duration, 'the duration does not use the server clock');
+
+    // And the page really carries a server timestamp for it to adopt.
+    $f = boardFixture();
+    presentVisitor($f['site'], 'anon-clock');
+
+    $response = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk();
+
+    expect($response->getContent())->toMatch('/data-server-now="[^"]+"/');
+
+    // Refreshed by each snapshot rather than fixed at page load, so a clock
+    // that drifts during a long session is corrected.
+    $resync = Str::before(
+        Str::after($source, 'function resyncBoard() {'),
+        '// Holds events that arrive while a snapshot',
+    );
+
+    test()->assertStringContainsString(
+        'adoptServerClock(',
+        $resync,
+        'the board never re-reads the server clock after page load',
+    );
+});
