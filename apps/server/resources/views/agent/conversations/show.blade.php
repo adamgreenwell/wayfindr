@@ -1804,8 +1804,8 @@
                     }
                 }
 
-                function subscribe(socket, auth) {
-                    socket.send(JSON.stringify({
+                function subscribe(activeSocket, auth) {
+                    activeSocket.send(JSON.stringify({
                         event: 'pusher:subscribe',
                         data: {
                             auth: auth,
@@ -1814,7 +1814,7 @@
                     }));
                 }
 
-                function authorize(socket, socketId) {
+                function authorize(activeSocket, socketId) {
                     var body = new URLSearchParams();
 
                     body.set('socket_id', socketId);
@@ -1838,7 +1838,17 @@
                             return response.json();
                         })
                         .then(function (data) {
-                            subscribe(socket, data.auth);
+                            // Only the socket still in service may react -- the same
+                            // rule the failure path takes, and for a sharper reason
+                            // here: this token is bound to the socket_id that ASKED
+                            // for it. Sending it down a replacement is a subscribe
+                            // Reverb rejects, and the page would announce it was
+                            // listening on a channel it had just been refused.
+                            if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                                return;
+                            }
+
+                            subscribe(activeSocket, data.auth);
                             setStatus(realtimeLabels.cobrowseRealtime.listening, 'listening');
                             reconnectDelay = 1000;
 
@@ -1858,13 +1868,37 @@
                             hasConnectedOnce = true;
                         })
                         .catch(function () {
+                            // Only the socket still in service may react.
+                            if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                                return;
+                            }
+
                             setStatus(realtimeLabels.cobrowseRealtime.failed, 'warning');
+
+                            // A failed authorization leaves the socket HEALTHY and
+                            // unsubscribed, so no close event ever fires and the
+                            // reconnect that only the close handler schedules never
+                            // runs. The page would sit connected to nothing for the
+                            // rest of the session, looking exactly like a quiet
+                            // conversation.
+                            try {
+                                activeSocket.close();
+                            } catch (error) {
+                                // Closing is best effort; the reconnect is what matters.
+                            }
+
+                            scheduleReconnect();
                         });
                 }
 
                 var socketScheme = config.scheme === 'https' ? 'wss' : 'ws';
                 var socketUrl = socketScheme + '://' + config.host + ':' + config.port + '/app/' + encodeURIComponent(config.appKey) + '?protocol=7&client=wayfindr-agent&version=0.0.0&flash=false';
                 var socket = null;
+
+                // Which socket is in service, so a callback from one that has been
+                // replaced can be told apart and ignored.
+                var socketGeneration = 0;
+
                 var reconnectDelay = 1000;
                 var reconnectTimer = null;
                 var pageClosing = false;
@@ -1894,6 +1928,31 @@
                     try {
                         event = JSON.parse(message.data);
                     } catch (error) {
+                        return;
+                    }
+
+                    // Reverb sends this on a quiet connection and closes the socket
+                    // if nothing answers. It is a protocol MESSAGE, not a WebSocket
+                    // control frame, so the browser does not reply on our behalf --
+                    // the bundled Pusher client does that, and this page speaks the
+                    // protocol itself.
+                    //
+                    // Without it the page still worked, which is why it went
+                    // unnoticed: the socket was retired, the close handler
+                    // reconnected, and the transcript refetched on resubscribe. A
+                    // realtime page with a gap in it roughly every minute, on every
+                    // install, since this socket was written.
+                    //
+                    // Answered on the socket the frame ARRIVED on, so a ping to one
+                    // being replaced does not have its pong sent down the successor.
+                    if (event.event === 'pusher:ping') {
+                        try {
+                            message.target.send(JSON.stringify({ event: 'pusher:pong', data: {} }));
+                        } catch (error) {
+                            // A socket that cannot be written to is already gone, and
+                            // the close handler reconnects.
+                        }
+
                         return;
                     }
 
@@ -1979,10 +2038,21 @@
                 }
 
                 function connect() {
+                    // Which socket is in service. An authorization fetch or a close
+                    // event for one that has since been replaced is answering about
+                    // a connection nobody is using, and acting on it opens another
+                    // socket beside the healthy one -- then another.
+                    var generation = ++socketGeneration;
+
                     socket = new WebSocket(socketUrl);
+                    socket.wayfindrGeneration = generation;
                     socket.addEventListener('message', handleSocketMessage);
 
                     socket.addEventListener('close', function () {
+                        if (generation !== socketGeneration) {
+                            return;
+                        }
+
                         if (hasCobrowseTargets && panel.dataset.state !== 'available') {
                             setStatus(realtimeLabels.cobrowseRealtime.disconnected, 'warning');
                         }
