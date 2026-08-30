@@ -163,10 +163,16 @@ proxy_read_timeout 3600s;
 proxy_send_timeout 3600s;
 ```
 
-Wayfindr's own realtime pages send a client keepalive well inside any of these
-windows, so they survive a default configuration. Raise the timeout anyway: it
-is what the connection is for, and it removes a minute-by-minute reconnect from
-every other client that speaks to this Reverb.
+Wayfindr's own realtime pages send a client keepalive, which holds the
+connection open while the tab is **visible**. It is not a substitute for the
+setting. Browsers throttle timers in a backgrounded tab — measured on our
+staging deploy, a hidden agent tab's 15-second keepalive stretched to 78
+seconds, overshot the 60-second window, and the socket was torn down. No
+JavaScript timer can promise otherwise, because the browser will not let a
+hidden tab keep to a schedule.
+
+So raise the timeout. It removes the ceiling entirely, and it is one line
+against a problem no client-side workaround fully closes.
 
 Generate the `APP_KEY` on the server with:
 
