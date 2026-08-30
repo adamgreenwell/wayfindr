@@ -8159,3 +8159,104 @@ test('agent cannot view another account conversation', function (): void {
         ->get('/dashboard/conversations/WF-OTHER1')
         ->assertNotFound();
 });
+
+test('the agent realtime socket answers the keepalive the server sends it', function (): void {
+    // Reverb sends an application-level `pusher:ping` on a quiet connection
+    // (`REVERB_APP_PING_INTERVAL`, sixty seconds by default) and closes the
+    // socket if no `pusher:pong` comes back. These are protocol MESSAGES, not
+    // WebSocket control frames, so the browser does not answer them -- the
+    // bundled Pusher client does, and this page speaks the protocol itself.
+    //
+    // It went unnoticed because the page still worked: socket retired, close
+    // handler reconnects, transcript refetched on resubscribe. A realtime page
+    // with a gap in it roughly every minute, on every install, for as long as
+    // this socket has existed.
+    $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $handler = Str::before(Str::after($source, 'function handleSocketMessage(message) {'), "\n                function ");
+
+    test()->assertStringContainsString(
+        "event.event === 'pusher:connection_established'",
+        $handler,
+        'the slice is not the message handler',
+    );
+
+    test()->assertStringContainsString(
+        "event.event === 'pusher:ping'",
+        $handler,
+        'the page never answers the keepalive, so the server retires its socket',
+    );
+
+    test()->assertStringContainsString(
+        'pusher:pong',
+        $handler,
+        'the page recognises the keepalive without answering it',
+    );
+});
+
+test('a failed subscribe does not leave the agent page connected to nothing', function (): void {
+    // Authorization failing leaves the socket HEALTHY and unsubscribed. No
+    // close event fires, and the reconnect is scheduled only by the close
+    // handler -- so the page sat connected to nothing for the rest of the
+    // session, looking exactly like a quiet conversation.
+    $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $authorize = Str::before(Str::after($source, 'function authorize(activeSocket, socketId) {'), "\n                function ");
+
+    test()->assertStringContainsString(
+        'config.authEndpoint',
+        $authorize,
+        'the slice is not authorize()',
+    );
+
+    test()->assertStringContainsString(
+        'activeSocket.close();',
+        $authorize,
+        'a failed subscribe leaves a healthy socket that will never be replaced',
+    );
+
+    test()->assertStringContainsString(
+        'scheduleReconnect();',
+        $authorize,
+        'a failed subscribe never reconnects',
+    );
+
+    // And only the socket still in service may react -- once a failure closes
+    // and reconnects, an overtaken callback doing the same opens another socket
+    // beside the healthy one.
+    test()->assertStringContainsString(
+        'activeSocket.wayfindrGeneration !== socketGeneration',
+        $authorize,
+        'a callback from a replaced socket can still schedule a reconnect',
+    );
+});
+
+test('a close event from a replaced agent socket cannot open another', function (): void {
+    // The close handler runs for every socket, including ones already replaced.
+    // A failed authorization closes its own socket and schedules a reconnect in
+    // the same breath; `close` arrives asynchronously, by which time a healthy
+    // socket is in service, and an unguarded handler schedules another.
+    $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $connect = Str::before(Str::after($source, "\n                function connect() {"), "\n                function ");
+
+    test()->assertStringContainsString(
+        'new WebSocket(socketUrl)',
+        $connect,
+        'the slice is not connect()',
+    );
+
+    test()->assertStringContainsString(
+        'var generation = ++socketGeneration;',
+        $connect,
+        'sockets are not numbered, so a stale callback cannot be told apart',
+    );
+
+    $close = Str::before(Str::after($connect, "socket.addEventListener('close', function () {"), '});');
+
+    test()->assertStringContainsString(
+        'generation !== socketGeneration',
+        $close,
+        'a close event from a socket nobody is using still schedules a reconnect',
+    );
+});
