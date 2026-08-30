@@ -403,6 +403,8 @@
                 // in flight -- and put a visitor back on a page that has just
                 // said the site is not collecting them.
                 function clearBoard(reason) {
+                    stopKeepalive();
+
                     // Latched, because closing a socket does not cancel a
                     // message the browser has already queued for it. An update
                     // dispatched before the revocation arrives after the rows
@@ -705,6 +707,58 @@
                     reconnectDelay = Math.min(reconnectDelay * 2, 15000);
                 }
 
+
+                // Our own keepalive.
+                //
+                // The pusher protocol expects the CLIENT to speak on an
+                // otherwise silent connection: the server declares an
+                // `activity_timeout` when the connection is established, and a
+                // client that says nothing for that long is disconnected. This
+                // board answered the server's ping and never sent one of its own.
+                //
+                // It matters more than the protocol makes it sound, because
+                // anything between the browser and Reverb is also counting. On
+                // a default nginx the websocket location inherits
+                // `proxy_read_timeout 60s`, so an idle socket is torn down at
+                // sixty seconds with no close frame -- measured on our own
+                // staging deploy, where a silent socket died at exactly 60s
+                // (code 1006) while one sending a ping every 25s stayed up.
+                // Reverb's own ping is also on a sixty-second interval, so it
+                // never got the chance to arrive first.
+                var keepaliveTimer = null;
+
+                function stopKeepalive() {
+                    if (keepaliveTimer) {
+                        window.clearInterval(keepaliveTimer);
+                        keepaliveTimer = null;
+                    }
+                }
+
+                function startKeepalive(activeSocket, activityTimeoutSeconds) {
+                    stopKeepalive();
+
+                    // Half the window the server gave us, so a single lost frame
+                    // is not a disconnection, and never longer than 25 seconds --
+                    // proxies in front of us have their own idea of idle and do
+                    // not tell us what it is.
+                    var declared = Number(activityTimeoutSeconds);
+                    var every = Math.max(5, Math.min(25, (declared > 0 ? declared : 30) / 2));
+
+                    keepaliveTimer = window.setInterval(function () {
+                        if (activeSocket.readyState !== 1) {
+                            stopKeepalive();
+
+                            return;
+                        }
+
+                        try {
+                            activeSocket.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+                        } catch (error) {
+                            stopKeepalive();
+                        }
+                    }, every * 1000);
+                }
+
                 function authorize(activeSocket, socketId) {
                     var token = document.querySelector('meta[name="csrf-token"]');
 
@@ -819,7 +873,8 @@
                             return;
                         }
 
-                        authorize(socket, established.socket_id);
+                        startKeepalive(message.target, established.activity_timeout);
+                        authorize(message.target, established.socket_id);
 
                         return;
                     }
@@ -888,6 +943,15 @@
                         if (generation !== socketGeneration) {
                             return;
                         }
+
+                        // AFTER the guard. `keepaliveTimer` is one variable for
+                        // the page, so a close arriving from a socket that has
+                        // already been replaced would otherwise stop the
+                        // REPLACEMENT's keepalive -- and a failed authorization
+                        // closes its own socket and schedules a reconnect in the
+                        // same breath, so the successor is routinely alive
+                        // before its predecessor's close event lands.
+                        stopKeepalive();
 
                         if (statusEl && !pageClosing) {
                             statusEl.textContent = 'Reconnecting to live updates.';

@@ -138,6 +138,36 @@ ready. Switch it to `reverb` when the site should publish live conversation
 message events. `REVERB_APP_KEY` and `REVERB_APP_SECRET` should be long random
 strings; `openssl rand -hex 16` is fine for each value.
 
+### Raise the proxy read timeout on the WebSocket location
+
+Forge proxies the WebSocket paths to Reverb without setting
+`proxy_read_timeout`, so they inherit **nginx's default of 60 seconds**. A
+WebSocket that is idle for a minute — an agent watching a quiet conversation is
+exactly that — is then torn down mid-connection, with no close frame. The
+browser sees an abnormal close (code 1006) and reconnects, so the symptom is
+not an error anybody notices: it is a realtime page that silently drops and
+re-establishes roughly once a minute, losing whatever was published in the gap
+until the next resync catches up.
+
+It is easy to misread. Reverb's own `ping_interval` also defaults to 60
+seconds, so the keepalive it would have sent never arrives — the proxy closes
+the connection at the same moment. Measured on our staging deploy: an idle
+socket closed at exactly 60s, while an otherwise identical one sending a frame
+every 25 seconds was still connected at 113s.
+
+Add this to the site's nginx configuration for **both** WebSocket locations
+(`/app` and `/apps`), under Forge's *Site → Files → Edit Nginx Configuration*:
+
+```nginx
+proxy_read_timeout 3600s;
+proxy_send_timeout 3600s;
+```
+
+Wayfindr's own realtime pages send a client keepalive well inside any of these
+windows, so they survive a default configuration. Raise the timeout anyway: it
+is what the connection is for, and it removes a minute-by-minute reconnect from
+every other client that speaks to this Reverb.
+
 Generate the `APP_KEY` on the server with:
 
 ```bash

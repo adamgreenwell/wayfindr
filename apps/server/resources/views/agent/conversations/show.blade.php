@@ -1804,6 +1804,58 @@
                     }
                 }
 
+
+                // Our own keepalive.
+                //
+                // The pusher protocol expects the CLIENT to speak on an
+                // otherwise silent connection: the server declares an
+                // `activity_timeout` when the connection is established, and a
+                // client that says nothing for that long is disconnected. This
+                // page answered the server's ping and never sent one of its own.
+                //
+                // It matters more than the protocol makes it sound, because
+                // anything between the browser and Reverb is also counting. On
+                // a default nginx the websocket location inherits
+                // `proxy_read_timeout 60s`, so an idle socket is torn down at
+                // sixty seconds with no close frame -- measured on our own
+                // staging deploy, where a silent socket died at exactly 60s
+                // (code 1006) while one sending a ping every 25s stayed up.
+                // Reverb's own ping is also on a sixty-second interval, so it
+                // never got the chance to arrive first.
+                var keepaliveTimer = null;
+
+                function stopKeepalive() {
+                    if (keepaliveTimer) {
+                        window.clearInterval(keepaliveTimer);
+                        keepaliveTimer = null;
+                    }
+                }
+
+                function startKeepalive(activeSocket, activityTimeoutSeconds) {
+                    stopKeepalive();
+
+                    // Half the window the server gave us, so a single lost frame
+                    // is not a disconnection, and never longer than 25 seconds --
+                    // proxies in front of us have their own idea of idle and do
+                    // not tell us what it is.
+                    var declared = Number(activityTimeoutSeconds);
+                    var every = Math.max(5, Math.min(25, (declared > 0 ? declared : 30) / 2));
+
+                    keepaliveTimer = window.setInterval(function () {
+                        if (activeSocket.readyState !== 1) {
+                            stopKeepalive();
+
+                            return;
+                        }
+
+                        try {
+                            activeSocket.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+                        } catch (error) {
+                            stopKeepalive();
+                        }
+                    }, every * 1000);
+                }
+
                 function subscribe(activeSocket, auth) {
                     activeSocket.send(JSON.stringify({
                         event: 'pusher:subscribe',
@@ -1957,7 +2009,10 @@
                     }
 
                     if (event.event === 'pusher:connection_established') {
-                        authorize(socket, parsePayload(event.data).socket_id);
+                        var established = parsePayload(event.data);
+
+                        startKeepalive(message.target, established.activity_timeout);
+                        authorize(message.target, established.socket_id);
 
                         return;
                     }
@@ -2052,6 +2107,8 @@
                         if (generation !== socketGeneration) {
                             return;
                         }
+
+                        stopKeepalive();
 
                         if (hasCobrowseTargets && panel.dataset.state !== 'available') {
                             setStatus(realtimeLabels.cobrowseRealtime.disconnected, 'warning');
