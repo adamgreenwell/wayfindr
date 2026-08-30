@@ -1485,14 +1485,30 @@ test('the board keeps its own connection alive', function (): void {
         'the keepalive is not started from the connection payload',
     );
 
-    // And stopped everywhere the board stops caring about the socket.
-    foreach (['clearBoard(reason) {', "socket.addEventListener('close'"] as $site) {
-        $slice = Str::before(Str::after($source, $site), '}');
+    // And stopped everywhere the board stops caring about the socket. Each
+    // slice runs to that block's own terminator, not to the first `}` -- the
+    // guard below introduces one before the call, and a slice that stopped
+    // there would report the call missing when it is simply further down.
+    $closeHandler = Str::before(Str::after($source, "socket.addEventListener('close', function () {"), '});');
+    $clear = Str::before(Str::after($source, 'function clearBoard(reason) {'), "\n                }");
 
+    foreach (['close handler' => $closeHandler, 'clearBoard()' => $clear] as $where => $slice) {
         test()->assertStringContainsString(
             'stopKeepalive();',
             $slice,
-            'the keepalive outlives the socket it belongs to, at: '.$site,
+            'the keepalive outlives the socket it belongs to, in '.$where,
         );
     }
+
+    // In the close handler it has to come AFTER the generation guard, not
+    // merely be present. `keepaliveTimer` is one variable for the page, so a
+    // close from a socket already replaced would otherwise stop the
+    // REPLACEMENT's keepalive and put the board back on the sixty-second
+    // disconnect this whole change removes. A failed authorization closes its
+    // own socket and schedules a reconnect in the same breath, so the successor
+    // is routinely alive before its predecessor's close event lands.
+    expect(mb_strpos($closeHandler, 'generation !== socketGeneration'))->toBeLessThan(
+        mb_strpos($closeHandler, 'stopKeepalive();'),
+        'a close from a replaced socket stops the current keepalive'
+    );
 });

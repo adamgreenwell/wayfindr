@@ -929,8 +929,6 @@
                     socket.addEventListener('message', handleSocketMessage);
 
                     socket.addEventListener('close', function () {
-                        stopKeepalive();
-
                         // The same guard the authorization callback takes, and
                         // this is the handler that always runs.
                         //
@@ -945,6 +943,15 @@
                         if (generation !== socketGeneration) {
                             return;
                         }
+
+                        // AFTER the guard. `keepaliveTimer` is one variable for
+                        // the page, so a close arriving from a socket that has
+                        // already been replaced would otherwise stop the
+                        // REPLACEMENT's keepalive -- and a failed authorization
+                        // closes its own socket and schedules a reconnect in the
+                        // same breath, so the successor is routinely alive
+                        // before its predecessor's close event lands.
+                        stopKeepalive();
 
                         if (statusEl && !pageClosing) {
                             statusEl.textContent = 'Reconnecting to live updates.';
