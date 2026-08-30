@@ -165,14 +165,17 @@ proxy_send_timeout 3600s;
 
 Wayfindr's own realtime pages send a client keepalive, which holds the
 connection open while the tab is **visible**. It is not a substitute for the
-setting. Browsers throttle timers in a backgrounded tab — measured on our
-staging deploy, a hidden agent tab's 15-second keepalive stretched to 78
-seconds, overshot the 60-second window, and the socket was torn down. No
-JavaScript timer can promise otherwise, because the browser will not let a
-hidden tab keep to a schedule.
+setting.
 
-So raise the timeout. It removes the ceiling entirely, and it is one line
-against a problem no client-side workaround fully closes.
+A hidden tab cannot be relied on to keep any schedule. Browsers throttle
+background timers, and Chrome goes further and *freezes* eligible tabs
+outright: measured on our staging deploy, a hidden agent tab ran **no timers
+at all** for 83 seconds of wall clock — a one-second interval fired zero
+times. A keepalive cannot fire from a page that is not running, so no
+client-side workaround closes this.
+
+So raise the timeout. It removes the 60-second ceiling entirely, and it is one
+line against a problem the client genuinely cannot solve for itself.
 
 Generate the `APP_KEY` on the server with:
 
