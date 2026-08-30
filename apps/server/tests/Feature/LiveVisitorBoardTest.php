@@ -1445,3 +1445,54 @@ test('the board measures against the clock that stamped its rows', function (): 
         'the board never re-reads the server clock after page load',
     );
 });
+
+test('the board keeps its own connection alive', function (): void {
+    // Answering the server's ping is only half the protocol. The client is
+    // expected to speak on an otherwise silent connection -- the server
+    // declares an `activity_timeout` on connect and disconnects a client that
+    // says nothing for that long.
+    //
+    // And whatever sits between the browser and Reverb is counting too. On a
+    // default nginx the websocket location inherits `proxy_read_timeout 60s`,
+    // so a silent socket is torn down at sixty seconds with no close frame.
+    // Measured on staging: an idle socket died at exactly 60s (code 1006)
+    // while one sending a ping every 25s was still open at 113s. Reverb's own
+    // ping is on the same sixty-second interval, so it never arrived first --
+    // which is why answering it changed nothing on its own.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    $keepalive = Str::before(Str::after($source, 'function startKeepalive(activeSocket, activityTimeoutSeconds) {'), "\n                }");
+
+    test()->assertStringContainsString(
+        "event: 'pusher:ping'",
+        $keepalive,
+        'the board never sends a keepalive of its own',
+    );
+
+    // Derived from what the SERVER declared, not a number picked here.
+    test()->assertStringContainsString(
+        'activityTimeoutSeconds',
+        $keepalive,
+        'the keepalive interval ignores the timeout the server declared',
+    );
+
+    // Started from the connection payload, on the socket that carried it.
+    $handler = Str::before(Str::after($source, 'function handleSocketMessage(message) {'), "\n                function ");
+
+    test()->assertStringContainsString(
+        'startKeepalive(message.target, established.activity_timeout)',
+        $handler,
+        'the keepalive is not started from the connection payload',
+    );
+
+    // And stopped everywhere the board stops caring about the socket.
+    foreach (['clearBoard(reason) {', "socket.addEventListener('close'"] as $site) {
+        $slice = Str::before(Str::after($source, $site), '}');
+
+        test()->assertStringContainsString(
+            'stopKeepalive();',
+            $slice,
+            'the keepalive outlives the socket it belongs to, at: '.$site,
+        );
+    }
+});

@@ -8274,3 +8274,41 @@ test('a close event from a replaced agent socket cannot open another', function 
         'a close event from a socket nobody is using still schedules a reconnect',
     );
 });
+
+test('the agent conversation page keeps its own connection alive', function (): void {
+    // See the matching board test for the measurement. Answering the server's
+    // ping is half the protocol; the client has to speak on a silent
+    // connection too, and every proxy in between is counting idle time with
+    // its own timeout that it never tells us about.
+    $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+
+    $keepalive = Str::before(Str::after($source, 'function startKeepalive(activeSocket, activityTimeoutSeconds) {'), "\n                }");
+
+    test()->assertStringContainsString(
+        "event: 'pusher:ping'",
+        $keepalive,
+        'the page never sends a keepalive of its own',
+    );
+
+    test()->assertStringContainsString(
+        'activityTimeoutSeconds',
+        $keepalive,
+        'the keepalive interval ignores the timeout the server declared',
+    );
+
+    $handler = Str::before(Str::after($source, 'function handleSocketMessage(message) {'), "\n                function ");
+
+    test()->assertStringContainsString(
+        'startKeepalive(message.target, established.activity_timeout)',
+        $handler,
+        'the keepalive is not started from the connection payload',
+    );
+
+    $close = Str::before(Str::after($source, "socket.addEventListener('close', function () {"), '});');
+
+    test()->assertStringContainsString(
+        'stopKeepalive();',
+        $close,
+        'the keepalive outlives the socket it belongs to',
+    );
+});
