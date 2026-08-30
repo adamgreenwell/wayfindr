@@ -8223,11 +8223,25 @@ test('a failed subscribe does not leave the agent page connected to nothing', fu
 
     // And only the socket still in service may react -- once a failure closes
     // and reconnects, an overtaken callback doing the same opens another socket
-    // beside the healthy one.
+    // beside the healthy one. BOTH callbacks, not just the failure: a
+    // successful one is the sharper case, because the token it is holding is
+    // bound to the socket_id that asked for it.
+    expect(substr_count($authorize, 'activeSocket.wayfindrGeneration !== socketGeneration'))
+        ->toBe(2, 'only one of the two authorization callbacks checks it is still current');
+
+    // The subscribe goes down the socket that was AUTHORISED, never the global
+    // successor -- Reverb rejects a token bound to a different socket_id, and
+    // the page would announce it was listening on a channel it had been refused.
     test()->assertStringContainsString(
-        'activeSocket.wayfindrGeneration !== socketGeneration',
+        'subscribe(activeSocket, data.auth);',
         $authorize,
-        'a callback from a replaced socket can still schedule a reconnect',
+        'the subscription is sent on whichever socket happens to be current',
+    );
+
+    test()->assertStringNotContainsString(
+        'subscribe(socket,',
+        $authorize,
+        'the subscription is still sent on the global socket',
     );
 });
 

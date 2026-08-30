@@ -1804,8 +1804,8 @@
                     }
                 }
 
-                function subscribe(socket, auth) {
-                    socket.send(JSON.stringify({
+                function subscribe(activeSocket, auth) {
+                    activeSocket.send(JSON.stringify({
                         event: 'pusher:subscribe',
                         data: {
                             auth: auth,
@@ -1838,7 +1838,17 @@
                             return response.json();
                         })
                         .then(function (data) {
-                            subscribe(socket, data.auth);
+                            // Only the socket still in service may react -- the same
+                            // rule the failure path takes, and for a sharper reason
+                            // here: this token is bound to the socket_id that ASKED
+                            // for it. Sending it down a replacement is a subscribe
+                            // Reverb rejects, and the page would announce it was
+                            // listening on a channel it had just been refused.
+                            if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                                return;
+                            }
+
+                            subscribe(activeSocket, data.auth);
                             setStatus(realtimeLabels.cobrowseRealtime.listening, 'listening');
                             reconnectDelay = 1000;
 
