@@ -30,6 +30,11 @@ class OperatorOnboardingController extends Controller
             'label' => 'Configure mail',
             'configured' => 'Manage mail settings',
         ],
+        'language_and_region' => [
+            'route' => 'operator.settings.localization.edit',
+            'label' => 'Set language and region',
+            'configured' => 'Manage language and region',
+        ],
     ];
 
     public function __invoke(Request $request, OperatorReadiness $readiness): View
