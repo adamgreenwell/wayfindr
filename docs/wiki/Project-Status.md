@@ -45,7 +45,9 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
 - **A dashboard an agent can read in their own language** — **English, German
   and Italian** — on the surfaces extracted so far: the profile pages, the
   conversation queue, the ticket list, and the conversation detail page with its
-  cobrowse panel.
+  cobrowse panel. An agent who has chosen nothing reads the install's language,
+  which the operator sets in the browser under **Language and region**;
+  `APP_LOCALE` seeds a new install and is the fallback until somebody saves one.
 
   **Most of the dashboard is still English** — the home page, Alerts, Reports,
   Visitors, site settings, ticket detail, and all of account management:
@@ -90,10 +92,13 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   a customer until somebody who speaks it has read the rendered screens.
 - **A dashboard an agent can read on their own clock.** An agent picks a
   timezone on their profile beside their language; everyone who has not picked
-  one follows the install's, which is `WAYFINDR_DASHBOARD_TIMEZONE` (UTC unless
-  set). It changes what is **shown**, never what is stored — every record stays
-  in UTC — so changing it re-reads existing history rather than rewriting it,
-  and it applies to report day boundaries as well as timestamps.
+  one follows the install's. The operator sets that in the browser, under
+  **Language and region**, and it is authoritative —
+  `WAYFINDR_DASHBOARD_TIMEZONE` seeds a new install and is the fallback until
+  somebody saves one. It changes what is **shown**, never what is stored —
+  every record stays in UTC — so changing it re-reads existing history rather
+  than rewriting it, and it applies to report day boundaries as well as
+  timestamps.
 
   A site's **support hours** are the deliberate exception: they belong to the
   site and stay in the site's own zone, because "visitors are told support is
