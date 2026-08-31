@@ -318,8 +318,12 @@ record it, though, and its error log is the most direct evidence you will get:
 upstream timed out (110: Connection timed out) while reading upstream
 ```
 
-entries against the `/app` or `/apps` location, arriving about once a minute
-per connected client, are this exact problem.
+entries against the `/app` or `/apps` location are this exact problem.
+
+They appear only for the sockets actually affected, roughly once a minute
+each. A healthy Wayfindr page produces none, so a quiet log does not mean the
+setting is unnecessary — it means the clients you happen to be serving are the
+ones that keep themselves alive.
 
 Other reverse proxies can use the same idea: public HTTPS outside, private
 Reverb port inside, WebSocket upgrade headers preserved.
