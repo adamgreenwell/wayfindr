@@ -165,17 +165,27 @@ proxy_send_timeout 3600s;
 
 Wayfindr's own realtime pages send a client keepalive, which holds the
 connection open while the tab is **visible**. It is not a substitute for the
-setting.
+setting, and the setting is not a complete substitute for it either — they
+cover different failures.
 
-A hidden tab cannot be relied on to keep any schedule. Browsers throttle
-background timers, and Chrome goes further and *freezes* eligible tabs
-outright: measured on our staging deploy, a hidden agent tab ran **no timers
-at all** for 83 seconds of wall clock — a one-second interval fired zero
-times. A keepalive cannot fire from a page that is not running, so no
-client-side workaround closes this.
+**Raising the timeout removes nginx's idle close.** That is the failure that
+affects every connection, including healthy foreground tabs, and it is the one
+worth fixing: without it a perfectly active agent's socket is torn down once a
+minute.
 
-So raise the timeout. It removes the 60-second ceiling entirely, and it is one
-line against a problem the client genuinely cannot solve for itself.
+**It does not make a suspended tab immortal.** Browsers throttle background
+timers, and Chrome can *freeze* an eligible tab outright — no timers run at
+all. A frozen page cannot send the client keepalive, and it cannot answer
+Reverb's own `pusher:ping` either, so Reverb closes the connection after its
+`activity_timeout` regardless of what nginx allows. A tab that sleeps long
+enough will be disconnected by design and reconnect when it wakes; that path
+is meant to work, and it does.
+
+One caveat on the numbers behind this, since they are easy to over-read: the
+freeze was observed in an *automated* browser tab, which is never the
+foreground tab and is a prime candidate for suspension. Ordinary background
+throttling is milder. Treat it as the pessimistic end of the range rather than
+what a real agent's tab does.
 
 Generate the `APP_KEY` on the server with:
 
