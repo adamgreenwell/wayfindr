@@ -10,7 +10,6 @@ use App\Support\DashboardTimezone;
 use App\Support\OperatorReadiness;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
-use DateTimeZone;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -57,8 +56,9 @@ class AgentProfileController extends Controller
             'locale' => ['nullable', 'string', Rule::in(array_keys(DashboardLanguage::SUPPORTED))],
             // Validated against the platform's zone database rather than a
             // list kept in the codebase, which would be wrong the first time
-            // tzdata added or renamed one.
-            'timezone' => ['nullable', 'string', Rule::in(DateTimeZone::listIdentifiers())],
+            // tzdata added or renamed one. `acceptable()` and not the canonical
+            // list, so an agent already on `US/Eastern` can re-submit it.
+            'timezone' => ['nullable', 'string', Rule::in(DashboardTimezone::acceptable())],
         ]);
 
         $request->user()->update([
