@@ -251,9 +251,9 @@ location /app {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
 
-    # A WebSocket is idle whenever nobody is typing. Without these it inherits
-    # nginx's 60-second default and is torn down mid-connection about once a
-    # minute -- see the note below.
+    # Without these the WebSocket inherits nginx's 60-second default and is
+    # torn down whenever nothing crosses it for that long -- see the note
+    # below for which connections that actually reaches.
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
 
@@ -270,9 +270,9 @@ location /apps {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
 
-    # A WebSocket is idle whenever nobody is typing. Without these it inherits
-    # nginx's 60-second default and is torn down mid-connection about once a
-    # minute -- see the note below.
+    # Without these the WebSocket inherits nginx's 60-second default and is
+    # torn down whenever nothing crosses it for that long -- see the note
+    # below for which connections that actually reaches.
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
 
@@ -281,22 +281,31 @@ location /apps {
 ```
 
 **Do not leave the two timeouts out.** nginx's default `proxy_read_timeout` is
-60 seconds and applies to an idle WebSocket — which is any conversation where
-nobody happens to be typing. When nothing crosses the connection inside that
-window it is torn down with no close frame, the browser reports an abnormal
-close, and the page reconnects. Nothing logs an error and no user sees a
-failure; the page simply has a gap in it, and whatever was published inside
-that gap is only recovered by the next resync.
+60 seconds, counted from the last thing to cross the connection in either
+direction. When nothing does for that long the socket is torn down with no
+close frame, the browser reports an abnormal close, and the page reconnects.
+Nothing logs an error and no user sees a failure; the page simply has a gap in
+it, and whatever was published inside that gap is only recovered by the next
+resync.
 
-Wayfindr's own pages send a keepalive every 15 seconds, so a **visible** tab
-stays comfortably inside the window and is not affected. What the setting
-protects is every connection whose keepalive is absent or delayed past 60
-seconds: a tab the browser has throttled or suspended, any other client
-speaking to this Reverb, and anything at all if that keepalive ever stops.
+A quiet conversation is **not** by itself an idle connection. Wayfindr's pages
+send a keepalive every 15 seconds, so a visible tab stays well inside the
+window whether or not anybody is typing.
 
-It is easy to misdiagnose, because Reverb's own `ping_interval` also defaults to
-60 seconds, so the keepalive that would have held the connection open never gets
-the chance to arrive.
+What the setting protects is every connection whose keepalive is delayed past
+60 seconds — a tab the browser has throttled, any other client speaking to this
+Reverb, and anything at all if that keepalive stops.
+
+It does not rescue a tab the browser has **suspended**, and no proxy setting
+can. A frozen page cannot send the keepalive and cannot answer Reverb's own
+`pusher:ping` either, so Reverb closes the connection after its
+`activity_timeout` regardless of what nginx permits. Such a tab reconnects when
+it wakes, which is the designed path.
+
+The overlap is what makes this easy to misdiagnose: Reverb's `ping_interval`
+also defaults to 60 seconds, so on a default nginx the proxy closes the
+connection at the same moment the keepalive that would have held it open was
+due.
 
 Other reverse proxies can use the same idea: public HTTPS outside, private
 Reverb port inside, WebSocket upgrade headers preserved.
