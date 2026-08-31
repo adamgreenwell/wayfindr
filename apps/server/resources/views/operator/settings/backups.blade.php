@@ -90,7 +90,7 @@
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Size</span>
-                    <span class="meta-value">{{ $latestRun->size_bytes ? number_format($latestRun->size_bytes / 1048576, 1).' MB' : '—' }}</span>
+                    <span class="meta-value">{{ $latestRun->size_bytes ? \App\Support\ReaderNumber::decimal($latestRun->size_bytes / 1048576, 1).' MB' : '—' }}</span>
                 </div>
                 <div class="meta-item">
                     <span class="meta-label">Offsite</span>

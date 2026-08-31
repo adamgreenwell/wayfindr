@@ -238,12 +238,12 @@
                     <div class="section-header">
                         <strong>{{ __('conversations.detail.cobrowse.replay_preview') }}</strong>
                         <span class="lede">
-                            <span data-cobrowse-replay-applied>{{ __('cobrowse.units.applied', ['count' => number_format($cobrowseConsent['replay_preview']['applied_mutations_value'])]) }}</span>
+                            <span data-cobrowse-replay-applied>{{ __('cobrowse.units.applied', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['replay_preview']['applied_mutations_value'])]) }}</span>
                             /
-                            <span data-cobrowse-replay-skipped>{{ __('cobrowse.units.skipped', ['count' => number_format($cobrowseConsent['replay_preview']['skipped_mutations_value'])]) }}</span>
+                            <span data-cobrowse-replay-skipped>{{ __('cobrowse.units.skipped', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['replay_preview']['skipped_mutations_value'])]) }}</span>
                         </span>
                         @if ($cobrowseConsent['replay_preview']['viewport_width'])
-                            <span class="lede" data-cobrowse-viewport-label>{{ __('cobrowse.units.viewport', ['width' => number_format($cobrowseConsent['replay_preview']['viewport_width'])]) }}</span>
+                            <span class="lede" data-cobrowse-viewport-label>{{ __('cobrowse.units.viewport', ['width' => \App\Support\ReaderNumber::count($cobrowseConsent['replay_preview']['viewport_width'])]) }}</span>
                         @else
                             <span class="lede" data-cobrowse-viewport-label hidden></span>
                         @endif
@@ -589,11 +589,11 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.nodes') }}</span>
-                            <span class="meta-value">{{ trans_choice('cobrowse.units.nodes', $cobrowseConsent['snapshot']['node_count_value'], ['count' => number_format($cobrowseConsent['snapshot']['node_count_value'])]) }}</span>
+                            <span class="meta-value">{{ trans_choice('cobrowse.units.nodes', $cobrowseConsent['snapshot']['node_count_value'], ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['snapshot']['node_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.masked') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.masked', ['count' => number_format($cobrowseConsent['snapshot']['masked_count_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.masked', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['snapshot']['masked_count_value'])]) }}</span>
                         </div>
                     </div>
 
@@ -614,23 +614,23 @@
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.batches') }}</span>
-                            <span class="meta-value">{{ trans_choice('cobrowse.units.batches', $cobrowseConsent['mutation_stream']['batch_count_value'], ['count' => number_format($cobrowseConsent['mutation_stream']['batch_count_value'])]) }}</span>
+                            <span class="meta-value">{{ trans_choice('cobrowse.units.batches', $cobrowseConsent['mutation_stream']['batch_count_value'], ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['batch_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.mutations') }}</span>
-                            <span class="meta-value">{{ trans_choice('cobrowse.units.mutations', $cobrowseConsent['mutation_stream']['mutation_count_value'], ['count' => number_format($cobrowseConsent['mutation_stream']['mutation_count_value'])]) }}</span>
+                            <span class="meta-value">{{ trans_choice('cobrowse.units.mutations', $cobrowseConsent['mutation_stream']['mutation_count_value'], ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['mutation_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.dropped') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.dropped', ['count' => number_format($cobrowseConsent['mutation_stream']['dropped_count_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.dropped', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['dropped_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.skipped') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.skipped', ['count' => number_format($cobrowseConsent['mutation_stream']['skipped_count_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.skipped', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['skipped_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.last_sequence') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.sequence', ['count' => number_format($cobrowseConsent['mutation_stream']['last_sequence_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.sequence', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['last_sequence_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
@@ -652,19 +652,19 @@
                 <div class="meta-grid realtime-grid" data-cobrowse-telemetry-grid @if (! $cobrowseConsent['telemetry']) hidden @endif>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-rtt>@if (($cobrowseConsent['telemetry']['rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => number_format($cobrowseConsent['telemetry']['rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-rtt>@if (($cobrowseConsent['telemetry']['rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.max_rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@if (($cobrowseConsent['telemetry']['max_rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => number_format($cobrowseConsent['telemetry']['max_rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@if (($cobrowseConsent['telemetry']['max_rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['max_rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-payload>@if (($cobrowseConsent['telemetry']['payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => number_format($cobrowseConsent['telemetry']['payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-payload>@if (($cobrowseConsent['telemetry']['payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.max_payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@if (($cobrowseConsent['telemetry']['max_payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => number_format($cobrowseConsent['telemetry']['max_payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@if (($cobrowseConsent['telemetry']['max_payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['max_payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.dropped_batches') }}</span>
