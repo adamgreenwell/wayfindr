@@ -251,6 +251,12 @@ location /app {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
 
+    # A WebSocket is idle whenever nobody is typing. Without these it inherits
+    # nginx's 60-second default and is torn down mid-connection about once a
+    # minute -- see the note below.
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
     proxy_pass http://127.0.0.1:8080;
 }
 
@@ -264,8 +270,27 @@ location /apps {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
 
+    # A WebSocket is idle whenever nobody is typing. Without these it inherits
+    # nginx's 60-second default and is torn down mid-connection about once a
+    # minute -- see the note below.
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
     proxy_pass http://127.0.0.1:8080;
 }
+
+**Do not leave the two timeouts out.** They are the difference between a
+working realtime connection and one that silently reconnects all day. nginx's
+default `proxy_read_timeout` is 60 seconds and applies to an idle WebSocket --
+which is any conversation where nobody happens to be typing. The socket is torn
+down with no close frame, the browser reports an abnormal close, and the page
+reconnects. Nothing logs an error and no user sees a failure; the page simply
+has a gap in it every minute, and whatever was published inside the gap is only
+recovered by the next resync.
+
+It is easy to misdiagnose, because Reverb's own `ping_interval` also defaults to
+60 seconds, so the keepalive that would have held the connection open never gets
+the chance to arrive.
 ```
 
 Other reverse proxies can use the same idea: public HTTPS outside, private
