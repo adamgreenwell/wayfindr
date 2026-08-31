@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\DashboardLanguage;
 use App\Support\OperatorReadiness;
 use App\Support\OperatorSystemIdentity;
 use App\Support\RealtimeHealth;
@@ -78,6 +79,7 @@ class OperatorDashboardController extends Controller
             'operator_settings.scanning.updated',
             'operator_settings.backup.updated',
             'operator_settings.backup.triggered',
+            'operator_settings.localization.updated',
         ];
     }
 
@@ -99,6 +101,7 @@ class OperatorDashboardController extends Controller
             'operator_settings.scanning.updated' => 'Scanning settings updated',
             'operator_settings.backup.updated' => 'Backup settings updated',
             'operator_settings.backup.triggered' => 'Backup triggered',
+            'operator_settings.localization.updated' => 'Language and region updated',
             default => 'Operator activity',
         };
     }
@@ -135,6 +138,18 @@ class OperatorDashboardController extends Controller
 
         if ($event->action === 'operator_settings.backup.triggered') {
             return 'A backup was queued to run in the background.';
+        }
+
+        // Before the readiness fall-through below, and that ordering is the
+        // whole point: an action allow-listed but not given a body here is not
+        // rendered blank, it is captioned "Instance readiness proof was
+        // recorded" -- a settings change described as something it is not.
+        if ($event->action === 'operator_settings.localization.updated') {
+            return sprintf(
+                'Dashboard language and region were updated (language: %s, timezone: %s).',
+                (string) data_get($event->metadata, 'language', 'unknown'),
+                (string) data_get($event->metadata, 'timezone', 'unknown'),
+            );
         }
 
         return match (data_get($event->metadata, 'key')) {
@@ -202,6 +217,21 @@ class OperatorDashboardController extends Controller
                         ], true) => 'Cleared',
                         default => 'Unchanged',
                     },
+                ],
+                [
+                    'label' => 'Event type',
+                    'value' => 'Instance settings change',
+                ],
+            ],
+            'operator_settings.localization.updated' => [
+                [
+                    'label' => 'Language',
+                    'value' => DashboardLanguage::SUPPORTED[(string) data_get($event->metadata, 'language')]
+                        ?? (string) data_get($event->metadata, 'language', 'unknown'),
+                ],
+                [
+                    'label' => 'Timezone',
+                    'value' => (string) data_get($event->metadata, 'timezone', 'unknown'),
                 ],
                 [
                     'label' => 'Event type',

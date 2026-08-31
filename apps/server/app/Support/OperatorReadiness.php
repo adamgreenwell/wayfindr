@@ -6,6 +6,7 @@ use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
 use App\Support\Attachments\AttachmentStorage;
 use App\Support\Attachments\Scanning\AttachmentScanner;
+use App\Support\Settings\OperatorSettings;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -78,6 +79,14 @@ class OperatorReadiness
             $this->scheduler(),
             $this->alertDigestDelivery(),
             $this->backupsRestore(),
+            // Both surfaces or neither. Present only on the checklist, this
+            // step let the two readiness screens contradict each other about
+            // the same install: onboarding asking an operator to confirm the
+            // clock while the console next to it reported Ready, kept the
+            // warning out of the Health tab, and never offered it as the next
+            // step. Whichever screen an operator happened to open decided
+            // whether the install had a problem.
+            $this->languageAndRegion(),
         ];
 
         $retentionSummary = $this->retentionSummary();
@@ -155,6 +164,89 @@ class OperatorReadiness
             detail: 'Laravel cannot safely encrypt sessions, cookies, or signed data without an application key.',
             action: 'Run php artisan key:generate and save the generated APP_KEY in the environment.',
             commands: ['php artisan key:generate']
+        );
+    }
+
+    /**
+     * Whether anyone has said what language and clock this install reads in.
+     *
+     * The only checklist item that is a CHOICE rather than a condition, and it
+     * earns its place for the reason it is easy to leave out: an install that
+     * guessed wrong is not broken, it is merely foreign, so nobody reports it.
+     * An agent in Berlin reading `14:32` assumes that is how the product works.
+     *
+     * "Attention" therefore means "we guessed and nobody has confirmed it",
+     * not "something is wrong" -- and an operator for whom English and UTC are
+     * right clears it by agreeing once, which is the whole point of asking.
+     *
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function languageAndRegion(): array
+    {
+        // The settings store is READ here, in the request, and the store can
+        // be down. With `SESSION_DRIVER=database` and `CACHE_STORE=redis` --
+        // both documented -- an operator stays signed in through a Redis
+        // outage, and this is the page they open when something is wrong. The
+        // provider's boot-time catch does not cover a later read, so without
+        // this the checklist answers 500 exactly when it is needed.
+        //
+        // Unreachable is not the same as unconfirmed, but it is not "ready"
+        // either: we genuinely do not know what was chosen, and the env
+        // fallback is what the dashboard is serving meanwhile. Saying so is
+        // the honest answer.
+        try {
+            $settings = app(OperatorSettings::class);
+
+            $language = DashboardLanguage::normalise($settings->effective('localization.language'));
+            $timezone = DashboardTimezone::normalise($settings->effective('localization.timezone'));
+
+            // Stored AND still resolvable. A tzdata update can retire a zone
+            // the operator chose in good faith, and then a presence check
+            // alone reads as confirmed while the normalisation below quietly
+            // serves UTC instead -- hiding the one thing this step exists to
+            // surface, an unexpected clock nobody agreed to.
+            $chosen = $settings->isSet('localization.language')
+                && $settings->isSet('localization.timezone')
+                && $language !== null
+                && $timezone !== null;
+        } catch (Throwable) {
+            // Not null. When the store is unreachable the dashboard does not
+            // fall back to English and UTC -- it falls back to whatever the
+            // ENVIRONMENT configured, which is exactly what the provider left
+            // standing in config. Reporting the hardcoded defaults here would
+            // misstate the language and clock this install is actually serving,
+            // during the one outage this branch exists to survive.
+            $language = DashboardLanguage::normalise(config('wayfindr.dashboard_locale'));
+            $timezone = DashboardTimezone::normalise(config('wayfindr.dashboard_timezone'));
+
+            // Still unconfirmed, whatever those turn out to be: what the
+            // operator chose is precisely what could not be read.
+            $chosen = false;
+        }
+
+        $language ??= DashboardLanguage::FALLBACK;
+        $timezone ??= DashboardTimezone::FALLBACK;
+        $summary = sprintf('The dashboard reads in %s, on %s.', DashboardLanguage::SUPPORTED[$language] ?? $language, $timezone);
+
+        if (! $chosen) {
+            return $this->check(
+                key: 'language_and_region',
+                label: 'Language and region',
+                status: 'attention',
+                summary: $summary.' Nobody has confirmed that is right.',
+                detail: 'These are the defaults for every agent who has not chosen their own, which on a new install is all of them. A wrong clock does not look like a fault: reports cover a day that ended hours before the reader\'s did, and nobody thinks to report it.',
+                action: 'Confirm the language and timezone this install should read in.',
+                statusLabel: 'Confirm this'
+            );
+        }
+
+        return $this->check(
+            key: 'language_and_region',
+            label: 'Language and region',
+            status: 'ready',
+            summary: $summary,
+            detail: 'Agents who prefer another language or clock can still choose their own on their profile.',
+            action: 'Change it whenever the desk moves; agents keep any choice they made for themselves.'
         );
     }
 
@@ -845,6 +937,7 @@ class OperatorReadiness
             $this->publicUrl(),
             $this->backgroundWorkersStep(),
             $this->backupsRestore(),
+            $this->languageAndRegion(),
         ];
     }
 
