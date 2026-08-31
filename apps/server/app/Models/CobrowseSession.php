@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SanitisesStoredPageUrls;
 use Database\Factories\CobrowseSessionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -24,6 +25,35 @@ class CobrowseSession extends Model
 {
     /** @use HasFactory<CobrowseSessionFactory> */
     use HasFactory;
+
+    use SanitisesStoredPageUrls;
+
+    /**
+     * Every place the three cobrowse writers put a page address.
+     *
+     * The last one is a LIST -- a run of recent mutation batches, each carrying
+     * the address it was reported from -- which is why the trait grew a `*`
+     * segment.
+     *
+     * A visitor who grants cobrowse has agreed to share the PAGE; that is the
+     * whole feature and ADR 0005 gates it on exactly that agreement. Agreeing
+     * to share a page is not agreeing to hand over the credential in its
+     * address, and this path keeps addresses longer than any other in the
+     * product: the content pruner strips the heavy payloads on schedule and
+     * RETAINS the URLs by design, so an unsanitised one outlives everything
+     * around it.
+     *
+     * @return array<int, string>
+     */
+    protected static function pageUrlPaths(): array
+    {
+        return [
+            'page_state.page_url',
+            'snapshot.page_url',
+            'mutations.last_page_url',
+            'mutations.recent_batches.*.page_url',
+        ];
+    }
 
     protected function casts(): array
     {

@@ -6,6 +6,7 @@ use App\Events\CobrowseStateUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Support\Visitors\VisitorPageUrl;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
@@ -53,7 +54,12 @@ class CobrowsePageStateController extends Controller
         abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
 
         $pageState = [
-            'page_url' => $validated['page_url'],
+            // Reduced here as well as in the model hook. The hook is the
+            // guarantee -- it cannot be bypassed by a writer nobody has added
+            // yet -- but this response echoes the value back, and echoing an
+            // address we are about to strip would tell the client we kept
+            // something we did not.
+            'page_url' => VisitorPageUrl::reduce($validated['page_url']),
             'title' => $validated['title'] ?? null,
             'viewport_width' => $validated['viewport_width'],
             'viewport_height' => $validated['viewport_height'],
