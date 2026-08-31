@@ -328,8 +328,10 @@ test('a language and region change appears in the operator activity feed, descri
 test('the setup checklist still renders when the settings store is unreachable', function (): void {
     $operator = localizationOperator();
 
-    app(OperatorSettings::class)->set('localization.language', 'de');
-    app(OperatorSettings::class)->set('localization.timezone', 'Europe/Berlin');
+    // The install is configured through the environment, which is what the
+    // service provider leaves standing in config when the store is gone.
+    config()->set('wayfindr.dashboard_locale', 'de');
+    config()->set('wayfindr.dashboard_timezone', 'Europe/Berlin');
 
     // The store goes away mid-session.
     Cache::shouldReceive('get')->andThrow(new RuntimeException('Connection refused [tcp://127.0.0.1:6379]'));
@@ -343,5 +345,10 @@ test('the setup checklist still renders when the settings store is unreachable',
         ->assertSee('Language and region')
         // Unreachable is not "ready": what was chosen is unknown, and the env
         // fallback is what the dashboard is serving meanwhile.
-        ->assertSee('Nobody has confirmed that is right.');
+        ->assertSee('Nobody has confirmed that is right.')
+        // And it names the clock the dashboard is ACTUALLY on. Reporting the
+        // hardcoded defaults would be a second wrong answer during the outage.
+        ->assertSee('Deutsch')
+        ->assertSee('Europe/Berlin')
+        ->assertDontSee('on UTC.');
 });

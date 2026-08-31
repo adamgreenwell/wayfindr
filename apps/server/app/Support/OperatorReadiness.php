@@ -202,8 +202,17 @@ class OperatorReadiness
                 && $language !== null
                 && $timezone !== null;
         } catch (Throwable) {
-            $language = null;
-            $timezone = null;
+            // Not null. When the store is unreachable the dashboard does not
+            // fall back to English and UTC -- it falls back to whatever the
+            // ENVIRONMENT configured, which is exactly what the provider left
+            // standing in config. Reporting the hardcoded defaults here would
+            // misstate the language and clock this install is actually serving,
+            // during the one outage this branch exists to survive.
+            $language = DashboardLanguage::normalise(config('wayfindr.dashboard_locale'));
+            $timezone = DashboardTimezone::normalise(config('wayfindr.dashboard_timezone'));
+
+            // Still unconfirmed, whatever those turn out to be: what the
+            // operator chose is precisely what could not be read.
             $chosen = false;
         }
 
