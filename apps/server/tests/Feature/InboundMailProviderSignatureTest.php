@@ -322,3 +322,48 @@ test('a broken upload is refused rather than accepted and dropped', function ():
         'attachment-1' => $broken,
     ]))->assertStatus(422);
 });
+
+test('the retry after a refused attachment is accepted, not refused as a replay', function (): void {
+    // The two fixes in this PR collide unless the claim is given back. The
+    // token is single-use so a captured tuple cannot forge a second message;
+    // the 422 exists so a broken attachment is retried rather than dropped.
+    // Together, without a release, the retry Mailgun sends carries the SAME
+    // signature, finds the token already spent, and gets 401 -- and once the
+    // 300-second window passes there is no way back. The 422 that exists to
+    // save the attachment would be what loses the entire message.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-retried';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    $broken = new UploadedFile(
+        tempnam(sys_get_temp_dir(), 'wf'),
+        'too-big.png',
+        'image/png',
+        UPLOAD_ERR_INI_SIZE,
+        true
+    );
+
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => $broken,
+    ]))->assertStatus(422);
+
+    // Mailgun retries the same signed delivery, this time uploaded intact.
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('now-fine.png'),
+    ]))->assertOk()->assertJsonPath('message', 'Accepted.');
+
+    // And the claim is spent again by the delivery that succeeded, so the
+    // release did not reopen the forgery window it was closing.
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(401);
+});

@@ -26,4 +26,19 @@ interface VerifiesInboundMail
      * key, a webhook password, or the shared secret their proxy signs with.
      */
     public function verify(Request $request, string $secret): bool;
+
+    /**
+     * Give back any single-use claim `verify()` made for this delivery.
+     *
+     * A scheme that spends something to authenticate -- Mailgun's one-shot
+     * token -- has to be able to un-spend it, because "verified" and
+     * "processed" are not the same event. A delivery can verify and then fail
+     * in a way the provider will retry, and the retry carries the SAME
+     * signature: if the claim outlives the failure, the retry is refused and
+     * the message is lost for good rather than delayed.
+     *
+     * Called only after a successful `verify()`, and only on an outcome the
+     * provider will try again. A scheme that claims nothing does nothing here.
+     */
+    public function release(Request $request): void;
 }

@@ -83,10 +83,32 @@ final class MailgunSignature implements VerifiesInboundMail
      */
     private function claimToken(string $token): bool
     {
-        return Cache::add(
-            'wayfindr:inbound-mail:mailgun-token:'.hash('sha256', $token),
-            true,
-            self::MAXIMUM_AGE_SECONDS * 2,
-        );
+        return Cache::add(self::claimKey($token), true, self::MAXIMUM_AGE_SECONDS * 2);
+    }
+
+    /**
+     * Hand the token back so the provider's retry can spend it again.
+     *
+     * Only reachable after this request verified, so the caller is holding a
+     * tuple it already proved genuine -- releasing gives an attacker nothing
+     * they could not do by using that same tuple directly, and it is the only
+     * thing standing between a retryable failure and permanent loss.
+     *
+     * Derived from the request rather than remembered on the instance: the
+     * verifier is resolved per delivery and keeping claim state on it would
+     * make correctness depend on that staying true.
+     */
+    public function release(Request $request): void
+    {
+        $token = (string) $request->input('token', '');
+
+        if ($token !== '') {
+            Cache::forget(self::claimKey($token));
+        }
+    }
+
+    private static function claimKey(string $token): string
+    {
+        return 'wayfindr:inbound-mail:mailgun-token:'.hash('sha256', $token);
     }
 }

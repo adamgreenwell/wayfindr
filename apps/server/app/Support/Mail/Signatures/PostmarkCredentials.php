@@ -34,4 +34,13 @@ final class PostmarkCredentials implements VerifiesInboundMail
 
         return hash_equals($secret, $supplied);
     }
+
+    /**
+     * Nothing to give back: this scheme spends no single-use state to
+     * authenticate, so a retry of the same delivery verifies again on its own.
+     */
+    public function release(Request $request): void
+    {
+        //
+    }
 }

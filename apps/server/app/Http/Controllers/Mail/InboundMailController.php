@@ -58,6 +58,12 @@ class InboundMailController extends Controller
         if ($this->hasUnusableUpload($request)) {
             Log::warning('Inbound mail refused: an attachment did not upload completely.');
 
+            // The retry carries the same signature, so anything spent to
+            // authenticate this attempt has to go back before we ask for one.
+            // Without this the 422 that exists to SAVE the attachment is what
+            // loses the whole message: the retry is refused as a replay.
+            $verifier->release($request);
+
             return response()->json(['message' => 'An attachment could not be read.'], 422);
         }
 
