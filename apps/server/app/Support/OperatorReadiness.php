@@ -6,6 +6,7 @@ use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
 use App\Support\Attachments\AttachmentStorage;
 use App\Support\Attachments\Scanning\AttachmentScanner;
+use App\Support\Settings\OperatorSettings;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -155,6 +156,53 @@ class OperatorReadiness
             detail: 'Laravel cannot safely encrypt sessions, cookies, or signed data without an application key.',
             action: 'Run php artisan key:generate and save the generated APP_KEY in the environment.',
             commands: ['php artisan key:generate']
+        );
+    }
+
+    /**
+     * Whether anyone has said what language and clock this install reads in.
+     *
+     * The only checklist item that is a CHOICE rather than a condition, and it
+     * earns its place for the reason it is easy to leave out: an install that
+     * guessed wrong is not broken, it is merely foreign, so nobody reports it.
+     * An agent in Berlin reading `14:32` assumes that is how the product works.
+     *
+     * "Attention" therefore means "we guessed and nobody has confirmed it",
+     * not "something is wrong" -- and an operator for whom English and UTC are
+     * right clears it by agreeing once, which is the whole point of asking.
+     *
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function languageAndRegion(): array
+    {
+        $settings = app(OperatorSettings::class);
+        $chosen = $settings->isSet('localization.language') && $settings->isSet('localization.timezone');
+
+        $language = DashboardLanguage::normalise($settings->effective('localization.language'))
+            ?? DashboardLanguage::FALLBACK;
+        $timezone = DashboardTimezone::normalise($settings->effective('localization.timezone'))
+            ?? DashboardTimezone::FALLBACK;
+        $summary = sprintf('The dashboard reads in %s, on %s.', DashboardLanguage::SUPPORTED[$language] ?? $language, $timezone);
+
+        if (! $chosen) {
+            return $this->check(
+                key: 'language_and_region',
+                label: 'Language and region',
+                status: 'attention',
+                summary: $summary.' Nobody has confirmed that is right.',
+                detail: 'These are the defaults for every agent who has not chosen their own, which on a new install is all of them. A wrong clock does not look like a fault: reports cover a day that ended hours before the reader\'s did, and nobody thinks to report it.',
+                action: 'Confirm the language and timezone this install should read in.',
+                statusLabel: 'Confirm this'
+            );
+        }
+
+        return $this->check(
+            key: 'language_and_region',
+            label: 'Language and region',
+            status: 'ready',
+            summary: $summary,
+            detail: 'Agents who prefer another language or clock can still choose their own on their profile.',
+            action: 'Change it whenever the desk moves; agents keep any choice they made for themselves.'
         );
     }
 
@@ -845,6 +893,7 @@ class OperatorReadiness
             $this->publicUrl(),
             $this->backgroundWorkersStep(),
             $this->backupsRestore(),
+            $this->languageAndRegion(),
         ];
     }
 
