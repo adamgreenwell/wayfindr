@@ -146,7 +146,9 @@ Then work through the readiness screens:
   the stack boots before mail exists — but alert emails and password resets
   go nowhere until you configure a real provider. Use
   [email-delivery.md](email-delivery.md) (SPF/DKIM/DMARC included) and run
-  the mail smoke test.
+  the mail smoke test. Mail arriving the other way — replies becoming
+  conversations — is a separate switch that is off until you set it:
+  [inbound-mail.md](inbound-mail.md).
 - `/operator` flags what the app can inspect
   directly (queues, realtime, scheduler, storage, scanning) and mark
   backups as a manual responsibility. Wayfindr ships `wayfindr:backup` and
