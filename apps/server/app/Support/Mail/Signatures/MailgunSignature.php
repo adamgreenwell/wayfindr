@@ -60,7 +60,7 @@ final class MailgunSignature implements VerifiesInboundMail
             return false;
         }
 
-        return $this->claimToken($token);
+        return $this->claimToken($token, self::fingerprint($request));
     }
 
     /**
@@ -81,18 +81,84 @@ final class MailgunSignature implements VerifiesInboundMail
      * reclaimed in the gap between its entry expiring and its timestamp
      * ageing out.
      */
-    private function claimToken(string $token): bool
+    private function claimToken(string $token, string $fingerprint): bool
     {
-        return Cache::add(self::claimKey($token), true, self::MAXIMUM_AGE_SECONDS * 2);
+        $key = self::claimKey($token);
+
+        // `Cache::add()` because a first claim has to be atomic. A
+        // get-then-put would let two concurrent replays both read "unclaimed"
+        // and both proceed, which is exactly the shape an attacker would send.
+        if (Cache::add($key, ['fingerprint' => $fingerprint, 'retryable' => false], self::MAXIMUM_AGE_SECONDS * 2)) {
+            return true;
+        }
+
+        $claim = Cache::get($key);
+
+        // Spent, and not handed back: a replay.
+        if (! is_array($claim) || ($claim['retryable'] ?? false) !== true) {
+            return false;
+        }
+
+        // Handed back, but only the SAME message may pick it up. The signature
+        // covers the timestamp and token and not the body, so a release that
+        // asked no further questions would be a forgery window: anyone holding
+        // the tuple could take the freed claim and post a different sender,
+        // subject or body with it.
+        if (! hash_equals((string) ($claim['fingerprint'] ?? ''), $fingerprint)) {
+            return false;
+        }
+
+        Cache::put($key, ['fingerprint' => $fingerprint, 'retryable' => false], self::MAXIMUM_AGE_SECONDS * 2);
+
+        return true;
     }
 
     /**
-     * Hand the token back so the provider's retry can spend it again.
+     * What makes this the same message, for the purpose of a retry.
      *
-     * Only reachable after this request verified, so the caller is holding a
-     * tuple it already proved genuine -- releasing gives an attacker nothing
-     * they could not do by using that same tuple directly, and it is the only
-     * thing standing between a retryable failure and permanent loss.
+     * Sender, recipients, subject, body and threading headers -- the fields
+     * `InboundMessage` actually routes on. Change any of them and it is a
+     * different delivery, which is precisely what a freed claim must not
+     * authenticate.
+     *
+     * Attachments are deliberately NOT in it. The retry this exists to allow is
+     * frequently one whose attachment CHANGED: the first attempt was refused
+     * because the upload did not complete, and the retry carries the intact
+     * file. Fingerprinting the bytes would refuse exactly the delivery the
+     * release was built to save.
+     */
+    private static function fingerprint(Request $request): string
+    {
+        $fields = [
+            'from', 'From', 'sender', 'to', 'To', 'recipient', 'original_recipient',
+            'subject', 'Subject', 'body-plain', 'stripped-text', 'text', 'TextBody',
+            'Message-Id', 'message-id', 'MessageID', 'In-Reply-To', 'in_reply_to', 'InReplyTo',
+        ];
+
+        $material = [];
+
+        foreach ($fields as $field) {
+            $value = $request->input($field);
+
+            $material[$field] = is_scalar($value) ? (string) $value : null;
+        }
+
+        return hash('sha256', json_encode($material, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Hand the token back, BOUND to the delivery that spent it.
+     *
+     * Marked retryable rather than forgotten, and that distinction is the
+     * whole of it. Forgetting opens a forgery window: the failure this
+     * releases for may have happened AFTER the message was committed -- a
+     * broadcast or listener throwing past the transaction -- and since
+     * Mailgun's HMAC covers only the timestamp and token, anyone holding that
+     * tuple could take the freed claim and post a different sender, subject or
+     * body inside the remaining freshness window.
+     *
+     * Keeping the fingerprint means only the same message can pick it up,
+     * which is the only thing a retry ever is.
      *
      * Derived from the request rather than remembered on the instance: the
      * verifier is resolved per delivery and keeping claim state on it would
@@ -102,9 +168,21 @@ final class MailgunSignature implements VerifiesInboundMail
     {
         $token = (string) $request->input('token', '');
 
-        if ($token !== '') {
-            Cache::forget(self::claimKey($token));
+        if ($token === '') {
+            return;
         }
+
+        $key = self::claimKey($token);
+        $claim = Cache::get($key);
+
+        // Only a claim this request actually made. Reading it back rather than
+        // writing blind means a token some other delivery holds cannot be
+        // freed by asking.
+        if (! is_array($claim) || ! hash_equals((string) ($claim['fingerprint'] ?? ''), self::fingerprint($request))) {
+            return;
+        }
+
+        Cache::put($key, ['fingerprint' => $claim['fingerprint'], 'retryable' => true], self::MAXIMUM_AGE_SECONDS * 2);
     }
 
     private static function claimKey(string $token): string

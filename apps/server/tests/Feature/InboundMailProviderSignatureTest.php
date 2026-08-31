@@ -406,3 +406,77 @@ test('the token survives a failed write, and the retry is accepted', function ()
         ->assertOk()
         ->assertJsonPath('message', 'Accepted.');
 });
+
+test('a freed claim cannot be spent on a different message', function (): void {
+    // Releasing on any failure is right for retries and wrong on its own. The
+    // throw may land AFTER the message was committed -- a broadcast or listener
+    // failing past the transaction -- and Mailgun's HMAC covers only the
+    // timestamp and token. A claim simply forgotten would therefore hand
+    // anybody holding that tuple a forgery window: same signature, different
+    // sender and body, accepted.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-bound';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    Schema::rename('conversation_messages', 'conversation_messages_away');
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
+    Schema::rename('conversation_messages_away', 'conversation_messages');
+
+    // The claim is back, but it belongs to that message. A different sender and
+    // body on the same tuple is a forgery, not a retry.
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple + [
+        'from' => 'attacker@example.test',
+        'body-plain' => 'Please reset the password on this account.',
+    ]))->assertStatus(401);
+
+    // The real retry still works.
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))
+        ->assertOk()
+        ->assertJsonPath('message', 'Accepted.');
+});
+
+test('a retry whose attachment changed is still the same message', function (): void {
+    // The fingerprint covers the message, not the bytes. The retry this whole
+    // mechanism exists for is usually one whose attachment CHANGED -- refused
+    // because the upload did not complete, retried with the intact file -- so
+    // fingerprinting the attachment would refuse the delivery it was built to
+    // save.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-changed-file';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    $broken = new UploadedFile(
+        tempnam(sys_get_temp_dir(), 'wf'),
+        'too-big.png',
+        'image/png',
+        UPLOAD_ERR_INI_SIZE,
+        true
+    );
+
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => $broken,
+    ]))->assertStatus(422);
+
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('now-fine.png'),
+    ]))->assertOk()->assertJsonPath('message', 'Accepted.');
+});
