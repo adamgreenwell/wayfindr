@@ -463,9 +463,13 @@ class CobrowseConsentState
             'payload_value' => isset($telemetry['payload_bytes']) ? (int) $telemetry['payload_bytes'] : null,
             'max_payload' => $this->formatBytes($telemetry['max_payload_bytes'] ?? null),
             'max_payload_value' => isset($telemetry['max_payload_bytes']) ? (int) $telemetry['max_payload_bytes'] : null,
-            'dropped_batches' => number_format((int) ($telemetry['dropped_batches'] ?? 0)),
-            'reconnects' => number_format((int) ($telemetry['reconnects'] ?? 0)),
-            'samples' => number_format((int) ($telemetry['samples'] ?? 0)),
+            // Raw, like the eleven `*_value` keys above them. These three are
+            // rendered on their own rather than into an English sentence, so a
+            // number formatted here would be an en-US number on a German page
+            // -- and formatting in a model is the wrong place besides.
+            'dropped_batches_value' => (int) ($telemetry['dropped_batches'] ?? 0),
+            'reconnects_value' => (int) ($telemetry['reconnects'] ?? 0),
+            'samples_value' => (int) ($telemetry['samples'] ?? 0),
         ];
     }
 

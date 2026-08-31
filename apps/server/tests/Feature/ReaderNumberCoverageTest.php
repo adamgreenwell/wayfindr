@@ -34,6 +34,11 @@ const READER_NUMBER_EXEMPT = [
     // rather than a number one -- and models hand out state, they do not
     // translate. They belong to the extraction slice, not this one.
     'app/Support/CobrowsePayloadBudget.php' => 'English sentences awaiting extraction',
+    // NOTE: this file also held three counts rendered on their own rather than
+    // inside a sentence, and a whole-file exemption is what let them keep an
+    // en-US separator on a German page. They now hand out `*_value` and the
+    // view formats them. An exemption that covers more than it means to is a
+    // guard that has stopped checking.
     'app/Support/CobrowseConsentState.php' => 'English sentences awaiting extraction',
     'app/Support/CobrowsePressureSentence.php' => 'English sentences awaiting extraction',
     'app/Support/CobrowseTransportPressure.php' => 'English sentences awaiting extraction',
@@ -132,6 +137,52 @@ test('no number inside a style attribute follows the reader', function (): void 
         '',
         'A decimal comma makes the declaration invalid, the browser drops it,',
         'and the element silently collapses. Leave these as raw values.',
+    ]));
+});
+
+/**
+ * The client half. `toLocaleString()` with no argument follows the BROWSER.
+ *
+ * That is two bugs in one shape. A German agent on an en-US browser reads
+ * German dates beside American numbers; and because these run on the
+ * live-update path, the server paints `4.213` and the first websocket message
+ * rewrites the same node as `4,213` with no data change behind it -- which
+ * would have silently undone the server-side seam within seconds of anyone
+ * looking at the page.
+ */
+test('no number is formatted for the browser rather than the agent', function (): void {
+    $root = dirname(__DIR__, 2).'/resources/views';
+    $offenders = [];
+
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root));
+
+    foreach ($files as $file) {
+        if (! $file->isFile() || ! str_ends_with($file->getFilename(), '.blade.php')) {
+            continue;
+        }
+
+        foreach (file($file->getPathname()) as $number => $line) {
+            if (! str_contains($line, 'toLocaleString()')) {
+                continue;
+            }
+
+            $trimmed = ltrim($line);
+
+            if (str_starts_with($trimmed, '//') || str_starts_with($trimmed, '*')) {
+                continue;
+            }
+
+            $offenders[] = str_replace(dirname($root, 2).'/', '', $file->getPathname())
+                .':'.($number + 1).'  '.trim($line);
+        }
+    }
+
+    expect($offenders)->toBe([], implode("\n", [
+        'These format a number for whatever locale the BROWSER happens to have:',
+        ...$offenders,
+        '',
+        'Pass the agent\'s locale. `realtimeLabels.locale` is already shipped to',
+        'the page for Intl.RelativeTimeFormat.',
     ]));
 });
 
