@@ -10,6 +10,7 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AlertDigestCandidateCollector;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -234,3 +235,39 @@ function createConversationAlert(
 
     return $conversation;
 }
+
+test('a digest dates its entries on the recipient clock, not on storage', function (): void {
+    // The digest was printing `2026-08-24T15:05:00.000000Z` into an agent's
+    // inbox: storage's clock, in a machine format, in the middle of a
+    // sentence. The ReaderClock guard walked past it because `toISOString()`
+    // was in none of its matchers -- a hole shaped exactly like the defect.
+    //
+    // This is also the one case the seam's explicit-reader argument was
+    // written for. A digest is assembled by a scheduled command and rendered
+    // in a queue worker; there is nobody signed in to look up.
+    CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = digestAgent($account, ['timezone' => 'Europe/Berlin', 'locale' => 'de']);
+    $site = Site::factory()->for($account)->create();
+
+    createConversationAlert(agent: $agent, site: $site, body: 'Still waiting on this.');
+
+    $candidates = app(AlertDigestCandidateCollector::class)->forAgent($agent);
+
+    expect($candidates)->not->toBeEmpty();
+
+    $candidate = $candidates->first();
+
+    // 15:05 UTC is 17:05 in Berlin, and a German reader reads a 24-hour
+    // clock -- so the LANGUAGE half matters here too, and the worker's
+    // ambient locale is the install default, not this agent's.
+    expect($candidate['last_activity_label'])->toContain('17:05')
+        ->and($candidate['last_activity_label'])->toContain('24. Aug 2026')
+        ->and($candidate['last_activity_label'])->not->toContain('PM');
+
+    // The machine half is untouched: it is parsed back to decide staleness.
+    expect($candidate['last_activity_at'])->toContain('2026-08-24T15:05');
+
+    CarbonImmutable::setTestNow();
+});

@@ -13,8 +13,8 @@
             @if ($candidate['priority'])
                 - Priority: {{ ucfirst($candidate['priority']) }}
             @endif
-            @if ($candidate['last_activity_at'])
-                - Last activity: {{ $candidate['last_activity_at'] }}
+            @if ($candidate['last_activity_label'])
+                - Last activity: {{ $candidate['last_activity_label'] }}
             @endif
             <br>
             <a href="{{ url($candidate['url']) }}">Open in Wayfindr</a>

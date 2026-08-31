@@ -8,8 +8,8 @@ Wayfindr found {{ $candidateCount }} support {{ Str::plural('item', $candidateCo
 @if ($candidate['priority'])
   Priority: {{ ucfirst($candidate['priority']) }}
 @endif
-@if ($candidate['last_activity_at'])
-  Last activity: {{ $candidate['last_activity_at'] }}
+@if ($candidate['last_activity_label'])
+  Last activity: {{ $candidate['last_activity_label'] }}
 @endif
   Link: {{ url($candidate['url']) }}
 @endforeach
