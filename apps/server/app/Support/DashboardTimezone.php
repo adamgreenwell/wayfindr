@@ -64,7 +64,27 @@ final class DashboardTimezone
     }
 
     /**
-     * Null for anything that is not a real IANA zone.
+     * Every zone this install will accept as a stored preference.
+     *
+     * `ALL_WITH_BC`, deliberately. The canonical list leaves out roughly 180
+     * backward-compatible aliases -- `US/Eastern`, `Asia/Calcutta`,
+     * `Europe/Kiev` -- which PHP resolves perfectly well and which real
+     * configuration is full of. Refusing them does not produce an error an
+     * operator can see; it drops that reader to the fallback and renders their
+     * whole dashboard on a clock they did not choose.
+     *
+     * The test is "can the platform render a time in it", and that is the list
+     * that answers it.
+     *
+     * @return list<string>
+     */
+    public static function acceptable(): array
+    {
+        return DateTimeZone::listIdentifiers(DateTimeZone::ALL_WITH_BC);
+    }
+
+    /**
+     * Null for anything that is not a zone the platform can resolve.
      *
      * Checked against the platform's own database rather than a list kept
      * here: zones are added and renamed by the tzdata release the host runs,
@@ -82,23 +102,44 @@ final class DashboardTimezone
             return null;
         }
 
-        return in_array($timezone, DateTimeZone::listIdentifiers(), true) ? $timezone : null;
+        return in_array($timezone, self::acceptable(), true) ? $timezone : null;
     }
 
     /**
-     * Every zone an agent may choose, grouped for a select element.
+     * Every zone to OFFER, grouped for a select element.
+     *
+     * Canonical names only, unlike {@see self::acceptable()}. Listing the
+     * aliases as well would put `Asia/Kolkata` and `Asia/Calcutta` in the same
+     * menu as if they were a choice between two things.
+     *
+     * `$include` keeps a value that is already stored but not on the canonical
+     * list, which is the difference between a select and a trap: without it an
+     * agent whose zone is `US/Eastern` opens their profile, finds nothing
+     * selected, and silently saves whichever option happened to be first.
      *
      * @return array<string, list<string>>
      */
-    public static function choices(): array
+    public static function choices(?string $include = null): array
     {
+        $identifiers = DateTimeZone::listIdentifiers();
+        $include = self::normalise($include);
+
+        if ($include !== null && ! in_array($include, $identifiers, true)) {
+            $identifiers[] = $include;
+        }
+
         $grouped = [];
 
-        foreach (DateTimeZone::listIdentifiers() as $identifier) {
+        foreach ($identifiers as $identifier) {
             $region = str_contains($identifier, '/') ? explode('/', $identifier)[0] : 'Other';
             $grouped[$region][] = $identifier;
         }
 
+        foreach ($grouped as &$region) {
+            sort($region);
+        }
+
+        unset($region);
         ksort($grouped);
 
         return $grouped;

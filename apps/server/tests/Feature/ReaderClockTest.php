@@ -313,3 +313,58 @@ it('tells an approver the expiry on their own clock', function () {
     expect($status)->toContain('17:00')
         ->and(str_contains((string) $status, '15:00'))->toBeFalse();
 });
+
+/**
+ * `DateTimeZone::listIdentifiers()` leaves out roughly 180 backward-compatible
+ * aliases that PHP resolves perfectly well, and real configuration is full of
+ * them. Refusing one produces no error anybody sees -- it drops that reader to
+ * the fallback and renders their whole dashboard on a clock they never chose.
+ */
+it('accepts a zone the platform can resolve, alias or not', function () {
+    foreach (['US/Eastern', 'Asia/Calcutta', 'Europe/Kiev'] as $alias) {
+        expect(DashboardTimezone::normalise($alias))->toBe($alias)
+            ->and(in_array($alias, DateTimeZone::listIdentifiers(), true))
+            ->toBeFalse("{$alias} is no longer an alias; the test has stopped proving anything");
+    }
+
+    $agent = User::factory()->for(Account::factory())->create(['timezone' => 'US/Eastern']);
+
+    // 14:32 UTC is 10:32 on the US east coast in August.
+    expect(ReaderClock::moment(CarbonImmutable::create(2026, 8, 24, 14, 32, 0, 'UTC'), $agent)->format('H:i'))
+        ->toBe('10:32');
+});
+
+it('keeps an alias on the profile form instead of silently reassigning it', function () {
+    // The select offers canonical names only, so a stored alias has no option
+    // to be selected. Left out, the browser selects whichever option comes
+    // first and the next save moves the agent to a zone they never picked.
+    $agent = User::factory()->for(Account::factory())->create(['timezone' => 'US/Eastern']);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('value="US/Eastern" selected', escape: false);
+
+    // And it survives a round trip through the form.
+    $this->actingAs($agent)
+        ->put(route('dashboard.profile.update'), ['name' => 'Ada Agent', 'timezone' => 'US/Eastern'])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect($agent->fresh()->timezone)->toBe('US/Eastern');
+});
+
+it('offers canonical names only, not the aliases beside them', function () {
+    $choices = DashboardTimezone::choices();
+
+    expect($choices['Asia'])->toContain('Asia/Kolkata')
+        ->and(in_array('Asia/Calcutta', $choices['Asia'], true))->toBeFalse()
+        ->and(array_key_exists('US', $choices))->toBeFalse();
+
+    // Unless one is already stored, in which case it is offered so it can be
+    // kept -- and exactly once, however many times it is asked for.
+    $withAlias = DashboardTimezone::choices('US/Eastern');
+
+    expect($withAlias['US'])->toBe(['US/Eastern'])
+        ->and(DashboardTimezone::choices('Asia/Kolkata')['Asia'])->toBe($choices['Asia']);
+});

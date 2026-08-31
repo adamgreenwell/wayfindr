@@ -76,7 +76,7 @@
                     {{-- Same rule as the language above: "whatever the install
                          uses" is the default and stays selectable. --}}
                     <option value="">{{ __('profile.details.timezone_default') }}</option>
-                    @foreach (\App\Support\DashboardTimezone::choices() as $region => $zones)
+                    @foreach (\App\Support\DashboardTimezone::choices(old('timezone', $agent->timezone)) as $region => $zones)
                         <optgroup label="{{ $region }}">
                             @foreach ($zones as $zone)
                                 <option value="{{ $zone }}" @selected(old('timezone', $agent->timezone) === $zone)>{{ $zone }}</option>
