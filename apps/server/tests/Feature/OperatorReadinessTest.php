@@ -194,6 +194,8 @@ test('readiness diagnostics recommend the first attention item as the next step'
 });
 
 test('readiness diagnostics recommend manual smoke confirmation when no attention items remain', function (): void {
+    readinessLanguageAndRegionConfirmed();
+
     config([
         'app.url' => 'https://support.example.test',
         'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
@@ -543,6 +545,8 @@ test('readiness diagnostics include older active cobrowse transport pressure bey
 });
 
 test('readiness diagnostics treat confirmed manual items as ready', function (): void {
+    readinessLanguageAndRegionConfirmed();
+
     config([
         'app.url' => 'https://support.example.test',
         'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
@@ -619,6 +623,8 @@ test('readiness diagnostics treat confirmed manual items as ready', function ():
 });
 
 test('readiness diagnostics mark stale confirmations as refresh due', function (): void {
+    readinessLanguageAndRegionConfirmed();
+
     $this->travelTo(Carbon::parse('2026-06-06 12:00:00'));
 
     config([
@@ -1464,6 +1470,8 @@ test('readiness smoke path reflects cobrowse transport attention without leaking
 });
 
 test('readiness smoke path preserves cobrowse manual remediation when transport cannot be inspected', function (): void {
+    readinessLanguageAndRegionConfirmed();
+
     config([
         'app.url' => 'https://support.example.test',
         'mail.default' => 'smtp',
