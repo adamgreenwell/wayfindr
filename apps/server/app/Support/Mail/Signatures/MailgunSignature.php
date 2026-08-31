@@ -140,6 +140,23 @@ final class MailgunSignature implements VerifiesInboundMail
             return false;
         }
 
+        // An exact match needs nothing further: a delivery identical to the
+        // one that made the claim leaves the claim identical too, so there is
+        // nothing to write and nothing to race for.
+        if ($claim == $fingerprint) {
+            return true;
+        }
+
+        // Otherwise this delivery is filling a slot the claim left open, and
+        // exactly one may. Two concurrent deliveries would both read the
+        // wildcard and both pass before either wrote -- so an attacker holding
+        // the tuple could race the genuine retry and substitute its bytes.
+        // `Cache::add()` on the transition itself, which is the only atomic
+        // primitive this needs and the same one the first claim uses.
+        if (! Cache::add($key.':narrowed', true, self::MAXIMUM_AGE_SECONDS + 600)) {
+            return false;
+        }
+
         // Re-bound to what was actually presented, so a slot unlocked by one
         // incomplete upload narrows to concrete bytes as soon as a good file
         // arrives, instead of staying open for the rest of the window.

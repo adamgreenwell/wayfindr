@@ -57,7 +57,8 @@ final class InboundMessage
             // Cut here rather than at render time: the transcript stores what
             // the sender wrote, and every later reader gets the same thing.
             QuotedText::strip($body),
-            self::text(self::first($payload, ['message_id', 'MessageID', 'Message-Id', 'message-id'])),
+            self::text(self::first($payload, ['message_id', 'MessageID', 'Message-Id', 'message-id']))
+                ?? self::derivedMessageId($payload),
             self::text(self::first($payload, ['in_reply_to', 'InReplyTo', 'In-Reply-To'])),
             self::references($payload),
             self::attachments($payload),
@@ -84,6 +85,43 @@ final class InboundMessage
         }
 
         return array_values(array_unique(array_filter($candidates)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return list<string>
+     */
+    /**
+     * An identity for mail whose sender stamped no `Message-Id`.
+     *
+     * Almost every MTA stamps one, and `alreadyAccepted()` keys on it -- so
+     * without this the handful that do not are the one shape a provider's
+     * retry duplicates instead of deduplicating. That is not a hypothetical
+     * attacker: a delivery can commit and then have its response lost to an
+     * edge timeout or a deploy, and the provider re-POSTs something we have
+     * already stored. Those failures are bursty, so it shows up as "during
+     * the incident, some inbound mail forked into second conversations".
+     *
+     * Derived from the provider's own per-delivery token where there is one,
+     * because that is identical across retries of one delivery and different
+     * between two deliveries -- which is exactly the distinction being drawn,
+     * and one the message content cannot make. Two identical "thanks" replies
+     * are two messages; the same "thanks" delivered twice is one.
+     *
+     * Marked as derived so it is never mistaken for something the sender
+     * wrote, and so a later reader can tell why threading found nothing.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private static function derivedMessageId(array $payload): ?string
+    {
+        $token = self::text(self::first($payload, ['token']));
+
+        if ($token === null) {
+            return null;
+        }
+
+        return '<derived-'.hash('sha256', $token).'@wayfindr.invalid>';
     }
 
     /**

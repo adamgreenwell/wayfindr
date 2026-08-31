@@ -16,7 +16,9 @@ use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Support\Mail\Signatures\MailgunSignature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -806,4 +808,98 @@ test('an attachment that will not read is refused, not quietly dropped', functio
 
     // And nothing was stored, so the provider's retry has somewhere to land.
     expect(ConversationMessage::query()->count())->toBe(0);
+});
+
+test('only one delivery may fill a slot the claim left open', function (): void {
+    // The wildcard is a window, and a window has to have exactly one winner.
+    // Two deliveries both read `unusable` and both pass before either writes,
+    // so an attacker holding the tuple could race the genuine retry and
+    // substitute its bytes -- or, for mail with no Message-Id, have both
+    // stored.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-narrow-race';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    // The delivery that fails: PHP rejected the upload, so the slot is open.
+    $broken = new UploadedFile(
+        tempnam(sys_get_temp_dir(), 'wf'),
+        'report.png',
+        'image/png',
+        UPLOAD_ERR_INI_SIZE,
+        true
+    );
+
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => $broken,
+    ]))->assertStatus(422);
+
+    // Two retries reach verification against the same open claim. Verified
+    // directly, without the work in between, because that is the interleaving
+    // a real race produces -- and calling the endpoint twice would not reach
+    // it, since the first call's write would have landed.
+    $verifier = new MailgunSignature;
+
+    // The same mail fields the 422 delivery carried -- only the attachment
+    // differs, which is the whole point.
+    $withFile = function (string $name, int $size) use ($tuple): Request {
+        $path = tempnam(sys_get_temp_dir(), 'wf');
+        file_put_contents($path, str_repeat('a', $size));
+
+        return Request::create('/api/mail/inbound', 'POST', inboundPayload($tuple), [], [
+            'attachment-1' => new UploadedFile($path, $name, 'image/png', UPLOAD_ERR_OK, true),
+        ]);
+    };
+
+    $genuine = $withFile('report.png', 32);
+    $attacker = $withFile('report.png', 64);
+
+    $key = 'wayfindr:inbound-mail:mailgun-token:'.hash('sha256', $tok);
+    $asBothSawIt = Cache::get($key);
+
+    expect($verifier->verify($genuine, 'k'))->toBeTrue('the first delivery should fill the slot');
+
+    // Put the claim back to the OPEN state the second delivery read, before
+    // the first one's write landed. That is the race. Without this the second
+    // verify fails because the slot is already concrete -- the right answer
+    // for the wrong reason, and it passes with or without the atomic guard.
+    Cache::put($key, $asBothSawIt, 600);
+
+    expect($verifier->verify($attacker, 'k'))
+        ->toBeFalse('two deliveries both filled the same open slot');
+});
+
+test('a provider that retries more than once is not refused the second time', function (): void {
+    // Mailgun re-POSTs up to six times. An identical retry changes nothing
+    // about the claim, so it must not consume anything -- an earlier version
+    // of the narrowing guard would have taken the one-shot transition on the
+    // first retry and refused every one after it.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-retried-thrice';
+    $payload = inboundPayload([
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ]);
+
+    foreach (range(1, 3) as $attempt) {
+        test()->postJson('/api/mail/inbound', $payload)
+            ->assertOk("retry {$attempt} was refused");
+    }
+
+    // And routing recognised them as one message rather than three.
+    expect(ConversationMessage::query()->count())->toBe(1);
 });
