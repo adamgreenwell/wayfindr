@@ -13,7 +13,7 @@
                         @foreach ($activeBreakGlassGrants as $grant)
                             <p>
                                 {{ $grant->requester?->name ?? 'A former operator' }} has read-only access to
-                                {{ lcfirst($grant->scopeLabel()) }} until {{ \App\Support\ReaderClock::moment($grant->expires_at)->format('H:i T') }}
+                                {{ lcfirst($grant->scopeLabel()) }} until {{ \App\Support\ReaderClock::timeWithZone($grant->expires_at) }}
                                 ({{ $grant->expires_at->diffForHumans() }}){{ $grant->self_approved ? ' — self-approved' : '' }}.
                             </p>
                         @endforeach

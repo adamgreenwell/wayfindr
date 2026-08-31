@@ -39,6 +39,31 @@ use Illuminate\Support\Facades\Auth;
  * has no `Auth::user()`, and its reader is the recipient. Anything rendering
  * for a named person should pass them.
  *
+ * ## Why formatting moved in here
+ *
+ * This class used to convert and stop, on the argument that the formats
+ * genuinely differ -- an expiry wants a time, an audit row wants the date too
+ * -- and that collapsing them would replace a real distinction with a lookup
+ * table. That objection was right about a table of arbitrary `d.m.Y` patterns
+ * and wrong about what was needed.
+ *
+ * A zone is only half of what a moment needs. `format('M j, Y')` writes an
+ * English month in a US order to a German reader whose clock is now correct,
+ * which is a converted timestamp that still reads foreign. The three methods
+ * below are ICU skeletons, not patterns: they name the three questions a
+ * reader actually asks -- which day, which day and what time, what time -- and
+ * the twenty hardcoded formats in the tree collapsed into them without loss.
+ * The 12- versus 24-hour switch comes free, and no hand-written pattern can
+ * express it.
+ *
+ * `isoFormat` and not `translatedFormat`: the latter translates the month name
+ * and keeps the US order, so Italian gets `ago 24, 2026` -- a worse answer than
+ * leaving it in English, because it looks translated.
+ *
+ * Relative times need nothing. Carbon's own service provider listens for
+ * Laravel's `LocaleUpdated` event, so every `diffForHumans()` in the codebase
+ * already follows the page.
+ *
  * Not every absolute time is the reader's, and those must NOT come through
  * here. A site's support hours belong to the site -- "visitors are told
  * support is back at 09:00" is a statement in the site's own zone, and moving
@@ -61,15 +86,81 @@ final class ReaderClock
     }
 
     /**
-     * A stored moment, moved onto the reader's clock.
+     * A stored moment, moved onto the reader's clock but not yet written down.
      *
-     * Formatting stays at the call site because the formats genuinely differ
-     * -- an expiry wants `H:i T`, an audit row wants the date too -- and
-     * collapsing them here would replace a real distinction with a lookup
-     * table. The zone is the part that must be decided once, and it is.
+     * For anything a person reads, prefer {@see self::date()},
+     * {@see self::dateTime()} or {@see self::time()} below. This stays public
+     * for the cases that genuinely need the Carbon instance -- a comparison, a
+     * derived value, a format no reader sees.
      */
     public static function moment(DateTimeInterface $at, ?User $reader = null): CarbonImmutable
     {
         return CarbonImmutable::instance($at)->setTimezone(self::zone($reader));
+    }
+
+    /**
+     * The moment on the reader's clock AND in the reader's language.
+     *
+     * Passing a reader names the WHOLE reader, not only their zone. That
+     * matters because the two callers are different in kind:
+     *
+     * - A request passes nobody. `SetDashboardLocale` has already set the
+     *   page's language, with the route's extraction status folded in, so
+     *   ambient is not just convenient there -- it is the only answer that
+     *   respects the extracted-route scoping.
+     * - A queued job passes the recipient, because there is no page and
+     *   nobody signed in. Its language cannot be ambient; the worker's is the
+     *   install default, which is how an agent who reads German got a digest
+     *   dated in English.
+     */
+    private static function readable(DateTimeInterface $at, ?User $reader): CarbonImmutable
+    {
+        $moment = self::moment($at, $reader);
+
+        return $reader === null ? $moment : $moment->locale(DashboardLanguage::for($reader));
+    }
+
+    /**
+     * Which day: `Aug 24, 2026`, `24. Aug 2026`, `24 ago 2026`.
+     *
+     * The medium skeleton rather than the short one. `L` would give
+     * `08/24/2026` -- correct for the locale and worse for everyone, since a
+     * numeric date is the one shape a reader cannot disambiguate on sight.
+     * `ll` also happens to render English exactly as this codebase already
+     * did, so adopting the seam changed nothing for existing readers and
+     * everything for German and Italian ones.
+     */
+    public static function date(DateTimeInterface $at, ?User $reader = null): string
+    {
+        return self::readable($at, $reader)->isoFormat('ll');
+    }
+
+    /**
+     * Which day and what time: `Aug 24, 2026 3:05 PM`, `24. Aug 2026 15:05`.
+     */
+    public static function dateTime(DateTimeInterface $at, ?User $reader = null): string
+    {
+        return self::readable($at, $reader)->isoFormat('ll LT');
+    }
+
+    /**
+     * What time: `3:05 PM`, `15:05`.
+     */
+    public static function time(DateTimeInterface $at, ?User $reader = null): string
+    {
+        return self::readable($at, $reader)->isoFormat('LT');
+    }
+
+    /**
+     * What time, and on whose clock: `3:05 PM CEST`, `15:05 CEST`.
+     *
+     * A fourth method rather than a caller gluing a zone on, because the two
+     * places that want it are time-bounded ACCESS grants -- "read-only until
+     * 16:32" is a promise, and a promise with no clock named is one an agent
+     * in another zone reads wrongly and cannot tell they have.
+     */
+    public static function timeWithZone(DateTimeInterface $at, ?User $reader = null): string
+    {
+        return self::readable($at, $reader)->isoFormat('LT z');
     }
 }

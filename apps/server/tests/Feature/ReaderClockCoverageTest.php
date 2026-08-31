@@ -55,6 +55,19 @@ const READER_CLOCK_EXEMPT = [
     // back on the reader's clock. Passing them through the seam again would be
     // a no-op that reads as a conversion.
     'app/Http/Controllers/AgentReportController.php' => 'days ReportingWindow already converted',
+
+    // The seam's own implementation. The line-level skip below looks for the
+    // word `ReaderClock`, which these lines do not contain because they call
+    // `self::`.
+    'app/Support/ReaderClock.php' => 'the conversion itself',
+
+    // ISO strings written into notification data and parsed back out of it.
+    // Machine keys: `waiting_since` and `last_attempted_at` reach a reader
+    // only through `diffForHumans()`, which is an interval and already follows
+    // the page's language.
+    'app/Models/User.php' => 'a stored delivery stamp, compared not read',
+    'app/Support/UnattendedConversationAlertCollector.php' => 'episode keys, compared not read',
+    'app/Listeners/NotifyAgentsOfVisitorMessage.php' => 'episode keys, compared not read',
 ];
 
 /**
@@ -70,12 +83,32 @@ const READER_CLOCK_EXEMPT_LINES = [
     // session that made it and may be opened by a team spread across zones, so
     // it stays unambiguous rather than local.
     'Ymd-His' => 'a filename stamp',
+
+    // `AlertDigestCandidateCollector::timestamp()` -- the machine half of a
+    // display/machine pair, parsed back to decide whether a digest entry is
+    // stale. Named by shape rather than by file, because its display twin
+    // `label()` lives beside it and must stay checked.
+    'return $timestamp?->toISOString();' => 'the machine half of a labelled pair',
 ];
 
-/** Formatting calls that produce a moment for someone to read. */
+/**
+ * Formatting calls that produce a moment for someone to read.
+ *
+ * `isoFormat` is here because it is now the seam's own spelling, and a call
+ * site using it directly would be invisible to the `->format('` matcher -- the
+ * shape a guard is worst at, one it cannot see by construction.
+ *
+ * `toISOString` is here because it was already being rendered as prose. The
+ * alert digest printed `2026-08-24T15:05:00.000000Z` into an agent's email, in
+ * storage's clock, and this guard walked past it: the call was in neither
+ * matcher, the collector was in no exemption list, and the ISO escape hatch
+ * below named only `toIso8601String`. A guard with a hole shaped exactly like
+ * the defect reads as proof the defect is absent.
+ */
 const READER_CLOCK_CALLS = [
     'toDateTimeString', 'toDayDateTimeString', 'toFormattedDayDateString',
     'toDateString', 'toTimeString', 'toFormattedDateString',
+    'isoFormat', 'toISOString',
 ];
 
 test('every reader-facing timestamp crosses the seam', function (): void {
@@ -129,7 +162,10 @@ test('every reader-facing timestamp crosses the seam', function (): void {
                     continue;
                 }
 
-                // An ISO string is machine-readable and carries its own offset.
+                // An ISO string carries its own offset, so it is unambiguous
+                // to a MACHINE. That is not a reason to print one at a person,
+                // which is how `toISOString()` reached an agent's inbox. Only
+                // the explicitly machine-bound spelling is waved through.
                 if (str_contains($line, 'toIso8601String') || str_contains($line, 'Y-m-d\\TH')) {
                     continue;
                 }
@@ -165,4 +201,22 @@ test('the guard still recognises an unconverted timestamp', function (): void {
     $formatter = '        $pressure = $this->transportPressure->format($metadata, $latestReport);';
 
     expect((bool) preg_match("/->format\(\s*'/", $formatter))->toBeFalse();
+
+    // The two shapes the matcher was WIDENED for. Neither is checked by the
+    // sweep above once the tree is clean -- a clean tree passes whether or not
+    // the matcher still recognises them -- so they are asserted here or not at
+    // all. Removing either from READER_CLOCK_CALLS must fail something.
+    $widened = [
+        // The seam's own spelling. A call site using it directly is invisible
+        // to the `->format('` matcher by construction.
+        "        return \$moment->isoFormat('ll LT');" => 'isoFormat',
+        // What the alert digest printed into an agent's inbox: storage's
+        // clock, in a machine format, in the middle of a sentence.
+        '        return $timestamp?->toISOString();' => 'toISOString',
+    ];
+
+    foreach ($widened as $line => $call) {
+        expect((bool) preg_match('/->('.implode('|', READER_CLOCK_CALLS).')\(/', $line))
+            ->toBeTrue("the guard no longer recognises {$call}");
+    }
 });
