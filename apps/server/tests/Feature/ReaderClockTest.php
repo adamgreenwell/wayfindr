@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\User;
 use App\Support\DashboardTimezone;
@@ -236,4 +237,79 @@ it('offers every zone on the profile form, grouped to be findable', function () 
 
     expect(array_keys($choices))->toContain('Europe', 'America', 'Asia')
         ->and($choices['Europe'])->toContain(BERLIN);
+});
+
+/**
+ * The miss a first sweep of `resources/views/` cannot see: a controller that
+ * formats a timestamp into a string before any view exists.
+ */
+it('renders the account audit list on the reader clock', function () {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'timezone' => BERLIN,
+    ]);
+
+    AuditEvent::query()->create([
+        'account_id' => $account->id,
+        'actor_type' => $admin->getMorphClass(),
+        'actor_id' => $admin->id,
+        'action' => 'site.created',
+        'metadata' => [],
+        'occurred_at' => CarbonImmutable::create(2026, 8, 24, 14, 32, 0, 'UTC'),
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('2026-08-24 16:32:00')
+        ->assertDontSee('2026-08-24 14:32:00');
+});
+
+/**
+ * The report window's bounds are UTC because they are bound into SQL. That
+ * makes them the wrong thing to print: for a reader west of UTC the end of
+ * Aug 24 locally is 06:59 on Aug 25 UTC, so a chart label built from the raw
+ * bound announces a day the chart does not cover.
+ */
+it('announces the report range on the reader calendar, not the UTC one', function () {
+    CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 25, 3, 0, 0, 'UTC'));
+
+    // 03:00 UTC on the 25th is still 20:00 on the 24th in Los Angeles.
+    $window = ReportingWindow::ofDays(7, 'America/Los_Angeles');
+
+    expect($window->endsOn()->toDateString())->toBe('2026-08-24')
+        ->and($window->end->toDateString())->toBe('2026-08-25', 'the query bound stays UTC')
+        ->and($window->startsOn()->toDateString())->toBe('2026-08-18');
+
+    CarbonImmutable::setTestNow();
+});
+
+it('tells an approver the expiry on their own clock', function () {
+    $account = Account::factory()->create();
+    $operator = User::factory()->for($account)->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+        'timezone' => BERLIN,
+    ]);
+
+    $this->travelTo(CarbonImmutable::create(2026, 8, 24, 14, 0, 0, 'UTC'));
+
+    $grant = BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => $operator->id,
+        'status' => BreakGlassGrant::STATUS_REQUESTED,
+    ]);
+
+    $this->actingAs($operator)
+        ->post(route('operator.break-glass.approve', $grant))
+        ->assertRedirect();
+
+    $status = session('status');
+
+    // A default grant runs an hour: 15:00 UTC, which in Berlin is 17:00.
+    // `toContain` is variadic on strings, so the reason goes in a comment
+    // rather than a second argument -- passed there it becomes another needle.
+    expect($status)->toContain('17:00')
+        ->and(str_contains((string) $status, '15:00'))->toBeFalse();
 });

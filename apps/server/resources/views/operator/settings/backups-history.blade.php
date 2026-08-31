@@ -40,7 +40,7 @@
                                     @endswitch
                                 </td>
                                 <td>
-                                    {{ $run->started_at?->toDayDateTimeString() }}
+                                    {{ $run->started_at === null ? '' : \App\Support\ReaderClock::moment($run->started_at)->toDayDateTimeString() }}
                                     <span class="table-note">{{ $run->started_at?->diffForHumans() }}</span>
                                 </td>
                                 <td>{{ $run->size_bytes ? number_format($run->size_bytes / 1048576, 1).' MB' : '—' }}</td>

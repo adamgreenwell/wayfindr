@@ -98,6 +98,26 @@ final class ReportingWindow
     }
 
     /**
+     * The window's first and last day AS THE READER SEES THEM.
+     *
+     * `start` and `end` are query bounds and are deliberately UTC, which makes
+     * them the wrong thing to print: for a reader west of UTC the end of
+     * Aug 24 in Los Angeles is 06:59 on Aug 25 UTC, so a chart labelled from
+     * the raw bound announces the wrong day entirely. Reading is a different
+     * question from querying, and it gets its own pair rather than a note
+     * asking every call site to remember the difference.
+     */
+    public function startsOn(): CarbonImmutable
+    {
+        return $this->start->setTimezone($this->zone);
+    }
+
+    public function endsOn(): CarbonImmutable
+    {
+        return $this->end->setTimezone($this->zone);
+    }
+
+    /**
      * One entry per day in the window, oldest first.
      *
      * Every day is present whether or not anything happened on it. A chart that
