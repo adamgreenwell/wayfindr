@@ -49,17 +49,25 @@ display clock here instead.
 
 The GUI setting overrides the environment, the same way mail, storage, scanning
 and backups do
-([ADR 0011](../decisions/0011-operator-settings-and-guided-onboarding.md)). If you
-prefer to seed an install from the environment — a fleet deployment, or a
-container image — these are the keys:
+([ADR 0011](../decisions/0011-operator-settings-and-guided-onboarding.md)). To
+seed a **new** install — a fleet deployment, or a container image — these are
+the keys:
 
 ```dotenv
 APP_LOCALE=de
 WAYFINDR_DASHBOARD_TIMEZONE=Europe/Berlin
 ```
 
-Anything saved in the operator console wins over both. To go back to the
-environment value, clear the setting rather than re-typing it.
+They decide what a fresh install reads in **before anybody has answered the
+setup step**, and what the console's form is pre-filled with when it is first
+opened.
+
+Once the setting is saved in the console, the console is the answer and these
+are no longer consulted. That is deliberate rather than an omission: the whole
+point of the setup step is that a person confirmed the clock, and a "go back to
+whatever the environment says" control would be a way to un-confirm it while the
+checklist still read as ready. Changing the language or timezone later means
+changing it in the console.
 
 ## Which timezones are accepted
 

@@ -232,3 +232,31 @@ test('answering only one half does not count as confirmed', function (): void {
         ->assertOk()
         ->assertSee('Nobody has confirmed that is right.');
 });
+
+/**
+ * A stored value can stop being a real zone without anyone touching it: tzdata
+ * retires identifiers, and the row that was right when it was saved is not
+ * right after an upgrade. Presence alone would read as confirmed while the
+ * dashboard quietly served UTC -- hiding exactly the unexpected clock this step
+ * exists to surface.
+ */
+test('a stored setting that no longer resolves is not a confirmation', function (): void {
+    $settings = app(OperatorSettings::class);
+    $settings->set('localization.language', 'de');
+    $settings->set('localization.timezone', 'Europe/Berlin');
+
+    $this->actingAs(localizationOperator())
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertDontSee('Nobody has confirmed that is right.');
+
+    // The zone is retired by a tzdata update; the row is untouched.
+    $settings->set('localization.timezone', 'Europe/Atlantis');
+
+    $this->actingAs(localizationOperator())
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertSee('Nobody has confirmed that is right.')
+        // And it says what the reader will actually get, not what is stored.
+        ->assertSee('on UTC.');
+});

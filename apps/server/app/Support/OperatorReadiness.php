@@ -176,12 +176,22 @@ class OperatorReadiness
     private function languageAndRegion(): array
     {
         $settings = app(OperatorSettings::class);
-        $chosen = $settings->isSet('localization.language') && $settings->isSet('localization.timezone');
 
-        $language = DashboardLanguage::normalise($settings->effective('localization.language'))
-            ?? DashboardLanguage::FALLBACK;
-        $timezone = DashboardTimezone::normalise($settings->effective('localization.timezone'))
-            ?? DashboardTimezone::FALLBACK;
+        $language = DashboardLanguage::normalise($settings->effective('localization.language'));
+        $timezone = DashboardTimezone::normalise($settings->effective('localization.timezone'));
+
+        // Stored AND still resolvable. A tzdata update can retire a zone the
+        // operator chose in good faith, and then a presence check alone reads
+        // as confirmed while the normalisation below quietly serves UTC
+        // instead -- hiding the one thing this step exists to surface, an
+        // unexpected clock nobody agreed to.
+        $chosen = $settings->isSet('localization.language')
+            && $settings->isSet('localization.timezone')
+            && $language !== null
+            && $timezone !== null;
+
+        $language ??= DashboardLanguage::FALLBACK;
+        $timezone ??= DashboardTimezone::FALLBACK;
         $summary = sprintf('The dashboard reads in %s, on %s.', DashboardLanguage::SUPPORTED[$language] ?? $language, $timezone);
 
         if (! $chosen) {
