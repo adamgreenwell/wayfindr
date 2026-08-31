@@ -27,6 +27,9 @@ trait SanitisesStoredPageUrls
     /**
      * Dot paths within `metadata` holding a page address.
      *
+     * A `*` segment walks every element of a list, for documents that keep a
+     * run of them rather than a single value.
+     *
      * @return array<int, string>
      */
     abstract protected static function pageUrlPaths(): array;
@@ -61,6 +64,26 @@ trait SanitisesStoredPageUrls
     private static function sanitisePageUrlPath(array &$metadata, array $path): bool
     {
         $key = array_shift($path);
+
+        // A list of them rather than one. Cobrowse keeps a run of recent
+        // mutation batches, each carrying the address it was reported from, so
+        // the path has to walk indices nobody can name in advance.
+        if ($key === '*') {
+            $changed = false;
+
+            foreach ($metadata as $index => $entry) {
+                if (! is_array($entry)) {
+                    continue;
+                }
+
+                if (self::sanitisePageUrlPath($entry, $path)) {
+                    $metadata[$index] = $entry;
+                    $changed = true;
+                }
+            }
+
+            return $changed;
+        }
 
         if (! array_key_exists($key, $metadata)) {
             return false;
