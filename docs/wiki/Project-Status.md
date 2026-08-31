@@ -91,6 +91,31 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   a customer until somebody who speaks it has read the rendered screens.
 - **A visitor directory**, and a read-only public API with a decided isolation
   model (ADR 0018).
+- **Live visitor presence** ([#747](https://github.com/adamgreenwell/wayfindr/issues/747)):
+  who is on the site right now, on what page, for how long, and whether the desk
+  has ever heard from them. It updates over the Reverb connection the agent
+  pages already use, and resyncs on subscribe and on a timer so a missed frame
+  costs a minute rather than the session.
+
+  The decision that made it possible is
+  [ADR 0019](https://github.com/adamgreenwell/wayfindr/blob/main/docs/decisions/0019-presence-for-visitors-who-have-not-made-contact.md):
+  Wayfindr may observe visitors who never made contact, on a per-site operator
+  switch, with a visitor-facing disclosure, a decline the widget honours, and
+  the product's first automatic retention control.
+
+  **Off on every install until somebody turns it on.** The switch is on the site
+  page under *Live visitor presence*, behind the same permission as the masking
+  rules, and a default install reports nothing and shows no visitor a notice.
+  Turning it off again deletes the visitors it collected who never made contact,
+  and a second switch decides whether reports may name the page at all — for
+  sites whose paths carry invitation codes or reset tokens.
+
+  Presence-only visitors are deleted 30 days after they were last seen, or
+  sooner if the operator shortens the window; the maximum is the product's, not
+  the operator's, and a longer value is clamped rather than honoured.
+
+  Proactive messaging — the feature presence exists to unblock — is deliberately
+  not part of this and remains Tier 2.
 - **Agent-initiated password recovery.**
 - Consent-based cobrowse observe mode with sanitized snapshots, bounded
   mutations, telemetry, and an inert replay preview.

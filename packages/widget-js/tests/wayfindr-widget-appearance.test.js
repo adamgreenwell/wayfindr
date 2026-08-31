@@ -228,7 +228,7 @@ test('the launcher is in the right corner before anybody clicks it', async () =>
   assert.equal(asked.some((url) => url.includes('/api/widget/bootstrap')), false);
 });
 
-test('a remembered appearance costs a returning visitor nothing', async () => {
+test('a remembered appearance paints instantly and is still re-checked', async () => {
   const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
     url: 'https://shop.example.test/',
   });
@@ -260,8 +260,21 @@ test('a remembered appearance costs a returning visitor nothing', async () => {
 
   await settle();
 
+  // The cache still buys what it was added for: the launcher is in the right
+  // corner from the first frame, with no request between load and paint.
   assert.equal(widget.root.getAttribute('data-wf-launcher'), 'left');
-  assert.equal(asked.length, 0, 'nothing was asked for');
+
+  // But it is no longer the answer. The same response now carries whether this
+  // site watches visitors who have not made contact, and the stored copy has
+  // no expiry -- so treating it as final meant a returning visitor acted on
+  // whatever that setting was on their first ever visit, for good, and an
+  // operator turning presence off was talking to browsers that had stopped
+  // listening months earlier.
+  assert.deepEqual(
+    asked,
+    ['http://127.0.0.1:8000/api/widget/appearance?site_public_key=site_public_shop'],
+    'the cached copy was treated as the final answer',
+  );
 });
 
 test('clearing a setting clears it, rather than leaving the last one', async () => {

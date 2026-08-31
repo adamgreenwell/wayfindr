@@ -34,7 +34,7 @@ class ConversationTypingController extends Controller
 
         abort_unless($conversation, 404, 'Conversation not found.');
 
-        $visitor->update(['last_seen_at' => now()]);
+        $visitor->update(['last_web_seen_at' => now()]);
 
         $metadata = $conversation->metadata ?? [];
 

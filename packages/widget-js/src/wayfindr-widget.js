@@ -41,6 +41,11 @@
       'notice.emptyVisitor': 'No messages yet. Send a message and support will see it here.',
       'notice.emptyAgent': 'No messages yet. Replies will show up here.',
       'notice.closed': 'This conversation was closed. Send a new message to reopen it.',
+      'presence.disclosure': 'This site can see which of its pages you are on while this widget is loaded, and remembers this visit so it can tell you have been here before. If you never get in touch, that record is deleted after {days} days.',
+      'presence.disclosureNoPage': 'This site can see that you are here while this widget is loaded, and remembers this visit so it can tell you have been here before. It is not told which page you are on. If you never get in touch, that record is deleted after {days} days.',
+      'presence.decline': 'Stop sharing',
+      'presence.declined': 'Not sharing which pages you visit.',
+      'presence.declinedNoPage': 'Not letting this site know you are here.',
       'notice.retry': 'Try again',
       'form.label': 'How can we help?',
       'form.placeholder': 'Type your message...',
@@ -125,6 +130,11 @@
       'notice.emptyVisitor': 'Noch keine Nachrichten. Schreiben Sie uns, der Support sieht Ihre Nachricht hier.',
       'notice.emptyAgent': 'Noch keine Nachrichten. Antworten erscheinen hier.',
       'notice.closed': 'Diese Unterhaltung wurde geschlossen. Senden Sie eine neue Nachricht, um sie wieder zu öffnen.',
+      'presence.disclosure': 'Diese Website kann sehen, auf welchen ihrer Seiten Sie sich befinden, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach {days} Tagen gelöscht.',
+      'presence.disclosureNoPage': 'Diese Website kann sehen, dass Sie hier sind, solange dieses Widget geladen ist, und merkt sich diesen Besuch, um Sie bei einem erneuten Besuch wiederzuerkennen. Welche Seite Sie ansehen, erfährt sie nicht. Wenn Sie nie Kontakt aufnehmen, wird dieser Eintrag nach {days} Tagen gelöscht.',
+      'presence.decline': 'Nicht mehr teilen',
+      'presence.declined': 'Es wird nicht geteilt, welche Seiten Sie besuchen.',
+      'presence.declinedNoPage': 'Diese Website erfährt nicht mehr, dass Sie hier sind.',
       'notice.retry': 'Erneut versuchen',
       'form.label': 'Wie können wir helfen?',
       'form.placeholder': 'Nachricht eingeben …',
@@ -579,6 +589,21 @@
           return result;
         });
       },
+      // Somebody is on the site. Public and unauthenticated by necessity: a
+      // visitor who has never made contact has no token, and that is the whole
+      // population this reports.
+      reportPresence: function (pageUrl) {
+        return postJson(fetcher, apiBaseUrl + '/api/widget/presence', withoutNullValues({
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          // Sanitised HERE, not only by the widget that usually calls it.
+          // createClient() is a public integration surface, so a host calling
+          // client.reportPresence(window.location.href) would otherwise put a
+          // reset token on the wire -- which is the one thing client-side
+          // sanitising exists to prevent.
+          page_url: sanitisePageUrl(pageUrl),
+        }));
+      },
       startConversation: function (body, details) {
         details = details || {};
         var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
@@ -653,12 +678,15 @@
       // Delete a not-yet-sent upload (server only removes an unbound attachment
       // this visitor owns), freeing the conversation quota it held.
       deleteAttachment: function (supportCode, attachmentId) {
-        return fetcher(this.attachmentDownloadUrl(supportCode, attachmentId), {
+        // REQUEST_PRIVACY explicitly: this is the one request that does not go
+        // through the JSON or form helpers, so it did not inherit the policy
+        // they apply and sent the host page address like any ordinary fetch.
+        return fetcher(this.attachmentDownloadUrl(supportCode, attachmentId), Object.assign({
           method: 'DELETE',
           headers: {
             Accept: 'application/json',
           },
-        }).then(function (response) {
+        }, REQUEST_PRIVACY)).then(function (response) {
           if (! response.ok) {
             throw responseError(response, {});
           }
@@ -938,6 +966,14 @@
     rootEl.dir = t.direction;
     rootEl.innerHTML = [
       '<button class="wayfindr-widget__launcher" type="button" aria-controls="' + escapeHtml(panelId) + '" aria-expanded="false">' + escapeHtml(options.launcherLabel || t('launcher.label')) + '</button>',
+      // OUTSIDE the panel, deliberately. The visitors this feature exists to
+      // see are the ones who never open the widget, so a notice that only
+      // appears once they do is not a disclosure -- it is an explanation
+      // offered to the people it does not apply to. ADR 0019 §2.
+      '<div class="wayfindr-widget__presence" role="status" aria-live="polite" hidden>',
+      '  <p class="wayfindr-widget__presence-copy">' + escapeHtml(t('presence.disclosure')) + '</p>',
+      '  <button class="wayfindr-widget__presence-decline" type="button">' + escapeHtml(t('presence.decline')) + '</button>',
+      '</div>',
       '<section id="' + escapeHtml(panelId) + '" class="wayfindr-widget__panel" aria-label="' + escapeHtml(t('panel.aria')) + '" hidden>',
       '  <header class="wayfindr-widget__header">',
       '    <strong>' + escapeHtml(options.title || t('header.title')) + '</strong>',
@@ -1045,6 +1081,21 @@
     var ratingComment = rootEl.querySelector('.wayfindr-widget__rating-comment');
     var ratingSend = rootEl.querySelector('.wayfindr-widget__rating-send');
     var ratingStatus = rootEl.querySelector('.wayfindr-widget__rating-status');
+    // The window that owns this document, not the ambient global: a test
+    // harness (and an embed inside an iframe) hands the widget a document whose
+    // view is not the one this script happens to be running in.
+    var presenceWindow = (doc && doc.defaultView) || root || null;
+    var presenceEl = rootEl.querySelector('.wayfindr-widget__presence');
+    var presenceCopyEl = rootEl.querySelector('.wayfindr-widget__presence-copy');
+    var presenceDeclineEl = rootEl.querySelector('.wayfindr-widget__presence-decline');
+    var presenceConfig = null;
+    var presenceTimer = null;
+    // An override, the way messagePollMs and cobrowseStatusPollMs already work.
+    // Zero disables the repeating heartbeat while leaving the first report and
+    // the disclosure intact -- which is what a test wants, and what a host page
+    // that only cares about arrival could ask for.
+    var presencePollMs = typeof options.presencePollMs === 'number' ? Math.max(0, options.presencePollMs) : null;
+    var storage = resolveStorageOption(options);
     var ratingConfig = null;
     var ratingScore = null;
     var ratingAnswered = false;
@@ -1755,6 +1806,11 @@
     }
 
     function handleVisibilityChange() {
+      // Presence rides on the handler `destroy()` already removes rather than
+      // registering a second, anonymous one -- an anonymous listener cannot be
+      // removed, so a destroyed widget would keep waking up and reporting.
+      handlePresenceVisibility();
+
       if (canMarkRenderedMessagesSeen()) {
         scheduleRenderedReadReceipt();
 
@@ -1762,6 +1818,28 @@
       }
 
       cancelPendingReadReceipt();
+    }
+
+    function handlePresenceVisibility() {
+      if (!presenceConfig) {
+        return;
+      }
+
+      if (presenceHidden()) {
+        // A hidden tab reports nothing, and decaying to quiet is the honest
+        // answer for somebody who is not looking.
+        stopPresenceTimer();
+
+        return;
+      }
+
+      // Through the same gate as the first report ever sent, not straight out.
+      // If the config arrived while this tab was in the background, the notice
+      // has never been painted -- the two-frame wait ran against a hidden
+      // document -- and foregrounding used to send the heartbeat synchronously
+      // inside the visibilitychange handler, ahead of the first paint the
+      // visitor could have seen anything in.
+      startPresenceAfterDisclosure();
     }
 
     function renderCobrowseConsent() {
@@ -2575,6 +2653,13 @@
         img.setAttribute('src', url);
         img.setAttribute('alt', attachment.filename || t('attachment.fallbackName'));
         img.setAttribute('loading', 'lazy');
+        // The BROWSER fetches this one, not us, so the policy the widget puts
+        // on its own requests does not reach it -- and `rel`, which the file
+        // link beside this uses, does not apply to an image. Without this the
+        // host page's full address goes to the server as a Referer header on
+        // every preview, which is the address presence strips a token out of
+        // before it will even report it.
+        img.setAttribute('referrerpolicy', 'no-referrer');
         link.appendChild(img);
 
         return link;
@@ -2661,13 +2746,48 @@
     function refreshFromBootstrap() {
       var seq = ++bootstrapSequence;
 
-      bootstrapPromise = client.bootstrap(location ? location.href : null, visitorContext).then(function (result) {
+      // The same gate the heartbeat uses. A visitor who declined and then
+      // opened the panel had their page submitted here anyway -- so the board
+      // and their profile showed where somebody was who had just asked not to
+      // be followed, and it reached the server before anything could drop it.
+      var settingsSeq = 0;
+
+      bootstrapPromise = whenSiteConfigKnown().then(function () {
+        // The ticket is taken HERE, after the wait, not before it.
+        //
+        // whenSiteConfigKnown() can start a configuration fetch of its own,
+        // and that fetch takes a ticket. Reserving this one first therefore
+        // numbered the bootstrap BELOW a request it was about to wait for --
+        // so the bootstrap, sent afterwards and answering from a later read of
+        // the same server, arrived carrying the lower number and was thrown
+        // away by its own watermark as stale.
+        //
+        // An operator revoking presence or page addresses between the two
+        // reads lands in the later one, which is exactly the answer that was
+        // being discarded: the tab went on reporting under a policy that no
+        // longer existed until some later heartbeat happened to carry the
+        // change.
+        //
+        // Still taken before the request rather than on arrival, which is the
+        // other way to get this wrong: incrementing when the answer lands makes
+        // a slow bootstrap the newest answer no matter what overtook it.
+        settingsSeq = ++presenceSettingsSequence;
+
+        return client.bootstrap(pageUrlForReporting(), visitorContext);
+      }).then(function (result) {
         if (seq !== bootstrapSequence) {
+          // Overtaken: this answer is not about the panel on screen, so none
+          // of its visitor or conversation state is applied. Its SETTINGS
+          // still are -- being overtaken says another panel opened, not that
+          // the server said nothing -- and the watermark decides whether they
+          // are the newest word on the subject.
+          applyBootstrapSettings(result, settingsSeq);
+
           return;
         }
 
         bootstrapped = true;
-        applyBootstrapResult(result);
+        applyBootstrapResult(result, settingsSeq);
       });
 
       // Opening the panel must not surface a failure: the fallback state is
@@ -2682,7 +2802,13 @@
     }
 
     // Everything a bootstrap answer tells the widget, applied in one place.
-    function applyBootstrapResult(result) {
+    if (presenceDeclineEl) {
+      presenceDeclineEl.addEventListener('click', function () {
+        declinePresence();
+      });
+    }
+
+    function applyBootstrapResult(result, bootstrapSettingsSeq) {
       // Language first: everything below renders copy, and rendering it twice
       // would show the visitor the wrong language for a frame.
       applyLocale(siteLocale(result));
@@ -2699,6 +2825,812 @@
       applyHelpAvailability(siteHasArticles(result));
       ratingConfig = siteRatingPrompt(result);
       renderRatingPrompt();
+
+      // Presence is not STARTED from here -- that belongs to fetchSiteConfig(),
+      // the one path that runs without the panel -- but a running reporter is
+      // updated, because bootstrap is the freshest answer a long-lived tab
+      // ever gets. fetchSiteConfig() runs once per page load, so a tab left
+      // open all afternoon would otherwise keep the settings it started with
+      // and go on sending page addresses an operator switched off hours ago.
+      // The ticket was taken when the REQUEST started, in refreshFromBootstrap,
+      // and is checked here. Incrementing on arrival made a slow bootstrap the
+      // newest answer no matter what overtook it: a heartbeat carrying the
+      // operator's revocation would stop reporting, and this response --
+      // fetched before that revocation existed -- would then reinstate it.
+      applyBootstrapSettings(result, bootstrapSettingsSeq);
+    }
+
+    /**
+     * The half of a bootstrap answer that is about the SITE, not this panel.
+     *
+     * Split out because the two halves are ordered differently and always
+     * were. The visitor and conversation state describes the panel that asked,
+     * so only the newest one matters and an overtaken answer is worthless. The
+     * settings describe the site, and `settingsAnswerIsNewest()` orders those
+     * on its own.
+     *
+     * Gating both on the panel's identity threw away revocations: a bootstrap
+     * carrying an operator's change was discarded merely because the visitor
+     * had closed and reopened the panel while it was in flight -- and if the
+     * bootstrap that overtook it then failed, nothing applied the change at
+     * all and the tab carried on under a policy that no longer existed.
+     */
+    function applyBootstrapSettings(result, bootstrapSettingsSeq) {
+      if (!settingsAnswerIsNewest(bootstrapSettingsSeq)) {
+        return;
+      }
+
+      refreshPresenceSettings(result && result.site ? result.site.presence : null);
+    }
+
+    /**
+     * Report that somebody is here, once the notice saying so exists.
+     *
+     * Four conditions, and every one of them can stop it:
+     *
+     *  - the operator has not switched it on for this site;
+     *  - the visitor declined, which is remembered per site;
+     *  - the browser cannot REMEMBER a decline, so we fail closed -- an embed
+     *    passing `storage: null` or a private window would otherwise resume
+     *    reporting on the next page for somebody who already said no;
+     *  - the tab is hidden, which is the honest signal that nobody is looking.
+     */
+    function applyPresence(config) {
+      stopPresence();
+
+      presenceConfig = config && config.reports === true ? config : null;
+
+      // Remembered outside the config, which is cleared when reporting stops:
+      // a site's decision not to keep page addresses has to outlive its
+      // decision to stop watching.
+      //
+      // An answer that carries no `page_urls` at all RESOLVES the policy to
+      // true rather than leaving it unknown. The server has replied and has
+      // not forbidden anything, and a widget talking to an older build that
+      // does not send the key must not withhold addresses for ever.
+      if (config) {
+        presenceReportedPageUrls = typeof config.page_urls === 'boolean'
+          ? config.page_urls
+          : true;
+      }
+
+      if (!presenceConfig) {
+        return;
+      }
+
+      var key = presenceStorageKey(options.sitePublicKey);
+
+      // Fail closed. If a "no" cannot survive a navigation, we do not get to
+      // assume a "yes".
+      //
+      // presenceConfig is cleared before BOTH returns rather than left set:
+      // the visibility handler gates on it, so leaving it truthy meant hiding
+      // and re-showing the tab restarted reporting -- underneath a notice
+      // saying pages were not being shared.
+      if (!storageRemembers(storage, key)) {
+        presenceConfig = null;
+
+        return;
+      }
+
+      // Through declineRecorded(), not straight at storage. A decline whose
+      // write was lost to a transient failure lives only in memory, and
+      // reading the store directly here restarted reporting for somebody who
+      // had already said no.
+      if (declineRecorded()) {
+        presenceConfig = null;
+        renderPresenceDeclined();
+
+        return;
+      }
+
+      renderPresenceDisclosure();
+
+      // The first report waits for the notice to be PAINTED, not merely to
+      // exist. Being in the document is not being visible: the element is
+      // inserted with its styles unresolved, and reporting in the same task
+      // sent the first heartbeat before the browser had any opportunity to
+      // show the visitor anything. Two frames is the ordinary way to say
+      // "after the next paint" -- one schedules before the coming frame, the
+      // second lands after it.
+      //
+      // Re-checked rather than assumed at that point, because two frames is
+      // long enough for the answer to change.
+      startPresenceAfterDisclosure();
+    }
+
+    /**
+     * Apply a newer answer to a reporter that is already running.
+     *
+     * Deliberately not applyPresence(): that stops and restarts, which would
+     * send a fresh first-heartbeat and re-run the paint wait every time the
+     * panel opened. This changes the settings underneath a running timer and
+     * leaves the timer alone.
+     *
+     * Turning reporting off is the exception that must be immediate rather
+     * than tidy -- an operator revoking it should not have to wait for the tab
+     * to close.
+     */
+    /**
+     * The page-load configuration read, once it has been started.
+     *
+     * Waited on by the writers that send a page address, rather than having
+     * them guess. Withholding the address until the policy is known keeps it
+     * off the wire on a site that forbids it; waiting for the answer instead of
+     * withholding outright keeps it for every site that does not, which is most
+     * of them and includes every install that never touched presence.
+     *
+     * The read starts at init, so by the time somebody opens the panel it has
+     * usually resolved and this costs nothing.
+     */
+    var siteConfigPromise = null;
+
+    // The settings ticket held by the request in `siteConfigPromise`, so a
+    // retired or superseded request can be told apart from the live one when
+    // its answer finally arrives. Zero means no request is live.
+    var siteConfigSequence = 0;
+
+    /**
+     * This request has answered. Is it still the one we were waiting for?
+     *
+     * True hands over settlement: the reference and the ticket are cleared, so
+     * nothing later mistakes a request that has answered for one still in
+     * flight. That mistake was real -- the wait races the request against a
+     * timer, winning the race does not cancel the timer, and the timer then
+     * found `siteConfigPromise` still pointing at the settled request and
+     * "retired" it three seconds after it had succeeded, forgetting a page
+     * address permission the server had granted.
+     *
+     * False means retired or superseded, and the caller must not touch shared
+     * policy with what it is holding -- in either direction. A late failure
+     * from an overtaken read used to null a permission a newer answer had just
+     * granted.
+     */
+    function siteConfigSettles(seq) {
+      if (seq !== siteConfigSequence) {
+        return false;
+      }
+
+      siteConfigPromise = null;
+      siteConfigSequence = 0;
+      siteConfigSettledAt = Date.now();
+
+      return true;
+    }
+
+    /**
+     * How long anything will wait for the page-load configuration.
+     *
+     * Long enough that an ordinary slow connection still gets its answer, short
+     * enough that a stalled request is not something a visitor sits through.
+     */
+    var SITE_CONFIG_WAIT_MS = typeof options.siteConfigWaitMs === 'number'
+      ? Math.max(0, options.siteConfigWaitMs)
+      : 3000;
+
+    /** When the last configuration answer settled, or null before the first. */
+    var siteConfigSettledAt = null;
+
+    /** Past this, a settled answer is re-read rather than reused. */
+    var SITE_CONFIG_STALE_MS = typeof options.siteConfigStaleMs === 'number'
+      ? Math.max(0, options.siteConfigStaleMs)
+      : 300000;
+
+    function whenSiteConfigKnown() {
+      // Re-read when the settled answer is old. A tab left open all afternoon
+      // holds a policy from page load, so an operator switching page addresses
+      // off would still see one arrive from the next panel opening -- the
+      // heartbeat refreshes continuously, but a site that is not reporting has
+      // no heartbeat to carry it.
+      if (siteConfigSettledAt !== null && Date.now() - siteConfigSettledAt > SITE_CONFIG_STALE_MS) {
+        fetchSiteConfig();
+      }
+
+      if (!siteConfigPromise) {
+        return Promise.resolve();
+      }
+
+      // Bounded, because a fetch that STALLS never rejects. Browsers give
+      // requests no timeout of their own, so chaining bootstrap to an
+      // unresolved promise means a captive portal or a hung proxy leaves the
+      // visitor unable to open the panel or send a message at all -- the
+      // widget waiting for an optional privacy setting while somebody is
+      // trying to ask for help.
+      //
+      // Past the wait the policy is still unknown, and unknown withholds: the
+      // address is dropped rather than the request. That is the right way
+      // round -- losing page context is a worse outcome for the agent and a
+      // better one for the visitor than losing the conversation.
+      var pending = siteConfigPromise;
+
+      return Promise.race([
+        pending.catch(function () {}),
+        new Promise(function (resolve) {
+          setTimeout(function () {
+            // Retire a request that never settles. Without this
+            // `siteConfigSettledAt` stays null for ever, so the staleness check
+            // never re-fetches, the hung promise is referenced permanently, and
+            // every later wait pays the full timeout again -- for an answer
+            // that is not coming even once the network recovers.
+            if (siteConfigPromise === pending) {
+              siteConfigPromise = null;
+              siteConfigSettledAt = Date.now();
+
+              // Its TICKET dies with it. Dropping only the reference left the
+              // ticket live, and the watermark rises only when an answer is
+              // actually applied -- so if whatever overtook this request then
+              // failed, applying nothing and moving nothing, this request's
+              // answer still beat the watermark whenever the network finally
+              // produced it. Minutes late, carrying the policy as it stood
+              // before an operator revoked page addresses, and granting it.
+              siteConfigSequence = 0;
+
+              // And the policy is unknown until something answers, which
+              // withholds -- the same rule the failure path applies, for the
+              // same reason. A request we have stopped waiting for has told us
+              // nothing.
+              presenceReportedPageUrls = null;
+            }
+
+            resolve();
+          }, SITE_CONFIG_WAIT_MS);
+        }),
+      ]);
+    }
+
+    /**
+     * Orders the answers that carry settings.
+     *
+     * Two numbers, not one. `presenceSettingsSequence` issues a ticket to every
+     * request that will come back with settings; `presenceSettingsApplied` is
+     * the highest ticket whose answer has actually been applied. An answer is
+     * applied only if its ticket beats that watermark.
+     *
+     * The earlier version compared against the ISSUER and handed tickets back
+     * when a request failed, which needed the failure to know whether it was
+     * still the newest -- and got it wrong as soon as two requests failed, or
+     * failed out of order. A watermark needs no bookkeeping on failure at all:
+     * a request that never answers simply never advances it, and a late answer
+     * from an overtaken request loses on its own number.
+     */
+    var presenceSettingsSequence = 0;
+
+    var presenceSettingsApplied = 0;
+
+    /**
+     * Is this answer the newest one seen so far?
+     *
+     * Advances the watermark as a side effect, so two answers from the same
+     * ticket cannot both apply.
+     */
+    function settingsAnswerIsNewest(seq) {
+      if (seq <= presenceSettingsApplied) {
+        return false;
+      }
+
+      presenceSettingsApplied = seq;
+
+      return true;
+    }
+
+    function refreshPresenceSettings(config) {
+      // Nothing running yet: this answer STARTS it rather than being dropped.
+      //
+      // Returning early here meant a visitor who opened the panel while the
+      // page-load config read was still in flight got presence from neither
+      // side -- bootstrap's answer was discarded for having nothing to update,
+      // and the config read that arrived afterwards was discarded for being
+      // overtaken. Opening the panel quickly turned the feature off.
+      if (!presenceConfig) {
+        // The page-address policy is updated even while nothing is reporting.
+        // A site with presence off still has one, and returning early here left
+        // a tab that loaded when addresses were allowed sending them after the
+        // operator revoked -- the revocation arriving in the very answer that
+        // was being ignored.
+        if (config && typeof config.page_urls === 'boolean') {
+          presenceReportedPageUrls = config.page_urls;
+        }
+
+        if (config && config.reports === true) {
+          applyPresence(config);
+        }
+
+        return;
+      }
+
+      // Not an answer this understands: left alone. A truncated or unexpected
+      // body is not evidence of anything, and reading it as permission is the
+      // wrong direction to guess in.
+      if (!config || typeof config.reports !== 'boolean') {
+        return;
+      }
+
+      if (config.reports !== true) {
+        // The policy travels with the stop. An answer saying reporting is off
+        // AND addresses are off left the address policy at its previous value,
+        // so a visitor opening the panel before the next config refresh had
+        // bootstrap send one the operator had switched off in the same breath.
+        if (typeof config.page_urls === 'boolean') {
+          presenceReportedPageUrls = config.page_urls;
+        }
+
+        stopPresence();
+
+        return;
+      }
+
+      // Merged key by key rather than assigned, because a key the answer does
+      // not carry means UNCHANGED, not allowed. Assigning wholesale meant a
+      // response without `page_urls` silently re-enabled sending addresses an
+      // operator had switched off.
+      presenceConfig = {
+        reports: true,
+        every: typeof config.every === 'number' ? config.every : presenceConfig.every,
+        page_urls: typeof config.page_urls === 'boolean' ? config.page_urls : presenceConfig.page_urls,
+        // Carried through, or the notice loses the install's retention window
+        // on the first heartbeat and silently reverts to the default it is
+        // written around.
+        retention_days: typeof config.retention_days === 'number'
+          ? config.retention_days
+          : presenceConfig.retention_days,
+      };
+
+      presenceReportedPageUrls = presenceConfig.page_urls !== false;
+
+
+      // The notice describes what is collected, so it changes with it.
+      renderPresenceDisclosure();
+    }
+
+    /**
+     * Begin reporting once the notice has had a frame to appear.
+     *
+     * The single way into a running heartbeat, so every path -- config
+     * arriving, a tab returning to the foreground -- passes the same two
+     * checks. Having the first caller do them and the rest inherit the result
+     * is how the visibility path came to bypass both.
+     */
+    function startPresenceAfterDisclosure() {
+      afterNextPaint(function () {
+        if (!presenceConfig) {
+          return;
+        }
+
+        if (!presenceNoticeVisible() || declineRecorded()) {
+          presenceConfig = null;
+
+          return;
+        }
+
+        sendPresence();
+        startPresenceTimer();
+      });
+    }
+
+    /**
+     * Is the notice actually on screen, rather than merely in the document?
+     *
+     * `offsetParent` is null for an element that is display:none or inside
+     * something that is -- which covers the notice being hidden, an ancestor
+     * being hidden, and the whole widget being removed between frames.
+     */
+    function presenceNoticeVisible() {
+      if (!presenceEl || !rootEl.contains(presenceEl) || presenceEl.hidden) {
+        return false;
+      }
+
+      // Walked structurally first: an ancestor being hidden hides this too, and
+      // the structural answer is the only one available where there is no
+      // layout to ask -- a non-visual environment reports no geometry for
+      // everything, so a check that only asked geometry would either refuse to
+      // report at all or, read the other way round, wave everything through.
+      var node = presenceEl;
+
+      while (node && node !== rootEl.parentNode) {
+        if (node.hidden === true) {
+          return false;
+        }
+
+        if (node.style && node.style.display === 'none') {
+          return false;
+        }
+
+        node = node.parentElement;
+      }
+
+      // `visibility: hidden` occupies space, so it still has client rects. A
+      // notice hidden that way is laid out, measurable and invisible, and a
+      // check that only asked geometry called it shown. The host page owns the
+      // stylesheet, so this is a shape somebody else can put us in.
+      var view = presenceWindow;
+
+      if (view && typeof view.getComputedStyle === 'function') {
+        // Walked to the DOCUMENT, not stopped at the widget root. Opacity does
+        // not inherit and an invisible descendant still has client rects, so a
+        // host wrapper styled `opacity: 0` ABOVE the mount hid the notice while
+        // every check inside the root said it was fine.
+        var styled = presenceEl;
+
+        while (styled) {
+          var style = view.getComputedStyle(styled);
+
+          if (style && (style.visibility === 'hidden' || style.visibility === 'collapse' || style.display === 'none' || style.opacity === '0')) {
+            return false;
+          }
+
+          styled = styled.parentElement;
+        }
+      }
+
+      // Then geometry, which is what catches being hidden by the HOST page's
+      // stylesheet rather than by us -- a class we never see, on an element we
+      // do not own.
+      if (typeof presenceEl.getClientRects !== 'function') {
+        return true;
+      }
+
+      var rects = presenceEl.getClientRects();
+
+      if (rects.length > 0) {
+        // ON SCREEN, not merely laid out. Host CSS can translate the notice off
+        // the viewport, or a transformed mount can clip it under `overflow:
+        // hidden`, and it keeps a perfectly good rectangle throughout -- the
+        // browser is happy to describe where something would be if anyone could
+        // see it.
+        var view = presenceWindow;
+        var width = (view && view.innerWidth) || (doc.documentElement && doc.documentElement.clientWidth) || 0;
+        var height = (view && view.innerHeight) || (doc.documentElement && doc.documentElement.clientHeight) || 0;
+
+        // No viewport to measure against means a non-visual environment, where
+        // the structural checks above are the whole answer.
+        if (width === 0 || height === 0) {
+          return true;
+        }
+
+        for (var i = 0; i < rects.length; i++) {
+          var rect = rects[i];
+
+          if (rect.width > 0 && rect.height > 0
+            && rect.bottom > 0 && rect.right > 0
+            && rect.top < height && rect.left < width) {
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      // No geometry has two meanings and they are opposites: genuinely hidden,
+      // or an environment that lays nothing out at all. Asking a control
+      // element separates them. If the document's own body has no box either,
+      // there is no layout here and geometry cannot answer -- so the structural
+      // check above stands rather than being overruled by a measurement that
+      // reports every element as invisible.
+      var body = doc && doc.body;
+      var layoutAvailable = Boolean(body && typeof body.getClientRects === 'function'
+        && body.getClientRects().length > 0);
+
+      return !layoutAvailable;
+    }
+
+    function afterNextPaint(run) {
+      var raf = presenceWindow && typeof presenceWindow.requestAnimationFrame === 'function'
+        ? presenceWindow.requestAnimationFrame.bind(presenceWindow)
+        : null;
+
+      if (!raf) {
+        // No rAF means no rendering to wait for -- a test harness or a
+        // non-visual environment. Running late is still running.
+        setTimeout(run, 0);
+
+        return;
+      }
+
+      raf(function () {
+        raf(run);
+      });
+    }
+
+    /**
+     * Another tab wrote the decline key for this site.
+     *
+     * Scoped to this site's key: a visitor declining on one site says nothing
+     * about another, and reacting to every storage write in the page would
+     * make an unrelated host application able to stop reporting by accident.
+     */
+    function handlePresenceStorageChange(event) {
+      if (!event || event.key !== presenceStorageKey(options.sitePublicKey)) {
+        return;
+      }
+
+      if (event.newValue === 'declined') {
+        presenceDeclinedInMemory = true;
+
+        // Recorded before the config is cleared, exactly as the direct click
+        // does. Without it a decline arriving from another tab confirmed the
+        // page-sharing wording on a site that never shared page addresses.
+        presenceReportedPageUrls = Boolean(presenceConfig && presenceConfig.page_urls !== false);
+
+        stopPresenceTimer();
+        presenceConfig = null;
+        renderPresenceDeclined();
+      }
+    }
+
+    function declineRecorded() {
+      // In memory OR in storage. The probe at start-up proves storage worked
+      // THEN; a host that fills its quota afterwards, or an adapter that starts
+      // rejecting, makes storageSet fail silently -- and the decline would have
+      // existed nowhere, because the in-memory config is cleared in the same
+      // breath. A "no" that evaporates because the disk was full is the failure
+      // the fail-closed rule exists to prevent, arriving from the other side.
+      return presenceDeclinedInMemory
+        || storageGet(storage, presenceStorageKey(options.sitePublicKey)) === 'declined';
+    }
+
+    function sendPresence() {
+      if (!presenceConfig || presenceHidden()) {
+        return;
+      }
+
+      // RE-CHECKED, not inherited from the way in. The gate used to run once,
+      // in startPresenceAfterDisclosure(), and the interval reported
+      // unconditionally ever after -- so anything that hid the notice AFTER
+      // reporting began left a visitor being watched with nothing on screen
+      // saying so and no way to decline.
+      //
+      // The layout above is what stops the open panel doing that. This is what
+      // stops the next thing doing it: a host stylesheet that loads late, a
+      // wrapper that gains `overflow:hidden`, a change to this widget nobody
+      // thought to check. The disclosure is the whole basis on which this is
+      // collected, so its absence has to be able to stop the collection at any
+      // moment, not only at the start.
+      //
+      // Skipped rather than stopped. A notice hidden by an open panel or a
+      // transient host state comes back, and reporting resumes with it; ending
+      // the run would make one obscured frame permanent for the life of the tab.
+      if (!presenceNoticeVisible()) {
+        return;
+      }
+
+      // The stored decline is re-read on EVERY beat rather than trusted from
+      // the in-memory config. The same site is often open in several tabs, and
+      // "Stop sharing" in one of them writes the site-wide key but can only
+      // stop its own instance -- so every other loaded tab went on reporting
+      // the visitor who had just said no. A decline is a decision about the
+      // person, not about the tab they happened to click in.
+      if (declineRecorded()) {
+        stopPresenceTimer();
+        presenceConfig = null;
+        renderPresenceDeclined();
+
+        return;
+      }
+
+      // The page only when the site asked for it. Told by the server rather
+      // than decided here, and the server drops it again on arrival -- but an
+      // address the operator has said not to keep should not travel at all,
+      // which is the whole reason the client sanitises in the first place.
+      var pageUrl = pageUrlForReporting();
+
+      var seq = ++presenceSettingsSequence;
+
+      client.reportPresence(pageUrl).then(function (result) {
+        // Only the NEWEST answer touches the settings. Heartbeats can overlap
+        // when one runs longer than the interval, and bootstrap answers on its
+        // own schedule, so responses arrive out of order -- and an older one
+        // carrying `page_urls: true` would undo a newer one that turned
+        // addresses off, putting them back on the wire for the life of the tab.
+        if (!settingsAnswerIsNewest(seq)) {
+          return;
+        }
+
+        // Every heartbeat comes back with the settings in force, and this is
+        // the ONLY way a passive tab ever hears about a change: a visitor who
+        // never opens the panel never calls bootstrap, and the page-load config
+        // fetch happens once. Without this, an operator turning presence off
+        // left exactly the visitors this feature is about reporting until they
+        // navigated away.
+        refreshPresenceSettings(result);
+      }).catch(function (error) {
+        // A site that is GONE stops the tab, rather than leaving it posting for
+        // as long as somebody keeps the page open. Archiving a site makes every
+        // presence request 404, and a missed heartbeat is otherwise treated as
+        // a network blip -- correctly, which is why this needs the status to
+        // tell them apart.
+        var status = error && error.status;
+
+        if (status === 404 || status === 403 || status === 410) {
+          stopPresence();
+
+          return;
+        }
+
+        // Anything else is a visitor reading as quiet, which is a fair
+        // description of somebody we cannot reach.
+      });
+    }
+
+    /**
+     * The page address this widget is allowed to send, or null.
+     *
+     * Shared by the heartbeat and bootstrap, because a visitor's decline has to
+     * bind both. Declining stops the heartbeat, and a visitor who then opened
+     * the panel had their page address submitted by bootstrap anyway -- so the
+     * board and their profile showed the page of somebody who had just asked
+     * not to be followed.
+     *
+     * Opening the widget is still contact and is still recorded: what the
+     * decline governs is where they are, not whether they are talking to us.
+     */
+    function pageUrlForReporting() {
+      if (declineRecorded()) {
+        return null;
+      }
+
+      // `presenceReportedPageUrls`, not `presenceConfig`. Turning presence off
+      // clears the config, and reading the setting from a cleared config makes
+      // it look unknown -- so a site that had said "never keep page addresses"
+      // got them again from bootstrap and conversation start the moment
+      // reporting stopped, which is the wrong direction for that to fail in.
+      // Unknown withholds, exactly like false.
+      if (presenceReportedPageUrls !== true) {
+        return null;
+      }
+
+      return sanitisePageUrl(currentHref());
+    }
+
+    function startPresenceTimer() {
+      stopPresenceTimer();
+
+      var every = presencePollMs === null
+        ? Math.max(5, Number(presenceConfig && presenceConfig.every) || 45) * 1000
+        : presencePollMs;
+
+      if (every <= 0) {
+        return;
+      }
+
+      presenceTimer = setInterval(sendPresence, every);
+    }
+
+    function stopPresenceTimer() {
+      if (presenceTimer) {
+        clearInterval(presenceTimer);
+        presenceTimer = null;
+      }
+    }
+
+    function stopPresence() {
+      stopPresenceTimer();
+      presenceConfig = null;
+
+      if (presenceEl) {
+        presenceEl.hidden = true;
+      }
+    }
+
+    function presenceHidden() {
+      return Boolean(doc && doc.visibilityState === 'hidden');
+    }
+
+    function currentHref() {
+      // The RESOLVED location, then the DOCUMENT's own. Production embeds pass
+      // neither `options.location` nor a document, so reading the option alone
+      // meant every heartbeat omitted the page and the board could never say
+      // where anybody was.
+      //
+      // An EXPLICITLY supplied document wins over the ambient location. A host
+      // calling init({document: iframe.contentDocument}) without passing a
+      // location got `root.location` -- the surrounding page -- so the widget
+      // reported an address the visitor was not on, and on a same-origin
+      // iframe integration that address can be an unrelated part of the site.
+      // The document it was handed is the document it is in.
+      if (options.document && options.document.location && options.document.location.href) {
+        return options.document.location.href;
+      }
+
+      if (location && location.href) {
+        return location.href;
+      }
+
+      return doc && doc.location && doc.location.href ? doc.location.href : null;
+    }
+
+    function renderPresenceDisclosure() {
+      if (!presenceEl) {
+        return;
+      }
+
+      presenceEl.hidden = false;
+
+      if (presenceCopyEl) {
+        // The notice has to describe what is actually collected. A site with
+        // page addresses switched off sends only "somebody is here", and a
+        // disclosure claiming otherwise is both untrue and a worse explanation
+        // than none -- it describes a sharing the visitor cannot stop because
+        // it is not happening.
+        // The retention the INSTALL applies, not a number baked into the copy.
+        // An operator shortening the window told every visitor thirty days
+        // regardless, which is a privacy notice that is wrong in the direction
+        // that matters least to them and most to being truthful.
+        var days = presenceConfig && typeof presenceConfig.retention_days === 'number'
+            ? presenceConfig.retention_days
+            : 30;
+
+        presenceCopyEl.textContent = (presenceConfig && presenceConfig.page_urls === false
+            ? t('presence.disclosureNoPage')
+            : t('presence.disclosure')).replace('{days}', String(days));
+      }
+
+      if (presenceDeclineEl) {
+        presenceDeclineEl.hidden = false;
+        presenceDeclineEl.textContent = t('presence.decline');
+      }
+    }
+
+    function renderPresenceDeclined() {
+      if (!presenceEl) {
+        return;
+      }
+
+      presenceEl.hidden = false;
+
+      if (presenceCopyEl) {
+        // On a site that never shared page addresses, "not sharing which pages
+        // you visit" was already true before the click -- so the confirmation
+        // confirmed nothing and read like the control had failed. What stopped
+        // is the site being told the visitor is here.
+        presenceCopyEl.textContent = presenceReportedPageUrls
+          ? t('presence.declined')
+          : t('presence.declinedNoPage');
+      }
+
+      if (presenceDeclineEl) {
+        presenceDeclineEl.hidden = true;
+      }
+    }
+
+    /**
+     * Whether this site keeps page addresses at all.
+     *
+     * Kept OUTSIDE `presenceConfig`, which is cleared whenever reporting stops
+     * -- by a decline, by the operator switching presence off, by a fail-closed
+     * return. Two things need this after that point: the decline confirmation,
+     * which has to describe what actually stopped, and `pageUrlForReporting()`,
+     * which still runs for bootstrap and conversation start long after any
+     * heartbeat has.
+     *
+     * Starts UNKNOWN, and unknown withholds. A visitor can open the panel
+     * before the page-load config read answers, and defaulting to "allowed"
+     * meant bootstrap submitted the address on a site whose policy is not to
+     * keep any -- dropped on arrival, but already across the wire, which is the
+     * one thing the client-side rule exists to prevent.
+     *
+     * Resolved to true if that read FAILS, which restores the behaviour every
+     * install had before presence existed: a site that cannot tell us its
+     * policy is not a site that has forbidden anything.
+     */
+    var presenceReportedPageUrls = null;
+
+    /**
+     * The decline, held here as well as in storage.
+     *
+     * Storage is what makes it survive a navigation; this is what makes it
+     * survive a storage write that fails after the start-up probe said writes
+     * work.
+     */
+    var presenceDeclinedInMemory = false;
+
+    function declinePresence() {
+      presenceReportedPageUrls = Boolean(presenceConfig && presenceConfig.page_urls !== false);
+      presenceDeclinedInMemory = true;
+
+      storageSet(storage, presenceStorageKey(options.sitePublicKey), 'declined');
+      stopPresenceTimer();
+      presenceConfig = null;
+      renderPresenceDeclined();
     }
 
     /**
@@ -2772,23 +3704,159 @@
 
       if (cached) {
         try {
+          // Painted from the cache, and then asked anyway. The early return
+          // that used to be here made a RETURNING visitor -- anyone holding a
+          // cached appearance, which is everyone after their first page --
+          // never fetch the config that now carries presence. They saw no
+          // disclosure and sent no heartbeat: the same defect this rework was
+          // for, reintroduced one line further down.
           applyAppearance(JSON.parse(cached));
-
-          return;
         } catch (error) {
           storageRemove(widgetStorage, appearanceStorageKey(options.sitePublicKey));
         }
       }
 
-      client.fetchAppearance().then(function (result) {
+      fetchSiteConfig();
+    }
+
+    /**
+     * Ask for the public configuration a page load is allowed to know.
+     *
+     * Called even when a cached appearance was just applied, which is a change
+     * of role for the cache rather than a change of mind about it: it still
+     * buys the instant paint it was added for, but it is no longer the answer.
+     *
+     * It cannot be, now that presence rides along. The stored appearance has no
+     * expiry, so a visitor who never opens the panel would hold whatever the
+     * site's presence setting was on their first ever visit -- for good. An
+     * operator switching it off would be telling a browser that stopped
+     * listening months ago.
+     *
+     * The request is unauthenticated, writes nothing, and returns the same
+     * bytes to everyone on the site, so it is one cacheable GET per page view
+     * rather than anything a visitor pays for twice.
+     */
+    function fetchSiteConfig() {
+      var seq = ++presenceSettingsSequence;
+
+      siteConfigSequence = seq;
+
+      siteConfigPromise = client.fetchAppearance().then(function (result) {
+        // Retired while we were away, or superseded by a later read. Either
+        // way this answer is not ours to apply -- and the watermark cannot
+        // catch it, because a ticket that never applied anything never moved
+        // it.
+        if (!siteConfigSettles(seq)) {
+          // But an answer arriving at all means the network is back, and
+          // retiring left this tab with no policy -- so ask again rather than
+          // going quiet. Discarding without re-reading is how "we stopped
+          // waiting" turns into "presence never started", which is the failure
+          // the retirement was not supposed to cause.
+          //
+          // Only when nothing is live, so a superseded request does not stack
+          // another read on top of the one that superseded it.
+          if (siteConfigSequence === 0) {
+            fetchSiteConfig();
+          }
+
+          return;
+        }
+
+        var presence = (result && result.presence) || null;
+
+        // The POLICY resolves even from an overtaken answer, before the
+        // sequence check discards the rest of it. Being overtaken says this is
+        // not the newest configuration; it does not unsay that the server
+        // replied, and "not asked yet" is the only state that withholds page
+        // addresses. Skipped when something newer has already answered, which
+        // is what the null check means here.
+        if (presenceReportedPageUrls === null) {
+          presenceReportedPageUrls = presence && typeof presence.page_urls === 'boolean'
+            ? presence.page_urls
+            : true;
+        }
+
+        // Overtaken answers are discarded here. This request starts at page
+        // load and can be slow; a visitor who opens the panel meanwhile gets a
+        // bootstrap answer that is NEWER, and applying this one afterwards
+        // would reinstate settings the operator had already changed.
+        if (!settingsAnswerIsNewest(seq)) {
+          return;
+        }
+
         var appearance = (result && result.appearance) || null;
 
         if (appearance) {
           applyAppearance(appearance);
           rememberAppearance(appearance);
         }
+
+        // The site's language BEFORE the disclosure is rendered. It only
+        // decides anything when neither the host page nor the browser has a
+        // preference -- and in exactly that case a silent visitor on a German
+        // site was shown an English privacy notice, because the site default
+        // used to arrive with bootstrap and a silent visitor never bootstraps.
+        if (result && typeof result.locale === 'string') {
+          applyLocale(result.locale);
+        }
+
+        // This answer IS the newest, so it sets the policy outright -- whatever
+        // it said, including saying nothing about presence at all. An older
+        // build that sends no presence block has not forbidden anything.
+        presenceReportedPageUrls = presence && typeof presence.page_urls === 'boolean'
+          ? presence.page_urls
+          : true;
+
+        applyPresence(presence);
       }).catch(function () {
-        // The default corner is a fine answer to a failed lookup.
+        // Retired or superseded: this failure is not about the policy in
+        // force. A timed-out page-load read rejecting after a bootstrap has
+        // succeeded would otherwise null the permission that bootstrap had
+        // just granted -- a request nobody was waiting for revoking something
+        // current by giving up.
+        //
+        // NOT covered by a test, and it is worth saying so. Every scenario I
+        // could build re-granted the policy before anything observable read
+        // it, so the window is real but narrow and self-healing, and a test
+        // that passes either way is worse than none. This stands on being the
+        // same rule the success path above follows: an answer from a request
+        // that is no longer live does not touch shared policy, in either
+        // direction.
+        if (!siteConfigSettles(seq)) {
+          return;
+        }
+
+        // A failed read leaves the policy UNKNOWN, and unknown withholds.
+        //
+        // This used to resolve to "allowed", reasoning that a site which cannot
+        // answer has not forbidden anything. That is the wrong way round for
+        // the one setting an operator turns on BECAUSE their paths carry
+        // secrets: a rate-limited or briefly broken config endpoint would then
+        // hand out exactly the permission they had revoked. Losing page context
+        // is an agent's inconvenience; sending an address the site said not to
+        // keep is what this whole path exists to prevent.
+        //
+        // Not permanent either: bootstrap carries the settings too, and the
+        // read is retried once this answer goes stale.
+        //
+        // FORGOTTEN, not merely left unset. Everything above was true only of
+        // the first read, where there was no value to leave -- a refresh that
+        // fails kept whatever the last successful one said, so the comment
+        // described a rule the code applied in one case out of two.
+        //
+        // The second case is the one this exists for. A tab open all afternoon
+        // holds the permission it loaded with; the operator revokes it; the
+        // staleness check fires a refresh and the endpoint rate-limits it. The
+        // tab then treats a revoked permission as current and sends the address
+        // on the next thing it does, reaching the server before the answer that
+        // would have stopped it.
+        presenceReportedPageUrls = null;
+
+        siteConfigSettledAt = Date.now();
+
+        // The default corner is a fine answer to a failed lookup, and no
+        // answer about presence means no reporting -- which is the direction
+        // an unanswered privacy question has to fail in.
       });
     }
 
@@ -3384,6 +4452,18 @@
     });
     doc.addEventListener('visibilitychange', handleVisibilityChange);
 
+    // A decline made in ANOTHER tab. The per-beat re-read is the guarantee;
+    // this is the promptness -- without it a visitor who clicks "Stop sharing"
+    // watches their other tabs keep reporting for up to a full interval, which
+    // is exactly the moment they are looking for the control to have worked.
+    //
+    // `storage` fires only in the other documents, never in the one that wrote,
+    // which is what makes it the right event: the writing tab has already
+    // stopped itself.
+    if (presenceWindow && typeof presenceWindow.addEventListener === 'function') {
+        presenceWindow.addEventListener('storage', handlePresenceStorageChange);
+    }
+
     function submitComposerForm() {
       if (typeof form.requestSubmit === 'function') {
         form.requestSubmit();
@@ -3489,8 +4569,17 @@
         // subject), so files staged before it existed have somewhere to go — no
         // empty conversation is created just by picking a file.
         if (!supportCode) {
+          // The site's page-address policy is known before the address is
+          // built, so a site that keeps none never has one cross the wire and
+          // every other site keeps its support context.
+          await whenSiteConfigKnown();
+
           var conversation = await client.startConversation(body, {
-            pageUrl: location ? location.href : null,
+            // The same gate bootstrap and the heartbeat use. Without it a
+            // visitor who declined and then sent their first message had the
+            // page they declined to share travel with it -- and land on the
+            // conversation, where it outlives the decline entirely.
+            pageUrl: pageUrlForReporting(),
             context: visitorContext,
             intake: intakeAnswers(),
           });
@@ -3626,7 +4715,12 @@
         cancelPendingReadReceipt();
         clearAgentTypingExpiry();
         stopMutationStream();
+        stopPresence();
         doc.removeEventListener('visibilitychange', handleVisibilityChange);
+
+        if (presenceWindow && typeof presenceWindow.removeEventListener === 'function') {
+            presenceWindow.removeEventListener('storage', handlePresenceStorageChange);
+        }
         rootEl.remove();
       },
     };
@@ -5534,47 +6628,62 @@
     return visitorToken;
   }
 
+  /**
+   * Never send the host page's address in a header.
+   *
+   * Everything else in this file works to keep the query string off the wire:
+   * the URL is sanitised before it is sent, the path is redacted, the whole
+   * query is dropped. The browser then attaches the FULL current URL --
+   * including that query string -- as a `Referer` on every request, and on a
+   * same-origin install it does so by default. A host serving
+   * `Referrer-Policy: unsafe-url` sends it cross-origin too.
+   *
+   * So the sanitising was defeated by a header nobody wrote, and the tokens it
+   * exists to strip reached the server and its logs anyway.
+   */
+  var REQUEST_PRIVACY = { referrerPolicy: 'no-referrer' };
+
   function getJson(fetcher, url) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'GET',
       headers: {
         Accept: 'application/json',
       },
-    }).then(readJsonResponse);
+    }, REQUEST_PRIVACY)).then(readJsonResponse);
   }
 
   function postJson(fetcher, url, payload) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-    }).then(readJsonResponse);
+    }, REQUEST_PRIVACY)).then(readJsonResponse);
   }
 
   // Multipart POST for file uploads. Deliberately does NOT set Content-Type —
   // the browser adds the multipart boundary itself.
   function postForm(fetcher, url, formData) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'POST',
       headers: {
         Accept: 'application/json',
       },
       body: formData,
-    }).then(readJsonResponse);
+    }, REQUEST_PRIVACY)).then(readJsonResponse);
   }
 
   function postJsonRaw(fetcher, url, payload) {
-    return fetcher(url, {
+    return fetcher(url, Object.assign({
       method: 'POST',
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
-    }).then(readRawJsonResponse);
+    }, REQUEST_PRIVACY)).then(readRawJsonResponse);
   }
 
   async function readJsonResponse(response) {
@@ -5687,6 +6796,135 @@
     }
   }
 
+  // Does this storage actually keep things?
+  //
+  // `storageSet` swallows failures, which is right for a cached token and wrong
+  // for a decline: an embed passing `storage: null`, private browsing, or a
+  // locked-down browser all leave a "no" that evaporates on the next
+  // navigation. Presence has to know the difference, so it writes a sentinel
+  // and reads it back rather than trusting the write.
+  function storageRemembers(storage, key) {
+    if (!storage) {
+      return false;
+    }
+
+    try {
+      var probe = key + ':probe';
+
+      storage.setItem(probe, '1');
+      var read = storage.getItem(probe);
+      storage.removeItem(probe);
+
+      return read === '1';
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function presenceStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':presence-declined';
+  }
+
+  // The same rule the server applies, applied before the request is built.
+  //
+  // Not redundant with the server pass: sanitising on arrival means the raw URL
+  // has already crossed the wire, and a query string that reached Wayfindr
+  // reached proxies, access logs and error trackers on the way. Removing a
+  // token after transmitting it is not removing it.
+  function sanitisePageUrl(href) {
+    if (typeof href !== 'string' || href === '') {
+      return null;
+    }
+
+    try {
+      var parsed = new URL(href);
+
+      // http and https only. These values become clickable links in the agent
+      // dashboard, and `javascript://host/%0Aalert(1)` parses perfectly.
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return null;
+      }
+
+      // Rebuilt from named parts, so anything not named -- query, fragment,
+      // `user:pass@` credentials -- cannot survive by being forgotten.
+      //
+      // The PATH is redacted too, not copied. The server does this at rest, but
+      // the promise this function makes is that the secret never goes over the
+      // wire -- and `/reset-password/9f2c8a1b...` puts one in the one part that
+      // survives the query and fragment being dropped. Copying the pathname
+      // verbatim sent it to Wayfindr, to every proxy in between, and into
+      // request logs on both sides, where redacting it afterwards cannot reach.
+      return parsed.protocol + '//' + parsed.host + redactPathSegments(parsed.pathname);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Replace path segments that look like a credential rather than a page name.
+   *
+   * Mirrors VisitorPageUrl::looksOpaque() on the server deliberately: the same
+   * rule on both sides means the agent sees the same string whether it was
+   * redacted here or there, and a disagreement would show up as page addresses
+   * that change shape depending on which path they took.
+   *
+   * Crude, and a heuristic rather than a proof. It will sometimes redact a long
+   * harmless slug, which is the right way round for a rule whose failures are
+   * credentials.
+   */
+  function redactPathSegments(pathname) {
+    if (typeof pathname !== 'string' || pathname === '') {
+      return '';
+    }
+
+    return pathname.split('/').map(function (segment) {
+      return looksOpaqueSegment(segment) ? '[redacted]' : segment;
+    }).join('/');
+  }
+
+  function looksOpaqueSegment(segment) {
+    // A UUID is never a page name.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)) {
+      return true;
+    }
+
+    // A separator used to end the test, on the reasoning that a slug is words
+    // joined by hyphens. It is also how a credential is punctuated:
+    // `/invite/ABC-123` and `/reset/abc_def123` walked straight past a rule
+    // that read any hyphen as proof of readability -- and here that meant the
+    // credential crossed the wire before the server could redact anything.
+    //
+    // Kept identical to VisitorPageUrl::looksOpaque(). A disagreement between
+    // the two shows up as addresses that change shape depending on which path
+    // they took, and the client's is the one that decides what leaves at all.
+    var bare = segment.replace(/[-_.]/g, '');
+
+    if (bare.length >= 5 && /^[A-Z0-9]+$/.test(bare)) {
+      return true;
+    }
+
+    return segment.split(/[-_.]/).some(looksOpaquePart);
+  }
+
+  function looksOpaquePart(part) {
+    if (part.length >= 32) {
+      return true;
+    }
+
+    // Carries a digit and is past the length of a version or a year: `v2`,
+    // `2024` and `page3` survive, `A1B2C3` and `123456` do not.
+    if (part.length >= 6 && /[0-9]/.test(part)) {
+      return true;
+    }
+
+    // Sixteen letters unbroken is past the words routes are named after.
+    if (part.length >= 16) {
+      return true;
+    }
+
+    return part.length >= 5 && /^[A-Z0-9]+$/.test(part);
+  }
+
   function storageRemove(storage, key) {
     try {
       if (storage) {
@@ -5751,7 +6989,25 @@
       '@media (prefers-color-scheme:dark){.wayfindr-widget:not([data-wf-theme="light"]){--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}}',
       '.wayfindr-widget[data-wf-theme="dark"]{--wf-paper:#141517;--wf-surface:#1B1D20;--wf-surface-2:#24272A;--wf-ink:#ECECE8;--wf-ink-invert:var(--wf-brand-ink-configured-dark,#16181A);--wf-muted:#9BA0A3;--wf-rule:#2E3134;--wf-rule-firm:#3D4145;--wf-brand:var(--wf-brand-configured-dark,#3FA69D);--wf-signal-rest:#7E8386;--wf-signal-go:#4CA97A;--wf-signal-hold:#E0A72A;--wf-signal-stop:#E2685C;--wf-site-red:#D54C43;--wf-site-blue:#5578D0;--wf-site-ochre:#A57105;--wf-site-pine:#238C57;--wf-site-violet:#896EB6;--wf-site-rust:#C65C2E}',
       // wayfindr:tokens:end
-      '.wayfindr-widget{position:fixed;inset-inline-end:20px;bottom:20px;z-index:2147483000;font-family:var(--wf-font-sans);color:var(--wf-ink)}',
+      // A column laid out bottom-up, capped to the viewport.
+      //
+      // The notice used to float above the root on `bottom:100%`, which is
+      // measured against whatever the root's height happens to be. Closed
+      // that is the launcher and the notice sits neatly above it; OPEN the
+      // launcher is hidden and the panel becomes the whole root, so the
+      // notice was pushed above the panel -- and on a phone the panel IS the
+      // viewport, so the disclosure and its "Stop sharing" control went
+      // entirely off the top of the screen while reporting carried on.
+      //
+      // column-reverse keeps the DOM order (launcher first, for focus) and
+      // renders it upward from the corner, so the launcher stays pinned, the
+      // notice sits above it, and the panel takes what is left. align-items
+      // keeps the launcher its own width: a 280px notice in normal flow was
+      // what widened the root and dragged the launcher off its corner, which
+      // is why the notice was taken out of flow in the first place.
+      '.wayfindr-widget{position:fixed;inset-inline-end:20px;bottom:20px;z-index:2147483000;display:flex;flex-direction:column-reverse;align-items:flex-end;gap:8px;max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);font-family:var(--wf-font-sans);color:var(--wf-ink)}',
+      // Anchors the presence notice, which is positioned against this box.
+      '.wayfindr-widget{isolation:isolate}',
       '.wayfindr-widget *{box-sizing:border-box}',
       '.wayfindr-widget [hidden]{display:none!important}',
       '.wayfindr-widget__launcher,.wayfindr-widget__send{border:0;border-radius:999px;background:var(--wf-brand);color:var(--wf-ink-invert);box-shadow:0 12px 30px rgba(8,37,34,.18);cursor:pointer;font:700 14px/1 var(--wf-font-sans)}',
@@ -5760,12 +7016,18 @@
       // RTL language rather than fighting it -- see the widget language work.
       // No issue number here on purpose: the token guard scans this block for
       // hardcoded colours and reads a bare hash-774 as a three-digit hex.
-      '.wayfindr-widget[data-wf-launcher="left"]{inset-inline-end:auto;inset-inline-start:20px}',
+      // Aligned to the corner the root is actually anchored to. The column
+      // shrinks to fit, so `align-items` decides where the NARROW children sit
+      // inside the width the widest one sets -- and the notice is much wider
+      // than the launcher. Anchored on the right, flex-end keeps the launcher
+      // on its corner; anchored on the left it pushed the launcher inward by
+      // the whole difference, measured at 120px on a phone.
+      '.wayfindr-widget[data-wf-launcher="left"]{inset-inline-end:auto;inset-inline-start:20px;align-items:flex-start}',
       '.wayfindr-widget__launcher[data-cobrowse-active="true"]::after{content:"";position:absolute;top:-3px;inset-inline-end:-3px;width:14px;height:14px;border-radius:999px;background:var(--wf-signal-hold);border:2px solid var(--wf-surface);box-shadow:0 0 0 2px color-mix(in srgb, var(--wf-signal-hold) 35%, transparent)}',
       '.wayfindr-widget__send{min-height:40px;padding:0 14px;border-radius:6px}',
       '.wayfindr-widget__launcher:hover,.wayfindr-widget__send:hover{background:color-mix(in srgb, var(--wf-brand) 80%, var(--wf-ink))}',
       '.wayfindr-widget__send:disabled{cursor:wait;opacity:.7}',
-      '.wayfindr-widget__panel{display:flex;flex-direction:column;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border:1px solid var(--wf-rule);border-top:3px solid var(--wf-site-accent,var(--wf-brand));border-radius:8px;background:var(--wf-surface);box-shadow:0 20px 55px rgba(8,37,34,.2);overflow:auto}',
+      '.wayfindr-widget__panel{display:flex;flex-direction:column;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);border:1px solid var(--wf-rule);border-top:3px solid var(--wf-site-accent,var(--wf-brand));border-radius:8px;background:var(--wf-surface);box-shadow:0 20px 55px rgba(8,37,34,.2);min-height:0;overflow:auto}',
       '.wayfindr-widget__panel>*{flex-shrink:0}',
       '.wayfindr-widget__panel>.wayfindr-widget__timeline-wrap{flex:0 1 auto;min-height:0}',
       '.wayfindr-widget__header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-paper)}',
@@ -5798,6 +7060,14 @@
       '.wayfindr-widget__notice{display:grid;gap:10px;margin:0;padding:14px 16px;border-bottom:1px solid var(--wf-rule);background:var(--wf-surface-2);color:var(--wf-muted);font-size:13px;line-height:1.4}',
       '.wayfindr-widget__notice[data-state="warning"]{background:color-mix(in srgb, var(--wf-signal-hold) 12%, var(--wf-surface));color:color-mix(in srgb, var(--wf-signal-hold) 70%, var(--wf-ink))}',
       '.wayfindr-widget__notice-copy{margin:0}',
+      // The root is fixed and auto-width, so a 280px child in normal flow
+      // widened it and the inline launcher stayed at the left edge of that
+      // box -- pushing the launcher off the corner it is anchored to, on
+      // every page of an opted-in site. Taken out of flow and pinned to the
+      // same corner instead, so the root keeps the launcher's width.
+      '.wayfindr-widget__presence{display:flex;flex:0 0 auto;gap:8px;align-items:center;justify-content:flex-end;width:max-content;max-width:min(280px,calc(100vw - 40px));padding:6px 10px;border:var(--wf-border) solid var(--wf-rule);border-radius:var(--wf-radius);background:var(--wf-surface);color:var(--wf-muted);font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(8,37,34,.10)}',
+      '.wayfindr-widget__presence-copy{margin:0}',
+      '.wayfindr-widget__presence-decline{background:none;border:0;padding:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit;white-space:nowrap}',
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__notice-retry:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__notice-retry:disabled{cursor:wait;opacity:.7}',
@@ -5869,7 +7139,7 @@
       '.wayfindr-widget__cobrowse-decline:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__cobrowse-allow:disabled,.wayfindr-widget__cobrowse-decline:disabled{cursor:wait;opacity:.7}',
       '.wayfindr-widget__status{min-height:20px;margin:0;padding:0 16px 16px;color:var(--wf-muted);font-size:13px}',
-      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
+      '@media (max-width:480px){.wayfindr-widget{inset-inline-end:12px;bottom:12px;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px)}.wayfindr-widget__panel{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}}',
     ].join('');
 
     doc.head.appendChild(style);
