@@ -109,6 +109,28 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   attempted. They establish nothing about whether a sentence is good Italian,
   and the translation policy says so directly. Do not promise either language to
   a customer until somebody who speaks it has read the rendered screens.
+- **A dashboard an agent can read on their own clock.** An agent picks a
+  timezone on their profile beside their language; everyone who has not picked
+  one follows the install's, which is `WAYFINDR_DASHBOARD_TIMEZONE` (UTC unless
+  set). It changes what is **shown**, never what is stored — every record stays
+  in UTC — so changing it re-reads existing history rather than rewriting it,
+  and it applies to report day boundaries as well as timestamps.
+
+  A site's **support hours** are the deliberate exception: they belong to the
+  site and stay in the site's own zone, because "visitors are told support is
+  back at 09:00" would become untrue read on an agent's clock.
+
+  **`app.timezone` is the storage clock, and it is hardcoded to `UTC`** in
+  `config/app.php` — deliberately, and with no environment variable for it.
+  Laravel writes `created_at` through that value into columns that carry no
+  offset, so pointing it anywhere else would record local wall-clock time where
+  every reader, and every report query, expects UTC. The display clock is a
+  separate setting for exactly that reason.
+- **Numbers grouped the way the reading agent groups them** — `4.213` for a
+  German agent, `4,213` for an English one — on the same extracted pages, and
+  in live updates as well as the first render. Values that something reads back
+  are deliberately left alone: chart bar widths, data attributes, CSV cells,
+  and anything on a broadcast.
 - **A visitor directory**, and a read-only public API with a decided isolation
   model (ADR 0018).
 - **Live visitor presence** ([#747](https://github.com/adamgreenwell/wayfindr/issues/747)):
