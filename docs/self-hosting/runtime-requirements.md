@@ -278,20 +278,25 @@ location /apps {
 
     proxy_pass http://127.0.0.1:8080;
 }
+```
 
-**Do not leave the two timeouts out.** They are the difference between a
-working realtime connection and one that silently reconnects all day. nginx's
-default `proxy_read_timeout` is 60 seconds and applies to an idle WebSocket --
-which is any conversation where nobody happens to be typing. The socket is torn
-down with no close frame, the browser reports an abnormal close, and the page
-reconnects. Nothing logs an error and no user sees a failure; the page simply
-has a gap in it every minute, and whatever was published inside the gap is only
-recovered by the next resync.
+**Do not leave the two timeouts out.** nginx's default `proxy_read_timeout` is
+60 seconds and applies to an idle WebSocket — which is any conversation where
+nobody happens to be typing. When nothing crosses the connection inside that
+window it is torn down with no close frame, the browser reports an abnormal
+close, and the page reconnects. Nothing logs an error and no user sees a
+failure; the page simply has a gap in it, and whatever was published inside
+that gap is only recovered by the next resync.
+
+Wayfindr's own pages send a keepalive every 15 seconds, so a **visible** tab
+stays comfortably inside the window and is not affected. What the setting
+protects is every connection whose keepalive is absent or delayed past 60
+seconds: a tab the browser has throttled or suspended, any other client
+speaking to this Reverb, and anything at all if that keepalive ever stops.
 
 It is easy to misdiagnose, because Reverb's own `ping_interval` also defaults to
 60 seconds, so the keepalive that would have held the connection open never gets
 the chance to arrive.
-```
 
 Other reverse proxies can use the same idea: public HTTPS outside, private
 Reverb port inside, WebSocket upgrade headers preserved.

@@ -168,10 +168,12 @@ connection open while the tab is **visible**. It is not a substitute for the
 setting, and the setting is not a complete substitute for it either — they
 cover different failures.
 
-**Raising the timeout removes nginx's idle close.** That is the failure that
-affects every connection, including healthy foreground tabs, and it is the one
-worth fixing: without it a perfectly active agent's socket is torn down once a
-minute.
+**Raising the timeout removes nginx's idle close.** A visible agent tab is
+already held open by the client keepalive above, so this is not what rescues
+the common case. It covers everything that keepalive cannot reach — a
+throttled or suspended tab, any other client talking to this Reverb, and the
+whole thing if that keepalive ever stops — which is why it is worth setting
+even though the pages look fine without it.
 
 **It does not make a suspended tab immortal.** Browsers throttle background
 timers, and Chrome can *freeze* an eligible tab outright — no timers run at
