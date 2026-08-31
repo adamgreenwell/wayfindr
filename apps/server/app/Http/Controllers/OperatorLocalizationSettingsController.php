@@ -6,7 +6,6 @@ use App\Models\AuditEvent;
 use App\Support\DashboardLanguage;
 use App\Support\DashboardTimezone;
 use App\Support\Settings\OperatorSettings;
-use DateTimeZone;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -34,18 +33,26 @@ class OperatorLocalizationSettingsController extends Controller
     {
         $from = $this->returnContext($request);
 
+        // Normalised on the way out as well as in. A value that arrived from
+        // env, or from a tzdata release that has since retired it, should
+        // render as the fallback the dashboard will actually use rather than
+        // pre-selecting an option the form cannot offer.
+        $language = DashboardLanguage::normalise($settings->effective('localization.language'))
+            ?? DashboardLanguage::FALLBACK;
+        $timezone = DashboardTimezone::normalise($settings->effective('localization.timezone'))
+            ?? DashboardTimezone::FALLBACK;
+
         return view('operator.settings.localization', [
             'operator' => $request->user(),
-            // Normalised on the way out as well as in. A value that arrived
-            // from env, or from a tzdata release that has since renamed it,
-            // should render as the fallback the dashboard will actually use
-            // rather than pre-selecting an option the form cannot offer.
-            'language' => DashboardLanguage::normalise($settings->effective('localization.language'))
-                ?? DashboardLanguage::FALLBACK,
-            'timezone' => DashboardTimezone::normalise($settings->effective('localization.timezone'))
-                ?? DashboardTimezone::FALLBACK,
+            'language' => $language,
+            'timezone' => $timezone,
             'languageChoices' => DashboardLanguage::options(),
-            'timezoneChoices' => DashboardTimezone::choices(),
+            // The current value is kept selectable, because `normalise()`
+            // accepts backward-compatible aliases -- `US/Eastern` -- that the
+            // canonical menu does not list. Without this the select shows an
+            // unrelated first option as chosen and the next save moves the
+            // INSTALL-WIDE clock to a zone nobody picked.
+            'timezoneChoices' => DashboardTimezone::choices(old('timezone', $timezone)),
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
             'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
             'returnTo' => $from,
@@ -56,10 +63,11 @@ class OperatorLocalizationSettingsController extends Controller
     {
         $validated = $request->validate([
             'language' => ['required', 'string', Rule::in(array_keys(DashboardLanguage::SUPPORTED))],
-            // Checked against the platform's own zone database rather than a
-            // list kept here, which would be wrong the first time tzdata added
-            // or renamed one.
-            'timezone' => ['required', 'string', Rule::in(DateTimeZone::listIdentifiers())],
+            // `acceptable()` rather than the canonical list, so a value the
+            // dashboard already honours can be re-submitted. The menu offers
+            // canonical names and this accepts the aliases too -- the same
+            // split the agent profile makes.
+            'timezone' => ['required', 'string', Rule::in(DashboardTimezone::acceptable())],
         ]);
 
         $language = DashboardLanguage::normalise($validated['language']) ?? DashboardLanguage::FALLBACK;

@@ -260,3 +260,56 @@ test('a stored setting that no longer resolves is not a confirmation', function 
         // And it says what the reader will actually get, not what is stored.
         ->assertSee('on UTC.');
 });
+
+/**
+ * The install default may be a backward-compatible alias -- `US/Eastern` --
+ * which the dashboard honours but the canonical menu does not list. Left out
+ * of the select, nothing matches, the browser shows the first option as
+ * chosen, and the next save moves the INSTALL-WIDE clock to a zone nobody
+ * picked. The agent profile was fixed for this; the operator page was written
+ * on the other branch and kept the pre-fix shape.
+ */
+test('an alias install default stays selectable, and survives a save', function (): void {
+    $operator = localizationOperator();
+    app(OperatorSettings::class)->set('localization.timezone', 'US/Eastern');
+    app(OperatorSettings::class)->set('localization.language', 'en');
+
+    $this->actingAs($operator)
+        ->get(route('operator.settings.localization.edit'))
+        ->assertOk()
+        ->assertSee('value="US/Eastern" selected', escape: false);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.localization.update'), [
+            'language' => 'en',
+            'timezone' => 'US/Eastern',
+        ])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect(app(OperatorSettings::class)->effective('localization.timezone'))->toBe('US/Eastern');
+});
+
+/**
+ * Allow-listing the action alone is the half-wired trap: the body method falls
+ * through to a readiness `match`, so a settings change would be captioned
+ * "Instance readiness proof was recorded" -- described as something it is not.
+ */
+test('a language and region change appears in the operator activity feed, described correctly', function (): void {
+    $operator = localizationOperator();
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.localization.update'), [
+            'language' => 'de',
+            'timezone' => 'Europe/Berlin',
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($operator)
+        ->get(route('operator.dashboard'))
+        ->assertOk()
+        ->assertSee('Language and region updated')
+        ->assertSee('Dashboard language and region were updated (language: de, timezone: Europe/Berlin).')
+        ->assertSee('Deutsch')
+        ->assertDontSee('Instance readiness proof was recorded.');
+});
