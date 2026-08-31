@@ -10,6 +10,7 @@ use App\Support\DashboardTimezone;
 use App\Support\ReaderClock;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 
 uses(RefreshDatabase::class);
@@ -312,4 +313,35 @@ test('a language and region change appears in the operator activity feed, descri
         ->assertSee('Dashboard language and region were updated (language: de, timezone: Europe/Berlin).')
         ->assertSee('Deutsch')
         ->assertDontSee('Instance readiness proof was recorded.');
+});
+
+/**
+ * The checklist is what an operator opens when something is wrong, so it has
+ * to render when something is wrong.
+ *
+ * With the documented `SESSION_DRIVER=database` and `CACHE_STORE=redis` an
+ * operator stays signed in through a Redis outage. The settings store is read
+ * during the request, and the service provider's boot-time catch does not
+ * cover a later read -- so this step would have answered 500 on exactly the
+ * page that exists to diagnose the outage.
+ */
+test('the setup checklist still renders when the settings store is unreachable', function (): void {
+    $operator = localizationOperator();
+
+    app(OperatorSettings::class)->set('localization.language', 'de');
+    app(OperatorSettings::class)->set('localization.timezone', 'Europe/Berlin');
+
+    // The store goes away mid-session.
+    Cache::shouldReceive('get')->andThrow(new RuntimeException('Connection refused [tcp://127.0.0.1:6379]'));
+    Cache::shouldReceive('remember')->andThrow(new RuntimeException('Connection refused [tcp://127.0.0.1:6379]'));
+    Cache::shouldReceive('put')->andThrow(new RuntimeException('Connection refused [tcp://127.0.0.1:6379]'));
+    Cache::shouldReceive('forget')->andThrow(new RuntimeException('Connection refused [tcp://127.0.0.1:6379]'));
+
+    $this->actingAs($operator)
+        ->get(route('operator.onboarding'))
+        ->assertOk()
+        ->assertSee('Language and region')
+        // Unreachable is not "ready": what was chosen is unknown, and the env
+        // fallback is what the dashboard is serving meanwhile.
+        ->assertSee('Nobody has confirmed that is right.');
 });

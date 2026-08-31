@@ -175,20 +175,37 @@ class OperatorReadiness
      */
     private function languageAndRegion(): array
     {
-        $settings = app(OperatorSettings::class);
+        // The settings store is READ here, in the request, and the store can
+        // be down. With `SESSION_DRIVER=database` and `CACHE_STORE=redis` --
+        // both documented -- an operator stays signed in through a Redis
+        // outage, and this is the page they open when something is wrong. The
+        // provider's boot-time catch does not cover a later read, so without
+        // this the checklist answers 500 exactly when it is needed.
+        //
+        // Unreachable is not the same as unconfirmed, but it is not "ready"
+        // either: we genuinely do not know what was chosen, and the env
+        // fallback is what the dashboard is serving meanwhile. Saying so is
+        // the honest answer.
+        try {
+            $settings = app(OperatorSettings::class);
 
-        $language = DashboardLanguage::normalise($settings->effective('localization.language'));
-        $timezone = DashboardTimezone::normalise($settings->effective('localization.timezone'));
+            $language = DashboardLanguage::normalise($settings->effective('localization.language'));
+            $timezone = DashboardTimezone::normalise($settings->effective('localization.timezone'));
 
-        // Stored AND still resolvable. A tzdata update can retire a zone the
-        // operator chose in good faith, and then a presence check alone reads
-        // as confirmed while the normalisation below quietly serves UTC
-        // instead -- hiding the one thing this step exists to surface, an
-        // unexpected clock nobody agreed to.
-        $chosen = $settings->isSet('localization.language')
-            && $settings->isSet('localization.timezone')
-            && $language !== null
-            && $timezone !== null;
+            // Stored AND still resolvable. A tzdata update can retire a zone
+            // the operator chose in good faith, and then a presence check
+            // alone reads as confirmed while the normalisation below quietly
+            // serves UTC instead -- hiding the one thing this step exists to
+            // surface, an unexpected clock nobody agreed to.
+            $chosen = $settings->isSet('localization.language')
+                && $settings->isSet('localization.timezone')
+                && $language !== null
+                && $timezone !== null;
+        } catch (Throwable) {
+            $language = null;
+            $timezone = null;
+            $chosen = false;
+        }
 
         $language ??= DashboardLanguage::FALLBACK;
         $timezone ??= DashboardTimezone::FALLBACK;
