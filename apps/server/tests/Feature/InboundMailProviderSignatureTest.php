@@ -903,3 +903,66 @@ test('a provider that retries more than once is not refused the second time', fu
     // And routing recognised them as one message rather than three.
     expect(ConversationMessage::query()->count())->toBe(1);
 });
+
+test('a tuple stamped in the future is refused rather than trusted', function (): void {
+    // The window used to be symmetric, and that was a hole rather than
+    // symmetry: a tuple an hour ahead stayed acceptable for nine hours while
+    // its claim expired after eight, so for the last hour a captured tuple
+    // could be presented with a forged body, find nothing to compare against,
+    // and take a fresh claim. A clock ahead of ours is not evidence of
+    // freshness, and the past bound exists for a retry schedule the future
+    // bound has nothing to do with.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ahead = (string) (time() + 3600);
+    $tok = 'tok-from-the-future';
+
+    test()->postJson('/api/mail/inbound', inboundPayload([
+        'timestamp' => $ahead,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ahead.$tok, 'k'),
+    ]))->assertStatus(401);
+
+    // Ordinary drift is still tolerated -- the bound is for NTP, not for a
+    // provider that happens to be a minute fast.
+    $slightlyAhead = (string) (time() + 60);
+    $tok2 = 'tok-slight-drift';
+
+    test()->postJson('/api/mail/inbound', inboundPayload([
+        'timestamp' => $slightlyAhead,
+        'token' => $tok2,
+        'signature' => hash_hmac('sha256', $slightlyAhead.$tok2, 'k'),
+    ]))->assertOk();
+});
+
+test('a claim outlives every moment its tuple is still accepted', function (): void {
+    // The claim's lifetime is measured from the SIGNED timestamp rather than
+    // from now, so it cannot lapse while the tuple that made it is still
+    // being let through.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) (time() + 240);
+    $tok = 'tok-outlives';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertOk();
+
+    // Move to the last moment the tuple is still fresh: signed time plus the
+    // whole eight-hour age bound, less a minute.
+    $this->travelTo(now()->addSeconds(240 + (8 * 60 * 60) - 60));
+
+    // The tuple still verifies on age -- and the claim is still there to
+    // refuse a different message with it.
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple + [
+        'from' => 'attacker@example.test',
+        'body-plain' => 'Please reset the password on this account.',
+    ]))->assertStatus(401);
+});

@@ -71,6 +71,23 @@ final class MailgunSignature implements VerifiesInboundMail
     private const MAXIMUM_AGE_SECONDS = 8 * 60 * 60;
 
     /**
+     * How far AHEAD of us a sender's clock may be.
+     *
+     * Separate from the age above, and much smaller, because the two bounds
+     * answer different questions. The past bound has to cover a retry
+     * schedule. The future bound only has to cover clock drift between two
+     * hosts, which is seconds when NTP is working and minutes when it is not.
+     *
+     * They were one symmetric check, and that left a hole: a tuple stamped an
+     * hour ahead stayed acceptable for nine hours while its claim expired
+     * after eight -- so for the last hour a captured tuple could be presented
+     * with a forged body, find nothing to compare against, and take a brand
+     * new claim. A future timestamp is not evidence of freshness, and there is
+     * no reason to extend anything on the strength of one.
+     */
+    private const MAXIMUM_SKEW_SECONDS = 300;
+
+    /**
      * A slot whose bytes the sender never successfully delivered.
      *
      * The one thing a retry is allowed to change. An upload PHP marks invalid
@@ -94,10 +111,12 @@ final class MailgunSignature implements VerifiesInboundMail
             return false;
         }
 
-        // Future timestamps are rejected as firmly as old ones: a clock far
-        // ahead is not evidence of freshness, and accepting one would let a
-        // forged timestamp buy an unbounded replay window.
-        if (abs(time() - (int) $timestamp) > self::MAXIMUM_AGE_SECONDS) {
+        // Future timestamps are rejected far more sharply than old ones: a
+        // clock ahead is not evidence of freshness, and every second granted
+        // there is a second the claim below has to outlive.
+        $age = time() - (int) $timestamp;
+
+        if ($age > self::MAXIMUM_AGE_SECONDS || $age < -self::MAXIMUM_SKEW_SECONDS) {
             return false;
         }
 
@@ -105,7 +124,7 @@ final class MailgunSignature implements VerifiesInboundMail
             return false;
         }
 
-        return $this->claimToken($token, self::fingerprint($request));
+        return $this->claimToken($token, self::fingerprint($request), (int) $timestamp);
     }
 
     /**
@@ -122,11 +141,18 @@ final class MailgunSignature implements VerifiesInboundMail
      *
      * @param  array{mail: string, attachments: array<string, string>}  $fingerprint
      */
-    private function claimToken(string $token, array $fingerprint): bool
+    private function claimToken(string $token, array $fingerprint, int $timestamp): bool
     {
         $key = self::claimKey($token);
 
-        if (Cache::add($key, $fingerprint, self::MAXIMUM_AGE_SECONDS + 600)) {
+        // Measured from the SIGNED timestamp, not from now, so a claim can
+        // never expire while the tuple that made it is still being accepted.
+        // A fixed TTL leaves that gap open for exactly as long as the sender's
+        // clock is ahead of ours, and what falls through it is a forged body
+        // taking a fresh claim against nothing.
+        $ttl = ($timestamp + self::MAXIMUM_AGE_SECONDS) - time() + 60;
+
+        if (Cache::add($key, $fingerprint, $ttl)) {
             return true;
         }
 
@@ -153,14 +179,14 @@ final class MailgunSignature implements VerifiesInboundMail
         // the tuple could race the genuine retry and substitute its bytes.
         // `Cache::add()` on the transition itself, which is the only atomic
         // primitive this needs and the same one the first claim uses.
-        if (! Cache::add($key.':narrowed', true, self::MAXIMUM_AGE_SECONDS + 600)) {
+        if (! Cache::add($key.':narrowed', true, $ttl)) {
             return false;
         }
 
         // Re-bound to what was actually presented, so a slot unlocked by one
         // incomplete upload narrows to concrete bytes as soon as a good file
         // arrives, instead of staying open for the rest of the window.
-        Cache::put($key, $fingerprint, self::MAXIMUM_AGE_SECONDS + 600);
+        Cache::put($key, $fingerprint, $ttl);
 
         return true;
     }

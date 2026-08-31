@@ -60,8 +60,11 @@ Two things bound replay, and both matter, because **Mailgun's signature covers
 the timestamp and token and not the body**. A valid tuple would otherwise
 authenticate *any* payload:
 
-- deliveries older than Mailgun's own retry schedule are refused, in either
-  direction — a clock far ahead is not evidence of freshness;
+- deliveries older than Mailgun's own retry schedule are refused, and
+  deliveries stamped more than five minutes in the FUTURE are refused much
+  sooner — the past bound exists to cover retries, while the future bound only
+  has to cover clock drift between two hosts, and a clock ahead of ours is not
+  evidence of freshness;
 - each token is bound to the **message** it first carried. A second delivery
   reusing it is accepted only if it is that same message — which is what a
   provider's retry always is — and refused if any of the sender, recipients,
