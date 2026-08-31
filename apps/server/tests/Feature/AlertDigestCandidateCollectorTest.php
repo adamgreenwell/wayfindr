@@ -1,5 +1,6 @@
 <?php
 
+use App\Mail\AlertDigestMessage;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -12,6 +13,7 @@ use App\Notifications\TicketAssigned;
 use App\Support\AlertDigestCandidateCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -270,4 +272,38 @@ test('a digest dates its entries on the recipient clock, not on storage', functi
     expect($candidate['last_activity_at'])->toContain('2026-08-24T15:05');
 
     CarbonImmutable::setTestNow();
+});
+
+test('a digest queued by the previous release still renders', function (): void {
+    // A rolling deploy leaves jobs in the queue that were serialized by the
+    // release before this one. Their candidates carry `last_activity_at` and
+    // no label. Reading the new key directly threw while rendering, the retry
+    // threw the same way, and `SendAlertDigestsCommand` had already marked
+    // those notifications queued -- so the alerts were never selected again.
+    // The failure is silent, permanent, and only happens in production.
+    $account = Account::factory()->create();
+    $agent = digestAgent($account);
+
+    $preDeployCandidate = [
+        'kind' => 'conversation_needs_reply',
+        'last_activity_at' => '2026-08-24T15:05:00.000000Z',
+        'notification_id' => (string) Str::uuid(),
+        'priority' => null,
+        'reference' => 'WF-OLDSHAPE',
+        'site_name' => 'Acme Docs',
+        'status' => null,
+        'subject' => 'Checkout trouble',
+        'url' => 'https://support.example.test/dashboard/conversations/WF-OLDSHAPE',
+    ];
+
+    $message = new AlertDigestMessage(
+        agentName: $agent->name,
+        candidates: [$preDeployCandidate],
+        generatedAt: CarbonImmutable::now(),
+    );
+
+    $rendered = $message->render();
+
+    expect($rendered)->toContain('WF-OLDSHAPE')
+        ->and($rendered)->toContain('2026-08-24T15:05:00.000000Z');
 });
