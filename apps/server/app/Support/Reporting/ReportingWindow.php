@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Reporting;
 
+use App\Support\ReaderClock;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 
@@ -39,6 +40,17 @@ final class ReportingWindow
         public readonly int $days,
         public readonly CarbonImmutable $start,
         public readonly CarbonImmutable $end,
+        /**
+         * The clock whose days these are.
+         *
+         * `start` and `end` are kept as UTC instants regardless, because they
+         * are bound straight into `whereBetween` against columns that store
+         * UTC -- Laravel formats a datetime binding in the instance's OWN
+         * zone, so a Berlin-carrying bound would silently shift every query by
+         * the offset. The zone lives here instead, and only bucketing and
+         * labelling use it.
+         */
+        public readonly string $zone,
     ) {}
 
     /**
@@ -48,28 +60,41 @@ final class ReportingWindow
      * hand-edited query string should show the default report, not an error
      * page.
      */
-    public static function fromRequestValue(mixed $value): self
+    public static function fromRequestValue(mixed $value, ?string $zone = null): self
     {
         $days = is_numeric($value) ? (int) $value : 0;
 
-        return self::ofDays(in_array($days, self::CHOICES, true) ? $days : self::DEFAULT_DAYS);
+        return self::ofDays(in_array($days, self::CHOICES, true) ? $days : self::DEFAULT_DAYS, $zone);
     }
 
     /**
-     * Days are the application's days.
+     * Days are the READER's days.
      *
-     * `now()` respects `app.timezone`, so an install configured for UTC buckets
-     * by UTC dates even when the person reading it is somewhere else. That is
-     * the same clock every other timestamp in the dashboard is shown in, and one
-     * report disagreeing with the conversation list about which day something
-     * happened would be worse than either convention.
+     * A day boundary only means something on a clock, so the window is cut on
+     * the reader's -- `ReaderClock::zone()` by default, which is the signed-in
+     * agent's.
+     *
+     * This used to argue for the install's clock, on the grounds that a report
+     * disagreeing with the conversation list about which day something happened
+     * would be worse than either convention. The consistency was the right thing
+     * to want and UTC was the wrong way to get it: an agent in Berlin read a
+     * "yesterday" that ended at 02:00 their time, and the conversation list
+     * beside it was equally wrong in the same direction. Cutting the window on
+     * the reader's clock keeps them agreeing AND makes them right.
      */
-    public static function ofDays(int $days): self
+    public static function ofDays(int $days, ?string $zone = null): self
     {
-        $end = CarbonImmutable::now()->endOfDay();
+        $zone ??= ReaderClock::zone();
+
+        $end = CarbonImmutable::now($zone)->endOfDay();
 
         // Inclusive of today, so "last 7 days" is today plus the six before it.
-        return new self($days, $end->subDays($days - 1)->startOfDay(), $end);
+        $start = $end->subDays($days - 1)->startOfDay();
+
+        // Stored as the UTC instants those local boundaries fall on. The
+        // boundary is the reader's midnight; the value bound into SQL has to be
+        // what that midnight is in the column's clock.
+        return new self($days, $start->setTimezone('UTC'), $end->setTimezone('UTC'), $zone);
     }
 
     /**
@@ -84,9 +109,15 @@ final class ReportingWindow
     public function days(): array
     {
         $days = [];
+        $day = $this->start->setTimezone($this->zone)->startOfDay();
+        $end = $this->end->setTimezone($this->zone);
 
-        for ($day = $this->start; $day->lessThanOrEqualTo($this->end); $day = $day->addDay()) {
+        // `startOfDay()` again on every step rather than a flat 24-hour stride:
+        // across a DST change a day is 23 or 25 hours long, and striding would
+        // walk the boundary off the midnight it started on.
+        while ($day->lessThanOrEqualTo($end)) {
             $days[] = $day;
+            $day = $day->addDay()->startOfDay();
         }
 
         return $days;
@@ -108,9 +139,17 @@ final class ReportingWindow
         return $buckets;
     }
 
+    /**
+     * Which day a moment belongs to, on the reader's clock.
+     *
+     * The conversion is the whole point. Rows arrive as UTC instants, and
+     * formatting one without moving it first files 00:30 in Berlin under the
+     * previous day -- into a bucket that exists, so nothing looks broken, and
+     * the count is simply wrong for every moment in the offset band.
+     */
     public function bucketKey(DateTimeInterface $at): string
     {
-        return CarbonImmutable::instance($at)->format('Y-m-d');
+        return CarbonImmutable::instance($at)->setTimezone($this->zone)->format('Y-m-d');
     }
 
     public function label(): string

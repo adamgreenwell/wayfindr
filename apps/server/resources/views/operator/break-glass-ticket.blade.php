@@ -26,7 +26,7 @@
             </div>
             <div class="meta-item">
                 <span class="meta-label">Opened</span>
-                <span class="meta-value">{{ $ticket->created_at->format('M j, Y H:i') }}</span>
+                <span class="meta-value">{{ \App\Support\ReaderClock::moment($ticket->created_at)->format('M j, Y H:i') }}</span>
             </div>
             @if ($ticket->conversation)
                 <div class="meta-item">

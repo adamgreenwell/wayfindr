@@ -6,9 +6,11 @@ use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\DashboardLanguage;
+use App\Support\DashboardTimezone;
 use App\Support\OperatorReadiness;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
+use DateTimeZone;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,6 +55,10 @@ class AgentProfileController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'locale' => ['nullable', 'string', Rule::in(array_keys(DashboardLanguage::SUPPORTED))],
+            // Validated against the platform's zone database rather than a
+            // list kept in the codebase, which would be wrong the first time
+            // tzdata added or renamed one.
+            'timezone' => ['nullable', 'string', Rule::in(DateTimeZone::listIdentifiers())],
         ]);
 
         $request->user()->update([
@@ -60,6 +66,7 @@ class AgentProfileController extends Controller
             // Null means "follow the install", which is what every agent had
             // before this existed and stays the safe answer.
             'locale' => DashboardLanguage::normalise($validated['locale'] ?? null),
+            'timezone' => DashboardTimezone::normalise($validated['timezone'] ?? null),
         ]);
 
         // The KEY travels, not the sentence. This action can change the agent's
