@@ -75,6 +75,18 @@
       'error.refresh': 'Messages could not be refreshed. Your current chat is still visible.',
       'error.attachment': 'That file could not be attached.',
       'error.requestFailed': 'Wayfindr request failed with status {status}.',
+      // The server's own rejection keys. It sends the key alongside its
+      // sentence because on an unpinned site it cannot know what language this
+      // widget is speaking -- that follows the visitor's browser, which the
+      // server never sees.
+      'composer.rejected.too_many': 'A message can include at most {max} attachments.',
+      'composer.rejected.unreadable': 'The file could not be read.',
+      'composer.rejected.too_large': 'The file is larger than the {limit} limit.',
+      'composer.rejected.type': 'This file type is not allowed.',
+      'composer.rejected.conversation_full': 'This conversation has reached its attachment storage limit.',
+      'composer.rejected.infected': 'This file was rejected by a security scan.',
+      'composer.rejected.unscannable': 'This file could not be scanned for malware and was not accepted. Please try again shortly.',
+      'composer.rejected.unavailable': 'One or more attachments are unavailable.',
       'intake.pending': 'Please answer the questions above first. Your message is still here.',
       'intake.submit': 'Continue',
       'help.label': 'Find an answer',
@@ -164,6 +176,14 @@
       'error.refresh': 'Die Nachrichten konnten nicht aktualisiert werden. Ihr Chat ist weiterhin sichtbar.',
       'error.attachment': 'Diese Datei konnte nicht angehängt werden.',
       'error.requestFailed': 'Wayfindr-Anfrage fehlgeschlagen mit Status {status}.',
+      'composer.rejected.too_many': 'Eine Nachricht darf höchstens {max} Anhänge enthalten.',
+      'composer.rejected.unreadable': 'Die Datei konnte nicht gelesen werden.',
+      'composer.rejected.too_large': 'Die Datei ist größer als das Limit von {limit}.',
+      'composer.rejected.type': 'Dieser Dateityp ist nicht zulässig.',
+      'composer.rejected.conversation_full': 'Diese Unterhaltung hat ihr Speicherlimit für Anhänge erreicht.',
+      'composer.rejected.infected': 'Diese Datei wurde von einer Sicherheitsprüfung abgelehnt.',
+      'composer.rejected.unscannable': 'Diese Datei konnte nicht auf Schadsoftware geprüft und daher nicht angenommen werden. Bitte versuchen Sie es in Kürze erneut.',
+      'composer.rejected.unavailable': 'Ein oder mehrere Anhänge sind nicht verfügbar.',
       'intake.pending': 'Bitte beantworten Sie zuerst die Fragen oben. Ihre Nachricht bleibt erhalten.',
       'intake.submit': 'Weiter',
       'help.label': 'Antwort finden',
@@ -6712,6 +6732,20 @@
 
   // Carry the HTTP status on the error so callers can tell a server rejection
   // (a stale or foreign reference) from a transient network failure.
+  /**
+   * Do we carry this key at all?
+   *
+   * `t()` falls back to the raw key when it has never heard of one, which is
+   * the right answer for a bug in our own code and the wrong one here: the
+   * server may name a rejection this build predates, and showing a visitor
+   * `composer.rejected.something_new` is worse than showing them the English
+   * sentence the server already sent. Checked against English, which is the
+   * catalogue every key must appear in.
+   */
+  function translatableKey(key) {
+    return typeof MESSAGES[DEFAULT_LOCALE][key] === 'string';
+  }
+
   function responseError(response, data) {
     // A server-authored message is the server's copy and is shown as-is. Our
     // own generic failure carries a key instead, so the widget can say it in
@@ -6719,7 +6753,18 @@
     var serverMessage = typeof data.message === 'string' && data.message ? data.message : null;
     var error = new Error(serverMessage || 'Wayfindr request failed with status ' + response.status + '.');
 
-    if (!serverMessage) {
+    // A KEY beats a sentence. The server sends both for the failures it can
+    // name, because on a site that does not pin a language it cannot know
+    // which one this widget is speaking -- that follows the visitor's browser,
+    // on this side of the wire. Its sentence is a considered guess; the key
+    // lets us say the same thing in the language the panel is already in.
+    //
+    // Only for keys we actually carry: an unknown one would render as the raw
+    // key, which is worse than the English sentence it replaced.
+    if (typeof data.error_key === 'string' && data.error_key && translatableKey(data.error_key)) {
+      error.wayfindrKey = data.error_key;
+      error.wayfindrParams = data.error_params && typeof data.error_params === 'object' ? data.error_params : {};
+    } else if (!serverMessage) {
       error.wayfindrKey = 'error.requestFailed';
       error.wayfindrParams = { status: response.status };
     }

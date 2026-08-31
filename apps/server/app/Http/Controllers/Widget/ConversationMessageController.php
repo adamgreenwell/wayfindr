@@ -130,78 +130,90 @@ class ConversationMessageController extends Controller
         $clientMessageId = $this->normalizeClientMessageId($validated['client_message_id'] ?? null);
         $visitor = $conversation->visitor;
 
-        [$message, $created] = DB::transaction(function () use ($conversation, $body, $attachmentIds, $clientMessageId, $binder, $visitor) {
-            // Lock the conversation row so the idempotency check and the insert
-            // are atomic. Without this, two concurrent sends sharing a
-            // client_message_id could both pass the lookup before either row is
-            // visible and both create a message.
-            // Keep the locked row. Reading status off the pre-lock instance means
-            // two concurrent sends on a closed conversation both see "closed"
-            // and both record a reopen, for one transition.
-            $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
+        try {
+            [$message, $created] = DB::transaction(function () use ($conversation, $body, $attachmentIds, $clientMessageId, $binder, $visitor) {
+                // Lock the conversation row so the idempotency check and the insert
+                // are atomic. Without this, two concurrent sends sharing a
+                // client_message_id could both pass the lookup before either row is
+                // visible and both create a message.
+                // Keep the locked row. Reading status off the pre-lock instance means
+                // two concurrent sends on a closed conversation both see "closed"
+                // and both record a reopen, for one transition.
+                $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
 
-            if ($clientMessageId !== null) {
-                $existing = $conversation->messages()
-                    ->where('sender_type', Visitor::class)
-                    ->where('metadata->client_message_id', $clientMessageId)
-                    ->first();
+                if ($clientMessageId !== null) {
+                    $existing = $conversation->messages()
+                        ->where('sender_type', Visitor::class)
+                        ->where('metadata->client_message_id', $clientMessageId)
+                        ->first();
 
-                if ($existing) {
-                    // Idempotent retry: the message (and any attachments bound to
-                    // it on the first accepted send) already exists, so return it
-                    // without creating a second row, re-binding, or re-broadcasting.
-                    return [$existing, false];
+                    if ($existing) {
+                        // Idempotent retry: the message (and any attachments bound to
+                        // it on the first accepted send) already exists, so return it
+                        // without creating a second row, re-binding, or re-broadcasting.
+                        return [$existing, false];
+                    }
                 }
-            }
 
-            $message = $conversation->messages()->create([
-                'sender_type' => Visitor::class,
-                'sender_id' => $conversation->visitor_id,
-                'type' => 'text',
-                'body' => $body === '' ? null : $body,
-                'metadata' => $clientMessageId !== null ? ['client_message_id' => $clientMessageId] : [],
-            ]);
+                $message = $conversation->messages()->create([
+                    'sender_type' => Visitor::class,
+                    'sender_id' => $conversation->visitor_id,
+                    'type' => 'text',
+                    'body' => $body === '' ? null : $body,
+                    'metadata' => $clientMessageId !== null ? ['client_message_id' => $clientMessageId] : [],
+                ]);
 
-            // Bind the visitor's own pending uploads to this message. A bad
-            // reference throws and rolls the whole send back.
-            try {
-                $binder->bind($conversation, $message, $attachmentIds, $visitor);
-            } catch (AttachmentRejected $rejected) {
-                // Answered in the site's language, not the install's. The
-                // throw still escapes the closure, so the send still rolls back.
-                throw $rejected->toValidationException();
-            }
+                // Bind the visitor's own pending uploads to this message. A bad
+                // reference throws and rolls the whole send back.
+                try {
+                    $binder->bind($conversation, $message, $attachmentIds, $visitor);
+                } catch (AttachmentRejected $rejected) {
+                    // Answered in the site's language, not the install's, and
+                    // carrying the key so a widget following the visitor's browser
+                    // can say it in the language it is actually speaking.
+                    //
+                    // Still THROWN rather than returned: this runs inside the send
+                    // transaction, and the throw is what rolls it back. The handler
+                    // below turns it into the response.
+                    throw $rejected;
+                }
 
-            $previousStatus = (string) ($locked?->status ?? $conversation->status);
+                $previousStatus = (string) ($locked?->status ?? $conversation->status);
 
-            // Written through the LOCKED instance, exactly as the agent
-            // transition path is. Eloquent compares against the attributes THIS
-            // request read: a send that loaded "open", then waited behind an
-            // agent's close, finds "open" unchanged and omits both status and
-            // closed_at from the update -- leaving the row closed while the
-            // call below records a reopen that never happened. A history that
-            // reports transitions the database never made is worse than the
-            // absence this PR set out to fix.
-            $target = $locked ?? $conversation;
+                // Written through the LOCKED instance, exactly as the agent
+                // transition path is. Eloquent compares against the attributes THIS
+                // request read: a send that loaded "open", then waited behind an
+                // agent's close, finds "open" unchanged and omits both status and
+                // closed_at from the update -- leaving the row closed while the
+                // call below records a reopen that never happened. A history that
+                // reports transitions the database never made is worse than the
+                // absence this PR set out to fix.
+                $target = $locked ?? $conversation;
 
-            $target->forceFill([
-                'status' => 'open',
-                'closed_at' => null,
-                'last_message_at' => $message->created_at,
-            ])->save();
+                $target->forceFill([
+                    'status' => 'open',
+                    'closed_at' => null,
+                    'last_message_at' => $message->created_at,
+                ])->save();
 
-            // Keep the caller's instance honest: the response reports this
-            // status back to the widget.
-            $conversation->setRawAttributes($target->getAttributes(), true);
+                // Keep the caller's instance honest: the response reports this
+                // status back to the widget.
+                $conversation->setRawAttributes($target->getAttributes(), true);
 
-            // A visitor replying to a closed conversation is the reopen that
-            // matters most: it means the resolution did not hold. It used to
-            // leave no trace at all.
-            app(ConversationLifecycleLog::class)
-                ->replyReopenedIfClosed($conversation, $visitor, $previousStatus);
+                // A visitor replying to a closed conversation is the reopen that
+                // matters most: it means the resolution did not hold. It used to
+                // leave no trace at all.
+                app(ConversationLifecycleLog::class)
+                    ->replyReopenedIfClosed($conversation, $visitor, $previousStatus);
 
-            return [$message, true];
-        });
+                return [$message, true];
+            });
+        } catch (AttachmentRejected $rejected) {
+            // Caught OUT here, where the transaction has already rolled back.
+            // Returning from inside the closure would have committed the
+            // half-written send.
+            return $rejected->toWidgetResponse();
+        }
 
         if ($created) {
             event(new ConversationMessageCreated($message));

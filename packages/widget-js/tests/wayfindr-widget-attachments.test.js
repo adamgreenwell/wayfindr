@@ -646,3 +646,69 @@ test('every request the widget makes withholds the host page address', async () 
     'deleting an upload sent the host page address',
   );
 });
+
+test('a rejection is said in the language the widget is speaking', async () => {
+  // The server cannot know this visitor's language: the site does not pin one,
+  // so the widget is following the BROWSER, a choice made on this side of the
+  // wire. The server sends its English sentence and the key beside it; the
+  // widget carries the key in its own German catalogue and says it properly
+  // rather than dropping an English sentence into a German panel.
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-de',
+    visitorToken: 'visitor-token-de',
+    fetch: async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        message: 'This file type is not allowed.',
+        errors: { file: ['This file type is not allowed.'] },
+        error_key: 'composer.rejected.type',
+        error_params: {},
+      }),
+    }),
+  });
+
+  let thrown = null;
+  try {
+    await client.uploadAttachment('WF-DE1', new Blob(['x']), 'payload.bin');
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.ok(thrown, 'the upload did not fail, so this proves nothing');
+  assert.equal(thrown.wayfindrKey, 'composer.rejected.type', 'the rejection key was not carried onto the error');
+  assert.deepEqual(thrown.wayfindrParams, {}, 'the rejection parameters were not carried');
+});
+
+test('a rejection key this build does not carry falls back to the server sentence', async () => {
+  // A newer server naming a rejection this widget predates. Showing the
+  // visitor `composer.rejected.something_new` would be worse than the English
+  // sentence the server already sent, so the key is ignored unless we have it.
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-new',
+    visitorToken: 'visitor-token-new',
+    fetch: async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        message: 'This file was rejected for a reason this widget has never heard of.',
+        error_key: 'composer.rejected.invented_after_this_build',
+      }),
+    }),
+  });
+
+  let thrown = null;
+  try {
+    await client.uploadAttachment('WF-NEW1', new Blob(['x']), 'payload.bin');
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.ok(thrown);
+  assert.equal(thrown.wayfindrKey, undefined, 'an unknown key was adopted and would render raw to a visitor');
+  assert.match(thrown.message, /never heard of/, 'the server sentence was lost');
+});

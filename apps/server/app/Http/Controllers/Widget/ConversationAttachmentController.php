@@ -71,7 +71,9 @@ class ConversationAttachmentController extends Controller
         try {
             $attachment = $uploads->store($conversation, $request->file('file'), $conversation->visitor);
         } catch (AttachmentRejected $rejected) {
-            throw $rejected->toValidationException();
+            // Keyed, not just worded: this reader's language is the widget's,
+            // and on an unpinned site the server does not know it.
+            return $rejected->toWidgetResponse();
         }
 
         return response()->json([
