@@ -88,7 +88,7 @@ final class MailgunSignature implements VerifiesInboundMail
         // `Cache::add()` because a first claim has to be atomic. A
         // get-then-put would let two concurrent replays both read "unclaimed"
         // and both proceed, which is exactly the shape an attacker would send.
-        if (Cache::add($key, ['fingerprint' => $fingerprint, 'retryable' => false], self::MAXIMUM_AGE_SECONDS * 2)) {
+        if (Cache::add($key, self::claim($fingerprint, false, 0), self::MAXIMUM_AGE_SECONDS * 2)) {
             return true;
         }
 
@@ -104,13 +104,36 @@ final class MailgunSignature implements VerifiesInboundMail
         // asked no further questions would be a forgery window: anyone holding
         // the tuple could take the freed claim and post a different sender,
         // subject or body with it.
+        //
+        // Checked BEFORE the generation below, deliberately: a forged attempt
+        // must not be able to burn the generation the genuine retry needs.
         if (! hash_equals((string) ($claim['fingerprint'] ?? ''), $fingerprint)) {
             return false;
         }
 
-        Cache::put($key, ['fingerprint' => $fingerprint, 'retryable' => false], self::MAXIMUM_AGE_SECONDS * 2);
+        $generation = (int) ($claim['generation'] ?? 0);
+
+        // Exactly one retry may take any given generation, and `Cache::add()`
+        // for the same reason the first claim uses it: the read above and the
+        // write below are not one operation, so without this two concurrent
+        // retries both see `retryable` and both proceed. Losing that race
+        // returns false, so the loser gets 401 and never reaches the work --
+        // which also means it can never release the claim the winner spent.
+        if (! Cache::add($key.':generation:'.$generation, true, self::MAXIMUM_AGE_SECONDS * 2)) {
+            return false;
+        }
+
+        Cache::put($key, self::claim($fingerprint, false, $generation + 1), self::MAXIMUM_AGE_SECONDS * 2);
 
         return true;
+    }
+
+    /**
+     * @return array{fingerprint: string, retryable: bool, generation: int}
+     */
+    private static function claim(string $fingerprint, bool $retryable, int $generation): array
+    {
+        return ['fingerprint' => $fingerprint, 'retryable' => $retryable, 'generation' => $generation];
     }
 
     /**
@@ -129,21 +152,64 @@ final class MailgunSignature implements VerifiesInboundMail
      */
     private static function fingerprint(Request $request): string
     {
-        $fields = [
-            'from', 'From', 'sender', 'to', 'To', 'recipient', 'original_recipient',
-            'subject', 'Subject', 'body-plain', 'stripped-text', 'text', 'TextBody',
-            'Message-Id', 'message-id', 'MessageID', 'In-Reply-To', 'in_reply_to', 'InReplyTo',
-        ];
+        // Everything posted, MINUS a short list -- not a list of fields to
+        // include.
+        //
+        // The first version named the fields to cover and missed four that
+        // routing actually reads: `message_id` (the FIRST key
+        // `InboundMessage` checks for the id, outranking the `Message-Id`
+        // that was listed), `references`/`References`, bare `body`, and
+        // `FromFull.Email`. Each omission was silently exploitable: change an
+        // unlisted field on a freed claim and the fingerprint still matches,
+        // so the delivery reclaims the token, misses
+        // `alreadyAccepted()`'s message-id lookup, and threads itself into a
+        // different conversation.
+        //
+        // An include-list has to enumerate every alias every provider might
+        // send and every alias `InboundMessage` might read, and stay correct
+        // as both change. A deny-list only has to name what a legitimate
+        // retry is allowed to differ in, which is a short closed set that
+        // changes when this file does.
+        $material = $request->input();
 
-        $material = [];
+        foreach ([
+            // The tuple that authenticates the delivery rather than describes
+            // it. Identical on a retry by definition, so including it would
+            // be harmless -- and excluding it says which is which.
+            'timestamp', 'token', 'signature',
 
-        foreach ($fields as $field) {
-            $value = $request->input($field);
-
-            $material[$field] = is_scalar($value) ? (string) $value : null;
+            // The attachment payload, and only for the reason the docblock
+            // gives: a retry after a 422 carries a DIFFERENT file.
+            // `$request->input()` already excludes uploaded files, so this
+            // drops the base64 arrays the JSON-shaped providers send and the
+            // multipart bookkeeping that varies with them.
+            'attachments', 'Attachments', 'attachment-count', 'content-id-map',
+        ] as $volatile) {
+            unset($material[$volatile]);
         }
 
+        // Key order must not decide identity: a provider is free to reorder
+        // fields between a delivery and its retry.
+        self::sortDeep($material);
+
         return hash('sha256', json_encode($material, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Sort an arbitrarily nested payload by key, in place.
+     *
+     * `message-headers` arrives as a list of [name, value] pairs, so nested
+     * structure is normal here rather than exotic.
+     */
+    private static function sortDeep(array &$material): void
+    {
+        ksort($material);
+
+        foreach ($material as &$value) {
+            if (is_array($value)) {
+                self::sortDeep($value);
+            }
+        }
     }
 
     /**
@@ -182,7 +248,14 @@ final class MailgunSignature implements VerifiesInboundMail
             return;
         }
 
-        Cache::put($key, ['fingerprint' => $claim['fingerprint'], 'retryable' => true], self::MAXIMUM_AGE_SECONDS * 2);
+        // The generation is written back unchanged. It was already incremented
+        // when this attempt claimed it, so the next retry contends on a fresh,
+        // unclaimed generation key rather than one this attempt burned.
+        Cache::put(
+            $key,
+            self::claim((string) $claim['fingerprint'], true, (int) ($claim['generation'] ?? 0)),
+            self::MAXIMUM_AGE_SECONDS * 2,
+        );
     }
 
     private static function claimKey(string $token): string

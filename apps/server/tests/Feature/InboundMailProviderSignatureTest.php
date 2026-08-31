@@ -16,8 +16,11 @@ use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Support\Mail\Signatures\MailgunSignature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
@@ -479,4 +482,179 @@ test('a retry whose attachment changed is still the same message', function (): 
         'attachment-count' => '1',
         'attachment-1' => UploadedFile::fake()->image('now-fine.png'),
     ]))->assertOk()->assertJsonPath('message', 'Accepted.');
+});
+
+test('a freed claim cannot be spent on rerouted threading headers', function (): void {
+    // The first fingerprint named the fields to cover and missed four the
+    // router actually reads. `message_id` (underscore) is the FIRST key
+    // InboundMessage checks for the id, outranking the `Message-Id` that WAS
+    // listed, and `References` had no entry in any casing. So a freed claim
+    // could be reclaimed by a delivery that changed both: the fingerprint
+    // still matched, alreadyAccepted() found nothing to dedupe against, and
+    // the message threaded itself into a different conversation of the same
+    // visitor.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-rerouted';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    Schema::rename('conversation_messages', 'conversation_messages_away');
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
+    Schema::rename('conversation_messages_away', 'conversation_messages');
+
+    foreach ([
+        ['message_id' => '<novel@attacker.test>'],
+        ['References' => '<someone-elses-thread@example.test>'],
+        ['references' => '<someone-elses-thread@example.test>'],
+        ['body' => 'Please reset the password on this account.'],
+        ['cc' => 'elsewhere@example.test'],
+        ['message-headers' => json_encode([['Message-Id', '<novel@attacker.test>']])],
+    ] as $tampered) {
+        test()->postJson('/api/mail/inbound', inboundPayload($tuple + $tampered))
+            ->assertStatus(401, 'a freed claim accepted a changed '.array_key_first($tampered));
+    }
+
+    // The untouched delivery is still the one that may have it.
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))
+        ->assertOk()
+        ->assertJsonPath('message', 'Accepted.');
+});
+
+test('a reordered payload is still the same delivery', function (): void {
+    // A provider may serialise its fields in a different order on a retry.
+    // Order deciding identity would refuse a legitimate retry.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-reordered';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    Schema::rename('conversation_messages', 'conversation_messages_away');
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
+    Schema::rename('conversation_messages_away', 'conversation_messages');
+
+    test()->postJson('/api/mail/inbound', array_reverse(inboundPayload($tuple), true))
+        ->assertOk()
+        ->assertJsonPath('message', 'Accepted.');
+});
+
+test('only one of two concurrent retries may spend a freed claim', function (): void {
+    // Reclaiming was a read-modify-write: both retries could see `retryable`
+    // before either wrote it back, and both would verify. The loser must get
+    // 401 -- which also stops it reaching the work, so it can never release
+    // the claim the winner just spent.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-concurrent';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    Schema::rename('conversation_messages', 'conversation_messages_away');
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
+    Schema::rename('conversation_messages_away', 'conversation_messages');
+
+    $verifier = new MailgunSignature;
+    $request = Request::create('/api/mail/inbound', 'POST', inboundPayload($tuple));
+
+    $key = 'wayfindr:inbound-mail:mailgun-token:'.hash('sha256', $tok);
+    $asBothRetriesSawIt = Cache::get($key);
+
+    expect($asBothRetriesSawIt['retryable'])->toBeTrue('the release should have handed the claim back');
+
+    // Retry A wins.
+    expect($verifier->verify($request, 'k'))->toBeTrue();
+
+    // Retry B is now put back to the state it READ -- before A's write landed.
+    // That is the whole of the race: two requests holding the same snapshot.
+    //
+    // Calling verify() twice in a row would NOT reach it. The second call
+    // would be refused by the `retryable` flag A just cleared, so it would
+    // pass whether or not the generation is claimed atomically -- a test that
+    // never touches the thing it names.
+    Cache::put($key, $asBothRetriesSawIt, 600);
+
+    expect($verifier->verify($request, 'k'))
+        ->toBeFalse('two retries both spent the same generation');
+});
+
+test('the per-message attachment cap holds on the mail path', function (): void {
+    // The binder enforces the cap against the array it is handed, which is the
+    // right check for the composer -- one call, every file. The mail router
+    // binds one file per call, so the binder saw an array of one every time
+    // and the limit never fired. The branch's own operator documentation sizes
+    // `post_max_size` from this cap.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    config()->set('wayfindr.attachments.max_per_message', 2);
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-many-files';
+    $payload = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+        'attachment-count' => '4',
+    ];
+
+    foreach (range(1, 4) as $index) {
+        $payload['attachment-'.$index] = UploadedFile::fake()->image("file-{$index}.png");
+    }
+
+    test()->post('/api/mail/inbound', inboundPayload($payload))
+        ->assertOk()
+        ->assertJsonPath('message', 'Accepted.');
+
+    $stored = ConversationMessage::query()->latest('id')->first();
+
+    expect($stored->attachments()->count())->toBe(2, 'the cap must bound what is stored');
+
+    // Reported rather than silently dropped, which is the contract attach()
+    // already keeps for a file it cannot take.
+    expect($stored->body)->toContain('file-3.png')
+        ->and($stored->body)->toContain('file-4.png');
+});
+
+test('a message stored but not announced is not asked for again', function (): void {
+    // The listeners are synchronous, so an unreachable broadcaster throws PAST
+    // the commit. Letting that escape answers the provider 5xx for a message
+    // that is already stored; the provider redelivers, and mail with no
+    // Message-Id has nothing for alreadyAccepted() to match on -- so the
+    // redelivery opens a SECOND conversation about the same question.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    config()->set('broadcasting.default', 'a-connection-that-does-not-exist');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-announce-fails';
+
+    test()->postJson('/api/mail/inbound', inboundPayload([
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ]))->assertOk()->assertJsonPath('message', 'Accepted.');
+
+    expect(ConversationMessage::query()->count())->toBe(1)
+        ->and(Conversation::query()->count())->toBe(1);
 });

@@ -138,9 +138,11 @@ class InboundMailController extends Controller
      * Lift threading headers out of wherever the provider hid them.
      *
      * `InboundMessage` reads `Message-Id`, `In-Reply-To` and `References` at
-     * the top level, which is where the JSON providers put them. Mailgun does
-     * not: they are inside `message-headers`, a JSON-encoded array of
-     * [name, value] pairs. Postmark keeps its own array of {Name, Value}.
+     * the top level, which is where the JSON providers put them. Mailgun also
+     * puts them inside `message-headers`, a JSON-encoded array of
+     * [name, value] pairs -- a parsed route forwards both, so this lift is
+     * belt-and-braces rather than the only path. Postmark keeps its own array
+     * of {Name, Value}, and there it IS the only path.
      *
      * Left unlifted, `threadCandidates()` finds nothing and every customer
      * REPLY opens a new conversation -- which is the single thing the email
