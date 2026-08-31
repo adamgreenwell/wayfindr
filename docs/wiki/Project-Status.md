@@ -57,6 +57,26 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   are translated, and it is the authority rather than this paragraph: a page
   missing from it renders English by design rather than by accident. A prose
   list will drift from the constant, so read the constant.
+- **A dashboard an agent can read on their own clock.** An agent picks a
+  timezone on their profile beside their language; everyone who has not picked
+  one follows the install's, which is `WAYFINDR_DASHBOARD_TIMEZONE` (UTC unless
+  set). It changes what is **shown**, never what is stored — every record stays
+  in UTC — so changing it re-reads existing history rather than rewriting it,
+  and it applies to report day boundaries as well as timestamps.
+
+  A site's **support hours** are the deliberate exception: they belong to the
+  site and stay in the site's own zone, because "visitors are told support is
+  back at 09:00" would become untrue read on an agent's clock.
+
+  **Leave `APP_TIMEZONE` at UTC.** It is the storage clock, not a display one —
+  Laravel writes `created_at` through it into columns that carry no offset, so
+  pointing it at a local zone records local wall-clock time where every reader,
+  and every report query, expects UTC.
+- **Numbers grouped the way the reading agent groups them** — `4.213` for a
+  German agent, `4,213` for an English one — on the same extracted pages, and
+  in live updates as well as the first render. Values that something reads back
+  are deliberately left alone: chart bar widths, data attributes, CSV cells,
+  and anything on a broadcast.
 
   **Write endpoints are the deliberate exception.** A form submitted from a
   translated page answers in that page's language even when its own route is
