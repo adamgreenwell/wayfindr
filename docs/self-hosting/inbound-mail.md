@@ -113,14 +113,28 @@ delivery retried.
 
 ### Postmark
 
-Set `WAYFINDR_INBOUND_MAIL_PROVIDER=postmark`, choose a long random password,
-and put it in both `WAYFINDR_INBOUND_MAIL_SECRET` and the webhook URL:
+Set `WAYFINDR_INBOUND_MAIL_PROVIDER=postmark`. The password travels inside a
+URL, so generate one that needs no escaping:
+
+```bash
+openssl rand -base64 48 | tr -d '=+/' | cut -c1-40
+```
+
+Put that value in both `WAYFINDR_INBOUND_MAIL_SECRET` and the webhook URL:
 
 ```
 https://wayfindr:YOUR-PASSWORD@your-install.example.com/api/mail/inbound
 ```
 
 Any username works; only the password is checked.
+
+> **If you bring your own password, keep it out of `@ : / # ? %`.** Those are
+> reserved in a URL's userinfo, and a literal one changes where Postmark thinks
+> the host begins — so it either rejects the webhook URL or sends every
+> delivery to somewhere that answers `401`. Wayfindr compares the **decoded**
+> password, so a password containing them has to be percent-encoded in the URL
+> while `WAYFINDR_INBOUND_MAIL_SECRET` keeps the original. Generating a
+> URL-safe one avoids having to get that right twice.
 
 **This is the weakest of the three, and the reason is Postmark's.** Postmark
 computes no customer-keyed signature over anything, so there is nothing to
