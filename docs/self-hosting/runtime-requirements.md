@@ -281,16 +281,19 @@ location /apps {
 ```
 
 **Do not leave the two timeouts out.** nginx's default `proxy_read_timeout` is
-60 seconds, counted from the last thing to cross the connection in either
-direction. When nothing does for that long the socket is torn down with no
-close frame, the browser reports an abnormal close, and the page reconnects.
-Nothing logs an error and no user sees a failure; the page simply has a gap in
-it, and whatever was published inside that gap is only recovered by the next
-resync.
+60 seconds, and it is measured between successive reads **from Reverb** — not
+from traffic in either direction. When nothing arrives from upstream for that
+long the socket is torn down with no close frame, the browser reports an
+abnormal close, and the page reconnects, losing whatever was published in the
+gap until the next resync.
 
-A quiet conversation is **not** by itself an idle connection. Wayfindr's pages
-send a keepalive every 15 seconds, so a visible tab stays well inside the
-window whether or not anybody is typing.
+That the timer watches the *upstream* is why a keepalive works: Wayfindr's
+pages send `pusher:ping` every 15 seconds and Reverb answers `pusher:pong`, so
+something arrives from upstream well inside the window. A client that sent
+frames Reverb does not answer would still time out, however chatty it was.
+
+So a quiet conversation is **not** by itself an idle connection — a visible tab
+carries traffic whether or not anybody is typing.
 
 What the setting protects is every connection whose keepalive is delayed past
 60 seconds — a tab the browser has throttled, any other client speaking to this
@@ -306,6 +309,17 @@ The overlap is what makes this easy to misdiagnose: Reverb's `ping_interval`
 also defaults to 60 seconds, so on a default nginx the proxy closes the
 connection at the same moment the keepalive that would have held it open was
 due.
+
+**Where to look.** Nothing surfaces in the application or the browser — no
+error, no failed request, just a page that quietly reconnects. nginx does
+record it, though, and its error log is the most direct evidence you will get:
+
+```
+upstream timed out (110: Connection timed out) while reading upstream
+```
+
+entries against the `/app` or `/apps` location, arriving about once a minute
+per connected client, are this exact problem.
 
 Other reverse proxies can use the same idea: public HTTPS outside, private
 Reverb port inside, WebSocket upgrade headers preserved.
