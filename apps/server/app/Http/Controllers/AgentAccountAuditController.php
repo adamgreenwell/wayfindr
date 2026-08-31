@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\ReaderClock;
 use App\Support\SpreadsheetSafeCsv;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -180,7 +181,9 @@ class AgentAccountAuditController extends Controller
             ->limit($limit)
             ->get()
             ->map(fn (AuditEvent $event): array => [
-                'occurred_at' => $event->occurred_at?->toDateTimeString() ?? '',
+                'occurred_at' => $event->occurred_at === null
+                    ? ''
+                    : ReaderClock::moment($event->occurred_at)->toDateTimeString(),
                 'action' => $event->action,
                 'label' => $this->auditLabel($event->action),
                 'actor' => $this->auditActor($event),

@@ -2,7 +2,7 @@
     <p><a class="text-link" href="{{ route('operator.break-glass.index') }}">Back to operator access</a></p>
     <h1>{{ $grant->scopeLabel() }}</h1>
     <p class="lede">
-        Read-only access until {{ $grant->expires_at->format('H:i T') }} ({{ $grant->expires_at->diffForHumans() }}).
+        Read-only access until {{ \App\Support\ReaderClock::moment($grant->expires_at)->format('H:i T') }} ({{ $grant->expires_at->diffForHumans() }}).
         Every view is recorded and visible to {{ $grant->account?->name }}.
     </p>
 

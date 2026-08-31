@@ -7,6 +7,7 @@ use App\Models\BreakGlassGrant;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Support\BreakGlass\BreakGlassGrants;
+use App\Support\ReaderClock;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -101,7 +102,7 @@ class OperatorBreakGlassController extends Controller
 
         return redirect()
             ->route('operator.break-glass.index')
-            ->with('status', sprintf('Self-approved — access to %s until %s.', $grant->scopeLabel(), $grant->expires_at->format('H:i T')));
+            ->with('status', sprintf('Self-approved — access to %s until %s.', $grant->scopeLabel(), ReaderClock::moment($grant->expires_at)->format('H:i T')));
     }
 
     public function close(Request $request, BreakGlassGrant $grant, BreakGlassGrants $grants): RedirectResponse

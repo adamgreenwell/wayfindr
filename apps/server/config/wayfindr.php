@@ -87,6 +87,15 @@ return [
     // chose. Laravel never touches this key.
     'dashboard_locale' => (string) env('APP_LOCALE', 'en'),
 
+    // The install's own clock, kept here for exactly the reason above: the
+    // request-scoped timezone is applied by moving `app.timezone`, so reading
+    // the default back out of it would return whichever agent was served last.
+    // Laravel never touches this key either.
+    //
+    // UTC when unset, and honestly so -- guessing from the server's clock would
+    // silently adopt whichever region the host happens to sit in.
+    'dashboard_timezone' => (string) env('WAYFINDR_DASHBOARD_TIMEZONE', 'UTC'),
+
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
 
