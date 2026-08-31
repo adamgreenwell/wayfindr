@@ -872,6 +872,11 @@
                             <p class="desk-closure-state">
                                 Desk closed early.
                                 @if ($availability->opensAt)
+                                    {{-- Deliberately NOT ReaderClock: this reports what
+                                         VISITORS are told, and `opensAt` already carries the
+                                         site's own zone. Moving it to the reader's clock would
+                                         make the sentence untrue for an agent sitting in a
+                                         different one. --}}
                                     Visitors are told support is back at
                                     {{ $availability->opensAt->format('H:i') }}
                                     on {{ $availability->opensAt->format('j M') }}.

@@ -70,6 +70,26 @@
                 @enderror
             </div>
 
+            <div class="field">
+                <label for="timezone">{{ __('profile.details.timezone') }}</label>
+                <select id="timezone" name="timezone">
+                    {{-- Same rule as the language above: "whatever the install
+                         uses" is the default and stays selectable. --}}
+                    <option value="">{{ __('profile.details.timezone_default') }}</option>
+                    @foreach (\App\Support\DashboardTimezone::choices(old('timezone', $agent->timezone)) as $region => $zones)
+                        <optgroup label="{{ $region }}">
+                            @foreach ($zones as $zone)
+                                <option value="{{ $zone }}" @selected(old('timezone', $agent->timezone) === $zone)>{{ $zone }}</option>
+                            @endforeach
+                        </optgroup>
+                    @endforeach
+                </select>
+                <p class="field-help">{{ __('profile.details.timezone_help') }}</p>
+                @error('timezone')
+                    <p class="field-error">{{ $message }}</p>
+                @enderror
+            </div>
+
             <button class="button" type="submit">{{ __('profile.details.save') }}</button>
         </form>
     </section>

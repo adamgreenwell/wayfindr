@@ -1129,6 +1129,15 @@ function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $engli
         || str_contains($text, 'WF-LANG')
         || str_contains($text, 'anon-')
         || str_contains($text, '@')
+        // IANA time zone identifiers. `Europe/Berlin` is a NAME, not copy:
+        // the same string in every language by design, and a translated one is
+        // a value the platform's own zone database rejects.
+        //
+        // Asked of the zone database rather than matched on shape. A shape
+        // rule looked right and quietly missed the abbreviation forms --
+        // `UTC`, `GMT`, `CET` -- which are identifiers too and read as
+        // three-letter words to every other check here.
+        || in_array($text, DateTimeZone::listIdentifiers(), true)
         // Numbers, punctuation and single letters read the same in both
         // languages, correctly.
         || preg_match('/\p{L}{3}/u', $text) !== 1;

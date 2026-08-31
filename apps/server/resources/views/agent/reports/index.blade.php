@@ -60,7 +60,7 @@
             <div class="notice-copy">
                 <p><strong>Conversations opened</strong> and <strong>first response times</strong> are recoverable from the whole history of this install.</p>
                 @if ($historyBeganAt)
-                    <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records, which this install began keeping on {{ $historyBeganAt->toFormattedDayDateString() }}. Anything before that is unrecorded rather than absent &mdash; conversations were closed, but nothing was keeping the sequence, and it cannot be reconstructed after the fact.</p>
+                    <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records, which this install began keeping on {{ \App\Support\ReaderClock::moment($historyBeganAt)->toFormattedDayDateString() }}. Anything before that is unrecorded rather than absent &mdash; conversations were closed, but nothing was keeping the sequence, and it cannot be reconstructed after the fact.</p>
                 @else
                     <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records, and this install has not stamped when it started keeping them. Run outstanding migrations; until then these figures cover only what happens to be on record.</p>
                 @endif
@@ -88,7 +88,7 @@
                         <div
                             class="chart"
                             role="img"
-                            aria-label="Conversations per day. {{ $volume['opened_total'] }} opened and {{ $volume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->end->toFormattedDayDateString() }}. The busiest day had {{ $chart['max'] }}."
+                            aria-label="Conversations per day. {{ $volume['opened_total'] }} opened and {{ $volume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->endsOn()->toFormattedDayDateString() }}. The busiest day had {{ $chart['max'] }}."
                         >
                             @foreach ($chart['days'] as $day)
                                 <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} opened, {{ $day['closed'] }} closed">
@@ -242,7 +242,7 @@
                             <p>
                                 No ticket was created in this period, and no close is on record for it. This
                                 install began recording ticket closes on
-                                {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}, and the range selected
+                                {{ \App\Support\ReaderClock::moment($ticketHistoryBeganAt)->toFormattedDayDateString() }}, and the range selected
                                 reaches back before that &mdash; tickets closed earlier left no trace to count.
                             </p>
                         @else
@@ -260,7 +260,7 @@
                         <div
                             class="chart"
                             role="img"
-                            aria-label="Tickets per day. {{ $ticketVolume['opened_total'] }} created and {{ $ticketVolume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->end->toFormattedDayDateString() }}. The busiest day had {{ $ticketChart['max'] }}."
+                            aria-label="Tickets per day. {{ $ticketVolume['opened_total'] }} created and {{ $ticketVolume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->endsOn()->toFormattedDayDateString() }}. The busiest day had {{ $ticketChart['max'] }}."
                         >
                             @foreach ($ticketChart['days'] as $day)
                                 <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} created, {{ $day['closed'] }} closed">
@@ -337,7 +337,7 @@
                                  not absent. --}}
                             <p>
                                 No ticket close is on record in this period. This install began recording ticket
-                                closes on {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}, and the range
+                                closes on {{ \App\Support\ReaderClock::moment($ticketHistoryBeganAt)->toFormattedDayDateString() }}, and the range
                                 selected reaches back before that &mdash; tickets closed earlier left no trace to
                                 count, so this is not the same as nothing having happened.
                             </p>
@@ -386,7 +386,7 @@
                                  conversation boundary -- so "long before" would be false exactly where a
                                  reader most needs the figure to be trustworthy. --}}
                             This install began recording ticket closes and reopens on
-                            {{ $ticketHistoryBeganAt->toFormattedDayDateString() }}. A ticket opened before
+                            {{ \App\Support\ReaderClock::moment($ticketHistoryBeganAt)->toFormattedDayDateString() }}. A ticket opened before
                             then may have been closed and reopened while nothing was writing it down, so it
                             is counted as a close and left out of the times here.
                         </p>
