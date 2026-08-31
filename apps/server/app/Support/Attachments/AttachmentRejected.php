@@ -2,6 +2,7 @@
 
 namespace App\Support\Attachments;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
@@ -62,5 +63,31 @@ final class AttachmentRejected extends RuntimeException
         return ValidationException::withMessages([
             $this->field => __($this->key, $this->parameters, $locale),
         ]);
+    }
+
+    /**
+     * The same rejection, for a reader whose language the server cannot know.
+     *
+     * `WidgetLanguage::for($site)` is null unless the site PINS a language, and
+     * null does not mean English -- it means the widget is following the
+     * visitor's browser, a choice made on the other side of the wire. So the
+     * sentence below is the server's best guess and the key is the fact: a
+     * widget speaking German can resolve `composer.rejected.type` from its own
+     * catalogue and say it properly, instead of showing an English sentence in
+     * an otherwise German panel.
+     *
+     * The sentence stays regardless, so an older widget and any client that is
+     * not the widget keep working unchanged.
+     */
+    public function toWidgetResponse(?string $locale = null): JsonResponse
+    {
+        $message = __($this->key, $this->parameters, $locale);
+
+        return response()->json([
+            'message' => $message,
+            'errors' => [$this->field => [$message]],
+            'error_key' => $this->key,
+            'error_params' => (object) $this->parameters,
+        ], 422);
     }
 }
