@@ -647,39 +647,74 @@ test('every request the widget makes withholds the host page address', async () 
   );
 });
 
-test('a rejection is said in the language the widget is speaking', async () => {
-  // The server cannot know this visitor's language: the site does not pin one,
-  // so the widget is following the BROWSER, a choice made on this side of the
-  // wire. The server sends its English sentence and the key beside it; the
-  // widget carries the key in its own German catalogue and says it properly
-  // rather than dropping an English sentence into a German panel.
-  const client = Wayfindr.createClient({
-    apiBaseUrl: 'http://127.0.0.1:8000',
-    sitePublicKey: 'site_public_docs',
-    anonymousId: 'anon-de',
-    visitorToken: 'visitor-token-de',
-    fetch: async () => ({
-      ok: false,
-      status: 422,
-      json: async () => ({
-        message: 'This file type is not allowed.',
-        errors: { file: ['This file type is not allowed.'] },
-        error_key: 'composer.rejected.type',
-        error_params: {},
-      }),
-    }),
+test('a rejected upload is shown to the visitor in the widget\'s language', async (t) => {
+  // The point of the key is what the VISITOR reads. Asserting it reached the
+  // Error object proves the plumbing and not the product: the chip renders
+  // `entry.error`, and that line took the server's sentence verbatim -- which
+  // on an unpinned site is English, inside an otherwise German panel.
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
   });
 
-  let thrown = null;
-  try {
-    await client.uploadAttachment('WF-DE1', new Blob(['x']), 'payload.bin');
-  } catch (error) {
-    thrown = error;
-  }
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    // No pinned site language: the widget follows the browser, which the
+    // server cannot see. This is the case the whole change exists for.
+    navigator: { languages: ['de-DE', 'de'] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: memoryStorage({
+      'wayfindr:site_public_shop:anonymous-id': 'anon-de',
+      'wayfindr:site_public_shop:visitor-token': 'visitor-token-de',
+      'wayfindr:site_public_shop:support-code': 'WF-DE1',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/attachments') && !url.includes('?')) {
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            message: 'This file type is not allowed.',
+            errors: { file: ['This file type is not allowed.'] },
+            error_key: 'composer.rejected.type',
+            error_params: {},
+          }),
+        };
+      }
 
-  assert.ok(thrown, 'the upload did not fail, so this proves nothing');
-  assert.equal(thrown.wayfindrKey, 'composer.rejected.type', 'the rejection key was not carried onto the error');
-  assert.deepEqual(thrown.wayfindrParams, {}, 'the rejection parameters were not carried');
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await widget.open();
+  await settle();
+
+  const input = widget.root.querySelector('input[type="file"]');
+  const file = new dom.window.File(['x'], 'payload.bin', { type: 'application/x-msdownload' });
+
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+
+  await settle();
+  await settle();
+
+  const state = widget.root.querySelector('.wayfindr-widget__attach-chip-state');
+
+  assert.ok(state, 'no attachment chip was rendered, so this proves nothing');
+  assert.equal(
+    state.textContent,
+    'Dieser Dateityp ist nicht zulässig.',
+    'the visitor was shown the server English sentence rather than the widget German copy',
+  );
 });
 
 test('a rejection key this build does not carry falls back to the server sentence', async () => {

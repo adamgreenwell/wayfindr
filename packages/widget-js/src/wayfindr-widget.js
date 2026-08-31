@@ -2593,8 +2593,14 @@
       }).catch(function (error) {
         if (pendingAttachments.indexOf(entry) !== -1) {
           entry.status = 'error';
-          entry.error = (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500 && error.message)
-            ? error.message
+          // Through errorText(), so a rejection that arrived with a key is
+          // said in the language this panel is speaking. Attaching the key to
+          // the error is not enough on its own -- this is the line the visitor
+          // actually reads, and it used to take the server's sentence
+          // verbatim, which on an unpinned site is English regardless of what
+          // the widget is showing around it.
+          entry.error = (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500 && (error.wayfindrKey || error.message))
+            ? errorText(error, 'error.attachment')
             : t('error.attachment');
           renderPendingAttachments();
         }
@@ -4636,8 +4642,22 @@
           return;
         }
 
-        status.textContent = t('error.send');
-        showNotice('warning', t('error.send'), {
+        // A rejection tells the visitor what to CORRECT -- too many
+        // attachments, one no longer available -- and answering that with the
+        // generic "could not be sent" offers a retry of the same thing without
+        // saying what to change.
+        //
+        // Only a KEYED failure, not errorText(): its middle branch shows any
+        // server-authored sentence, which is right where the server owns the
+        // copy and wrong here. A 500 saying "Database unavailable." is not
+        // composer copy, and putting it in the status line tells a visitor
+        // about our database instead of about their message.
+        var sendMessage = error && error.wayfindrKey
+            ? t(error.wayfindrKey, error.wayfindrParams)
+            : t('error.send');
+
+        status.textContent = sendMessage;
+        showNotice('warning', sendMessage, {
           retry: true,
           onRetry: retryComposerSend,
         });
