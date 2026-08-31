@@ -4022,3 +4022,29 @@ test('the live-update path is given the agent language, not the browser', functi
     expect(substr_count($html, 'toLocaleString()'))->toBe(0)
         ->and($html)->toContain('function readerNumber(');
 });
+
+test('the queue-pressure count is grouped for the agent, on both renders', function (): void {
+    // This sentence is fully translated -- `:count verworfene Stapel` -- and
+    // renders on two extracted routes, so the only English thing left in it
+    // was the number. It was exempted from the number guard as "English
+    // awaiting extraction", which it is not, and the exemption hid it.
+    //
+    // The live handler already formatted these for the agent, so the two
+    // halves disagreed: the server painted `1,000` and the first websocket
+    // message rewrote the same node as `1.000`.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+
+    $metadata = $session->metadata;
+    $metadata['telemetry']['dropped_batches'] = 1000;
+    $metadata['telemetry']['reported_at'] = now()->toIso8601String();
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $german = conversationQueueLanguageVisibleText((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $session->conversation->support_code))
+        ->assertOk()
+        ->getContent());
+
+    expect($german)->toContain('1.000 verworfene Stapel')
+        ->and($german)->not->toContain('1,000 verworfene Stapel');
+});

@@ -33,6 +33,12 @@ const READER_NUMBER_EXEMPT = [
     // English sentences assembled inside a model, which is a copy problem
     // rather than a number one -- and models hand out state, they do not
     // translate. They belong to the extraction slice, not this one.
+    // NOTE: `CobrowsePressureSentence` was on this list and did not belong.
+    // Its sentence is fully translated -- `:count verworfene Stapel` -- and it
+    // renders on two extracted routes, so the only English thing about it was
+    // the number. The guard below now refuses that combination outright,
+    // because "awaiting extraction" and "calls the catalogue" cannot both be
+    // true and my saying so in a comment is what failed.
     'app/Support/CobrowsePayloadBudget.php' => 'English sentences awaiting extraction',
     // NOTE: this file also held three counts rendered on their own rather than
     // inside a sentence, and a whole-file exemption is what let them keep an
@@ -40,7 +46,6 @@ const READER_NUMBER_EXEMPT = [
     // view formats them. An exemption that covers more than it means to is a
     // guard that has stopped checking.
     'app/Support/CobrowseConsentState.php' => 'English sentences awaiting extraction',
-    'app/Support/CobrowsePressureSentence.php' => 'English sentences awaiting extraction',
     'app/Support/CobrowseTransportPressure.php' => 'English sentences awaiting extraction',
     'app/Support/CobrowseReplayPreview.php' => 'English sentences awaiting extraction',
     'app/Support/CobrowseReplayDrift.php' => 'English sentences awaiting extraction',
@@ -137,6 +142,47 @@ test('no number inside a style attribute follows the reader', function (): void 
         '',
         'A decimal comma makes the declaration invalid, the browser drops it,',
         'and the element silently collapses. Leave these as raw values.',
+    ]));
+});
+
+/**
+ * An exemption has to be able to be wrong.
+ *
+ * "English sentences awaiting extraction" is a claim about a file, and a
+ * claim can rot -- or be mistaken when it is written, which is what happened.
+ * A file that reaches for the catalogue is not awaiting extraction; it has
+ * been extracted, and a number formatted inside it lands in a translated
+ * sentence. Checking the reason against the file turns a comment into
+ * something that fails.
+ */
+test('no file exempted as un-extracted actually uses the catalogue', function (): void {
+    $root = dirname(__DIR__, 2);
+    $contradictions = [];
+
+    foreach (READER_NUMBER_EXEMPT as $relative => $reason) {
+        if (! str_contains($reason, 'awaiting extraction')) {
+            continue;
+        }
+
+        $source = @file_get_contents($root.'/'.$relative);
+
+        if ($source === false) {
+            $contradictions[] = $relative.'  (exempted but no longer exists)';
+
+            continue;
+        }
+
+        if (preg_match('/(?:__|trans_choice)\(/', $source) === 1) {
+            $contradictions[] = $relative.'  calls the catalogue, so its numbers reach a translated sentence';
+        }
+    }
+
+    expect($contradictions)->toBe([], implode("\n", [
+        'These are exempted as un-extracted English and are not:',
+        ...$contradictions,
+        '',
+        'Route their numbers through ReaderNumber and drop the exemption, or',
+        'give them a reason that is true.',
     ]));
 });
 
