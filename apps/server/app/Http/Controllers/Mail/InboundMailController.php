@@ -181,7 +181,13 @@ class InboundMailController extends Controller
     {
         $payload = $request->all();
 
-        if (! empty($payload['attachments']) || ! empty($payload['Attachments'])) {
+        // An ARRAY, not merely something truthy. `attachments=1` passed an
+        // emptiness check, so a caller holding a valid tuple could add that one
+        // scalar and have every multipart file skipped -- the message commits
+        // without its attachments, and message-id deduplication then stops the
+        // provider's own retry from restoring them. The scalar is not in the
+        // fingerprint either, which is why it cost nothing to add.
+        if (is_array($payload['attachments'] ?? null) || is_array($payload['Attachments'] ?? null)) {
             return $payload;
         }
 

@@ -99,6 +99,17 @@ final class MailgunSignature implements VerifiesInboundMail
 
     public function verify(Request $request, string $secret): bool
     {
+        // Scalars before casting. The nested webhook shape sends `signature`
+        // as an object, and `(string)` on an array raises a warning this
+        // codebase promotes to an exception -- so the deliberate 401 this
+        // class documents for that shape came back as a 500, and the provider
+        // kept retrying it.
+        foreach (['timestamp', 'token', 'signature'] as $field) {
+            if (! is_scalar($request->input($field))) {
+                return false;
+            }
+        }
+
         $timestamp = (string) $request->input('timestamp', '');
         $token = (string) $request->input('token', '');
         $signature = (string) $request->input('signature', '');

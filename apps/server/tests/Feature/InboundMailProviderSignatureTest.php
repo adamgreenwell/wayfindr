@@ -966,3 +966,49 @@ test('a claim outlives every moment its tuple is still accepted', function (): v
         'body-plain' => 'Please reset the password on this account.',
     ]))->assertStatus(401);
 });
+
+test('a scalar attachments field cannot make the real files disappear', function (): void {
+    // `! empty($payload['attachments'])` was true for `attachments=1`, so one
+    // scalar skipped the whole multipart conversion and the message committed
+    // without its files -- after which message-id deduplication stops the
+    // provider's own retry from ever restoring them. The scalar is not in the
+    // fingerprint either, so adding it cost nothing.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-scalar-attachments';
+
+    test()->post('/api/mail/inbound', inboundPayload([
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('genuine.png'),
+        'attachments' => '1',
+    ]))->assertOk();
+
+    expect(ConversationMessage::query()->latest('id')->first()->attachments()->count())
+        ->toBe(1, 'the multipart file was skipped by a scalar');
+});
+
+test('the nested webhook shape is refused, not answered with a 500', function (): void {
+    // Mailgun's newer nested shape sends `signature` as an object. `(string)`
+    // on an array raises a warning this codebase promotes to an exception, so
+    // the deliberate 401 this endpoint documents for that shape came back as a
+    // 500 -- and a 500 is a code the provider retries, forever.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    test()->postJson('/api/mail/inbound', [
+        'signature' => [
+            'timestamp' => (string) time(),
+            'token' => 'nested-token',
+            'signature' => 'nested-signature',
+        ],
+        'event-data' => ['event' => 'delivered'],
+    ])->assertStatus(401);
+});
