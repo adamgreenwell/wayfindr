@@ -60,40 +60,53 @@ Two things bound replay, and both matter, because **Mailgun's signature covers
 the timestamp and token and not the body**. A valid tuple would otherwise
 authenticate *any* payload:
 
-- deliveries more than five minutes old are refused, in either direction — a
-  clock far ahead is not evidence of freshness;
-- each token is accepted **once**. A second delivery reusing it is refused
-  whatever it contains.
+- deliveries older than Mailgun's own retry schedule are refused, in either
+  direction — a clock far ahead is not evidence of freshness;
+- each token is bound to the **message** it first carried. A second delivery
+  reusing it is accepted only if it is that same message — which is what a
+  provider's retry always is — and refused if any of the sender, recipients,
+  subject, body, threading headers or attachments differ.
 
-#### Raise the PHP upload limits, both of them
+That second rule is what makes the first one safe to size generously. Mailgun
+re-POSTs a failed route at 10 minutes, then 15, 30, 60, 120 and 240, giving up
+after 8 hours; a window shorter than that would refuse the provider's own
+retries on the timestamp, and the `422` above — whose entire purpose is that
+the delivery is sent again — could never work.
+
+#### PHP upload limits
 
 Attachments on a route arrive as file uploads rather than in the JSON body, and
 are stored like any other attachment. Two `php.ini` limits govern whether they
-survive the trip, and **raising only the obvious one makes things worse**:
+survive the trip.
+
+**The official image already sets both**, in
+`/usr/local/etc/php/conf.d/wayfindr.ini`:
 
 ```ini
 upload_max_filesize = 10M
 post_max_size = 64M
+memory_limit = 256M
 ```
 
-`upload_max_filesize` is the per-file ceiling. Set it to at least
-`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES` (10M by default); it is commonly still 2M.
-A file over it arrives as an upload PHP marks unusable, the delivery is refused
-with `422`, and the provider retries — which is the only way the file survives.
+You only need to touch these if you run Wayfindr on your own PHP, or if you
+raise `WAYFINDR_ATTACHMENT_MAX_FILE_BYTES` above 10M.
+
+`upload_max_filesize` is the per-file ceiling; set it to at least
+`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES`. PHP's own default is 2M, which is below
+what Wayfindr accepts — so on a hand-rolled stack the application's limit is
+unreachable and a file over 2M is refused before any Wayfindr code runs.
 
 `post_max_size` is the ceiling on the **whole request**: every attachment, the
 message body, and multipart overhead together. Wayfindr accepts up to
 `WAYFINDR_ATTACHMENT_MAX_PER_MESSAGE` files (5) of
-`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES` each, so the defaults allow a 50M request
-and `post_max_size` needs headroom above that.
+`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES` each, so it needs headroom above 50M
+rather than matching one file.
 
 It matters more than it looks, because exceeding it does not produce a large
 upload — it produces **no request body at all**. PHP discards the entire
 multipart body, so the endpoint never sees the signature fields, cannot verify
-anything, and answers `401`. The retry is identical and gets `401` again. A
-`post_max_size` left at its common 8M default therefore turns every message
-carrying a large attachment into a permanent loss, and the `422` described above
-never happens.
+anything, and answers `401` rather than the `422` that would have had the
+delivery retried.
 
 ### Postmark
 
@@ -135,8 +148,8 @@ SendGrid among them.
 | --- | --- |
 | `404` | The channel is off. `WAYFINDR_INBOUND_MAIL_SECRET` is empty. |
 | `401` | The delivery did not verify: wrong secret, wrong `..._PROVIDER`, a stale Mailgun timestamp, or an unrecognised provider name. Also what a request over `post_max_size` looks like, because PHP discards the body before the signature can be read. |
-| `422` | An attachment did not upload completely — usually PHP's `upload_max_filesize`. Refused so the provider retries rather than losing the file. |
-| `500` | Something failed while storing the message. The provider retries, and Wayfindr gives back anything it spent verifying so the retry is accepted rather than refused as a replay. |
+| `422` | An attachment the sender sent could not be read — usually PHP's `upload_max_filesize`. Refused so the provider retries rather than losing the file. |
+| `500` | Something failed while storing the message. The provider retries, and the retry is accepted because it carries the same message. |
 | `200` `Accepted.` | Routed onto a conversation. |
 | `200` `Ignored.` | Understood and deliberately not routed — no usable sender, or an address matching no site. |
 

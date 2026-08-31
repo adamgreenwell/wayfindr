@@ -242,6 +242,14 @@ final class InboundMailRouter
      */
     private const NAMED_SKIPS = 5;
 
+    /**
+     * How much of a refused filename the notice repeats.
+     *
+     * Long enough to recognise the file that did not arrive, short enough that
+     * the notice cannot become a message.
+     */
+    private const NAME_LENGTH = 60;
+
     private function attach(Conversation $conversation, ConversationMessage $stored, InboundMessage $message, Visitor $visitor): array
     {
         $skipped = [];
@@ -313,11 +321,19 @@ final class InboundMailRouter
     {
         $total = count($skipped);
 
-        // Named individually up to a point, then counted. The names come from
-        // the sender, and a delivery carrying dozens of files would otherwise
-        // append all of them to the transcript -- an unbounded attacker-chosen
-        // string in the message body, which is a worse outcome than a summary.
-        $named = array_slice($skipped, 0, self::NAMED_SKIPS);
+        // Every one of these names is a string the SENDER chose, and this
+        // notice is written into a message body attributed to the visitor --
+        // so an agent reads it as the customer's own words. Capping the count
+        // alone was not enough: a filename may be 998 characters, so five of
+        // them is still five kilobytes of attacker-written prose in someone
+        // else's transcript. Both dimensions are bounded, and each name is cut
+        // to something that still identifies the file.
+        $named = [];
+
+        foreach (array_slice($skipped, 0, self::NAMED_SKIPS) as $name) {
+            $named[] = Str::limit(trim(preg_replace('/\s+/u', ' ', (string) $name) ?? ''), self::NAME_LENGTH);
+        }
+
         $remainder = $total - count($named);
 
         return '[Wayfindr could not accept '

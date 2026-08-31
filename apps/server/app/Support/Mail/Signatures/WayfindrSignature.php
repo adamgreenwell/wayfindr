@@ -28,13 +28,4 @@ final class WayfindrSignature implements VerifiesInboundMail
         // === leaks how much of a guess was right, one byte at a time.
         return hash_equals('sha256='.hash_hmac('sha256', $request->getContent(), $secret), $signature);
     }
-
-    /**
-     * Nothing to give back: this scheme spends no single-use state to
-     * authenticate, so a retry of the same delivery verifies again on its own.
-     */
-    public function release(Request $request): void
-    {
-        //
-    }
 }

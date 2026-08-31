@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Mail\Signatures;
 
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -22,18 +23,62 @@ use Illuminate\Support\Facades\Cache;
  * The secret here is Mailgun's HTTP webhook signing key, from the sending
  * domain's security settings. It is NOT the API key, and telling an operator
  * apart from that is worth the sentence in the documentation.
+ *
+ * ## What the tuple can and cannot say
+ *
+ * Because the HMAC covers only `timestamp . token`, a captured tuple
+ * authenticates ANY payload for as long as it stays fresh. Anybody who obtains
+ * one delivery -- from a log, a proxy, a retry they can observe -- could
+ * otherwise post arbitrary mail as anyone. That is forgery, not replay, and it
+ * is what the claim below exists to stop.
+ *
+ * A claim records the FINGERPRINT of the delivery that made it. A later
+ * delivery on the same token is accepted only if it is the same message, and
+ * refused otherwise. There is no release, no retryable flag and no generation
+ * counter: three review rounds added those to let a provider retry through,
+ * and each one opened the hole the next had to close. They are unnecessary,
+ * because a genuine retry carries the same message and therefore the same
+ * fingerprint -- it was never the thing being refused.
+ *
+ * Re-PROCESSING an identical delivery is a different question, and it is
+ * answered where idempotency already lives: {@see
+ * \App\Support\Mail\InboundMailRouter::alreadyAccepted()}, backed by a unique
+ * index rather than by a cache entry.
  */
 final class MailgunSignature implements VerifiesInboundMail
 {
     /**
      * How far out of date a delivery may be.
      *
-     * Without this a captured delivery replays for ever: the body, token and
-     * signature stay valid together, so anybody who sees one can post it back
-     * indefinitely. Mailgun sends the timestamp precisely so the receiver can
-     * bound that, and its own guidance is to check it.
+     * Sized to the provider's retry schedule, which is the thing that decides
+     * it. Mailgun re-POSTs a failed route at 10 minutes, then 15, 30, 60, 120
+     * and 240, giving up after 8 hours -- so a window shorter than that
+     * refuses the provider's own retries, and refuses them on the timestamp
+     * before any of the machinery below is consulted.
+     *
+     * It was 300 seconds, and that was a real defect rather than a
+     * conservative choice: every documented retry arrived stale, so the `422`
+     * this endpoint answers for an incomplete upload -- the whole point of
+     * which is that the provider tries again -- could never have worked. The
+     * documentation said it did.
+     *
+     * A long window is safe here only because the fingerprint binds the whole
+     * delivery. A captured tuple replayed inside it can carry nothing but the
+     * message it was issued for, which routing already treats as a duplicate.
+     * Shorten this and mail is lost; widen it without the fingerprint and mail
+     * is forged.
      */
-    private const MAXIMUM_AGE_SECONDS = 300;
+    private const MAXIMUM_AGE_SECONDS = 8 * 60 * 60;
+
+    /**
+     * A slot whose bytes the sender never successfully delivered.
+     *
+     * The one thing a retry is allowed to change. An upload PHP marks invalid
+     * has no readable content by definition, so there is nothing to bind --
+     * and the retry that carries the intact file is exactly the delivery this
+     * endpoint asked for when it answered `422`.
+     */
+    private const UNUSABLE = 'unusable';
 
     public function verify(Request $request, string $secret): bool
     {
@@ -64,135 +109,205 @@ final class MailgunSignature implements VerifiesInboundMail
     }
 
     /**
-     * Each token is good once.
+     * A token is good for one message, however many times it is delivered.
      *
-     * The age bound alone is not enough, because Mailgun's HMAC covers the
-     * timestamp and token and NOT the body. A valid tuple therefore
-     * authenticates ANY payload for as long as it stays fresh: anybody who
-     * obtains one delivery -- from a log, a proxy, a retry they can observe --
-     * can post arbitrary mail as anyone until it expires. That is forgery, not
-     * merely replay of the same message.
+     * `Cache::add()` because the first claim has to be atomic. A get-then-put
+     * would let two concurrent forgeries both read "unclaimed" and both
+     * proceed, which is exactly the shape an attacker would send.
      *
-     * `Cache::add()` because the claim has to be atomic. A get-then-put would
-     * let two concurrent replays both read "unclaimed" and both proceed, which
-     * is exactly the shape an attacker would send.
+     * A second delivery on a claimed token is compared, not counted. Same
+     * message, accepted -- that is a retry, and refusing it is how mail gets
+     * lost. Different message, refused -- that is the forgery the HMAC cannot
+     * catch on its own.
      *
-     * Held a little longer than the freshness window, so a token cannot be
-     * reclaimed in the gap between its entry expiring and its timestamp
-     * ageing out.
+     * @param  array{mail: string, attachments: array<string, string>}  $fingerprint
      */
-    private function claimToken(string $token, string $fingerprint): bool
+    private function claimToken(string $token, array $fingerprint): bool
     {
         $key = self::claimKey($token);
 
-        // `Cache::add()` because a first claim has to be atomic. A
-        // get-then-put would let two concurrent replays both read "unclaimed"
-        // and both proceed, which is exactly the shape an attacker would send.
-        if (Cache::add($key, self::claim($fingerprint, false, 0), self::MAXIMUM_AGE_SECONDS * 2)) {
+        if (Cache::add($key, $fingerprint, self::MAXIMUM_AGE_SECONDS + 600)) {
             return true;
         }
 
         $claim = Cache::get($key);
 
-        // Spent, and not handed back: a replay.
-        if (! is_array($claim) || ($claim['retryable'] ?? false) !== true) {
+        if (! is_array($claim)) {
             return false;
         }
 
-        // Handed back, but only the SAME message may pick it up. The signature
-        // covers the timestamp and token and not the body, so a release that
-        // asked no further questions would be a forgery window: anyone holding
-        // the tuple could take the freed claim and post a different sender,
-        // subject or body with it.
-        //
-        // Checked BEFORE the generation below, deliberately: a forged attempt
-        // must not be able to burn the generation the genuine retry needs.
-        if (! hash_equals((string) ($claim['fingerprint'] ?? ''), $fingerprint)) {
+        if (! self::matches($claim, $fingerprint)) {
             return false;
         }
 
-        $generation = (int) ($claim['generation'] ?? 0);
-
-        // Exactly one retry may take any given generation, and `Cache::add()`
-        // for the same reason the first claim uses it: the read above and the
-        // write below are not one operation, so without this two concurrent
-        // retries both see `retryable` and both proceed. Losing that race
-        // returns false, so the loser gets 401 and never reaches the work --
-        // which also means it can never release the claim the winner spent.
-        if (! Cache::add($key.':generation:'.$generation, true, self::MAXIMUM_AGE_SECONDS * 2)) {
-            return false;
-        }
-
-        Cache::put($key, self::claim($fingerprint, false, $generation + 1), self::MAXIMUM_AGE_SECONDS * 2);
+        // Re-bound to what was actually presented, so a slot unlocked by one
+        // incomplete upload narrows to concrete bytes as soon as a good file
+        // arrives, instead of staying open for the rest of the window.
+        Cache::put($key, $fingerprint, self::MAXIMUM_AGE_SECONDS + 600);
 
         return true;
     }
 
     /**
-     * @return array{fingerprint: string, retryable: bool, generation: int}
+     * Whether a delivery is the same message the claim was made for.
+     *
+     * The wildcard is DIRECTIONAL. Only the stored side may say `unusable`, so
+     * presenting a broken file cannot unlock a slot the genuine delivery
+     * filled -- which would otherwise hand an attacker the carve-out on
+     * demand, since an oversized upload is something anyone can send.
+     *
+     * @param  array<string, mixed>  $claim
+     * @param  array{mail: string, attachments: array<string, string>}  $fingerprint
      */
-    private static function claim(string $fingerprint, bool $retryable, int $generation): array
+    private static function matches(array $claim, array $fingerprint): bool
     {
-        return ['fingerprint' => $fingerprint, 'retryable' => $retryable, 'generation' => $generation];
+        if (! is_string($claim['mail'] ?? null) || ! hash_equals($claim['mail'], $fingerprint['mail'])) {
+            return false;
+        }
+
+        $claimed = is_array($claim['attachments'] ?? null) ? $claim['attachments'] : [];
+        $offered = $fingerprint['attachments'];
+
+        // The SET of slots must match, not merely each slot that is present.
+        // Otherwise a forgery adds files rather than replacing them.
+        if (array_keys($claimed) !== array_keys($offered)) {
+            return false;
+        }
+
+        foreach ($claimed as $slot => $digest) {
+            if ($digest === self::UNUSABLE) {
+                continue;
+            }
+
+            if (! is_string($digest) || ! hash_equals($digest, $offered[$slot])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
-     * What makes this the same message, for the purpose of a retry.
+     * What makes this the same message.
      *
-     * Sender, recipients, subject, body and threading headers -- the fields
-     * `InboundMessage` actually routes on. Change any of them and it is a
-     * different delivery, which is precisely what a freed claim must not
-     * authenticate.
+     * Two parts, because "one slot may vary" cannot be expressed inside a
+     * single hash.
      *
-     * Attachments are deliberately NOT in it. The retry this exists to allow is
-     * frequently one whose attachment CHANGED: the first attempt was refused
-     * because the upload did not complete, and the retry carries the intact
-     * file. Fingerprinting the bytes would refuse exactly the delivery the
-     * release was built to save.
+     * `mail` is everything posted except the tuple that authenticates it and
+     * the attachment payload, key-sorted so a provider may reorder fields
+     * between a delivery and its retry. A deny-list rather than a list of
+     * fields to include: an include-list has to name every alias every
+     * provider might send and every alias `InboundMessage` might read, and an
+     * earlier version of this missed four of them -- `message_id`,
+     * `references`, bare `body` and `FromFull.Email` -- each silently
+     * exploitable, since an unlisted field can be changed on a claimed token.
+     *
+     * `attachments` is a slot-keyed map of digests, covering BOTH wire shapes.
+     * Multipart uploads never appear in `$request->input()` at all, so they
+     * have to be read from `allFiles()` or they are bound by nothing; the
+     * JSON-shaped providers put theirs in the payload, where the deny-list
+     * would otherwise drop them. The slot key carries the sender's declared
+     * filename, so a forgery cannot rename a file it is not allowed to
+     * replace.
+     *
+     * @return array{mail: string, attachments: array<string, string>}
      */
-    private static function fingerprint(Request $request): string
+    private static function fingerprint(Request $request): array
     {
-        // Everything posted, MINUS a short list -- not a list of fields to
-        // include.
-        //
-        // The first version named the fields to cover and missed four that
-        // routing actually reads: `message_id` (the FIRST key
-        // `InboundMessage` checks for the id, outranking the `Message-Id`
-        // that was listed), `references`/`References`, bare `body`, and
-        // `FromFull.Email`. Each omission was silently exploitable: change an
-        // unlisted field on a freed claim and the fingerprint still matches,
-        // so the delivery reclaims the token, misses
-        // `alreadyAccepted()`'s message-id lookup, and threads itself into a
-        // different conversation.
-        //
-        // An include-list has to enumerate every alias every provider might
-        // send and every alias `InboundMessage` might read, and stay correct
-        // as both change. A deny-list only has to name what a legitimate
-        // retry is allowed to differ in, which is a short closed set that
-        // changes when this file does.
         $material = $request->input();
 
         foreach ([
-            // The tuple that authenticates the delivery rather than describes
-            // it. Identical on a retry by definition, so including it would
-            // be harmless -- and excluding it says which is which.
+            // The tuple authenticates the delivery rather than describing it.
             'timestamp', 'token', 'signature',
-
-            // The attachment payload, and only for the reason the docblock
-            // gives: a retry after a 422 carries a DIFFERENT file.
-            // `$request->input()` already excludes uploaded files, so this
-            // drops the base64 arrays the JSON-shaped providers send and the
-            // multipart bookkeeping that varies with them.
+            // Bound in the attachment map below instead, where one slot can be
+            // allowed to vary and the rest cannot.
             'attachments', 'Attachments', 'attachment-count', 'content-id-map',
         ] as $volatile) {
             unset($material[$volatile]);
         }
 
-        // Key order must not decide identity: a provider is free to reorder
-        // fields between a delivery and its retry.
         self::sortDeep($material);
 
-        return hash('sha256', json_encode($material, JSON_THROW_ON_ERROR));
+        return [
+            'mail' => hash('sha256', json_encode($material, JSON_THROW_ON_ERROR)),
+            'attachments' => self::attachmentDigests($request),
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private static function attachmentDigests(Request $request): array
+    {
+        $digests = [];
+
+        foreach ($request->allFiles() as $field => $files) {
+            foreach (is_array($files) ? $files : [$files] as $index => $file) {
+                if (! $file instanceof UploadedFile) {
+                    continue;
+                }
+
+                $slot = $field.'['.$index.']|'.$file->getClientOriginalName();
+
+                // Gated on `isValid()` and never on the path. An upload PHP
+                // rejected has an empty pathname, and `getRealPath()` on an
+                // empty string returns the CURRENT DIRECTORY rather than
+                // false -- so hashing "the file" would quietly hash a folder.
+                $digests[$slot] = self::digest($file);
+            }
+        }
+
+        foreach (['attachments', 'Attachments'] as $field) {
+            $payload = $request->input($field);
+
+            if (! is_array($payload)) {
+                continue;
+            }
+
+            foreach ($payload as $index => $attachment) {
+                $name = is_array($attachment) ? ($attachment['name'] ?? $attachment['Name'] ?? '') : '';
+                $content = is_array($attachment) ? ($attachment['content'] ?? $attachment['Content'] ?? '') : $attachment;
+
+                $digests[$field.'['.$index.']|'.(is_scalar($name) ? (string) $name : '')] =
+                    hash('sha256', is_scalar($content) ? (string) $content : '');
+            }
+        }
+
+        ksort($digests);
+
+        return $digests;
+    }
+
+    /**
+     * One uploaded file's digest, or the wildcard when there are no bytes.
+     *
+     * Readability is checked rather than assumed. `isValid()` says PHP
+     * finished receiving the upload; it does not say the bytes are still
+     * there when we come to read them, and `hash_file()` on a file that has
+     * gone raises a warning -- which this codebase turns into an exception, so
+     * an infrastructure fault would answer 500 in the middle of verifying a
+     * signature rather than the 422 the controller has waiting for it.
+     *
+     * A file we cannot read is a file that did not arrive usably, which is
+     * what the wildcard means. It is not an attacker primitive: the sender
+     * chooses the name and the bytes, not whether this host's filesystem
+     * answers.
+     */
+    private static function digest(UploadedFile $file): string
+    {
+        if (! $file->isValid()) {
+            return self::UNUSABLE;
+        }
+
+        $path = $file->getPathname();
+
+        if (! is_file($path) || ! is_readable($path)) {
+            return self::UNUSABLE;
+        }
+
+        $digest = @hash_file('sha256', $path);
+
+        return $digest === false ? self::UNUSABLE : $digest;
     }
 
     /**
@@ -200,6 +315,8 @@ final class MailgunSignature implements VerifiesInboundMail
      *
      * `message-headers` arrives as a list of [name, value] pairs, so nested
      * structure is normal here rather than exotic.
+     *
+     * @param  array<mixed>  $material
      */
     private static function sortDeep(array &$material): void
     {
@@ -210,52 +327,6 @@ final class MailgunSignature implements VerifiesInboundMail
                 self::sortDeep($value);
             }
         }
-    }
-
-    /**
-     * Hand the token back, BOUND to the delivery that spent it.
-     *
-     * Marked retryable rather than forgotten, and that distinction is the
-     * whole of it. Forgetting opens a forgery window: the failure this
-     * releases for may have happened AFTER the message was committed -- a
-     * broadcast or listener throwing past the transaction -- and since
-     * Mailgun's HMAC covers only the timestamp and token, anyone holding that
-     * tuple could take the freed claim and post a different sender, subject or
-     * body inside the remaining freshness window.
-     *
-     * Keeping the fingerprint means only the same message can pick it up,
-     * which is the only thing a retry ever is.
-     *
-     * Derived from the request rather than remembered on the instance: the
-     * verifier is resolved per delivery and keeping claim state on it would
-     * make correctness depend on that staying true.
-     */
-    public function release(Request $request): void
-    {
-        $token = (string) $request->input('token', '');
-
-        if ($token === '') {
-            return;
-        }
-
-        $key = self::claimKey($token);
-        $claim = Cache::get($key);
-
-        // Only a claim this request actually made. Reading it back rather than
-        // writing blind means a token some other delivery holds cannot be
-        // freed by asking.
-        if (! is_array($claim) || ! hash_equals((string) ($claim['fingerprint'] ?? ''), self::fingerprint($request))) {
-            return;
-        }
-
-        // The generation is written back unchanged. It was already incremented
-        // when this attempt claimed it, so the next retry contends on a fresh,
-        // unclaimed generation key rather than one this attempt burned.
-        Cache::put(
-            $key,
-            self::claim((string) $claim['fingerprint'], true, (int) ($claim['generation'] ?? 0)),
-            self::MAXIMUM_AGE_SECONDS * 2,
-        );
     }
 
     private static function claimKey(string $token): string

@@ -9,7 +9,6 @@ use App\Support\Mail\Signatures\InboundMailVerifiers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
  * Where a mail provider delivers what it parsed.
@@ -50,27 +49,13 @@ class InboundMailController extends Controller
             return response()->json(['message' => 'Invalid signature.'], 401);
         }
 
-        // Past this point the delivery is authenticated, and anything spent to
-        // authenticate it must survive ONLY an outcome the provider will not
-        // send again. Every retry carries the same signature, so a claim that
-        // outlives a failure refuses the retry -- and once the freshness window
-        // passes there is no way back. Naming the rule once here is the only
-        // way to keep it true: the first version of this released on the single
-        // failure it could see, and a write that threw two frames deeper still
-        // stranded the token.
-        try {
-            $response = $this->handle($request, $router);
-        } catch (Throwable $exception) {
-            $verifier->release($request);
-
-            throw $exception;
-        }
-
-        if ($response->getStatusCode() >= 300) {
-            $verifier->release($request);
-        }
-
-        return $response;
+        // No release, no unwinding, nothing to hand back. A retry carries the
+        // same message and therefore the same fingerprint, so the claim
+        // accepts it -- which is why the three rounds of release machinery
+        // that used to sit here could go. Whether a retry should be
+        // re-PROCESSED is a different question, answered by
+        // `InboundMailRouter::alreadyAccepted()` against a unique index.
+        return $this->handle($request, $router);
     }
 
     /**
@@ -82,19 +67,18 @@ class InboundMailController extends Controller
      */
     private function handle(Request $request, InboundMailRouter $router): JsonResponse
     {
-        $payload = $this->payloadWithProviderHeaders($this->payloadWithUploadedFiles($request));
+        $adapted = $this->payloadWithUploadedFiles($request);
 
-        // A file the upload never completed. Skipping it and answering 200
-        // would stop the provider retrying while the attachment is gone --
-        // the same trade this endpoint already refuses elsewhere. 422 tells
-        // the provider to try again, which is the only way the file survives.
-        if ($this->hasUnusableUpload($request)) {
-            Log::warning('Inbound mail refused: an attachment did not upload completely.');
-
+        // A file the sender sent that could not be turned into an attachment
+        // -- the upload never completed, or completed and will not read.
+        // Answering 200 would stop the provider retrying while the file is
+        // gone, and 422 asks for the delivery again, which is the only way it
+        // survives. One decision, taken where the read happens.
+        if ($adapted === null) {
             return response()->json(['message' => 'An attachment could not be read.'], 422);
         }
 
-        $message = InboundMessage::fromPayload($payload);
+        $message = InboundMessage::fromPayload($this->payloadWithProviderHeaders($adapted));
 
         // Deliberately 200, and deliberately terminal: there is no sender to
         // route to, and no retry will invent one.
@@ -107,31 +91,6 @@ class InboundMailController extends Controller
         return response()->json([
             'message' => $router->route($message) === null ? 'Ignored.' : 'Accepted.',
         ], 200);
-    }
-
-    /**
-     * Did a file arrive that PHP could not finish receiving?
-     *
-     * The likeliest cause is an attachment larger than `upload_max_filesize`,
-     * which commonly still sits at PHP's 2M default while Wayfindr accepts
-     * ten. The rest of the multipart body parses fine, so nothing else
-     * notices.
-     */
-    private function hasUnusableUpload(Request $request): bool
-    {
-        foreach ($request->allFiles() as $field => $file) {
-            if (! str_starts_with((string) $field, 'attachment-')) {
-                continue;
-            }
-
-            foreach (is_array($file) ? $file : [$file] as $uploaded) {
-                if ($uploaded && ! $uploaded->isValid()) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -209,7 +168,16 @@ class InboundMailController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function payloadWithUploadedFiles(Request $request): array
+    /**
+     * Null when a file the sender sent cannot be turned into an attachment.
+     *
+     * The read happens here exactly once, so the decision belongs here too --
+     * asking a separate `hasUnusableUpload()` would read every file a second
+     * time and leave a gap in which the check passes and the build fails.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function payloadWithUploadedFiles(Request $request): ?array
     {
         $payload = $request->all();
 
@@ -227,14 +195,28 @@ class InboundMailController extends Controller
             }
 
             foreach (is_array($file) ? $file : [$file] as $uploaded) {
+                // An upload PHP itself rejected -- over `upload_max_filesize`,
+                // truncated, interrupted. Reported rather than skipped, for
+                // the same reason as the read failure below.
                 if (! $uploaded || ! $uploaded->isValid()) {
-                    continue;
+                    return null;
                 }
 
-                $contents = @file_get_contents($uploaded->getRealPath());
+                $path = $uploaded->getRealPath();
+                $contents = $path === false ? false : @file_get_contents($path);
 
+                // PHP said the upload completed and the bytes still will not
+                // read -- a transient permissions or filesystem fault. Skipping
+                // it silently answered `200 Accepted.`, which stops the
+                // provider retrying and loses the file permanently, and worse,
+                // if it was the only attachment the message is indistinguishable
+                // from one that never had it.
                 if ($contents === false) {
-                    continue;
+                    Log::warning('Inbound mail: an attachment could not be read.', [
+                        'name' => $uploaded->getClientOriginalName(),
+                    ]);
+
+                    return null;
                 }
 
                 $attachments[] = [

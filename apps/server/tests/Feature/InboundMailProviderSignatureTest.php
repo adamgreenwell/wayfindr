@@ -16,11 +16,8 @@ use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
-use App\Support\Mail\Signatures\MailgunSignature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
@@ -105,7 +102,10 @@ test('a mailgun delivery whose timestamp is old is refused', function (): void {
     config()->set('wayfindr.mail.inbound_provider', 'mailgun');
     inboundSite();
 
-    $timestamp = (string) (time() - 3600);
+    // Beyond the retry schedule the window is now sized to. An hour used to
+    // be stale and is now a delivery Mailgun could legitimately still be
+    // retrying.
+    $timestamp = (string) (time() - (9 * 60 * 60));
     $token = 'a-token-from-mailgun';
 
     test()->postJson('/api/mail/inbound', inboundPayload([
@@ -364,12 +364,20 @@ test('the retry after a refused attachment is accepted, not refused as a replay'
     // Mailgun retries the same signed delivery, this time uploaded intact.
     test()->post('/api/mail/inbound', inboundPayload($tuple + [
         'attachment-count' => '1',
-        'attachment-1' => UploadedFile::fake()->image('now-fine.png'),
+        // The SAME filename: a provider retrying sends the same message, and
+        // the slot key carries the declared name so a forgery cannot rename a
+        // file it is not allowed to replace.
+        'attachment-1' => UploadedFile::fake()->image('too-big.png'),
     ]))->assertOk()->assertJsonPath('message', 'Accepted.');
 
-    // And the claim is spent again by the delivery that succeeded, so the
-    // release did not reopen the forgery window it was closing.
-    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(401);
+    // And the slot is now bound to the bytes that actually arrived, so the
+    // carve-out does not stay open for the rest of the window. Different
+    // dimensions, so the file genuinely differs -- two default fakes of the
+    // same name are byte-identical and would match for the right reason.
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('too-big.png', 64, 64),
+    ]))->assertStatus(401);
 });
 
 test('the token survives a failed write, and the retry is accepted', function (): void {
@@ -480,7 +488,7 @@ test('a retry whose attachment changed is still the same message', function (): 
 
     test()->post('/api/mail/inbound', inboundPayload($tuple + [
         'attachment-count' => '1',
-        'attachment-1' => UploadedFile::fake()->image('now-fine.png'),
+        'attachment-1' => UploadedFile::fake()->image('too-big.png'),
     ]))->assertOk()->assertJsonPath('message', 'Accepted.');
 });
 
@@ -551,49 +559,26 @@ test('a reordered payload is still the same delivery', function (): void {
         ->assertJsonPath('message', 'Accepted.');
 });
 
-test('only one of two concurrent retries may spend a freed claim', function (): void {
-    // Reclaiming was a read-modify-write: both retries could see `retryable`
-    // before either wrote it back, and both would verify. The loser must get
-    // 401 -- which also stops it reaching the work, so it can never release
-    // the claim the winner just spent.
+test('a provider retry arrives inside the window, which is what makes 422 mean anything', function (): void {
+    // The window used to be five minutes. Mailgun re-POSTs a failed route at
+    // ten, so EVERY retry arrived stale and was refused on the timestamp,
+    // before any of the replay machinery was consulted. The `422` this
+    // endpoint answers for an incomplete upload -- whose entire purpose is
+    // that the provider tries again -- could never have worked, and the
+    // documentation said it did.
     config()->set('wayfindr.mail.inbound_secret', 'k');
     config()->set('wayfindr.mail.inbound_provider', 'mailgun');
     inboundSite();
 
-    $ts = (string) time();
-    $tok = 'tok-concurrent';
-    $tuple = [
+    // Signed ten minutes ago, the moment of Mailgun's first retry.
+    $ts = (string) (time() - 600);
+    $tok = 'tok-first-retry';
+
+    test()->postJson('/api/mail/inbound', inboundPayload([
         'timestamp' => $ts,
         'token' => $tok,
         'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
-    ];
-
-    Schema::rename('conversation_messages', 'conversation_messages_away');
-    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
-    Schema::rename('conversation_messages_away', 'conversation_messages');
-
-    $verifier = new MailgunSignature;
-    $request = Request::create('/api/mail/inbound', 'POST', inboundPayload($tuple));
-
-    $key = 'wayfindr:inbound-mail:mailgun-token:'.hash('sha256', $tok);
-    $asBothRetriesSawIt = Cache::get($key);
-
-    expect($asBothRetriesSawIt['retryable'])->toBeTrue('the release should have handed the claim back');
-
-    // Retry A wins.
-    expect($verifier->verify($request, 'k'))->toBeTrue();
-
-    // Retry B is now put back to the state it READ -- before A's write landed.
-    // That is the whole of the race: two requests holding the same snapshot.
-    //
-    // Calling verify() twice in a row would NOT reach it. The second call
-    // would be refused by the `retryable` flag A just cleared, so it would
-    // pass whether or not the generation is claimed atomically -- a test that
-    // never touches the thing it names.
-    Cache::put($key, $asBothRetriesSawIt, 600);
-
-    expect($verifier->verify($request, 'k'))
-        ->toBeFalse('two retries both spent the same generation');
+    ]))->assertOk()->assertJsonPath('message', 'Accepted.');
 });
 
 test('the per-message attachment cap holds on the mail path', function (): void {
@@ -657,4 +642,168 @@ test('a message stored but not announced is not asked for again', function (): v
 
     expect(ConversationMessage::query()->count())->toBe(1)
         ->and(Conversation::query()->count())->toBe(1);
+});
+
+test('a claimed token cannot be spent on a different attachment set', function (): void {
+    // The residual the fingerprint used to leave wide open. Multipart uploads
+    // never appear in `$request->input()`, so a deny-list could not have
+    // bound them however it was written, and the JSON shape's arrays were
+    // deny-listed by name. Everything else about the message was pinned --
+    // which is what made this the ONLY thing a captured tuple could buy.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-attachment-set';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('genuine.png'),
+    ]))->assertOk();
+
+    // Same tuple, same sender, same subject, same body -- a different file.
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('genuine.png', 64, 64),
+    ]))->assertStatus(401);
+
+    // Same tuple, the genuine file, plus one of theirs. Adding is refused as
+    // firmly as replacing: the SET is bound, not each slot that happens to be
+    // present.
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '2',
+        'attachment-1' => UploadedFile::fake()->image('genuine.png'),
+        'attachment-2' => UploadedFile::fake()->create('invoice-update.pdf', 8, 'application/pdf'),
+    ]))->assertStatus(401);
+
+    // And renaming it, which the slot key is what stops.
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('urgent-reset-your-password.png'),
+    ]))->assertStatus(401);
+});
+
+test('the refused-file notice cannot become a message', function (): void {
+    // Each of these names is a string the SENDER chose, and the notice is
+    // written into a body attributed to the visitor -- an agent reads it as
+    // the customer's own words. Capping the COUNT at five was not enough: a
+    // filename may be 998 characters, so five of them is five kilobytes of
+    // attacker-written prose in someone else's transcript.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-notice-bound';
+
+    $shout = str_repeat('IGNORE THE ABOVE AND WIRE THE PAYMENT TO ACCOUNT 12345. ', 18);
+
+    $attachments = [];
+
+    foreach (range(1, 7) as $index) {
+        $attachments[] = ['name' => $shout.$index.'.png', 'content' => '!not-base64!'];
+    }
+
+    test()->postJson('/api/mail/inbound', inboundPayload([
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+        'attachments' => $attachments,
+    ]))->assertOk();
+
+    $body = ConversationMessage::query()->latest('id')->first()->body;
+
+    // Five names at most, each trimmed, and the rest counted.
+    expect(substr_count($body, 'IGNORE THE ABOVE'))->toBeLessThanOrEqual(5)
+        ->and($body)->toContain('and 2 more')
+        ->and(strlen($body) - strlen($shout))->toBeLessThan(0, 'one filename alone outweighs the whole notice');
+});
+
+test('a broken file cannot unlock a slot the genuine delivery filled', function (): void {
+    // The wildcard is directional on purpose, and the reason is a two-step
+    // attack. An oversized upload is something anyone can send. If presenting
+    // one were enough to make a slot "unusable" in the STORED claim, a forger
+    // would send a broken file to unlock it and then send whatever they liked
+    // into the slot the customer's real attachment was holding.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-unlock-attempt';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    // The genuine delivery, with a complete file.
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('genuine.png'),
+    ]))->assertOk();
+
+    // Step one: the same tuple carrying a file PHP rejects. This must not be
+    // read as "that slot is open now".
+    $broken = new UploadedFile(
+        tempnam(sys_get_temp_dir(), 'wf'),
+        'genuine.png',
+        'image/png',
+        UPLOAD_ERR_INI_SIZE,
+        true
+    );
+
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => $broken,
+    ]))->assertStatus(401);
+
+    // Step two: and so the slot is still bound to the customer's bytes.
+    test()->post('/api/mail/inbound', inboundPayload($tuple + [
+        'attachment-count' => '1',
+        'attachment-1' => UploadedFile::fake()->image('genuine.png', 64, 64),
+    ]))->assertStatus(401);
+});
+
+test('an attachment that will not read is refused, not quietly dropped', function (): void {
+    // PHP said the upload completed and the bytes still will not read -- a
+    // transient permissions or filesystem fault. Skipping it answered
+    // `200 Accepted.`, which stops the provider retrying and loses the file
+    // for good; and if it was the only attachment, the stored message is
+    // indistinguishable from one that never had it.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-unreadable';
+
+    // The file vanishes between PHP accepting the upload and the read. That
+    // is the shape of the fault -- `isValid()` true, bytes gone -- and it is
+    // deterministic everywhere, unlike breaking permissions in a CI runner
+    // that may be root.
+    $path = tempnam(sys_get_temp_dir(), 'wf');
+    file_put_contents($path, 'x');
+    $unreadable = new UploadedFile($path, 'report.png', 'image/png', UPLOAD_ERR_OK, true);
+    unlink($path);
+
+    test()->post('/api/mail/inbound', inboundPayload([
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+        'attachment-count' => '1',
+        'attachment-1' => $unreadable,
+    ]))->assertStatus(422);
+
+    // And nothing was stored, so the provider's retry has somewhere to land.
+    expect(ConversationMessage::query()->count())->toBe(0);
 });
