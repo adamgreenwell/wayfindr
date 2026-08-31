@@ -65,12 +65,35 @@ authenticate *any* payload:
 - each token is accepted **once**. A second delivery reusing it is refused
   whatever it contains.
 
+#### Raise the PHP upload limits, both of them
+
 Attachments on a route arrive as file uploads rather than in the JSON body, and
-are stored like any other attachment. If one is larger than PHP's own
-`upload_max_filesize`, the delivery is refused with `422` so Mailgun retries —
-accepting it would lose the file quietly. That limit is commonly still 2M while
-Wayfindr accepts 10M, so it is worth raising in `php.ini` to match
-`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES`.
+are stored like any other attachment. Two `php.ini` limits govern whether they
+survive the trip, and **raising only the obvious one makes things worse**:
+
+```ini
+upload_max_filesize = 10M
+post_max_size = 64M
+```
+
+`upload_max_filesize` is the per-file ceiling. Set it to at least
+`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES` (10M by default); it is commonly still 2M.
+A file over it arrives as an upload PHP marks unusable, the delivery is refused
+with `422`, and the provider retries — which is the only way the file survives.
+
+`post_max_size` is the ceiling on the **whole request**: every attachment, the
+message body, and multipart overhead together. Wayfindr accepts up to
+`WAYFINDR_ATTACHMENT_MAX_PER_MESSAGE` files (5) of
+`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES` each, so the defaults allow a 50M request
+and `post_max_size` needs headroom above that.
+
+It matters more than it looks, because exceeding it does not produce a large
+upload — it produces **no request body at all**. PHP discards the entire
+multipart body, so the endpoint never sees the signature fields, cannot verify
+anything, and answers `401`. The retry is identical and gets `401` again. A
+`post_max_size` left at its common 8M default therefore turns every message
+carrying a large attachment into a permanent loss, and the `422` described above
+never happens.
 
 ### Postmark
 
@@ -111,8 +134,9 @@ SendGrid among them.
 | Status | Meaning |
 | --- | --- |
 | `404` | The channel is off. `WAYFINDR_INBOUND_MAIL_SECRET` is empty. |
-| `401` | The delivery did not verify: wrong secret, wrong `..._PROVIDER`, a stale Mailgun timestamp, or an unrecognised provider name. |
+| `401` | The delivery did not verify: wrong secret, wrong `..._PROVIDER`, a stale Mailgun timestamp, or an unrecognised provider name. Also what a request over `post_max_size` looks like, because PHP discards the body before the signature can be read. |
 | `422` | An attachment did not upload completely — usually PHP's `upload_max_filesize`. Refused so the provider retries rather than losing the file. |
+| `500` | Something failed while storing the message. The provider retries, and Wayfindr gives back anything it spent verifying so the retry is accepted rather than refused as a replay. |
 | `200` `Accepted.` | Routed onto a conversation. |
 | `200` `Ignored.` | Understood and deliberately not routed — no usable sender, or an address matching no site. |
 

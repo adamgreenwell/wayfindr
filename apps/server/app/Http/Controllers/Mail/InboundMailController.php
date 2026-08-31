@@ -9,6 +9,7 @@ use App\Support\Mail\Signatures\InboundMailVerifiers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Where a mail provider delivers what it parsed.
@@ -49,6 +50,38 @@ class InboundMailController extends Controller
             return response()->json(['message' => 'Invalid signature.'], 401);
         }
 
+        // Past this point the delivery is authenticated, and anything spent to
+        // authenticate it must survive ONLY an outcome the provider will not
+        // send again. Every retry carries the same signature, so a claim that
+        // outlives a failure refuses the retry -- and once the freshness window
+        // passes there is no way back. Naming the rule once here is the only
+        // way to keep it true: the first version of this released on the single
+        // failure it could see, and a write that threw two frames deeper still
+        // stranded the token.
+        try {
+            $response = $this->handle($request, $router);
+        } catch (Throwable $exception) {
+            $verifier->release($request);
+
+            throw $exception;
+        }
+
+        if ($response->getStatusCode() >= 300) {
+            $verifier->release($request);
+        }
+
+        return $response;
+    }
+
+    /**
+     * The work a verified delivery actually does.
+     *
+     * Separate from `__invoke` so that "did this reach a terminal outcome?" is
+     * a question about ONE return value rather than a promise every future
+     * branch has to remember to keep.
+     */
+    private function handle(Request $request, InboundMailRouter $router): JsonResponse
+    {
         $payload = $this->payloadWithProviderHeaders($this->payloadWithUploadedFiles($request));
 
         // A file the upload never completed. Skipping it and answering 200
@@ -58,17 +91,13 @@ class InboundMailController extends Controller
         if ($this->hasUnusableUpload($request)) {
             Log::warning('Inbound mail refused: an attachment did not upload completely.');
 
-            // The retry carries the same signature, so anything spent to
-            // authenticate this attempt has to go back before we ask for one.
-            // Without this the 422 that exists to SAVE the attachment is what
-            // loses the whole message: the retry is refused as a replay.
-            $verifier->release($request);
-
             return response()->json(['message' => 'An attachment could not be read.'], 422);
         }
 
         $message = InboundMessage::fromPayload($payload);
 
+        // Deliberately 200, and deliberately terminal: there is no sender to
+        // route to, and no retry will invent one.
         if ($message === null) {
             Log::info('Inbound mail rejected: no usable sender.');
 

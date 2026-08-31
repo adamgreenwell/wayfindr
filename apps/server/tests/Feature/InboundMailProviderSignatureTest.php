@@ -18,6 +18,7 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -366,4 +367,42 @@ test('the retry after a refused attachment is accepted, not refused as a replay'
     // And the claim is spent again by the delivery that succeeded, so the
     // release did not reopen the forgery window it was closing.
     test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(401);
+});
+
+test('the token survives a failed write, and the retry is accepted', function (): void {
+    // The narrow version of this fix released the claim on the ONE failure it
+    // could see -- the unusable upload. A write that fails two frames deeper
+    // (storage rejecting a file, the database going away) never reached that
+    // line, so the token stayed spent and Mailgun's retry got 401 until the
+    // freshness window closed on it. The rule has to be about the outcome, not
+    // about the branch that produced it.
+    //
+    // Faulted for real rather than mocked: `InboundMailRouter` is final, and a
+    // dropped table reproduces the reported shape -- a throw from inside the
+    // routing transaction, well past the point the controller can see.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-failed-write';
+    $tuple = [
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+    ];
+
+    // Renamed rather than dropped, so putting it back restores the real
+    // schema rather than a stub the migration would decline to re-fill.
+    Schema::rename('conversation_messages', 'conversation_messages_away');
+
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
+
+    // Fixed, the way an operator would, and the provider retries the delivery
+    // it never got an answer for.
+    Schema::rename('conversation_messages_away', 'conversation_messages');
+
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))
+        ->assertOk()
+        ->assertJsonPath('message', 'Accepted.');
 });
