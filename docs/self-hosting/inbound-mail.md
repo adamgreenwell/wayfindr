@@ -66,7 +66,11 @@ authenticate *any* payload:
   whatever it contains.
 
 Attachments on a route arrive as file uploads rather than in the JSON body, and
-are stored like any other attachment.
+are stored like any other attachment. If one is larger than PHP's own
+`upload_max_filesize`, the delivery is refused with `422` so Mailgun retries —
+accepting it would lose the file quietly. That limit is commonly still 2M while
+Wayfindr accepts 10M, so it is worth raising in `php.ini` to match
+`WAYFINDR_ATTACHMENT_MAX_FILE_BYTES`.
 
 ### Postmark
 
@@ -108,6 +112,7 @@ SendGrid among them.
 | --- | --- |
 | `404` | The channel is off. `WAYFINDR_INBOUND_MAIL_SECRET` is empty. |
 | `401` | The delivery did not verify: wrong secret, wrong `..._PROVIDER`, a stale Mailgun timestamp, or an unrecognised provider name. |
+| `422` | An attachment did not upload completely — usually PHP's `upload_max_filesize`. Refused so the provider retries rather than losing the file. |
 | `200` `Accepted.` | Routed onto a conversation. |
 | `200` `Ignored.` | Understood and deliberately not routed — no usable sender, or an address matching no site. |
 

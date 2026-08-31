@@ -49,7 +49,19 @@ class InboundMailController extends Controller
             return response()->json(['message' => 'Invalid signature.'], 401);
         }
 
-        $message = InboundMessage::fromPayload($this->payloadWithUploadedFiles($request));
+        $payload = $this->payloadWithProviderHeaders($this->payloadWithUploadedFiles($request));
+
+        // A file the upload never completed. Skipping it and answering 200
+        // would stop the provider retrying while the attachment is gone --
+        // the same trade this endpoint already refuses elsewhere. 422 tells
+        // the provider to try again, which is the only way the file survives.
+        if ($this->hasUnusableUpload($request)) {
+            Log::warning('Inbound mail refused: an attachment did not upload completely.');
+
+            return response()->json(['message' => 'An attachment could not be read.'], 422);
+        }
+
+        $message = InboundMessage::fromPayload($payload);
 
         if ($message === null) {
             Log::info('Inbound mail rejected: no usable sender.');
@@ -60,6 +72,87 @@ class InboundMailController extends Controller
         return response()->json([
             'message' => $router->route($message) === null ? 'Ignored.' : 'Accepted.',
         ], 200);
+    }
+
+    /**
+     * Did a file arrive that PHP could not finish receiving?
+     *
+     * The likeliest cause is an attachment larger than `upload_max_filesize`,
+     * which commonly still sits at PHP's 2M default while Wayfindr accepts
+     * ten. The rest of the multipart body parses fine, so nothing else
+     * notices.
+     */
+    private function hasUnusableUpload(Request $request): bool
+    {
+        foreach ($request->allFiles() as $field => $file) {
+            if (! str_starts_with((string) $field, 'attachment-')) {
+                continue;
+            }
+
+            foreach (is_array($file) ? $file : [$file] as $uploaded) {
+                if ($uploaded && ! $uploaded->isValid()) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Lift threading headers out of wherever the provider hid them.
+     *
+     * `InboundMessage` reads `Message-Id`, `In-Reply-To` and `References` at
+     * the top level, which is where the JSON providers put them. Mailgun does
+     * not: they are inside `message-headers`, a JSON-encoded array of
+     * [name, value] pairs. Postmark keeps its own array of {Name, Value}.
+     *
+     * Left unlifted, `threadCandidates()` finds nothing and every customer
+     * REPLY opens a new conversation -- which is the single thing the email
+     * channel exists to prevent, and it would look like the feature working.
+     *
+     * Existing top-level values win. A provider that sends both means them.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function payloadWithProviderHeaders(array $payload): array
+    {
+        $headers = [];
+
+        // Mailgun: a JSON string, or already decoded by the framework.
+        $mailgun = $payload['message-headers'] ?? null;
+
+        if (is_string($mailgun)) {
+            $mailgun = json_decode($mailgun, true);
+        }
+
+        foreach (is_array($mailgun) ? $mailgun : [] as $pair) {
+            if (is_array($pair) && count($pair) >= 2 && is_string($pair[0] ?? null)) {
+                $headers[strtolower($pair[0])] = $pair[1];
+            }
+        }
+
+        // Postmark: [{Name, Value}, ...].
+        foreach (is_array($payload['Headers'] ?? null) ? $payload['Headers'] : [] as $header) {
+            if (is_array($header) && is_string($header['Name'] ?? null)) {
+                $headers[strtolower($header['Name'])] = $header['Value'] ?? null;
+            }
+        }
+
+        foreach ([
+            'message-id' => 'Message-Id',
+            'in-reply-to' => 'In-Reply-To',
+            'references' => 'References',
+        ] as $wire => $field) {
+            $value = $headers[$wire] ?? null;
+
+            if (is_string($value) && $value !== '' && ($payload[$field] ?? null) === null) {
+                $payload[$field] = $value;
+            }
+        }
+
+        return $payload;
     }
 
     /**

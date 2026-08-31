@@ -13,6 +13,7 @@
 // The endpoint now verifies what the provider actually sends, chosen by config.
 
 use App\Models\Account;
+use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -226,4 +227,98 @@ test('a mailgun route delivers its attachments rather than dropping them', funct
 
     expect($message)->not->toBeNull('no message was created, so this proves nothing');
     expect($message->attachments()->count())->toBe(1, 'the attached file was accepted and then discarded');
+});
+
+test('a mailgun reply joins its conversation instead of starting a new one', function (): void {
+    // Mailgun does not put threading headers at the top level. They are inside
+    // `message-headers`, a JSON array of [name, value] pairs -- so
+    // `threadCandidates()` saw nothing and every customer reply opened a NEW
+    // conversation, which is the one thing the email channel exists to avoid.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    $site = inboundSite();
+
+    $deliver = function (array $extra) use (&$deliver) {
+        $ts = (string) time();
+        $tok = 'tok-'.bin2hex(random_bytes(6));
+
+        return test()->postJson('/api/mail/inbound', inboundPayload(array_merge([
+            'timestamp' => $ts,
+            'token' => $tok,
+            'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+        ], $extra)));
+    };
+
+    $deliver([
+        'message-headers' => json_encode([['Message-Id', '<first@example.test>']]),
+    ])->assertOk()->assertJsonPath('message', 'Accepted.');
+
+    $first = Conversation::query()->latest('id')->first();
+
+    $deliver([
+        'text' => 'Still not working.',
+        'message-headers' => json_encode([
+            ['Message-Id', '<second@example.test>'],
+            ['In-Reply-To', '<first@example.test>'],
+        ]),
+    ])->assertOk()->assertJsonPath('message', 'Accepted.');
+
+    expect(Conversation::query()->count())
+        ->toBe(1, 'the reply opened a second conversation instead of joining the first');
+    expect($first->fresh()->messages()->count())->toBe(2);
+});
+
+test('a postmark reply joins its conversation too', function (): void {
+    // Postmark carries them in a `Headers` array of {Name, Value}.
+    config()->set('wayfindr.mail.inbound_secret', 'pw');
+    config()->set('wayfindr.mail.inbound_provider', 'postmark');
+    inboundSite();
+
+    $auth = ['Authorization' => 'Basic '.base64_encode('wayfindr:pw')];
+
+    test()->withHeaders($auth)->postJson('/api/mail/inbound', inboundPayload([
+        'Headers' => [['Name' => 'Message-ID', 'Value' => '<pm-first@example.test>']],
+    ]))->assertOk();
+
+    test()->withHeaders($auth)->postJson('/api/mail/inbound', inboundPayload([
+        'text' => 'Following up.',
+        'Headers' => [
+            ['Name' => 'Message-ID', 'Value' => '<pm-second@example.test>'],
+            ['Name' => 'In-Reply-To', 'Value' => '<pm-first@example.test>'],
+        ],
+    ]))->assertOk();
+
+    expect(Conversation::query()->count())
+        ->toBe(1, 'the reply opened a second conversation instead of joining the first');
+});
+
+test('a broken upload is refused rather than accepted and dropped', function (): void {
+    // An attachment larger than PHP's own `upload_max_filesize` arrives as an
+    // UploadedFile whose `isValid()` is false while the rest of the multipart
+    // body parses fine. Skipping it and answering `Accepted.` stops Mailgun
+    // retrying and loses the file -- the same failure this PR just fixed for
+    // the field-name mismatch, on a different path.
+    config()->set('wayfindr.mail.inbound_secret', 'k');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $ts = (string) time();
+    $tok = 'tok-broken';
+
+    $broken = new UploadedFile(
+        tempnam(sys_get_temp_dir(), 'wf'),
+        'too-big.png',
+        'image/png',
+        UPLOAD_ERR_INI_SIZE,
+        true
+    );
+
+    test()->post('/api/mail/inbound', inboundPayload([
+        'timestamp' => $ts,
+        'token' => $tok,
+        'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
+        'attachment-count' => '1',
+        'attachment-1' => $broken,
+    ]))->assertStatus(422);
 });
