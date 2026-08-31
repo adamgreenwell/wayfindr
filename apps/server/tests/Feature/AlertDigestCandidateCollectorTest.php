@@ -1,5 +1,6 @@
 <?php
 
+use App\Mail\AlertDigestMessage;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -10,7 +11,9 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AlertDigestCandidateCollector;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -234,3 +237,73 @@ function createConversationAlert(
 
     return $conversation;
 }
+
+test('a digest dates its entries on the recipient clock, not on storage', function (): void {
+    // The digest was printing `2026-08-24T15:05:00.000000Z` into an agent's
+    // inbox: storage's clock, in a machine format, in the middle of a
+    // sentence. The ReaderClock guard walked past it because `toISOString()`
+    // was in none of its matchers -- a hole shaped exactly like the defect.
+    //
+    // This is also the one case the seam's explicit-reader argument was
+    // written for. A digest is assembled by a scheduled command and rendered
+    // in a queue worker; there is nobody signed in to look up.
+    CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = digestAgent($account, ['timezone' => 'Europe/Berlin', 'locale' => 'de']);
+    $site = Site::factory()->for($account)->create();
+
+    createConversationAlert(agent: $agent, site: $site, body: 'Still waiting on this.');
+
+    $candidates = app(AlertDigestCandidateCollector::class)->forAgent($agent);
+
+    expect($candidates)->not->toBeEmpty();
+
+    $candidate = $candidates->first();
+
+    // 15:05 UTC is 17:05 in Berlin, and a German reader reads a 24-hour
+    // clock -- so the LANGUAGE half matters here too, and the worker's
+    // ambient locale is the install default, not this agent's.
+    expect($candidate['last_activity_label'])->toContain('17:05')
+        ->and($candidate['last_activity_label'])->toContain('24. Aug 2026')
+        ->and($candidate['last_activity_label'])->not->toContain('PM');
+
+    // The machine half is untouched: it is parsed back to decide staleness.
+    expect($candidate['last_activity_at'])->toContain('2026-08-24T15:05');
+
+    CarbonImmutable::setTestNow();
+});
+
+test('a digest queued by the previous release still renders', function (): void {
+    // A rolling deploy leaves jobs in the queue that were serialized by the
+    // release before this one. Their candidates carry `last_activity_at` and
+    // no label. Reading the new key directly threw while rendering, the retry
+    // threw the same way, and `SendAlertDigestsCommand` had already marked
+    // those notifications queued -- so the alerts were never selected again.
+    // The failure is silent, permanent, and only happens in production.
+    $account = Account::factory()->create();
+    $agent = digestAgent($account);
+
+    $preDeployCandidate = [
+        'kind' => 'conversation_needs_reply',
+        'last_activity_at' => '2026-08-24T15:05:00.000000Z',
+        'notification_id' => (string) Str::uuid(),
+        'priority' => null,
+        'reference' => 'WF-OLDSHAPE',
+        'site_name' => 'Acme Docs',
+        'status' => null,
+        'subject' => 'Checkout trouble',
+        'url' => 'https://support.example.test/dashboard/conversations/WF-OLDSHAPE',
+    ];
+
+    $message = new AlertDigestMessage(
+        agentName: $agent->name,
+        candidates: [$preDeployCandidate],
+        generatedAt: CarbonImmutable::now(),
+    );
+
+    $rendered = $message->render();
+
+    expect($rendered)->toContain('WF-OLDSHAPE')
+        ->and($rendered)->toContain('2026-08-24T15:05:00.000000Z');
+});
