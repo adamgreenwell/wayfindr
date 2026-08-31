@@ -9,6 +9,11 @@ return [
         // means the channel is off, and the endpoint answers 404 rather than
         // standing open.
         'inbound_secret' => env('WAYFINDR_INBOUND_MAIL_SECRET', ''),
+
+        // Which scheme the configured provider actually speaks. Defaults to
+        // Wayfindr's own, so an install already re-signing through a proxy --
+        // the only way this channel worked before -- is unaffected.
+        'inbound_provider' => env('WAYFINDR_INBOUND_MAIL_PROVIDER', 'wayfindr'),
     ],
 
     'documentation' => [

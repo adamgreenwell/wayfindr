@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Mail;
 use App\Http\Controllers\Controller;
 use App\Support\Mail\InboundMailRouter;
 use App\Support\Mail\InboundMessage;
+use App\Support\Mail\Signatures\InboundMailVerifiers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -13,10 +14,15 @@ use Illuminate\Support\Facades\Log;
  * Where a mail provider delivers what it parsed.
  *
  * Signed rather than authenticated, exactly as the GitHub, GitLab and Jira
- * webhooks already are: the caller is a provider, not a person, and an HMAC
- * over the raw body is the only thing separating it from anybody who learned
+ * webhooks already are: the caller is a provider, not a person, and what it
+ * proves about itself is the only thing separating it from anybody who learned
  * the URL. One install-wide secret, because the mail provider is install-wide
  * -- sites are told apart by the address written to, not by their own endpoint.
+ *
+ * WHICH proof depends on the provider, and they do not agree: see
+ * `InboundMailVerifiers`. This endpoint once accepted only Wayfindr's own
+ * scheme, which no provider emits, so a native webhook got 401 on every
+ * delivery.
  *
  * Answers 200 to anything accepted OR deliberately ignored. A provider retries
  * on a failure code, and retrying a message addressed to a site that does not
@@ -35,7 +41,11 @@ class InboundMailController extends Controller
             return response()->json(['message' => 'Inbound mail is not configured.'], 404);
         }
 
-        if (! $this->signatureIsValid($request, $secret)) {
+        // The scheme the operator's provider actually speaks. Unknown names
+        // verify nothing and therefore accept nothing.
+        $verifier = InboundMailVerifiers::for((string) config('wayfindr.mail.inbound_provider', 'wayfindr'));
+
+        if ($verifier === null || ! $verifier->verify($request, $secret)) {
             return response()->json(['message' => 'Invalid signature.'], 401);
         }
 
@@ -50,20 +60,5 @@ class InboundMailController extends Controller
         return response()->json([
             'message' => $router->route($message) === null ? 'Ignored.' : 'Accepted.',
         ], 200);
-    }
-
-    /**
-     * Compared with hash_equals, which takes the same time whatever the input.
-     * A plain === leaks how much of a guess was right, one byte at a time.
-     */
-    private function signatureIsValid(Request $request, string $secret): bool
-    {
-        $signature = (string) $request->header('X-Wayfindr-Signature', '');
-
-        if (! str_starts_with($signature, 'sha256=')) {
-            return false;
-        }
-
-        return hash_equals('sha256='.hash_hmac('sha256', $request->getContent(), $secret), $signature);
     }
 }
