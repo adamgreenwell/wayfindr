@@ -79,6 +79,14 @@ class OperatorReadiness
             $this->scheduler(),
             $this->alertDigestDelivery(),
             $this->backupsRestore(),
+            // Both surfaces or neither. Present only on the checklist, this
+            // step let the two readiness screens contradict each other about
+            // the same install: onboarding asking an operator to confirm the
+            // clock while the console next to it reported Ready, kept the
+            // warning out of the Health tab, and never offered it as the next
+            // step. Whichever screen an operator happened to open decided
+            // whether the install had a problem.
+            $this->languageAndRegion(),
         ];
 
         $retentionSummary = $this->retentionSummary();

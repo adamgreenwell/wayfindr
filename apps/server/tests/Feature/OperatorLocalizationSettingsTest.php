@@ -352,3 +352,33 @@ test('the setup checklist still renders when the settings store is unreachable',
         ->assertSee('Europe/Berlin')
         ->assertDontSee('on UTC.');
 });
+
+/**
+ * Both readiness surfaces or neither.
+ *
+ * Present only on the onboarding checklist, this step let the two screens
+ * contradict each other about the same install: onboarding asking an operator
+ * to confirm the clock while the console beside it reported Ready. Whichever
+ * screen they happened to open decided whether there was a problem.
+ */
+test('the operator console raises language and region too, not just the checklist', function (): void {
+    $operator = localizationOperator();
+
+    $console = $this->actingAs($operator)->get(route('operator.dashboard'))->assertOk();
+
+    $console->assertSee('Language and region')
+        ->assertSee('Nobody has confirmed that is right.');
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.localization.update'), [
+            'language' => 'de',
+            'timezone' => 'Europe/Berlin',
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($operator)
+        ->get(route('operator.dashboard'))
+        ->assertOk()
+        ->assertSee('Language and region')
+        ->assertDontSee('Nobody has confirmed that is right.');
+});
