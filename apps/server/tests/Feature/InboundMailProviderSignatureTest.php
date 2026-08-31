@@ -20,7 +20,6 @@ use App\Support\Mail\Signatures\MailgunSignature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -407,13 +406,13 @@ test('the token survives a failed write, and the retry is accepted', function ()
 
     // Renamed rather than dropped, so putting it back restores the real
     // schema rather than a stub the migration would decline to re-fill.
-    Schema::rename('conversation_messages', 'conversation_messages_away');
+    $letItThrough = inboundMailSignatureFailNextWrite();
 
     test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
 
     // Fixed, the way an operator would, and the provider retries the delivery
     // it never got an answer for.
-    Schema::rename('conversation_messages_away', 'conversation_messages');
+    $letItThrough();
 
     test()->postJson('/api/mail/inbound', inboundPayload($tuple))
         ->assertOk()
@@ -439,9 +438,9 @@ test('a freed claim cannot be spent on a different message', function (): void {
         'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
     ];
 
-    Schema::rename('conversation_messages', 'conversation_messages_away');
+    $letItThrough = inboundMailSignatureFailNextWrite();
     test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
-    Schema::rename('conversation_messages_away', 'conversation_messages');
+    $letItThrough();
 
     // The claim is back, but it belongs to that message. A different sender and
     // body on the same tuple is a forgery, not a retry.
@@ -515,9 +514,9 @@ test('a freed claim cannot be spent on rerouted threading headers', function ():
         'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
     ];
 
-    Schema::rename('conversation_messages', 'conversation_messages_away');
+    $letItThrough = inboundMailSignatureFailNextWrite();
     test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
-    Schema::rename('conversation_messages_away', 'conversation_messages');
+    $letItThrough();
 
     foreach ([
         ['message_id' => '<novel@attacker.test>'],
@@ -552,9 +551,9 @@ test('a reordered payload is still the same delivery', function (): void {
         'signature' => hash_hmac('sha256', $ts.$tok, 'k'),
     ];
 
-    Schema::rename('conversation_messages', 'conversation_messages_away');
+    $letItThrough = inboundMailSignatureFailNextWrite();
     test()->postJson('/api/mail/inbound', inboundPayload($tuple))->assertStatus(500);
-    Schema::rename('conversation_messages_away', 'conversation_messages');
+    $letItThrough();
 
     test()->postJson('/api/mail/inbound', array_reverse(inboundPayload($tuple), true))
         ->assertOk()
@@ -1012,3 +1011,34 @@ test('the nested webhook shape is refused, not answered with a 500', function ()
         'event-data' => ['event' => 'delivered'],
     ])->assertStatus(401);
 });
+
+/**
+ * Make the next inbound delivery fail while it is storing the message.
+ *
+ * Returns a closure that lets the next one through.
+ *
+ * This used to rename `conversation_messages` out from under the routing
+ * transaction, which works on SQLite and does not on PostgreSQL: a failed
+ * statement there aborts the whole transaction, so the rename BACK -- and
+ * every query after it -- dies with `25P02`, including the retry the test
+ * exists to make. CI caught it; the local suite could not, because it runs
+ * SQLite.
+ *
+ * Throwing from a model event reproduces the same shape without a failed
+ * statement: the insert is never attempted, `DB::transaction` rolls back to
+ * its savepoint, and the exception reaches the controller as a 500.
+ */
+function inboundMailSignatureFailNextWrite(): Closure
+{
+    $failing = true;
+
+    ConversationMessage::creating(function () use (&$failing): void {
+        if ($failing) {
+            throw new RuntimeException('storage rejected the write');
+        }
+    });
+
+    return function () use (&$failing): void {
+        $failing = false;
+    };
+}
