@@ -20,7 +20,7 @@
                 @foreach ($messages as $message)
                     <div class="management-link">
                         <span>
-                            <strong>{{ $senderLabels[$message->id] }} · {{ \App\Support\ReaderClock::moment($message->created_at)->format('M j, H:i') }}</strong>
+                            <strong>{{ $senderLabels[$message->id] }} · {{ \App\Support\ReaderClock::dateTime($message->created_at) }}</strong>
                             @if (filled($message->body))
                                 <span class="lede">{{ $message->body }}</span>
                             @endif

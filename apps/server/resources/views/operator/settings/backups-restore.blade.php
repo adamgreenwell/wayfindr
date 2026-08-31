@@ -50,7 +50,7 @@
                             <option value="">Select an archive…</option>
                             @foreach ($archives as $archive)
                                 <option value="{{ $archive['filename'] }}" @selected($selected === $archive['filename'])>
-                                    {{ \App\Support\ReaderClock::moment($archive['taken_at'])->toDayDateTimeString() }} · {{ \App\Support\ReaderNumber::decimal($archive['size'] / 1048576, 1) }} MB · {{ $archive['filename'] }}
+                                    {{ \App\Support\ReaderClock::dateTime($archive['taken_at']) }} · {{ \App\Support\ReaderNumber::decimal($archive['size'] / 1048576, 1) }} MB · {{ $archive['filename'] }}
                                 </option>
                             @endforeach
                         </select>

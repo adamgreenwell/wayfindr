@@ -156,6 +156,8 @@ test('a retention failure badges Data, not Health', function (): void {
 });
 
 test('the next step card never prints the same sentence twice', function (): void {
+    readinessLanguageAndRegionConfirmed();
+
     // Smoke steps carry one sentence. The card renders summary then detail, so
     // a fabricated detail showed the identical line twice -- visible on stage
     // the moment a smoke step became the next step.

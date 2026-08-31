@@ -67,7 +67,7 @@ class AgentAccountBreakGlassController extends Controller
 
         return redirect()
             ->route('dashboard.account.break-glass.index')
-            ->with('status', sprintf('Access to %s approved until %s.', $grant->scopeLabel(), ReaderClock::moment($grant->expires_at)->format('H:i T')));
+            ->with('status', sprintf('Access to %s approved until %s.', $grant->scopeLabel(), ReaderClock::timeWithZone($grant->expires_at)));
     }
 
     public function deny(Request $request, BreakGlassGrant $grant, BreakGlassGrants $grants): RedirectResponse
