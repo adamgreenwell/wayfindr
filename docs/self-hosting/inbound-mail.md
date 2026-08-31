@@ -47,14 +47,26 @@ Set `WAYFINDR_INBOUND_MAIL_PROVIDER=mailgun` and put your **HTTP webhook signing
 key** in `WAYFINDR_INBOUND_MAIL_SECRET`. That key is in the sending domain's
 security settings; it is **not** your API key, and the two are easy to confuse.
 
-Point a route or webhook at `https://your-install.example.com/api/mail/inbound`.
-Mailgun sends `timestamp`, `token` and `signature`, and Wayfindr checks all
-three.
+Point a **route** at `https://your-install.example.com/api/mail/inbound`.
+Mailgun sends `timestamp`, `token` and `signature` alongside the parsed mail,
+and Wayfindr checks all three.
 
-Deliveries more than five minutes old are refused. A valid Mailgun signature is
-otherwise replayable indefinitely — the body, token and signature stay valid
-together — so the timestamp is what bounds that, and Mailgun sends it for
-exactly this purpose.
+Use a route, not the newer nested webhook shape. That shape carries the sender
+and body under `event-data`, which Wayfindr does not parse, so it would verify
+and then create nothing — and it is refused rather than accepted-and-ignored so
+you find out immediately.
+
+Two things bound replay, and both matter, because **Mailgun's signature covers
+the timestamp and token and not the body**. A valid tuple would otherwise
+authenticate *any* payload:
+
+- deliveries more than five minutes old are refused, in either direction — a
+  clock far ahead is not evidence of freshness;
+- each token is accepted **once**. A second delivery reusing it is refused
+  whatever it contains.
+
+Attachments on a route arrive as file uploads rather than in the JSON body, and
+are stored like any other attachment.
 
 ### Postmark
 

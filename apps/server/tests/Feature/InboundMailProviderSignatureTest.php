@@ -13,8 +13,11 @@
 // The endpoint now verifies what the provider actually sends, chosen by config.
 
 use App\Models\Account;
+use App\Models\ConversationMessage;
 use App\Models\Site;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -165,4 +168,62 @@ test('an unknown provider refuses everything rather than falling open', function
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_WAYFINDR_SIGNATURE' => 'sha256='.hash_hmac('sha256', $body, 'shhh'),
     ], $body)->assertStatus(401);
+});
+
+test('a mailgun tuple cannot be replayed with a different message', function (): void {
+    // Mailgun's HMAC covers `timestamp . token` and NOT the body, so a valid
+    // tuple authenticates any payload at all for as long as it stays fresh.
+    // Anybody who obtains one delivery -- a log line, a proxy, a retry they can
+    // see -- can post arbitrary mail as anyone for the rest of that window.
+    //
+    // The age bound alone does not close it. The token is single-use, and
+    // claiming it has to be atomic, or two concurrent replays both win.
+    config()->set('wayfindr.mail.inbound_secret', 'mailgun-signing-key');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    inboundSite();
+
+    $timestamp = (string) time();
+    $token = 'single-use-token';
+    $signature = hash_hmac('sha256', $timestamp.$token, 'mailgun-signing-key');
+    $tuple = ['timestamp' => $timestamp, 'token' => $token, 'signature' => $signature];
+
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple))
+        ->assertOk()->assertJsonPath('message', 'Accepted.');
+
+    // The same tuple, a different sender and a different body.
+    test()->postJson('/api/mail/inbound', inboundPayload($tuple + [
+        'from' => 'Attacker <mallory@example.test>',
+        'text' => 'Please reset the password for the admin account.',
+    ]))->assertStatus(401);
+});
+
+test('a mailgun route delivers its attachments rather than dropping them', function (): void {
+    // A Mailgun ROUTE posts attachments as multipart files -- `attachment-1`,
+    // `attachment-2` -- not as the base64 array `InboundMessage` reads. Left
+    // unadapted the endpoint answers `Accepted.`, which also stops the provider
+    // retrying, while the file is silently gone. Losing a customer's screenshot
+    // and reporting success is worse than refusing the delivery.
+    config()->set('wayfindr.mail.inbound_secret', 'mailgun-signing-key');
+    config()->set('wayfindr.mail.inbound_provider', 'mailgun');
+    Storage::fake('attachments');
+    inboundSite();
+
+    $timestamp = (string) time();
+    $token = 'attachment-token';
+
+    test()->post('/api/mail/inbound', inboundPayload([
+        'timestamp' => $timestamp,
+        'token' => $token,
+        'signature' => hash_hmac('sha256', $timestamp.$token, 'mailgun-signing-key'),
+        'attachment-count' => '1',
+        // A REAL png. The pipeline sniffs the type from the bytes rather than
+        // trusting the header, so a zero-filled fake is rejected on its own
+        // merits and the test would pass or fail for the wrong reason.
+        'attachment-1' => UploadedFile::fake()->image('screenshot.png'),
+    ]))->assertOk()->assertJsonPath('message', 'Accepted.');
+
+    $message = ConversationMessage::query()->latest('id')->first();
+
+    expect($message)->not->toBeNull('no message was created, so this proves nothing');
+    expect($message->attachments()->count())->toBe(1, 'the attached file was accepted and then discarded');
 });
