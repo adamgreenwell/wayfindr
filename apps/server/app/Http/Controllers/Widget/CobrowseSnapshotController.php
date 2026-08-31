@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowsePayloadBudget;
 use App\Support\CobrowseResyncRequestPolicy;
+use App\Support\Visitors\VisitorPageUrl;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
@@ -66,7 +67,9 @@ class CobrowseSnapshotController extends Controller
         abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
 
         $snapshot = [
-            'page_url' => $validated['page_url'],
+            // See CobrowsePageStateController: the hook is the guarantee, this
+            // keeps the echoed value honest.
+            'page_url' => VisitorPageUrl::reduce($validated['page_url']),
             'title' => $validated['title'] ?? null,
             'html' => $validated['html'],
             'text' => $validated['text'],
