@@ -160,6 +160,7 @@ class CobrowseConsentState
         $latestReport = $this->transportPressure->latestReportAt($metadata);
         $telemetryReport = $this->transportPressure->parseReportedAt($telemetry['reported_at'] ?? null);
         $pressure = $this->transportPressure->format($metadata, $latestReport);
+        $pressureCounts = $this->transportPressure->counts($metadata, $latestReport);
         $reconnects = (int) ($telemetry['reconnects'] ?? 0);
 
         if (! $latestReport) {
@@ -167,8 +168,8 @@ class CobrowseConsentState
                 'state' => 'unavailable',
                 'copy' => 'no_reports',
                 'last_report_reported' => false,
-                'has_pressure' => $this->hasTransportPressure($pressure),
-                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
+                'has_pressure' => $this->hasTransportPressure($pressureCounts),
+                'pressure_counts' => $pressureCounts,
                 'label' => 'Unavailable',
                 'message' => 'No cobrowse transport reports have arrived yet.',
                 'last_report' => 'Not reported',
@@ -184,8 +185,8 @@ class CobrowseConsentState
                 'state' => 'stale',
                 'copy' => 'stale',
                 'last_report_reported' => true,
-                'has_pressure' => $this->hasTransportPressure($pressure),
-                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
+                'has_pressure' => $this->hasTransportPressure($pressureCounts),
+                'pressure_counts' => $pressureCounts,
                 'label' => 'Stale',
                 'message' => 'No cobrowse report has arrived in the last 2 minutes.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -201,8 +202,8 @@ class CobrowseConsentState
                 'state' => 'reconnecting',
                 'copy' => 'reconnecting',
                 'last_report_reported' => true,
-                'has_pressure' => $this->hasTransportPressure($pressure),
-                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
+                'has_pressure' => $this->hasTransportPressure($pressureCounts),
+                'pressure_counts' => $pressureCounts,
                 'label' => 'Reconnecting',
                 'message' => 'The visitor transport has reconnected recently; preview data may briefly lag.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -213,13 +214,13 @@ class CobrowseConsentState
             ];
         }
 
-        if ($this->hasTransportPressure($pressure)) {
+        if ($this->hasTransportPressure($pressureCounts)) {
             return [
                 'state' => 'degraded',
                 'copy' => 'degraded',
                 'last_report_reported' => true,
-                'has_pressure' => $this->hasTransportPressure($pressure),
-                'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
+                'has_pressure' => $this->hasTransportPressure($pressureCounts),
+                'pressure_counts' => $pressureCounts,
                 'label' => 'Degraded',
                 'message' => 'Cobrowse reports are arriving, but the visitor page is changing faster than Wayfindr can fully replay.',
                 'last_report' => $latestReport->diffForHumans(),
@@ -234,20 +235,20 @@ class CobrowseConsentState
             'state' => 'live',
             'copy' => 'live',
             'last_report_reported' => true,
-            'has_pressure' => $this->hasTransportPressure($pressure),
-            'pressure_counts' => $this->transportPressure->counts($metadata, $latestReport),
+            'has_pressure' => $this->hasTransportPressure($pressureCounts),
+            'pressure_counts' => $pressureCounts,
             'label' => 'Live',
             'message' => 'Cobrowse reports are arriving normally.',
             'last_report' => $latestReport->diffForHumans(),
             'reconnects' => '0',
             'pressure' => $pressure,
-            'guidance' => ! $this->hasTransportPressure($pressure)
+            'guidance' => ! $this->hasTransportPressure($pressureCounts)
                 ? 'Preview is current enough to use alongside chat.'
                 : 'Use chat to confirm anything that depends on fast-changing page state.',
             // The only field in this shape whose copy is not settled by `copy`
             // alone, so it names its own key rather than making the surface
             // re-derive a condition it cannot see.
-            'guidance_copy' => ! $this->hasTransportPressure($pressure) ? 'guidance' : 'guidance_pressure',
+            'guidance_copy' => ! $this->hasTransportPressure($pressureCounts) ? 'guidance' : 'guidance_pressure',
             'recovery_action' => 'No recovery action needed.',
         ];
     }
@@ -261,9 +262,24 @@ class CobrowseConsentState
         };
     }
 
-    private function hasTransportPressure(string $pressure): bool
+    /**
+     * Is the transport under pressure?
+     *
+     * From the COUNTS, not from reading back the sentence that renders them.
+     *
+     * This used to compare the formatted string against two English literals,
+     * which worked exactly as long as the string was English. The render side
+     * was extracted for translation and this was not, so the first person to
+     * translate `CobrowseTransportPressure::format()` would have made every
+     * session read as degraded to every German and Italian agent -- permanently,
+     * and with nothing in that diff to suggest why.
+     *
+     * @param  array<string, mixed>  $counts
+     */
+    private function hasTransportPressure(array $counts): bool
     {
-        return ! in_array($pressure, ['No drops reported', 'No recent drops reported'], true);
+        return ((int) ($counts['dropped_batches'] ?? 0)) > 0
+            || ((int) ($counts['skipped_mutations'] ?? 0)) > 0;
     }
 
     private function hasFreshReconnectWarning(int $reconnects, ?Carbon $telemetryReport, ?Carbon $latestReport): bool
