@@ -3192,10 +3192,21 @@ test('a reported byte count is German too', function (): void {
 
     $page = conversationQueueLanguageVisibleText($html);
 
-    $this->assertStringContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'de'), $page,
+    // Both halves of this pair used to compute their expectation with
+    // `number_format()`, which froze the en-US separator into a test about
+    // language. It could not see the defect it was standing next to: the
+    // German page really did say `2,048 Bytes`, and the negative half kept
+    // passing for the wrong reason -- the English NOUN was absent, so nobody
+    // looked at the number.
+    $this->assertStringContainsString(__('cobrowse.units.bytes', ['count' => '2.048'], 'de'), $page,
         'the payload size is not in the agent language');
-    $this->assertStringNotContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'en'), $page,
+    $this->assertStringNotContainsString(__('cobrowse.units.bytes', ['count' => '2,048'], 'en'), $page,
         'the English byte unit is still on the German page');
+
+    // The separator on its own, which is what neither half was checking. A
+    // German reader parses `2,048` as two-point-zero-four-eight.
+    $this->assertStringNotContainsString('2,048', $page,
+        'an en-US grouped number is on the German page');
 });
 
 test('a region that declares English is English all the way down', function (): void {
@@ -3928,4 +3939,86 @@ test('a German cobrowse sentence is never marked English because its value is', 
         expect($openedEnglish === false || $closedSince !== false)
             ->toBeTrue("German sentence for {$key} is inside an English-marked region");
     }
+});
+
+test('a four-digit count is grouped the way the reading agent groups numbers', function (): void {
+    // The revert-detector for the number seam. `number_format()` writes
+    // `4,213` in every language the dashboard speaks, and this page is
+    // extracted, so a German agent was reading a four-thousand count as
+    // four-point-two-one-three. Plausible at both readings, which is why it
+    // shipped.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['snapshot']['node_count'] = 4213;
+    // The telemetry counts are rendered on their own rather than inside a
+    // sentence, and were formatted inside the model -- so a whole-file
+    // exemption in the coverage guard hid them.
+    $metadata['telemetry']['dropped_batches'] = 5314;
+    $metadata['telemetry']['reconnects'] = 6415;
+    $metadata['telemetry']['samples'] = 7516;
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $german = conversationQueueLanguageVisibleText((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent());
+
+    expect($german)->toContain('4.213')
+        ->and($german)->not->toContain('4,213')
+        ->and($german)->toContain('5.314')
+        ->and($german)->toContain('6.415')
+        ->and($german)->toContain('7.516')
+        // A negative only for `samples`, which is the one of the three with a
+        // single render site. `dropped_batches` and `reconnects` also appear
+        // in the transport-health sentences, still assembled in English inside
+        // a model and exempted from the number guard for that reason -- so
+        // `5,314` really is on this page, welded to an English noun. That is
+        // the extraction slice's defect, and asserting against it here would
+        // be asserting that someone else's work was done.
+        ->and($german)->not->toContain('7,516');
+
+    // Both halves matter. The negative one is what catches a partial revert
+    // that leaves the seam in place and bypasses it at one call site.
+    $english = conversationQueueLanguageVisibleText((string) $this->actingAs($world['agents']['en'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent());
+
+    expect($english)->toContain('4,213')
+        ->and($english)->not->toContain('4.213')
+        ->and($english)->toContain('7,516')
+        ->and($english)->not->toContain('7.516');
+});
+
+test('the live-update path is given the agent language, not the browser', function (): void {
+    // The server half of this is undone within seconds without the client
+    // half: `applyPreviewState()` rewrites the same nodes the server just
+    // painted, and `toLocaleString()` with no argument follows the browser.
+    // The live block only renders when broadcasting is configured, which is
+    // the only condition under which any of this runs at all.
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'test-key');
+    config()->set('broadcasting.connections.reverb.options.host', 'localhost');
+    config()->set('broadcasting.connections.reverb.options.port', 8080);
+
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $session->conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    // The block is present at all -- without this the rest asserts nothing.
+    expect($html)->toContain('var realtimeLabels =');
+
+    // The agent's language reaches the script.
+    expect($html)->toContain('"locale":"de"');
+
+    // ...and every live formatter goes through the helper that uses it.
+    expect(substr_count($html, 'toLocaleString()'))->toBe(0)
+        ->and($html)->toContain('function readerNumber(');
 });

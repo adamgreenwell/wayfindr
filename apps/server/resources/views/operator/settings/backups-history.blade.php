@@ -43,7 +43,7 @@
                                     {{ $run->started_at === null ? '' : \App\Support\ReaderClock::dateTime($run->started_at) }}
                                     <span class="table-note">{{ $run->started_at?->diffForHumans() }}</span>
                                 </td>
-                                <td>{{ $run->size_bytes ? number_format($run->size_bytes / 1048576, 1).' MB' : '—' }}</td>
+                                <td>{{ $run->size_bytes ? \App\Support\ReaderNumber::decimal($run->size_bytes / 1048576, 1).' MB' : '—' }}</td>
                                 <td>{{ $run->offsite_key ? 'Uploaded to ['.$run->offsite_disk.']' : 'Local only' }}</td>
                                 <td>{{ $run->triggeredBy?->name ?? 'Scheduled' }}</td>
                                 <td style="white-space: normal; min-width: 240px;">{{ $run->message ?: '—' }}</td>

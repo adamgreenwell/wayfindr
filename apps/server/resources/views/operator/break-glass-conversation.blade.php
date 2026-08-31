@@ -27,7 +27,7 @@
                             @foreach ($attachmentsByMessage[$message->id] as $attachment)
                                 <span class="lede">
                                     Attachment: {{ $attachment->original_filename }}
-                                    ({{ $attachment->mime_type }}, {{ number_format($attachment->size_bytes / 1024, 1) }} KB, scan: {{ $attachment->scan_status ?? 'n/a' }})
+                                    ({{ $attachment->mime_type }}, {{ \App\Support\ReaderNumber::decimal($attachment->size_bytes / 1024, 1) }} KB, scan: {{ $attachment->scan_status ?? 'n/a' }})
                                     — names and sizes only; operator access never opens a file.
                                 </span>
                             @endforeach

@@ -238,12 +238,12 @@
                     <div class="section-header">
                         <strong>{{ __('conversations.detail.cobrowse.replay_preview') }}</strong>
                         <span class="lede">
-                            <span data-cobrowse-replay-applied>{{ __('cobrowse.units.applied', ['count' => number_format($cobrowseConsent['replay_preview']['applied_mutations_value'])]) }}</span>
+                            <span data-cobrowse-replay-applied>{{ __('cobrowse.units.applied', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['replay_preview']['applied_mutations_value'])]) }}</span>
                             /
-                            <span data-cobrowse-replay-skipped>{{ __('cobrowse.units.skipped', ['count' => number_format($cobrowseConsent['replay_preview']['skipped_mutations_value'])]) }}</span>
+                            <span data-cobrowse-replay-skipped>{{ __('cobrowse.units.skipped', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['replay_preview']['skipped_mutations_value'])]) }}</span>
                         </span>
                         @if ($cobrowseConsent['replay_preview']['viewport_width'])
-                            <span class="lede" data-cobrowse-viewport-label>{{ __('cobrowse.units.viewport', ['width' => number_format($cobrowseConsent['replay_preview']['viewport_width'])]) }}</span>
+                            <span class="lede" data-cobrowse-viewport-label>{{ __('cobrowse.units.viewport', ['width' => \App\Support\ReaderNumber::count($cobrowseConsent['replay_preview']['viewport_width'])]) }}</span>
                         @else
                             <span class="lede" data-cobrowse-viewport-label hidden></span>
                         @endif
@@ -589,11 +589,11 @@
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.nodes') }}</span>
-                            <span class="meta-value">{{ trans_choice('cobrowse.units.nodes', $cobrowseConsent['snapshot']['node_count_value'], ['count' => number_format($cobrowseConsent['snapshot']['node_count_value'])]) }}</span>
+                            <span class="meta-value">{{ trans_choice('cobrowse.units.nodes', $cobrowseConsent['snapshot']['node_count_value'], ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['snapshot']['node_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.masked') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.masked', ['count' => number_format($cobrowseConsent['snapshot']['masked_count_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.masked', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['snapshot']['masked_count_value'])]) }}</span>
                         </div>
                     </div>
 
@@ -614,23 +614,23 @@
                     <div class="meta-grid realtime-grid">
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.batches') }}</span>
-                            <span class="meta-value">{{ trans_choice('cobrowse.units.batches', $cobrowseConsent['mutation_stream']['batch_count_value'], ['count' => number_format($cobrowseConsent['mutation_stream']['batch_count_value'])]) }}</span>
+                            <span class="meta-value">{{ trans_choice('cobrowse.units.batches', $cobrowseConsent['mutation_stream']['batch_count_value'], ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['batch_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.mutations') }}</span>
-                            <span class="meta-value">{{ trans_choice('cobrowse.units.mutations', $cobrowseConsent['mutation_stream']['mutation_count_value'], ['count' => number_format($cobrowseConsent['mutation_stream']['mutation_count_value'])]) }}</span>
+                            <span class="meta-value">{{ trans_choice('cobrowse.units.mutations', $cobrowseConsent['mutation_stream']['mutation_count_value'], ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['mutation_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.dropped') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.dropped', ['count' => number_format($cobrowseConsent['mutation_stream']['dropped_count_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.dropped', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['dropped_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.skipped') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.skipped', ['count' => number_format($cobrowseConsent['mutation_stream']['skipped_count_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.skipped', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['skipped_count_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.last_sequence') }}</span>
-                            <span class="meta-value">{{ __('cobrowse.units.sequence', ['count' => number_format($cobrowseConsent['mutation_stream']['last_sequence_value'])]) }}</span>
+                            <span class="meta-value">{{ __('cobrowse.units.sequence', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['mutation_stream']['last_sequence_value'])]) }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.cobrowse.url') }}</span>
@@ -652,31 +652,31 @@
                 <div class="meta-grid realtime-grid" data-cobrowse-telemetry-grid @if (! $cobrowseConsent['telemetry']) hidden @endif>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-rtt>@if (($cobrowseConsent['telemetry']['rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => number_format($cobrowseConsent['telemetry']['rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-rtt>@if (($cobrowseConsent['telemetry']['rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.max_rtt') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@if (($cobrowseConsent['telemetry']['max_rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => number_format($cobrowseConsent['telemetry']['max_rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-rtt>@if (($cobrowseConsent['telemetry']['max_rtt_value'] ?? null) !== null){{ __('cobrowse.units.milliseconds', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['max_rtt_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-payload>@if (($cobrowseConsent['telemetry']['payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => number_format($cobrowseConsent['telemetry']['payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-payload>@if (($cobrowseConsent['telemetry']['payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.max_payload') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@if (($cobrowseConsent['telemetry']['max_payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => number_format($cobrowseConsent['telemetry']['max_payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
+                        <span class="meta-value" data-cobrowse-telemetry-max-payload>@if (($cobrowseConsent['telemetry']['max_payload_value'] ?? null) !== null){{ __('cobrowse.units.bytes', ['count' => \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['max_payload_value'])]) }}@else{{ __('cobrowse.units.not_reported') }}@endif</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.dropped_batches') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-dropped-batches>{{ $cobrowseConsent['telemetry']['dropped_batches'] ?? '0' }}</span>
+                        <span class="meta-value" data-cobrowse-telemetry-dropped-batches>{{ \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['dropped_batches_value'] ?? 0) }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.reconnects') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-reconnects>{{ $cobrowseConsent['telemetry']['reconnects'] ?? '0' }}</span>
+                        <span class="meta-value" data-cobrowse-telemetry-reconnects>{{ \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['reconnects_value'] ?? 0) }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.cobrowse.samples') }}</span>
-                        <span class="meta-value" data-cobrowse-telemetry-samples>{{ $cobrowseConsent['telemetry']['samples'] ?? '0' }}</span>
+                        <span class="meta-value" data-cobrowse-telemetry-samples>{{ \App\Support\ReaderNumber::count($cobrowseConsent['telemetry']['samples_value'] ?? 0) }}</span>
                     </div>
                 </div>
 
@@ -1068,12 +1068,12 @@
                     // watching. The counts travel; the words are local.
                     if (previewApplied && typeof preview.applied_mutations_value === 'number') {
                         previewApplied.textContent = realtimeLabels.cobrowseUnits.applied
-                            .replace(':count', preview.applied_mutations_value.toLocaleString());
+                            .replace(':count', readerNumber(preview.applied_mutations_value));
                     }
 
                     if (previewSkipped && typeof preview.skipped_mutations_value === 'number') {
                         previewSkipped.textContent = realtimeLabels.cobrowseUnits.skipped
-                            .replace(':count', preview.skipped_mutations_value.toLocaleString());
+                            .replace(':count', readerNumber(preview.skipped_mutations_value));
                     }
 
                     var drift = preview.drift || null;
@@ -1127,7 +1127,7 @@
                         previewFrame.setAttribute('data-viewport-width', String(viewportWidth));
 
                         if (previewViewportLabel) {
-                            previewViewportLabel.textContent = realtimeLabels.cobrowseUnits.viewport.replace(':width', viewportWidth.toLocaleString());
+                            previewViewportLabel.textContent = realtimeLabels.cobrowseUnits.viewport.replace(':width', readerNumber(viewportWidth));
                             previewViewportLabel.hidden = false;
                         }
                     } else {
@@ -1394,22 +1394,35 @@
                     return Number.isFinite(number) && number >= 0 ? number : null;
                 }
 
+                // The client half of `ReaderNumber`. Calling `toLocaleString`
+                // with no argument follows the BROWSER, not the agent -- so a German
+                // agent on an en-US browser got German dates and American
+                // numbers in the same panel, and worse, the server painted
+                // `4.213` and the first websocket message rewrote the same
+                // node as `4,213` with no data change behind it.
+                //
+                // `realtimeLabels.locale` is the agent's, already shipped for
+                // `Intl.RelativeTimeFormat` further down this file.
+                function readerNumber(number) {
+                    return Number(number).toLocaleString(realtimeLabels.locale || 'en');
+                }
+
                 function formatNumber(value) {
                     var number = numericValue(value);
 
-                    return number === null ? '0' : Math.round(number).toLocaleString();
+                    return number === null ? '0' : readerNumber(Math.round(number));
                 }
 
                 function formatMilliseconds(value) {
                     var number = numericValue(value);
 
-                    return number === null ? realtimeLabels.cobrowseUnits.notReported : realtimeLabels.cobrowseUnits.milliseconds.replace(':count', Math.round(number).toLocaleString());
+                    return number === null ? realtimeLabels.cobrowseUnits.notReported : realtimeLabels.cobrowseUnits.milliseconds.replace(':count', readerNumber(Math.round(number)));
                 }
 
                 function formatBytes(value) {
                     var number = numericValue(value);
 
-                    return number === null ? realtimeLabels.cobrowseUnits.notReported : realtimeLabels.cobrowseUnits.bytes.replace(':count', Math.round(number).toLocaleString());
+                    return number === null ? realtimeLabels.cobrowseUnits.notReported : realtimeLabels.cobrowseUnits.bytes.replace(':count', readerNumber(Math.round(number)));
                 }
 
                 function timestampValue(value) {
@@ -1437,7 +1450,12 @@
                         return '1 minute ago';
                     }
 
-                    return elapsedMinutes.toLocaleString() + ' minutes ago';
+                    // Deliberately NOT readerNumber(): the noun beside it is a
+                    // hardcoded English string. A German number welded to an
+                    // English word reads worse than either, and is the trap
+                    // `CobrowseSnapshotFreshness` already pins English for.
+                    // This becomes correct when the sentence is extracted.
+                    return elapsedMinutes.toLocaleString('en') + ' minutes ago';
                 }
 
                 function transportPressureFromSummary(summary) {
@@ -1467,12 +1485,12 @@
                     // follows in x-cobrowse-pressure.
                     if (droppedBatches > 0) {
                         parts.push((droppedBatches === 1 ? pressureCopy.droppedOne : pressureCopy.droppedMany)
-                            .replace(':count', Math.round(droppedBatches).toLocaleString()));
+                            .replace(':count', readerNumber(Math.round(droppedBatches))));
                     }
 
                     if (skippedMutations > 0) {
                         parts.push((skippedMutations === 1 ? pressureCopy.skippedOne : pressureCopy.skippedMany)
-                            .replace(':count', Math.round(skippedMutations).toLocaleString()));
+                            .replace(':count', readerNumber(Math.round(skippedMutations))));
                     }
 
                     if (parts.length === 0) {
