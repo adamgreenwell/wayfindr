@@ -165,14 +165,29 @@ proxy_send_timeout 3600s;
 
 Wayfindr's own realtime pages send a client keepalive, which holds the
 connection open while the tab is **visible**. It is not a substitute for the
-setting. Browsers throttle timers in a backgrounded tab — measured on our
-staging deploy, a hidden agent tab's 15-second keepalive stretched to 78
-seconds, overshot the 60-second window, and the socket was torn down. No
-JavaScript timer can promise otherwise, because the browser will not let a
-hidden tab keep to a schedule.
+setting, and the setting is not a complete substitute for it either — they
+cover different failures.
 
-So raise the timeout. It removes the ceiling entirely, and it is one line
-against a problem no client-side workaround fully closes.
+**Raising the timeout removes nginx's idle close.** A visible agent tab is
+already held open by the client keepalive above, so this is not what rescues
+the common case. It covers everything that keepalive cannot reach — a
+throttled or suspended tab, any other client talking to this Reverb, and the
+whole thing if that keepalive ever stops — which is why it is worth setting
+even though the pages look fine without it.
+
+**It does not make a suspended tab immortal.** Browsers throttle background
+timers, and Chrome can *freeze* an eligible tab outright — no timers run at
+all. A frozen page cannot send the client keepalive, and it cannot answer
+Reverb's own `pusher:ping` either, so Reverb closes the connection after its
+`activity_timeout` regardless of what nginx allows. A tab that sleeps long
+enough will be disconnected by design and reconnect when it wakes; that path
+is meant to work, and it does.
+
+One caveat on the numbers behind this, since they are easy to over-read: the
+freeze was observed in an *automated* browser tab, which is never the
+foreground tab and is a prime candidate for suspension. Ordinary background
+throttling is milder. Treat it as the pessimistic end of the range rather than
+what a real agent's tab does.
 
 Generate the `APP_KEY` on the server with:
 
