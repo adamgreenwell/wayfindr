@@ -114,6 +114,7 @@ class AlertDigestCandidateCollector
         return [
             'kind' => 'conversation_needs_reply',
             'last_activity_at' => $this->timestamp($conversation->last_message_at ?? $notification->created_at),
+            'last_activity_label' => $this->label($conversation->last_message_at ?? $notification->created_at, $agent),
             'notification_id' => (string) $notification->id,
             'priority' => null,
             'reference' => $conversation->support_code,
@@ -151,6 +152,7 @@ class AlertDigestCandidateCollector
         return [
             'kind' => 'ticket_assigned',
             'last_activity_at' => $this->timestamp($ticket->updated_at ?? $notification->created_at),
+            'last_activity_label' => $this->label($ticket->updated_at ?? $notification->created_at, $agent),
             'notification_id' => (string) $notification->id,
             'priority' => $ticket->priority,
             'reference' => 'Ticket #'.$ticket->id,
@@ -161,9 +163,31 @@ class AlertDigestCandidateCollector
         ];
     }
 
+    /**
+     * The machine value, kept for comparison and never shown to anyone.
+     *
+     * {@see self::candidateWasQueuedAfterLastActivity()} parses this back, so
+     * it is UTC and it stays UTC. Its display twin is {@see self::label()}.
+     */
     private function timestamp(?CarbonInterface $timestamp): ?string
     {
         return $timestamp?->toISOString();
+    }
+
+    /**
+     * The same moment for the agent this digest is addressed to.
+     *
+     * The reader is passed rather than looked up, because there is nobody
+     * signed in: a digest is assembled by a scheduled command and rendered in
+     * a queue worker. This is the case `ReaderClock`'s explicit-reader
+     * argument was written for, and until now nothing used it.
+     *
+     * What the email said before was `2026-08-24T15:05:00.000000Z` -- storage's
+     * clock, in a format nobody reads, in the middle of a sentence.
+     */
+    private function label(?CarbonInterface $timestamp, User $agent): ?string
+    {
+        return $timestamp === null ? null : ReaderClock::dateTime($timestamp, $agent);
     }
 
     private function candidateWasQueuedAfterLastActivity(DatabaseNotification $notification, ?string $lastActivityAt): bool

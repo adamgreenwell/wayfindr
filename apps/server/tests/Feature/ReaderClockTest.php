@@ -12,6 +12,7 @@ use App\Support\ReaderClock;
 use App\Support\Reporting\ReportingWindow;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 
@@ -67,8 +68,10 @@ it('renders an absolute time on the reader clock, not the storage clock', functi
     $response = $this->actingAs($agent)->get(route('dashboard'));
 
     $response->assertOk();
-    $response->assertSee('16:32', escape: false);
-    $response->assertDontSee('14:32');
+    // 12-hour with the zone named, because that is what an English reader's
+    // locale says -- the SEAM decides the shape now, not the call site.
+    $response->assertSee('4:32 PM', escape: false);
+    $response->assertDontSee('2:32 PM');
 
     expect($grant->fresh()->expires_at->setTimezone('UTC')->format('H:i'))
         ->toBe('14:32', 'storage must stay on UTC no matter who is reading');
@@ -80,8 +83,8 @@ it('leaves an agent who has chosen nothing on the install clock', function () {
     $this->actingAs($agent)
         ->get(route('dashboard'))
         ->assertOk()
-        ->assertSee('14:32', escape: false)
-        ->assertDontSee('16:32');
+        ->assertSee('2:32 PM', escape: false)
+        ->assertDontSee('4:32 PM');
 });
 
 /**
@@ -307,11 +310,12 @@ it('tells an approver the expiry on their own clock', function () {
 
     $status = session('status');
 
-    // A default grant runs an hour: 15:00 UTC, which in Berlin is 17:00.
+    // A default grant runs an hour: 15:00 UTC, which in Berlin is 17:00 --
+    // rendered on an English reader's locale as 5:00 PM, with the zone named.
     // `toContain` is variadic on strings, so the reason goes in a comment
     // rather than a second argument -- passed there it becomes another needle.
-    expect($status)->toContain('17:00')
-        ->and(str_contains((string) $status, '15:00'))->toBeFalse();
+    expect($status)->toContain('5:00 PM')
+        ->and(str_contains((string) $status, '3:00 PM'))->toBeFalse();
 });
 
 /**
@@ -367,4 +371,51 @@ it('offers canonical names only, not the aliases beside them', function () {
 
     expect($withAlias['US'])->toBe(['US/Eastern'])
         ->and(DashboardTimezone::choices('Asia/Kolkata')['Asia'])->toBe($choices['Asia']);
+});
+
+/**
+ * A converted timestamp in an English month order still reads foreign. The
+ * zone was only half of what the moment needed.
+ */
+it('writes a date the way the reader writes dates', function () {
+    $at = CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC');
+    $germanBerliner = User::factory()->for(Account::factory())
+        ->create(['timezone' => BERLIN, 'locale' => 'de']);
+
+    App::setLocale('en');
+    expect(ReaderClock::date($at))->toBe('Aug 24, 2026')
+        ->and(ReaderClock::time($at))->toBe('3:05 PM')
+        // A named reader brings their own language, so this does not follow
+        // the ambient English above.
+        ->and(ReaderClock::time($at, $germanBerliner))->toBe('17:05');
+
+    App::setLocale('de');
+    expect(ReaderClock::date($at))->toBe('24. Aug 2026');
+
+    App::setLocale('it');
+    expect(ReaderClock::date($at))->toBe('24 ago 2026');
+});
+
+it('names the clock on a time-bounded promise', function () {
+    $at = CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC');
+    $berliner = User::factory()->for(Account::factory())->create(['timezone' => BERLIN]);
+
+    App::setLocale('en');
+
+    // "Read-only access until 17:05" with no clock named is a promise an agent
+    // in another zone reads wrongly and cannot tell they have.
+    expect(ReaderClock::timeWithZone($at, $berliner))->toBe('5:05 PM CEST')
+        ->and(ReaderClock::timeWithZone($at))->toBe('3:05 PM UTC');
+});
+
+it('translates the month rather than reordering it, which is why isoFormat', function () {
+    // `translatedFormat('M j, Y')` translates the month name and keeps the US
+    // order: Italian gets `ago 24, 2026`. That is a worse answer than leaving
+    // it English, because it looks translated.
+    $at = CarbonImmutable::create(2026, 8, 24, 12, 0, 0, 'UTC');
+
+    App::setLocale('it');
+
+    expect(ReaderClock::date($at))->toBe('24 ago 2026')
+        ->and(CarbonImmutable::instance($at)->locale('it')->translatedFormat('M j, Y'))->toBe('ago 24, 2026');
 });
