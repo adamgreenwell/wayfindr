@@ -78,14 +78,18 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   **Neither pack has been read by a qualified speaker, and they are unreviewed
   in different ways.** German was drafted during development: written by hand,
   in context, by somebody who is not a professional translator. Italian is
-  mostly machine output. Eight of its nine catalogues came out of a pipeline
-  with a glossary, a protection scheme for placeholders and a policy scorer;
-  each opens with `NOT YET REVIEWED` and describes its own values as proposals.
-  The ninth, `validation.php`, is not pipeline output at all — the pipeline only
-  translates files it finds in `lang/en`, and there is no English validation
-  catalogue — so it was written by hand against the German one, covering the
-  rules the dashboard actually validates with and falling back to Laravel's own
-  English for any rule it does not name.
+  mostly machine output. Thirteen of its fourteen catalogues came out of a
+  pipeline with a glossary, a protection scheme for placeholders and a policy
+  scorer; each opens with `NOT YET REVIEWED` and describes its own values as
+  proposals. The fourteenth, `validation.php`, is not pipeline output at all —
+  the pipeline only translates files it finds in `lang/en`, and there is no
+  English validation catalogue — so it was written by hand against the German
+  one, covering the rules the dashboard actually validates with and falling back
+  to Laravel's own English for any rule it does not name.
+
+  The count grows with every extracted surface, so treat it as of this writing
+  rather than as a fixed figure: `ls apps/server/lang/it` is the answer, and
+  `grep -l 'NOT YET REVIEWED'` over it is the unreviewed share.
 
   Those checks establish mechanical consistency: the same term rendered the same
   way everywhere, no placeholder lost in translation, the right register
