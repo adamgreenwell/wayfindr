@@ -4,7 +4,7 @@
             {{-- Usable, not merely un-revoked. A token past its expiry is refused
                  at authentication and labelled Expired in the table below, so
                  counting it as active would contradict the same page. --}}
-            <span class="lede">{{ __('api_tokens.active', ['count' => \App\Support\ReaderNumber::count($tokens->filter->isUsable()->count())]) }}</span>
+            <span class="lede">{{ trans_choice('api_tokens.active', $tokens->filter->isUsable()->count(), ['count' => \App\Support\ReaderNumber::count($tokens->filter->isUsable()->count())]) }}</span>
         </x-slot:actions>
     </x-page-header>
 

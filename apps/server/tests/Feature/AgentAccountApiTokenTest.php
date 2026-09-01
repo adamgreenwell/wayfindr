@@ -756,3 +756,43 @@ test('every flashed status is a key, taken from the action that flashes it', fun
     // one key cannot pass on the other's translation.
     expect(array_unique(array_values($flashes)))->toHaveCount(4);
 });
+
+test('the active count agrees with the number in Italian', function (): void {
+    // `:count attivi` flat read `1 attivi` for an admin with one usable token.
+    // Italian inflects the adjective, so the key carries branches and the view
+    // selects between them.
+    //
+    // Exactly ONE usable token, which is the case no other test produces: the
+    // render audit's world has two, so it renders the plural whether or not a
+    // singular branch exists.
+    ['admin' => $admin, 'account' => $account] = tokenAdmin();
+    $admin->update(['locale' => 'it']);
+
+    $generated = ApiToken::generate();
+    ApiToken::query()->create([
+        'account_id' => $account->id,
+        'name' => 'Solo',
+        'token_hash' => $generated['hash'],
+        'last_four' => $generated['last_four'],
+        'abilities' => [ApiToken::ABILITY_READ],
+    ]);
+
+    // A second token that is NOT usable, so a page counting rows rather than
+    // usable ones would say two and fail here rather than passing by accident.
+    $revoked = ApiToken::generate();
+    ApiToken::query()->create([
+        'account_id' => $account->id,
+        'name' => 'Revocato',
+        'token_hash' => $revoked['hash'],
+        'last_four' => $revoked['last_four'],
+        'abilities' => [ApiToken::ABILITY_READ],
+        'revoked_at' => now(),
+    ]);
+
+    $html = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    expect($html)->toContain('1 attivo');
+    $this->assertStringNotContainsString('1 attivi', $html,
+        'the active count did not agree with the number');
+});

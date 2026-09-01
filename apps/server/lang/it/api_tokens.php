@@ -32,7 +32,9 @@ return [
     'subtitle' => 'Accesso programmatico ai dati di supporto di questo account, per integrazioni sviluppate da lei o da altri.',
     'back' => 'Torna all’account',
 
-    'active' => ':count attivi',
+    // Italian DOES inflect it, and this was `:count attivi` flat -- which read
+    // `1 attivi` for an admin with one usable token.
+    'active' => '{1} :count attivo|[2,*] :count attivi',
 
     'flash' => [
         'created' => 'Token API creato. Lo copi ora — non potrà essere mostrato di nuovo.',

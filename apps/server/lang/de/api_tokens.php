@@ -36,7 +36,9 @@ return [
     'subtitle' => 'Programmatischer Zugriff auf die Supportdaten dieses Kontos, für Integrationen, die Sie oder jemand anderes baut.',
     'back' => 'Zurück zum Konto',
 
-    'active' => ':count aktiv',
+    // German predicate adjectives do not inflect, so both branches are the
+    // same. The branches exist because the key is rendered with `trans_choice`.
+    'active' => '{1} :count aktiv|[2,*] :count aktiv',
 
     'flash' => [
         'created' => 'API-Token erstellt. Kopieren Sie es jetzt — es kann nicht erneut angezeigt werden.',

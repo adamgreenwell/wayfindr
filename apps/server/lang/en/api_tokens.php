@@ -32,7 +32,10 @@ return [
     // Usable rather than merely un-revoked: a token past its expiry is refused
     // at authentication and labelled Expired in the table, so counting it as
     // active would contradict the same page.
-    'active' => ':count active',
+    // A plural line even though English does not inflect `active`: the key is
+    // rendered with `trans_choice`, and a key without branches returns the whole
+    // string, selector and all.
+    'active' => '{1} :count active|[2,*] :count active',
 
     'flash' => [
         'created' => 'API token created. Copy it now — it cannot be shown again.',
