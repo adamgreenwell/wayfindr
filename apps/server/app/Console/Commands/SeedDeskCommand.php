@@ -968,7 +968,7 @@ final class SeedDeskCommand extends Command
                     ->whereIn('conversation_id', $conversations->pluck('id'))
                     ->orderBy('conversation_id')
                     ->orderBy('created_at')
-                    ->get(['conversation_id', 'created_at'])
+                    ->get(['conversation_id', 'created_at', 'sender_type', 'sender_id'])
                     ->groupBy('conversation_id');
 
                 foreach ($conversations as $conversation) {
@@ -989,9 +989,7 @@ final class SeedDeskCommand extends Command
                     // reopen is an agent leaves half the figure unexercised.
                     if (self::mix($n, 'reopened', 4) === 0) {
                         $openedAt = Carbon::parse($conversation->created_at);
-                        $messages = ($messageTimes[$conversation->id] ?? collect())
-                            ->map(fn ($row): Carbon => Carbon::parse($row->created_at))
-                            ->values();
+                        $messages = ($messageTimes[$conversation->id] ?? collect())->values();
 
                         // The reopen sits ON a message, and the close just
                         // before it -- which is exactly how the product gets
@@ -1010,8 +1008,9 @@ final class SeedDeskCommand extends Command
                             continue;
                         }
 
-                        $reopenedAt = $messages[$pivot]->copy();
-                        $previous = $messages[$pivot - 1];
+                        $pivotMessage = $messages[$pivot];
+                        $reopenedAt = Carbon::parse($pivotMessage->created_at);
+                        $previous = Carbon::parse($messages[$pivot - 1]->created_at);
 
                         // Halfway through the gap, so it is strictly after the
                         // message before and strictly before the one that
@@ -1025,15 +1024,22 @@ final class SeedDeskCommand extends Command
                             continue;
                         }
 
-                        $byVisitor = self::mix($n, 'reopened_by', 3) === 0;
+                        // WHOSE message it was. The reopen is caused by that
+                        // message, so attributing it to anyone else describes
+                        // history no install can produce -- and both
+                        // `reopened_by_visitor` and the actor activity table
+                        // are computed from this. It was an independent mix
+                        // before, which disagreed with the sender about a
+                        // quarter of the time.
+                        $byVisitor = $pivotMessage->sender_type === (new Visitor)->getMorphClass();
 
                         $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $firstCloseAt);
 
                         $rows[] = [
                             'account_id' => $accountId,
                             'site_id' => $conversation->site_id,
-                            'actor_type' => $byVisitor ? (new Visitor)->getMorphClass() : (new User)->getMorphClass(),
-                            'actor_id' => $byVisitor ? $conversation->visitor_id : $agentIds[self::mix($n, 'agent', count($agentIds))],
+                            'actor_type' => $pivotMessage->sender_type,
+                            'actor_id' => $pivotMessage->sender_id,
                             'subject_type' => (new Conversation)->getMorphClass(),
                             'subject_id' => $conversation->id,
                             'action' => ConversationLifecycleLog::REOPENED,

@@ -979,6 +979,44 @@ test('nothing is said to a conversation while it is closed', function (): void {
     }
 });
 
+test('whoever wrote the message is who reopened the conversation', function (): void {
+    // The reopen sits on a message, so it was caused by that message -- and
+    // attributing it to anybody else describes history no install can produce.
+    // `reopened_by_visitor` and the actor activity table are both computed from
+    // this, and it was an independent mix that disagreed with the sender about
+    // a quarter of the time.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 120, '--messages' => 5, '--fresh' => true])
+        ->assertSuccessful();
+
+    $reopens = AuditEvent::query()->where('action', 'conversation.reopened')->get();
+
+    expect($reopens)->not->toBeEmpty();
+
+    foreach ($reopens as $reopen) {
+        $message = ConversationMessage::query()
+            ->where('conversation_id', $reopen->subject_id)
+            ->where('created_at', $reopen->occurred_at)
+            ->first();
+
+        expect($message)->not->toBeNull('a reopen happened at a moment no message did');
+
+        expect($message->sender_type)->toBe($reopen->actor_type,
+            'the reopen is credited to a different kind of actor than the message that caused it');
+        expect((int) $message->sender_id)->toBe((int) $reopen->actor_id,
+            'the reopen is credited to a different person than the one who wrote the message');
+
+        // And the metadata the report splits on agrees with both.
+        expect($reopen->metadata['actor'] ?? null)
+            ->toBe($message->sender_type === (new Visitor)->getMorphClass() ? 'visitor' : 'agent');
+    }
+
+    // Both kinds still occur, or taking the actor from the message has
+    // collapsed the split the report exists to show.
+    $actors = $reopens->map(fn (AuditEvent $e): string => (string) ($e->metadata['actor'] ?? ''))->unique();
+
+    expect($actors->sort()->values()->all())->toBe(['agent', 'visitor']);
+});
+
 test('an answer never arrives after the episode it answers was reopened', function (): void {
     // `ConversationRatingController` rejects a stale episode token, so a rating
     // timestamped after its episode reopened is a row the product cannot
