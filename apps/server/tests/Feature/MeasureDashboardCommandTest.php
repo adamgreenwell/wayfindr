@@ -546,6 +546,58 @@ test('it gives back a session id the caller chose but never used', function (): 
         ->toBe($theirs, 'the command handed the caller its own session id');
 });
 
+test('the same fixture measures the same bytes after a reseed', function (): void {
+    // The baseline calls response sizes exact -- "the same fixture produces the
+    // same figures every run" -- and that has to survive a REBUILD, which is
+    // what the page tells operators to run.
+    //
+    // It did not. Seeded message bodies carried the conversation's database id,
+    // and deleting the desk does not reset a PostgreSQL sequence: the same
+    // conversation came back with a different id, a wider one as the install
+    // aged, and the queue renders that body for every row. The bytes moved with
+    // sequence history rather than with the options the fixture was given.
+    $measure = function (): array {
+        expect(Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]))->toBe(0);
+
+        return collect(json_decode(Artisan::output(), true)['pages'])
+            ->mapWithKeys(fn (array $page): array => [$page['page'] => $page['bytes']])
+            ->all();
+    };
+
+    $seed = fn () => Artisan::call('wayfindr:seed-desk', [
+        '--conversations' => 12,
+        '--messages' => 2,
+        '--fresh' => true,
+    ]);
+
+    $seed();
+    $first = $measure();
+
+    $seed();
+    $second = $measure();
+
+    // Sequences really did move, or this asserts nothing: a fixture rebuilt
+    // onto identical ids would agree for the wrong reason.
+    expect(Conversation::query()->min('id'))
+        ->toBeGreaterThan(12, 'the ids did not advance, so a reseed cannot show this');
+
+    // Within a few bytes, not identical, and the difference is worth naming:
+    // pages link to conversations and tickets by DATABASE ID, so a rebuild that
+    // advances a sequence past a power of ten widens every such href by a
+    // character. That is the application's own URLs, not the fixture, and no
+    // seeder can hold it still.
+    //
+    // What the fixture controls is the rendered CONTENT, and that is now stable
+    // -- which is the part that scales. The message body carrying an id was
+    // rendered once per queue row, so it moved the figure by kilobytes; the
+    // remaining drift is a handful of bytes on a hundred-kilobyte page and does
+    // not grow with the desk.
+    foreach ($first as $page => $bytes) {
+        expect(abs($second[$page] - $bytes))
+            ->toBeLessThanOrEqual(64, "{$page} measured {$bytes} then {$second[$page]} for the same fixture");
+    }
+});
+
 test('it measures a conversation an agent would actually open', function (): void {
     // Ordering by id descending picked the OLDEST, because the seeder writes
     // newest-first -- and with the default fixture that last row also carries

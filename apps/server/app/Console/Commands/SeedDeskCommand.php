@@ -510,7 +510,16 @@ final class SeedDeskCommand extends Command
                             'sender_type' => $fromVisitor ? Visitor::class : User::class,
                             'sender_id' => $fromVisitor ? $conversation->visitor_id : $agentIds[$m % count($agentIds)],
                             'type' => 'text',
-                            'body' => 'Message '.$m.' on conversation '.$conversation->id.'. '
+                            // The SUPPORT CODE, not the database id. Deleting the
+                            // desk does not reset the sequence, so a reseed hands
+                            // the same conversation a different id and a wider one
+                            // as the install ages -- and the queue renders this
+                            // body for every row, so the response BYTES moved with
+                            // sequence history rather than with the options the
+                            // fixture was given. The baseline calls those bytes
+                            // exact. The support code is fixed width and depends
+                            // only on the seeded index.
+                            'body' => 'Message '.$m.' on conversation '.$conversation->support_code.'. '
                                 .'Enough words that a body column holds something worth reading past.',
                             'metadata' => json_encode([]),
                             // The last message on an open conversation is unread,
@@ -614,7 +623,7 @@ final class SeedDeskCommand extends Command
                         'priority' => $priorities[self::mix($n, 'priority', count($priorities))],
                         'category' => $categories[self::mix($n, 'category', count($categories))],
                         'subject' => (string) $conversation->subject,
-                        'description' => 'Raised from conversation '.$conversation->id.'.',
+                        'description' => 'Raised from conversation '.$conversation->support_code.'.',
                         'metadata' => json_encode([]),
                         // Never later than now. A recent conversation raised
                         // minutes ago was being closed two days from now, so

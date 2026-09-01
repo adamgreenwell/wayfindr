@@ -557,6 +557,41 @@ test('a closed ticket was touched when it was closed', function (): void {
     }
 });
 
+test('a reseed writes the same words, not just the same shapes', function (): void {
+    // The baseline calls response sizes exact, and the queue renders a message
+    // body for every row -- so any drift in that text moves the figure by
+    // kilobytes. Bodies carried the conversation's DATABASE ID, and deleting the
+    // desk does not reset a PostgreSQL sequence: the same conversation came back
+    // with a different id, and a wider one as the install aged.
+    //
+    // Asserted on the CONTENT rather than on rendered bytes, because a byte
+    // comparison at a small fixture size hides this: a one-character shift
+    // across two dozen rows disappears into any tolerance loose enough to allow
+    // for the ids the application puts in its own URLs.
+    $seed = fn () => $this->artisan('wayfindr:seed-desk', [
+        '--conversations' => 12,
+        '--messages' => 2,
+        '--fresh' => true,
+    ])->assertSuccessful();
+
+    $bodies = fn (): array => ConversationMessage::query()->orderBy('body')->pluck('body')->all();
+    $descriptions = fn (): array => Ticket::query()->orderBy('description')->pluck('description')->all();
+
+    $seed();
+    $firstBodies = $bodies();
+    $firstDescriptions = $descriptions();
+
+    $seed();
+
+    // The sequence really did advance, or a reseed onto identical ids would
+    // agree for the wrong reason and this would pass on the broken code.
+    expect(ConversationMessage::query()->min('id'))
+        ->toBeGreaterThan(count($firstBodies), 'the ids did not advance, so a reseed cannot show this');
+
+    expect($bodies())->toBe($firstBodies, 'a reseed wrote different message bodies for the same fixture');
+    expect($descriptions())->toBe($firstDescriptions, 'a reseed wrote different ticket descriptions');
+});
+
 test('--messages holds even for one conversation', function (): void {
     // The deltas are ordered so any PREFIX stays near zero, not just a whole
     // cycle. Running `($index % 5) - 2` kept only a low-valued prefix when the

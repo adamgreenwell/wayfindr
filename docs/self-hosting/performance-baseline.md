@@ -32,9 +32,14 @@ measuring — and that overhead grows with query count, which is exactly the axi
 the ticket queue's N+1 sits on. Query counts come from a separate, untimed
 request.
 
-**Read the milliseconds as approximate and the other two as exact.** Query
-counts and response sizes are deterministic — the same fixture produces the same
-figures every run. Timings move by several per cent between runs on the same
+**Read the milliseconds as approximate and the other two as near-exact.** Query
+counts are deterministic. Response sizes are stable to within a few bytes on a
+hundred-kilobyte page, and the residue is worth naming: the dashboard links to
+conversations and tickets by **database id**, so rebuilding the fixture advances
+those sequences and widens an href by a character each time one passes a power of
+ten. No seeder can hold that still, and it does not grow with the desk. What the
+fixture does control — every word it writes — is stable across rebuilds, and is
+asserted to be. Timings move by several per cent between runs on the same
 machine, and by much more if anything else is using it, so treat them as an
 order of magnitude rather than a benchmark. Nothing here turns on the
 difference between 25.4 and 25.6 seconds.
