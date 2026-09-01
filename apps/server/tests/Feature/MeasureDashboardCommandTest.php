@@ -682,6 +682,14 @@ test('it says up front when the memory limit will not survive the desk', functio
     // No limit is not a small limit.
     expect($warn(50_000, null))->toBeNull();
 
+    // A run with no queue in it must be silent whatever the desk holds: only
+    // the queues render a row per conversation, so warning about gigabytes
+    // when measuring `--page=detail` is advice about a run that is not
+    // happening. Asserted on the rule's own gate rather than the estimate.
+    expect(MeasureDashboardCommand::rendersAQueue(['Conversation detail' => '/x']))->toBeFalse();
+    expect(MeasureDashboardCommand::rendersAQueue(['Ticket queue (all)' => '/x']))->toBeTrue();
+    expect(MeasureDashboardCommand::rendersAQueue([]))->toBeFalse();
+
     // The command running quietly on a desk that fits. NOT proof that it
     // consults the rule at all -- commenting the call out leaves this green,
     // because the estimate is per conversation and a small desk never warns

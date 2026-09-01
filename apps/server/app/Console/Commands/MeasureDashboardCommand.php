@@ -83,8 +83,6 @@ final class MeasureDashboardCommand extends Command
             return self::FAILURE;
         }
 
-        $this->warnAboutMemoryLimit();
-
         // Whoever was signed in stays signed in. In a long-lived process --
         // `Artisan::call()`, Tinker -- logging in here left everything
         // afterwards authenticated as the measured agent.
@@ -257,6 +255,8 @@ final class MeasureDashboardCommand extends Command
     {
 
         $targets = $this->onlyRequested($this->targets($agent));
+
+        $this->warnAboutMemoryLimit($agent, $targets);
 
         if ($targets === []) {
             $this->components->error('Nothing to measure. Run `wayfindr:seed-desk` first, or widen --page.');
@@ -506,18 +506,67 @@ final class MeasureDashboardCommand extends Command
      * to one measured point, which is enough to be useful and not enough to
      * stop somebody measuring their own install.
      */
-    private function warnAboutMemoryLimit(): void
+    /**
+     * @param  array<string, string>  $targets
+     */
+    private function warnAboutMemoryLimit(User $agent, array $targets): void
     {
+        // Only the QUEUES render a row per conversation. Measuring
+        // `--page=detail` costs one conversation's messages whatever the desk
+        // holds, so warning about gigabytes there is advice about a run that is
+        // not happening.
+        if (! self::rendersAQueue($targets)) {
+            return;
+        }
+
+        // What this AGENT can see, not what the database holds. An install with
+        // one large tenant and one small one was warning the small one about
+        // rows its queue will never render.
+        $visible = Conversation::query()
+            ->whereIn('site_id', Site::query()->visibleToAgent($agent)->select('id'))
+            ->count();
+
         $warning = self::memoryWarning(
-            Conversation::query()->count(),
+            $visible,
             $this->memoryLimitInBytes(),
             (string) ini_get('memory_limit'),
             (string) $this->getName(),
         );
 
-        if ($warning !== null) {
-            $this->components->warn($warning);
+        if ($warning === null) {
+            return;
         }
+
+        // STDERR under `--json`, for the reason `onlyRequested()` does the same:
+        // a notice printed above the document makes the advertised
+        // machine-readable output unparseable to everything that reads it.
+        if ($this->option('json')) {
+            $stderr = $this->getOutput()->getOutput();
+
+            if ($stderr instanceof ConsoleOutputInterface) {
+                $stderr->getErrorOutput()->writeln('<comment>'.$warning.'</comment>');
+            }
+
+            return;
+        }
+
+        $this->components->warn($warning);
+    }
+
+    /**
+     * Whether any selected page renders a row per conversation.
+     *
+     * @param  array<string, string>  $targets
+     */
+    public static function rendersAQueue(array $targets): bool
+    {
+        foreach (array_keys($targets) as $label) {
+            if (str_contains(mb_strtolower($label), 'queue')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

@@ -18,7 +18,7 @@ Two commands. Both are shipped, so an operator can run them against their own
 hardware rather than trusting these figures:
 
 ```bash
-php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh
+php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```
 
 ```bash
@@ -26,6 +26,19 @@ php -d memory_limit=2G artisan wayfindr:measure-dashboard --runs=3
 ```
 
 Every figure on this page was taken with `--runs=3`.
+
+**`--force` is needed because the image runs as production.**
+`server.Dockerfile` sets `APP_ENV=production`, and the seeder refuses to run
+there without being told twice — which is correct, and makes the flag
+mandatory on the one environment this page is written for. Read it as the
+warning it is: this writes tens of thousands of rows.
+
+They go to an account of the seeder's own (`wayfindr-measurement-desk`), and
+`--fresh` deletes exactly that account and refuses if anything it did not
+create is sitting there. Nothing else is touched. But a real install is still
+being asked to hold a second desk's worth of data and serve 193 MB responses
+while you measure it, so **measure a staging copy if you have one**, and expect
+the disk and the load to be real if you do not.
 
 **The memory override is required, not a precaution.** The shipped image sets
 `memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size
