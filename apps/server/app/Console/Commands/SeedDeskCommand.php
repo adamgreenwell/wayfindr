@@ -8,6 +8,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationRating;
+use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -82,6 +83,20 @@ final class SeedDeskCommand extends Command
      * characters and never this prefix.
      */
     private const NAME = 'Measurement Desk';
+
+    /**
+     * What a visitor writes when they answer. Deliberately dull and varied in
+     * length, because the report renders these and a fixture of identical
+     * one-word strings measures a narrower row than a real desk produces.
+     */
+    private const RATING_COMMENTS = [
+        'Sorted quickly, thank you.',
+        'Took a while to get going but the answer was right in the end.',
+        'Still not sure this is fixed.',
+        'Clear explanation, no complaints.',
+        'Had to repeat myself a few times before it was understood.',
+        'Exactly what I needed.',
+    ];
 
     private const SITE_KEY_PREFIX = 'site_desk_';
 
@@ -184,6 +199,8 @@ final class SeedDeskCommand extends Command
         }
 
         $this->components->twoColumnDetail('Window', $months.' months');
+
+        $this->warnAboutRecordingBoundaries($months);
         $this->components->twoColumnDetail('Took', ReaderNumber::decimal(microtime(true) - $startedAt, 1).'s');
 
         $this->newLine();
@@ -1168,7 +1185,14 @@ final class SeedDeskCommand extends Command
                         // Weighted toward good, because a desk where a third of
                         // answers are "bad" is not a desk anyone recognises.
                         'score' => $scores[self::mix($n, 'score', 6) < 4 ? 0 : (self::mix($n, 'score2', 2) === 0 ? 1 : 2)],
-                        'comment' => null,
+                        // A comment on a third of answers, because
+                        // `SupportReport::comments()` filters on
+                        // `whereNotNull` -- with every comment null the section
+                        // returned an empty list and the report tab's comment
+                        // rows were never rendered at any desk size.
+                        'comment' => self::mix($n, 'commented', 3) === 0
+                            ? self::RATING_COMMENTS[self::mix($n, 'comment_text', count(self::RATING_COMMENTS))]
+                            : null,
                         // Never later than now. `closed_at` is clamped to the
                         // present, so a recent conversation's close plus an
                         // unconditional offset put its answer in the future --
@@ -1191,6 +1215,51 @@ final class SeedDeskCommand extends Command
             }, 'audit_events.id', 'id');
 
         return $written;
+    }
+
+    /**
+     * Say when this install's recording boundary will hide the seeded history.
+     *
+     * Both boundaries are INSTALLATION-WIDE and belong to every account, so
+     * this command will not move them -- doing so would tell real accounts'
+     * reports to trust unaudited history. On a clean measurement install they
+     * are absent, which means "always trustworthy" and the desk measures whole.
+     *
+     * On an UPGRADED install they are set and recent, and a desk backdated
+     * twelve months mostly predates them: the resolution durations read
+     * unmeasurable and the report marks itself partial. That is the report
+     * being honest rather than broken, but it is not what somebody measuring
+     * report performance is expecting to see, so it is said out loud.
+     *
+     * Making the desk measurable there would need an account-scoped boundary,
+     * which is a change to the reporting model rather than to a fixture.
+     */
+    private function warnAboutRecordingBoundaries(int $months): void
+    {
+        $seededFrom = Carbon::now()->subMonths($months);
+
+        $boundaries = OperatorSetting::query()
+            ->whereIn('key', [
+                'reporting.lifecycle_recording_began_at',
+                'reporting.ticket_lifecycle_recording_began_at',
+            ])
+            ->pluck('value', 'key')
+            ->filter(fn ($value): bool => is_string($value) && $value !== '')
+            ->filter(fn (string $value): bool => Carbon::parse($value)->greaterThan($seededFrom));
+
+        if ($boundaries->isEmpty()) {
+            return;
+        }
+
+        $this->newLine();
+        $this->components->warn(
+            'This install records lifecycle history only from '
+            .$boundaries->map(fn (string $value): string => Carbon::parse($value)->toDateString())->implode(' and ')
+            .', which is later than the '.$months.' months this desk covers. The report tabs will mark '
+            .'themselves partial and report resolution durations as unmeasurable for anything older. '
+            .'Those settings belong to every account on this install, so this command will not move them. '
+            .'A measurement install with no history recorded before the desk existed reports it whole.'
+        );
     }
 
     private function siteIds(array $desk): array

@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationRating;
 use App\Models\ConversationReadState;
+use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -865,6 +866,64 @@ test('a lifecycle event never happens before or after it could have', function (
         expect($closes->filter(fn (AuditEvent $e): bool => $e->occurred_at->greaterThanOrEqualTo($reopen->occurred_at)))
             ->not->toBeEmpty('a conversation was reopened and never closed again');
     }
+});
+
+test('it says when this install will report the desk as partial', function (): void {
+    // Both recording boundaries are INSTALLATION-WIDE and belong to every
+    // account, so this command will not move them: doing so would tell real
+    // accounts' reports to trust unaudited history. On a clean measurement
+    // install they are absent, which means "always trustworthy".
+    //
+    // On an upgraded install they are set and recent, and a desk backdated
+    // twelve months mostly predates them -- the report marks itself partial and
+    // reports resolution durations as unmeasurable. That is the report being
+    // honest, not broken, but it is not what somebody measuring report
+    // performance expects, so it is said out loud rather than left to be
+    // discovered in a figure.
+    OperatorSetting::query()->create([
+        'key' => 'reporting.ticket_lifecycle_recording_began_at',
+        'value' => now()->subDays(3)->toIso8601String(),
+    ]);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1, '--fresh' => true])
+        ->expectsOutputToContain('records lifecycle history only from')
+        ->assertSuccessful();
+
+    // And the boundary is UNTOUCHED. The warning exists because moving it is
+    // the thing this command must not do.
+    expect(OperatorSetting::query()
+        ->where('key', 'reporting.ticket_lifecycle_recording_began_at')
+        ->value('value'))
+        ->not->toBeNull('the seeder moved an installation-wide reporting boundary');
+});
+
+test('it says nothing about boundaries a measurement install does not have', function (): void {
+    // The documented case: no history recorded before the desk existed, so
+    // nothing to warn about. A warning on every run is noise that teaches
+    // operators to skip the output.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1, '--fresh' => true])
+        ->doesntExpectOutputToContain('records lifecycle history only from')
+        ->assertSuccessful();
+});
+
+test('a visitor sometimes says why', function (): void {
+    // `SupportReport::comments()` filters on `whereNotNull`, so a fixture with
+    // every comment null returned an empty list and the report tab's comment
+    // rows were never rendered at any desk size -- the section would have been
+    // measured as free.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 120, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $withComment = ConversationRating::query()->whereNotNull('comment')->count();
+    $total = ConversationRating::query()->count();
+
+    expect($withComment)->toBeGreaterThan(0, 'no rating carries a comment, so the comments section renders nothing')
+        ->and($withComment)->toBeLessThan($total, 'every rating carries a comment, which no real desk produces');
+
+    // Varied, because the report renders these: a fixture of one repeated
+    // string measures a narrower row than a real desk returns.
+    expect(ConversationRating::query()->whereNotNull('comment')->distinct()->count('comment'))
+        ->toBeGreaterThan(1, 'every comment is the same string');
 });
 
 test('--messages holds even for one conversation', function (): void {
