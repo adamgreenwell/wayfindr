@@ -39,6 +39,11 @@ machine, and by much more if anything else is using it, so treat them as an
 order of magnitude rather than a benchmark. Nothing here turns on the
 difference between 22.1 and 22.3 seconds.
 
+"Much more" is not hypothetical: running the test suite alongside a measurement
+put the 25,000-row open queue at 4,367 ms, nearly double its 2,659 ms on an idle
+machine and higher than the same page at twice the data. If a figure here breaks
+the pattern of the ones around it, suspect the machine before the code.
+
 **Measurement cannot change what it measures.** Every request runs inside a
 transaction that is always rolled back. The conversation detail page is not a
 read — it marks the conversation read for the viewer — so without that, an
@@ -85,10 +90,10 @@ them:
 
 | Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 122 ms | 474 ms | 3.9 MB | 186 ms | 268 | 11 ms / 26 q |
-| 5,000 | 524 ms | 2,371 ms | 19.2 MB | 904 ms | 1,268 | 12 ms / 26 q |
-| 25,000 | 2,414 ms | 12,308 ms | 96.0 MB | 4,694 ms | 6,268 | 12 ms / 26 q |
-| 50,000 | 4,861 ms | 26,825 ms | 192.1 MB | 9,880 ms | 12,518 | 14 ms / 26 q |
+| 1,000 | 136 ms | 499 ms | 3.9 MB | 215 ms | 268 | 14 ms / 26 q |
+| 5,000 | 545 ms | 2,472 ms | 19.3 MB | 950 ms | 1,268 | 13 ms / 26 q |
+| 25,000 | 2,659 ms | 13,269 ms | 96.0 MB | 5,108 ms | 6,268 | 14 ms / 26 q |
+| 50,000 | 4,642 ms | 25,477 ms | 186.0 MB | 9,503 ms | 12,518 | 12 ms / 26 q |
 
 The last column is the control, and it is the point: the same page, at fifty
 times the data, costs the same.
@@ -129,8 +134,10 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-12 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations to
-50,000. Its cost is bounded by one conversation's own messages rather than by
+12-14 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
+to 50,000. The queries and the response size do not move at all; the
+milliseconds vary by a millisecond or two between runs, which is the noise floor
+on a page this cheap. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 
 This is worth stating as plainly as the problems: the page an agent spends most
