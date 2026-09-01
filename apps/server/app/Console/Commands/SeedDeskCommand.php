@@ -273,7 +273,7 @@ final class SeedDeskCommand extends Command
         // single pass and means each conversation has its own visitor, which is
         // what makes the queue's joins do the work they do in production.
         $visitorIds = DB::table('visitors')
-            ->whereIn('site_id', array_map(fn (Site $site): int => $site->id, $desk['sites']))
+            ->whereIn('site_id', $this->siteIds($desk))
             ->where('anonymous_id', 'like', 'desk-visitor-%')
             ->orderBy('id')
             ->pluck('id')
@@ -347,6 +347,12 @@ final class SeedDeskCommand extends Command
         // conversations the id list alone is the largest thing this command
         // would hold, and there is no reason to hold it.
         DB::table('conversations')
+            // Scoped to this desk's SITES, not just the support-code prefix.
+            // The prefix is global, so a conversation on somebody else's
+            // account carrying it -- a legacy row, a hand-made one -- would
+            // have had synthetic messages attached to it, attributed to
+            // measurement-desk agents.
+            ->whereIn('site_id', $this->siteIds($desk))
             ->where('support_code', 'like', 'WF-DESK-%')
             ->orderBy('id')
             ->select(['id', 'visitor_id', 'created_at'])
@@ -402,6 +408,10 @@ final class SeedDeskCommand extends Command
         $written = 0;
 
         DB::table('conversations')
+            // Same scoping as the messages pass, and for the same reason: this
+            // one would otherwise raise a ticket ON the measurement account
+            // pointing at another account's conversation.
+            ->whereIn('site_id', $this->siteIds($desk))
             ->where('support_code', 'like', 'WF-DESK-%')
             ->orderBy('id')
             ->select(['id', 'site_id', 'visitor_id', 'created_at', 'subject'])
@@ -494,6 +504,21 @@ final class SeedDeskCommand extends Command
     public static function mix(int $n, string $attribute, int $of): int
     {
         return (int) (hexdec(substr(md5($attribute.':'.$n), 0, 8)) % $of);
+    }
+
+    /**
+     * This desk's site ids.
+     *
+     * Every pass that reads rows back scopes through these. The support-code
+     * prefix alone is a naming convention, not a boundary -- and this command
+     * promises to touch nothing outside its own account.
+     *
+     * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
+     * @return list<int>
+     */
+    private function siteIds(array $desk): array
+    {
+        return array_map(fn (Site $site): int => $site->id, $desk['sites']);
     }
 
     /**

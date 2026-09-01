@@ -166,6 +166,35 @@ test('fresh takes the agents it created with it', function (): void {
         ->toBe(0, 'a seeded agent is left with no account and a known password');
 });
 
+test('it leaves another account\'s conversation alone even when its code matches', function (): void {
+    // The support-code prefix is a naming CONVENTION, not a boundary. A
+    // conversation on somebody else's account carrying `WF-DESK-` -- a legacy
+    // row, a hand-made one -- was picked up by the passes that read
+    // conversations back, so it had synthetic messages attached to it,
+    // attributed to measurement-desk agents, and a ticket raised ON the
+    // measurement account pointing at it.
+    $other = Account::query()->create(['slug' => 'someone-elses-desk', 'name' => 'Theirs']);
+    $otherSite = Site::factory()->for($other)->create();
+    $otherVisitor = Visitor::factory()->for($otherSite)->create();
+
+    // A code that matches the prefix and cannot collide with a generated one.
+    $theirs = Conversation::factory()->for($otherSite)->for($otherVisitor)
+        ->create(['support_code' => 'WF-DESK-LEGACY-1']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 12, '--messages' => 3])
+        ->assertSuccessful();
+
+    expect($theirs->messages()->count())
+        ->toBe(0, 'another account\'s conversation was given synthetic messages');
+
+    expect(Ticket::query()->where('conversation_id', $theirs->id)->count())
+        ->toBe(0, 'a ticket was raised on the measurement account for another account\'s conversation');
+
+    // And the desk itself is intact, or this passes by seeding nothing.
+    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-0%')->count())
+        ->toBeGreaterThan(0, 'the desk was not seeded, so this proves nothing');
+});
+
 test('it refuses rather than take over an address somebody else holds', function (): void {
     // Two ways this command reached outside its own account, both found by
     // asking what happens when a real user holds a `desk-agent-` address:
