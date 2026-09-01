@@ -96,6 +96,16 @@ test('it writes a desk with the spread a measurement needs', function (): void {
 
     expect($states)->toHaveCount(4, 'the seeded visitors do not reach every presence state');
 
+    // And a visitor seen on the web has a visit to measure. `Visitor::booted()`
+    // starts one on the first sighting and a bulk insert bypasses it, so the
+    // live board's "on site for" column had nothing to work from.
+    expect(Visitor::query()->whereNotNull('last_web_seen_at')->whereNull('current_visit_started_at')->count())
+        ->toBe(0, 'a visitor is present on the site with no visit start');
+
+    // Varied, or the column is one repeated duration.
+    expect(Visitor::query()->whereNotNull('current_visit_started_at')->distinct()->count('current_visit_started_at'))
+        ->toBeGreaterThan(1, 'every present visitor arrived at the same moment');
+
     // Read states exist, and in both shapes. Without them every conversation
     // reads as new activity -- `scopeWithNewActivityFor()` treats a missing row
     // as unread -- so the queue's marker was on for every row and its absence

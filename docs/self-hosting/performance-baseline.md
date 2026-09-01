@@ -97,8 +97,9 @@ times the data, costs the same.
 
 ### Neither queue paginates
 
-`AgentConversationController` and `AgentTicketController` contain no
-`paginate()`. Every conversation and every ticket matching the current filters
+`AgentConversationQueueController` and `AgentTicketQueueController` — the
+single-action controllers behind `/dashboard/conversations` and
+`/dashboard/tickets` — contain no `paginate()`. Every conversation and every ticket matching the current filters
 is queried, hydrated and rendered into one response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane

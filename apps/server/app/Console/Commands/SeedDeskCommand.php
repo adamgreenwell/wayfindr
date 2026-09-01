@@ -297,6 +297,13 @@ final class SeedDeskCommand extends Command
                 // as active on the live board while the directory says they
                 // were last seen months ago.
                 'last_seen_at' => $webSeenAt !== null && $webSeenAt->greaterThan($seenAt) ? $webSeenAt : $seenAt,
+                // `Visitor::booted()` starts a visit the first time a website
+                // sighting is recorded, and a bulk insert bypasses it -- so
+                // every present visitor had a null visit start and the live
+                // board's "on site for" column had nothing to measure from.
+                //
+                // Varied, so the column is not one repeated duration.
+                'current_visit_started_at' => $webSeenAt?->copy()->subMinutes(self::mix($i, 'visit', 45) + 1),
                 'created_at' => $seenAt,
                 'updated_at' => $seenAt,
             ];
