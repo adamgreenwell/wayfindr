@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Models\Account;
+use App\Models\Conversation;
+use App\Models\Site;
+use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 
@@ -82,4 +86,33 @@ test('the detail page is the control, and does not grow with the desk', function
 
 test('it says so rather than measuring nothing when the database is empty', function (): void {
     $this->artisan('wayfindr:measure-dashboard')->assertFailed();
+});
+
+test('it measures a conversation the agent can actually open', function (): void {
+    // A global "highest id" pick finds whatever conversation was created last,
+    // which in a database holding more than one account is one the measured
+    // agent cannot view. The request 404s, a 404 is very fast, and it would
+    // have been reported as the best number on the page.
+    //
+    // Nothing else in the suite puts a second account in front of this command,
+    // which is why the global query looked correct.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 2, '--fresh' => true]);
+
+    $stranger = Account::query()->create(['slug' => 'another-desk', 'name' => 'Another']);
+    $strangerSite = Site::factory()->for($stranger)->create();
+    $strangerVisitor = Visitor::factory()->for($strangerSite)->create();
+
+    // Created LAST, so it holds the highest id and a global query finds it.
+    Conversation::factory()->for($strangerSite)->for($strangerVisitor)
+        ->create(['support_code' => 'WF-STRANGER-1']);
+
+    $exit = Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]);
+
+    expect($exit)->toBe(0, 'the command measured a page the agent cannot open');
+
+    $measured = json_decode(Artisan::output(), true);
+    $detail = collect($measured['pages'])->firstWhere('page', 'Conversation detail');
+
+    expect($detail['status'])->toBe(200)
+        ->and($detail['uri'])->not->toContain('WF-STRANGER-1');
 });

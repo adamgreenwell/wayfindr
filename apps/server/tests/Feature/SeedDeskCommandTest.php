@@ -48,9 +48,17 @@ test('it writes a desk with the spread a measurement needs', function (): void {
     expect($open)->toBeGreaterThan(0)
         ->and($closed)->toBeGreaterThan(0);
 
-    // Assigned and unassigned both present, so the assignee lanes have rows.
-    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->whereNull('assigned_agent_id')->count())->toBeGreaterThan(0)
-        ->and(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->whereNotNull('assigned_agent_id')->count())->toBeGreaterThan(0);
+    // Assigned and unassigned both present WITHIN THE OPEN LANE, not merely
+    // somewhere in the table. Asserting it across the whole set is what let a
+    // fixture through where every open conversation was assigned: `$i % 6 === 0`
+    // makes `$i` even, and the assignment rule was `$i % 2`. The unassigned-open
+    // lane is the one an agent actually works from.
+    $openScope = fn () => Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->where('status', 'open');
+
+    expect($openScope()->whereNull('assigned_agent_id')->count())
+        ->toBeGreaterThan(0, 'no OPEN conversation is unassigned, so that lane renders nothing')
+        ->and($openScope()->whereNotNull('assigned_agent_id')->count())
+        ->toBeGreaterThan(0, 'no OPEN conversation is assigned, so the assignee lane renders nothing');
 
     // Subjects vary, or a search measures a full-table match rather than a
     // search. Twelve openings against sixty rows.
@@ -76,6 +84,23 @@ test('it writes a desk with the spread a measurement needs', function (): void {
     expect(Ticket::query()->where('account_id', $account->id)->distinct()->count('status'))->toBe(3)
         ->and(Ticket::query()->where('account_id', $account->id)->distinct()->count('priority'))->toBe(4)
         ->and(Ticket::query()->where('account_id', $account->id)->distinct()->count('category'))->toBe(6);
+
+    // And no attribute is a FUNCTION of another. Every value appearing somewhere
+    // is not enough: status and assignment both cycled on `% 3` once, which made
+    // every open ticket unassigned and every closed one assigned, and each
+    // category permanently tied to one status. The counts above were all
+    // satisfied by that.
+    $openTickets = Ticket::query()->where('account_id', $account->id)->where('status', 'open');
+
+    expect((clone $openTickets)->whereNull('assignee_id')->count())
+        ->toBeGreaterThan(0, 'no OPEN ticket is unassigned; status and assignment are related')
+        ->and((clone $openTickets)->whereNotNull('assignee_id')->count())
+        ->toBeGreaterThan(0, 'no OPEN ticket is assigned; status and assignment are related');
+
+    // More than one category inside a single status, or category is decided by
+    // status rather than varying beside it.
+    expect((clone $openTickets)->distinct()->count('category'))
+        ->toBeGreaterThan(1, 'every open ticket shares one category; category is tied to status');
 
     // Spread across the window, or a ninety-day report has one bucket.
     $span = Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->max('created_at');

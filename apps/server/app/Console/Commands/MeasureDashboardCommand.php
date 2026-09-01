@@ -57,7 +57,7 @@ final class MeasureDashboardCommand extends Command
 
         Auth::login($agent);
 
-        $targets = $this->targets();
+        $targets = $this->targets($agent);
 
         if ($targets === []) {
             $this->components->error('No conversation to measure against. Run `wayfindr:seed-desk` first.');
@@ -70,6 +70,20 @@ final class MeasureDashboardCommand extends Command
 
         foreach ($targets as $label => $uri) {
             $rows[] = $this->measure($kernel, $agent, $label, $uri, $runs);
+        }
+
+        // A page that did not render is not a fast page. Reporting success here
+        // would put a very good number next to a 404 or a 403, which is the one
+        // way a performance baseline can be actively misleading rather than
+        // merely incomplete.
+        $unrendered = array_values(array_filter($rows, fn (array $row): bool => $row['status'] !== 200));
+
+        if ($unrendered !== []) {
+            foreach ($unrendered as $row) {
+                $this->components->error("{$row['page']} answered {$row['status']} at {$row['uri']}; its timing measures an error page.");
+            }
+
+            return self::FAILURE;
         }
 
         if ($this->option('json')) {
@@ -136,10 +150,6 @@ final class MeasureDashboardCommand extends Command
         // decide the figure a baseline is compared against.
         $median = $timings[intdiv(count($timings), 2)];
 
-        if ($status !== 200) {
-            $this->components->warn("{$label} answered {$status}, so its timing is not measuring the page.");
-        }
-
         return [
             'page' => $label,
             'uri' => $uri,
@@ -175,9 +185,17 @@ final class MeasureDashboardCommand extends Command
      *
      * @return array<string, string>
      */
-    private function targets(): array
+    private function targets(User $agent): array
     {
-        $conversation = Conversation::query()->orderByDesc('id')->first();
+        // Scoped to the measured agent's own account. A global `first()` picks
+        // whatever conversation has the highest id, which in a database holding
+        // more than one account is one this agent cannot open -- and a 404 is
+        // very fast, so it would have been reported as the best number on the
+        // page.
+        $conversation = Conversation::query()
+            ->whereHas('site', fn ($site) => $site->where('account_id', $agent->account_id))
+            ->orderByDesc('id')
+            ->first();
 
         if ($conversation === null) {
             return [];

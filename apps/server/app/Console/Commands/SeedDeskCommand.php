@@ -250,14 +250,16 @@ final class SeedDeskCommand extends Command
             // is keeping up. A queue of nothing but closed rows would make the
             // default view -- the one an agent actually opens -- the cheapest
             // query here rather than the most expensive.
-            $open = $i % 6 === 0;
+            $open = $this->mix($i, 'status', 6) === 0;
 
             $rows[] = [
                 'site_id' => $desk['sites'][$i % $siteCount]->id,
                 'visitor_id' => $visitorIds[$i % count($visitorIds)],
-                // Half the open ones unassigned, so the "assigned to me" and
-                // "unassigned" lanes both have rows.
-                'assigned_agent_id' => $i % 2 === 0 ? $desk['agents'][$i % $agentCount]->id : null,
+                // Independent of status, or the unassigned-OPEN lane -- the
+                // one an agent actually works from -- never gets a row.
+                'assigned_agent_id' => $this->mix($i, 'assignee', 2) === 0
+                    ? $desk['agents'][$this->mix($i, 'agent', $agentCount)]->id
+                    : null,
                 'support_code' => 'WF-DESK-'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
                 'status' => $open ? 'open' : 'closed',
                 'subject' => $subjects[$i % count($subjects)].' '.$i,
@@ -367,27 +369,26 @@ final class SeedDeskCommand extends Command
                         continue;
                     }
 
-                    // Cycled on a per-TICKET counter, not on the conversation
-                    // id. Tickets are taken every fourth conversation, so ids
-                    // step by four -- and `id % 4` is then the same number for
-                    // every ticket, which gave all of them one priority. Same
-                    // trap waiting for any modulus sharing a factor with the
-                    // stride.
+                    // Salted per attribute rather than cycled on one counter --
+                    // see `mix()` for the three ways the counter went wrong.
                     $n = $written + count($rows);
 
                     $raisedAt = Carbon::parse($conversation->created_at);
-                    $status = $statuses[$n % count($statuses)];
+                    $status = $statuses[$this->mix($n, 'status', count($statuses))];
 
                     $rows[] = [
                         'account_id' => $desk['account']->id,
                         'site_id' => $conversation->site_id,
                         'conversation_id' => $conversation->id,
                         'requester_id' => $conversation->visitor_id,
-                        // A third unassigned, so the attention lanes have rows.
-                        'assignee_id' => $n % 3 === 0 ? null : $agentIds[$n % count($agentIds)],
+                        // A third unassigned, and independent of status, so the
+                        // open queue holds assigned AND unassigned rows.
+                        'assignee_id' => $this->mix($n, 'assignee', 3) === 0
+                            ? null
+                            : $agentIds[$this->mix($n, 'agent', count($agentIds))],
                         'status' => $status,
-                        'priority' => $priorities[$n % count($priorities)],
-                        'category' => $categories[$n % count($categories)],
+                        'priority' => $priorities[$this->mix($n, 'priority', count($priorities))],
+                        'category' => $categories[$this->mix($n, 'category', count($categories))],
                         'subject' => (string) $conversation->subject,
                         'description' => 'Raised from conversation '.$conversation->id.'.',
                         'metadata' => json_encode([]),
@@ -408,6 +409,32 @@ final class SeedDeskCommand extends Command
             });
 
         return $written;
+    }
+
+    /**
+     * A deterministic, decorrelated value for one attribute of one row.
+     *
+     * Modular arithmetic on a shared counter is what this replaces, and it went
+     * wrong three separate ways before I stopped using it:
+     *
+     *   - Tickets are taken every FOURTH conversation, so `id % 4` was the same
+     *     number for every ticket and all of them shared one priority.
+     *   - A conversation was open when `$i % 6 === 0`, which makes `$i` even --
+     *     so the `$i % 2` assignment rule assigned every open row and the
+     *     unassigned-open lane, which is the one an agent works from, never
+     *     existed.
+     *   - Ticket status and null-assignment both used `% 3`, so every open
+     *     ticket was unassigned and every closed one assigned, and `% 6`
+     *     categories were pinned to a status.
+     *
+     * Each of those is the same mistake: two attributes derived from one
+     * counter are related whether or not the moduli look unrelated. Salting the
+     * counter per attribute makes them independent by construction, and keeps
+     * the fixture reproducible, which `random_int` would not.
+     */
+    private function mix(int $n, string $attribute, int $of): int
+    {
+        return (int) (crc32($attribute.':'.$n) % $of);
     }
 
     /**

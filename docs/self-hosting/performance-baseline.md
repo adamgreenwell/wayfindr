@@ -51,25 +51,28 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,438 | 21 | 37.2 MB |
-| Conversation queue (closed) | 23,906 | 15 | 186.5 MB |
-| Conversation queue (search) | 2,297 | 21 | 18.8 MB |
-| Conversation queue (assigned to me) | 1,218 | 21 | 9.5 MB |
-| Ticket queue (open) | 3,413 | 4,184 | 21.0 MB |
-| Ticket queue (all) | 10,334 | 12,518 | 62.4 MB |
-| **Conversation detail** | **11** | **24** | **150 KB** |
+| Conversation queue (open) | 4,341 | 21 | 37.2 MB |
+| Conversation queue (closed) | 24,125 | 15 | 186.6 MB |
+| Conversation queue (search) | 589 | 21 | 3.2 MB |
+| Conversation queue (assigned to me) | 995 | 21 | 7.6 MB |
+| Ticket queue (open) | 3,388 | 4,175 | 20.9 MB |
+| Ticket queue (all) | 10,263 | 12,518 | 62.5 MB |
+| **Conversation detail** | **14** | **25** | **149 KB** |
 
 ### How it grows
 
 Every queue is linear in the number of rows, because every queue renders all of
 them:
 
-| Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries |
+| Conversations | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 110 ms | 422 ms | 4.0 MB | 188 ms | 268 |
-| 5,000 | 427 ms | 2,139 ms | 19.6 MB | 966 ms | 1,268 |
-| 25,000 | 2,146 ms | 11,148 ms | 97.8 MB | 5,059 ms | 6,268 |
-| 50,000 | 4,438 ms | 23,906 ms | 186.5 MB | 10,334 ms | 12,518 |
+| 1,000 | 446 ms | 3.8 MB | 198 ms | 268 | 13 ms / 25 q |
+| 5,000 | 2,154 ms | 18.7 MB | 983 ms | 1,268 | 14 ms / 25 q |
+| 25,000 | 11,231 ms | 93.2 MB | 4,974 ms | 6,268 | 15 ms / 24 q |
+| 50,000 | 24,125 ms | 186.6 MB | 10,263 ms | 12,518 | 14 ms / 25 q |
+
+The last column is the control, and it is the point: the same page, at fifty
+times the data, costs the same.
 
 ## What that means
 
@@ -90,7 +93,8 @@ builds 186 MB in twenty-four seconds; the browser then has to parse it.
 
 ### The ticket queue issues one query per ticket
 
-12,518 queries to render the ticket list, of which **12,499 are the same query**:
+12,518 queries to render the ticket list, of which **12,499 are the same query**
+— one per ticket:
 
 ```sql
 select * from "audit_events"
@@ -105,7 +109,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-11 ms, 24 queries and 150 KB at *every* size measured, from 20 conversations to
+14 ms, 25 queries and 149 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 
