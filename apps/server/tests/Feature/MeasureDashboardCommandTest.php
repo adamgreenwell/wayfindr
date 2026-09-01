@@ -649,6 +649,56 @@ test('the published baseline names every page the command measures', function ()
     }
 });
 
+test('it says up front when the memory limit will not survive the desk', function (): void {
+    // The queues render every matching row into one response, so the shipped
+    // image's 256M dies inside the closed queue and prints no table at all. An
+    // operator who missed the override in the docs got a fatal and no reason.
+    //
+    // Asserted on the RULE rather than by running the command under a small
+    // limit: `ini_set` refuses any value below current usage, so a test can
+    // only reach limits the command already survives -- and the case worth
+    // proving is the documented 50,000-conversation desk, which no test is
+    // going to seed.
+    $warn = fn (int $conversations, ?int $limit, string $written = '256M'): ?string => MeasureDashboardCommand::memoryWarning(
+        $conversations,
+        $limit,
+        $written,
+        'wayfindr:measure-dashboard',
+    );
+
+    // The shipped image against the documented fixture: the case in the docs.
+    $shipped = $warn(50_000, 256 * 1024 * 1024);
+
+    expect($shipped)->toContain('memory_limit is 256M')
+        ->and($shipped)->toContain('50,000 conversations')
+        ->and($shipped)->toContain('memory_limit=2G');
+
+    // Room to spare says nothing, or it is noise on every run.
+    expect($warn(50_000, 4 * 1024 * 1024 * 1024))->toBeNull();
+
+    // A small desk fits inside the shipped limit and must not be warned about.
+    expect($warn(200, 256 * 1024 * 1024))->toBeNull();
+
+    // No limit is not a small limit.
+    expect($warn(50_000, null))->toBeNull();
+
+    // The command running quietly on a desk that fits. NOT proof that it
+    // consults the rule at all -- commenting the call out leaves this green,
+    // because the estimate is per conversation and a small desk never warns
+    // under any limit `ini_set` will accept (it refuses anything below current
+    // usage, which is already ~97MB). Reaching the warning through the command
+    // would need a desk of several thousand, and #843 is a live reminder of
+    // what oversized fixtures do to this suite.
+    //
+    // The wiring was checked by hand instead: against the documented
+    // 50,000-conversation desk the real command warns at `-d memory_limit=256M`
+    // -- "likely to need about 1,953M" -- and says nothing at 4G.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail']]);
+
+    expect(Artisan::output())->not->toContain('memory_limit is');
+});
+
 test('it measures a conversation an agent would actually open', function (): void {
     // Ordering by id descending picked the OLDEST, because the seeder writes
     // newest-first -- and with the default fixture that last row also carries

@@ -83,6 +83,8 @@ final class MeasureDashboardCommand extends Command
             return self::FAILURE;
         }
 
+        $this->warnAboutMemoryLimit();
+
         // Whoever was signed in stays signed in. In a long-lived process --
         // `Artisan::call()`, Tinker -- logging in here left everything
         // afterwards authenticated as the measured agent.
@@ -491,6 +493,91 @@ final class MeasureDashboardCommand extends Command
      * `dispatch()`. Failing here must not mask the measurement, so a store that
      * cannot destroy is reported and the rest are still attempted.
      */
+    /**
+     * Say up front when the memory limit will not survive the run.
+     *
+     * The queues render every matching row into one response, so the cost is
+     * the desk's size and not a constant: the shipped image allows 256M and the
+     * documented 50,000-conversation fixture needs somewhere between 1.5G and
+     * 2G. Without this an operator who missed the override in the docs gets a
+     * fatal inside the closed queue and no table.
+     *
+     * A WARNING, never a refusal. The estimate below is a straight line fitted
+     * to one measured point, which is enough to be useful and not enough to
+     * stop somebody measuring their own install.
+     */
+    private function warnAboutMemoryLimit(): void
+    {
+        $warning = self::memoryWarning(
+            Conversation::query()->count(),
+            $this->memoryLimitInBytes(),
+            (string) ini_get('memory_limit'),
+            (string) $this->getName(),
+        );
+
+        if ($warning !== null) {
+            $this->components->warn($warning);
+        }
+    }
+
+    /**
+     * The warning for a desk this size under this limit, or null for none.
+     *
+     * Pure, and public, so the rule can be asserted at the sizes that matter
+     * rather than at the sizes a test can afford to seed: warning correctly at
+     * 50,000 conversations is the case worth proving, and no test is going to
+     * write 50,000 rows to prove it.
+     *
+     * The estimate is ~40KB per conversation, a straight line through one
+     * measured point -- 50,000 needs somewhere between 1.5G and 2G. Enough to
+     * be useful, and stated as a likelihood because it is one point.
+     */
+    public static function memoryWarning(int $conversations, ?int $limitBytes, string $limitAsWritten, string $commandName): ?string
+    {
+        // No limit is not a small limit.
+        if ($limitBytes === null) {
+            return null;
+        }
+
+        $needed = $conversations * 40 * 1024;
+
+        if ($limitBytes >= $needed) {
+            return null;
+        }
+
+        return sprintf(
+            'memory_limit is %s and this desk of %s conversations is likely to need about %s. '
+            .'Re-run with `php -d memory_limit=%dG artisan %s` if it dies.',
+            $limitAsWritten,
+            ReaderNumber::count($conversations),
+            ReaderNumber::count((int) round($needed / 1024 / 1024)).'M',
+            max(1, (int) ceil($needed / 1024 / 1024 / 1024)),
+            $commandName,
+        );
+    }
+
+    /**
+     * The configured limit in bytes, or null when there is not one.
+     */
+    private function memoryLimitInBytes(): ?int
+    {
+        $raw = trim((string) ini_get('memory_limit'));
+
+        if ($raw === '' || $raw === '-1') {
+            return null;
+        }
+
+        $unit = strtolower(substr($raw, -1));
+        $value = (int) $raw;
+
+        return match ($unit) {
+            'g' => $value * 1024 * 1024 * 1024,
+            'm' => $value * 1024 * 1024,
+            'k' => $value * 1024,
+            default => $value,
+        };
+    }
+
     /**
      * Put the router's current route and request back.
      *

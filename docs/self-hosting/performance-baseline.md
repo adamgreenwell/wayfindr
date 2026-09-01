@@ -22,10 +22,23 @@ php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh
 ```
 
 ```bash
-php artisan wayfindr:measure-dashboard --runs=3
+php -d memory_limit=2G artisan wayfindr:measure-dashboard --runs=3
 ```
 
 Every figure on this page was taken with `--runs=3`.
+
+**The memory override is required, not a precaution.** The shipped image sets
+`memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size
+the measurement dies inside the closed queue without ever printing the table. It
+needs somewhere between 1.5 GB and 2 GB: 1536M is fatal, 2G completes. The
+seeding command is unaffected and runs inside 256M, because it writes in chunks.
+
+That requirement is worth reading as a finding rather than a footnote. The
+measurement needs eight times the image's limit because the page it measures
+builds a 193 MB response with every matching row hydrated at once — the
+[pagination problem](#neither-queue-paginates) showing up as a memory bill
+before it shows up as a number. Scale the override with the desk: a smaller
+fixture needs proportionally less.
 
 **Timings are taken with query logging OFF.** Laravel's query log allocates and
 retains an entry per query, so measuring with it on charges the page for the
