@@ -41,6 +41,16 @@ final class StoredPageUrlSweep
         'visitors' => ['last_page_url'],
         'conversations' => ['started_page_url'],
         'tickets' => ['visitor_context.last_page_url', 'visitor_context.started_page_url'],
+        // Cobrowse keeps four copies, and they outlive the other three. The
+        // prune command strips the heavy payloads on schedule and keeps the
+        // addresses by design, so one written before the forward fix outlives
+        // every other trace of that session.
+        'cobrowse_sessions' => [
+            'page_state.page_url',
+            'snapshot.page_url',
+            'mutations.last_page_url',
+            'mutations.recent_batches.*.page_url',
+        ],
     ];
 
     /**
@@ -160,6 +170,23 @@ final class StoredPageUrlSweep
     private static function rewritePath(array &$metadata, array $path): bool
     {
         $key = array_shift($path);
+
+        // A list to walk rather than a key to look up. Cobrowse keeps a run of
+        // recent mutation batches, each with its own address, so the path has
+        // to fan out -- and every entry has to be visited even after one of
+        // them changes, or the sweep stops at the first hit and leaves the
+        // rest of the run whole.
+        if ($key === '*') {
+            $changed = false;
+
+            foreach ($metadata as &$entry) {
+                if (is_array($entry) && self::rewritePath($entry, $path)) {
+                    $changed = true;
+                }
+            }
+
+            return $changed;
+        }
 
         if (! array_key_exists($key, $metadata)) {
             return false;
