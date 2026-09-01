@@ -262,6 +262,30 @@ test('measuring does not change what it measures', function (): void {
         ->toBe($audits, 'the measurement recorded audit events attributed to the measured agent');
 });
 
+test('it leaves the caller\'s query log entries alone', function (): void {
+    // Restoring the switch and discarding the contents is not restoring the
+    // state: the flush erased whatever diagnostics the caller had accumulated
+    // before calling.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    DB::enableQueryLog();
+
+    // Something the caller wanted to keep.
+    Conversation::query()->count();
+
+    $theirs = count(DB::getQueryLog());
+
+    expect($theirs)->toBeGreaterThan(0, 'nothing was logged, so this proves nothing');
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(count(DB::getQueryLog()))
+        ->toBeGreaterThanOrEqual($theirs, 'the command discarded the caller\'s logged queries');
+
+    DB::disableQueryLog();
+    DB::flushQueryLog();
+});
+
 test('it does not inherit a query log that was already on', function (): void {
     // Called through `Artisan::call()` or from Tinker the connection's log may
     // already be enabled, and then every timed run allocates and retains an

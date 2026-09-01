@@ -95,10 +95,19 @@ final class MeasureDashboardCommand extends Command
             return $this->measureAll($kernel, $agent);
         } finally {
             DB::rollBack();
-            DB::flushQueryLog();
 
             if ($wasLogging) {
+                // The caller's log is the CALLER's. Flushing it here erased
+                // whatever diagnostics they had accumulated before calling --
+                // restoring the switch and discarding the contents is not
+                // restoring the state.
+                //
+                // Their log gains this command's counted requests, which is the
+                // lesser harm and is what any code running inside a query log
+                // does to it.
                 DB::enableQueryLog();
+            } else {
+                DB::flushQueryLog();
             }
 
             $caller === null ? Auth::logout() : Auth::login($caller);
@@ -212,15 +221,18 @@ final class MeasureDashboardCommand extends Command
         // error escaping this request skipped the disable -- and if logging was
         // off when the command started, the outer restore only flushes, leaving
         // it on for everything afterwards in a long-lived process.
-        DB::flushQueryLog();
+        // Counted from the DIFFERENCE, so nothing has to be flushed. Logging is
+        // off for the timed runs above, so the only entries this adds are the
+        // counted request's -- and an inherited log keeps everything it had.
+        $before = count(DB::getQueryLog());
+
         DB::enableQueryLog();
 
         try {
             $this->send($kernel, $agent, $uri);
-            $queries = count(DB::getQueryLog());
+            $queries = count(DB::getQueryLog()) - $before;
         } finally {
             DB::disableQueryLog();
-            DB::flushQueryLog();
         }
 
         sort($timings);
