@@ -185,12 +185,34 @@ final class MeasureDashboardCommand extends Command
         ];
     }
 
+    /**
+     * One request, with anything it writes rolled back.
+     *
+     * Measuring is meant to be an observation. The conversation detail page is
+     * not a read: `show()` marks notifications read and marks the conversation
+     * read for the viewer, and with a cobrowse replay present it records a
+     * `cobrowse.preview_viewed` audit event. Run with `--email` against a real
+     * agent -- which is exactly what an operator measuring their own install
+     * would do -- a benchmark silently cleared their notifications and left
+     * audit entries attributed to them.
+     *
+     * A transaction round every request, always rolled back, makes that
+     * impossible for this page and for any page added to the list later. The
+     * overhead is uniform across the set and is the price of a tool that cannot
+     * change what it is measuring.
+     */
     private function send(Kernel $kernel, User $agent, string $uri): Response
     {
         $request = Request::create($uri, 'GET');
         $request->setUserResolver(fn (): User => $agent);
 
-        return $kernel->handle($request);
+        DB::beginTransaction();
+
+        try {
+            return $kernel->handle($request);
+        } finally {
+            DB::rollBack();
+        }
     }
 
     private function agent(): ?User

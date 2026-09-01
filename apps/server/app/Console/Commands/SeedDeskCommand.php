@@ -161,6 +161,17 @@ final class SeedDeskCommand extends Command
      */
     private function desk(int $agentCount, int $siteCount): array
     {
+        // Checked on EVERY run, not only under `--fresh`. Without `--fresh` this
+        // reuses whatever account holds the slug -- renaming it, and adding
+        // `desk-agent-0` to it as OWNER with the password this command prints
+        // on success. That is an account takeover rather than a seeding, and
+        // confining the provenance check to the delete path left it wide open.
+        $existing = Account::query()->where('slug', self::SLUG)->first();
+
+        if ($existing !== null) {
+            $this->refuseUnlessSeeded($existing);
+        }
+
         $account = Account::query()->updateOrCreate(
             ['slug' => self::SLUG],
             ['name' => 'Measurement Desk'],
@@ -371,6 +382,9 @@ final class SeedDeskCommand extends Command
                     // the long ones are where it is worth knowing.
                     $count = max(1, $messagesEach + ($index % 5) - 2);
 
+                    // Roughly a third, independent of everything else.
+                    $unread = self::mix((int) $conversation->id, 'unread', 3) === 0;
+
                     for ($m = 0; $m < $count; $m++) {
                         $fromVisitor = $m % 2 === 0;
 
@@ -382,7 +396,15 @@ final class SeedDeskCommand extends Command
                             'body' => 'Message '.$m.' on conversation '.$conversation->id.'. '
                                 .'Enough words that a body column holds something worth reading past.',
                             'metadata' => json_encode([]),
-                            'seen_at' => $startedAt->copy()->addMinutes($m + 1),
+                            // The LAST visitor message on an open conversation is
+                            // unread, which is what a desk that has not caught up
+                            // looks like -- and what the queue's attention lanes
+                            // are computed from. Marking every message seen left
+                            // those branches unrendered and made the detail page's
+                            // read-marking a no-op, so nothing measured it.
+                            'seen_at' => $unread && $fromVisitor && $m === $count - 1
+                                ? null
+                                : $startedAt->copy()->addMinutes($m + 1),
                             'created_at' => $startedAt->copy()->addMinutes($m),
                             'updated_at' => $startedAt->copy()->addMinutes($m),
                         ];

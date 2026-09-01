@@ -214,6 +214,24 @@ test('fresh refuses an account at its slug that it did not create', function ():
         ->and(Conversation::query()->whereKey($realConversation->id)->exists())->toBeTrue('a real conversation was deleted');
 });
 
+test('it refuses a real account at its slug even without --fresh', function (): void {
+    // Without `--fresh` the command does not delete anything -- it REUSES the
+    // account at its slug, renames it, and adds `desk-agent-0` to it as OWNER
+    // with the password it prints on success. That is an account takeover, and
+    // confining the provenance check to the delete path left it wide open.
+    $real = Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'A Real Desk']);
+    Site::factory()->for($real)->create(['name' => 'Production']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1])
+        ->assertFailed();
+
+    expect(Account::query()->whereKey($real->id)->value('name'))
+        ->toBe('A Real Desk', 'a real account was renamed');
+
+    expect(User::query()->where('account_id', $real->id)->count())
+        ->toBe(0, 'an agent with a published password was added to a real account');
+});
+
 test('fresh still cleans up a half-made desk', function (): void {
     // The provenance check must not strand an operator whose first run was
     // interrupted: an account with no sites and no users is what that looks

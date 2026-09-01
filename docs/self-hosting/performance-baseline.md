@@ -26,6 +26,18 @@ php artisan wayfindr:measure-dashboard --runs=3
 
 Every figure on this page was taken with `--runs=3`.
 
+**Timings are taken with query logging OFF.** Laravel's query log allocates and
+retains an entry per query, so measuring with it on charges the page for the
+measuring — and that overhead grows with query count, which is exactly the axis
+the ticket queue's N+1 sits on. Query counts come from a separate, untimed
+request.
+
+**Measurement cannot change what it measures.** Every request runs inside a
+transaction that is always rolled back. The conversation detail page is not a
+read — it marks the conversation read for the viewer — so without that, an
+operator benchmarking their own install with `--email` would clear a real
+agent's state while taking the numbers.
+
 The seeder writes to its own account (`wayfindr-measurement-desk`) and `--fresh`
 deletes exactly that account, so it is safe to run beside real data. It refuses
 to run in production without `--force`.
@@ -53,10 +65,11 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,384 | 21 | 37.7 MB |
-| Conversation queue (closed) | 23,697 | 15 | 186.1 MB |
-| Ticket queue (all) | 10,373 | 12,518 | 62.5 MB |
-| **Conversation detail** | **13** | **25** | **149 KB** |
+| Conversation queue (open) | 4,134 | 21 | 37.7 MB |
+| Conversation queue (closed) | 22,340 | 15 | 186.1 MB |
+| Ticket queue (open) | 3,090 | 4,187 | 20.9 MB |
+| Ticket queue (all) | 9,489 | 12,518 | 62.5 MB |
+| **Conversation detail** | **11** | **26** | **149 KB** |
 
 ### How it grows
 
@@ -65,10 +78,10 @@ them:
 
 | Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 112 ms | 432 ms | 3.8 MB | 205 ms | 268 | 14 ms / 25 q |
-| 5,000 | 444 ms | 2,188 ms | 18.6 MB | 1,016 ms | 1,268 | 14 ms / 25 q |
-| 25,000 | 2,192 ms | 11,378 ms | 93.0 MB | 5,108 ms | 6,268 | 15 ms / 24 q |
-| 50,000 | 4,384 ms | 23,697 ms | 186.1 MB | 10,373 ms | 12,518 | 13 ms / 25 q |
+| 1,000 | 106 ms | 404 ms | 3.8 MB | 186 ms | 268 | 10 ms / 26 q |
+| 5,000 | 416 ms | 1,966 ms | 18.6 MB | 898 ms | 1,268 | 11 ms / 26 q |
+| 25,000 | 2,002 ms | 10,475 ms | 93.0 MB | 4,817 ms | 6,268 | 11 ms / 25 q |
+| 50,000 | 4,134 ms | 22,340 ms | 186.1 MB | 9,489 ms | 12,518 | 11 ms / 26 q |
 
 The last column is the control, and it is the point: the same page, at fifty
 times the data, costs the same.
@@ -108,7 +121,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-13 ms, 25 queries and 149 KB at *every* size measured, from 20 conversations to
+11 ms, 26 queries and 149 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 

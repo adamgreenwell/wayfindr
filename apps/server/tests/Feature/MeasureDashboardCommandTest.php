@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
@@ -221,4 +222,33 @@ test('it leaves the query log off when it finishes', function (): void {
     Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]);
 
     expect(DB::logging())->toBeFalse('the command left the query log enabled');
+});
+
+test('measuring does not change what it measures', function (): void {
+    // The conversation detail page is not a read. `show()` marks notifications
+    // read and marks the conversation read for the viewer, so an operator
+    // benchmarking their own install with `--email` was silently clearing a
+    // real agent's notifications and moving their read state.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 12, '--messages' => 3, '--fresh' => true]);
+
+    $agent = User::query()->where('email', 'desk-agent-0@example.test')->firstOrFail();
+    $conversation = Conversation::query()->orderByDesc('id')->firstOrFail();
+
+    // The right table. `markReadFor()` writes a per-agent READ STATE -- it does
+    // not touch `conversation_messages.seen_at` -- so an assertion over message
+    // rows watched the wrong thing and passed with the rollback deliberately
+    // removed. Two tests in a row could not see the mutation they were about.
+    $before = $conversation->readStates()->where('user_id', $agent->id)->count();
+
+    expect($before)->toBe(0, 'the agent has already read this conversation, so there is nothing to observe');
+
+    $audits = AuditEvent::query()->count();
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 2, '--json' => true]);
+
+    expect($conversation->readStates()->where('user_id', $agent->id)->count())
+        ->toBe($before, 'the measurement marked the conversation read for the agent');
+
+    expect(AuditEvent::query()->count())
+        ->toBe($audits, 'the measurement recorded audit events attributed to the measured agent');
 });
