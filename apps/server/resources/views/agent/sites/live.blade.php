@@ -17,7 +17,12 @@
             <h2 id="live-board-heading">{{ __('sites_live.board.heading') }}</h2>
             {{-- The server's clock, so the board can measure against the same
                  one that stamped the rows. Refreshed by every resync. --}}
-            <span class="lede" data-live-count data-server-now="{{ now()->toJSON() }}">{{ \App\Support\ReaderNumber::count($presentCount) }}</span>
+            {{-- Two values, deliberately. The TEXT is grouped for the reader -- `1.000`
+                 for a German agent -- and the script must never parse it back:
+                 `Number('1.000')` is 1 and `Number('1,000')` is NaN, so reading
+                 the rendered text collapsed the total on the next socket event.
+                 `data-live-total` is the raw integer, for the script alone. --}}
+            <span class="lede" data-live-count data-live-total="{{ $presentCount }}" data-server-now="{{ now()->toJSON() }}">{{ \App\Support\ReaderNumber::count($presentCount) }}</span>
         </div>
 
         @if (! $reporting->enabled)
@@ -198,7 +203,9 @@
                 // limit, and overwriting the total with it on the first
                 // heartbeat put the capped figure back on a page that had
                 // rendered the real one.
-                var presentTotal = countEl ? Number(countEl.textContent) || 0 : 0;
+                // From the data attribute, never from the rendered text. The
+                // text is grouped for the reader and is not a number any more.
+                var presentTotal = countEl ? Number(countEl.getAttribute('data-live-total')) || 0 : 0;
 
                 var displayLimit = Number(config.displayLimit) || 0;
 
@@ -231,6 +238,7 @@
                     }
 
                     if (countEl) {
+                        countEl.setAttribute('data-live-total', String(presentTotal));
                         countEl.textContent = readerNumber(presentTotal);
                     }
 

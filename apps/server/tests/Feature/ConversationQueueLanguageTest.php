@@ -4538,3 +4538,64 @@ test('the live board announces the account\'s words as its own', function (): vo
     expect(trim((string) preg_replace('/\s+/u', ' ', $heading->textContent)))
         ->toBe(__('sites_live.heading', ['site' => $world['site']->name], 'de'));
 });
+
+test('the live count is grouped for the reader and raw for the script', function (): void {
+    // Grouping the count broke the board. The script initialises and resyncs
+    // `presentTotal` from the element, and a grouped string is not a number any
+    // more: `Number('1.000')` is 1 for a German agent and `Number('1,000')` is
+    // NaN for an English one, so the next socket event or fifteen-second
+    // refresh collapsed the total toward the rendered rows.
+    //
+    // FOUR FIGURES, built here rather than assumed. Under a thousand nothing is
+    // grouped, so the shared world's three visitors pass this whether or not
+    // the split exists -- which is how the defect got past a green suite in the
+    // first place.
+    $world = conversationQueueLanguageWorld();
+
+    $seen = now()->subMinute();
+    $rows = [];
+
+    for ($i = 0; $i < 1200; $i++) {
+        $rows[] = [
+            'site_id' => $world['site']->id,
+            'anonymous_id' => 'anon-crowd-'.$i,
+            'metadata' => '[]',
+            'last_seen_at' => $seen,
+            'last_web_seen_at' => $seen,
+            'created_at' => $seen,
+            'updated_at' => $seen,
+        ];
+    }
+
+    // One statement rather than 1200 model saves: the point is the size of the
+    // number, not the shape of the rows.
+    Visitor::query()->insert($rows);
+
+    $html = (string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.sites.live', $world['site']))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $count = $xpath->query('//*[@data-live-count]')->item(0);
+
+    expect($count)->not->toBeNull('the live count did not render')
+        ->and($count)->toBeInstanceOf(DOMElement::class);
+
+    $raw = $count->getAttribute('data-live-total');
+    $shown = trim($count->textContent);
+
+    expect($count->hasAttribute('data-live-total'))
+        ->toBeTrue('the script has nothing to read but the reader-facing text');
+
+    expect($raw)->toMatch('/^\d+$/', 'the machine-readable total is grouped too, so the script still cannot parse it');
+    expect((int) $raw)->toBeGreaterThan(999, 'the fixture did not reach the size where grouping happens');
+
+    // The reader's number IS grouped, or this test is passing on a page that
+    // never had the problem.
+    expect($shown)->not->toBe($raw, 'the count was not grouped for the reader, so this proves nothing');
+
+    // And the German grouping is exactly what JavaScript would misread as 1.
+    expect($shown)->toContain('.');
+});
