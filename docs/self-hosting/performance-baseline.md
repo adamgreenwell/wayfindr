@@ -72,11 +72,11 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 5,035 | 21 | 38.9 MB |
-| Conversation queue (closed) | 27,000 | 15 | 192.1 MB |
-| Ticket queue (open) | 3,289 | 4,187 | 21.0 MB |
-| Ticket queue (all) | 9,894 | 12,518 | 62.6 MB |
-| **Conversation detail** | **14** | **26** | **149 KB** |
+| Conversation queue (open) | 4,861 | 21 | 38.9 MB |
+| Conversation queue (closed) | 26,825 | 15 | 192.1 MB |
+| Ticket queue (open) | 3,296 | 4,292 | 21.0 MB |
+| Ticket queue (all) | 9,880 | 12,518 | 62.6 MB |
+| **Conversation detail** | **14** | **26** | **148 KB** |
 
 ### How it grows
 
@@ -85,10 +85,10 @@ them:
 
 | Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 124 ms | 492 ms | 3.9 MB | 198 ms | 268 | 13 ms / 26 q |
-| 5,000 | 516 ms | 2,544 ms | 19.2 MB | 968 ms | 1,268 | 13 ms / 26 q |
-| 25,000 | 4,441 ms | 13,334 ms | 96.0 MB | 4,874 ms | 6,268 | 17 ms / 26 q |
-| 50,000 | 4,996 ms | 27,384 ms | 192.1 MB | 9,376 ms | 12,518 | 15 ms / 26 q |
+| 1,000 | 122 ms | 474 ms | 3.9 MB | 186 ms | 268 | 11 ms / 26 q |
+| 5,000 | 524 ms | 2,371 ms | 19.2 MB | 904 ms | 1,268 | 12 ms / 26 q |
+| 25,000 | 2,414 ms | 12,308 ms | 96.0 MB | 4,694 ms | 6,268 | 12 ms / 26 q |
+| 50,000 | 4,861 ms | 26,825 ms | 192.1 MB | 9,880 ms | 12,518 | 14 ms / 26 q |
 
 The last column is the control, and it is the point: the same page, at fifty
 times the data, costs the same.
@@ -129,7 +129,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-15 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations to
+14 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 
