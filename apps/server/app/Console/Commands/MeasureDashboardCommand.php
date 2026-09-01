@@ -13,6 +13,7 @@ use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -42,6 +43,7 @@ final class MeasureDashboardCommand extends Command
     protected $signature = 'wayfindr:measure-dashboard
         {--email= : The agent to measure as; defaults to the seeded desk owner}
         {--runs=3 : Measured runs per page, after one warm-up}
+        {--page=* : Measure only pages whose name contains this, e.g. --page=ticket}
         {--json : Emit machine-readable rows instead of a table}';
 
     protected $description = 'Time the dashboard\'s heaviest pages against the data currently in the database.';
@@ -58,7 +60,52 @@ final class MeasureDashboardCommand extends Command
 
         Auth::login($agent);
 
-        $targets = $this->targets($agent);
+        // Inherited state, turned off before anything is timed. Called through
+        // `Artisan::call()` or from Tinker, the connection's query log may
+        // already be on -- and then every timed run allocates and retains an
+        // entry per query, which is exactly the overhead this command separates
+        // the counted request to avoid. Restored at the end, because it belongs
+        // to whoever turned it on.
+        $wasLogging = DB::logging();
+
+        DB::disableQueryLog();
+
+        // ONE transaction round the whole measurement, always rolled back.
+        //
+        // Measuring is meant to be an observation, and the conversation detail
+        // page is not a read: `show()` marks notifications read and marks the
+        // conversation read for the viewer. Run with `--email` against a real
+        // agent -- exactly what an operator measuring their own install does --
+        // a benchmark silently cleared their state.
+        //
+        // One transaction rather than one per REQUEST. The guarantee is
+        // identical -- no write from any measured request survives -- and one
+        // is the cheaper shape: nested inside a transaction a test suite
+        // already holds, per-request meant a savepoint per request, and
+        // PostgreSQL degrades once a transaction accumulates many
+        // subtransactions.
+        DB::beginTransaction();
+
+        try {
+            return $this->measureAll($kernel, $agent);
+        } finally {
+            DB::rollBack();
+            DB::flushQueryLog();
+
+            if ($wasLogging) {
+                DB::enableQueryLog();
+            }
+        }
+    }
+
+    /**
+     * Named around `Command::run()`, which is public and belongs to the base
+     * class -- redeclaring it private is a fatal before anything runs.
+     */
+    private function measureAll(Kernel $kernel, User $agent): int
+    {
+
+        $targets = $this->onlyRequested($this->targets($agent));
 
         if ($targets === []) {
             $this->components->error('No conversation to measure against. Run `wayfindr:seed-desk` first.');
@@ -185,34 +232,12 @@ final class MeasureDashboardCommand extends Command
         ];
     }
 
-    /**
-     * One request, with anything it writes rolled back.
-     *
-     * Measuring is meant to be an observation. The conversation detail page is
-     * not a read: `show()` marks notifications read and marks the conversation
-     * read for the viewer, and with a cobrowse replay present it records a
-     * `cobrowse.preview_viewed` audit event. Run with `--email` against a real
-     * agent -- which is exactly what an operator measuring their own install
-     * would do -- a benchmark silently cleared their notifications and left
-     * audit entries attributed to them.
-     *
-     * A transaction round every request, always rolled back, makes that
-     * impossible for this page and for any page added to the list later. The
-     * overhead is uniform across the set and is the price of a tool that cannot
-     * change what it is measuring.
-     */
     private function send(Kernel $kernel, User $agent, string $uri): Response
     {
         $request = Request::create($uri, 'GET');
         $request->setUserResolver(fn (): User => $agent);
 
-        DB::beginTransaction();
-
-        try {
-            return $kernel->handle($request);
-        } finally {
-            DB::rollBack();
-        }
+        return $kernel->handle($request);
     }
 
     private function agent(): ?User
@@ -266,6 +291,59 @@ final class MeasureDashboardCommand extends Command
             // control that says so when the others do.
             'Conversation detail' => '/dashboard/conversations/'.$conversation->support_code,
         ];
+    }
+
+    /**
+     * Narrow the set to what `--page` asked for.
+     *
+     * For an operator re-measuring one page after changing it, rather than
+     * sitting through the closed lane again to see whether the ticket queue
+     * moved. Matched on a substring of the name, case-insensitively, because
+     * the names are for reading rather than for typing exactly.
+     *
+     * @param  array<string, string>  $targets
+     * @return array<string, string>
+     */
+    private function onlyRequested(array $targets): array
+    {
+        /** @var list<string> $wanted */
+        $wanted = (array) $this->option('page');
+
+        if ($wanted === []) {
+            return $targets;
+        }
+
+        $matched = array_filter(
+            $targets,
+            fn (string $label): bool => collect($wanted)
+                ->contains(fn (string $needle): bool => str_contains(mb_strtolower($label), mb_strtolower($needle))),
+            ARRAY_FILTER_USE_KEY,
+        );
+
+        if ($matched === []) {
+            // STDERR, so `--json` stays parseable. A notice printed above the
+            // document makes the output unreadable to every consumer of it,
+            // which is a strange way to be helpful.
+            $notice = 'No page matches '.implode(', ', $wanted).'. Measuring all of them.';
+
+            if ($this->option('json')) {
+                // `OutputStyle::getErrorOutput()` is protected, so the raw
+                // Symfony output underneath is where stderr lives.
+                $stderr = $this->getOutput()->getOutput();
+
+                if ($stderr instanceof ConsoleOutputInterface) {
+                    $stderr->getErrorOutput()->writeln('<comment>'.$notice.'</comment>');
+                }
+
+                return $targets;
+            }
+
+            $this->components->warn($notice);
+
+            return $targets;
+        }
+
+        return $matched;
     }
 
     private function humanBytes(int $bytes): string

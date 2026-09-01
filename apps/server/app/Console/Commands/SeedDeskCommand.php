@@ -69,6 +69,20 @@ final class SeedDeskCommand extends Command
      */
     private const CHUNK = 500;
 
+    /**
+     * The marks this command leaves on what it creates.
+     *
+     * `accounts` has nowhere to write a provenance flag -- it is `name`, `slug`
+     * and timestamps -- so ownership is read from the shape instead. The
+     * ordinary site key generator produces `site_` plus thirty-two random
+     * characters and never this prefix.
+     */
+    private const SITE_KEY_PREFIX = 'site_desk_';
+
+    private const AGENT_PREFIX = 'desk-agent-';
+
+    private const AGENT_SUFFIX = '@example.test';
+
     public function handle(): int
     {
         if (app()->isProduction() && ! $this->option('force')) {
@@ -170,6 +184,21 @@ final class SeedDeskCommand extends Command
 
         if ($existing !== null) {
             $this->refuseUnlessSeeded($existing);
+
+            // A desk is already here, and this run would reuse its sites and
+            // re-insert the same `desk-visitor-` identifiers -- which the
+            // `(site_id, anonymous_id)` unique index refuses. That failure
+            // arrives AFTER the agents' passwords have been rehashed and the
+            // sites' public keys replaced, so forgetting the flag both fails
+            // and half-rewrites the fixture the operator already had.
+            //
+            // Refused up front instead, saying which flag to add.
+            if (Site::query()->where('account_id', $existing->id)->exists()) {
+                throw new RuntimeException(
+                    'A measurement desk is already seeded. Re-run with --fresh to replace it, '
+                    .'which removes the previous one first.'
+                );
+            }
         }
 
         $account = Account::query()->updateOrCreate(
@@ -554,14 +583,23 @@ final class SeedDeskCommand extends Command
      */
     private function refuseUnlessSeeded(Account $account): void
     {
+        // Compared in PHP, not with LIKE. `_` is a single-character WILDCARD in
+        // SQL, so `site_desk_%` also matches `site-desk-legacy` -- and the
+        // pattern that was supposed to prove this account is ours would have
+        // said yes to somebody else's site and let `--fresh` delete their desk.
+        //
+        // One account holds a handful of sites and agents, so exact prefix
+        // matching costs nothing and cannot be read two ways.
         $foreignSites = Site::query()
             ->where('account_id', $account->id)
-            ->where('public_key', 'not like', 'site_desk_%')
+            ->pluck('public_key')
+            ->reject(fn (?string $key): bool => is_string($key) && str_starts_with($key, self::SITE_KEY_PREFIX))
             ->count();
 
         $foreignUsers = User::query()
             ->where('account_id', $account->id)
-            ->where('email', 'not like', 'desk-agent-%@example.test')
+            ->pluck('email')
+            ->reject(fn (?string $email): bool => is_string($email) && self::isSeededAgentAddress($email))
             ->count();
 
         if ($foreignSites === 0 && $foreignUsers === 0) {
@@ -573,6 +611,17 @@ final class SeedDeskCommand extends Command
             .' user(s) this command did not create, so it is somebody\'s real desk rather than a '
             .'previous measurement. Refusing to delete it. Rename that account if you want the slug.'
         );
+    }
+
+    /**
+     * Whether an address is one this command hands out.
+     *
+     * Exact, for the same reason the site key is: a LIKE pattern is read by SQL
+     * rather than by this file.
+     */
+    private static function isSeededAgentAddress(string $email): bool
+    {
+        return str_starts_with($email, self::AGENT_PREFIX) && str_ends_with($email, self::AGENT_SUFFIX);
     }
 
     /**

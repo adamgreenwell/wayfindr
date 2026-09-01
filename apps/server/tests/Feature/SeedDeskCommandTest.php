@@ -232,6 +232,48 @@ test('it refuses a real account at its slug even without --fresh', function (): 
         ->toBe(0, 'an agent with a published password was added to a real account');
 });
 
+test('a site key that only looks like ours does not count as provenance', function (): void {
+    // `_` is a single-character WILDCARD in SQL, so `like 'site_desk_%'` also
+    // matches `site-desk-legacy`. The pattern meant to prove an account is ours
+    // would have said yes to somebody else's site and let `--fresh` delete
+    // their desk.
+    $real = Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'A Real Desk']);
+    Site::factory()->for($real)->create(['name' => 'Legacy', 'public_key' => 'site-desk-legacy']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1, '--fresh' => true])
+        ->assertFailed();
+
+    expect(Account::query()->whereKey($real->id)->exists())
+        ->toBeTrue('a real account was deleted because its site key matched a LIKE wildcard');
+});
+
+test('running twice without --fresh refuses before it changes anything', function (): void {
+    // The second run reuses the existing sites and re-inserts the same
+    // `desk-visitor-` identifiers, which the `(site_id, anonymous_id)` unique
+    // index refuses -- but only AFTER `desk()` has rehashed the agents'
+    // passwords and replaced the sites' public keys. A forgotten flag both
+    // failed and half-rewrote the fixture the operator already had.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 2])
+        ->assertSuccessful();
+
+    $keys = Site::query()
+        ->whereIn('id', Site::query()->pluck('id'))
+        ->orderBy('id')
+        ->pluck('public_key')
+        ->all();
+
+    $passwords = User::query()->orderBy('id')->pluck('password')->all();
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 2])
+        ->assertFailed();
+
+    expect(Site::query()->orderBy('id')->pluck('public_key')->all())
+        ->toBe($keys, 'the failed run replaced the existing sites\' public keys');
+
+    expect(User::query()->orderBy('id')->pluck('password')->all())
+        ->toBe($passwords, 'the failed run rehashed the existing agents\' passwords');
+});
+
 test('fresh still cleans up a half-made desk', function (): void {
     // The provenance check must not strand an operator whose first run was
     // interrupted: an account with no sites and no users is what that looks

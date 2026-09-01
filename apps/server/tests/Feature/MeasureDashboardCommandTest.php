@@ -109,7 +109,7 @@ test('it measures a conversation the agent can actually open', function (): void
     Conversation::factory()->for($strangerSite)->for($strangerVisitor)
         ->create(['support_code' => 'WF-STRANGER-1']);
 
-    $exit = Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]);
+    $exit = Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
 
     expect($exit)->toBe(0, 'the command measured a page the agent cannot open');
 
@@ -141,7 +141,7 @@ test('it skips a site on the agent\'s own account that the agent cannot see', fu
     Conversation::factory()->for($restricted)->for($visitor)
         ->create(['support_code' => 'WF-HIDDEN-1']);
 
-    $exit = Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--email' => $measured->email, '--json' => true]);
+    $exit = Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--email' => $measured->email, '--page' => ['detail'], '--json' => true]);
 
     expect($exit)->toBe(0, 'the command measured a conversation on a site the agent cannot see');
 
@@ -197,7 +197,7 @@ test('it reports the count the measured agent can actually see', function (): vo
 
     Conversation::factory()->for($strangerSite)->for($strangerVisitor)->count(40)->create();
 
-    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]);
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
 
     $measured = json_decode(Artisan::output(), true);
 
@@ -244,11 +244,54 @@ test('measuring does not change what it measures', function (): void {
 
     $audits = AuditEvent::query()->count();
 
-    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 2, '--json' => true]);
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 2, '--page' => ['detail'], '--json' => true]);
 
     expect($conversation->readStates()->where('user_id', $agent->id)->count())
         ->toBe($before, 'the measurement marked the conversation read for the agent');
 
     expect(AuditEvent::query()->count())
         ->toBe($audits, 'the measurement recorded audit events attributed to the measured agent');
+});
+
+test('it does not inherit a query log that was already on', function (): void {
+    // Called through `Artisan::call()` or from Tinker the connection's log may
+    // already be enabled, and then every timed run allocates and retains an
+    // entry per query -- exactly the overhead the separate counted request
+    // exists to keep out of the figures. Disabling only around the count is not
+    // enough when it was on before the command started.
+    //
+    // And it belongs to whoever turned it on, so it goes back.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 2, '--fresh' => true]);
+
+    DB::enableQueryLog();
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]);
+
+    expect(DB::logging())
+        ->toBeTrue('the command turned off a query log it did not turn on');
+
+    DB::disableQueryLog();
+});
+
+test('--page narrows the set, and says so when it matches nothing', function (): void {
+    // For an operator re-measuring one page after changing it, rather than
+    // sitting through the closed lane again to see whether the ticket queue
+    // moved. The tests here use it too: a test that asserts one thing about
+    // one page has no reason to render six others.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 2, '--fresh' => true]);
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['ticket'], '--json' => true]);
+
+    $pages = collect(json_decode(Artisan::output(), true)['pages'])->pluck('page');
+
+    expect($pages)->toHaveCount(2)
+        ->and($pages->every(fn (string $page): bool => str_contains(mb_strtolower($page), 'ticket')))->toBeTrue();
+
+    // A filter matching nothing measures everything rather than silently
+    // reporting an empty baseline, and warns.
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['nonsense'], '--json' => true]);
+
+    $all = collect(json_decode(Artisan::output(), true)['pages'] ?? [])->pluck('page');
+
+    expect($all->count())->toBeGreaterThan(2);
 });
