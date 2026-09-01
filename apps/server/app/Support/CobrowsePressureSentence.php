@@ -33,11 +33,11 @@ final class CobrowsePressureSentence
         $skipped = (int) ($counts['skipped_mutations'] ?? 0);
 
         if ($dropped > 0) {
-            $parts[] = trans_choice('cobrowse.pressure.dropped', $dropped, ['count' => number_format($dropped)]);
+            $parts[] = trans_choice('cobrowse.pressure.dropped', $dropped, ['count' => ReaderNumber::count($dropped)]);
         }
 
         if ($skipped > 0) {
-            $parts[] = trans_choice('cobrowse.pressure.skipped', $skipped, ['count' => number_format($skipped)]);
+            $parts[] = trans_choice('cobrowse.pressure.skipped', $skipped, ['count' => ReaderNumber::count($skipped)]);
         }
 
         if ($parts !== []) {

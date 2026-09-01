@@ -3971,13 +3971,17 @@ test('a four-digit count is grouped the way the reading agent groups numbers', f
         ->and($german)->toContain('5.314')
         ->and($german)->toContain('6.415')
         ->and($german)->toContain('7.516')
-        // A negative only for `samples`, which is the one of the three with a
-        // single render site. `dropped_batches` and `reconnects` also appear
-        // in the transport-health sentences, still assembled in English inside
-        // a model and exempted from the number guard for that reason -- so
-        // `5,314` really is on this page, welded to an English noun. That is
-        // the extraction slice's defect, and asserting against it here would
-        // be asserting that someone else's work was done.
+        // `reconnects` can be asserted negatively now: the transport-health
+        // block used to render it bare under a translated label with an en-US
+        // separator, so the page carried `6,415` and `6.415` at once. The
+        // model hands out the raw value and the surface formats it.
+        //
+        // `dropped_batches` still cannot: it also appears in the pressure
+        // sentence, which really is English inside a model. `5,314` is
+        // legitimately on this page welded to an English noun, and asserting
+        // against it here would be asserting that the extraction slice's work
+        // was done.
+        ->and($german)->not->toContain('6,415')
         ->and($german)->not->toContain('7,516');
 
     // Both halves matter. The negative one is what catches a partial revert
@@ -4021,4 +4025,30 @@ test('the live-update path is given the agent language, not the browser', functi
     // ...and every live formatter goes through the helper that uses it.
     expect(substr_count($html, 'toLocaleString()'))->toBe(0)
         ->and($html)->toContain('function readerNumber(');
+});
+
+test('the queue-pressure count is grouped for the agent, on both renders', function (): void {
+    // This sentence is fully translated -- `:count verworfene Stapel` -- and
+    // renders on two extracted routes, so the only English thing left in it
+    // was the number. It was exempted from the number guard as "English
+    // awaiting extraction", which it is not, and the exemption hid it.
+    //
+    // The live handler already formatted these for the agent, so the two
+    // halves disagreed: the server painted `1,000` and the first websocket
+    // message rewrote the same node as `1.000`.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+
+    $metadata = $session->metadata;
+    $metadata['telemetry']['dropped_batches'] = 1000;
+    $metadata['telemetry']['reported_at'] = now()->toIso8601String();
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $german = conversationQueueLanguageVisibleText((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $session->conversation->support_code))
+        ->assertOk()
+        ->getContent());
+
+    expect($german)->toContain('1.000 verworfene Stapel')
+        ->and($german)->not->toContain('1,000 verworfene Stapel');
 });
