@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\ExternalIssueSyncStatus;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -121,4 +122,97 @@ test('ticket queue shows sanitized latest external issue attempt context', funct
     } finally {
         Carbon::setTestNow();
     }
+});
+
+test('the ticket queue does not query audit events once per ticket', function (): void {
+    // `TicketExternalIssueAttempt::auditEventsForTicket()` went straight to the
+    // relation, so the queue's eager load was thrown away and every ticket cost
+    // its own query. Its two siblings -- `externalLinksForTicket()` on the same
+    // class and `TicketExternalIssueState::forTicket()` -- both check
+    // `relationLoaded()` first; this one did not, and that single missing check
+    // was the whole N+1.
+    //
+    // Counted rather than timed: the query COUNT is deterministic, and it is the
+    // figure that tells the two shapes apart. Asserted as "does not grow with
+    // the number of tickets", not as an absolute, so an unrelated query added to
+    // this page later does not fail this test for the wrong reason.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    $countFor = function (int $tickets) use ($account, $agent, $site): int {
+        Ticket::query()->delete();
+
+        foreach (range(1, $tickets) as $i) {
+            $ticket = Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+
+            // A tracked event on each, so the collection this reads is not
+            // empty -- an N+1 over nothing still costs a query, but a fixture
+            // that never populates the relation cannot show the eager load
+            // being used either.
+            AuditEvent::factory()
+                ->for($account)
+                ->for($ticket, 'subject')
+                ->create([
+                    'action' => 'ticket.external_sync_failed',
+                    'metadata' => ['provider' => 'github', 'project_key' => 'acme/api'],
+                    'occurred_at' => now()->subMinutes(5),
+                ]);
+        }
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        try {
+            $this->actingAs($agent)->get('/dashboard/tickets')->assertOk();
+
+            return count(DB::getQueryLog());
+        } finally {
+            DB::disableQueryLog();
+        }
+    };
+
+    $few = $countFor(2);
+    $many = $countFor(12);
+
+    expect($many)->toBeLessThanOrEqual($few + 2,
+        "the ticket queue issued {$few} queries for 2 tickets and {$many} for 12: it is querying per ticket");
+});
+
+test('the ticket detail page still finds an attempt that is only an audit event', function (): void {
+    // The regression the eager-load fix nearly caused, and the reason the queue
+    // hands its collections over explicitly instead of the helper picking up
+    // whatever relation happens to be loaded.
+    //
+    // This page eager-loads `auditEvents` constrained to `ticket.note_added` for
+    // its timeline. That is not a tracked external-issue action, so a helper
+    // that reused the relation because it was present would filter it to
+    // nothing and report "No external attempt yet" -- on a ticket whose only
+    // attempt is an event, which is exactly the ticket this is about.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    $ticket = Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+
+    // A note, so the page's own constrained eager load is NOT empty -- an empty
+    // one would fall through and pass whether the bug is present or not.
+    AuditEvent::factory()->for($account)->for($ticket, 'subject')->create([
+        'action' => 'ticket.note_added',
+        'metadata' => ['note' => 'Looking into this.'],
+        'occurred_at' => now()->subMinutes(20),
+    ]);
+
+    // The attempt itself, with no external link behind it.
+    AuditEvent::factory()->for($account)->for($ticket, 'subject')->create([
+        'action' => 'ticket.external_issue_created',
+        'metadata' => ['provider' => 'github', 'project_key' => 'acme/api'],
+        'occurred_at' => now()->subMinutes(5),
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('acme/api')
+        ->assertDontSee(__('tickets.external_attempt.none_label'));
 });

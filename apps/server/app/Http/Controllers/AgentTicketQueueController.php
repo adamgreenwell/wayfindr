@@ -653,7 +653,21 @@ class AgentTicketQueueController extends Controller
     {
         return [
             ...$this->ticketExternalIssueStateCue(TicketExternalIssueState::forTicket($ticket)),
-            'attempt' => TicketExternalIssueAttempt::latestCueForTicket($ticket),
+            // The eager loads from this controller's own query, handed over
+            // explicitly. Without them the helper queried per ticket -- 12,499
+            // queries on a desk with 12,500 tickets, and the reason this page
+            // was slower than the conversation queue on a quarter of the rows.
+            //
+            // Passed from HERE rather than picked up inside the helper, because
+            // this is the only place that knows the load above used the tracked
+            // actions the helper wants. The ticket detail page loads the same
+            // relation constrained to `ticket.note_added`, and a helper that
+            // reused whatever was present would answer that page wrongly.
+            'attempt' => TicketExternalIssueAttempt::latestCueForTicket(
+                $ticket,
+                $ticket->externalLinks,
+                $ticket->auditEvents,
+            ),
         ];
     }
 
