@@ -255,7 +255,11 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
     // leaves the expiry, revocation, purged-site, no-abilities and never-used
     // copy unrendered -- on this page most of the sentences ARE the branches,
     // so a one-row fixture would measure the headings and little else.
-    $issuer = User::factory()->for($account)->create(['name' => 'Ada Datenpunkt']);
+    // A name of its own rather than another `Ada Datenpunkt`: every agent in
+    // this world is called that, and the topbar renders the viewer's name on
+    // every page -- so a guard looking for the ISSUER by name would match the
+    // person reading the page instead.
+    $issuer = User::factory()->for($account)->create(['name' => 'Ausgeber Datenpunkt']);
 
     // Active, unrestricted, used, and issued by somebody -- the only row that
     // reaches the `created_by` form of the sentence.
@@ -4315,4 +4319,50 @@ test('an article is announced as the account\'s words, not the agent\'s language
     expect($heading)->not->toBeNull('the preview heading did not render')
         ->and($heading->hasAttribute('lang'))
         ->toBeFalse('the page\'s own copy was reset along with the article, which marks the document unknown and calls it a fix');
+});
+
+test('an API token is announced as the account\'s words, not the agent\'s language', function (): void {
+    // Same class as the articles page one commit below: a token's name, the
+    // sites it reaches, the agent who issued it and the credential hint are the
+    // account's own data, and the extracted page declares the agent's locale
+    // for the whole document.
+    //
+    // Per ELEMENT and via `hasAttribute` first, for the two reasons the
+    // articles guard records: the same string renders in several marked places,
+    // and `getAttribute('lang')` cannot tell `lang=""` from no `lang` at all.
+    $world = conversationQueueLanguageWorld();
+
+    $html = (string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $regions = [
+        'the token name' => '//strong[normalize-space(text())="Acme Datenpunkt Sync"]',
+        'the issuing agent' => '//span[normalize-space(text())="Ausgeber Datenpunkt"]',
+        'the credential hint' => '//code[starts-with(normalize-space(text()), "'.ApiToken::PREFIX.'")]',
+        'a site the token reaches' => '//span[normalize-space(text())="Acme Datenpunkt Docs"]',
+    ];
+
+    foreach ($regions as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class);
+
+        expect($node->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so it is announced in the agent language");
+
+        expect($node->getAttribute('lang'))
+            ->toBe('', "{$label} declares a language rather than the account's unknown one");
+    }
+
+    // And the page's own copy is untouched, or this marks the document unknown
+    // and calls it a fix.
+    $heading = $xpath->query('//h2[@id="api-token-list-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull('the tokens heading did not render')
+        ->and($heading->hasAttribute('lang'))->toBeFalse('the page\'s own heading was reset along with the account\'s data');
 });

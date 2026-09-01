@@ -62,18 +62,27 @@
                         @foreach ($tokens as $token)
                             <tr>
                                 <td>
-                                    <strong>{{ $token->name }}</strong>
+                                    {{-- The token's name, the sites it reaches and the
+                                         agent who issued it are the account's own words.
+                                         `lang=""` is HTML's "unknown": the page around
+                                         them is German, these are not. --}}
+                                    <strong lang="">{{ $token->name }}</strong>
                                     {{-- Two whole sentences rather than one with an
                                          optional tail. German puts the issuing agent
                                          somewhere English does not, and a sentence
                                          assembled by concatenation cannot move it. --}}
                                     <span class="lede">
-                                        {{ $token->createdBy
-                                            ? __('api_tokens.list.created_by', ['when' => $token->created_at->diffForHumans(), 'name' => $token->createdBy->name])
-                                            : __('api_tokens.list.created', ['when' => $token->created_at->diffForHumans()]) }}
+                                        @if ($token->createdBy)
+                                            {!! __('api_tokens.list.created_by', [
+                                                'when' => e($token->created_at->diffForHumans()),
+                                                'name' => '<span lang="">'.e($token->createdBy->name).'</span>',
+                                            ]) !!}
+                                        @else
+                                            {{ __('api_tokens.list.created', ['when' => $token->created_at->diffForHumans()]) }}
+                                        @endif
                                     </span>
                                 </td>
-                                <td><code>{{ $token->displayHint() }}</code></td>
+                                <td><code lang="">{{ $token->displayHint() }}</code></td>
                                 <td>
                                     @php
                                         // Site access restricts an admin too, so a token can reach sites
@@ -103,7 +112,7 @@
                                         <span class="lede">{{ __('api_tokens.reaches.every_site') }}</span>
                                     @else
                                         <span class="lede">
-                                            {{ $namedSites->pluck('name')->join(', ') }}{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? __('api_tokens.reaches.unsupported') : '' }}
+                                            <span lang="">{{ $namedSites->pluck('name')->join(', ') }}</span>{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? __('api_tokens.reaches.unsupported') : '' }}
                                         </span>
                                     @endif
                                     <span class="lede">{{ $token->abilities === [] ? __('api_tokens.reaches.no_abilities') : $abilityLabels }}</span>
@@ -189,7 +198,7 @@
                         @foreach ($sites as $site)
                             <label for="api_token_site_{{ $site->id }}">
                                 <input type="checkbox" id="api_token_site_{{ $site->id }}" name="site_ids[]" value="{{ $site->id }}">
-                                {{ $site->name }}
+                                <span lang="">{{ $site->name }}</span>
                             </label>
                         @endforeach
                         <p class="field-help">
