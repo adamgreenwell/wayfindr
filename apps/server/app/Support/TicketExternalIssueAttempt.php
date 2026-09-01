@@ -93,17 +93,16 @@ final /*
      */
     private static function auditEventsForTicket(Ticket $ticket, ?Collection $auditEvents = null): Collection
     {
-        // The loaded relation FIRST, matching this class's own
-        // `externalLinksForTicket()` and `TicketExternalIssueState::forTicket()`.
-        // Going straight to the relation threw away the ticket queue's eager
-        // load and cost one query per ticket -- 12,499 of them on a desk with
-        // 12,500 tickets. Of the three helpers reading these two relations, this
-        // was the only one missing the check.
-        $auditEvents ??= $ticket->relationLoaded('auditEvents')
-            ? $ticket->auditEvents
-            : $ticket->auditEvents()
-                ->whereIn('action', TicketExternalIssueState::trackedAuditActions())
-                ->get();
+        // Queried unless the CALLER hands over a collection, and deliberately
+        // not `relationLoaded()`. Loaded is not the same as loaded with these
+        // rows: the ticket detail page eager-loads `auditEvents` constrained to
+        // `ticket.note_added`, which is not a tracked action, so reusing it
+        // because it happens to be present reports "no external attempt yet" on
+        // a ticket whose latest attempt is an event. Only a caller knows whether
+        // its own eager load matches this scope.
+        $auditEvents ??= $ticket->auditEvents()
+            ->whereIn('action', TicketExternalIssueState::trackedAuditActions())
+            ->get();
 
         return $auditEvents
             ->where('account_id', $ticket->account_id)

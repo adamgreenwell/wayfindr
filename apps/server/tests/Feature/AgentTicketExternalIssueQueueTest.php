@@ -178,3 +178,41 @@ test('the ticket queue does not query audit events once per ticket', function ()
     expect($many)->toBeLessThanOrEqual($few + 2,
         "the ticket queue issued {$few} queries for 2 tickets and {$many} for 12: it is querying per ticket");
 });
+
+test('the ticket detail page still finds an attempt that is only an audit event', function (): void {
+    // The regression the eager-load fix nearly caused, and the reason the queue
+    // hands its collections over explicitly instead of the helper picking up
+    // whatever relation happens to be loaded.
+    //
+    // This page eager-loads `auditEvents` constrained to `ticket.note_added` for
+    // its timeline. That is not a tracked external-issue action, so a helper
+    // that reused the relation because it was present would filter it to
+    // nothing and report "No external attempt yet" -- on a ticket whose only
+    // attempt is an event, which is exactly the ticket this is about.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    $ticket = Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+
+    // A note, so the page's own constrained eager load is NOT empty -- an empty
+    // one would fall through and pass whether the bug is present or not.
+    AuditEvent::factory()->for($account)->for($ticket, 'subject')->create([
+        'action' => 'ticket.note_added',
+        'metadata' => ['note' => 'Looking into this.'],
+        'occurred_at' => now()->subMinutes(20),
+    ]);
+
+    // The attempt itself, with no external link behind it.
+    AuditEvent::factory()->for($account)->for($ticket, 'subject')->create([
+        'action' => 'ticket.external_issue_created',
+        'metadata' => ['provider' => 'github', 'project_key' => 'acme/api'],
+        'occurred_at' => now()->subMinutes(5),
+    ]);
+
+    $this->actingAs($agent)
+        ->get("/dashboard/tickets/{$ticket->id}")
+        ->assertOk()
+        ->assertSee('acme/api')
+        ->assertDontSee(__('tickets.external_attempt.none_label'));
+});
