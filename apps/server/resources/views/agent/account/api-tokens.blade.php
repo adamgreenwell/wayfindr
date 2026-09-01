@@ -165,7 +165,16 @@
 
                 <div class="field">
                     <label for="api_token_name">{{ __('api_tokens.create.name_label') }}</label>
-                    <input type="text" id="api_token_name" name="name" maxlength="120" required
+                    {{-- The same reset the table's names carry. A token name is
+                         what this admin calls their own integration, not a
+                         sentence in the language they read the dashboard in.
+
+                         The placeholder is our copy and inherits the reset,
+                         which is the accepted cost of a control declaring one
+                         language for both -- the value is read back on every
+                         keystroke and outlives a hint shown only while the
+                         field is empty. --}}
+                    <input type="text" id="api_token_name" name="name" maxlength="120" required lang=""
                         placeholder="{{ __('api_tokens.create.name_placeholder') }}" value="{{ old('name') }}">
                     <p class="field-help">{{ __('api_tokens.create.name_help') }}</p>
                     @error('name')

@@ -4340,6 +4340,10 @@ test('an API token is announced as the account\'s words, not the agent\'s langua
     $xpath = new DOMXPath($document);
 
     $regions = [
+        // The CREATE form as well as the table. The articles slice shipped with
+        // its editor reset and its create form not, and the same split was
+        // sitting here.
+        'the new-token name field' => '//input[@id="api_token_name"]',
         'the token name' => '//strong[normalize-space(text())="Acme Datenpunkt Sync"]',
         'the issuing agent' => '//span[normalize-space(text())="Ausgeber Datenpunkt"]',
         'the credential hint' => '//code[starts-with(normalize-space(text()), "'.ApiToken::PREFIX.'")]',
