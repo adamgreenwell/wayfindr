@@ -92,6 +92,14 @@ final class DashboardLanguage
         // message over its local fallback, so an oversized file answered in
         // English replaced the German live state on an ordinary upload.
         'dashboard.conversations.attachments.store',
+
+        // The account reply-templates page. An agent reaches it from the reply
+        // composer on a conversation, which is already extracted -- so before
+        // this it was a German conversation and an English page one click away.
+        'dashboard.account.reply-templates.index',
+        'dashboard.account.reply-templates.store',
+        'dashboard.account.reply-templates.update',
+        'dashboard.account.reply-templates.archive',
     ];
 
     /**

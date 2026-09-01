@@ -40,7 +40,7 @@ class AgentReplyTemplateController extends Controller
 
         return redirect()
             ->route('dashboard.account.reply-templates.index')
-            ->with('status', 'Reply template created.');
+            ->with('status', 'reply_templates.flash.created');
     }
 
     public function update(Request $request, ReplyTemplate $replyTemplate): RedirectResponse
@@ -53,7 +53,7 @@ class AgentReplyTemplateController extends Controller
 
         return redirect()
             ->route('dashboard.account.reply-templates.index')
-            ->with('status', 'Reply template updated.');
+            ->with('status', 'reply_templates.flash.updated');
     }
 
     public function archive(Request $request, ReplyTemplate $replyTemplate): RedirectResponse
@@ -68,7 +68,7 @@ class AgentReplyTemplateController extends Controller
 
         return redirect()
             ->route('dashboard.account.reply-templates.index')
-            ->with('status', 'Reply template archived.');
+            ->with('status', 'reply_templates.flash.archived');
     }
 
     private function authorizeManageReplyTemplate(mixed $agent, ReplyTemplate $replyTemplate): void
