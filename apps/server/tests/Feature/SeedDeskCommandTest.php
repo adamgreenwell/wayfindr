@@ -166,6 +166,43 @@ test('fresh takes the agents it created with it', function (): void {
         ->toBe(0, 'a seeded agent is left with no account and a known password');
 });
 
+test('it refuses rather than take over an address somebody else holds', function (): void {
+    // Two ways this command reached outside its own account, both found by
+    // asking what happens when a real user holds a `desk-agent-` address:
+    //
+    //   - `--fresh` deleted them, because the cleanup matched on the ADDRESS,
+    //     which is global. That was the fix for the orphan problem breaking a
+    //     different promise in the course of keeping one.
+    //   - Seeding then MOVED them. `users.email` is globally unique, so
+    //     `updateOrCreate` keyed on the address does not create a second user;
+    //     it reassigns the existing one -- onto a desk whose password this
+    //     command prints on success.
+    //
+    // Refusing is the right answer to "somebody already holds the address I
+    // need". It is recoverable; taking over their account is not.
+    // A desk exists FIRST, so `--fresh` has something to clean and the global
+    // delete is actually reached. Without that the cleanup is a no-op and the
+    // scoping cannot be observed at all.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 2])
+        ->assertSuccessful();
+
+    $other = Account::query()->create(['slug' => 'someone-elses-desk', 'name' => 'Theirs']);
+
+    // An index this run does not want, so the only thing that touches it is a
+    // rule matching the PATTERN rather than the account.
+    $bystander = User::factory()->for($other)->create(['email' => 'desk-agent-9@example.test']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 2, '--fresh' => true])
+        ->assertFailed()
+        ->expectsOutputToContain('desk-agent-9@example.test');
+
+    expect(User::query()->whereKey($bystander->id)->exists())
+        ->toBeTrue('a user on another account was deleted for holding a matching address');
+
+    expect(User::query()->whereKey($bystander->id)->value('account_id'))
+        ->toBe($other->id, 'a user on another account was moved onto the measurement desk');
+});
+
 test('it refuses to run in production without being told twice', function (): void {
     // Restored in a `finally`, because `app()['env']` is process-global and
     // `RefreshDatabase` does not touch it. Leaving it set leaked `production`

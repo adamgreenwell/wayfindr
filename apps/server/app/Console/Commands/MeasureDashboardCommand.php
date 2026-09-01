@@ -87,9 +87,17 @@ final class MeasureDashboardCommand extends Command
             return self::FAILURE;
         }
 
+        // The count the agent's queues actually render, not every row in the
+        // database. A global count beside another account reports fifty
+        // thousand next to timings taken over twenty, which is a baseline that
+        // says the opposite of the truth.
+        $visible = Conversation::query()
+            ->whereIn('site_id', Site::query()->visibleToAgent($agent)->select('id'))
+            ->count();
+
         if ($this->option('json')) {
             $this->line((string) json_encode([
-                'conversations' => Conversation::query()->count(),
+                'conversations' => $visible,
                 'measured_at' => now()->toJSON(),
                 'pages' => $rows,
             ], JSON_PRETTY_PRINT));
@@ -98,7 +106,7 @@ final class MeasureDashboardCommand extends Command
         }
 
         $this->newLine();
-        $this->components->twoColumnDetail('<options=bold>Conversations in database</>', ReaderNumber::count(Conversation::query()->count()));
+        $this->components->twoColumnDetail('<options=bold>Conversations visible to this agent</>', ReaderNumber::count($visible));
         $this->newLine();
 
         $this->table(

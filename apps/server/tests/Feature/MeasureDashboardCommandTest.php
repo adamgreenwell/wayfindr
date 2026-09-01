@@ -181,3 +181,24 @@ test('the reported figure is a median on an even run count too', function (): vo
             ->and($ms)->toBeLessThan(60000, "{$page} reported an implausible time");
     }
 });
+
+test('it reports the count the measured agent can actually see', function (): void {
+    // A global count beside another account reports that account's rows next to
+    // timings taken over the agent's own, which is a baseline saying the
+    // opposite of the truth -- fast numbers under a large figure.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 15, '--messages' => 2, '--fresh' => true]);
+
+    // A much larger neighbour the measured agent cannot see any of.
+    $stranger = Account::query()->create(['slug' => 'noisy-neighbour', 'name' => 'Neighbour']);
+    $strangerSite = Site::factory()->for($stranger)->create();
+    $strangerVisitor = Visitor::factory()->for($strangerSite)->create();
+
+    Conversation::factory()->for($strangerSite)->for($strangerVisitor)->count(40)->create();
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]);
+
+    $measured = json_decode(Artisan::output(), true);
+
+    expect($measured['conversations'])
+        ->toBe(15, 'the reported size counts rows the measured agent cannot open');
+});

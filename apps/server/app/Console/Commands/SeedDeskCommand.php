@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -95,8 +96,23 @@ final class SeedDeskCommand extends Command
                 // strand sign-in-capable accounts with this command's known
                 // password and no account at all -- which is a worse thing to
                 // leave on a machine than the rows it was asked to remove.
-                User::query()->where('email', 'like', 'desk-agent-%@example.test')->delete();
-                Account::query()->where('slug', self::SLUG)->delete();
+                //
+                // Scoped to THIS account and taken first, while the link still
+                // exists. Matching on the address alone is global, and would
+                // delete a real person who happens to hold a `desk-agent-`
+                // address on another account -- which is the same promise this
+                // command makes about the rest of the database, broken by the
+                // fix for the orphans.
+                $previous = Account::query()->where('slug', self::SLUG)->first();
+
+                if ($previous !== null) {
+                    User::query()
+                        ->where('account_id', $previous->id)
+                        ->where('email', 'like', 'desk-agent-%@example.test')
+                        ->delete();
+
+                    $previous->delete();
+                }
 
                 return true;
             });
@@ -146,13 +162,33 @@ final class SeedDeskCommand extends Command
             ['name' => 'Measurement Desk'],
         );
 
+        // `users.email` is globally unique, so `updateOrCreate` keyed on the
+        // address alone does not create a second user -- it MOVES the existing
+        // one onto this account. A real person holding a `desk-agent-` address
+        // elsewhere would have been quietly reassigned to a seeded desk whose
+        // password this command prints.
+        //
+        // Refused instead. Failing is the correct answer to "somebody already
+        // holds the address I need": it is recoverable, and taking over their
+        // account is not.
+        $taken = User::query()
+            ->where('email', 'like', 'desk-agent-%@example.test')
+            ->where(fn ($query) => $query->whereNull('account_id')->orWhere('account_id', '!=', $account->id))
+            ->pluck('email');
+
+        if ($taken->isNotEmpty()) {
+            throw new RuntimeException(
+                'These addresses belong to a user outside the measurement desk, and this command '
+                .'would take them over: '.$taken->implode(', ').'. Move or remove them first.'
+            );
+        }
+
         $agents = [];
 
         for ($i = 0; $i < $agentCount; $i++) {
             $agents[] = User::query()->updateOrCreate(
-                ['email' => 'desk-agent-'.$i.'@example.test'],
+                ['email' => 'desk-agent-'.$i.'@example.test', 'account_id' => $account->id],
                 [
-                    'account_id' => $account->id,
                     // One owner so the account is manageable, the rest agents,
                     // because the queue's assignee filter is only interesting
                     // when several people can hold work.
