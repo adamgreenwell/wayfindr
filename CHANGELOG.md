@@ -30,7 +30,173 @@ missed while skimming.
 
 ## [Unreleased]
 
-Nothing yet.
+**Requires operator action — but only if you run your own nginx in front of
+Wayfindr.** Everything else in this release is pull-and-restart, and migrations
+run themselves.
+
+If you run the shipped Docker Compose stack, there is nothing to do: it proxies
+Reverb through Caddy, which imposes no idle timeout on a proxied WebSocket. The
+action below applies to Laravel Forge installs and to anything built from the
+sample in `docs/self-hosting/runtime-requirements.md`, whose nginx block through
+0.7.0 omitted the setting.
+
+**Two things you will notice within a minute of upgrading, neither of them
+broken:**
+
+- **The operator console flips from Ready to "Needs attention."** A new
+  readiness check asks whether anybody has confirmed the install's language and
+  clock, and it gates on a stored value rather than on your environment — so an
+  install already configured correctly through `APP_LOCALE` and
+  `WAYFINDR_DASHBOARD_TIMEZONE` still flips. Visit **Operator console →
+  Language and region** and save once; confirming that English and UTC were
+  right all along is a valid answer and clears it permanently.
+- **Every agent's profile gains a third language.** Italian ships in this
+  release. See the caveat under *Added* before you promise it to anyone.
+
+**And one change to your traffic.** The widget now makes one additional
+unauthenticated `GET /api/widget/appearance` per page view, on every install,
+whether or not you turn presence on. It writes nothing and returns the same
+bytes to every visitor on a site, so it is cacheable — but it is a request per
+page view that was not there before.
+
+### Added
+
+- **A per-agent timezone, and a dashboard that renders on it.** An agent picks a
+  timezone on their profile beside their language, and times, dates and report
+  day boundaries follow it. Everything is still stored in UTC — a single seam
+  converts on the way to a screen and nowhere else — so this changes what is
+  shown and never what is written, and changing it re-reads existing history
+  rather than rewriting it. It also fixes a real miscount: activity in the
+  offset band (00:30 in Berlin) was being filed under the previous day.
+
+  A site's **support hours** are deliberately excluded and stay in the site's
+  own zone, because "visitors are told support is back at 09:00" would be untrue
+  read on an agent's clock.
+
+  New optional key `WAYFINDR_DASHBOARD_TIMEZONE`, defaulting to `UTC`, which is
+  what every existing install already renders. **Not `APP_TIMEZONE`** — that is
+  read nowhere in Wayfindr, and the storage clock it would set is hardcoded to
+  `UTC` on purpose, because Laravel writes `created_at` through it into columns
+  that carry no offset.
+
+- **Language and region as an operator setting**, under **Operator console →
+  Language and region**, DB-backed and overriding the environment the same way
+  mail, storage, scanning and backups already do. `APP_LOCALE` and
+  `WAYFINDR_DASHBOARD_TIMEZONE` now seed a new install and pre-fill that form;
+  once you save there, the console value is what the dashboard uses.
+
+  There is deliberately **no "go back to the environment" control**. It would
+  let you un-confirm the setup step while the checklist still read ready.
+
+- **Italian.** The agent dashboard speaks English, German and Italian on the
+  surfaces extracted so far. **Neither the German nor the Italian pack has been
+  read by a qualified speaker**, and eight of nine Italian catalogues are
+  machine-drafted and open with `NOT YET REVIEWED`. The mechanical checks pass —
+  consistent terms, no lost placeholders, the right register attempted — and
+  they establish nothing about whether a sentence is good Italian. Do not
+  promise either language to a customer until somebody who speaks it has read
+  the rendered screens.
+
+- **Live visitor presence.** You can see who is on the site right now, with the
+  privacy question settled first (ADR 0019) rather than after: a visitor is told
+  before anything is reported, can decline, and what is kept is bounded and
+  pruned rather than held forever.
+
+- **The conversation detail page speaks the agent's language**, including its
+  cobrowse panel — the half that 0.7.0 said would arrive in 0.7.1.
+
+- **`wayfindr:translate-catalogue`**, the command that drafted the Italian pack.
+  It reads a new `MURF_API_KEY` and **sends catalogue strings to an outside
+  service**. Nothing calls it on your behalf; it exists for whoever maintains
+  the packs. If that is not you, leave the key unset and the command unused.
+
+### Changed
+
+- **⚠ Operator action, nginx installs only.** Add `proxy_read_timeout 3600s;`
+  and `proxy_send_timeout 3600s;` to **both** the `/app` and `/apps` location
+  blocks, then reload. nginx defaults to 60 seconds and the sample Wayfindr
+  shipped through 0.7.0 omitted the setting, so an install built from it drops
+  and reconnects the agent conversation page and the live visitor board roughly
+  once a minute. The client now sends its own keepalive, which helps and **does
+  not replace this** — a proxy that closes an idle connection closes it whatever
+  the client does. `docs/self-hosting/runtime-requirements.md` and the Forge
+  guide both carry the corrected block. **The Docker Compose stack needs no
+  change.**
+
+- **Email can be switched on by pasting a webhook URL.** 0.7.0 told you that no
+  provider's inbound webhook could be pointed at Wayfindr and that you needed a
+  re-signing proxy in front that Wayfindr does not ship. That was true when it
+  was written and is no longer. Mailgun and Postmark can now be pointed straight
+  at `POST /api/mail/inbound`; set `WAYFINDR_INBOUND_MAIL_PROVIDER` to name the
+  scheme. **If you built that proxy, you can retire it** — the original
+  `X-Wayfindr-Signature` scheme still verifies, so nothing breaks if you keep
+  it. If you gave up on email in 0.7.0, this is the release to try again.
+  `docs/self-hosting/inbound-mail.md` is new and covers all three.
+
+- **The shipped image now sets PHP's upload limits** (`upload_max_filesize`,
+  `post_max_size`, `memory_limit`) to match what Wayfindr itself accepts. They
+  were the compiled-in 2M/8M defaults, below the application's own 10 MB limit,
+  so a visitor attaching a 4 MB screenshot was refused by PHP before any
+  Wayfindr code ran. If you run your own PHP rather than the image, raise them
+  yourself — `post_max_size` bounds the whole request, not one file.
+
+- **Numbers and dates follow the reading agent's language**, not the server's
+  and not the browser's. Nothing changes for an English reader's *numbers*.
+  Some English *dates* do shift, cosmetically: report and backup-history dates
+  lose the weekday (`Mon, Aug 24, 2026` → `Aug 24, 2026`), and break-glass
+  stamps move to a 12-hour clock with the year (`Aug 24, 15:05` →
+  `Aug 24, 2026 3:05 PM`). The account audit list and its CSV export
+  deliberately keep a sortable `Y-m-d H:i:s`, because a localized cell is
+  reparsed by whatever spreadsheet opens it.
+
+### Fixed
+
+- **The unattended-alert digest was mailing a raw UTC timestamp** —
+  `2026-08-24T15:05:00.000000Z`, mid-sentence — instead of a readable time on
+  the recipient's own clock.
+
+- **Blade directives were reaching the browser as text** on one page, where a
+  directive written flush against a word character was never compiled.
+
+- **The agent conversation socket** now reconnects with the same discipline the
+  visitor board already had, rather than going quiet after a drop.
+
+- **Widget rejection messages reach the visitor in their own language.** The
+  widget was being handed an English sentence to display; it is now handed the
+  key and says it itself, with the server sentence kept as the fallback for the
+  cases a key cannot reach.
+
+- **The cobrowse pressure indicator** no longer derives its state by comparing
+  the rendered sentence against English literals — a comparison that would have
+  pinned the indicator on permanently for German and Italian agents the moment
+  that surface was translated.
+
+### Security
+
+- **Query strings are no longer stored with the page addresses Wayfindr keeps**,
+  and the ones already stored have been rewritten. A visitor carrying a password
+  reset token or a session id in a URL had it kept whole and shown to an agent
+  on the visitor profile, the conversation, the ticket snapshot, and — longest
+  of all — the cobrowse session, which keeps addresses by design after pruning
+  strips everything else.
+
+  **⚠ The rewrite is irreversible**, which is the point: the query strings are
+  gone. It runs automatically as two migrations, and the deploy script also runs
+  `wayfindr:sanitise-page-urls` after activation to catch rows written by the
+  old code during the migration window. If you deploy some other way, run that
+  command once by hand afterwards. It is idempotent.
+
+  `audit_events` is deliberately **not** rewritten. An audit trail you rewrite
+  is not an audit trail; the protection there is that the account audit screen
+  and its export carry only time, action, actor, subject and site, and never raw
+  event metadata.
+
+- **Inbound mail deliveries are bound to the message they carry.** Mailgun signs
+  a timestamp and a token and not the body, so a captured signature would
+  otherwise authenticate any payload for as long as it stayed fresh. A token is
+  now good for one message however many times the provider redelivers it, and a
+  delivery that differs in sender, recipients, subject, body, threading headers
+  or attachments is refused.
 
 ## [0.7.0] - 2026-08-25
 
