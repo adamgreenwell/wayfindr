@@ -13,6 +13,7 @@ use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
@@ -284,8 +285,10 @@ final class MeasureDashboardCommand extends Command
         // sits on. Timing it instrumented would have inflated the one number
         // that is evidence for the finding.
         for ($run = 0; $run < $runs; $run++) {
-            // Savepoint opened BEFORE the clock and rolled back after it, so
-            // the isolation is not part of what the page is charged for.
+            // Savepoint and cache cleared BEFORE the clock, rolled back after
+            // it, so the isolation is not part of what the page is charged for.
+            $this->isolate();
+
             DB::beginTransaction();
 
             try {
@@ -388,6 +391,8 @@ final class MeasureDashboardCommand extends Command
      */
     private function send(Kernel $kernel, User $agent, string $uri): Response
     {
+        $this->isolate();
+
         DB::beginTransaction();
 
         try {
@@ -395,6 +400,23 @@ final class MeasureDashboardCommand extends Command
         } finally {
             DB::rollBack();
         }
+    }
+
+    /**
+     * Put the next request back at the start line.
+     *
+     * The transaction covers the database; the CACHE is in-memory and shared
+     * across every request this command makes, so the warm-up's cobrowse
+     * throttle key was still there for the timed runs -- and they measured a
+     * page that had decided not to write an audit entry. The same failure the
+     * per-request transaction fixed, one store over.
+     *
+     * Called outside the clock, like the savepoint, so isolating is not part of
+     * what a page is charged for.
+     */
+    private function isolate(): void
+    {
+        Cache::store('array')->flush();
     }
 
     /**
