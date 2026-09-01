@@ -195,6 +195,37 @@ test('it leaves another account\'s conversation alone even when its code matches
         ->toBeGreaterThan(0, 'the desk was not seeded, so this proves nothing');
 });
 
+test('fresh refuses an account at its slug that it did not create', function (): void {
+    // A slug is user-selectable -- `wayfindr:bootstrap` takes an arbitrary one
+    // -- so an account carrying this one is not evidence the command made it,
+    // and `--fresh` cascades through every site, visitor, conversation and
+    // ticket underneath. Deleting somebody's real desk because it chose the
+    // same name is the worst thing this command could do.
+    $real = Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'A Real Desk']);
+    $realSite = Site::factory()->for($real)->create(['name' => 'Production']);
+    $realVisitor = Visitor::factory()->for($realSite)->create();
+    $realConversation = Conversation::factory()->for($realSite)->for($realVisitor)->create();
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1, '--fresh' => true])
+        ->assertFailed();
+
+    expect(Account::query()->whereKey($real->id)->exists())->toBeTrue('a real account was deleted')
+        ->and(Site::query()->whereKey($realSite->id)->exists())->toBeTrue('a real site was deleted')
+        ->and(Conversation::query()->whereKey($realConversation->id)->exists())->toBeTrue('a real conversation was deleted');
+});
+
+test('fresh still cleans up a half-made desk', function (): void {
+    // The provenance check must not strand an operator whose first run was
+    // interrupted: an account with no sites and no users is what that looks
+    // like, and refusing to clear it would leave `--fresh` permanently stuck.
+    Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'Measurement Desk']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1, '--fresh' => true])
+        ->assertSuccessful();
+
+    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())->toBe(5);
+});
+
 test('it refuses rather than take over an address somebody else holds', function (): void {
     // Two ways this command reached outside its own account, both found by
     // asking what happens when a real user holds a `desk-agent-` address:

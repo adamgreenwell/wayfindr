@@ -83,12 +83,12 @@ is queried, hydrated and rendered into one response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane
 is **186 MB of HTML** — a response no browser will render pleasantly and many
-proxies will refuse outright, arriving after twenty-four seconds. The open lane
+proxies will refuse outright, arriving after twenty-two seconds. The open lane
 is better only because a desk that is keeping up has fewer open rows; it is the
 same query with a narrower `where`.
 
 Response size is the number to watch here rather than milliseconds. The server
-builds 186 MB in twenty-four seconds; the browser then has to parse it.
+builds 186 MB in twenty-two seconds; the browser then has to parse it.
 
 ### The ticket queue issues one query per ticket
 

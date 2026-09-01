@@ -134,24 +134,31 @@ final class MeasureDashboardCommand extends Command
         $this->send($kernel, $agent, $uri);
 
         $timings = [];
-        $queries = 0;
         $bytes = 0;
         $status = 0;
 
+        // TIMED runs are uninstrumented. Laravel's query log allocates and
+        // retains an entry per query, so leaving it on inside the measured
+        // interval charges the page for the measuring -- and the overhead grows
+        // with query count, which is exactly the axis the ticket queue's N+1
+        // sits on. Timing it instrumented would have inflated the one number
+        // that is evidence for the finding.
         for ($run = 0; $run < $runs; $run++) {
-            DB::flushQueryLog();
-            DB::enableQueryLog();
-
             $startedAt = microtime(true);
             $response = $this->send($kernel, $agent, $uri);
             $timings[] = (microtime(true) - $startedAt) * 1000;
 
-            $queries = count(DB::getQueryLog());
             $bytes = strlen((string) $response->getContent());
             $status = $response->getStatusCode();
-
-            DB::disableQueryLog();
         }
+
+        // Counted separately, once, and not timed.
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $this->send($kernel, $agent, $uri);
+        $queries = count(DB::getQueryLog());
+        DB::disableQueryLog();
+        DB::flushQueryLog();
 
         sort($timings);
 

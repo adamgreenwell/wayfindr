@@ -83,45 +83,49 @@ final class SeedDeskCommand extends Command
         $siteCount = max(1, (int) $this->option('sites'));
         $messagesEach = max(0, (int) $this->option('messages'));
 
-        if ($this->option('fresh')) {
-            $this->components->task('Removing the previous desk', function (): bool {
-                // The account cascade takes its sites, and theirs takes the
-                // visitors, conversations, messages and tickets underneath. One
-                // delete rather than a truncate, so a real account sitting in
-                // the same database is untouched.
-                //
-                // Users are NOT part of that cascade: `users.account_id` is
-                // `nullOnDelete()`, so deleting the account detaches them and
-                // leaves them behind. Reseeding with fewer agents would then
-                // strand sign-in-capable accounts with this command's known
-                // password and no account at all -- which is a worse thing to
-                // leave on a machine than the rows it was asked to remove.
-                //
-                // Scoped to THIS account and taken first, while the link still
-                // exists. Matching on the address alone is global, and would
-                // delete a real person who happens to hold a `desk-agent-`
-                // address on another account -- which is the same promise this
-                // command makes about the rest of the database, broken by the
-                // fix for the orphans.
-                $previous = Account::query()->where('slug', self::SLUG)->first();
+        $startedAt = microtime(true);
+        $written = [];
 
-                if ($previous !== null) {
+        try {
+            if ($this->option('fresh')) {
+                $this->components->task('Removing the previous desk', function (): bool {
+                    // The account cascade takes its sites, and theirs takes the
+                    // visitors, conversations, messages and tickets underneath. One
+                    // delete rather than a truncate, so a real account sitting in
+                    // the same database is untouched.
+                    //
+                    // Users are NOT part of that cascade: `users.account_id` is
+                    // `nullOnDelete()`, so deleting the account detaches them and
+                    // leaves them behind. Reseeding with fewer agents would then
+                    // strand sign-in-capable accounts with this command's known
+                    // password and no account at all -- which is a worse thing to
+                    // leave on a machine than the rows it was asked to remove.
+                    //
+                    // Scoped to THIS account and taken first, while the link still
+                    // exists. Matching on the address alone is global, and would
+                    // delete a real person who happens to hold a `desk-agent-`
+                    // address on another account -- which is the same promise this
+                    // command makes about the rest of the database, broken by the
+                    // fix for the orphans.
+                    $previous = Account::query()->where('slug', self::SLUG)->first();
+
+                    if ($previous === null) {
+                        return true;
+                    }
+
+                    $this->refuseUnlessSeeded($previous);
+
                     User::query()
                         ->where('account_id', $previous->id)
                         ->where('email', 'like', 'desk-agent-%@example.test')
                         ->delete();
 
                     $previous->delete();
-                }
 
-                return true;
-            });
-        }
+                    return true;
+                });
+            }
 
-        $startedAt = microtime(true);
-        $written = [];
-
-        try {
             $desk = $this->desk($agentCount, $siteCount);
 
             $written['visitors'] = $this->measure('Visitors', fn (): int => $this->seedVisitors($desk, $conversations, $months));
@@ -504,6 +508,49 @@ final class SeedDeskCommand extends Command
     public static function mix(int $n, string $attribute, int $of): int
     {
         return (int) (hexdec(substr(md5($attribute.':'.$n), 0, 8)) % $of);
+    }
+
+    /**
+     * Stop unless the account at this slug is one THIS command made.
+     *
+     * A slug is user-selectable -- `wayfindr:bootstrap` takes an arbitrary one
+     * -- so an account carrying it is not evidence that this command created
+     * it, and `--fresh` cascades through every site, visitor, conversation and
+     * ticket underneath. Deleting a real desk because it chose the same name is
+     * the worst thing in this file.
+     *
+     * Provenance comes from the SHAPE, because `accounts` has nowhere to write
+     * a marker -- it is `name`, `slug` and timestamps, and adding a column to
+     * the product's schema for a measurement command is the wrong trade. Every
+     * site this command creates carries a `site_desk_` public key, which the
+     * ordinary key generator (`site_` plus thirty-two random characters) does
+     * not produce, and every user it creates is a `desk-agent-` address.
+     *
+     * An account with no sites and no users passes: that is what a half-made
+     * desk looks like after an interrupted run, and refusing to clean it up
+     * would leave the operator stuck.
+     */
+    private function refuseUnlessSeeded(Account $account): void
+    {
+        $foreignSites = Site::query()
+            ->where('account_id', $account->id)
+            ->where('public_key', 'not like', 'site_desk_%')
+            ->count();
+
+        $foreignUsers = User::query()
+            ->where('account_id', $account->id)
+            ->where('email', 'not like', 'desk-agent-%@example.test')
+            ->count();
+
+        if ($foreignSites === 0 && $foreignUsers === 0) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'The account at `'.self::SLUG.'` holds '.$foreignSites.' site(s) and '.$foreignUsers
+            .' user(s) this command did not create, so it is somebody\'s real desk rather than a '
+            .'previous measurement. Refusing to delete it. Rename that account if you want the slug.'
+        );
     }
 
     /**

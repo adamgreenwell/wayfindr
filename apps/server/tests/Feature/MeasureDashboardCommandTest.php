@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -201,4 +202,23 @@ test('it reports the count the measured agent can actually see', function (): vo
 
     expect($measured['conversations'])
         ->toBe(15, 'the reported size counts rows the measured agent cannot open');
+});
+
+test('it leaves the query log off when it finishes', function (): void {
+    // The command turns the log on to count queries and must turn it back off.
+    // Left on, every query in the process afterwards allocates and retains an
+    // entry -- which in a long-running console session is a memory leak, and in
+    // this command's own timed runs would be the instrumentation overhead it
+    // exists to keep out of the figures.
+    //
+    // This does NOT prove the timed runs are uninstrumented; that is a
+    // performance property and not observable from here. It proves the state
+    // does not leak, which is the part a test can see.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 2, '--fresh' => true]);
+
+    DB::disableQueryLog();
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]);
+
+    expect(DB::logging())->toBeFalse('the command left the query log enabled');
 });
