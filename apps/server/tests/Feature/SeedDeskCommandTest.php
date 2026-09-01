@@ -1048,6 +1048,37 @@ test('a visitor still reopens something at the smallest message count', function
         ->toBeGreaterThan(0, 'no agent reopened anything');
 });
 
+test('nothing is said after the conversation was finally closed', function (): void {
+    // The sibling of the closed-period check: a message after the LAST close
+    // has no reopen to bound it, and in the product it would have reopened the
+    // conversation. `syncLastMessageAt()` already moves `closed_at` to the last
+    // message before the lifecycle pass reads it, so the final close cannot
+    // precede the transcript -- this asserts that rather than leaving it as a
+    // property one pass happens to inherit from another.
+    //
+    // At the dense fixture, because that is where a four-hour close would sit
+    // in the middle of a six-hour transcript.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 300, '--fresh' => true])
+        ->assertSuccessful();
+
+    $finalCloses = AuditEvent::query()
+        ->where('action', 'conversation.closed')
+        ->get()
+        ->groupBy('subject_id')
+        ->map(fn ($events) => $events->max('occurred_at'));
+
+    expect($finalCloses)->not->toBeEmpty();
+
+    foreach ($finalCloses as $conversationId => $closedAt) {
+        $after = ConversationMessage::query()
+            ->where('conversation_id', $conversationId)
+            ->where('created_at', '>', $closedAt)
+            ->count();
+
+        expect($after)->toBe(0, 'a message arrived after the conversation was finally closed, which would have reopened it');
+    }
+});
+
 test('an answer never arrives after the episode it answers was reopened', function (): void {
     // `ConversationRatingController` rejects a stale episode token, so a rating
     // timestamped after its episode reopened is a row the product cannot
