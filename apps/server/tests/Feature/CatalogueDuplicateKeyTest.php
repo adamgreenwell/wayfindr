@@ -113,15 +113,23 @@ function duplicateCatalogueKeys(string $path): array
 }
 
 /**
- * The VALUE of a quoted PHP key, not its spelling.
+ * The VALUE of a quoted PHP key -- and a refusal to guess.
  *
- * `'don\'t'` and `"don't"` are the same array key and PHP keeps only one of
- * them, but their source text differs -- so comparing the literals let the
- * duplicate this guard promises to catch walk straight past it. Catalogue keys
- * are plain today, which is exactly why nothing would have noticed.
+ * `'don\'t'` and `"don't"` are the same PHP key spelled two ways, so comparing
+ * source literals let the duplicate this guard exists to find walk past it.
  *
- * Escape rules by quote style: single quotes recognise only `\'` and `\\`;
- * double quotes recognise the C-style set.
+ * Decoding the general case is a bigger job than it looks, and getting it
+ * subtly wrong is worse than not doing it: `stripcslashes()` is the obvious
+ * reach and does NOT match PHP, which keeps the backslash in an unknown escape
+ * like `"a\qb"` while `stripcslashes()` returns `aqb` -- so two distinct keys
+ * would be reported as one. PHP's `\u{...}` goes the other way, leaving two
+ * spellings of one key looking distinct.
+ *
+ * So this decodes the two escapes a SINGLE-quoted string can contain, which is
+ * the whole of that syntax, and refuses anything else. Every key in every
+ * catalogue is `[a-z0-9_]`, so the refusal is unreachable today -- and if one
+ * ever does need an escape, this fails loudly instead of quietly comparing the
+ * wrong thing.
  */
 function catalogueKeyValue(string $literal): string
 {
@@ -132,7 +140,18 @@ function catalogueKeyValue(string $literal): string
         return str_replace(['\\\\', "\\'"], ['\\', "'"], $inner);
     }
 
-    return stripcslashes($inner);
+    // Double-quoted. Plain text is the same string either way; anything with a
+    // backslash in it needs semantics this guard deliberately does not carry.
+    if (str_contains($inner, '\\')) {
+        throw new RuntimeException(
+            "A catalogue key uses a double-quoted escape ({$literal}). The duplicate guard "
+            .'compares evaluated keys and does not implement PHP\'s double-quoted escape rules, '
+            .'because getting them subtly wrong reports duplicates that are not there. '
+            .'Write the key as a plain single-quoted string.'
+        );
+    }
+
+    return $inner;
 }
 
 test('the duplicate detector sees a duplicate, and does not invent one', function (): void {
@@ -198,13 +217,29 @@ test('the duplicate detector sees a duplicate, and does not invent one', functio
     expect(duplicateCatalogueKeys($scratch))
         ->toHaveCount(1, 'the detector compares how a key is spelled rather than what it is');
 
-    // And the unescaping is not so eager that it merges keys PHP keeps apart:
-    // in SINGLE quotes `\n` is a backslash and an n, not a newline.
+    // The single-quote rules, in both directions. `\b` is NOT an escape there,
+    // so `'a\\b'` and `'a\b'` both evaluate to `a\b` and are one key --
+    // which the first version of this test got backwards, asserting that two
+    // spellings of the same key were distinct.
+    $sameKeyTwoWays = <<<'PHP'
+    <?php
+    return [
+        'a\\b' => 'one',
+        'a\b' => 'two',
+    ];
+    PHP;
+
+    file_put_contents($scratch, $sameKeyTwoWays);
+
+    expect(duplicateCatalogueKeys($scratch))
+        ->toHaveCount(1, 'the detector does not apply the single-quote escape rules');
+
+    // And `'a\\\\b'` is `a\\b`, which really is a different key.
     $distinct = <<<'PHP'
     <?php
     return [
-        'a\nb' => 'one',
-        "a\nb" => 'two',
+        'a\\\\b' => 'one',
+        'a\\b' => 'two',
     ];
     PHP;
 
@@ -212,6 +247,22 @@ test('the duplicate detector sees a duplicate, and does not invent one', functio
 
     expect(duplicateCatalogueKeys($scratch))
         ->toBe([], 'the detector merged two keys that PHP keeps apart');
+
+    // A double-quoted escape is REFUSED rather than guessed at. `stripcslashes`
+    // and PHP disagree about unknown escapes and about `\u{...}`, in opposite
+    // directions, so a guard that half-implements the rules reports duplicates
+    // that are not there and misses ones that are.
+    $escaped = <<<'PHP'
+    <?php
+    return [
+        "a\qb" => 'one',
+    ];
+    PHP;
+
+    file_put_contents($scratch, $escaped);
+
+    expect(fn () => duplicateCatalogueKeys($scratch))
+        ->toThrow(RuntimeException::class);
 
     @unlink($scratch);
 });
