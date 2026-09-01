@@ -156,6 +156,7 @@ COPY packages/widget-js/src /app/packages/widget-js/src
 # whose config says realtime is on -- the exact silent degradation issue #714
 # exists to end.
 COPY packages/widget-js/vendor /app/packages/widget-js/vendor
+COPY docker/self-hosting/php.ini /usr/local/etc/php/conf.d/wayfindr.ini
 COPY docker/self-hosting/Caddyfile /etc/frankenphp/Caddyfile
 COPY docker/self-hosting/docker-entrypoint.sh /usr/local/bin/wayfindr-entrypoint
 
