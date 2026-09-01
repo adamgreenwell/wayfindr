@@ -343,6 +343,11 @@ return [
             'istantanea' => 'snapshot is snapshot',
             'operatore' => 'agent is agente and operator is gestore -- in Italian support vocabulary this word means the agent, so it swaps the two roles',
             'proprietario' => 'owner_role is titolare, owner_assignee is responsabile',
+            // The leading space is load-bearing. `conto` alone is a substring
+            // of `resoconto` -- Italian for a report, and the reports page is
+            // not extracted yet -- as well as `sconto` and `racconto`, so a
+            // bare entry would start crying wolf on the next slice but one.
+            ' conto' => 'account is account -- `conto` is a bank account',
         ],
 
         'de' => [

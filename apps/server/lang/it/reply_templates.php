@@ -28,7 +28,7 @@
 return [
     'title' => 'Modelli di risposta',
     'subtitle' => 'Gestione dei modelli di risposta condivisi per gli aggiornamenti più comuni ai visitatori.',
-    'back' => 'Torna al conto',
+    'back' => 'Torna all\'account',
 
     'flash' => [
         'created' => 'Modello di risposta creato.',

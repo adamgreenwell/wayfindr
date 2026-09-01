@@ -25,7 +25,7 @@
 return [
     'title' => 'Etichette dei ticket',
     'subtitle' => 'Gestione delle etichette condivise usate per il triage dei ticket e i filtri della dashboard.',
-    'back' => 'Torna al conto',
+    'back' => 'Torna all\'account',
 
     'flash' => [
         'created' => 'Etichetta del ticket creata.',
@@ -70,7 +70,7 @@ return [
     ],
 
     'validation' => [
-        'duplicate' => 'Questa etichetta esiste già in questo conto.',
+        'duplicate' => 'Questa etichetta esiste già in questo account.',
         'in_use' => 'Rimuova questa etichetta dai ticket prima di eliminarla.',
         'empty' => 'Usi almeno una lettera o una cifra per l\'etichetta.',
         'reserved' => 'Questo nome di etichetta è riservato al filtro dei ticket.',
