@@ -93,9 +93,17 @@ final /*
      */
     private static function auditEventsForTicket(Ticket $ticket, ?Collection $auditEvents = null): Collection
     {
-        $auditEvents ??= $ticket->auditEvents()
-            ->whereIn('action', TicketExternalIssueState::trackedAuditActions())
-            ->get();
+        // The loaded relation FIRST, matching this class's own
+        // `externalLinksForTicket()` and `TicketExternalIssueState::forTicket()`.
+        // Going straight to the relation threw away the ticket queue's eager
+        // load and cost one query per ticket -- 12,499 of them on a desk with
+        // 12,500 tickets. Of the three helpers reading these two relations, this
+        // was the only one missing the check.
+        $auditEvents ??= $ticket->relationLoaded('auditEvents')
+            ? $ticket->auditEvents
+            : $ticket->auditEvents()
+                ->whereIn('action', TicketExternalIssueState::trackedAuditActions())
+                ->get();
 
         return $auditEvents
             ->where('account_id', $ticket->account_id)
