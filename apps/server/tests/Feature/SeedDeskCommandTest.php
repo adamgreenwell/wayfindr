@@ -803,9 +803,26 @@ test('the reports have something to report', function (): void {
 
     // The ticket half walks its OWN actions, so seeding the conversation half
     // gives it nothing.
-    $tickets = (new TicketReport($scope, $window))->resolution();
+    $ticketReport = new TicketReport($scope, $window);
+    $tickets = $ticketReport->resolution();
 
     expect($tickets['summary']->count)->toBeGreaterThan(0, 'the ticket report resolved nothing');
+
+    // The agent activity table counts replies from `ticket.reply_sent` alone,
+    // which nothing else in the fixture writes. Without them every agent read
+    // zero and the aggregation was measured against an empty result at every
+    // desk size -- the same shape as ratings that carried no comment.
+    $activity = collect($ticketReport->agentActivity());
+
+    expect($activity)->not->toBeEmpty('no agent appears in the ticket activity table');
+
+    expect($activity->sum(fn (array $row): int => (int) ($row['replies'] ?? 0)))
+        ->toBeGreaterThan(0, 'every agent replied to no tickets, so the replies column measures nothing');
+
+    // More than one agent is credited, or the column is a single row wearing a
+    // table's clothes.
+    expect($activity->filter(fn (array $row): bool => (int) ($row['replies'] ?? 0) > 0))
+        ->toHaveCount($activity->count(), 'some agents replied to nothing');
 });
 
 test('a rating answers a close that actually happened', function (): void {

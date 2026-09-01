@@ -1088,6 +1088,27 @@ final class SeedDeskCommand extends Command
                         ];
                     };
 
+                    // Replies, which `TicketReport::agentActivity()` counts on
+                    // their own action. Without them every agent read zero
+                    // ticket replies and the aggregation was measured against
+                    // an empty result at every desk size -- the same shape as
+                    // the ratings that carried no comment.
+                    //
+                    // One to three, spread across the ticket's own life so they
+                    // land inside a report window rather than all at its start.
+                    $replies = self::mix($n, 'ticket_replies', 3) + 1;
+                    $span = max(60, (int) $raisedAt->diffInSeconds(
+                        $ticket->closed_at !== null ? Carbon::parse($ticket->closed_at) : Carbon::now()
+                    ));
+
+                    for ($r = 0; $r < $replies; $r++) {
+                        $event(
+                            'ticket.reply_sent',
+                            $raisedAt->copy()->addSeconds((int) ($span * ($r + 1) / ($replies + 1))),
+                            'open',
+                        );
+                    }
+
                     // A held ticket has been put on hold, whatever it did next.
                     if ($ticket->status === 'pending') {
                         $event('ticket.pending', $raisedAt->copy()->addHours(2)->min(Carbon::now()), 'open');
@@ -1244,7 +1265,13 @@ final class SeedDeskCommand extends Command
         // still leaves every available report complete. Warning on the span
         // would have turned into a permanent false positive as installs age,
         // which is how a warning teaches people to ignore it.
-        $longestReport = Carbon::now()->subDays(max(ReportingWindow::CHOICES));
+        // The window's OWN start, not `now()` minus its length. A 90-day
+        // window covers today plus the preceding 89 and begins at the reader
+        // day's midnight, so subtracting 90 days lands up to a day earlier and
+        // warned about boundaries every available report treats as complete.
+        // Recomputing what the thing you are comparing against already knows is
+        // how the two drift.
+        $longestReport = ReportingWindow::ofDays(max(ReportingWindow::CHOICES))->start;
 
         $boundaries = OperatorSetting::query()
             ->whereIn('key', [
