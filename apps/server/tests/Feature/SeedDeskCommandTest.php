@@ -663,6 +663,48 @@ test('a reseed writes the same lifecycle history', function (): void {
     Carbon::setTestNow();
 });
 
+test('a reseed writes the same satisfaction answers', function (): void {
+    // The third place a surrogate id was mistaken for a stable key. Ratings
+    // decided which closes were answered, what score they carried and how long
+    // the visitor took, all from `conversations.id` -- which moves on every
+    // `--fresh` against a sequence. The satisfaction figures moved with it.
+    //
+    // Its own test because the lifecycle one could not see this: it compares
+    // `audit_events`, and ratings live in another table. An assertion that
+    // stops at the table it was written for is how the same mistake reached
+    // three passes.
+    Carbon::setTestNow(Carbon::parse('2026-09-01 12:00:00', 'UTC'));
+
+    $seed = fn () => $this->artisan('wayfindr:seed-desk', [
+        '--conversations' => 60,
+        '--messages' => 2,
+        '--fresh' => true,
+    ])->assertSuccessful();
+
+    $shape = fn (): array => ConversationRating::query()
+        ->get()
+        ->map(fn (ConversationRating $r): string => (string) Conversation::query()->find($r->conversation_id)?->support_code
+            .'|'.$r->score
+            .'|'.$r->rated_at->toIso8601String())
+        ->sort()
+        ->values()
+        ->all();
+
+    $seed();
+    $first = $shape();
+
+    expect($first)->not->toBeEmpty();
+
+    $seed();
+
+    expect(ConversationRating::query()->min('id'))
+        ->toBeGreaterThan(count($first), 'the ids did not advance, so a reseed cannot show this');
+
+    expect($shape())->toBe($first, 'a reseed answered a different set of closes');
+
+    Carbon::setTestNow();
+});
+
 test('a visitor was seen no earlier than the last thing they said', function (): void {
     // `last_seen_at` means the latest contact by ANY channel, and the visitor
     // directory orders by it. Visitors are written before their conversations

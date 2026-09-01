@@ -1126,19 +1126,37 @@ final class SeedDeskCommand extends Command
         $written = 0;
         $scores = ConversationRating::SCORES;
 
+        // The conversation's SUPPORT CODE comes along, because every choice
+        // below keys on it rather than on `subject_id`: `--fresh` does not reset
+        // a PostgreSQL sequence, so ids move between otherwise identical runs
+        // and the satisfaction figures would move with them. Third place in
+        // this file where a surrogate id looked like a stable key.
         DB::table('audit_events')
-            ->whereIn('site_id', $this->siteIds($desk))
-            ->where('action', ConversationLifecycleLog::CLOSED)
-            ->where('subject_type', (new Conversation)->getMorphClass())
-            ->orderBy('id')
+            ->join('conversations', 'conversations.id', '=', 'audit_events.subject_id')
+            ->whereIn('audit_events.site_id', $this->siteIds($desk))
+            ->where('audit_events.action', ConversationLifecycleLog::CLOSED)
+            ->where('audit_events.subject_type', (new Conversation)->getMorphClass())
+            ->orderBy('audit_events.id')
+            ->select([
+                'audit_events.id',
+                'audit_events.site_id',
+                'audit_events.subject_id',
+                'audit_events.occurred_at',
+                'conversations.support_code',
+            ])
+            // The cursor column is QUALIFIED, and aliased back to `id`: joined
+            // to `conversations`, `chunkById`'s own unqualified `id` predicate
+            // is ambiguous and PostgreSQL refuses it.
             ->chunkById(self::CHUNK, function ($events) use (&$written, $scores): void {
                 $rows = [];
 
                 foreach ($events as $event) {
+                    $n = $this->seededIndex((string) $event->support_code);
+
                     // Half of closes are answered. A fixture where every close
                     // has an answer makes the "answered" ratio meaningless, and
                     // it is one of the figures the tab exists to show.
-                    if (self::mix((int) $event->subject_id, 'rated', 2) !== 0) {
+                    if (self::mix($n, 'rated', 2) !== 0) {
                         continue;
                     }
 
@@ -1149,7 +1167,7 @@ final class SeedDeskCommand extends Command
                         'site_id' => $event->site_id,
                         // Weighted toward good, because a desk where a third of
                         // answers are "bad" is not a desk anyone recognises.
-                        'score' => $scores[self::mix((int) $event->subject_id, 'score', 6) < 4 ? 0 : (self::mix((int) $event->subject_id, 'score2', 2) === 0 ? 1 : 2)],
+                        'score' => $scores[self::mix($n, 'score', 6) < 4 ? 0 : (self::mix($n, 'score2', 2) === 0 ? 1 : 2)],
                         'comment' => null,
                         // Never later than now. `closed_at` is clamped to the
                         // present, so a recent conversation's close plus an
@@ -1157,7 +1175,7 @@ final class SeedDeskCommand extends Command
                         // and the report counts answers by `episode_closed_at`,
                         // so it was already counting them.
                         'rated_at' => $closedAt->copy()
-                            ->addMinutes(self::mix((int) $event->subject_id, 'rated_after', 90) + 1)
+                            ->addMinutes(self::mix($n, 'rated_after', 90) + 1)
                             ->min(Carbon::now()),
                         'episode_closed_at' => $closedAt,
                         'episode_event_id' => $event->id,
@@ -1170,7 +1188,7 @@ final class SeedDeskCommand extends Command
                     DB::table('conversation_ratings')->insert($chunk);
                     $written += count($chunk);
                 }
-            });
+            }, 'audit_events.id', 'id');
 
         return $written;
     }
