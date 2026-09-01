@@ -72,11 +72,11 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,861 | 21 | 38.9 MB |
-| Conversation queue (closed) | 26,825 | 15 | 192.1 MB |
-| Ticket queue (open) | 3,296 | 4,292 | 21.0 MB |
-| Ticket queue (all) | 9,880 | 12,518 | 62.6 MB |
-| **Conversation detail** | **14** | **26** | **148 KB** |
+| Conversation queue (open) | 4,642 | 21 | 37.7 MB |
+| Conversation queue (closed) | 25,477 | 15 | 186.0 MB |
+| Ticket queue (open) | 3,187 | 4,185 | 20.9 MB |
+| Ticket queue (all) | 9,503 | 12,518 | 62.5 MB |
+| **Conversation detail** | **12** | **26** | **148 KB** |
 
 ### How it grows
 

@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -504,6 +505,32 @@ test('it does not touch the caller\'s session', function (): void {
     // the caller holding a session that reads as closed.
     expect(Session::isStarted())
         ->toBeTrue('the command left the caller\'s session stopped');
+});
+
+test('it gives back a session id the caller chose but never used', function (): void {
+    // A caller can select a session with `setId()` and not start it or write to
+    // it yet -- a queue worker about to handle a job, say. The capture used to
+    // key on "started, or holds data", so this id read as nothing to keep: the
+    // synthetic requests replaced it and the caller was handed the benchmark's
+    // id in place of the one they had chosen.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    // 40 alphanumeric characters, because `Store::setId()` silently GENERATES a
+    // fresh id for anything that fails its validity check -- a readable name
+    // never reached the code under test and the assertion compared the
+    // command's id against another id the command never saw.
+    $theirs = Str::random(40);
+
+    Session::setId($theirs);
+
+    expect(Session::getId())->toBe($theirs, 'the test never set the id it means to assert on')
+        ->and(Session::isStarted())->toBeFalse()
+        ->and(Session::all())->toBe([]);
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(Session::getId())
+        ->toBe($theirs, 'the command handed the caller its own session id');
 });
 
 test('it measures a conversation an agent would actually open', function (): void {

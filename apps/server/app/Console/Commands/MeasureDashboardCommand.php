@@ -101,12 +101,16 @@ final class MeasureDashboardCommand extends Command
         // synthetic requests still pass through `StartSession`, which starts
         // its own session on the same shared store -- so the caller was left
         // holding a benchmark's session id and none of their own data.
-        // Captured whenever the store HOLDS anything, not only when it says it
-        // is started: `Session::put()` without a `start()` leaves data behind a
-        // false `isStarted()`, and skipping the capture threw it away.
+        // The id is captured UNCONDITIONALLY, and the started flag and the
+        // attributes are captured beside it rather than deciding whether to
+        // look. Both narrower rules lost something real: keying on
+        // `isStarted()` threw away data put there without a `start()`, and
+        // keying on "started or holds data" threw away the id of a caller who
+        // had selected one with `setId()` and not yet used it -- who then got
+        // the benchmark's id back instead of their own.
         $callerSessionStarted = Session::isStarted();
         $callerSession = Session::all();
-        $callerSessionId = $callerSessionStarted || $callerSession !== [] ? Session::getId() : null;
+        $callerSessionId = Session::getId();
 
         // And the CACHE, which the transaction cannot reach. The detail page's
         // cobrowse audit trail claims a throttle key with `Cache::add()`, so a
@@ -207,31 +211,26 @@ final class MeasureDashboardCommand extends Command
                 ? app()->forgetInstance('request')
                 : app()->instance('request', $callerRequest);
 
-            if ($callerSessionId === null) {
-                // Nothing to put back, but the synthetic requests still started
-                // and filled the shared store -- so the benchmark's session
-                // would have been left sitting in a process that had none.
-                //
-                // Emptied rather than un-started: there is no public way to
-                // clear the started flag, and a started empty session is a much
-                // smaller residue than a populated one belonging to a
-                // measurement.
-                Session::flush();
-            } else {
-                // STARTED, then filled. Each synthetic request's `StartSession`
-                // save leaves the shared store stopped, so putting back the id
-                // and attributes without starting it left the caller holding a
-                // session that reads as closed -- and anything checking
-                // `isStarted()` behaved as if they had none.
-                Session::setId($callerSessionId);
+            // STARTED, then filled. Each synthetic request's `StartSession`
+            // save leaves the shared store stopped, so putting back the id and
+            // attributes without starting it left the caller holding a session
+            // that reads as closed -- and anything checking `isStarted()`
+            // behaved as if they had none.
+            //
+            // A caller who never had a session is the same restore with an
+            // empty capture: their own id back, no attributes, and the started
+            // flag they came in with. There is no public way to clear that flag,
+            // so a caller who was unstarted and whose session a synthetic
+            // request started keeps a started empty session -- a much smaller
+            // residue than a populated one belonging to a measurement.
+            Session::setId($callerSessionId);
 
-                if ($callerSessionStarted) {
-                    Session::start();
-                }
-
-                Session::flush();
-                Session::replace($callerSession);
+            if ($callerSessionStarted) {
+                Session::start();
             }
+
+            Session::flush();
+            Session::replace($callerSession);
         }
     }
 
