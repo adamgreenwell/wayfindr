@@ -208,9 +208,17 @@ final class MeasureDashboardCommand extends Command
         // sits on. Timing it instrumented would have inflated the one number
         // that is evidence for the finding.
         for ($run = 0; $run < $runs; $run++) {
-            $startedAt = microtime(true);
-            $response = $this->send($kernel, $agent, $uri);
-            $timings[] = (microtime(true) - $startedAt) * 1000;
+            // Savepoint opened BEFORE the clock and rolled back after it, so
+            // the isolation is not part of what the page is charged for.
+            DB::beginTransaction();
+
+            try {
+                $startedAt = microtime(true);
+                $response = $this->dispatch($kernel, $agent, $uri);
+                $timings[] = (microtime(true) - $startedAt) * 1000;
+            } finally {
+                DB::rollBack();
+            }
 
             $bytes = strlen((string) $response->getContent());
 
@@ -300,16 +308,30 @@ final class MeasureDashboardCommand extends Command
      */
     private function send(Kernel $kernel, User $agent, string $uri): Response
     {
-        $request = Request::create($uri, 'GET');
-        $request->setUserResolver(fn (): User => $agent);
-
         DB::beginTransaction();
 
         try {
-            return $kernel->handle($request);
+            return $this->dispatch($kernel, $agent, $uri);
         } finally {
             DB::rollBack();
         }
+    }
+
+    /**
+     * The request alone, with no isolation around it.
+     *
+     * Separate from `send()` so the TIMED path can open its savepoint before
+     * starting the clock and roll back after stopping it. Timing `send()`
+     * charged the page for the savepoint and the rollback -- the same mistake
+     * as leaving the query log on inside the measured interval, in a smaller
+     * amount.
+     */
+    private function dispatch(Kernel $kernel, User $agent, string $uri): Response
+    {
+        $request = Request::create($uri, 'GET');
+        $request->setUserResolver(fn (): User => $agent);
+
+        return $kernel->handle($request);
     }
 
     private function agent(): ?User
