@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
@@ -511,23 +512,32 @@ final class MeasureDashboardCommand extends Command
      */
     private function warnAboutMemoryLimit(User $agent, array $targets): void
     {
-        // Only the QUEUES render a row per conversation. Measuring
-        // `--page=detail` costs one conversation's messages whatever the desk
-        // holds, so warning about gigabytes there is advice about a run that is
-        // not happening.
-        if (! self::rendersAQueue($targets)) {
+        // Only the QUEUES render a row each. Measuring `--page=detail` costs
+        // one conversation's messages whatever the desk holds, so warning about
+        // gigabytes there is advice about a run that is not happening.
+        $kinds = self::queueKinds($targets);
+
+        if ($kinds === []) {
             return;
         }
 
-        // What this AGENT can see, not what the database holds. An install with
-        // one large tenant and one small one was warning the small one about
-        // rows its queue will never render.
-        $visible = Conversation::query()
-            ->whereIn('site_id', Site::query()->visibleToAgent($agent)->select('id'))
-            ->count();
+        // Each queue's OWN table, and only the ones selected. Counting
+        // conversations for a ticket run missed installs with few conversations
+        // and many tickets entirely -- they got no warning and then ran out of
+        // memory.
+        //
+        // Scoped to what this AGENT can see, because an install with one large
+        // tenant and one small one was warning the small one about rows its
+        // queue will never render.
+        $sites = Site::query()->visibleToAgent($agent)->select('id');
+
+        $rows = max(array_map(fn (string $kind): int => match ($kind) {
+            'conversations' => Conversation::query()->whereIn('site_id', $sites)->count(),
+            default => Ticket::query()->whereIn('site_id', $sites)->count(),
+        }, $kinds));
 
         $warning = self::memoryWarning(
-            $visible,
+            $rows,
             $this->memoryLimitInBytes(),
             (string) ini_get('memory_limit'),
             (string) $this->getName(),
@@ -554,19 +564,30 @@ final class MeasureDashboardCommand extends Command
     }
 
     /**
-     * Whether any selected page renders a row per conversation.
+     * Which row-per-record queues the selected pages include.
+     *
+     * By TABLE, because the two kinds cost different things: a ticket queue
+     * renders tickets and a conversation queue renders conversations, and an
+     * install can have very few of one and a great many of the other.
      *
      * @param  array<string, string>  $targets
+     * @return list<string>
      */
-    public static function rendersAQueue(array $targets): bool
+    public static function queueKinds(array $targets): array
     {
+        $kinds = [];
+
         foreach (array_keys($targets) as $label) {
-            if (str_contains(mb_strtolower($label), 'queue')) {
-                return true;
+            $label = mb_strtolower($label);
+
+            if (! str_contains($label, 'queue')) {
+                continue;
             }
+
+            $kinds[] = str_contains($label, 'ticket') ? 'tickets' : 'conversations';
         }
 
-        return false;
+        return array_values(array_unique($kinds));
     }
 
     /**
@@ -577,28 +598,34 @@ final class MeasureDashboardCommand extends Command
      * 50,000 conversations is the case worth proving, and no test is going to
      * write 50,000 rows to prove it.
      *
-     * The estimate is ~40KB per conversation, a straight line through one
-     * measured point -- 50,000 needs somewhere between 1.5G and 2G. Enough to
-     * be useful, and stated as a likelihood because it is one point.
+     * The estimate is ~40KB per row, a straight line through one measured
+     * point -- a 50,000-conversation queue needs between 1.5G and 2G. Enough to
+     * be useful, and stated as an upper bound because the filtered lanes render
+     * a subset of the table it counts.
      */
-    public static function memoryWarning(int $conversations, ?int $limitBytes, string $limitAsWritten, string $commandName): ?string
+    public static function memoryWarning(int $rows, ?int $limitBytes, string $limitAsWritten, string $commandName): ?string
     {
         // No limit is not a small limit.
         if ($limitBytes === null) {
             return null;
         }
 
-        $needed = $conversations * 40 * 1024;
+        $needed = $rows * 40 * 1024;
 
         if ($limitBytes >= $needed) {
             return null;
         }
 
+        // "Up to", deliberately. This is the whole table, not the rows a given
+        // filter returns: the search lane renders only what matches and the
+        // assigned lane only what is assigned, so a precise-sounding figure
+        // would be wrong for them in the safe direction. An upper bound is the
+        // honest shape for a warning whose job is "this may not be enough".
         return sprintf(
-            'memory_limit is %s and this desk of %s conversations is likely to need about %s. '
+            'memory_limit is %s and a queue over %s rows can need up to about %s. '
             .'Re-run with `php -d memory_limit=%dG artisan %s` if it dies.',
             $limitAsWritten,
-            ReaderNumber::count($conversations),
+            ReaderNumber::count($rows),
             ReaderNumber::count((int) round($needed / 1024 / 1024)).'M',
             max(1, (int) ceil($needed / 1024 / 1024 / 1024)),
             $commandName,

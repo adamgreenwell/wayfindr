@@ -670,8 +670,12 @@ test('it says up front when the memory limit will not survive the desk', functio
     $shipped = $warn(50_000, 256 * 1024 * 1024);
 
     expect($shipped)->toContain('memory_limit is 256M')
-        ->and($shipped)->toContain('50,000 conversations')
-        ->and($shipped)->toContain('memory_limit=2G');
+        ->and($shipped)->toContain('50,000 rows')
+        ->and($shipped)->toContain('memory_limit=2G')
+        // "up to", because the figure counts the table and the filtered lanes
+        // render a subset of it. A precise-sounding number would be wrong for
+        // them, in the safe direction, which is still wrong.
+        ->and($shipped)->toContain('up to');
 
     // Room to spare says nothing, or it is noise on every run.
     expect($warn(50_000, 4 * 1024 * 1024 * 1024))->toBeNull();
@@ -686,9 +690,19 @@ test('it says up front when the memory limit will not survive the desk', functio
     // the queues render a row per conversation, so warning about gigabytes
     // when measuring `--page=detail` is advice about a run that is not
     // happening. Asserted on the rule's own gate rather than the estimate.
-    expect(MeasureDashboardCommand::rendersAQueue(['Conversation detail' => '/x']))->toBeFalse();
-    expect(MeasureDashboardCommand::rendersAQueue(['Ticket queue (all)' => '/x']))->toBeTrue();
-    expect(MeasureDashboardCommand::rendersAQueue([]))->toBeFalse();
+    expect(MeasureDashboardCommand::queueKinds(['Conversation detail' => '/x']))->toBe([]);
+    expect(MeasureDashboardCommand::queueKinds([]))->toBe([]);
+
+    // And by TABLE, because the two cost different things. Counting
+    // conversations for a ticket run missed installs with few conversations and
+    // many tickets: no warning, then out of memory.
+    expect(MeasureDashboardCommand::queueKinds(['Ticket queue (all)' => '/x']))->toBe(['tickets']);
+    expect(MeasureDashboardCommand::queueKinds(['Conversation queue (open)' => '/x']))->toBe(['conversations']);
+    expect(MeasureDashboardCommand::queueKinds([
+        'Conversation queue (open)' => '/x',
+        'Ticket queue (all)' => '/y',
+        'Conversation detail' => '/z',
+    ]))->toBe(['conversations', 'tickets']);
 
     // The command running quietly on a desk that fits. NOT proof that it
     // consults the rule at all -- commenting the call out leaves this green,
@@ -788,12 +802,18 @@ test('it does not leave a session behind for every request it made', function ()
     // survives to be left behind. That is also why the cleanup has to sit
     // outside that transaction -- inside it, the rollback undid the delete and
     // it counted as a query the measured page never issues.
-    config(['session.driver' => 'file']);
+    // Its OWN directory, not the application's. Counting the shared one meant
+    // counting files this test did not create, and Laravel's file-session
+    // garbage collection is on a lottery: it swept 793 accumulated sessions
+    // mid-run and the assertion read that as the measurement deleting things.
+    // A test that fails because unrelated housekeeping happened is not
+    // measuring what it claims to.
+    $path = storage_path('framework/testing/sessions-'.bin2hex(random_bytes(6)));
+    File::ensureDirectoryExists($path);
+
+    config(['session.driver' => 'file', 'session.files' => $path]);
     app()->forgetInstance('session');
     app()->forgetInstance('session.store');
-
-    $path = config('session.files');
-    File::ensureDirectoryExists($path);
 
     $count = fn (): int => count(File::files($path));
 
@@ -808,6 +828,8 @@ test('it does not leave a session behind for every request it made', function ()
     ]))->toBe(0);
 
     expect($count())->toBe($before, 'the measurement left its own sessions in the store');
+
+    File::deleteDirectory($path);
 });
 
 test('it refuses rather than measure as somebody real', function (): void {
