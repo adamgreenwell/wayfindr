@@ -24,6 +24,8 @@ php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh
 php artisan wayfindr:measure-dashboard --runs=3
 ```
 
+Every figure on this page was taken with `--runs=3`.
+
 The seeder writes to its own account (`wayfindr-measurement-desk`) and `--fresh`
 deletes exactly that account, so it is safe to run beside real data. It refuses
 to run in production without `--force`.
@@ -51,25 +53,22 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,341 | 21 | 37.2 MB |
-| Conversation queue (closed) | 24,125 | 15 | 186.6 MB |
-| Conversation queue (search) | 589 | 21 | 3.2 MB |
-| Conversation queue (assigned to me) | 995 | 21 | 7.6 MB |
-| Ticket queue (open) | 3,388 | 4,175 | 20.9 MB |
-| Ticket queue (all) | 10,263 | 12,518 | 62.5 MB |
-| **Conversation detail** | **14** | **25** | **149 KB** |
+| Conversation queue (open) | 4,384 | 21 | 37.7 MB |
+| Conversation queue (closed) | 23,697 | 15 | 186.1 MB |
+| Ticket queue (all) | 10,373 | 12,518 | 62.5 MB |
+| **Conversation detail** | **13** | **25** | **149 KB** |
 
 ### How it grows
 
 Every queue is linear in the number of rows, because every queue renders all of
 them:
 
-| Conversations | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
-| ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 446 ms | 3.8 MB | 198 ms | 268 | 13 ms / 25 q |
-| 5,000 | 2,154 ms | 18.7 MB | 983 ms | 1,268 | 14 ms / 25 q |
-| 25,000 | 11,231 ms | 93.2 MB | 4,974 ms | 6,268 | 15 ms / 24 q |
-| 50,000 | 24,125 ms | 186.6 MB | 10,263 ms | 12,518 | 14 ms / 25 q |
+| Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 112 ms | 432 ms | 3.8 MB | 205 ms | 268 | 14 ms / 25 q |
+| 5,000 | 444 ms | 2,188 ms | 18.6 MB | 1,016 ms | 1,268 | 14 ms / 25 q |
+| 25,000 | 2,192 ms | 11,378 ms | 93.0 MB | 5,108 ms | 6,268 | 15 ms / 24 q |
+| 50,000 | 4,384 ms | 23,697 ms | 186.1 MB | 10,373 ms | 12,518 | 13 ms / 25 q |
 
 The last column is the control, and it is the point: the same page, at fifty
 times the data, costs the same.
@@ -109,7 +108,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-14 ms, 25 queries and 149 KB at *every* size measured, from 20 conversations to
+13 ms, 25 queries and 149 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 

@@ -149,7 +149,16 @@ final class MeasureDashboardCommand extends Command
 
         // Median, not mean. One run that hit a garbage collection should not
         // decide the figure a baseline is compared against.
-        $median = $timings[intdiv(count($timings), 2)];
+        //
+        // Averaged across the two central values on an EVEN run count, which
+        // `$timings[intdiv(count, 2)]` alone does not do: it takes the upper
+        // middle, so `--runs=2` over 100ms and 500ms reported 500 rather than
+        // 300. The growth table in the baseline was measured with `--runs=2`.
+        $middle = intdiv(count($timings), 2);
+
+        $median = count($timings) % 2 === 0
+            ? ($timings[$middle - 1] + $timings[$middle]) / 2
+            : $timings[$middle];
 
         return [
             'page' => $label,
