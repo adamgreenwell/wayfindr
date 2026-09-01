@@ -118,6 +118,13 @@ final class DashboardLanguage
         'dashboard.account.articles.update',
         'dashboard.account.articles.destroy',
         'dashboard.account.articles.publish',
+
+        // The account API-tokens page. The surface that hands out credentials
+        // was the one place an admin switched back to English -- where
+        // misreading a sentence costs the most on this platform.
+        'dashboard.account.api-tokens.index',
+        'dashboard.account.api-tokens.store',
+        'dashboard.account.api-tokens.destroy',
     ];
 
     /**

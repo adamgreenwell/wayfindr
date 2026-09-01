@@ -1264,6 +1264,10 @@ test('an italian plural branch inflects something', function (): void {
         'tickets.counts.tickets',
         'ticket_labels.usage.tickets',
         'ticket_labels.manage.in_use',
+        // `token` is the same kind of loanword -- `i token`, never `i tokens`
+        // -- and this string is a bare `:count token` with no article to agree
+        // with it.
+        'api_tokens.list.total',
         // `in sospeso` is a prepositional phrase, invariable by construction.
         'tickets.summary.heading.pending',
         // Both branches are one noun phrase (`Visualizzazione di ...`); the
@@ -1336,6 +1340,11 @@ test('a bare label uses the term its own key names', function (): void {
         'de/tickets.search.label' => 'search: field noun vs action verb',
         // The nav section is `Betrieb` (operations), not the person.
         'de/nav.items.operator' => 'operator: the section vs the person',
+        // `read` in the glossary is the past participle -- the state a MESSAGE
+        // is in, used as a queue filter. An API token's ability is the verb:
+        // the permission to read, not something already read.
+        'it/api_tokens.abilities.read' => 'read: message state vs token permission',
+        'de/api_tokens.abilities.read' => 'read: message state vs token permission',
     ];
 
     $unbound = [];
