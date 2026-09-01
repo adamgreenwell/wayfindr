@@ -530,6 +530,33 @@ test('a ticket is not closed in the future', function (): void {
     expect(Ticket::query()->whereNotNull('closed_at')->count())->toBeGreaterThan(0);
 });
 
+test('a closed ticket was touched when it was closed', function (): void {
+    // The ticket queue orders by `updated_at`, and a real closure goes through
+    // an Eloquent `update()` that advances it. Leaving it at the raise time
+    // filed every closure under the day the ticket was opened, so the measured
+    // queue ordered recently closed work as if it were stale.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 40, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $closed = Ticket::query()->whereNotNull('closed_at')->get();
+    expect($closed)->not->toBeEmpty();
+
+    foreach ($closed as $ticket) {
+        expect($ticket->updated_at->greaterThanOrEqualTo($ticket->closed_at))
+            ->toBeTrue('a closed ticket was last touched before it was closed');
+    }
+
+    // And an OPEN ticket still sits at its raise time, so the fix did not just
+    // push every row's `updated_at` forward and flatten the ordering.
+    $open = Ticket::query()->whereNull('closed_at')->get();
+    expect($open)->not->toBeEmpty();
+
+    foreach ($open as $ticket) {
+        expect($ticket->updated_at->equalTo($ticket->created_at))
+            ->toBeTrue('an open ticket reports activity it never had');
+    }
+});
+
 test('--messages holds even for one conversation', function (): void {
     // The deltas are ordered so any PREFIX stays near zero, not just a whole
     // cycle. Running `($index % 5) - 2` kept only a low-valued prefix when the

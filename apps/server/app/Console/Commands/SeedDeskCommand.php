@@ -596,6 +596,9 @@ final class SeedDeskCommand extends Command
                     // three then decided the ticket -- so a ticket on an open
                     // conversation was never open itself.
                     $status = $statuses[self::mix($n, 'ticket_status', count($statuses))];
+                    $closedAt = $status === 'closed'
+                        ? $raisedAt->copy()->addDays(2)->min(Carbon::now())
+                        : null;
 
                     $rows[] = [
                         'account_id' => $desk['account']->id,
@@ -617,11 +620,13 @@ final class SeedDeskCommand extends Command
                         // minutes ago was being closed two days from now, so
                         // the ticket queue reported a resolution that has not
                         // happened.
-                        'closed_at' => $status === 'closed'
-                            ? $raisedAt->copy()->addDays(2)->min(Carbon::now())
-                            : null,
+                        'closed_at' => $closedAt,
                         'created_at' => $raisedAt,
-                        'updated_at' => $raisedAt,
+                        // A real closure goes through an Eloquent `update()`,
+                        // which advances this. The ticket queue orders by it,
+                        // so leaving it at the raise time filed every closure
+                        // under the day the ticket was opened.
+                        'updated_at' => $closedAt ?? $raisedAt,
                     ];
                 }
 
