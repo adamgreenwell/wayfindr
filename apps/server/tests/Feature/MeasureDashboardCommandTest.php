@@ -247,16 +247,39 @@ test('measuring does not change what it measures', function (): void {
     // not touch `conversation_messages.seen_at` -- so an assertion over message
     // rows watched the wrong thing and passed with the rollback deliberately
     // removed. Two tests in a row could not see the mutation they were about.
-    $before = $conversation->readStates()->where('user_id', $agent->id)->count();
+    // The VALUE, not the count. The seeder now gives the measured agent read
+    // states, so `markReadFor()` UPDATES rather than inserts -- and a count
+    // stays 1 either way, which would have made this pass against the defect.
+    // Compared as a STRING: `value()` hands back a Carbon instance, and `toBe`
+    // on objects compares identity, so a fresh instance of the same moment
+    // failed while a genuine change would have too.
+    $readPosition = fn (): ?string => $conversation->readStates()
+        ->where('user_id', $agent->id)
+        ->value('last_read_at')?->toJSON();
 
-    expect($before)->toBe(0, 'the agent has already read this conversation, so there is nothing to observe');
+    // A read position the measurement would demonstrably move: set well in the
+    // past, so `markReadFor()` writing `now()` is a visible change. Left as the
+    // seeder wrote it, the value and `now()` can land in the same second and
+    // the assertion cannot see the difference.
+    $conversation->readStates()->updateOrCreate(
+        ['user_id' => $agent->id],
+        ['last_read_at' => now()->subYear()],
+    );
+
+    $before = $readPosition();
+
+    expect($before)->not->toBeNull('there is no read position to watch');
 
     $audits = AuditEvent::query()->count();
 
     Artisan::call('wayfindr:measure-dashboard', ['--runs' => 2, '--page' => ['detail'], '--json' => true]);
 
-    expect($conversation->readStates()->where('user_id', $agent->id)->count())
-        ->toBe($before, 'the measurement marked the conversation read for the agent');
+    // This watches the GUARANTEE -- that nothing a measured request writes
+    // survives -- rather than either mechanism. Two layers provide it, the
+    // outer transaction and the per-request savepoints, and removing either
+    // alone leaves the other holding: it takes removing both to make this
+    // fail, which is belt-and-braces working as intended rather than a gap.
+    expect($readPosition())->toBe($before, 'the measurement moved the agent\'s read position');
 
     expect(AuditEvent::query()->count())
         ->toBe($audits, 'the measurement recorded audit events attributed to the measured agent');

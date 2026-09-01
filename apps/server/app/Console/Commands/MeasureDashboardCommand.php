@@ -345,7 +345,11 @@ final class MeasureDashboardCommand extends Command
             return User::query()->where('email', $email)->first();
         }
 
-        return User::query()->where('email', 'like', 'desk-agent-%@example.test')->orderBy('id')->first()
+        // The seeded OWNER by its exact address. A `like 'desk-agent-%'` also
+        // matches `desk-agent-owner@example.test`, which the seeder permits on
+        // somebody else's account -- so the command could measure a different
+        // account's user and report the figures as this desk's.
+        return User::query()->where('email', 'desk-agent-0@example.test')->first()
             ?? User::query()->orderBy('id')->first();
     }
 

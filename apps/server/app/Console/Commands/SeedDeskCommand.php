@@ -810,15 +810,37 @@ final class SeedDeskCommand extends Command
 
                     $lastMessageAt = Carbon::parse($conversation->last_message_at);
 
+                    $lastReadAt = $state === 0
+                        ? $lastMessageAt->copy()->addMinute()
+                        : $lastMessageAt->copy()->subHour();
+
+                    // The FIRST agent always, because that is the one the
+                    // measurement signs in as and the queue evaluates read
+                    // states only for the current agent. Spreading them across
+                    // eight hashed agents gave the measured one an eighth of
+                    // the rows, so the marker it renders was almost always the
+                    // never-opened state after all.
                     $rows[] = [
                         'conversation_id' => $conversation->id,
-                        'user_id' => $agentIds[self::mix((int) $conversation->id, 'reader', count($agentIds))],
-                        'last_read_at' => $state === 0
-                            ? $lastMessageAt->copy()->addMinute()
-                            : $lastMessageAt->copy()->subHour(),
+                        'user_id' => $agentIds[0],
+                        'last_read_at' => $lastReadAt,
                         'created_at' => $lastMessageAt,
                         'updated_at' => $lastMessageAt,
                     ];
+
+                    // And a colleague on some of them, so the table is not
+                    // single-agent in a way no real desk is.
+                    $colleague = self::mix((int) $conversation->id, 'reader', count($agentIds));
+
+                    if ($colleague !== 0) {
+                        $rows[] = [
+                            'conversation_id' => $conversation->id,
+                            'user_id' => $agentIds[$colleague],
+                            'last_read_at' => $lastReadAt->copy()->subMinutes(5),
+                            'created_at' => $lastMessageAt,
+                            'updated_at' => $lastMessageAt,
+                        ];
+                    }
                 }
 
                 foreach (array_chunk($rows, self::CHUNK) as $chunk) {
