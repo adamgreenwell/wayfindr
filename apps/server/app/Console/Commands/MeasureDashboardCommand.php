@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Models\Conversation;
+use App\Models\Site;
 use App\Models\User;
 use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
@@ -192,8 +193,12 @@ final class MeasureDashboardCommand extends Command
         // more than one account is one this agent cannot open -- and a 404 is
         // very fast, so it would have been reported as the best number on the
         // page.
+        // `Site::visibleToAgent` -- the SAME scope the queue uses -- rather than
+        // an account match. An account whose sites carry explicit support-agent
+        // assignments has sites this agent cannot see, and a conversation on
+        // one of those is a 404 for them even though the account is theirs.
         $conversation = Conversation::query()
-            ->whereHas('site', fn ($site) => $site->where('account_id', $agent->account_id))
+            ->whereIn('site_id', Site::query()->visibleToAgent($agent)->select('id'))
             ->orderByDesc('id')
             ->first();
 

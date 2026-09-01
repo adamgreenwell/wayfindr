@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -115,4 +116,35 @@ test('it measures a conversation the agent can actually open', function (): void
 
     expect($detail['status'])->toBe(200)
         ->and($detail['uri'])->not->toContain('WF-STRANGER-1');
+});
+
+test('it skips a site on the agent\'s own account that the agent cannot see', function (): void {
+    // A site with explicit support agents is invisible to every OTHER agent on
+    // the same account. An account-only predicate does not exclude it, so the
+    // measured agent gets a 404 on a conversation belonging to their own
+    // account -- which the test above cannot see, because it builds a separate
+    // account and any account check already excludes that.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 2, '--agents' => 2, '--fresh' => true]);
+
+    $measured = User::query()->where('email', 'desk-agent-0@example.test')->firstOrFail();
+    $other = User::query()->where('email', 'desk-agent-1@example.test')->firstOrFail();
+
+    // Same account, supported by the OTHER agent only.
+    $restricted = Site::factory()->for($measured->account)->create(['name' => 'Restricted']);
+    $restricted->supportAgents()->attach($other->id);
+
+    $visitor = Visitor::factory()->for($restricted)->create();
+
+    // Highest id, so an unscoped or account-only query finds it.
+    Conversation::factory()->for($restricted)->for($visitor)
+        ->create(['support_code' => 'WF-HIDDEN-1']);
+
+    $exit = Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--email' => $measured->email, '--json' => true]);
+
+    expect($exit)->toBe(0, 'the command measured a conversation on a site the agent cannot see');
+
+    $detail = collect(json_decode(Artisan::output(), true)['pages'])->firstWhere('page', 'Conversation detail');
+
+    expect($detail['status'])->toBe(200)
+        ->and($detail['uri'])->not->toContain('WF-HIDDEN-1');
 });

@@ -88,6 +88,14 @@ final class SeedDeskCommand extends Command
                 // visitors, conversations, messages and tickets underneath. One
                 // delete rather than a truncate, so a real account sitting in
                 // the same database is untouched.
+                //
+                // Users are NOT part of that cascade: `users.account_id` is
+                // `nullOnDelete()`, so deleting the account detaches them and
+                // leaves them behind. Reseeding with fewer agents would then
+                // strand sign-in-capable accounts with this command's known
+                // password and no account at all -- which is a worse thing to
+                // leave on a machine than the rows it was asked to remove.
+                User::query()->where('email', 'like', 'desk-agent-%@example.test')->delete();
                 Account::query()->where('slug', self::SLUG)->delete();
 
                 return true;
@@ -250,15 +258,15 @@ final class SeedDeskCommand extends Command
             // is keeping up. A queue of nothing but closed rows would make the
             // default view -- the one an agent actually opens -- the cheapest
             // query here rather than the most expensive.
-            $open = $this->mix($i, 'status', 6) === 0;
+            $open = self::mix($i, 'status', 6) === 0;
 
             $rows[] = [
                 'site_id' => $desk['sites'][$i % $siteCount]->id,
                 'visitor_id' => $visitorIds[$i % count($visitorIds)],
                 // Independent of status, or the unassigned-OPEN lane -- the
                 // one an agent actually works from -- never gets a row.
-                'assigned_agent_id' => $this->mix($i, 'assignee', 2) === 0
-                    ? $desk['agents'][$this->mix($i, 'agent', $agentCount)]->id
+                'assigned_agent_id' => self::mix($i, 'assignee', 2) === 0
+                    ? $desk['agents'][self::mix($i, 'agent', $agentCount)]->id
                     : null,
                 'support_code' => 'WF-DESK-'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
                 'status' => $open ? 'open' : 'closed',
@@ -374,7 +382,7 @@ final class SeedDeskCommand extends Command
                     $n = $written + count($rows);
 
                     $raisedAt = Carbon::parse($conversation->created_at);
-                    $status = $statuses[$this->mix($n, 'status', count($statuses))];
+                    $status = $statuses[self::mix($n, 'status', count($statuses))];
 
                     $rows[] = [
                         'account_id' => $desk['account']->id,
@@ -383,12 +391,12 @@ final class SeedDeskCommand extends Command
                         'requester_id' => $conversation->visitor_id,
                         // A third unassigned, and independent of status, so the
                         // open queue holds assigned AND unassigned rows.
-                        'assignee_id' => $this->mix($n, 'assignee', 3) === 0
+                        'assignee_id' => self::mix($n, 'assignee', 3) === 0
                             ? null
-                            : $agentIds[$this->mix($n, 'agent', count($agentIds))],
+                            : $agentIds[self::mix($n, 'agent', count($agentIds))],
                         'status' => $status,
-                        'priority' => $priorities[$this->mix($n, 'priority', count($priorities))],
-                        'category' => $categories[$this->mix($n, 'category', count($categories))],
+                        'priority' => $priorities[self::mix($n, 'priority', count($priorities))],
+                        'category' => $categories[self::mix($n, 'category', count($categories))],
                         'subject' => (string) $conversation->subject,
                         'description' => 'Raised from conversation '.$conversation->id.'.',
                         'metadata' => json_encode([]),
@@ -429,12 +437,27 @@ final class SeedDeskCommand extends Command
      *
      * Each of those is the same mistake: two attributes derived from one
      * counter are related whether or not the moduli look unrelated. Salting the
-     * counter per attribute makes them independent by construction, and keeps
-     * the fixture reproducible, which `random_int` would not.
+     * counter per attribute fixes it, and keeps the fixture reproducible, which
+     * `random_int` would not.
+     *
+     * **The salt is not enough on its own, which is the fourth version of this
+     * bug.** `crc32($salt.':'.$n) % 6` looked decorrelated and is not: CRC32 is
+     * a linear checksum and its LOW BITS stay related across salts, so at fifty
+     * thousand rows the open lane came out 8,309 assigned against 18
+     * unassigned. A hash whose output is uniform is required, not merely a
+     * different input -- md5 over the same string gives 4,247 against 4,172.
+     *
+     * Cryptographic strength is irrelevant here; distribution is the whole
+     * requirement.
+     *
+     * Public and static so that requirement can be asserted directly. Reaching
+     * it through the seeder means seeding fifty thousand rows to see a skew
+     * that only appears at that size -- and a test that seeds a hundred and
+     * sixty passes with CRC32 in place, which is exactly what happened.
      */
-    private function mix(int $n, string $attribute, int $of): int
+    public static function mix(int $n, string $attribute, int $of): int
     {
-        return (int) (crc32($attribute.':'.$n) % $of);
+        return (int) (hexdec(substr(md5($attribute.':'.$n), 0, 8)) % $of);
     }
 
     /**

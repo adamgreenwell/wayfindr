@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\SeedDeskCommand;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -27,8 +28,12 @@ uses(RefreshDatabase::class);
  * it claims.
  */
 test('it writes a desk with the spread a measurement needs', function (): void {
+    // 160 rather than 60. Tickets are one conversation in four, and fifteen
+    // tickets do not cover six categories -- the mixing is deterministic, so
+    // that is a fixed shortfall rather than an intermittent one, but a fixture
+    // assertion that happens to be unsatisfiable is still the test's fault.
     $this->artisan('wayfindr:seed-desk', [
-        '--conversations' => 60,
+        '--conversations' => 160,
         '--messages' => 4,
         '--agents' => 3,
         '--sites' => 2,
@@ -38,7 +43,7 @@ test('it writes a desk with the spread a measurement needs', function (): void {
 
     expect(User::query()->where('account_id', $account->id)->count())->toBe(3)
         ->and(Site::query()->where('account_id', $account->id)->count())->toBe(2)
-        ->and(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())->toBe(60);
+        ->and(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())->toBe(160);
 
     // Both lanes populated. A queue with no open rows makes the default view --
     // the one an agent opens all day -- the cheapest query measured.
@@ -55,10 +60,18 @@ test('it writes a desk with the spread a measurement needs', function (): void {
     // lane is the one an agent actually works from.
     $openScope = fn () => Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->where('status', 'open');
 
-    expect($openScope()->whereNull('assigned_agent_id')->count())
-        ->toBeGreaterThan(0, 'no OPEN conversation is unassigned, so that lane renders nothing')
-        ->and($openScope()->whereNotNull('assigned_agent_id')->count())
-        ->toBeGreaterThan(0, 'no OPEN conversation is assigned, so the assignee lane renders nothing');
+    // A PROPORTION, not a presence. `> 0` was satisfied by a fixture that
+    // produced 8,309 assigned open conversations against 18 unassigned ones at
+    // desk size -- technically both lanes, in practice one. A split this loose
+    // still passes any reasonable mixing and fails any coupling.
+    $openTotal = $openScope()->count();
+    $openUnassigned = $openScope()->whereNull('assigned_agent_id')->count();
+
+    expect($openTotal)->toBeGreaterThan(10, 'too few open rows to say anything about their split');
+
+    expect($openUnassigned / $openTotal)
+        ->toBeGreaterThan(0.2, 'almost every OPEN conversation is assigned; status and assignment are coupled')
+        ->toBeLessThan(0.8, 'almost every OPEN conversation is unassigned; status and assignment are coupled');
 
     // Subjects vary, or a search measures a full-table match rather than a
     // search. Twelve openings against sixty rows.
@@ -67,7 +80,7 @@ test('it writes a desk with the spread a measurement needs', function (): void {
         ->distinct()
         ->count('subject');
 
-    expect($distinctSubjects)->toBe(60);
+    expect($distinctSubjects)->toBe(160);
 
     // Message counts are NOT uniform, or the detail page's cost is a constant
     // and the long conversations -- the ones worth knowing about -- never
@@ -92,10 +105,14 @@ test('it writes a desk with the spread a measurement needs', function (): void {
     // satisfied by that.
     $openTickets = Ticket::query()->where('account_id', $account->id)->where('status', 'open');
 
-    expect((clone $openTickets)->whereNull('assignee_id')->count())
-        ->toBeGreaterThan(0, 'no OPEN ticket is unassigned; status and assignment are related')
-        ->and((clone $openTickets)->whereNotNull('assignee_id')->count())
-        ->toBeGreaterThan(0, 'no OPEN ticket is assigned; status and assignment are related');
+    $openTicketTotal = (clone $openTickets)->count();
+    $openTicketsAssigned = (clone $openTickets)->whereNotNull('assignee_id')->count();
+
+    expect($openTicketTotal)->toBeGreaterThan(5, 'too few open tickets to say anything about their split');
+
+    expect($openTicketsAssigned / $openTicketTotal)
+        ->toBeGreaterThan(0.2, 'almost no OPEN ticket is assigned; status and assignment are coupled')
+        ->toBeLessThan(0.95, 'every OPEN ticket is assigned; status and assignment are coupled');
 
     // More than one category inside a single status, or category is decided by
     // status rather than varying beside it.
@@ -125,6 +142,28 @@ test('fresh removes its own desk and nothing else', function (): void {
     expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())->toBe(10)
         ->and(Account::query()->where('slug', 'a-real-account')->exists())->toBeTrue()
         ->and(Conversation::query()->where('support_code', 'WF-REAL-1')->exists())->toBeTrue();
+});
+
+test('fresh takes the agents it created with it', function (): void {
+    // `users.account_id` is `nullOnDelete()`, so deleting the account DETACHES
+    // its users rather than removing them. Reseeding with fewer agents then
+    // left sign-in-capable accounts behind, holding this command's known
+    // password and belonging to no account at all -- a worse thing to leave on
+    // a machine than the rows `--fresh` was asked to clear.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 6])
+        ->assertSuccessful();
+
+    expect(User::query()->where('email', 'like', 'desk-agent-%@example.test')->count())->toBe(6);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 1, '--fresh' => true])
+        ->assertSuccessful();
+
+    expect(User::query()->where('email', 'like', 'desk-agent-%@example.test')->count())
+        ->toBe(1, 'agents from the previous desk are still able to sign in');
+
+    // And none of them is orphaned, which is the shape the leftovers took.
+    expect(User::query()->where('email', 'like', 'desk-agent-%@example.test')->whereNull('account_id')->count())
+        ->toBe(0, 'a seeded agent is left with no account and a known password');
 });
 
 test('it refuses to run in production without being told twice', function (): void {
@@ -160,5 +199,52 @@ test('--force gets past the production refusal', function (): void {
         expect(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())->toBeTrue();
     } finally {
         app()['env'] = $environment;
+    }
+});
+
+test('the mixer keeps its attributes independent at desk size', function (): void {
+    // Asserted on the FUNCTION, not through the database. The skew this catches
+    // only appears at scale: with CRC32 in place the open lane came out 8,309
+    // assigned against 18 unassigned at fifty thousand rows, and a fixture test
+    // seeding a hundred and sixty passed it happily.
+    //
+    // Fifty thousand iterations of two hashes costs milliseconds, so the size
+    // that matters is affordable here in a way it is not through a seeder.
+    $mix = SeedDeskCommand::mix(...);
+
+    $openAssigned = 0;
+    $openUnassigned = 0;
+
+    for ($i = 0; $i < 50000; $i++) {
+        if ($mix($i, 'status', 6) !== 0) {
+            continue;
+        }
+
+        $mix($i, 'assignee', 2) === 0 ? $openAssigned++ : $openUnassigned++;
+    }
+
+    $open = $openAssigned + $openUnassigned;
+
+    expect($open)->toBeGreaterThan(5000, 'the status mixer is not producing an open lane at all');
+
+    expect($openUnassigned / $open)
+        ->toBeGreaterThan(0.3, "status and assignment are correlated: {$openAssigned} assigned against {$openUnassigned} unassigned")
+        ->toBeLessThan(0.7, "status and assignment are correlated: {$openAssigned} assigned against {$openUnassigned} unassigned");
+
+    // And each attribute is itself uniform, or one value dominates a filter
+    // that the measurement is meant to exercise evenly.
+    foreach ([['priority', 4], ['category', 6], ['status', 3]] as [$attribute, $of]) {
+        $buckets = array_fill(0, $of, 0);
+
+        for ($i = 0; $i < 50000; $i++) {
+            $buckets[$mix($i, $attribute, $of)]++;
+        }
+
+        $expected = 50000 / $of;
+
+        foreach ($buckets as $value => $count) {
+            expect($count)->toBeGreaterThan($expected * 0.8, "{$attribute} value {$value} is under-represented")
+                ->toBeLessThan($expected * 1.2, "{$attribute} value {$value} is over-represented");
+        }
     }
 });
