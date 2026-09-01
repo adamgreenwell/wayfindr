@@ -1,5 +1,10 @@
 <x-layouts.app title="{{ $article->title }}" :agent="$agent" :account="$account">
-            <x-page-header :title="$article->title" :subtitle="__('articles.detail.subtitle')" :back-href="route('dashboard.account.articles.index')" :back-label="__('articles.back_to_articles')" />
+            {{-- `title-lang=""` is HTML's "unknown". The article is written for
+                 VISITORS, so its language is whatever the account writes in --
+                 not the language this admin reads the dashboard in. Without
+                 this, a screen reader pronounces English article prose with
+                 German phonetics on a German dashboard. --}}
+            <x-page-header :title="$article->title" title-lang="" :subtitle="__('articles.detail.subtitle')" :back-href="route('dashboard.account.articles.index')" :back-label="__('articles.back_to_articles')" />
 
             @if (session('status'))
                 {{-- A catalogue key rather than a sentence -- see AgentArticleController. --}}
@@ -33,7 +38,7 @@
 
                 <div class="desk-closure">
                     <p class="desk-closure-state">
-                        {!! __('articles.detail.slug', ['slug' => '<code>'.e($article->slug).'</code>']) !!}
+                        {!! __('articles.detail.slug', ['slug' => '<code lang="">'.e($article->slug).'</code>']) !!}
                     </p>
 
                     <form method="POST" action="{{ route('dashboard.account.articles.publish', $article) }}">
@@ -57,12 +62,12 @@
                     <div class="field">
                         <label for="article_title">{{ __('articles.write.title_label') }}</label>
                         <input type="text" id="article_title" name="title" maxlength="160" required
-                            value="{{ old('title', $article->title) }}">
+                            lang="" value="{{ old('title', $article->title) }}">
                     </div>
 
                     <div class="field">
                         <label for="article_body">{{ __('articles.write.body_label') }}</label>
-                        <textarea id="article_body" name="body" rows="14" maxlength="20000" required>{{ old('body', $article->body) }}</textarea>
+                        <textarea id="article_body" name="body" rows="14" maxlength="20000" required lang="">{{ old('body', $article->body) }}</textarea>
                     </div>
 
                     <button class="button" type="submit">{{ __('articles.detail.save') }}</button>
@@ -77,7 +82,9 @@
                     </div>
                 </div>
 
-                <div class="notice-copy article-preview">
+                {{-- The entire preview is the article, so the reset goes on the
+                     region rather than on each block inside it. --}}
+                <div class="notice-copy article-preview" lang="">
                     @foreach ($blocks as $block)
                         @if ($block['type'] === 'heading')
                             <h3>{{ $block['text'] }}</h3>

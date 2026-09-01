@@ -97,7 +97,9 @@
                             @foreach ($articles as $article)
                                 <tr>
                                     <td>
-                                        <a href="{{ route('dashboard.account.articles.show', $article) }}">{{ $article->title }}</a>
+                                        {{-- The title is the account's own words, in whatever
+                                             language it writes for its visitors. --}}
+                                        <a href="{{ route('dashboard.account.articles.show', $article) }}" lang="">{{ $article->title }}</a>
                                     </td>
                                     <td>
                                         <span class="readiness-status" data-status="{{ $article->isPublished() ? 'ready' : 'manual' }}">

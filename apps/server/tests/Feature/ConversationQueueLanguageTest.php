@@ -4129,3 +4129,79 @@ test('the queue-pressure count is grouped for the agent, on both renders', funct
     expect($german)->toContain('1.000 verworfene Stapel')
         ->and($german)->not->toContain('1,000 verworfene Stapel');
 });
+
+test('an article is announced as the account\'s words, not the agent\'s language', function (): void {
+    // An article is written for VISITORS, so its language is whatever the
+    // account writes in -- which is not the language this admin happens to read
+    // the dashboard in. The extracted page declares the agent's language for
+    // the whole document, so without a reset a screen reader pronounces English
+    // article prose with German phonetics.
+    //
+    // The render audit cannot see this: the article's text is marked as DATA
+    // there, so it is excused from the translation check and nothing looks at
+    // how it is announced.
+    //
+    // Asserted per ELEMENT, not by asking whether the article's words appear
+    // inside SOME `lang=""` node anywhere on the page. The first version did
+    // that, and the title alone is rendered in three marked places -- so
+    // deleting any one of them left another to answer for it and five of six
+    // deletions passed. The strings collide by design; the elements do not.
+    $world = conversationQueueLanguageWorld();
+    $article = $world['article'];
+
+    $xpathFor = function (string $html): DOMXPath {
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+        return new DOMXPath($document);
+    };
+
+    $index = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.index'))->assertOk()->getContent());
+
+    $link = $index->query('//a[contains(@href, "'.$article->slug.'") or contains(@href, "/articles/'.$article->id.'")]')->item(0);
+
+    expect($link)->not->toBeNull('the article did not render in the list')
+        ->and($link)->toBeInstanceOf(DOMElement::class);
+
+    // `hasAttribute` FIRST. `getAttribute('lang')` returns the empty string
+    // both for `lang=""` and for no `lang` at all, so a value check alone
+    // passes on exactly the markup this guard exists to reject.
+    expect($link->hasAttribute('lang'))->toBeTrue('the list title carries no lang reset')
+        ->and($link->getAttribute('lang'))->toBe('', 'the list title is announced in the agent language');
+
+    $detail = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent());
+
+    // Each region that holds the article, named separately so a deletion in
+    // one cannot be covered by another.
+    $regions = [
+        'the page heading' => '//h1',
+        'the slug' => '//code[normalize-space(text())="'.$article->slug.'"]',
+        'the title field' => '//input[@id="article_title"]',
+        'the body field' => '//textarea[@id="article_body"]',
+        'the preview' => '//*[contains(@class, "article-preview")]',
+    ];
+
+    foreach ($regions as $label => $query) {
+        $node = $detail->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class);
+
+        expect($node->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so it is announced in the agent language");
+
+        expect($node->getAttribute('lang'))
+            ->toBe('', "{$label} declares a language rather than the account's unknown one");
+    }
+
+    // And the reset stopped at the article: the page's own copy is still
+    // announced in the agent's language, or this would be marking the whole
+    // document unknown and calling it a fix.
+    $heading = $detail->query('//h2[@id="article-preview-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull('the preview heading did not render')
+        ->and($heading->hasAttribute('lang'))
+        ->toBeFalse('the page\'s own copy was reset along with the article, which marks the document unknown and calls it a fix');
+});
