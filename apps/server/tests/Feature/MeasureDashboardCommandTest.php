@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Console\Commands\MeasureDashboardCommand;
+use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -349,4 +351,32 @@ test('it leaves the caller signed in as whoever they were', function (): void {
 
     expect(Auth::check())
         ->toBeFalse('the command left a process signed in that was not before');
+});
+
+test('it measures the ticket queue for an agent with no conversations', function (): void {
+    // Tickets without a visible conversation is a shape the product supports,
+    // and the detail target's absence used to fail the whole command -- so
+    // `--page=ticket` reported "no conversation" instead of measuring the pages
+    // that were asked for and do not need one.
+    $account = Account::query()->create(['slug' => 'tickets-only', 'name' => 'Tickets Only']);
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create();
+
+    Ticket::factory()->for($account)->for($site)->count(3)->create();
+
+    expect(Conversation::query()->count())->toBe(0);
+
+    $exit = Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--email' => $agent->email,
+        '--page' => ['ticket'],
+        '--json' => true,
+    ]);
+
+    expect($exit)->toBe(0, 'the command refused to measure tickets without a conversation');
+
+    $pages = collect(json_decode(Artisan::output(), true)['pages'])->pluck('page');
+
+    expect($pages)->toHaveCount(2)
+        ->and($pages->every(fn (string $page): bool => str_contains(mb_strtolower($page), 'ticket')))->toBeTrue();
 });

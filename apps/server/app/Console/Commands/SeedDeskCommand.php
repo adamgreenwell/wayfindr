@@ -203,31 +203,16 @@ final class SeedDeskCommand extends Command
             }
         }
 
+        // BEFORE the account is written. `updateOrCreate` persists it, and the
+        // address check then threw -- leaving an empty measurement account
+        // behind on a run that reported failure and, with nothing to clean up
+        // after, no way for the operator to tell it had been created.
+        $this->refuseTakenAddresses($existing?->id);
+
         $account = Account::query()->updateOrCreate(
             ['slug' => self::SLUG],
             ['name' => 'Measurement Desk'],
         );
-
-        // `users.email` is globally unique, so `updateOrCreate` keyed on the
-        // address alone does not create a second user -- it MOVES the existing
-        // one onto this account. A real person holding a `desk-agent-` address
-        // elsewhere would have been quietly reassigned to a seeded desk whose
-        // password this command prints.
-        //
-        // Refused instead. Failing is the correct answer to "somebody already
-        // holds the address I need": it is recoverable, and taking over their
-        // account is not.
-        $taken = User::query()
-            ->where('email', 'like', 'desk-agent-%@example.test')
-            ->where(fn ($query) => $query->whereNull('account_id')->orWhere('account_id', '!=', $account->id))
-            ->pluck('email');
-
-        if ($taken->isNotEmpty()) {
-            throw new RuntimeException(
-                'These addresses belong to a user outside the measurement desk, and this command '
-                .'would take them over: '.$taken->implode(', ').'. Move or remove them first.'
-            );
-        }
 
         $agents = [];
 
@@ -634,6 +619,39 @@ final class SeedDeskCommand extends Command
     }
 
     /**
+     * Stop if a `desk-agent-` address belongs to somebody else.
+     *
+     * `users.email` is globally unique, so `updateOrCreate` keyed on the
+     * address does not create a second user -- it MOVES the existing one onto
+     * this account. A real person holding one of these addresses would have
+     * been quietly reassigned to a desk whose password this command prints.
+     *
+     * Failing is the correct answer to "somebody already holds the address I
+     * need": it is recoverable, and taking over their account is not.
+     */
+    private function refuseTakenAddresses(?int $accountId): void
+    {
+        $taken = User::query()
+            ->where('email', 'like', 'desk-agent-%@example.test')
+            ->when(
+                $accountId === null,
+                fn ($query) => $query,
+                fn ($query) => $query->where(fn ($inner) => $inner->whereNull('account_id')->orWhere('account_id', '!=', $accountId)),
+            )
+            ->pluck('email')
+            ->filter(fn (string $email): bool => self::isSeededAgentAddress($email));
+
+        if ($taken->isEmpty()) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'These addresses belong to a user outside the measurement desk, and this command '
+            .'would take them over: '.$taken->implode(', ').'. Move or remove them first.'
+        );
+    }
+
+    /**
      * Whether an address is one this command hands out.
      *
      * Exact, for the same reason the site key is: a LIKE pattern is read by SQL
@@ -673,11 +691,17 @@ final class SeedDeskCommand extends Command
             ->pluck('id')
             ->all();
 
+        // The range narrows the scan; the FORMAT decides. A lexicographic range
+        // also contains `WF-DESK-0000003-LEGACY`, which this command will never
+        // insert and which therefore cannot collide -- so refusing on the range
+        // alone rejects a fixture that would have been fine.
         $collisions = DB::table('conversations')
             ->whereBetween('support_code', [$this->supportCode(0), $this->supportCode($conversations - 1)])
             ->when($ours !== [], fn ($query) => $query->whereNotIn('site_id', $ours))
-            ->limit(3)
-            ->pluck('support_code');
+            ->pluck('support_code')
+            ->filter(fn (string $code): bool => preg_match('/^WF-DESK-\d{7}$/', $code) === 1)
+            ->take(3)
+            ->values();
 
         if ($collisions->isEmpty()) {
             return;

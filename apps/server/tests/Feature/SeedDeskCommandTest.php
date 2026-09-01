@@ -358,6 +358,24 @@ test('it refuses a support code another account already holds', function (): voi
         ->toBeFalse('the run created its account before discovering it could not finish');
 });
 
+test('a code that only starts like ours is not a collision', function (): void {
+    // The lexicographic range also contains `WF-DESK-0000003-LEGACY`, which
+    // this command will never insert and which therefore cannot collide.
+    // Refusing on the range alone rejected a fixture that was fine.
+    $other = Account::query()->create(['slug' => 'someone-elses-desk', 'name' => 'Theirs']);
+    $otherSite = Site::factory()->for($other)->create();
+    $otherVisitor = Visitor::factory()->for($otherSite)->create();
+
+    Conversation::factory()->for($otherSite)->for($otherVisitor)
+        ->create(['support_code' => 'WF-DESK-0000003-LEGACY']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1])
+        ->assertSuccessful();
+
+    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-0%')->count())
+        ->toBeGreaterThan(0);
+});
+
 test('it refuses rather than take over an address somebody else holds', function (): void {
     // Two ways this command reached outside its own account, both found by
     // asking what happens when a real user holds a `desk-agent-` address:
@@ -387,6 +405,12 @@ test('it refuses rather than take over an address somebody else holds', function
     $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 2, '--fresh' => true])
         ->assertFailed()
         ->expectsOutputToContain('desk-agent-9@example.test');
+
+    // And nothing was created on the way to failing. `updateOrCreate` persisted
+    // the account before the address check threw, leaving an empty measurement
+    // account behind on a run that reported failure.
+    expect(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())
+        ->toBeFalse('a failed run left an empty measurement account behind');
 
     expect(User::query()->whereKey($bystander->id)->exists())
         ->toBeTrue('a user on another account was deleted for holding a matching address');

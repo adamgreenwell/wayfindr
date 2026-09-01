@@ -115,7 +115,7 @@ final class MeasureDashboardCommand extends Command
         $targets = $this->onlyRequested($this->targets($agent));
 
         if ($targets === []) {
-            $this->components->error('No conversation to measure against. Run `wayfindr:seed-desk` first.');
+            $this->components->error('Nothing to measure. Run `wayfindr:seed-desk` first, or widen --page.');
 
             return self::FAILURE;
         }
@@ -325,11 +325,11 @@ final class MeasureDashboardCommand extends Command
             ->orderByDesc('id')
             ->first();
 
-        if ($conversation === null) {
-            return [];
-        }
-
-        return [
+        // The TICKET pages do not need one, and an agent can hold tickets
+        // without a visible conversation. Returning nothing when there is no
+        // conversation made `--page=ticket` fail on a data shape the product
+        // supports, before the filter had a chance to run.
+        $targets = [
             // The page an agent opens first and returns to all day.
             'Conversation queue (open)' => '/dashboard/conversations',
             // The lane that accumulates. An open queue is bounded by how far
@@ -339,10 +339,15 @@ final class MeasureDashboardCommand extends Command
             'Conversation queue (mine)' => '/dashboard/conversations?conversation_filter=assigned_to_me',
             'Ticket queue (open)' => '/dashboard/tickets',
             'Ticket queue (all)' => '/dashboard/tickets?ticket_status=all',
+        ];
+
+        if ($conversation !== null) {
             // The one page whose cost should NOT grow with the desk, and the
             // control that says so when the others do.
-            'Conversation detail' => '/dashboard/conversations/'.$conversation->support_code,
-        ];
+            $targets['Conversation detail'] = '/dashboard/conversations/'.$conversation->support_code;
+        }
+
+        return $targets;
     }
 
     /**
