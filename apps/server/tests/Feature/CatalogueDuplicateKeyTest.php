@@ -79,6 +79,34 @@ function duplicateCatalogueKeys(string $path): array
             );
         }
 
+        // Every key is a quoted STRING. An integer key is skipped by the scan
+        // below, so `[1 => 'a', 1 => 'b']` -- PHP keeping the last, silently --
+        // would pass the sweep; and a quoted `'1'` collides with an integer `1`
+        // because PHP coerces it, so tracking them separately would be wrong
+        // too. This is the same refusal as the two above, and the rule they all
+        // come down to: a catalogue key is a plain single-quoted string.
+        if (is_array($token) && $token[0] === T_DOUBLE_ARROW) {
+            $before = null;
+
+            for ($back = $index - 1; $back >= 0; $back--) {
+                if (is_array($tokens[$back]) && in_array($tokens[$back][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                    continue;
+                }
+
+                $before = $tokens[$back];
+                break;
+            }
+
+            if (! is_array($before) || $before[0] !== T_CONSTANT_ENCAPSED_STRING) {
+                throw new RuntimeException(
+                    'A catalogue declares a key that is not a quoted string (line '
+                    .$token[2].'). The duplicate guard compares string keys, and PHP coerces '
+                    .'a numeric string to an integer, so a mixed catalogue cannot be checked '
+                    .'reliably. Write every key as a plain single-quoted string.'
+                );
+            }
+        }
+
         if ($token === '[') {
             $frames[] = ['seen' => [], 'name' => $pendingKey];
             $pendingKey = null;
@@ -311,6 +339,37 @@ test('the duplicate detector sees a duplicate, and does not invent one', functio
     file_put_contents($scratch, $shortForm);
 
     expect(duplicateCatalogueKeys($scratch))->toBe([]);
+
+    // An INTEGER key is refused. The scan tracks quoted strings, so
+    // `[1 => 'a', 1 => 'b']` -- one key, declared twice, PHP keeping the last
+    // -- would sail through; and tracking integers separately would be wrong
+    // anyway, because PHP coerces `'1'` to `1` and the two collide.
+    $integerKeys = <<<'PHP'
+    <?php
+    return [
+        1 => 'a',
+        1 => 'b',
+    ];
+    PHP;
+
+    file_put_contents($scratch, $integerKeys);
+
+    expect(fn () => duplicateCatalogueKeys($scratch))
+        ->toThrow(RuntimeException::class);
+
+    // Including the mixed case that motivates it: `'1'` and `1` are one key.
+    $coerced = <<<'PHP'
+    <?php
+    return [
+        '1' => 'a',
+        1 => 'b',
+    ];
+    PHP;
+
+    file_put_contents($scratch, $coerced);
+
+    expect(fn () => duplicateCatalogueKeys($scratch))
+        ->toThrow(RuntimeException::class);
 
     @unlink($scratch);
 });
