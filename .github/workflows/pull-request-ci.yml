@@ -116,13 +116,7 @@ jobs:
           DB_USERNAME: wayfindr
           DB_PASSWORD: wayfindr
           WAYFINDR_EXPECTED_DB_DRIVER: pgsql
-        # Unbuffered, so a hang names the test it stopped on. GitHub's log
-        # timestamps arrive in identical batches, which means the flush -- not
-        # the print -- is what they record, and "the last test shown" is only
-        # the last one to reach a flush.
-        run: |
-          php artisan config:clear --ansi
-          php -d output_buffering=0 -d implicit_flush=1 vendor/bin/pest --colors=always
+        run: composer test
 
   widget-and-assets:
     name: Widget and assets
