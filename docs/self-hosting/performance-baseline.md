@@ -128,7 +128,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-14 ms, 26 queries and 149 KB at *every* size measured, from 20 conversations to
+15 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 
