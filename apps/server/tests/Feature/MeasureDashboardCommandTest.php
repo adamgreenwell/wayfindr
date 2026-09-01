@@ -574,3 +574,38 @@ test('it does not flush a caller who is also using an array cache', function ():
 
     expect(config('cache.default'))->toBe('array', 'the command left the cache pointed elsewhere');
 });
+
+test('it does not leave a session behind for every request it made', function (): void {
+    // NOT mutation-proven either: the test environment's session store does not
+    // reach the database table this counts, so removing the cleanup leaves it
+    // green. The cleanup was verified by hand instead -- four requests against
+    // a `file` driver left four session files before it and none after.
+    // Every cookie-less synthetic request starts a session and persists it, so
+    // a measurement left one stored row per request behind -- four for a single
+    // page, in the caller's own session store.
+    config(['session.driver' => 'database']);
+
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    $before = DB::table('sessions')->count();
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 2, '--page' => ['detail'], '--json' => true]);
+
+    expect(DB::table('sessions')->count())
+        ->toBe($before, 'the measurement left its own sessions in the store');
+});
+
+test('it refuses rather than measure as somebody real', function (): void {
+    // NOT mutation-proven. Restoring the fallback leaves this green, because a
+    // command that picks the wrong agent still fails for its own reasons on a
+    // desk it was not built for -- so the exit code cannot tell the two apart.
+    // It would catch a gross regression and is not evidence of the refusal.
+    // On an install with real users and no measurement desk, falling back to
+    // "whoever exists" signed in as somebody's actual account and reported
+    // their numbers as the desk's. The documented answer is to run the seeder
+    // or pass --email.
+    User::factory()->create(['email' => 'a.real.person@example.com']);
+
+    expect(Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1]))
+        ->toBe(1, 'the command measured as a user it was never pointed at');
+});

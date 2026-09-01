@@ -590,7 +590,12 @@ final class SeedDeskCommand extends Command
                     $n = $this->seededIndex((string) $conversation->support_code);
 
                     $raisedAt = Carbon::parse($conversation->created_at);
-                    $status = $statuses[self::mix($n, 'status', count($statuses))];
+                    // Its OWN salt. Sharing `status` with the conversation
+                    // coupled the two lifecycles: `mix($n, 'status', 6)` decides
+                    // whether the conversation is open, and the same hash modulo
+                    // three then decided the ticket -- so a ticket on an open
+                    // conversation was never open itself.
+                    $status = $statuses[self::mix($n, 'ticket_status', count($statuses))];
 
                     $rows[] = [
                         'account_id' => $desk['account']->id,

@@ -93,8 +93,12 @@ final class MeasureDashboardCommand extends Command
         // synthetic requests still pass through `StartSession`, which starts
         // its own session on the same shared store -- so the caller was left
         // holding a benchmark's session id and none of their own data.
-        $callerSessionId = Session::isStarted() ? Session::getId() : null;
-        $callerSession = $callerSessionId === null ? [] : Session::all();
+        // Captured whenever the store HOLDS anything, not only when it says it
+        // is started: `Session::put()` without a `start()` leaves data behind a
+        // false `isStarted()`, and skipping the capture threw it away.
+        $callerSessionStarted = Session::isStarted();
+        $callerSession = Session::all();
+        $callerSessionId = $callerSessionStarted || $callerSession !== [] ? Session::getId() : null;
 
         // And the CACHE, which the transaction cannot reach. The detail page's
         // cobrowse audit trail claims a throttle key with `Cache::add()`, so a
@@ -209,7 +213,11 @@ final class MeasureDashboardCommand extends Command
                 // session that reads as closed -- and anything checking
                 // `isStarted()` behaved as if they had none.
                 Session::setId($callerSessionId);
-                Session::start();
+
+                if ($callerSessionStarted) {
+                    Session::start();
+                }
+
                 Session::flush();
                 Session::replace($callerSession);
             }
@@ -458,7 +466,19 @@ final class MeasureDashboardCommand extends Command
         $request = Request::create($uri, 'GET');
         $request->setUserResolver(fn (): User => $agent);
 
-        return $kernel->handle($request);
+        try {
+            return $kernel->handle($request);
+        } finally {
+            // Every cookie-less request starts a session and persists it, so a
+            // measurement left one stored row or file per request behind --
+            // four for a single page, and the store is the caller's.
+            //
+            // Destroyed by id, which is exact: the only sessions removed are the
+            // ones this request created.
+            if ($request->hasSession()) {
+                Session::getHandler()->destroy($request->session()->getId());
+            }
+        }
     }
 
     private function agent(): ?User
@@ -473,8 +493,11 @@ final class MeasureDashboardCommand extends Command
         // matches `desk-agent-owner@example.test`, which the seeder permits on
         // somebody else's account -- so the command could measure a different
         // account's user and report the figures as this desk's.
-        return User::query()->where('email', 'desk-agent-0@example.test')->first()
-            ?? User::query()->orderBy('id')->first();
+        // No fallback to "whoever exists". On an install with real users and no
+        // measurement desk, that signed in as somebody's actual account and
+        // reported their numbers as the desk's -- where the documented answer
+        // is to run the seeder or pass `--email`.
+        return User::query()->where('email', 'desk-agent-0@example.test')->first();
     }
 
     /**

@@ -184,6 +184,17 @@ test('it writes a desk with the spread a measurement needs', function (): void {
         ->toBeGreaterThan(0.2, 'almost no OPEN ticket is assigned; status and assignment are coupled')
         ->toBeLessThan(0.95, 'every OPEN ticket is assigned; status and assignment are coupled');
 
+    // A ticket's status is not decided by its conversation's. They shared a
+    // salt, so `mix($n, 'status', 6)` chose the conversation and the same hash
+    // modulo three chose the ticket -- and a ticket on an open conversation was
+    // never open itself.
+    $onOpen = Ticket::query()
+        ->whereIn('conversation_id', Conversation::query()->where('status', 'open')->select('id'))
+        ->distinct()
+        ->count('status');
+
+    expect($onOpen)->toBeGreaterThan(1, 'every ticket on an open conversation shares one status');
+
     // More than one category inside a single status, or category is decided by
     // status rather than varying beside it.
     expect((clone $openTickets)->distinct()->count('category'))
