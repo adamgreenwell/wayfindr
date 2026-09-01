@@ -237,8 +237,12 @@ final class MeasureDashboardCommand extends Command
         DB::enableQueryLog();
 
         try {
-            $this->send($kernel, $agent, $uri);
+            // Its status counts too. Discarding the counted request's response
+            // let an error there sit behind an earlier 200 -- the row reporting
+            // success while its query figure came from an error page.
+            $counted = $this->send($kernel, $agent, $uri);
             $queries = count(DB::getQueryLog()) - $before;
+            $status = self::worstStatus($status, $counted->getStatusCode());
         } finally {
             DB::disableQueryLog();
         }

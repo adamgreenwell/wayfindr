@@ -95,6 +95,20 @@ test('it writes a desk with the spread a measurement needs', function (): void {
 
     expect($states)->toHaveCount(4, 'the seeded visitors do not reach every presence state');
 
+    // Read states exist, and in both shapes. Without them every conversation
+    // reads as new activity -- `scopeWithNewActivityFor()` treats a missing row
+    // as unread -- so the queue's marker was on for every row and its absence
+    // never rendered.
+    $readStates = Conversation::query()
+        ->where('support_code', 'like', 'WF-DESK-%')
+        ->withCount('readStates')
+        ->get();
+
+    expect($readStates->where('read_states_count', '>', 0)->count())
+        ->toBeGreaterThan(0, 'no conversation has been read by anyone')
+        ->and($readStates->where('read_states_count', 0)->count())
+        ->toBeGreaterThan(0, 'every conversation has been read, so the never-opened state never renders');
+
     // Unseen messages from BOTH sides. `seen_at` describes whether a message
     // has been seen, and the two senders exercise different surfaces: an unseen
     // VISITOR message drives the queue's attention lanes, an unseen AGENT reply
@@ -348,10 +362,24 @@ test('--messages holds even for one conversation', function (): void {
         ->toBe(6, 'one conversation did not get the number of messages asked for');
 });
 
+test('fresh refuses an empty account that is not named as ours', function (): void {
+    // Allowing ANY empty account through was meant to unblock an interrupted
+    // first run, and it let a legitimate but not-yet-configured account at this
+    // slug be renamed and adopted -- the same failure the provenance check
+    // exists to prevent, wearing the shape of a kindness.
+    $theirs = Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'Acme Support']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1, '--fresh' => true])
+        ->assertFailed();
+
+    expect(Account::query()->whereKey($theirs->id)->exists())->toBeTrue('an empty real account was deleted')
+        ->and(Account::query()->whereKey($theirs->id)->value('name'))->toBe('Acme Support', 'an empty real account was renamed');
+});
+
 test('fresh still cleans up a half-made desk', function (): void {
     // The provenance check must not strand an operator whose first run was
-    // interrupted: an account with no sites and no users is what that looks
-    // like, and refusing to clear it would leave `--fresh` permanently stuck.
+    // interrupted. That leaves an account with no sites and no users AND this
+    // command's name, because the name is written before anything else happens.
     Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'Measurement Desk']);
 
     $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1, '--fresh' => true])

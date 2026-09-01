@@ -77,6 +77,8 @@ final class SeedDeskCommand extends Command
      * ordinary site key generator produces `site_` plus thirty-two random
      * characters and never this prefix.
      */
+    private const NAME = 'Measurement Desk';
+
     private const SITE_KEY_PREFIX = 'site_desk_';
 
     private const AGENT_PREFIX = 'desk-agent-';
@@ -148,6 +150,7 @@ final class SeedDeskCommand extends Command
             $written['conversations'] = $this->measure('Conversations', fn (): int => $this->seedConversations($desk, $conversations, $months));
             $written['messages'] = $this->measure('Messages', fn (): int => $this->seedMessages($desk, $messagesEach));
             $written['tickets'] = $this->measure('Tickets', fn (): int => $this->seedTickets($desk));
+            $written['read states'] = $this->measure('Read states', fn (): int => $this->seedReadStates($desk));
         } catch (Throwable $failure) {
             $this->components->error('Seeding stopped: '.$failure->getMessage());
 
@@ -211,7 +214,7 @@ final class SeedDeskCommand extends Command
 
         $account = Account::query()->updateOrCreate(
             ['slug' => self::SLUG],
-            ['name' => 'Measurement Desk'],
+            ['name' => self::NAME],
         );
 
         $agents = [];
@@ -627,7 +630,15 @@ final class SeedDeskCommand extends Command
             ->reject(fn (?string $email): bool => is_string($email) && self::isSeededAgentAddress($email))
             ->count();
 
-        if ($foreignSites === 0 && $foreignUsers === 0) {
+        // An empty account is only ours if it is also NAMED as ours. Allowing
+        // any empty account through was meant to unblock an interrupted first
+        // run, and it let a legitimate but not-yet-configured account at this
+        // slug be renamed and adopted -- which is the same failure the
+        // provenance check exists to prevent, wearing the shape of a kindness.
+        //
+        // An interrupted run always leaves the name behind, because the account
+        // is created with it before anything else happens.
+        if ($foreignSites === 0 && $foreignUsers === 0 && $account->name === self::NAME) {
             return;
         }
 
@@ -759,6 +770,64 @@ final class SeedDeskCommand extends Command
     private function siteIds(array $desk): array
     {
         return array_map(fn (Site $site): int => $site->id, $desk['sites']);
+    }
+
+    /**
+     * Which conversations each agent has already read.
+     *
+     * Without these every seeded conversation reads as NEW activity, because
+     * `Conversation::scopeWithNewActivityFor()` treats a missing row as unread.
+     * The queue's new-activity marker was therefore on for every row and its
+     * absence never rendered -- a distinction the fixture is supposed to make
+     * measurable.
+     *
+     * Two thirds of the rows get one: half of those read AFTER the last message
+     * (nothing new) and half before it (new activity on a conversation the
+     * agent has seen at least once), which are different states from never
+     * having opened it at all.
+     *
+     * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function seedReadStates(array $desk): int
+    {
+        $agentIds = array_map(fn (User $agent): int => $agent->id, $desk['agents']);
+        $written = 0;
+
+        DB::table('conversations')
+            ->whereIn('site_id', $this->siteIds($desk))
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->orderBy('id')
+            ->select(['id', 'last_message_at'])
+            ->chunk(self::CHUNK, function ($conversations) use ($agentIds, &$written): void {
+                $rows = [];
+
+                foreach ($conversations as $conversation) {
+                    $state = self::mix((int) $conversation->id, 'read', 3);
+
+                    if ($state === 2) {
+                        continue;
+                    }
+
+                    $lastMessageAt = Carbon::parse($conversation->last_message_at);
+
+                    $rows[] = [
+                        'conversation_id' => $conversation->id,
+                        'user_id' => $agentIds[self::mix((int) $conversation->id, 'reader', count($agentIds))],
+                        'last_read_at' => $state === 0
+                            ? $lastMessageAt->copy()->addMinute()
+                            : $lastMessageAt->copy()->subHour(),
+                        'created_at' => $lastMessageAt,
+                        'updated_at' => $lastMessageAt,
+                    ];
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('conversation_read_states')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        return $written;
     }
 
     /**
