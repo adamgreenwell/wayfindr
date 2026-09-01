@@ -37,7 +37,7 @@ counts and response sizes are deterministic — the same fixture produces the sa
 figures every run. Timings move by several per cent between runs on the same
 machine, and by much more if anything else is using it, so treat them as an
 order of magnitude rather than a benchmark. Nothing here turns on the
-difference between 22.1 and 22.3 seconds.
+difference between 25.4 and 25.6 seconds.
 
 "Much more" is not hypothetical: running the test suite alongside a measurement
 put the 25,000-row open queue at 4,367 ms, nearly double its 2,659 ms on an idle
@@ -104,8 +104,9 @@ times the data, costs the same.
 
 `AgentConversationQueueController` and `AgentTicketQueueController` — the
 single-action controllers behind `/dashboard/conversations` and
-`/dashboard/tickets` — contain no `paginate()`. Every conversation and every ticket matching the current filters
-is queried, hydrated and rendered into one response.
+`/dashboard/tickets` — contain no `paginate()`. Every conversation and every
+ticket matching the current filters is queried, hydrated and rendered into one
+response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane
 is **186 MB of HTML** — a response no browser will render pleasantly and many
@@ -144,8 +145,8 @@ best case.
 12-14 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
 to 50,000. The queries and the response size do not move at all; the
 milliseconds vary by a millisecond or two between runs, which is the noise floor
-on a page this cheap. Its cost is bounded by one conversation's own messages rather than by
-the desk around it, which is what the other pages are not.
+on a page this cheap. Its cost is bounded by one conversation's own messages
+rather than by the desk around it, which is what the other pages are not.
 
 This is worth stating as plainly as the problems: the page an agent spends most
 of their day inside does not degrade, and the guard in
@@ -165,21 +166,21 @@ Stated because a baseline with silent gaps is worse than one with named ones:
   twelve months specifically so this can be measured next; it has not been.
 
   **And the fixture is not ready for it yet.** Everything is inserted directly
-  rather than driven through the application, so three tables the reports read
-  are empty: `audit_events` has no `conversation.closed` or `conversation.
-  reopened` rows, none of the ticket lifecycle actions `TicketReport` walks, and
-  `conversation_ratings` has nothing for the satisfaction figures. Measuring the
-  report tabs against this data would time queries over empty tables and report
-  them as fast. Seeding that history is the first piece of the reporting
-  measurement, not a detail of it — tracked as #839.
+  rather than driven through the application, so what the reports read is not
+  there: `audit_events` holds neither `conversation.closed` nor
+  `conversation.reopened` rows, nor any of the ticket lifecycle actions
+  `TicketReport` walks separately, and `conversation_ratings` has nothing behind
+  the satisfaction figures. Measuring the report tabs against this data would
+  time queries over empty tables and report them as fast. Seeding that history
+  is the first piece of the reporting measurement, not a detail of it — tracked
+  as #839.
 - **Attachments and the retention sweep.** No large object count has been run
   through either.
 - **Cobrowse mutation batches** on a heavy page.
-
 - **The conversation detail page's cobrowse panel.** The seeder creates no
   cobrowse sessions, so the panel — a substantial part of that page, and the
   only path on it that touches the cache — never renders in these figures. The
-  15 ms above is a detail page without it.
+  figure above is a detail page without it.
 - **Concurrency of any kind.** Every figure here is one request at a time on an
   otherwise idle machine. Real contention will be worse.
 
