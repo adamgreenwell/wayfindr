@@ -12,6 +12,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
@@ -456,4 +457,21 @@ test('it leaves the caller\'s locale alone', function (): void {
 
     expect(App::getLocale())
         ->toBe('en', 'the command left the process speaking the measured agent\'s language');
+});
+
+test('it leaves the caller\'s bound request alone', function (): void {
+    // The HTTP kernel binds each synthetic request into the container, so the
+    // last dashboard request this command made stayed bound afterwards --
+    // anything reading `request()` in that process then read a benchmark's
+    // request instead of its own.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    $theirs = Request::create('/their/own/page', 'GET');
+
+    app()->instance('request', $theirs);
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(app('request')->getPathInfo())
+        ->toBe('/their/own/page', 'the command left its own request bound in the container');
 });

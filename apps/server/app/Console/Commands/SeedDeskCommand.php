@@ -414,6 +414,13 @@ final class SeedDeskCommand extends Command
 
         $agentIds = array_map(fn (User $agent): int => $agent->id, $desk['agents']);
         $written = 0;
+        $deviation = 0;
+        $seen = 0;
+
+        $total = DB::table('conversations')
+            ->whereIn('site_id', $this->siteIds($desk))
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->count();
 
         // Streamed in chunks rather than plucked whole: at fifty thousand
         // conversations the id list alone is the largest thing this command
@@ -428,10 +435,11 @@ final class SeedDeskCommand extends Command
             ->where('support_code', 'like', 'WF-DESK-%')
             ->orderBy('id')
             ->select(['id', 'visitor_id', 'created_at'])
-            ->chunk(self::CHUNK, function ($conversations) use ($messagesEach, $agentIds, &$written): void {
+            ->chunk(self::CHUNK, function ($conversations) use ($messagesEach, $agentIds, $total, &$written, &$deviation, &$seen): void {
                 $rows = [];
 
                 foreach ($conversations as $index => $conversation) {
+                    $seen++;
                     $startedAt = Carbon::parse($conversation->created_at);
 
                     // Varied, not uniform. Every conversation holding exactly
@@ -443,14 +451,24 @@ final class SeedDeskCommand extends Command
                     // `--messages=1` the counts 1,1,1,2,3 -- an average of 1.6
                     // against an advertised 1, which is exactly the wrong thing
                     // to get wrong in a fixture whose size is reported.
-                    // Deltas ordered so any PREFIX stays near zero, not just a
-                    // whole cycle: `0, +1, -1, +2, -2`. Running `($index % 5) -
-                    // 2` kept only a low-valued prefix when the count was not a
-                    // multiple of five, so `--conversations=1 --messages=6`
-                    // wrote four messages.
+                    // The TOTAL is exact, not merely balanced over a whole
+                    // cycle. Ordering the deltas so prefixes stay near zero was
+                    // an improvement and still left `--conversations=2` at 6.5
+                    // per conversation, because no fixed cycle sums to zero at
+                    // every length.
+                    //
+                    // So the running deviation is carried, and the LAST
+                    // conversation takes whatever cancels it. With a spread of
+                    // at most two the correction never drives a count below one.
                     $spread = max(0, min(2, $messagesEach - 1));
                     $deltas = $spread === 0 ? [0] : [0, $spread - 1, -($spread - 1), $spread, -$spread];
-                    $count = $messagesEach + $deltas[$index % count($deltas)];
+
+                    $delta = $seen === $total
+                        ? -$deviation
+                        : $deltas[$index % count($deltas)];
+
+                    $deviation += $delta;
+                    $count = max(1, $messagesEach + $delta);
 
                     // Roughly a third, independent of everything else.
                     $unread = self::mix((int) $conversation->id, 'unread', 3) === 0;
@@ -546,7 +564,13 @@ final class SeedDeskCommand extends Command
                         'subject' => (string) $conversation->subject,
                         'description' => 'Raised from conversation '.$conversation->id.'.',
                         'metadata' => json_encode([]),
-                        'closed_at' => $status === 'closed' ? $raisedAt->copy()->addDays(2) : null,
+                        // Never later than now. A recent conversation raised
+                        // minutes ago was being closed two days from now, so
+                        // the ticket queue reported a resolution that has not
+                        // happened.
+                        'closed_at' => $status === 'closed'
+                            ? $raisedAt->copy()->addDays(2)->min(Carbon::now())
+                            : null,
                         'created_at' => $raisedAt,
                         'updated_at' => $raisedAt,
                     ];

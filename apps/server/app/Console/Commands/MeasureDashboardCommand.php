@@ -70,6 +70,12 @@ final class MeasureDashboardCommand extends Command
         // translating into German.
         $callerLocale = App::getLocale();
 
+        // And the bound REQUEST. The HTTP kernel binds each synthetic request
+        // into the container, so the last dashboard request this command made
+        // stayed bound afterwards -- and anything reading `request()` in that
+        // process then read a benchmark's request instead of its own.
+        $callerRequest = app()->bound('request') ? app('request') : null;
+
         Auth::login($agent);
 
         // Inherited state, turned off before anything is timed. Called through
@@ -119,6 +125,10 @@ final class MeasureDashboardCommand extends Command
             $caller === null ? Auth::logout() : Auth::login($caller);
 
             App::setLocale($callerLocale);
+
+            $callerRequest === null
+                ? app()->forgetInstance('request')
+                : app()->instance('request', $callerRequest);
         }
     }
 

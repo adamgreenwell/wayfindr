@@ -350,6 +350,36 @@ test('--messages is the average it says it is', function (): void {
     }
 });
 
+test('--messages is exact at every conversation count', function (): void {
+    // No fixed cycle of deltas sums to zero at every length, so ordering them
+    // to keep prefixes near zero still left `--conversations=2 --messages=6` at
+    // 6.5. The running deviation is carried and the last conversation cancels
+    // it, which is exact rather than merely close.
+    foreach ([1, 2, 3, 4, 5, 7, 20] as $count) {
+        $this->artisan('wayfindr:seed-desk', [
+            '--conversations' => $count,
+            '--messages' => 6,
+            '--fresh' => true,
+        ])->assertSuccessful();
+
+        expect(ConversationMessage::query()->count())
+            ->toBe($count * 6, "--conversations={$count} did not write exactly six messages each on average");
+    }
+});
+
+test('a ticket is not closed in the future', function (): void {
+    // A conversation raised minutes ago was getting `closed_at` two days out,
+    // so the ticket queue reported a resolution that has not happened.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 40, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    expect(Ticket::query()->where('closed_at', '>', now())->count())
+        ->toBe(0, 'a ticket is closed at a time that has not arrived');
+
+    // And some ARE closed, or this passes on a fixture with no closures.
+    expect(Ticket::query()->whereNotNull('closed_at')->count())->toBeGreaterThan(0);
+});
+
 test('--messages holds even for one conversation', function (): void {
     // The deltas are ordered so any PREFIX stays near zero, not just a whole
     // cycle. Running `($index % 5) - 2` kept only a low-valued prefix when the
