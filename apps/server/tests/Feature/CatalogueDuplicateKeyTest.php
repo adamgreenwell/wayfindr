@@ -96,7 +96,7 @@ function duplicateCatalogueKeys(string $path): array
             continue;
         }
 
-        $key = trim($token[1], "'\"");
+        $key = catalogueKeyValue($token[1]);
         $frame = count($frames) - 1;
 
         if (isset($frames[$frame]['seen'][$key])) {
@@ -110,6 +110,29 @@ function duplicateCatalogueKeys(string $path): array
     }
 
     return $duplicates;
+}
+
+/**
+ * The VALUE of a quoted PHP key, not its spelling.
+ *
+ * `'don\'t'` and `"don't"` are the same array key and PHP keeps only one of
+ * them, but their source text differs -- so comparing the literals let the
+ * duplicate this guard promises to catch walk straight past it. Catalogue keys
+ * are plain today, which is exactly why nothing would have noticed.
+ *
+ * Escape rules by quote style: single quotes recognise only `\'` and `\\`;
+ * double quotes recognise the C-style set.
+ */
+function catalogueKeyValue(string $literal): string
+{
+    $quote = $literal[0] ?? "'";
+    $inner = mb_substr($literal, 1, -1);
+
+    if ($quote === "'") {
+        return str_replace(['\\\\', "\\'"], ['\\', "'"], $inner);
+    }
+
+    return stripcslashes($inner);
 }
 
 test('the duplicate detector sees a duplicate, and does not invent one', function (): void {
@@ -158,6 +181,37 @@ test('the duplicate detector sees a duplicate, and does not invent one', functio
 
     expect(duplicateCatalogueKeys($scratch))->toHaveCount(1, 'a duplicate inside a nested array is not seen');
     expect(duplicateCatalogueKeys($scratch)[0])->toContain('statuses.open');
+
+    // Two spellings of ONE key. PHP keeps the last, so this is a duplicate --
+    // and comparing the source text says it is not, which is how a guard that
+    // looks strict passes on the thing it exists to find.
+    $spellings = <<<'PHP'
+    <?php
+    return [
+        'don\'t' => 'a',
+        "don't" => 'b',
+    ];
+    PHP;
+
+    file_put_contents($scratch, $spellings);
+
+    expect(duplicateCatalogueKeys($scratch))
+        ->toHaveCount(1, 'the detector compares how a key is spelled rather than what it is');
+
+    // And the unescaping is not so eager that it merges keys PHP keeps apart:
+    // in SINGLE quotes `\n` is a backslash and an n, not a newline.
+    $distinct = <<<'PHP'
+    <?php
+    return [
+        'a\nb' => 'one',
+        "a\nb" => 'two',
+    ];
+    PHP;
+
+    file_put_contents($scratch, $distinct);
+
+    expect(duplicateCatalogueKeys($scratch))
+        ->toBe([], 'the detector merged two keys that PHP keeps apart');
 
     @unlink($scratch);
 });
