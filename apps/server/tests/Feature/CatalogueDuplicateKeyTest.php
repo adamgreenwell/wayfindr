@@ -61,6 +61,24 @@ function duplicateCatalogueKeys(string $path): array
     $pendingKey = null;
 
     foreach ($tokens as $index => $token) {
+        // Long-form `array(...)` opens a scope this walker does not track: its
+        // frames are pushed on `[`, so every key in a nested long-form array
+        // would land in the parent's frame and sibling `statuses.open` and
+        // `priorities.open` would be reported as one duplicated key.
+        //
+        // Refused rather than half-handled, the same call as the double-quoted
+        // escapes above. Tracking it properly means counting parentheses that
+        // also belong to every function call in the file, and a guard that
+        // invents duplicates blocks a suite over a file that is fine. Every
+        // catalogue uses short syntax; this fires if one stops.
+        if (is_array($token) && $token[0] === T_ARRAY) {
+            throw new RuntimeException(
+                'A catalogue uses long-form array() syntax. The duplicate guard tracks key '
+                .'scopes by short-array brackets and would report sibling arrays as duplicates. '
+                .'Write the catalogue with [] instead.'
+            );
+        }
+
         if ($token === '[') {
             $frames[] = ['seen' => [], 'name' => $pendingKey];
             $pendingKey = null;
@@ -263,6 +281,36 @@ test('the duplicate detector sees a duplicate, and does not invent one', functio
 
     expect(fn () => duplicateCatalogueKeys($scratch))
         ->toThrow(RuntimeException::class);
+
+    // Long-form `array()` is refused for the same reason: its keys would land
+    // in the enclosing frame, and two sibling arrays that each contain `open`
+    // -- which every catalogue here has -- would be reported as a duplicate.
+    $longForm = <<<'PHP'
+    <?php
+    return array(
+        'statuses' => array('open' => 'Open'),
+        'priorities' => array('open' => 'Open'),
+    );
+    PHP;
+
+    file_put_contents($scratch, $longForm);
+
+    expect(fn () => duplicateCatalogueKeys($scratch))
+        ->toThrow(RuntimeException::class);
+
+    // And the short-array equivalent it is refusing on behalf of passes, so the
+    // refusal is about syntax rather than about the shape being wrong.
+    $shortForm = <<<'PHP'
+    <?php
+    return [
+        'statuses' => ['open' => 'Open'],
+        'priorities' => ['open' => 'Open'],
+    ];
+    PHP;
+
+    file_put_contents($scratch, $shortForm);
+
+    expect(duplicateCatalogueKeys($scratch))->toBe([]);
 
     @unlink($scratch);
 });
