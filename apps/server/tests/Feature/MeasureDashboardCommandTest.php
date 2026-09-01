@@ -76,10 +76,16 @@ test('the detail page is the control, and does not grow with the desk', function
             ->all();
     };
 
-    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 3, '--fresh' => true]);
+    // The row counts stay: the queue carries about 110KB of fixed chrome, so a
+    // ratio of three needs this many rows to clear it. What drops is MESSAGES
+    // per conversation, from three to one -- the bytes come from the number of
+    // rows rather than what is behind each one, and the queue's `latestMessage`
+    // eager load walks the messages table, which #842 can plan catastrophically.
+    // Same assertion, a third of the rows for it to aggregate over.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 1, '--fresh' => true]);
     $small = $measure();
 
-    Artisan::call('wayfindr:seed-desk', ['--conversations' => 400, '--messages' => 3, '--fresh' => true]);
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 400, '--messages' => 1, '--fresh' => true]);
     $large = $measure();
 
     // The queue grew with the data, so the sizes really are different.
