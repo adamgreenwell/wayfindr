@@ -942,6 +942,73 @@ test('it says nothing about boundaries a measurement install does not have', fun
         ->assertSuccessful();
 });
 
+test('nothing is said to a conversation while it is closed', function (): void {
+    // In the product a message on a closed conversation REOPENS it, so a
+    // fixture with messages arriving during a closed period depicts a state no
+    // install can reach -- and `ResolutionEpisodes` starts the second episode
+    // at the wrong moment because of it.
+    //
+    // Dense enough to REACH the bug. Messages are a minute apart and a close is
+    // four hours out, so at sixty messages the old one-third/two-third window
+    // contained none of them and the broken fixture looked correct -- which is
+    // exactly why this shipped. It needs messages running past the 80-minute
+    // mark, so 200.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 12, '--messages' => 200, '--fresh' => true])
+        ->assertSuccessful();
+
+    $reopens = AuditEvent::query()->where('action', 'conversation.reopened')->get();
+
+    expect($reopens)->not->toBeEmpty();
+
+    foreach ($reopens as $reopen) {
+        $closedAt = AuditEvent::query()
+            ->where('action', 'conversation.closed')
+            ->where('subject_id', $reopen->subject_id)
+            ->where('occurred_at', '<', $reopen->occurred_at)
+            ->max('occurred_at');
+
+        expect($closedAt)->not->toBeNull();
+
+        $during = ConversationMessage::query()
+            ->where('conversation_id', $reopen->subject_id)
+            ->where('created_at', '>', $closedAt)
+            ->where('created_at', '<', $reopen->occurred_at)
+            ->count();
+
+        expect($during)->toBe(0, 'a message arrived while the conversation was closed, which would have reopened it');
+    }
+});
+
+test('an answer never arrives after the episode it answers was reopened', function (): void {
+    // `ConversationRatingController` rejects a stale episode token, so a rating
+    // timestamped after its episode reopened is a row the product cannot
+    // produce -- and it would give the report comments impossible times.
+    //
+    // The delay was added to the close without looking at what followed it, and
+    // a close and its reopen can be minutes apart.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 80, '--messages' => 4, '--fresh' => true])
+        ->assertSuccessful();
+
+    $ratings = ConversationRating::query()->get();
+
+    expect($ratings)->not->toBeEmpty('no ratings at all, so this asserts nothing');
+
+    foreach ($ratings as $rating) {
+        $reopenedAt = AuditEvent::query()
+            ->where('action', 'conversation.reopened')
+            ->where('subject_id', $rating->conversation_id)
+            ->where('occurred_at', '>', $rating->episode_closed_at)
+            ->min('occurred_at');
+
+        if ($reopenedAt === null) {
+            continue;
+        }
+
+        expect($rating->rated_at->lessThan(Carbon::parse($reopenedAt)))
+            ->toBeTrue('a visitor answered an episode that had already been reopened');
+    }
+});
+
 test('a visitor sometimes says why', function (): void {
     // `SupportReport::comments()` filters on `whereNotNull`, so a fixture with
     // every comment null returned an empty list and the report tab's comment

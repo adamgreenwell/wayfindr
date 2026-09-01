@@ -958,6 +958,19 @@ final class SeedDeskCommand extends Command
             ->chunkById(self::CHUNK, function ($conversations) use (&$written, $accountId, $agentIds): void {
                 $rows = [];
 
+                // The messages these conversations already carry. A close has
+                // to sit in a GAP between two of them: in the product a message
+                // on a closed conversation reopens it, so a fixture with
+                // messages arriving while it is supposedly closed depicts a
+                // state no install can reach -- and `ResolutionEpisodes` starts
+                // the second episode at the wrong moment because of it.
+                $messageTimes = DB::table('conversation_messages')
+                    ->whereIn('conversation_id', $conversations->pluck('id'))
+                    ->orderBy('conversation_id')
+                    ->orderBy('created_at')
+                    ->get(['conversation_id', 'created_at'])
+                    ->groupBy('conversation_id');
+
                 foreach ($conversations as $conversation) {
                     $n = $this->seededIndex((string) $conversation->support_code);
                     $closedAt = Carbon::parse($conversation->closed_at);
@@ -976,24 +989,45 @@ final class SeedDeskCommand extends Command
                     // reopen is an agent leaves half the figure unexercised.
                     if (self::mix($n, 'reopened', 4) === 0) {
                         $openedAt = Carbon::parse($conversation->created_at);
-                        $span = max(3, (int) $openedAt->diffInSeconds($closedAt));
-                        $firstCloseAt = $openedAt->copy()->addSeconds((int) ($span / 3));
-                        $reopenedAt = $openedAt->copy()->addSeconds((int) ($span * 2 / 3));
+                        $messages = ($messageTimes[$conversation->id] ?? collect())
+                            ->map(fn ($row): Carbon => Carbon::parse($row->created_at))
+                            ->values();
+
+                        // The reopen sits ON a message, and the close just
+                        // before it -- which is exactly how the product gets
+                        // there: somebody writes to a closed conversation and
+                        // that reopens it. Nothing then falls between them.
+                        //
+                        // The middle message, so both episodes carry some of
+                        // the traffic. With too few messages to split, the
+                        // conversation is left with its single close rather
+                        // than inventing a gap that its own messages contradict.
+                        $pivot = intdiv($messages->count(), 2);
+
+                        if ($messages->count() < 2 || $pivot < 1) {
+                            $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $closedAt);
+
+                            continue;
+                        }
+
+                        $reopenedAt = $messages[$pivot]->copy();
+                        $previous = $messages[$pivot - 1];
+
+                        // Halfway through the gap, so it is strictly after the
+                        // message before and strictly before the one that
+                        // reopens it.
+                        $gap = max(2, (int) $previous->diffInSeconds($reopenedAt));
+                        $firstCloseAt = $previous->copy()->addSeconds(intdiv($gap, 2));
+
+                        if ($firstCloseAt->greaterThanOrEqualTo($reopenedAt) || $firstCloseAt->lessThanOrEqualTo($openedAt)) {
+                            $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $closedAt);
+
+                            continue;
+                        }
+
                         $byVisitor = self::mix($n, 'reopened_by', 3) === 0;
 
-                        $rows[] = [
-                            'account_id' => $accountId,
-                            'site_id' => $conversation->site_id,
-                            'actor_type' => (new User)->getMorphClass(),
-                            'actor_id' => $agentIds[self::mix($n, 'agent', count($agentIds))],
-                            'subject_type' => (new Conversation)->getMorphClass(),
-                            'subject_id' => $conversation->id,
-                            'action' => ConversationLifecycleLog::CLOSED,
-                            'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
-                            'occurred_at' => $firstCloseAt,
-                            'created_at' => $firstCloseAt,
-                            'updated_at' => $firstCloseAt,
-                        ];
+                        $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $firstCloseAt);
 
                         $rows[] = [
                             'account_id' => $accountId,
@@ -1013,19 +1047,7 @@ final class SeedDeskCommand extends Command
                         ];
                     }
 
-                    $rows[] = [
-                        'account_id' => $accountId,
-                        'site_id' => $conversation->site_id,
-                        'actor_type' => (new User)->getMorphClass(),
-                        'actor_id' => $agentIds[self::mix($n, 'agent', count($agentIds))],
-                        'subject_type' => (new Conversation)->getMorphClass(),
-                        'subject_id' => $conversation->id,
-                        'action' => ConversationLifecycleLog::CLOSED,
-                        'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
-                        'occurred_at' => $closedAt,
-                        'created_at' => $closedAt,
-                        'updated_at' => $closedAt,
-                    ];
+                    $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $closedAt);
                 }
 
                 foreach (array_chunk($rows, self::CHUNK) as $chunk) {
@@ -1183,6 +1205,19 @@ final class SeedDeskCommand extends Command
                 'audit_events.occurred_at',
                 'conversations.support_code',
             ])
+            // When this conversation was next reopened, if it was. A rating
+            // belongs to the episode it answered, and `ConversationRatingController`
+            // rejects a stale episode token -- so an answer arriving after the
+            // reopen is a row the product cannot produce.
+            ->selectSub(
+                DB::table('audit_events as reopens')
+                    ->selectRaw('min(reopens.occurred_at)')
+                    ->whereColumn('reopens.subject_id', 'audit_events.subject_id')
+                    ->where('reopens.subject_type', (new Conversation)->getMorphClass())
+                    ->where('reopens.action', ConversationLifecycleLog::REOPENED)
+                    ->whereColumn('reopens.occurred_at', '>', 'audit_events.occurred_at'),
+                'next_reopen_at'
+            )
             // The cursor column is QUALIFIED, and aliased back to `id`: joined
             // to `conversations`, `chunkById`'s own unqualified `id` predicate
             // is ambiguous and PostgreSQL refuses it.
@@ -1200,6 +1235,21 @@ final class SeedDeskCommand extends Command
                     }
 
                     $closedAt = Carbon::parse($event->occurred_at);
+                    $reopenedAt = $event->next_reopen_at !== null
+                        ? Carbon::parse($event->next_reopen_at)
+                        : null;
+
+                    $answeredAt = $closedAt->copy()
+                        ->addMinutes(self::mix($n, 'rated_after', 90) + 1)
+                        ->min(Carbon::now());
+
+                    // An episode reopened before the visitor got round to
+                    // answering is simply left unanswered, rather than clamped
+                    // into a gap that may not exist: with a close and a reopen
+                    // minutes apart there is no honest time to put it.
+                    if ($reopenedAt !== null && $answeredAt->greaterThanOrEqualTo($reopenedAt)) {
+                        continue;
+                    }
 
                     $rows[] = [
                         'conversation_id' => $event->subject_id,
@@ -1215,14 +1265,7 @@ final class SeedDeskCommand extends Command
                         'comment' => self::mix($n, 'commented', 3) === 0
                             ? self::RATING_COMMENTS[self::mix($n, 'comment_text', count(self::RATING_COMMENTS))]
                             : null,
-                        // Never later than now. `closed_at` is clamped to the
-                        // present, so a recent conversation's close plus an
-                        // unconditional offset put its answer in the future --
-                        // and the report counts answers by `episode_closed_at`,
-                        // so it was already counting them.
-                        'rated_at' => $closedAt->copy()
-                            ->addMinutes(self::mix($n, 'rated_after', 90) + 1)
-                            ->min(Carbon::now()),
+                        'rated_at' => $answeredAt,
                         'episode_closed_at' => $closedAt,
                         'episode_event_id' => $event->id,
                         'created_at' => $closedAt,
@@ -1296,6 +1339,30 @@ final class SeedDeskCommand extends Command
             .'Those settings belong to every account on this install, so this command will not move them. '
             .'A measurement install with no history recorded before the desk existed reports it whole.'
         );
+    }
+
+    /**
+     * One close event, so the two paths through the reopen branch cannot
+     * disagree about what a close looks like.
+     *
+     * @param  list<int>  $agentIds
+     * @return array<string, mixed>
+     */
+    private function closeRow(object $conversation, ?int $accountId, array $agentIds, int $n, Carbon $at): array
+    {
+        return [
+            'account_id' => $accountId,
+            'site_id' => $conversation->site_id,
+            'actor_type' => (new User)->getMorphClass(),
+            'actor_id' => $agentIds[self::mix($n, 'agent', count($agentIds))],
+            'subject_type' => (new Conversation)->getMorphClass(),
+            'subject_id' => $conversation->id,
+            'action' => ConversationLifecycleLog::CLOSED,
+            'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
+            'occurred_at' => $at,
+            'created_at' => $at,
+            'updated_at' => $at,
+        ];
     }
 
     private function siteIds(array $desk): array
