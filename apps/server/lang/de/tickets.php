@@ -86,12 +86,6 @@ return [
         'closed' => 'Geschlossen',
     ],
 
-    'statuses' => [
-        'open' => 'Offen',
-        'pending' => 'Wartend',
-        'closed' => 'Geschlossen',
-    ],
-
     'priorities' => [
         'low' => 'Niedrig',
         'normal' => 'Normal',
@@ -133,13 +127,6 @@ return [
     ],
 
     'summary' => [
-        'lane_narrowed_heading' => ':shown von :matching angezeigt',
-        'heading' => [
-            'open' => '{1} :count offen|[2,*] :count offen',
-            'pending' => '{1} :count wartend|[2,*] :count wartend',
-            'closed' => '{1} :count geschlossen|[2,*] :count geschlossen',
-            'total' => '{1} :count insgesamt|[2,*] :count insgesamt',
-        ],
         'lane_narrowed_heading' => ':shown von :matching angezeigt',
         'heading' => [
             'open' => '{1} :count offen|[2,*] :count offen',
