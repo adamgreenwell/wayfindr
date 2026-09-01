@@ -100,6 +100,12 @@ final class SeedDeskCommand extends Command
         'Exactly what I needed.',
     ];
 
+    /**
+     * How many replies a ticket can carry, and so how many of its
+     * conversation's agent messages are worth loading.
+     */
+    private const MAX_TICKET_REPLIES = 3;
+
     private const SITE_KEY_PREFIX = 'site_desk_';
 
     private const AGENT_PREFIX = 'desk-agent-';
@@ -1123,12 +1129,26 @@ final class SeedDeskCommand extends Command
                 // written, the timestamps are inside the conversation's life by
                 // construction, and the reply the figure counts is one an agent
                 // actually sent.
-                $agentMessages = DB::table('conversation_messages')
-                    ->whereIn('conversation_id', $tickets->pluck('conversation_id')->filter())
-                    ->where('sender_type', (new User)->getMorphClass())
+                // At most `self::MAX_TICKET_REPLIES` per conversation, chosen
+                // in SQL rather than by loading everything and taking the first
+                // few: at `--conversations=5000 --messages=400` a 500-ticket
+                // chunk pulled about 100,000 message rows into memory to use
+                // three of them, which is the same peak the conversation pass
+                // was fixed for one round ago.
+                $conversationIds = $tickets->pluck('conversation_id')->filter();
+
+                $ranked = DB::table('conversation_messages')
+                    ->select(['conversation_id', 'created_at', 'sender_id'])
+                    ->selectRaw('row_number() over (partition by conversation_id order by created_at, id) as rn')
+                    ->whereIn('conversation_id', $conversationIds)
+                    ->where('sender_type', (new User)->getMorphClass());
+
+                $agentMessages = $conversationIds->isEmpty() ? collect() : DB::query()
+                    ->fromSub($ranked, 'ranked')
+                    ->where('rn', '<=', self::MAX_TICKET_REPLIES)
                     ->orderBy('conversation_id')
-                    ->orderBy('created_at')
-                    ->get(['conversation_id', 'created_at', 'sender_id'])
+                    ->orderBy('rn')
+                    ->get()
                     ->groupBy('conversation_id');
 
                 foreach ($tickets as $ticket) {
@@ -1167,7 +1187,7 @@ final class SeedDeskCommand extends Command
                     // One per agent message, up to three, and credited to the
                     // agent who sent it rather than to a mixed-in one.
                     $onConversation = $agentMessages[$ticket->conversation_id] ?? collect();
-                    $take = min($onConversation->count(), self::mix($n, 'ticket_replies', 3) + 1);
+                    $take = min($onConversation->count(), self::mix($n, 'ticket_replies', self::MAX_TICKET_REPLIES) + 1);
 
                     for ($r = 0; $r < $take; $r++) {
                         $message = $onConversation[$r];
