@@ -4,13 +4,19 @@ declare(strict_types=1);
 
 use App\Console\Commands\SeedDeskCommand;
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationRating;
 use App\Models\ConversationReadState;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Reporting\ReportingScope;
+use App\Support\Reporting\ReportingWindow;
+use App\Support\Reporting\SupportReport;
+use App\Support\Reporting\TicketReport;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -632,6 +638,104 @@ test('a visitor was seen no earlier than the last thing they said', function ():
 
     expect(count($webStates))
         ->toBe(4, 'the web presence spread collapsed: '.implode(', ', $webStates));
+});
+
+test('the reports have something to report', function (): void {
+    // The reason this history exists. Conversations and tickets are inserted at
+    // their final status rather than driven through the application, so none of
+    // the events a real close leaves behind existed -- and the report tabs are
+    // computed from exactly those. Measuring them against the old fixture would
+    // have timed a query over an empty table and called the page fast, which is
+    // worse than not measuring it at all.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 200, '--messages' => 3, '--fresh' => true])
+        ->assertSuccessful();
+
+    $agent = User::query()->where('email', 'desk-agent-0@example.test')->firstOrFail();
+    $scope = ReportingScope::for($agent->account, $agent);
+    $window = ReportingWindow::ofDays(90);
+
+    $support = new SupportReport($scope, $window);
+
+    $resolution = $support->resolution();
+    $satisfaction = $support->satisfaction();
+
+    // Both branches of the reopen split. A fixture where every reopen is an
+    // agent leaves `reopened_by_visitor` reading zero on a page built to show
+    // it, and zero is indistinguishable from broken.
+    expect($resolution['reopened'])->toBeGreaterThan(0)
+        ->and($resolution['reopened_by_visitor'])->toBeGreaterThan(0)
+        ->and($resolution['reopened_by_visitor'])->toBeLessThan($resolution['reopened']);
+
+    // All three scores, and answers that are a SUBSET of closes -- the ratio is
+    // one of the figures the tab exists for, and it means nothing at 100%.
+    expect($satisfaction['good'])->toBeGreaterThan(0)
+        ->and($satisfaction['ok'])->toBeGreaterThan(0)
+        ->and($satisfaction['bad'])->toBeGreaterThan(0)
+        ->and($satisfaction['closed'])->toBeGreaterThan(0)
+        ->and($satisfaction['answered'])->toBeGreaterThan(0)
+        ->and($satisfaction['answered'])->toBeLessThan($satisfaction['closed']);
+
+    // The ticket half walks its OWN actions, so seeding the conversation half
+    // gives it nothing.
+    $tickets = (new TicketReport($scope, $window))->resolution();
+
+    expect($tickets['summary']->count)->toBeGreaterThan(0, 'the ticket report resolved nothing');
+});
+
+test('a rating answers a close that actually happened', function (): void {
+    // `conversation_ratings.episode_event_id` points at the audit event that
+    // closed the episode, and the report counts answers by `episode_closed_at`
+    // rather than by when the answer arrived -- so the two have to agree or the
+    // page reports things like "1 of 0 closes answered".
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 60, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $ratings = ConversationRating::query()->get();
+
+    expect($ratings)->not->toBeEmpty();
+
+    foreach ($ratings as $rating) {
+        $event = AuditEvent::query()->find($rating->episode_event_id);
+
+        expect($event)->not->toBeNull('a rating answers a close that does not exist')
+            ->and($event->action)->toBe('conversation.closed')
+            ->and((int) $event->subject_id)->toBe((int) $rating->conversation_id)
+            // `episode_closed_at` has no datetime cast on the model, so it
+            // arrives as a string and has to be parsed rather than compared.
+            ->and(Carbon::parse($rating->episode_closed_at)->equalTo($event->occurred_at))
+            ->toBeTrue('the rating and the close it answers disagree about when it happened')
+            ->and($rating->rated_at->greaterThanOrEqualTo(Carbon::parse($rating->episode_closed_at)))
+            ->toBeTrue('a visitor answered before the conversation closed');
+    }
+});
+
+test('a lifecycle event never happens before or after it could have', function (): void {
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 80, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $events = AuditEvent::query()->whereIn('action', [
+        'conversation.closed', 'conversation.reopened',
+        'ticket.closed', 'ticket.reopened', 'ticket.pending',
+    ])->get();
+
+    expect($events)->not->toBeEmpty();
+
+    foreach ($events as $event) {
+        expect($event->occurred_at->lessThanOrEqualTo(now()))
+            ->toBeTrue("a {$event->action} is recorded in the future");
+    }
+
+    // A reopen belongs BEFORE the close it precedes, or the walk reads a
+    // conversation as reopened after it was last closed and counts a
+    // resolution that never finished.
+    foreach ($events->where('action', 'conversation.reopened') as $reopen) {
+        $close = $events->first(fn (AuditEvent $e): bool => $e->action === 'conversation.closed'
+            && (int) $e->subject_id === (int) $reopen->subject_id);
+
+        expect($close)->not->toBeNull('a conversation was reopened and never closed')
+            ->and($reopen->occurred_at->lessThanOrEqualTo($close->occurred_at))
+            ->toBeTrue('a conversation was reopened after the close it precedes');
+    }
 });
 
 test('--messages holds even for one conversation', function (): void {

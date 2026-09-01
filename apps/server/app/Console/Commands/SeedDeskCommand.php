@@ -6,9 +6,14 @@ namespace App\Console\Commands;
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\Conversation;
+use App\Models\ConversationRating;
+use App\Models\OperatorSetting;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -164,6 +169,8 @@ final class SeedDeskCommand extends Command
             $this->syncVisitorLastSeenAt($desk);
             $written['tickets'] = $this->measure('Tickets', fn (): int => $this->seedTickets($desk));
             $written['read states'] = $this->measure('Read states', fn (): int => $this->seedReadStates($desk));
+            $written['lifecycle events'] = $this->measure('Lifecycle events', fn (): int => $this->seedLifecycleHistory($desk));
+            $written['ratings'] = $this->measure('Ratings', fn (): int => $this->seedRatings($desk));
         } catch (Throwable $failure) {
             $this->components->error('Seeding stopped: '.$failure->getMessage());
 
@@ -903,6 +910,237 @@ final class SeedDeskCommand extends Command
      * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
      * @return list<int>
      */
+    /**
+     * Write the lifecycle history the reports are computed from.
+     *
+     * Conversations and tickets are inserted at their final status rather than
+     * driven through the application, so none of the events a real close leaves
+     * behind existed -- and `SupportReport` and `TicketReport` read exactly
+     * those. Measuring the report tabs against the fixture without this would
+     * time a query over an empty table and call the page fast, which is worse
+     * than not measuring it.
+     *
+     * Shaped like `ConversationLifecycleLog::record()` writes them, including
+     * `metadata.actor`, because the reopen figures split on it.
+     *
+     * @param  array{sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function seedLifecycleHistory(array $desk): int
+    {
+        $siteIds = $this->siteIds($desk);
+        $agentIds = array_map(fn (User $agent): int => $agent->id, $desk['agents']);
+        $accountId = $desk['sites'][0]->account_id;
+        $written = 0;
+
+        // CLOSED conversations, and the reopens that came before some of them.
+        Conversation::query()
+            ->whereIn('site_id', $siteIds)
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->whereNotNull('closed_at')
+            ->orderBy('id')
+            ->chunkById(self::CHUNK, function ($conversations) use (&$written, $accountId, $agentIds): void {
+                $rows = [];
+
+                foreach ($conversations as $conversation) {
+                    $n = $this->seededIndex((string) $conversation->support_code);
+                    $closedAt = Carbon::parse($conversation->closed_at);
+
+                    // A quarter were reopened first, and a third of those by
+                    // the visitor -- the report splits on exactly that, so a
+                    // fixture where every reopen is an agent leaves half the
+                    // figure unexercised.
+                    if (self::mix($n, 'reopened', 4) === 0) {
+                        $openedAt = Carbon::parse($conversation->created_at);
+                        $reopenedAt = $openedAt->copy()->addSeconds(
+                            max(1, (int) ($openedAt->diffInSeconds($closedAt) / 2))
+                        );
+                        $byVisitor = self::mix($n, 'reopened_by', 3) === 0;
+
+                        $rows[] = [
+                            'account_id' => $accountId,
+                            'site_id' => $conversation->site_id,
+                            'actor_type' => $byVisitor ? (new Visitor)->getMorphClass() : (new User)->getMorphClass(),
+                            'actor_id' => $byVisitor ? $conversation->visitor_id : $agentIds[self::mix($n, 'agent', count($agentIds))],
+                            'subject_type' => (new Conversation)->getMorphClass(),
+                            'subject_id' => $conversation->id,
+                            'action' => ConversationLifecycleLog::REOPENED,
+                            'metadata' => json_encode([
+                                'previous_status' => 'closed',
+                                'actor' => $byVisitor ? 'visitor' : 'agent',
+                            ]),
+                            'occurred_at' => $reopenedAt,
+                            'created_at' => $reopenedAt,
+                            'updated_at' => $reopenedAt,
+                        ];
+                    }
+
+                    $rows[] = [
+                        'account_id' => $accountId,
+                        'site_id' => $conversation->site_id,
+                        'actor_type' => (new User)->getMorphClass(),
+                        'actor_id' => $agentIds[self::mix($n, 'agent', count($agentIds))],
+                        'subject_type' => (new Conversation)->getMorphClass(),
+                        'subject_id' => $conversation->id,
+                        'action' => ConversationLifecycleLog::CLOSED,
+                        'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
+                        'occurred_at' => $closedAt,
+                        'created_at' => $closedAt,
+                        'updated_at' => $closedAt,
+                    ];
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('audit_events')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        $written += $this->seedTicketLifecycle($desk, $accountId, $agentIds);
+
+        return $written;
+    }
+
+    /**
+     * Ticket lifecycle, which `TicketReport` walks separately.
+     *
+     * Its own actions and its own walk: seeding the conversation half gives the
+     * ticket half nothing. It also reads an operator setting to know how far
+     * back its history can be trusted, so that is written too -- without it the
+     * report measures against a window the data does not cover.
+     *
+     * @param  list<int>  $agentIds
+     */
+    private function seedTicketLifecycle(array $desk, ?int $accountId, array $agentIds): int
+    {
+        $written = 0;
+        $earliest = null;
+
+        Ticket::query()
+            ->whereIn('site_id', $this->siteIds($desk))
+            ->orderBy('id')
+            ->chunkById(self::CHUNK, function ($tickets) use (&$written, &$earliest, $accountId, $agentIds): void {
+                $rows = [];
+
+                foreach ($tickets as $ticket) {
+                    $raisedAt = Carbon::parse($ticket->created_at);
+                    $n = (int) $ticket->id;
+                    $actorId = $agentIds[self::mix($n, 'ticket_actor', count($agentIds))];
+
+                    $event = function (string $action, Carbon $at, string $previous) use (&$rows, &$earliest, $accountId, $ticket, $actorId): void {
+                        $earliest = $earliest === null ? $at->copy() : $at->copy()->min($earliest);
+
+                        $rows[] = [
+                            'account_id' => $accountId,
+                            'site_id' => $ticket->site_id,
+                            'actor_type' => (new User)->getMorphClass(),
+                            'actor_id' => $actorId,
+                            'subject_type' => (new Ticket)->getMorphClass(),
+                            'subject_id' => $ticket->id,
+                            'action' => $action,
+                            'metadata' => json_encode(['previous_status' => $previous, 'actor' => 'agent']),
+                            'occurred_at' => $at,
+                            'created_at' => $at,
+                            'updated_at' => $at,
+                        ];
+                    };
+
+                    // A held ticket has been put on hold, whatever it did next.
+                    if ($ticket->status === 'pending') {
+                        $event('ticket.pending', $raisedAt->copy()->addHours(2)->min(Carbon::now()), 'open');
+                    }
+
+                    if ($ticket->closed_at !== null) {
+                        $closedAt = Carbon::parse($ticket->closed_at);
+
+                        // A fifth were closed, reopened and closed again, so the
+                        // walk sees a ticket contributing more than one
+                        // resolution rather than one long one.
+                        if (self::mix($n, 'ticket_reopened', 5) === 0) {
+                            $firstClose = $raisedAt->copy()->addHours(6)->min($closedAt);
+                            $event('ticket.closed', $firstClose, 'open');
+                            $event('ticket.reopened', $firstClose->copy()->addHours(2)->min($closedAt), 'closed');
+                        }
+
+                        $event('ticket.closed', $closedAt, 'open');
+                    }
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('audit_events')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        // What the report reads to know its history is trustworthy from here.
+        // Without it a fixture full of events is reported against a window that
+        // claims to have recorded none of them.
+        if ($earliest !== null) {
+            OperatorSetting::query()->updateOrCreate(
+                ['key' => 'reporting.ticket_lifecycle_recording_began_at'],
+                ['value' => $earliest->toIso8601String()],
+            );
+        }
+
+        return $written;
+    }
+
+    /**
+     * Satisfaction answers, which hang off the close they answered about.
+     *
+     * `conversation_ratings.episode_event_id` points at the audit event that
+     * closed the episode, so these can only be written after the lifecycle
+     * history exists -- and the report counts them by `episode_closed_at`
+     * rather than by when the answer arrived, so both have to agree.
+     *
+     * @param  array{sites: list<Site>}  $desk
+     */
+    private function seedRatings(array $desk): int
+    {
+        $written = 0;
+        $scores = ConversationRating::SCORES;
+
+        DB::table('audit_events')
+            ->whereIn('site_id', $this->siteIds($desk))
+            ->where('action', ConversationLifecycleLog::CLOSED)
+            ->where('subject_type', (new Conversation)->getMorphClass())
+            ->orderBy('id')
+            ->chunkById(self::CHUNK, function ($events) use (&$written, $scores): void {
+                $rows = [];
+
+                foreach ($events as $event) {
+                    // Half of closes are answered. A fixture where every close
+                    // has an answer makes the "answered" ratio meaningless, and
+                    // it is one of the figures the tab exists to show.
+                    if (self::mix((int) $event->subject_id, 'rated', 2) !== 0) {
+                        continue;
+                    }
+
+                    $closedAt = Carbon::parse($event->occurred_at);
+
+                    $rows[] = [
+                        'conversation_id' => $event->subject_id,
+                        'site_id' => $event->site_id,
+                        // Weighted toward good, because a desk where a third of
+                        // answers are "bad" is not a desk anyone recognises.
+                        'score' => $scores[self::mix((int) $event->subject_id, 'score', 6) < 4 ? 0 : (self::mix((int) $event->subject_id, 'score2', 2) === 0 ? 1 : 2)],
+                        'comment' => null,
+                        'rated_at' => $closedAt->copy()->addMinutes(self::mix((int) $event->subject_id, 'rated_after', 90) + 1),
+                        'episode_closed_at' => $closedAt,
+                        'episode_event_id' => $event->id,
+                        'created_at' => $closedAt,
+                        'updated_at' => $closedAt,
+                    ];
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('conversation_ratings')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        return $written;
+    }
+
     private function siteIds(array $desk): array
     {
         return array_map(fn (Site $site): int => $site->id, $desk['sites']);
