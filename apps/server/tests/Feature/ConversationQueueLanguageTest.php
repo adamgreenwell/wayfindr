@@ -4717,6 +4717,36 @@ test('the conversation surfaces announce the visitor\'s words as the visitor\'s'
         }
     }
 
+    // A visitor who gave NOTHING -- an inbound email whose `From` header has no
+    // display name leaves both `name` and `anonymous_id` null, and
+    // `visitorContext()` substitutes a translated sentence. That sentence is
+    // ours, so the two spans that would otherwise show the visitor's own
+    // identifier must not be reset.
+    //
+    // Nothing else in this suite builds that visitor, which is why the first
+    // version of this fix marked both spans unconditionally and was wrong for
+    // every email-originated conversation.
+    $conversation->visitor->forceFill(['name' => null, 'anonymous_id' => null])->save();
+
+    $anonymous = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))->assertOk()->getContent());
+
+    $unknown = __('conversations.detail.unknown_visitor', [], 'de');
+
+    foreach ($anonymous->query('//span[contains(@class, "meta-value")]') as $node) {
+        if (trim($node->textContent) !== $unknown) {
+            continue;
+        }
+
+        expect($node->hasAttribute('lang'))
+            ->toBeFalse('the unknown-visitor sentence is ours and is announced as an unknown language');
+    }
+
+    expect($anonymous->query('//span[contains(@class, "meta-value")][normalize-space(text())="'.$unknown.'"]')->length)
+        ->toBeGreaterThan(0, 'the unknown-visitor fallback did not render; this half of the guard checked nothing');
+
+    $conversation->visitor->forceFill(['name' => 'Acme Datenpunkt Besuch', 'anonymous_id' => 'anon-datenpunkt'])->save();
+
     // And with nothing reported, the FALLBACK is ours and is not reset -- the
     // half of this that marking the element unconditionally would get wrong.
     $conversation->visitor->update(['metadata' => []]);
