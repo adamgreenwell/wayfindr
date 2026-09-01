@@ -44,16 +44,18 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   language — **English and German**.
 - **A dashboard an agent can read in their own language** — **English, German
   and Italian** — on the surfaces extracted so far: the profile pages, the
-  conversation queue, the ticket list, and the conversation detail page with its
-  cobrowse panel. An agent who has chosen nothing reads the install's language,
-  which the operator sets in the browser under **Language and region**;
-  `APP_LOCALE` seeds a new install and is the fallback until somebody saves one.
+  conversation queue, the ticket list, the conversation detail page with its
+  cobrowse panel, the live-visitors board, and four account pages — reply
+  templates, ticket labels, articles and API tokens. An agent who has chosen
+  nothing reads the install's language, which the operator sets in the browser
+  under **Language and region**; `APP_LOCALE` seeds a new install and is the
+  fallback until somebody saves one.
 
-  **Most of the dashboard is still English** — the home page, Alerts, Reports,
-  Visitors, site settings, ticket detail, and all of account management:
-  Account, Integrations, API tokens, Operator access, Audit, Labels, Articles,
-  Reply templates. A German or Italian agent moving from the queue to Reports
-  changes language mid-session.
+  **Much of the dashboard is still English** — the home page, Alerts, Reports,
+  Visitors, site settings, ticket detail, and the rest of account management:
+  Account, Integrations, Operator access, Audit. The **operator console** is the
+  largest untouched surface and has never been extracted at all. A German or
+  Italian agent moving from the queue to Reports changes language mid-session.
 
   `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
   are translated, and it is the authority rather than this paragraph: a page

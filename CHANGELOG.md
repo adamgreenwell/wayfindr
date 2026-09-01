@@ -97,12 +97,26 @@ page view that was not there before.
 
 - **Italian.** The agent dashboard speaks English, German and Italian on the
   surfaces extracted so far. **Neither the German nor the Italian pack has been
-  read by a qualified speaker**, and eight of nine Italian catalogues are
-  machine-drafted and open with `NOT YET REVIEWED`. The mechanical checks pass —
-  consistent terms, no lost placeholders, the right register attempted — and
-  they establish nothing about whether a sentence is good Italian. Do not
-  promise either language to a customer until somebody who speaks it has read
-  the rendered screens.
+  read by a qualified speaker**, and 13 of the 14 Italian catalogues open with
+  `NOT YET REVIEWED`. The mechanical checks pass — consistent terms, no lost
+  placeholders, the right register attempted — and they establish nothing about
+  whether a sentence is good Italian. Do not promise either language to a
+  customer until somebody who speaks it has read the rendered screens.
+
+- **Five more surfaces speak the agent's language**: reply templates, ticket
+  labels, articles, API tokens and the live-visitors board. That is every
+  account page an agent reaches from the account home, so choosing German no
+  longer means a German page and an English one a click apart.
+
+  **Most of the dashboard is still English**, and the operator console has not
+  been extracted at all. `DashboardLanguage::EXTRACTED_ROUTES` is the authority
+  on which pages are translated; a page missing from it renders English by
+  design.
+
+  Content the *account* wrote — an article's title and body, a token's name, a
+  site's name, a visitor's name, the page they are on — is now marked `lang=""`
+  wherever it appears inside a translated page, so assistive technology stops
+  pronouncing English article prose with German phonetics.
 
 - **Live visitor presence.** You can see who is on the site right now, with the
   privacy question settled first (ADR 0019) rather than after: a visitor is told
