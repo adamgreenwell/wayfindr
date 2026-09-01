@@ -6,6 +6,7 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\Article;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -30,6 +31,7 @@ use App\Support\TicketExternalIssueAttempt;
 use App\Support\VisitorSessionToken;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\File;
@@ -235,9 +237,23 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         ]);
     }
 
+    // A published article, so the articles DETAIL page has something to render.
+    // Its own title and body are account content and stay identical in both
+    // languages -- the token marks them as data, the way the account name does.
+    $article = Article::factory()->for($account)->create([
+        'title' => 'Acme Datenpunkt Artikel',
+        // The slug is DATA and is rendered on the detail page, so it carries
+        // the token too. Left to the factory it is faker output, which the
+        // guard correctly reports as a string identical in both renders.
+        'slug' => 'acme-datenpunkt-artikel',
+        'body' => 'Acme Datenpunkt.',
+        'published_at' => now(),
+    ]);
+
     return [
         'account' => $account,
         'site' => $site,
+        'article' => $article,
         'agents' => [
             'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt']),
             'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt']),
@@ -1137,7 +1153,13 @@ function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $engli
     // "does this string appear at all", not where or in what language.
     $english = array_flip(array_column(conversationQueueLanguageAnnouncements($englishHtml), 'text'));
 
-    $isData = fn (string $text): bool => str_contains($text, 'Datenpunkt')
+    // The token match is deliberately case-INSENSITIVE. Fixture data does not
+    // always reach the page in the casing it was written in: an article's slug
+    // is `acme-datenpunkt-artikel`, lower-cased by the same slug rule the
+    // product uses, and a marker that only survives in its original casing
+    // stops marking things the moment the product touches them. Nothing this
+    // platform says in English contains `datenpunkt` in any casing.
+    $isData = fn (string $text): bool => stripos($text, 'Datenpunkt') !== false
         || str_contains($text, 'WF-LANG')
         || str_contains($text, 'anon-')
         || str_contains($text, '@')
@@ -1234,6 +1256,11 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
         route('dashboard.account.reply-templates.index'),
         route('dashboard.account.labels.index'),
+        route('dashboard.account.articles.index'),
+        // The DETAIL page explicitly. The prefix match above would let it pass
+        // on the index's coverage without ever rendering it -- which the loop's
+        // own comment names as how `conversations.show` went unaudited.
+        route('dashboard.account.articles.show', $world['article']),
     ];
 
     // Every GET-able extracted route is covered, whether or not it is listed
@@ -1259,6 +1286,32 @@ test('no English is rendered as German on any extracted surface', function (): v
         // as a second argument becomes a second required value and the failure
         // reports the message itself as missing.
         $this->assertTrue($matched, "extracted route not audited: {$name} ({$route->uri()})");
+    }
+
+    // And the same question asked from the other end, which is the direction
+    // that was missing. The loop above proves every extracted route is
+    // rendered here; it cannot notice a route that is rendered here and is no
+    // longer extracted.
+    //
+    // That gap is not theoretical -- deleting the articles routes from
+    // EXTRACTED_ROUTES left this whole file green. The page drops back to
+    // `lang="en"`, the audit only inspects surfaces that ANNOUNCE German, and a
+    // page that stops claiming German stops being looked at. The check and the
+    // behaviour were both defined by the same list, so removing an entry
+    // removed the thing that would have complained.
+    //
+    // `$states` is the deliberate statement of which pages are meant to speak
+    // the agent's language, so it is the honest place to hold that list to.
+    foreach ($states as $url) {
+        $name = app('router')->getRoutes()
+            ->match(Request::create(parse_url($url, PHP_URL_PATH), 'GET'))
+            ->getName();
+
+        $this->assertContains($name, DashboardLanguage::EXTRACTED_ROUTES, implode(' ', [
+            "audited page is not an extracted route: {$name}.",
+            'It renders in English for every agent, and this audit skips it in',
+            'silence because it never announces German.',
+        ]));
     }
 
     foreach ($states as $url) {
