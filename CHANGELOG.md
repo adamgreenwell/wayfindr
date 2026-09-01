@@ -97,12 +97,31 @@ page view that was not there before.
 
 - **Italian.** The agent dashboard speaks English, German and Italian on the
   surfaces extracted so far. **Neither the German nor the Italian pack has been
-  read by a qualified speaker**, and eight of nine Italian catalogues are
-  machine-drafted and open with `NOT YET REVIEWED`. The mechanical checks pass —
-  consistent terms, no lost placeholders, the right register attempted — and
-  they establish nothing about whether a sentence is good Italian. Do not
-  promise either language to a customer until somebody who speaks it has read
-  the rendered screens.
+  read by a qualified speaker**, and 13 of the 14 Italian catalogues open with
+  `NOT YET REVIEWED`. The mechanical checks pass — consistent terms, no lost
+  placeholders, the right register attempted — and they establish nothing about
+  whether a sentence is good Italian. Do not promise either language to a
+  customer until somebody who speaks it has read the rendered screens.
+
+- **Five more surfaces speak the agent's language**: reply templates, ticket
+  labels, articles, API tokens and the live-visitors board.
+
+  **Most of the dashboard is still English.** The account home itself is not
+  extracted, and neither are Integrations, Sites, the audit log or operator
+  access — so a German or Italian agent still reaches an English page in one
+  click from any of the four translated account pages, and the operator console
+  has not been extracted at all. `DashboardLanguage::EXTRACTED_ROUTES` is the
+  authority on which pages are translated; a page missing from it renders
+  English by design.
+
+  Content the *account* wrote — an article's title and body, a token's name, a
+  site's name, a visitor's name and the page they are on — now carries `lang=""`
+  on the surfaces listed above **and on the conversation queue and detail
+  page**, where several visitor-derived values had been inheriting the agent's
+  language since those pages were extracted. Assistive technology stops
+  pronouncing a visitor's English words with German phonetics there. Surfaces
+  that are still English are unaffected: the whole document is English, so
+  nothing is being announced as the wrong language.
 
 - **Live visitor presence.** You can see who is on the site right now, with the
   privacy question settled first (ADR 0019) rather than after: a visitor is told

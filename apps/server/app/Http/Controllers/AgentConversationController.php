@@ -886,7 +886,7 @@ class AgentConversationController extends Controller
     }
 
     /**
-     * @return array{anonymous_id: string, external_id: string|null, last_seen_at: Carbon|null, presence: array{state: string, label: string, detail: string}, last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
+     * @return array{identified: bool, anonymous_id: string, external_id: string|null, last_seen_at: Carbon|null, presence: array{state: string, label: string, detail: string}, last_page_url: string|null, started_page_url: string|null, host_context: array<string, string>}
      */
     private function visitorContext(Conversation $conversation, VisitorContextSanitizer $visitorContextSanitizer): array
     {
@@ -895,6 +895,14 @@ class AgentConversationController extends Controller
         $conversationMetadata = $conversation->metadata ?? [];
 
         return [
+            // Whether the visitor gave the platform ANY identifier of their own.
+            // The page needs this to decide language: `anonymous_id` below
+            // falls back to a translated sentence, so a view marking that value
+            // as the visitor's words announces our own copy as an unknown
+            // language. An inbound email whose `From` header carries no display
+            // name reaches exactly that state -- `InboundMailRouter::visitor()`
+            // creates the visitor with both fields null on purpose.
+            'identified' => $visitor?->anonymous_id !== null || $visitor?->name !== null,
             'anonymous_id' => $visitor?->anonymous_id ?? __('conversations.detail.unknown_visitor'),
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             // What the visitor typed into the pre-chat form, if the site asked.

@@ -4631,3 +4631,150 @@ test('nothing in the live board parses a number out of rendered text', function 
     expect(preg_match('/(?:Number|parseInt|parseFloat)\s*\(\s*[A-Za-z_$][\w$.]*\.textContent/', 'x = Number(freshCount.textContent) || 0;'))
         ->toBe(1, 'the pattern no longer recognises the call it was written for');
 });
+
+test('the conversation surfaces announce the visitor\'s words as the visitor\'s', function (): void {
+    // The queue and the detail page were extracted before the `lang=""` rule
+    // was being applied consistently, so three visitor-derived values on the
+    // busiest pages in the product still inherited the agent's language: the
+    // queue's visitor label, and the detail page's visitor name and two page
+    // addresses.
+    //
+    // Each has a translated FALLBACK, which is why the reset follows the branch
+    // rather than sitting on the element. Marking unconditionally would
+    // announce our own sentence as unknown, which is the same defect pointing
+    // the other way.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $conversation->visitor->update([
+        'name' => 'Acme Datenpunkt Besuch',
+        'metadata' => ['last_page_url' => 'https://acme.example/datenpunkt/kasse'],
+    ]);
+
+    // The ENTRY page is the conversation's, not the visitor's: one visitor can
+    // start several conversations from different pages.
+    $conversation->update([
+        'metadata' => ['started_page_url' => 'https://acme.example/datenpunkt/start'],
+    ]);
+
+    $xpathFor = function (string $html): DOMXPath {
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+        return new DOMXPath($document);
+    };
+
+    $queue = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))->assertOk()->getContent());
+
+    $label = $queue->query('//span[contains(@class, "wf-queue-assignee")][contains(text(), "Acme Datenpunkt")]')->item(0);
+
+    expect($label)->not->toBeNull('the visitor label did not render; this guard is checking nothing')
+        ->and($label->hasAttribute('lang'))->toBeTrue('the queue announces the visitor name in the agent language');
+
+    $detail = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))->assertOk()->getContent());
+
+    // Found by its own LABEL, not by its text. `Nicht gemeldet` is the German
+    // for two different keys on this page -- `conversations.detail.context`
+    // and `cobrowse.units` -- so a text match returns whichever comes first in
+    // the document, and the negative assertion below passed against a node
+    // this test never meant to look at.
+    // EVERY row under that label, not the first. This page carries two rows
+    // labelled `Besucher` -- one showing the anonymous identifier and one the
+    // name -- and taking `item(0)` meant the guard checked the marked one and
+    // reported clean while the other was announced in German.
+    $metaValues = function (string $labelKey) use ($detail): array {
+        $label = __($labelKey, [], 'de');
+
+        $nodes = [];
+
+        foreach ($detail->query(
+            '//div[contains(@class, "meta-item")][span[contains(@class, "meta-label")][normalize-space(text())="'.$label.'"]]'
+            .'/span[contains(@class, "meta-value")]'
+        ) as $node) {
+            $nodes[] = $node;
+        }
+
+        return $nodes;
+    };
+
+    foreach ([
+        'the visitor' => 'conversations.detail.context.visitor',
+        'the latest page' => 'conversations.detail.context.latest_page',
+        'the entry page' => 'conversations.detail.context.entry_page',
+        'the visitor reference' => 'conversations.detail.references.visitor_reference',
+    ] as $what => $labelKey) {
+        $nodes = $metaValues($labelKey);
+
+        expect($nodes)->not->toBeEmpty("{$what} did not render; this guard is checking nothing");
+
+        foreach ($nodes as $node) {
+            expect($node->hasAttribute('lang'))
+                ->toBeTrue("the detail page announces {$what} (\"{$node->textContent}\") in the agent language");
+
+            expect($node->getAttribute('lang'))->toBe('');
+        }
+    }
+
+    // A visitor who gave NOTHING -- an inbound email whose `From` header has no
+    // display name leaves both `name` and `anonymous_id` null, and
+    // `visitorContext()` substitutes a translated sentence. That sentence is
+    // ours, so the two spans that would otherwise show the visitor's own
+    // identifier must not be reset.
+    //
+    // Nothing else in this suite builds that visitor, which is why the first
+    // version of this fix marked both spans unconditionally and was wrong for
+    // every email-originated conversation.
+    $conversation->visitor->forceFill(['name' => null, 'anonymous_id' => null])->save();
+
+    $anonymous = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))->assertOk()->getContent());
+
+    $unknown = __('conversations.detail.unknown_visitor', [], 'de');
+
+    foreach ($anonymous->query('//span[contains(@class, "meta-value")]') as $node) {
+        if (trim($node->textContent) !== $unknown) {
+            continue;
+        }
+
+        expect($node->hasAttribute('lang'))
+            ->toBeFalse('the unknown-visitor sentence is ours and is announced as an unknown language');
+    }
+
+    expect($anonymous->query('//span[contains(@class, "meta-value")][normalize-space(text())="'.$unknown.'"]')->length)
+        ->toBeGreaterThan(0, 'the unknown-visitor fallback did not render; this half of the guard checked nothing');
+
+    $conversation->visitor->forceFill(['name' => 'Acme Datenpunkt Besuch', 'anonymous_id' => 'anon-datenpunkt'])->save();
+
+    // And with nothing reported, the FALLBACK is ours and is not reset -- the
+    // half of this that marking the element unconditionally would get wrong.
+    $conversation->visitor->update(['metadata' => []]);
+    $conversation->update(['metadata' => []]);
+
+    $bare = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))->assertOk()->getContent());
+
+    foreach (['conversations.detail.context.latest_page', 'conversations.detail.context.entry_page'] as $labelKey) {
+        $label = __($labelKey, [], 'de');
+
+        $nodes = [];
+
+        foreach ($bare->query(
+            '//div[contains(@class, "meta-item")][span[contains(@class, "meta-label")][normalize-space(text())="'.$label.'"]]'
+            .'/span[contains(@class, "meta-value")]'
+        ) as $node) {
+            $nodes[] = $node;
+        }
+
+        expect($nodes)->not->toBeEmpty("the {$label} row did not render");
+
+        foreach ($nodes as $node) {
+            expect(trim($node->textContent))->toBe(__('conversations.detail.context.not_reported', [], 'de'),
+                'the row is not showing its fallback, so this proves nothing');
+
+            expect($node->hasAttribute('lang'))
+                ->toBeFalse('our own fallback sentence is announced as an unknown language');
+        }
+    }
+});

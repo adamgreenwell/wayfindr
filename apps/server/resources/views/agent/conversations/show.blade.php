@@ -83,7 +83,13 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
-                        <span class="meta-value">{{ $conversation->visitor->anonymous_id ?? __('conversations.detail.unknown_visitor') }}</span>
+                        {{-- The identifier the visitor's browser gave, so it follows
+                             the branch: ours only when there is no visitor at all. --}}
+                        @if ($conversation->visitor->anonymous_id ?? null)
+                            <span class="meta-value" lang="">{{ $conversation->visitor->anonymous_id }}</span>
+                        @else
+                            <span class="meta-value">{{ __('conversations.detail.unknown_visitor') }}</span>
+                        @endif
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.assigned_to') }}</span>
@@ -700,7 +706,16 @@
                 <div class="meta-grid">
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
-                        <span class="meta-value">{{ $visitorContext['name'] ?: $visitorContext['anonymous_id'] }}</span>
+                        {{-- Usually the visitor's words -- a name they gave, or the
+                             identifier their browser did -- but not always. An
+                             inbound email with no display name leaves both null and
+                             `anonymous_id` carries a translated sentence instead, so
+                             the reset follows `identified` rather than the element. --}}
+                        @if ($visitorContext['identified'])
+                            <span class="meta-value" lang="">{{ $visitorContext['name'] ?: $visitorContext['anonymous_id'] }}</span>
+                        @else
+                            <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
+                        @endif
                     </div>
                     @if ($visitorContext['email'])
                         <div class="meta-item">
@@ -734,11 +749,23 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.latest_page') }}</span>
-                        <span class="meta-value">{{ $visitorContext['last_page_url'] ?? __('conversations.detail.context.not_reported') }}</span>
+                        {{-- Marked only when there IS an address. The fallback is our
+                             sentence and stays in the agent's language. --}}
+                        @if ($visitorContext['last_page_url'] ?? null)
+                            <span class="meta-value" lang="">{{ $visitorContext['last_page_url'] }}</span>
+                        @else
+                            <span class="meta-value">{{ __('conversations.detail.context.not_reported') }}</span>
+                        @endif
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.entry_page') }}</span>
-                        <span class="meta-value">{{ $visitorContext['started_page_url'] ?? __('conversations.detail.context.not_reported') }}</span>
+                        {{-- Marked only when there IS an address. The fallback is our
+                             sentence and stays in the agent's language. --}}
+                        @if ($visitorContext['started_page_url'] ?? null)
+                            <span class="meta-value" lang="">{{ $visitorContext['started_page_url'] }}</span>
+                        @else
+                            <span class="meta-value">{{ __('conversations.detail.context.not_reported') }}</span>
+                        @endif
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.history') }}</span>
@@ -763,7 +790,14 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.references.visitor_reference') }}</span>
-                        <span class="meta-value">{{ $visitorContext['external_id'] ?? $visitorContext['anonymous_id'] }}</span>
+                        {{-- Same fallback underneath: with no external id, this shows
+                             `anonymous_id`, which is our sentence when the visitor
+                             gave nothing. --}}
+                        @if ($visitorContext['external_id'] || $visitorContext['identified'])
+                            <span class="meta-value" lang="">{{ $visitorContext['external_id'] ?? $visitorContext['anonymous_id'] }}</span>
+                        @else
+                            <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
+                        @endif
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.references.same_visitor') }}</span>
