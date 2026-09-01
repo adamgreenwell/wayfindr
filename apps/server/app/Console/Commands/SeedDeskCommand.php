@@ -504,12 +504,23 @@ final class SeedDeskCommand extends Command
                             'created_at' => $startedAt->copy()->addMinutes($m),
                             'updated_at' => $startedAt->copy()->addMinutes($m),
                         ];
+
+                        // Flushed INSIDE the loop, not after the chunk. A long
+                        // fixture -- `--conversations=500 --messages=400`, which
+                        // is what measuring a heavy detail page needs -- held
+                        // two hundred thousand associative rows and several
+                        // Carbon objects each before writing any of them.
+                        if (count($rows) >= self::CHUNK) {
+                            DB::table('conversation_messages')->insert($rows);
+                            $written += count($rows);
+                            $rows = [];
+                        }
                     }
                 }
 
-                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
-                    DB::table('conversation_messages')->insert($chunk);
-                    $written += count($chunk);
+                if ($rows !== []) {
+                    DB::table('conversation_messages')->insert($rows);
+                    $written += count($rows);
                 }
             });
 

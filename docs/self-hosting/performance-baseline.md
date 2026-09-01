@@ -85,10 +85,10 @@ them:
 
 | Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 112 ms | 473 ms | 3.9 MB | 184 ms | 268 | 11 ms / 26 q |
-| 5,000 | 479 ms | 2,355 ms | 19.2 MB | 958 ms | 1,268 | 12 ms / 26 q |
-| 25,000 | 2,356 ms | 12,058 ms | 96.0 MB | 4,793 ms | 6,268 | 14 ms / 25 q |
-| 50,000 | 5,035 ms | 27,000 ms | 192.1 MB | 9,894 ms | 12,518 | 14 ms / 26 q |
+| 1,000 | 124 ms | 492 ms | 3.9 MB | 198 ms | 268 | 13 ms / 26 q |
+| 5,000 | 516 ms | 2,544 ms | 19.2 MB | 968 ms | 1,268 | 13 ms / 26 q |
+| 25,000 | 4,441 ms | 13,334 ms | 96.0 MB | 4,874 ms | 6,268 | 17 ms / 26 q |
+| 50,000 | 4,996 ms | 27,384 ms | 192.1 MB | 9,376 ms | 12,518 | 15 ms / 26 q |
 
 The last column is the control, and it is the point: the same page, at fifty
 times the data, costs the same.
