@@ -413,6 +413,51 @@ test('read positions follow the conversation when there are no messages', functi
     }
 });
 
+test('the same options produce the same fixture twice', function (): void {
+    // Hashing the database ID looked deterministic and is not: auto-increment
+    // does not restart after `--fresh`, and a desk created beside existing
+    // conversations starts higher again -- so every reseed produced different
+    // conversations unread, different agents holding read states, different
+    // ticket priorities. A measurement fixture that changes between runs makes
+    // two sets of numbers incomparable, which is the whole point of having one.
+    // Identified by ADDRESS, not by id. Agents are recreated on each `--fresh`
+    // and take new surrogate ids, which is expected -- capturing those would
+    // make this test fail on a fixture that is perfectly reproducible.
+    $shape = function (): string {
+        $agents = User::query()->pluck('email', 'id');
+
+        return Conversation::query()
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->orderBy('support_code')
+            ->get()
+            ->map(fn (Conversation $conversation): string => implode(':', [
+                $conversation->support_code,
+                $conversation->status,
+                (string) $conversation->messages()->count(),
+                // The UNSEEN count too. Without it the shape ignored the one
+                // thing the id-based hash decided, so the mutation that put it
+                // back passed on both drivers.
+                (string) $conversation->messages()->whereNull('seen_at')->count(),
+                (string) $conversation->readStates()->count(),
+                $conversation->readStates()->orderBy('user_id')->pluck('user_id')
+                    ->map(fn (int $id): string => (string) $agents[$id])->sort()->implode(','),
+                (string) Ticket::query()->where('conversation_id', $conversation->id)->value('priority'),
+                (string) Ticket::query()->where('conversation_id', $conversation->id)->value('status'),
+            ]))
+            ->implode('|');
+    };
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 24, '--messages' => 4, '--fresh' => true])
+        ->assertSuccessful();
+
+    $first = $shape();
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 24, '--messages' => 4, '--fresh' => true])
+        ->assertSuccessful();
+
+    expect($shape())->toBe($first, 'reseeding the same options produced a different fixture');
+});
+
 test('a conversation does not close before its last message', function (): void {
     // The closure was a fixed four hours after opening while messages are a
     // minute apart -- so a high `--messages`, exactly what somebody measuring a

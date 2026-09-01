@@ -144,7 +144,17 @@ final class MeasureDashboardCommand extends Command
                 ? app()->forgetInstance('request')
                 : app()->instance('request', $callerRequest);
 
-            if ($callerSessionId !== null) {
+            if ($callerSessionId === null) {
+                // Nothing to put back, but the synthetic requests still started
+                // and filled the shared store -- so the benchmark's session
+                // would have been left sitting in a process that had none.
+                //
+                // Emptied rather than un-started: there is no public way to
+                // clear the started flag, and a started empty session is a much
+                // smaller residue than a populated one belonging to a
+                // measurement.
+                Session::flush();
+            } else {
                 // STARTED, then filled. Each synthetic request's `StartSession`
                 // save leaves the shared store stopped, so putting back the id
                 // and attributes without starting it left the caller holding a
@@ -414,8 +424,15 @@ final class MeasureDashboardCommand extends Command
         // an account match. An account whose sites carry explicit support-agent
         // assignments has sites this agent cannot see, and a conversation on
         // one of those is a 404 for them even though the account is theirs.
+        // The most recently ACTIVE conversation, which is the row at the top of
+        // the queue and the one an agent opens. Ordering by id descending picked
+        // the OLDEST, because the seeder writes newest-first -- and with the
+        // default fixture that last row also carries the balancing message delta
+        // and no ticket, so it was the least representative conversation
+        // available.
         $conversation = Conversation::query()
             ->whereIn('site_id', Site::query()->visibleToAgent($agent)->select('id'))
+            ->orderByDesc('last_message_at')
             ->orderByDesc('id')
             ->first();
 

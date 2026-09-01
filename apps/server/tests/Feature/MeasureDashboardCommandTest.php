@@ -503,3 +503,24 @@ test('it does not touch the caller\'s session', function (): void {
     expect(Session::isStarted())
         ->toBeTrue('the command left the caller\'s session stopped');
 });
+
+test('it measures a conversation an agent would actually open', function (): void {
+    // Ordering by id descending picked the OLDEST, because the seeder writes
+    // newest-first -- and with the default fixture that last row also carries
+    // the balancing message delta and no ticket, so it was the least
+    // representative conversation available. The most recently active one is
+    // the row at the top of the queue.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 30, '--messages' => 4, '--fresh' => true]);
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    $detail = collect(json_decode(Artisan::output(), true)['pages'])->firstWhere('page', 'Conversation detail');
+
+    $newest = Conversation::query()->orderByDesc('last_message_at')->orderByDesc('id')->firstOrFail();
+    $oldest = Conversation::query()->orderBy('last_message_at')->firstOrFail();
+
+    expect($newest->support_code)->not->toBe($oldest->support_code, 'the fixture has no spread of activity');
+
+    expect($detail['uri'])->toContain($newest->support_code)
+        ->and($detail['uri'])->not->toContain($oldest->support_code);
+});

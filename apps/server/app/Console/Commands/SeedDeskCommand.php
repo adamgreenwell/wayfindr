@@ -438,7 +438,7 @@ final class SeedDeskCommand extends Command
             ->whereIn('site_id', $this->siteIds($desk))
             ->where('support_code', 'like', 'WF-DESK-%')
             ->orderBy('id')
-            ->select(['id', 'visitor_id', 'created_at'])
+            ->select(['id', 'visitor_id', 'created_at', 'support_code'])
             ->chunk(self::CHUNK, function ($conversations) use ($messagesEach, $agentIds, $total, &$written, &$deviation, &$seen): void {
                 $rows = [];
 
@@ -475,7 +475,7 @@ final class SeedDeskCommand extends Command
                     $count = max(1, $messagesEach + $delta);
 
                     // Roughly a third, independent of everything else.
-                    $unread = self::mix((int) $conversation->id, 'unread', 3) === 0;
+                    $unread = self::mix($this->seededIndex((string) $conversation->support_code), 'unread', 3) === 0;
 
                     for ($m = 0; $m < $count; $m++) {
                         $fromVisitor = $m % 2 === 0;
@@ -536,7 +536,7 @@ final class SeedDeskCommand extends Command
             ->whereIn('site_id', $this->siteIds($desk))
             ->where('support_code', 'like', 'WF-DESK-%')
             ->orderBy('id')
-            ->select(['id', 'site_id', 'visitor_id', 'created_at', 'subject'])
+            ->select(['id', 'site_id', 'visitor_id', 'created_at', 'subject', 'support_code'])
             ->chunk(self::CHUNK, function ($conversations) use ($desk, $agentIds, $categories, $priorities, $statuses, &$written): void {
                 $rows = [];
 
@@ -547,7 +547,11 @@ final class SeedDeskCommand extends Command
 
                     // Salted per attribute rather than cycled on one counter --
                     // see `mix()` for the three ways the counter went wrong.
-                    $n = $written + count($rows);
+                    //
+                    // Keyed on the conversation's own index, not a running
+                    // count, so a ticket keeps its shape across a reseed for the
+                    // same reason the messages and read states do.
+                    $n = $this->seededIndex((string) $conversation->support_code);
 
                     $raisedAt = Carbon::parse($conversation->created_at);
                     $status = $statuses[self::mix($n, 'status', count($statuses))];
@@ -803,6 +807,21 @@ final class SeedDeskCommand extends Command
     }
 
     /**
+     * The index a seeded conversation was written under.
+     *
+     * Read back out of the support code, because the database id is NOT stable:
+     * auto-increment does not restart after `--fresh`, and a desk created beside
+     * existing conversations starts higher again. Hashing the id therefore
+     * produced a different fixture on every reseed -- different conversations
+     * unread, different agents holding read states -- which quietly breaks the
+     * reproducibility this whole measurement rests on.
+     */
+    private function seededIndex(string $supportCode): int
+    {
+        return (int) mb_substr($supportCode, mb_strlen('WF-DESK-'));
+    }
+
+    /**
      * This desk's site ids.
      *
      * Every pass that reads rows back scopes through these. The support-code
@@ -884,12 +903,13 @@ final class SeedDeskCommand extends Command
             ->whereIn('site_id', $this->siteIds($desk))
             ->where('support_code', 'like', 'WF-DESK-%')
             ->orderBy('id')
-            ->select(['id', 'last_message_at', 'created_at'])
+            ->select(['id', 'last_message_at', 'created_at', 'support_code'])
             ->chunk(self::CHUNK, function ($conversations) use ($agentIds, &$written): void {
                 $rows = [];
 
                 foreach ($conversations as $conversation) {
-                    $state = self::mix((int) $conversation->id, 'read', 3);
+                    $index = $this->seededIndex((string) $conversation->support_code);
+                    $state = self::mix($index, 'read', 3);
 
                     if ($state === 2) {
                         continue;
@@ -927,7 +947,7 @@ final class SeedDeskCommand extends Command
 
                     // And a colleague on some of them, so the table is not
                     // single-agent in a way no real desk is.
-                    $colleague = self::mix((int) $conversation->id, 'reader', count($agentIds));
+                    $colleague = self::mix($index, 'reader', count($agentIds));
 
                     if ($colleague !== 0) {
                         $rows[] = [
