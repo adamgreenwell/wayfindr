@@ -51,6 +51,14 @@ final class MeasureDashboardCommand extends Command
 
     protected $description = 'Time the dashboard\'s heaviest pages against the data currently in the database.';
 
+    /**
+     * The cache this command measures against.
+     *
+     * Its own store rather than the shared `array` one, so clearing it between
+     * requests cannot reach a caller whose default happens to be `array` too.
+     */
+    private const CACHE_STORE = 'wayfindr-measure';
+
     public function handle(Kernel $kernel): int
     {
         $agent = $this->agent();
@@ -103,7 +111,14 @@ final class MeasureDashboardCommand extends Command
         // detail page's own figure, and the baseline says so.
         $callerCache = config('cache.default');
 
-        config(['cache.default' => 'array']);
+        // A store of this command's OWN, not the shared `array` one. A caller
+        // whose default is already `array` had their keys flushed between every
+        // synthetic request -- the isolation reaching into exactly what it was
+        // added to protect.
+        config([
+            'cache.stores.'.self::CACHE_STORE => ['driver' => 'array', 'serialize' => false],
+            'cache.default' => self::CACHE_STORE,
+        ]);
 
         // `setUser`, not `login`. Invoked through `Artisan::call()` during an
         // HTTP request, `Auth::login()` writes to and MIGRATES the caller's
@@ -416,7 +431,7 @@ final class MeasureDashboardCommand extends Command
      */
     private function isolate(): void
     {
-        Cache::store('array')->flush();
+        Cache::store(self::CACHE_STORE)->flush();
     }
 
     /**
@@ -477,6 +492,11 @@ final class MeasureDashboardCommand extends Command
         $visible = Conversation::query()
             ->whereIn('site_id', Site::query()->visibleToAgent($agent)->select('id'))
             ->orderByDesc('last_message_at')
+            // `created_at`, not `id`. With `--messages=0` every
+            // `last_message_at` is null and the tie-break decides -- and
+            // descending id picks the OLDEST, because the seeder writes
+            // newest-first.
+            ->orderByDesc('created_at')
             ->orderByDesc('id');
 
         // An OPEN one, because the queue measured beside it shows open

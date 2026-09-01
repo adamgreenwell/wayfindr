@@ -555,3 +555,22 @@ test('it does not write to the caller\'s cache', function (): void {
 
     Cache::flush();
 });
+
+test('it does not flush a caller who is also using an array cache', function (): void {
+    // The isolation clears its cache between requests. Done on the shared
+    // `array` store, that reached into exactly what it was added to protect: a
+    // caller whose default is already `array` had their keys deleted before
+    // every synthetic request.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    config(['cache.default' => 'array']);
+
+    Cache::store('array')->put('theirs', 'kept', 60);
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 2, '--page' => ['detail'], '--json' => true]);
+
+    expect(Cache::store('array')->get('theirs'))
+        ->toBe('kept', 'the command flushed the caller\'s array cache');
+
+    expect(config('cache.default'))->toBe('array', 'the command left the cache pointed elsewhere');
+});

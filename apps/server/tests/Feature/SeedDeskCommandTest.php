@@ -106,6 +106,15 @@ test('it writes a desk with the spread a measurement needs', function (): void {
     expect(Visitor::query()->whereNotNull('current_visit_started_at')->distinct()->count('current_visit_started_at'))
         ->toBeGreaterThan(1, 'every present visitor arrived at the same moment');
 
+    // And nothing about a visitor precedes the visitor. The web sighting and
+    // the visit start can both be more recent than the historical point the
+    // row was placed at, so the creation follows the earliest of them.
+    expect(Visitor::query()->whereColumn('current_visit_started_at', '<', 'created_at')->count())
+        ->toBe(0, 'a visit started before the visitor existed');
+
+    expect(Visitor::query()->whereColumn('last_web_seen_at', '<', 'created_at')->count())
+        ->toBe(0, 'a visitor was seen on the web before they existed');
+
     // Read states exist, and in both shapes. Without them every conversation
     // reads as new activity -- `scopeWithNewActivityFor()` treats a missing row
     // as unread -- so the queue's marker was on for every row and its absence

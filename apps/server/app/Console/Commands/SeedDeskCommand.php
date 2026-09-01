@@ -303,9 +303,15 @@ final class SeedDeskCommand extends Command
                 // board's "on site for" column had nothing to measure from.
                 //
                 // Varied, so the column is not one repeated duration.
-                'current_visit_started_at' => $webSeenAt?->copy()->subMinutes(self::mix($i, 'visit', 45) + 1),
-                'created_at' => $seenAt,
-                'updated_at' => $seenAt,
+                'current_visit_started_at' => $visitStartedAt = $webSeenAt?->copy()->subMinutes(self::mix($i, 'visit', 45) + 1),
+                // Created at its EARLIEST moment. A visit that started before
+                // the visitor existed is a timeline no surface can render
+                // sensibly, and the web sighting or the visit start can both
+                // precede the historical `last_seen_at` this row was placed at.
+                'created_at' => $createdAt = collect([$seenAt, $webSeenAt, $visitStartedAt])
+                    ->filter()
+                    ->min(),
+                'updated_at' => $createdAt,
             ];
 
             if (count($rows) >= self::CHUNK) {
