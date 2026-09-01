@@ -85,7 +85,7 @@ test('the detail page is the control, and does not grow with the desk', function
     Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 1, '--fresh' => true]);
     $small = $measure();
 
-    Artisan::call('wayfindr:seed-desk', ['--conversations' => 400, '--messages' => 1, '--fresh' => true]);
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 400, '--messages' => 3, '--fresh' => true]);
     $large = $measure();
 
     // The queue grew with the data, so the sizes really are different.
