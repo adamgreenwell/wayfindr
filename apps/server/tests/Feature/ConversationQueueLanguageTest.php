@@ -4,6 +4,7 @@
 // looks at most, and the one where the copy is least visible in the view: the
 // Blade file holds about seven sentences and the controller builds sixty.
 
+use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
@@ -240,6 +241,17 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         'agents' => [
             'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt']),
             'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt']),
+        ],
+
+        // A second pair with the admin role, for account-management surfaces
+        // that 403 without it -- a guard that cannot load a page cannot check
+        // it. Kept SEPARATE rather than promoting the pair above, because the
+        // role is rendered: making everyone an admin removes `Agent` from the
+        // screen, and the cognate list has a guard that notices when one of its
+        // entries stops appearing.
+        'admins' => [
+            'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
+            'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
         ],
     ];
 }
@@ -1220,6 +1232,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'ticket']),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
+        route('dashboard.account.reply-templates.index'),
     ];
 
     // Every GET-able extracted route is covered, whether or not it is listed
@@ -1248,9 +1261,14 @@ test('no English is rendered as German on any extracted surface', function (): v
     }
 
     foreach ($states as $url) {
+        // Account management needs the role, everything else must be checked
+        // WITHOUT it -- an admin sees controls a plain agent does not, and
+        // auditing only the admin view would leave the ordinary one unchecked.
+        $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
+
         $leaks = conversationQueueLanguageEnglishLeaks(
-            (string) $this->actingAs($agent)->get($url)->assertOk()->getContent(),
-            (string) $this->actingAs($world['agents']['en'])->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs($admin ? $world['admins']['de'] : $agent)->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs($world[$admin ? 'admins' : 'agents']['en'])->get($url)->assertOk()->getContent(),
         );
 
         expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
@@ -2403,6 +2421,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'tickets.chips.status = Status: :value',
         'tickets.chips.label = Label: :value',
         'tickets.row.actor_system = System',
+        'reply_templates.list.column_status = Status',
+        'reply_templates.manage.name = Name',
     ];
 
     expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],
