@@ -103,6 +103,19 @@ final class SeedDeskCommand extends Command
         $written = [];
 
         try {
+            // EVERY refusal before the destructive step. `--fresh` deleted the
+            // existing desk first, so a run that could never have finished --
+            // a support code or an agent address held by another account --
+            // cost the operator the fixture they already had on the way to
+            // failing.
+            //
+            // Both checks exclude what belongs to this desk, so they are
+            // answering the same question before and after the delete.
+            $existing = Account::query()->where('slug', self::SLUG)->first();
+
+            $this->refuseCollidingSupportCodes($conversations);
+            $this->refuseTakenAddresses($existing?->id);
+
             if ($this->option('fresh')) {
                 $this->components->task('Removing the previous desk', function (): bool {
                     // The account cascade takes its sites, and theirs takes the
@@ -141,8 +154,6 @@ final class SeedDeskCommand extends Command
                     return true;
                 });
             }
-
-            $this->refuseCollidingSupportCodes($conversations);
 
             $desk = $this->desk($agentCount, $siteCount);
 
@@ -205,12 +216,6 @@ final class SeedDeskCommand extends Command
                 );
             }
         }
-
-        // BEFORE the account is written. `updateOrCreate` persists it, and the
-        // address check then threw -- leaving an empty measurement account
-        // behind on a run that reported failure and, with nothing to clean up
-        // after, no way for the operator to tell it had been created.
-        $this->refuseTakenAddresses($existing?->id);
 
         $account = Account::query()->updateOrCreate(
             ['slug' => self::SLUG],

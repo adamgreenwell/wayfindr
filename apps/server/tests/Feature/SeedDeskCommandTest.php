@@ -458,11 +458,11 @@ test('it refuses rather than take over an address somebody else holds', function
         ->assertFailed()
         ->expectsOutputToContain('desk-agent-9@example.test');
 
-    // And nothing was created on the way to failing. `updateOrCreate` persisted
-    // the account before the address check threw, leaving an empty measurement
-    // account behind on a run that reported failure.
-    expect(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())
-        ->toBeFalse('a failed run left an empty measurement account behind');
+    // And the desk that was already there is INTACT. The refusals run before
+    // `--fresh` deletes anything, so a run that could never have finished no
+    // longer costs the operator the fixture they had.
+    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())
+        ->toBe(8, 'a refused run deleted the desk it was going to replace');
 
     expect(User::query()->whereKey($bystander->id)->exists())
         ->toBeTrue('a user on another account was deleted for holding a matching address');
@@ -552,4 +552,28 @@ test('the mixer keeps its attributes independent at desk size', function (): voi
                 ->toBeLessThan($expected * 1.2, "{$attribute} value {$value} is over-represented");
         }
     }
+});
+
+test('a refused run leaves the desk it was going to replace', function (): void {
+    // `--fresh` deleted the existing desk before the collision check, so a run
+    // that could never have finished -- a support code held by another account,
+    // in a range only the LARGER replacement reaches -- cost the operator the
+    // fixture they already had on the way to failing.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1])
+        ->assertSuccessful();
+
+    $other = Account::query()->create(['slug' => 'someone-elses-desk', 'name' => 'Theirs']);
+    $otherSite = Site::factory()->for($other)->create();
+    $otherVisitor = Visitor::factory()->for($otherSite)->create();
+
+    // Outside the old desk's range of 0-4, inside the new run's range of 0-9.
+    Conversation::factory()->for($otherSite)->for($otherVisitor)
+        ->create(['support_code' => 'WF-DESK-0000007']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1, '--fresh' => true])
+        ->assertFailed();
+
+    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-000000%')->whereIn('support_code', [
+        'WF-DESK-0000000', 'WF-DESK-0000001', 'WF-DESK-0000002', 'WF-DESK-0000003', 'WF-DESK-0000004',
+    ])->count())->toBe(5, 'the refused run deleted the desk it was replacing');
 });
