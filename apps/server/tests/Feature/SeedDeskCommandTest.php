@@ -592,6 +592,48 @@ test('a reseed writes the same words, not just the same shapes', function (): vo
     expect($descriptions())->toBe($firstDescriptions, 'a reseed wrote different ticket descriptions');
 });
 
+test('a visitor was seen no earlier than the last thing they said', function (): void {
+    // `last_seen_at` means the latest contact by ANY channel, and the visitor
+    // directory orders by it. Visitors are written before their conversations
+    // exist, so the value was fixed before the messages that follow it -- the
+    // directory showed people as last seen minutes before a message they went
+    // on to send.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 40, '--messages' => 4, '--fresh' => true])
+        ->assertSuccessful();
+
+    $newest = ConversationMessage::query()
+        ->join('conversations', 'conversations.id', '=', 'conversation_messages.conversation_id')
+        ->where('conversation_messages.sender_type', (new Visitor)->getMorphClass())
+        ->groupBy('conversations.visitor_id')
+        ->select('conversations.visitor_id')
+        ->selectRaw('max(conversation_messages.created_at) as newest')
+        ->get()
+        ->mapWithKeys(fn ($row): array => [(int) $row->visitor_id => (string) $row->newest]);
+
+    expect($newest)->not->toBeEmpty('no visitor-authored messages, so this asserts nothing');
+
+    foreach ($newest as $visitorId => $at) {
+        $visitor = Visitor::query()->findOrFail($visitorId);
+
+        expect($visitor->last_seen_at->greaterThanOrEqualTo(Carbon::parse($at)))
+            ->toBeTrue('a visitor was last seen before a message they sent');
+    }
+
+    // And the WEB sighting is untouched. It means a website sighting, not a
+    // message, and the live board's presence lanes are computed from it --
+    // moving it would report visitors as on-site because they once wrote in.
+    // All four presence states must still be represented.
+    $webStates = Visitor::query()->get()->map(fn (Visitor $v): string => match (true) {
+        $v->last_web_seen_at === null => 'absent',
+        $v->last_web_seen_at->greaterThan(now()->subMinutes(2)) => 'active',
+        $v->last_web_seen_at->greaterThan(now()->subMinutes(15)) => 'recent',
+        default => 'quiet',
+    })->unique()->values()->all();
+
+    expect(count($webStates))
+        ->toBe(4, 'the web presence spread collapsed: '.implode(', ', $webStates));
+});
+
 test('--messages holds even for one conversation', function (): void {
     // The deltas are ordered so any PREFIX stays near zero, not just a whole
     // cycle. Running `($index % 5) - 2` kept only a low-valued prefix when the

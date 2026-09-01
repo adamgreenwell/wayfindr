@@ -161,6 +161,7 @@ final class SeedDeskCommand extends Command
             $written['conversations'] = $this->measure('Conversations', fn (): int => $this->seedConversations($desk, $conversations, $months, $messagesEach));
             $written['messages'] = $this->measure('Messages', fn (): int => $this->seedMessages($desk, $messagesEach));
             $this->syncLastMessageAt($desk);
+            $this->syncVisitorLastSeenAt($desk);
             $written['tickets'] = $this->measure('Tickets', fn (): int => $this->seedTickets($desk));
             $written['read states'] = $this->measure('Read states', fn (): int => $this->seedReadStates($desk));
         } catch (Throwable $failure) {
@@ -921,6 +922,63 @@ final class SeedDeskCommand extends Command
      *
      * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
      */
+    /**
+     * Move a visitor's last sighting up to their newest message.
+     *
+     * `last_seen_at` means the latest contact by ANY channel, and the visitor
+     * directory orders by it. Visitors are written before their conversations
+     * exist, so the value was fixed before the messages that follow it: a
+     * visitor was shown as last seen minutes before a message they went on to
+     * send.
+     *
+     * `last_web_seen_at` is deliberately left alone. That one means a WEBSITE
+     * sighting, and a message is not one -- the live board's presence lanes are
+     * computed from it, so moving it would report visitors as on-site because
+     * they once wrote in.
+     *
+     * Compared in the WHERE rather than with `greatest()`, which PostgreSQL has
+     * and SQLite does not. The suite runs on both.
+     */
+    private function syncVisitorLastSeenAt(array $desk): void
+    {
+        // Resolved in PHP rather than as a correlated subquery in the SET
+        // clause: bindings do not reach a `DB::raw()` there, and writing it as
+        // one statement means one dialect. This runs once per seed.
+        $newest = DB::table('conversation_messages')
+            ->join('conversations', 'conversations.id', '=', 'conversation_messages.conversation_id')
+            ->join('visitors', 'visitors.id', '=', 'conversations.visitor_id')
+            ->whereIn('visitors.site_id', $this->siteIds($desk))
+            ->where('conversations.support_code', 'like', 'WF-DESK-%')
+            ->where('conversation_messages.sender_type', (new Visitor)->getMorphClass())
+            ->groupBy('conversations.visitor_id')
+            ->select('conversations.visitor_id')
+            ->selectRaw('max(conversation_messages.created_at) as newest')
+            ->pluck('newest', 'conversations.visitor_id');
+
+        if ($newest->isEmpty()) {
+            return;
+        }
+
+        // Grouped by TIMESTAMP so this is one statement per distinct value
+        // rather than one per visitor. The comparison stays in the database, so
+        // a visitor already seen later than their newest message keeps the
+        // later sighting.
+        $byTimestamp = [];
+
+        foreach ($newest as $visitorId => $at) {
+            $byTimestamp[(string) $at][] = (int) $visitorId;
+        }
+
+        foreach ($byTimestamp as $at => $visitorIds) {
+            foreach (array_chunk($visitorIds, self::CHUNK) as $chunk) {
+                DB::table('visitors')
+                    ->whereIn('id', $chunk)
+                    ->where('last_seen_at', '<', $at)
+                    ->update(['last_seen_at' => $at]);
+            }
+        }
+    }
+
     private function syncLastMessageAt(array $desk): void
     {
         DB::table('conversations')
