@@ -77,11 +77,18 @@ test('the detail page is the control, and does not grow with the desk', function
     };
 
     // The row counts stay: the queue carries about 110KB of fixed chrome, so a
-    // ratio of three needs this many rows to clear it. What drops is MESSAGES
-    // per conversation, from three to one -- the bytes come from the number of
-    // rows rather than what is behind each one, and the queue's `latestMessage`
-    // eager load walks the messages table, which #842 can plan catastrophically.
-    // Same assertion, a third of the rows for it to aggregate over.
+    // ratio of three needs this many rows to clear it -- cutting them to 5
+    // against 200 failed the guard at 2.3x, which is the guard working. What
+    // drops is MESSAGES per conversation, three to one, because the bytes come
+    // from the number of rows rather than what is behind each one.
+    //
+    // This was reduced while chasing a PostgreSQL CI job that hung to its
+    // 20-minute timeout: the full suite hung three times out of three with the
+    // heavier fixture and passed with the lighter one, while the file alone and
+    // the suite without it passed either way. The correlation is all that is
+    // established. My first explanation -- a slow query on this page -- was
+    // wrong and is measured at 0.6ms, so do not trust a story about WHY this
+    // size matters until someone has one that survives being checked.
     Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 1, '--fresh' => true]);
     $small = $measure();
 
