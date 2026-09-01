@@ -4599,3 +4599,35 @@ test('the live count is grouped for the reader and raw for the script', function
     // And the German grouping is exactly what JavaScript would misread as 1.
     expect($shown)->toContain('.');
 });
+
+test('nothing in the live board parses a number out of rendered text', function (): void {
+    // The count is grouped for the reader, so the rendered text is not a number
+    // any more. Two places read it back and I fixed one: start-up took the new
+    // attribute while `resyncBoard()` kept parsing the fetched snapshot's TEXT,
+    // so the corruption moved from page load to every resync.
+    //
+    // Source-level and pattern-based, because that is the shape of the mistake:
+    // I swept for the variable I knew (`countEl`) rather than for what the code
+    // was doing, and the second site used a different name.
+    $source = (string) file_get_contents(
+        resource_path('views/agent/sites/live.blade.php')
+    );
+
+    // Comments describe the trap; they are not the trap.
+    $code = (string) preg_replace('#//[^\n]*#', '', $source);
+
+    $matched = preg_match_all('/(?:Number|parseInt|parseFloat)\s*\(\s*[A-Za-z_$][\w$.]*\.textContent/', $code, $found);
+
+    expect($matched)->toBe(0, implode("\n", [
+        'A number is being parsed out of text that is grouped for the reader:',
+        ...($found[0] ?? []),
+        '',
+        'Read `data-live-total` instead. `Number("1.000")` is 1 and',
+        '`Number("1,000")` is NaN.',
+    ]));
+
+    // And the guard can still see the shape it is looking for, or a rename
+    // would quietly retire it.
+    expect(preg_match('/(?:Number|parseInt|parseFloat)\s*\(\s*[A-Za-z_$][\w$.]*\.textContent/', 'x = Number(freshCount.textContent) || 0;'))
+        ->toBe(1, 'the pattern no longer recognises the call it was written for');
+});

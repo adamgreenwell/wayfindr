@@ -747,7 +747,11 @@
                         // at whatever it was on page load.
                         adoptServerClock(freshCount);
 
-                        refreshCount(freshCount ? Number(freshCount.textContent) || 0 : undefined);
+                        // The ATTRIBUTE, for the same reason as at start-up:
+                        // the fetched snapshot's count is grouped for its
+                        // reader too, so parsing its text turns `1.200` into 1
+                        // on every resync rather than only on page load.
+                        refreshCount(freshCount ? Number(freshCount.getAttribute('data-live-total')) || 0 : undefined);
 
                         // Re-applied on top, in arrival order, so the newer
                         // state wins over the snapshot that did not have it.
