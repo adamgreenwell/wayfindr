@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Visitors\VisitorPresence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 
@@ -82,6 +83,17 @@ test('it writes a desk with the spread a measurement needs', function (): void {
         ->count('subject');
 
     expect($distinctSubjects)->toBe(160);
+
+    // Every presence state. `last_seen_at` alone leaves each visitor
+    // `not_reported`, so the queue rendered no active or recent marker and its
+    // presence filter had one value to choose between -- a filter measured
+    // against a column with no variety measures nothing.
+    $states = Visitor::query()
+        ->get()
+        ->map(fn (Visitor $visitor): string => VisitorPresence::stateFor($visitor->last_web_seen_at))
+        ->unique();
+
+    expect($states)->toHaveCount(4, 'the seeded visitors do not reach every presence state');
 
     // Unseen messages from BOTH sides. `seen_at` describes whether a message
     // has been seen, and the two senders exercise different surfaces: an unseen
@@ -322,6 +334,18 @@ test('--messages is the average it says it is', function (): void {
             ->toBeGreaterThan($requested - 0.2, "--messages={$requested} averaged below what was asked for")
             ->toBeLessThan($requested + 0.2, "--messages={$requested} averaged above what was asked for");
     }
+});
+
+test('--messages holds even for one conversation', function (): void {
+    // The deltas are ordered so any PREFIX stays near zero, not just a whole
+    // cycle. Running `($index % 5) - 2` kept only a low-valued prefix when the
+    // count was not a multiple of five, so a single conversation asking for six
+    // messages got four.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 1, '--messages' => 6, '--fresh' => true])
+        ->assertSuccessful();
+
+    expect(ConversationMessage::query()->count())
+        ->toBe(6, 'one conversation did not get the number of messages asked for');
 });
 
 test('fresh still cleans up a half-made desk', function (): void {

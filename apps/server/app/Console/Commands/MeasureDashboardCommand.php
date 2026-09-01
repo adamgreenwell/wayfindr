@@ -190,6 +190,7 @@ final class MeasureDashboardCommand extends Command
         $timings = [];
         $bytes = 0;
         $status = 0;
+        $queries = 0;
 
         // TIMED runs are uninstrumented. Laravel's query log allocates and
         // retains an entry per query, so leaving it on inside the measured
@@ -207,13 +208,20 @@ final class MeasureDashboardCommand extends Command
             $status = self::worstStatus($status, $response->getStatusCode());
         }
 
-        // Counted separately, once, and not timed.
+        // Counted separately, once, and not timed. In a `finally`, because an
+        // error escaping this request skipped the disable -- and if logging was
+        // off when the command started, the outer restore only flushes, leaving
+        // it on for everything afterwards in a long-lived process.
         DB::flushQueryLog();
         DB::enableQueryLog();
-        $this->send($kernel, $agent, $uri);
-        $queries = count(DB::getQueryLog());
-        DB::disableQueryLog();
-        DB::flushQueryLog();
+
+        try {
+            $this->send($kernel, $agent, $uri);
+            $queries = count(DB::getQueryLog());
+        } finally {
+            DB::disableQueryLog();
+            DB::flushQueryLog();
+        }
 
         sort($timings);
 

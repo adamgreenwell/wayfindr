@@ -72,11 +72,11 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 3,987 | 21 | 37.7 MB |
-| Conversation queue (closed) | 22,195 | 16 | 186.1 MB |
-| Ticket queue (open) | 3,099 | 4,187 | 20.9 MB |
-| Ticket queue (all) | 10,150 | 12,518 | 62.5 MB |
-| **Conversation detail** | **12** | **25** | **149 KB** |
+| Conversation queue (open) | 4,373 | 21 | 38.9 MB |
+| Conversation queue (closed) | 24,581 | 16 | 192.1 MB |
+| Ticket queue (open) | 3,365 | 4,187 | 20.9 MB |
+| Ticket queue (all) | 10,180 | 12,518 | 62.5 MB |
+| **Conversation detail** | **14** | **26** | **149 KB** |
 
 ### How it grows
 
@@ -85,10 +85,10 @@ them:
 
 | Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 106 ms | 404 ms | 3.8 MB | 186 ms | 268 | 10 ms / 26 q |
-| 5,000 | 416 ms | 1,966 ms | 18.6 MB | 898 ms | 1,268 | 11 ms / 26 q |
-| 25,000 | 2,002 ms | 10,475 ms | 93.0 MB | 4,817 ms | 6,268 | 11 ms / 25 q |
-| 50,000 | 4,134 ms | 22,340 ms | 186.1 MB | 9,489 ms | 12,518 | 11 ms / 26 q |
+| 1,000 | 119 ms | 489 ms | 3.9 MB | 195 ms | 268 | 12 ms / 26 q |
+| 5,000 | 514 ms | 2,398 ms | 19.3 MB | 944 ms | 1,268 | 13 ms / 26 q |
+| 25,000 | 2,432 ms | 12,152 ms | 96.0 MB | 4,754 ms | 6,268 | 13 ms / 25 q |
+| 50,000 | 4,373 ms | 24,581 ms | 192.1 MB | 10,180 ms | 12,518 | 14 ms / 26 q |
 
 The last column is the control, and it is the point: the same page, at fifty
 times the data, costs the same.
@@ -102,13 +102,13 @@ times the data, costs the same.
 is queried, hydrated and rendered into one response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane
-is **186 MB of HTML** — a response no browser will render pleasantly and many
-proxies will refuse outright, arriving after twenty-two seconds. The open lane
+is **192 MB of HTML** — a response no browser will render pleasantly and many
+proxies will refuse outright, arriving after twenty-five seconds. The open lane
 is better only because a desk that is keeping up has fewer open rows; it is the
 same query with a narrower `where`.
 
 Response size is the number to watch here rather than milliseconds. The server
-builds 186 MB in twenty-two seconds; the browser then has to parse it.
+builds 192 MB in twenty-five seconds; the browser then has to parse it.
 
 ### The ticket queue issues one query per ticket
 
@@ -128,7 +128,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-12 ms, 25 queries and 149 KB at *every* size measured, from 20 conversations to
+14 ms, 26 queries and 149 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 

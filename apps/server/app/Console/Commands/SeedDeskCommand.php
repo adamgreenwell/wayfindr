@@ -270,6 +270,20 @@ final class SeedDeskCommand extends Command
                 'email' => $i % 3 === 0 ? null : 'visitor'.$i.'@example.test',
                 'metadata' => json_encode(['last_page_url' => 'https://desk-'.($i % $siteCount).'.example.test/page/'.($i % 50)]),
                 'last_seen_at' => $seenAt,
+                // The WEB sighting, which is what presence is computed from --
+                // `last_seen_at` alone leaves every visitor `not_reported`, so
+                // the queue never rendered an active or recent marker and the
+                // presence filter had one value to choose between.
+                //
+                // Spread across all four states: inside two minutes is active,
+                // inside fifteen is recent, older is quiet, and absent is not
+                // reported at all.
+                'last_web_seen_at' => match (self::mix($i, 'presence', 4)) {
+                    0 => $now->copy()->subMinute(),
+                    1 => $now->copy()->subMinutes(7),
+                    2 => $now->copy()->subHours(3),
+                    default => null,
+                },
                 'created_at' => $seenAt,
                 'updated_at' => $seenAt,
             ];
@@ -409,8 +423,14 @@ final class SeedDeskCommand extends Command
                     // `--messages=1` the counts 1,1,1,2,3 -- an average of 1.6
                     // against an advertised 1, which is exactly the wrong thing
                     // to get wrong in a fixture whose size is reported.
+                    // Deltas ordered so any PREFIX stays near zero, not just a
+                    // whole cycle: `0, +1, -1, +2, -2`. Running `($index % 5) -
+                    // 2` kept only a low-valued prefix when the count was not a
+                    // multiple of five, so `--conversations=1 --messages=6`
+                    // wrote four messages.
                     $spread = max(0, min(2, $messagesEach - 1));
-                    $count = $messagesEach + ($index % (2 * $spread + 1)) - $spread;
+                    $deltas = $spread === 0 ? [0] : [0, $spread - 1, -($spread - 1), $spread, -$spread];
+                    $count = $messagesEach + $deltas[$index % count($deltas)];
 
                     // Roughly a third, independent of everything else.
                     $unread = self::mix((int) $conversation->id, 'unread', 3) === 0;
