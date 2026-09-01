@@ -27,13 +27,23 @@
 
                     <div class="field">
                         <label for="article_title">{{ __('articles.write.title_label') }}</label>
-                        <input type="text" id="article_title" name="title" maxlength="160" required
+                        {{-- The same reset the detail page's editor carries: what
+                             the agent types here is the ARTICLE, written for
+                             visitors, not a sentence in the language they read the
+                             dashboard in.
+
+                             The placeholder is our copy and is translated, so it
+                             inherits the reset too. That is the accepted cost of a
+                             control carrying one language for both: the value is
+                             read back on every keystroke and outlives the hint,
+                             which is shown only while the field is empty. --}}
+                        <input type="text" id="article_title" name="title" maxlength="160" required lang=""
                             value="{{ old('title') }}" placeholder="{{ __('articles.write.title_placeholder') }}">
                     </div>
 
                     <div class="field">
                         <label for="article_body">{{ __('articles.write.body_label') }}</label>
-                        <textarea id="article_body" name="body" rows="8" maxlength="20000" required
+                        <textarea id="article_body" name="body" rows="8" maxlength="20000" required lang=""
                             placeholder="{{ __('articles.write.body_placeholder') }}"></textarea>
                         {{-- `##` and `-` are pure syntax and pass through. The link
                              and emphasis examples are not: their brackets are syntax
@@ -78,7 +88,12 @@
                     <div class="notice-copy">
                         <p>
                             @if ($articleSearch !== '')
-                                {{ __('articles.list.no_match', ['search' => $articleSearch]) }}
+                                {{-- The sentence is ours and stays German; the term
+                                     quoted inside it is whatever the agent typed,
+                                     which is the account's language. The render audit
+                                     structurally cannot see this -- interpolated data
+                                     is excused from the translation check. --}}
+                                {!! __('articles.list.no_match', ['search' => '<span lang="">'.e($articleSearch).'</span>']) !!}
                             @else
                                 {{ __('articles.list.empty') }}
                             @endif

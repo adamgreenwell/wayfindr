@@ -4159,6 +4159,25 @@ test('an article is announced as the account\'s words, not the agent\'s language
     $index = $xpathFor((string) $this->actingAs($world['admins']['de'])
         ->get(route('dashboard.account.articles.index'))->assertOk()->getContent());
 
+    // The CREATION controls as well as the list. Codex found these on the
+    // second pass: the detail page's editor was reset and the create form one
+    // section above it was not, so the same words were announced differently
+    // depending on which form the agent was in.
+    foreach ([
+        'the new-article title field' => '//input[@id="article_title"]',
+        'the new-article body field' => '//textarea[@id="article_body"]',
+    ] as $label => $query) {
+        $control = $index->query($query)->item(0);
+
+        expect($control)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($control)->toBeInstanceOf(DOMElement::class);
+
+        expect($control->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so what the agent writes is announced in the dashboard language");
+
+        expect($control->getAttribute('lang'))->toBe('');
+    }
+
     $link = $index->query('//a[contains(@href, "'.$article->slug.'") or contains(@href, "/articles/'.$article->id.'")]')->item(0);
 
     expect($link)->not->toBeNull('the article did not render in the list')
@@ -4169,6 +4188,18 @@ test('an article is announced as the account\'s words, not the agent\'s language
     // passes on exactly the markup this guard exists to reject.
     expect($link->hasAttribute('lang'))->toBeTrue('the list title carries no lang reset')
         ->and($link->getAttribute('lang'))->toBe('', 'the list title is announced in the agent language');
+
+    // The search term echoed back in the empty state. The sentence around it
+    // is ours and stays German; the term is whatever the agent typed, which is
+    // the account's language. Interpolated data is excused from the render
+    // audit's translation check, so only this can see it.
+    $searched = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.index', ['article_search' => 'Kundenrueckerstattung zzz']))
+        ->assertOk()->getContent());
+
+    $echoed = $searched->query('//*[@lang=""][contains(text(), "Kundenrueckerstattung zzz")]')->item(0);
+
+    expect($echoed)->not->toBeNull('the search term is echoed in the agent language rather than as the words the agent typed');
 
     $detail = $xpathFor((string) $this->actingAs($world['admins']['de'])
         ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent());
