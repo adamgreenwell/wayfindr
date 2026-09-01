@@ -116,7 +116,7 @@ jobs:
           DB_USERNAME: wayfindr
           DB_PASSWORD: wayfindr
           WAYFINDR_EXPECTED_DB_DRIVER: pgsql
-        run: vendor/bin/pest tests/Feature/MeasureDashboardCommandTest.php --colors=always
+        run: composer test
 
   widget-and-assets:
     name: Widget and assets
