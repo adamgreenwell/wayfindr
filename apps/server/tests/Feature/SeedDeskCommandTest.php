@@ -706,18 +706,18 @@ test('it refuses rather than take over an address somebody else holds', function
     // A desk exists FIRST, so `--fresh` has something to clean and the global
     // delete is actually reached. Without that the cleanup is a no-op and the
     // scoping cannot be observed at all.
-    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 2])
+    // ONE agent, so index 1 is still free for somebody else to hold.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 1])
         ->assertSuccessful();
 
     $other = Account::query()->create(['slug' => 'someone-elses-desk', 'name' => 'Theirs']);
 
-    // An index this run does not want, so the only thing that touches it is a
-    // rule matching the PATTERN rather than the account.
-    $bystander = User::factory()->for($other)->create(['email' => 'desk-agent-9@example.test']);
+    // An index the next run DOES want, so seeding would reassign them.
+    $bystander = User::factory()->for($other)->create(['email' => 'desk-agent-1@example.test']);
 
     $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 2, '--fresh' => true])
         ->assertFailed()
-        ->expectsOutputToContain('desk-agent-9@example.test');
+        ->expectsOutputToContain('desk-agent-1@example.test');
 
     // And the desk that was already there is INTACT. The refusals run before
     // `--fresh` deletes anything, so a run that could never have finished no
@@ -725,6 +725,31 @@ test('it refuses rather than take over an address somebody else holds', function
     expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())
         ->toBe(8, 'a refused run deleted the desk it was going to replace');
 
+    expect(User::query()->whereKey($bystander->id)->exists())
+        ->toBeTrue('a user on another account was deleted for holding a matching address');
+
+    expect(User::query()->whereKey($bystander->id)->value('account_id'))
+        ->toBe($other->id, 'a user on another account was moved onto the measurement desk');
+});
+
+test('it does not refuse over an address it would never hand out', function (): void {
+    // The refusal matched the PATTERN, so an unrelated account holding a
+    // valid-looking high index blocked every default seed -- permanently, and
+    // for an address the run could not have taken: eight agents never reach
+    // index 999. The check asks for the addresses this run actually plans to
+    // create now.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 2])
+        ->assertSuccessful();
+
+    $other = Account::query()->create(['slug' => 'someone-elses-desk', 'name' => 'Theirs']);
+    $bystander = User::factory()->for($other)->create(['email' => 'desk-agent-999@example.test']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 1, '--agents' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    // And `--fresh` still did not take them with it. The delete is scoped to
+    // the account, not to the address shape, which is the promise the narrower
+    // refusal now leans on.
     expect(User::query()->whereKey($bystander->id)->exists())
         ->toBeTrue('a user on another account was deleted for holding a matching address');
 

@@ -114,7 +114,7 @@ final class SeedDeskCommand extends Command
             $existing = Account::query()->where('slug', self::SLUG)->first();
 
             $this->refuseCollidingSupportCodes($conversations);
-            $this->refuseTakenAddresses($existing?->id);
+            $this->refuseTakenAddresses($existing?->id, $agentCount);
 
             if ($this->option('fresh')) {
                 $this->components->task('Removing the previous desk', function (): bool {
@@ -227,7 +227,7 @@ final class SeedDeskCommand extends Command
 
         for ($i = 0; $i < $agentCount; $i++) {
             $agents[] = User::query()->updateOrCreate(
-                ['email' => 'desk-agent-'.$i.'@example.test', 'account_id' => $account->id],
+                ['email' => self::agentAddress($i), 'account_id' => $account->id],
                 [
                     // One owner so the account is manageable, the rest agents,
                     // because the queue's assignee filter is only interesting
@@ -755,17 +755,25 @@ final class SeedDeskCommand extends Command
      * Failing is the correct answer to "somebody already holds the address I
      * need": it is recoverable, and taking over their account is not.
      */
-    private function refuseTakenAddresses(?int $accountId): void
+    private function refuseTakenAddresses(?int $accountId, int $agentCount): void
     {
+        // The addresses this run would actually create, not every address
+        // shaped like one. A prefix match rejected `desk-agent-999@example.test`
+        // held by an unrelated account, which a default eight-agent seed never
+        // touches -- so one stray high-index address blocked seeding for good.
+        //
+        // Built from the same helper the creation uses, because the check and
+        // the thing it is checking disagreeing is how this went wrong.
+        $planned = array_map(self::agentAddress(...), range(0, $agentCount - 1));
+
         $taken = User::query()
-            ->where('email', 'like', 'desk-agent-%@example.test')
+            ->whereIn('email', $planned)
             ->when(
                 $accountId === null,
                 fn ($query) => $query,
                 fn ($query) => $query->where(fn ($inner) => $inner->whereNull('account_id')->orWhere('account_id', '!=', $accountId)),
             )
-            ->pluck('email')
-            ->filter(fn (string $email): bool => self::isSeededAgentAddress($email));
+            ->pluck('email');
 
         if ($taken->isEmpty()) {
             return;
@@ -775,6 +783,14 @@ final class SeedDeskCommand extends Command
             'These addresses belong to a user outside the measurement desk, and this command '
             .'would take them over: '.$taken->implode(', ').'. Move or remove them first.'
         );
+    }
+
+    /**
+     * The address this command hands to the agent at `$index`.
+     */
+    private static function agentAddress(int $index): string
+    {
+        return self::AGENT_PREFIX.$index.self::AGENT_SUFFIX;
     }
 
     /**

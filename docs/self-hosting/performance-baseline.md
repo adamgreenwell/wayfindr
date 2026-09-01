@@ -103,13 +103,13 @@ single-action controllers behind `/dashboard/conversations` and
 is queried, hydrated and rendered into one response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane
-is **192 MB of HTML** — a response no browser will render pleasantly and many
-proxies will refuse outright, arriving after twenty-seven seconds. The open lane
+is **186 MB of HTML** — a response no browser will render pleasantly and many
+proxies will refuse outright, arriving after twenty-five seconds. The open lane
 is better only because a desk that is keeping up has fewer open rows; it is the
 same query with a narrower `where`.
 
 Response size is the number to watch here rather than milliseconds. The server
-builds 192 MB in twenty-seven seconds; the browser then has to parse it.
+builds 186 MB in twenty-five seconds; the browser then has to parse it.
 
 ### The ticket queue issues one query per ticket
 
@@ -129,7 +129,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-14 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations to
+12 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 
