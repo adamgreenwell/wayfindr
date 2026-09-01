@@ -1,0 +1,457 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use App\Enums\AccountRole;
+use App\Models\Account;
+use App\Models\Site;
+use App\Models\User;
+use App\Models\Visitor;
+use App\Support\ReaderNumber;
+use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Throwable;
+
+/**
+ * A desk's worth of support data, for measuring against.
+ *
+ * Wayfindr has never been measured with anything in it (#796). The disposable-VM
+ * matrix proves it installs, upgrades, backs up and restores, and every one of
+ * those is a correctness proof on an empty install. Nothing establishes how the
+ * queue, the reports or the conversation page behave once a real desk has been
+ * running for a year, which is the first question an operator asks and the one
+ * a `1.0` is a promise about.
+ *
+ * This writes that year. It is a MEASUREMENT fixture, not a demo: the data is
+ * shaped so the queries under test do real work -- statuses and assignees and
+ * categories spread out, subjects varied enough that a search is not a full
+ * match, conversations distributed across the whole window so a ninety-day
+ * report has buckets to fill -- and it is deliberately dull to read.
+ *
+ * **Bulk inserts, not factories.** Fifty thousand conversations through the
+ * model layer is hours; through `insert()` in chunks it is seconds. The cost is
+ * that model events do not fire, which is correct here: this is seeding a
+ * database, not exercising the application, and a seeder that broadcast fifty
+ * thousand presence events would measure the seeder.
+ *
+ * Everything lands in its own account so it cannot be confused with real data,
+ * and `--fresh` removes exactly that account rather than truncating tables.
+ */
+final class SeedDeskCommand extends Command
+{
+    protected $signature = 'wayfindr:seed-desk
+        {--conversations=5000 : How many conversations to write}
+        {--months=12 : The window they are spread across}
+        {--agents=8 : Agents on the account}
+        {--sites=3 : Sites the conversations are split between}
+        {--messages=6 : Average messages per conversation}
+        {--fresh : Delete a previously seeded desk first}
+        {--force : Required to run when the app is in production}';
+
+    protected $description = 'Write a desk-sized account to measure the dashboard against.';
+
+    /**
+     * The account this command owns. Nothing outside it is ever touched.
+     */
+    private const SLUG = 'wayfindr-measurement-desk';
+
+    /**
+     * Rows per INSERT. High enough that the round trips stop mattering, low
+     * enough to stay well inside the placeholder limits both drivers impose --
+     * SQLite's default is 32766 bound parameters, and a conversation row binds
+     * eleven of them.
+     */
+    private const CHUNK = 500;
+
+    public function handle(): int
+    {
+        if (app()->isProduction() && ! $this->option('force')) {
+            $this->components->error('This writes tens of thousands of rows. Re-run with --force if that is really what you want here.');
+
+            return self::FAILURE;
+        }
+
+        $conversations = max(1, (int) $this->option('conversations'));
+        $months = max(1, (int) $this->option('months'));
+        $agentCount = max(1, (int) $this->option('agents'));
+        $siteCount = max(1, (int) $this->option('sites'));
+        $messagesEach = max(0, (int) $this->option('messages'));
+
+        if ($this->option('fresh')) {
+            $this->components->task('Removing the previous desk', function (): bool {
+                // The account cascade takes its sites, and theirs takes the
+                // visitors, conversations, messages and tickets underneath. One
+                // delete rather than a truncate, so a real account sitting in
+                // the same database is untouched.
+                Account::query()->where('slug', self::SLUG)->delete();
+
+                return true;
+            });
+        }
+
+        $startedAt = microtime(true);
+        $written = [];
+
+        try {
+            $desk = $this->desk($agentCount, $siteCount);
+
+            $written['visitors'] = $this->measure('Visitors', fn (): int => $this->seedVisitors($desk, $conversations, $months));
+            $written['conversations'] = $this->measure('Conversations', fn (): int => $this->seedConversations($desk, $conversations, $months));
+            $written['messages'] = $this->measure('Messages', fn (): int => $this->seedMessages($desk, $messagesEach));
+            $written['tickets'] = $this->measure('Tickets', fn (): int => $this->seedTickets($desk));
+        } catch (Throwable $failure) {
+            $this->components->error('Seeding stopped: '.$failure->getMessage());
+
+            return self::FAILURE;
+        }
+
+        $this->newLine();
+        $this->components->twoColumnDetail('<fg=green;options=bold>Desk</>', self::SLUG);
+
+        foreach ($written as $what => $count) {
+            $this->components->twoColumnDetail(ucfirst($what), ReaderNumber::count((int) $count));
+        }
+
+        $this->components->twoColumnDetail('Window', $months.' months');
+        $this->components->twoColumnDetail('Took', ReaderNumber::decimal(microtime(true) - $startedAt, 1).'s');
+
+        $this->newLine();
+        $this->components->info('Sign in as '.$desk['agents'][0]->email.' with the password `password`.');
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * The account, its sites and its agents. Small enough for the model layer.
+     *
+     * @return array{account: Account, sites: list<Site>, agents: list<User>}
+     */
+    private function desk(int $agentCount, int $siteCount): array
+    {
+        $account = Account::query()->updateOrCreate(
+            ['slug' => self::SLUG],
+            ['name' => 'Measurement Desk'],
+        );
+
+        $agents = [];
+
+        for ($i = 0; $i < $agentCount; $i++) {
+            $agents[] = User::query()->updateOrCreate(
+                ['email' => 'desk-agent-'.$i.'@example.test'],
+                [
+                    'account_id' => $account->id,
+                    // One owner so the account is manageable, the rest agents,
+                    // because the queue's assignee filter is only interesting
+                    // when several people can hold work.
+                    'account_role' => $i === 0 ? AccountRole::Owner : AccountRole::Agent,
+                    'name' => 'Desk Agent '.($i + 1),
+                    'password' => Hash::make('password'),
+                ],
+            );
+        }
+
+        $sites = [];
+
+        for ($i = 0; $i < $siteCount; $i++) {
+            $sites[] = Site::query()->updateOrCreate(
+                ['account_id' => $account->id, 'name' => 'Desk Site '.($i + 1)],
+                [
+                    'public_key' => 'site_desk_'.$i.'_'.Str::lower(Str::random(16)),
+                    'domain' => 'desk-'.$i.'.example.test',
+                ],
+            );
+        }
+
+        return ['account' => $account, 'sites' => $sites, 'agents' => $agents];
+    }
+
+    /**
+     * One visitor per conversation, spread across the sites.
+     *
+     * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function seedVisitors(array $desk, int $conversations, int $months): int
+    {
+        $now = Carbon::now();
+        $siteCount = count($desk['sites']);
+        $written = 0;
+        $rows = [];
+
+        for ($i = 0; $i < $conversations; $i++) {
+            $seenAt = $now->copy()->subMinutes((int) ($i * $months * 43800 / max(1, $conversations)));
+
+            $rows[] = [
+                'site_id' => $desk['sites'][$i % $siteCount]->id,
+                'anonymous_id' => 'desk-visitor-'.$i,
+                // Two thirds named, because the queue renders a name where it
+                // has one and an identifier where it does not, and those are
+                // different amounts of work.
+                'name' => $i % 3 === 0 ? null : 'Visitor '.$i,
+                'email' => $i % 3 === 0 ? null : 'visitor'.$i.'@example.test',
+                'metadata' => json_encode(['last_page_url' => 'https://desk-'.($i % $siteCount).'.example.test/page/'.($i % 50)]),
+                'last_seen_at' => $seenAt,
+                'created_at' => $seenAt,
+                'updated_at' => $seenAt,
+            ];
+
+            if (count($rows) >= self::CHUNK) {
+                DB::table('visitors')->insert($rows);
+                $written += count($rows);
+                $rows = [];
+            }
+        }
+
+        if ($rows !== []) {
+            DB::table('visitors')->insert($rows);
+            $written += count($rows);
+        }
+
+        return $written;
+    }
+
+    /**
+     * Conversations across the whole window, most of them closed.
+     *
+     * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function seedConversations(array $desk, int $conversations, int $months): int
+    {
+        $now = Carbon::now();
+        $siteCount = count($desk['sites']);
+        $agentCount = count($desk['agents']);
+
+        // Read once. Matching visitors to conversations by index keeps this a
+        // single pass and means each conversation has its own visitor, which is
+        // what makes the queue's joins do the work they do in production.
+        $visitorIds = DB::table('visitors')
+            ->whereIn('site_id', array_map(fn (Site $site): int => $site->id, $desk['sites']))
+            ->where('anonymous_id', 'like', 'desk-visitor-%')
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        if ($visitorIds === []) {
+            return 0;
+        }
+
+        $subjects = $this->subjects();
+        $written = 0;
+        $rows = [];
+
+        for ($i = 0; $i < $conversations; $i++) {
+            $openedAt = $now->copy()->subMinutes((int) ($i * $months * 43800 / max(1, $conversations)));
+
+            // Roughly one in six still open, which is the shape of a desk that
+            // is keeping up. A queue of nothing but closed rows would make the
+            // default view -- the one an agent actually opens -- the cheapest
+            // query here rather than the most expensive.
+            $open = $i % 6 === 0;
+
+            $rows[] = [
+                'site_id' => $desk['sites'][$i % $siteCount]->id,
+                'visitor_id' => $visitorIds[$i % count($visitorIds)],
+                // Half the open ones unassigned, so the "assigned to me" and
+                // "unassigned" lanes both have rows.
+                'assigned_agent_id' => $i % 2 === 0 ? $desk['agents'][$i % $agentCount]->id : null,
+                'support_code' => 'WF-DESK-'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
+                'status' => $open ? 'open' : 'closed',
+                'subject' => $subjects[$i % count($subjects)].' '.$i,
+                'metadata' => json_encode([]),
+                'last_message_at' => $openedAt->copy()->addMinutes(30),
+                'closed_at' => $open ? null : $openedAt->copy()->addHours(4),
+                'created_at' => $openedAt,
+                'updated_at' => $openedAt,
+            ];
+
+            if (count($rows) >= self::CHUNK) {
+                DB::table('conversations')->insert($rows);
+                $written += count($rows);
+                $rows = [];
+            }
+        }
+
+        if ($rows !== []) {
+            DB::table('conversations')->insert($rows);
+            $written += count($rows);
+        }
+
+        return $written;
+    }
+
+    /**
+     * Messages under each conversation, alternating visitor and agent.
+     *
+     * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function seedMessages(array $desk, int $messagesEach): int
+    {
+        if ($messagesEach === 0) {
+            return 0;
+        }
+
+        $agentIds = array_map(fn (User $agent): int => $agent->id, $desk['agents']);
+        $written = 0;
+
+        // Streamed in chunks rather than plucked whole: at fifty thousand
+        // conversations the id list alone is the largest thing this command
+        // would hold, and there is no reason to hold it.
+        DB::table('conversations')
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->orderBy('id')
+            ->select(['id', 'visitor_id', 'created_at'])
+            ->chunk(self::CHUNK, function ($conversations) use ($messagesEach, $agentIds, &$written): void {
+                $rows = [];
+
+                foreach ($conversations as $index => $conversation) {
+                    $startedAt = Carbon::parse($conversation->created_at);
+
+                    // Varied, not uniform. Every conversation holding exactly
+                    // six messages makes the detail page's cost a constant, and
+                    // the long ones are where it is worth knowing.
+                    $count = max(1, $messagesEach + ($index % 5) - 2);
+
+                    for ($m = 0; $m < $count; $m++) {
+                        $fromVisitor = $m % 2 === 0;
+
+                        $rows[] = [
+                            'conversation_id' => $conversation->id,
+                            'sender_type' => $fromVisitor ? Visitor::class : User::class,
+                            'sender_id' => $fromVisitor ? $conversation->visitor_id : $agentIds[$m % count($agentIds)],
+                            'type' => 'text',
+                            'body' => 'Message '.$m.' on conversation '.$conversation->id.'. '
+                                .'Enough words that a body column holds something worth reading past.',
+                            'metadata' => json_encode([]),
+                            'seen_at' => $startedAt->copy()->addMinutes($m + 1),
+                            'created_at' => $startedAt->copy()->addMinutes($m),
+                            'updated_at' => $startedAt->copy()->addMinutes($m),
+                        ];
+                    }
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('conversation_messages')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        return $written;
+    }
+
+    /**
+     * A ticket on roughly one conversation in four.
+     *
+     * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function seedTickets(array $desk): int
+    {
+        $agentIds = array_map(fn (User $agent): int => $agent->id, $desk['agents']);
+        $categories = ['question', 'bug', 'billing', 'access', 'task', 'other'];
+        $priorities = ['low', 'normal', 'high', 'urgent'];
+        $statuses = ['open', 'pending', 'closed'];
+        $written = 0;
+
+        DB::table('conversations')
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->orderBy('id')
+            ->select(['id', 'site_id', 'visitor_id', 'created_at', 'subject'])
+            ->chunk(self::CHUNK, function ($conversations) use ($desk, $agentIds, $categories, $priorities, $statuses, &$written): void {
+                $rows = [];
+
+                foreach ($conversations as $index => $conversation) {
+                    if ($index % 4 !== 0) {
+                        continue;
+                    }
+
+                    // Cycled on a per-TICKET counter, not on the conversation
+                    // id. Tickets are taken every fourth conversation, so ids
+                    // step by four -- and `id % 4` is then the same number for
+                    // every ticket, which gave all of them one priority. Same
+                    // trap waiting for any modulus sharing a factor with the
+                    // stride.
+                    $n = $written + count($rows);
+
+                    $raisedAt = Carbon::parse($conversation->created_at);
+                    $status = $statuses[$n % count($statuses)];
+
+                    $rows[] = [
+                        'account_id' => $desk['account']->id,
+                        'site_id' => $conversation->site_id,
+                        'conversation_id' => $conversation->id,
+                        'requester_id' => $conversation->visitor_id,
+                        // A third unassigned, so the attention lanes have rows.
+                        'assignee_id' => $n % 3 === 0 ? null : $agentIds[$n % count($agentIds)],
+                        'status' => $status,
+                        'priority' => $priorities[$n % count($priorities)],
+                        'category' => $categories[$n % count($categories)],
+                        'subject' => (string) $conversation->subject,
+                        'description' => 'Raised from conversation '.$conversation->id.'.',
+                        'metadata' => json_encode([]),
+                        'closed_at' => $status === 'closed' ? $raisedAt->copy()->addDays(2) : null,
+                        'created_at' => $raisedAt,
+                        'updated_at' => $raisedAt,
+                    ];
+                }
+
+                if ($rows === []) {
+                    return;
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('tickets')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        return $written;
+    }
+
+    /**
+     * Subjects with enough spread that a search is a search.
+     *
+     * Twelve openings rather than one repeated: a `LIKE` across fifty thousand
+     * identical subjects either matches everything or nothing, and neither
+     * timing tells an operator anything about their own desk.
+     *
+     * @return list<string>
+     */
+    private function subjects(): array
+    {
+        return [
+            'Refund not received for order',
+            'Cannot sign in after password reset',
+            'Invoice shows the wrong VAT rate',
+            'Widget not loading on checkout',
+            'Duplicate charge on card ending',
+            'Export finished but the file is empty',
+            'Two-factor codes rejected',
+            'Delivery address will not save',
+            'Subscription renewed after cancelling',
+            'Attachment upload fails over 5MB',
+            'Report totals disagree with the dashboard',
+            'Account owner left the company',
+        ];
+    }
+
+    /**
+     * Run one step, printing what it wrote and how long it took.
+     *
+     * @param  callable(): int  $step
+     */
+    private function measure(string $label, callable $step): int
+    {
+        $startedAt = microtime(true);
+        $written = $step();
+
+        $this->components->twoColumnDetail(
+            $label,
+            ReaderNumber::count((int) $written).' rows <fg=gray>'.ReaderNumber::decimal(microtime(true) - $startedAt, 1).'s</>',
+        );
+
+        return $written;
+    }
+}

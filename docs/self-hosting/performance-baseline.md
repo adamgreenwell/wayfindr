@@ -1,0 +1,142 @@
+# What Wayfindr does with a desk's worth of data in it
+
+**Measured 1 September 2026.** Before this, Wayfindr had never been measured
+under load — not badly, at all. Everything the disposable-VM matrix proves is a
+correctness proof on an empty install.
+
+This page is the first answer to the question a self-hosted `1.0` has to be able
+to answer: *how much can it take?*
+
+**The short version: the conversation and ticket queues do not paginate, and at
+a year of real traffic they stop being usable.** The conversation detail page is
+fine and stays fine. Numbers below.
+
+## Reproducing this
+
+Two commands. Both are shipped, so an operator can run them against their own
+hardware rather than trusting these figures:
+
+```bash
+php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh
+```
+
+```bash
+php artisan wayfindr:measure-dashboard --runs=3
+```
+
+The seeder writes to its own account (`wayfindr-measurement-desk`) and `--fresh`
+deletes exactly that account, so it is safe to run beside real data. It refuses
+to run in production without `--force`.
+
+## The hardware these numbers came from
+
+Figures are only comparable against the machine that produced them, so:
+
+| | |
+| --- | --- |
+| Machine | Apple M4 Max, 16 cores, 128 GB |
+| OS | macOS 27.0 |
+| PHP | 8.5.8 |
+| Database | PostgreSQL 18.4, local |
+| Dataset | 50,000 conversations, 300,000 messages, 12,500 tickets, 50,000 visitors, over 12 months |
+
+**This is a fast development machine, so read these as a floor.** A modest VPS —
+the thing most self-hosted installs actually run on — will be several times
+slower, and the measurements exclude the network, the web server and TLS because
+requests are dispatched through the HTTP kernel directly.
+
+## The numbers
+
+At 50,000 conversations:
+
+| Page | ms (median) | Queries | Response |
+| --- | ---: | ---: | ---: |
+| Conversation queue (open) | 4,438 | 21 | 37.2 MB |
+| Conversation queue (closed) | 23,906 | 15 | 186.5 MB |
+| Conversation queue (search) | 2,297 | 21 | 18.8 MB |
+| Conversation queue (assigned to me) | 1,218 | 21 | 9.5 MB |
+| Ticket queue (open) | 3,413 | 4,184 | 21.0 MB |
+| Ticket queue (all) | 10,334 | 12,518 | 62.4 MB |
+| **Conversation detail** | **11** | **24** | **150 KB** |
+
+### How it grows
+
+Every queue is linear in the number of rows, because every queue renders all of
+them:
+
+| Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 110 ms | 422 ms | 4.0 MB | 188 ms | 268 |
+| 5,000 | 427 ms | 2,139 ms | 19.6 MB | 966 ms | 1,268 |
+| 25,000 | 2,146 ms | 11,148 ms | 97.8 MB | 5,059 ms | 6,268 |
+| 50,000 | 4,438 ms | 23,906 ms | 186.5 MB | 10,334 ms | 12,518 |
+
+## What that means
+
+### Neither queue paginates
+
+`AgentConversationController` and `AgentTicketController` contain no
+`paginate()`. Every conversation and every ticket matching the current filters
+is queried, hydrated and rendered into one response.
+
+At a thousand conversations that is invisible. At fifty thousand the closed lane
+is **186 MB of HTML** — a response no browser will render pleasantly and many
+proxies will refuse outright, arriving after twenty-four seconds. The open lane
+is better only because a desk that is keeping up has fewer open rows; it is the
+same query with a narrower `where`.
+
+Response size is the number to watch here rather than milliseconds. The server
+builds 186 MB in twenty-four seconds; the browser then has to parse it.
+
+### The ticket queue issues one query per ticket
+
+12,518 queries to render the ticket list, of which **12,499 are the same query**:
+
+```sql
+select * from "audit_events"
+where "subject_type" = ? and "subject_id" = ? and "action" in (...)
+```
+
+One per ticket, lazily loaded while rendering. This is an N+1, and it is the
+reason the ticket queue is slower than the conversation queue despite holding a
+quarter as many rows. It would be invisible on a demo install and severe on a
+busy one — and unlike the pagination issue, it does not need a large desk to be
+worth fixing, only a large enough one to notice.
+
+### The conversation detail page is fine
+
+11 ms, 24 queries and 150 KB at *every* size measured, from 20 conversations to
+50,000. Its cost is bounded by one conversation's own messages rather than by
+the desk around it, which is what the other pages are not.
+
+This is worth stating as plainly as the problems: the page an agent spends most
+of their day inside does not degrade, and the guard in
+`MeasureDashboardCommandTest` asserts that it stays that way.
+
+## What has NOT been measured
+
+Stated because a baseline with silent gaps is worse than one with named ones:
+
+- **Reverb, and concurrent agent count.** #796 asks for a figure an operator can
+  size against. Producing one needs many real WebSocket clients against a
+  running Reverb, which is a different kind of harness from this one. Nothing
+  here establishes it.
+- **Reporting.** The report tabs stream rows and bucket them in PHP, deliberately
+  and for portability (`docs/product/reporting.md`), and that decision has never
+  been measured against a busy desk. The seeder produces data spread across
+  twelve months specifically so this can be measured next; it has not been.
+- **Attachments and the retention sweep.** No large object count has been run
+  through either.
+- **Cobrowse mutation batches** on a heavy page.
+- **Concurrency of any kind.** Every figure here is one request at a time on an
+  otherwise idle machine. Real contention will be worse.
+
+## What this does not say
+
+It does not say Wayfindr is slow. It says two specific pages are unbounded, one
+of them additionally holds an N+1, and one page that could have been either is
+neither.
+
+Fixing any of that is deliberately not part of taking this measurement. The
+point of a baseline is to exist before the change, so the next set of numbers
+can be compared rather than guessed at.
