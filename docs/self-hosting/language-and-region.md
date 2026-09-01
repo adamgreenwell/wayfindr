@@ -38,12 +38,16 @@ how existing timestamps are *read*, not what was written — so switching from
 `UTC` to `Europe/Berlin` shifts what you see by the offset, immediately and
 reversibly, with no migration and no risk to stored data.
 
-This is also why `APP_TIMEZONE` is **not** what this setting changes, and why you
-should leave it at `UTC`. Laravel writes `created_at` through `APP_TIMEZONE`,
-into columns that carry no offset. Point it at a local zone and rows written from
-then on record local wall-clock time in a column every other reader — and every
-report query — treats as UTC. The drift is permanent and invisible. Set the
-display clock here instead.
+This is also why the storage clock is **not** what this setting changes. That
+one is `app.timezone`, and it is **hardcoded to `UTC`** in `config/app.php` —
+there is no environment variable for it, deliberately.
+
+Laravel writes `created_at` through that value, into columns that carry no
+offset. Point it at a local zone and rows written from then on record local
+wall-clock time in a column every other reader — and every report query —
+treats as UTC. The drift is permanent and invisible, which is why it is not
+offered as a setting at all. The display clock is a separate setting for
+exactly that reason.
 
 ## Environment defaults
 
