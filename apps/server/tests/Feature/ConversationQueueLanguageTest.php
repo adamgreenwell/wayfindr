@@ -6,6 +6,7 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\ApiToken;
 use App\Models\Article;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
@@ -248,6 +249,50 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         'slug' => 'acme-datenpunkt-artikel',
         'body' => 'Acme Datenpunkt.',
         'published_at' => now(),
+    ]);
+
+    // API tokens, one per branch of the tokens table. A single active row
+    // leaves the expiry, revocation, purged-site, no-abilities and never-used
+    // copy unrendered -- on this page most of the sentences ARE the branches,
+    // so a one-row fixture would measure the headings and little else.
+    $issuer = User::factory()->for($account)->create(['name' => 'Ada Datenpunkt']);
+
+    // Active, unrestricted, used, and issued by somebody -- the only row that
+    // reaches the `created_by` form of the sentence.
+    ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Sync',
+        'created_by_id' => $issuer->id,
+        'last_four' => 'a1b2',
+        'last_used_at' => now()->subHours(3),
+    ]);
+
+    // Expiring rather than expired, restricted to a site it can name, and
+    // never used.
+    $restricted = ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Report',
+        'last_four' => 'c3d4',
+        'restricts_sites' => true,
+        'expires_at' => now()->addDays(30),
+    ]);
+    $restricted->sites()->attach($site);
+
+    ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Legacy',
+        'last_four' => 'e5f6',
+        'expires_at' => now()->subDay(),
+    ]);
+
+    // Revoked, with no abilities, and restricted to sites that have all since
+    // been purged. That last combination reaches NOTHING, which is the
+    // opposite of what an empty site list means for an unrestricted token --
+    // the two have separate sentences and this is the only row that renders
+    // the second one.
+    ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Retired',
+        'last_four' => 'g7h8',
+        'abilities' => [],
+        'restricts_sites' => true,
+        'revoked_at' => now()->subWeek(),
     ]);
 
     return [
@@ -1111,6 +1156,7 @@ function conversationQueueLanguageCognates(): array
         'Normal' => 'the same word in both languages, as a priority',
         'Live' => 'the same word in both languages, as a transport state',
         'URL' => 'the same word in both languages',
+        'Token' => 'the same word in both languages -- German writes DAS Token and hyphenates the compound, so the bare column header is identical while the page title is not',
         'Label' => 'a loanword German uses as-is',
         'Labels' => 'a loanword German uses as-is',
         'English' => 'an autonym -- the language selector names each language in its own language',
@@ -1162,6 +1208,9 @@ function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $engli
     $isData = fn (string $text): bool => stripos($text, 'Datenpunkt') !== false
         || str_contains($text, 'WF-LANG')
         || str_contains($text, 'anon-')
+        // A token hint (`wfk_…a1b2`) is the credential's own identifier, and
+        // the prefix alone reads as a three-letter word to the check below.
+        || str_starts_with($text, ApiToken::PREFIX)
         || str_contains($text, '@')
         // IANA time zone identifiers. `Europe/Berlin` is a NAME, not copy:
         // the same string in every language by design, and a translated one is
@@ -1256,6 +1305,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
         route('dashboard.account.reply-templates.index'),
         route('dashboard.account.labels.index'),
+        route('dashboard.account.api-tokens.index'),
         route('dashboard.account.articles.index'),
         // The DETAIL page explicitly. The prefix match above would let it pass
         // on the index's coverage without ever rendering it -- which the loop's
@@ -1485,6 +1535,13 @@ test('every cognate on the list still appears, so the list cannot rot', function
         // that is perfectly real.
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.show', $conversation->support_code))->getContent()
+        ),
+        // And the API-tokens page, where `Token` is a column header and
+        // appears nowhere else. ADMIN rather than agent: the page 403s
+        // otherwise, and a page that does not load announces nothing -- which
+        // this guard would read as a cognate that has stopped appearing.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.account.api-tokens.index'))->getContent()
         ),
     ), 'text');
 
@@ -2480,6 +2537,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'ticket_labels.list.heading = Labels',
         'ticket_labels.list.column_label = Label',
         'ticket_labels.list.column_slug = Slug',
+        'api_tokens.list.column_name = Name',
+        'api_tokens.list.column_token = Token',
     ];
 
     expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],

@@ -99,5 +99,21 @@ return [
         'name' => 'Name',
         'password' => 'Passwort',
         'password_confirmation' => 'Passwortbestätigung',
+
+        // The articles page. `body` was already here for the reply composer;
+        // `title` was not, so an over-long article title produced a correct
+        // German sentence with the English column name sitting inside it.
+        'title' => 'Titel',
+
+        // The API-tokens page. `abilities` and `site_ids` arrive as arrays.
+        // The per-entry `abilities.*` and `site_ids.*` forms are deliberately
+        // NOT here: a literal dotted key cannot coexist with its own parent in
+        // a catalogue that nests on dots, and neither rule is reachable from
+        // the form -- the ability checkbox has a fixed value and the site ids
+        // come from rendered checkboxes, so only a hand-built request fails
+        // them, and that request gets the framework's own wording.
+        'expires_in_days' => 'Gültigkeitsdauer in Tagen',
+        'abilities' => 'Berechtigungen',
+        'site_ids' => 'Websites',
     ],
 ];

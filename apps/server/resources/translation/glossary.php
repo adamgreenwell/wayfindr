@@ -80,6 +80,11 @@ return [
             // uses for it. `Kürzel` means an abbreviation and would describe
             // the wrong thing beside a column showing `vip-customer`.
             'Slug',
+
+            // The credential this platform hands out. German writes `das
+            // Token` and hyphenates the compound (`API-Token`), so the bare
+            // column header is identical while the page title is not.
+            'Token',
             'Normal',
             'System',
             ':count ms',
@@ -96,6 +101,8 @@ return [
 
             // Loanwords Italian tech writing uses as-is.
             'Ticket',
+            // Invariable in the plural: `i token`, never `i tokens`.
+            'Token',
             'Email',
             'Account',
             'Admin',
@@ -191,6 +198,8 @@ return [
             'owner_assignee' => ['term' => 'responsabile', 'note' => 'Whoever is responsible for a conversation or a ticket. The same split by SENSE that German makes with Inhaber/Zuständig.'],
             'email' => ['term' => 'email', 'note' => 'Invariable loanword. `indirizzo email` where the sentence needs the address specifically.'],
             'support_code' => ['term' => 'codice di supporto', 'note' => 'Against the compressed `codice supporto`, which reads more like a product name than a thing you can quote to someone.'],
+            'api_token' => ['term' => 'token API', 'note' => 'Qualifier follows the noun, and the loanword is invariable: `i token API`, never `i tokens`.'],
+            'ability' => ['term' => 'autorizzazione', 'note' => 'What a token is permitted to do. `capacità` is a personal capability and would describe the wrong thing beside a list of permissions.'],
             'request_action' => ['term' => 'Richiedi', 'note' => 'The verb: an agent asks the visitor widget for a snapshot or a session.'],
             'request_object' => ['term' => 'richiesta', 'note' => 'The thing that verb produces.'],
             'request_inquiry' => ['term' => 'richiesta', 'note' => 'Italian does NOT separate this the way German separates Anforderung from Anfrage -- both senses are `richiesta`. `domanda` is a question rather than a request and would be worse. Recorded as a deliberate merge so the next reader knows it was considered, not missed.'],
@@ -258,6 +267,8 @@ return [
             'owner_assignee' => ['term' => 'Zuständig', 'note' => 'Whoever is responsible for a work item: a conversation, a ticket. Takes "zuständige Person" where the sentence needs a noun. A split by SENSE rather than by density, and the one case where the audit found the shipped German already correct and this table wrong -- ratified by use, not proposed.'],
             'email' => ['term' => 'E-Mail', 'note' => 'Hyphen and capital M. "Email" is a different German word.'],
             'support_code' => ['term' => 'Support-Code'],
+            'api_token' => ['term' => 'API-Token', 'note' => 'Neuter -- DAS Token. Hyphenated: `API Token` open is English orthography, and German compounds this one.'],
+            'ability' => ['term' => 'Berechtigung', 'note' => 'What a token is permitted to do. NOT `Fähigkeit`, which is a personal capability -- a credential holds permissions, it has no aptitude.'],
 
             // English says `request` for four different things. German has the
             // words to keep them apart, and the catalogue drifted because
@@ -348,6 +359,10 @@ return [
             // not extracted yet -- as well as `sconto` and `racconto`, so a
             // bare entry would start crying wolf on the next slice but one.
             ' conto' => 'account is account -- `conto` is a bank account',
+            // `capacità` uncompounded. Not a substring of anything else in the
+            // shipped catalogues, and the whole point of the ability entry is
+            // that the obvious cognate is the wrong sense.
+            'capacità' => 'ability is autorizzazione -- `capacità` is a personal capability, not a permission a credential holds',
         ],
 
         'de' => [
@@ -355,6 +370,10 @@ return [
             'Schnappschuss' => 'snapshot is Snapshot',
             'Momentaufnahme' => 'snapshot is Snapshot',
             'Standort' => 'site is Website -- Standort is a physical location',
+            // Deliberately the full word rather than `Fähigkeit`: German
+            // compounds it (`Fähigkeiten`), and both forms are caught by the
+            // stem, but nothing else in these catalogues contains it.
+            'Fähigkeit' => 'ability is Berechtigung -- Fähigkeit is a personal capability, not a permission a credential holds',
             'Besucher:innen' => 'the colon form is rejected on accessibility grounds (policy section 8)',
             'angefragt' => 'request_action is angefordert',
             // `anfragen` is NOT listed, and the reason is the point of the rule

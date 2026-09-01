@@ -674,7 +674,7 @@ test('a revocation decides from the locked row, not the one read before it', fun
     $this->actingAs($admin)
         ->delete(route('dashboard.account.api-tokens.destroy', $token))
         ->assertRedirect(route('dashboard.account.api-tokens.index'))
-        ->assertSessionHas('status', 'That API token was already revoked.');
+        ->assertSessionHas('status', 'api_tokens.flash.already_revoked');
 
     // The moment it was actually disabled survives, rather than being stamped
     // over with the moment somebody asked a second time.
@@ -700,8 +700,59 @@ test('revoking twice in a row records it once', function (): void {
 
     $this->actingAs($admin)
         ->delete(route('dashboard.account.api-tokens.destroy', $token))
-        ->assertSessionHas('status', 'That API token was already revoked.');
+        ->assertSessionHas('status', 'api_tokens.flash.already_revoked');
 
     expect($token->fresh()->revoked_at->timestamp)->toBe($firstRevokedAt->timestamp)
         ->and(AuditEvent::query()->where('action', 'api_token.revoked')->count())->toBe(1);
+});
+
+test('every flashed status is a key, taken from the action that flashes it', function (): void {
+    // The controller flashes a KEY rather than a sentence, because it
+    // redirects: the request that renders the flash is a different request
+    // from the one that chose it, and an agent's language is resolved per
+    // request.
+    //
+    // Driven through the ACTIONS rather than over the catalogue. The first
+    // version of this test iterated the four keys and asserted each resolved
+    // in German -- which proves the catalogue has them and nothing about what
+    // the controller does. Reverting `flash.revoked` to an English sentence
+    // left it green.
+    ['admin' => $admin, 'account' => $account, 'site' => $site] = tokenAdmin();
+
+    $flashes = [];
+
+    $flashes['created_limited'] = $this->actingAs($admin)
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']])
+        ->getSession()->get('status');
+
+    $flashes['created'] = $this->actingAs($admin)
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Scoped sync',
+            'abilities' => ['read'],
+            'site_ids' => [$site->id],
+        ])
+        ->getSession()->get('status');
+
+    $token = ApiToken::query()->firstOrFail();
+
+    $flashes['revoked'] = $this->actingAs($admin)
+        ->delete(route('dashboard.account.api-tokens.destroy', $token))
+        ->getSession()->get('status');
+
+    $flashes['already_revoked'] = $this->actingAs($admin)
+        ->delete(route('dashboard.account.api-tokens.destroy', $token))
+        ->getSession()->get('status');
+
+    foreach ($flashes as $action => $flashed) {
+        expect($flashed)->toBeString()->not->toBe('', "the {$action} action flashed nothing");
+
+        // A key, not a sentence -- `__()` on a sentence returns the sentence.
+        expect(__($flashed, [], 'de'))
+            ->not->toBe($flashed, "the {$action} action flashed '{$flashed}', which is not a catalogue key")
+            ->and(__($flashed, [], 'de'))->not->toBe(__($flashed, [], 'en'));
+    }
+
+    // And all four are distinct, so a controller collapsing two of them into
+    // one key cannot pass on the other's translation.
+    expect(array_unique(array_values($flashes)))->toHaveCount(4);
 });
