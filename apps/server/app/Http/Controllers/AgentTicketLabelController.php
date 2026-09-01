@@ -43,7 +43,7 @@ class AgentTicketLabelController extends Controller
 
         if ($this->accountLabelSlugExists((int) $account->id, $label['slug'])) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label already exists for this account.',
+                'label_name' => __('ticket_labels.validation.duplicate'),
             ]);
         }
 
@@ -63,7 +63,7 @@ class AgentTicketLabelController extends Controller
 
         if ($this->labelSlugExists($ticketLabel, $label['slug'])) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label already exists for this account.',
+                'label_name' => __('ticket_labels.validation.duplicate'),
             ]);
         }
 
@@ -82,7 +82,7 @@ class AgentTicketLabelController extends Controller
 
         if ($ticketLabel->tickets()->exists()) {
             throw ValidationException::withMessages([
-                'label' => 'Remove this label from tickets before deleting it.',
+                'label' => __('ticket_labels.validation.in_use'),
             ]);
         }
 
@@ -117,13 +117,13 @@ class AgentTicketLabelController extends Controller
 
         if ($name === '' || $slug === '') {
             throw ValidationException::withMessages([
-                'label_name' => 'Use at least one letter or number for the label.',
+                'label_name' => __('ticket_labels.validation.empty'),
             ]);
         }
 
         if (TicketLabel::isReservedSlug($slug)) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label name is reserved for ticket filtering.',
+                'label_name' => __('ticket_labels.validation.reserved'),
             ]);
         }
 

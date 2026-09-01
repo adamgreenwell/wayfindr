@@ -68,4 +68,11 @@ return [
         'body' => 'Usi le etichette quando i ticket hanno bisogno di contesto di triage ripetibile, segnali di escalation o raggruppamenti di flusso. Inizi con poche etichette che il suo team userà davvero.',
         'action' => 'Crea la prima etichetta',
     ],
+
+    'validation' => [
+        'duplicate' => 'Questa etichetta esiste già in questo conto.',
+        'in_use' => 'Rimuova questa etichetta dai ticket prima di eliminarla.',
+        'empty' => 'Usi almeno una lettera o una cifra per l\'etichetta.',
+        'reserved' => 'Questo nome di etichetta è riservato al filtro dei ticket.',
+    ],
 ];

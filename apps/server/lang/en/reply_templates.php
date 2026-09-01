@@ -72,4 +72,9 @@ return [
         'archive' => 'Archive',
         'archived_note' => 'Archived templates stay out of reply helpers.',
     ],
+
+    'validation' => [
+        'name' => 'Please name this reply template.',
+        'body' => 'Please add a reply body.',
+    ],
 ];

@@ -98,13 +98,13 @@ class AgentReplyTemplateController extends Controller
 
         if ($templateInput['name'] === '') {
             throw ValidationException::withMessages([
-                'name' => 'Please name this reply template.',
+                'name' => __('reply_templates.validation.name'),
             ]);
         }
 
         if ($templateInput['body'] === '') {
             throw ValidationException::withMessages([
-                'body' => 'Please add a reply body.',
+                'body' => __('reply_templates.validation.body'),
             ]);
         }
 

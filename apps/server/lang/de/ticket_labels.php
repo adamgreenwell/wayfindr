@@ -67,4 +67,11 @@ return [
         'body' => 'Verwenden Sie Labels, wenn Tickets wiederkehrenden Triage-Kontext, Eskalationshinweise oder eine Gruppierung im Arbeitsablauf brauchen. Beginnen Sie mit wenigen Labels, die Ihr Team wirklich nutzt.',
         'action' => 'Erstes Label erstellen',
     ],
+
+    'validation' => [
+        'duplicate' => 'Dieses Label gibt es in diesem Konto bereits.',
+        'in_use' => 'Entfernen Sie dieses Label von den Tickets, bevor Sie es löschen.',
+        'empty' => 'Verwenden Sie mindestens einen Buchstaben oder eine Ziffer für das Label.',
+        'reserved' => 'Dieser Labelname ist für die Ticket-Filterung reserviert.',
+    ],
 ];

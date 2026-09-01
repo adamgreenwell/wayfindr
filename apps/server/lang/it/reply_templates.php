@@ -78,4 +78,9 @@ return [
         'archive' => 'Archivia',
         'archived_note' => 'I modelli archiviati non compaiono tra gli assistenti di risposta.',
     ],
+
+    'validation' => [
+        'name' => 'Assegni un nome a questo modello di risposta.',
+        'body' => 'Aggiunga un testo della risposta.',
+    ],
 ];

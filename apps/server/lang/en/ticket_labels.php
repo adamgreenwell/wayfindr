@@ -65,4 +65,11 @@ return [
         'body' => 'Use labels when tickets need repeatable triage context, escalation cues, or workflow grouping. Start with a few labels your team will actually use.',
         'action' => 'Create the first label',
     ],
+
+    'validation' => [
+        'duplicate' => 'That label already exists for this account.',
+        'in_use' => 'Remove this label from tickets before deleting it.',
+        'empty' => 'Use at least one letter or number for the label.',
+        'reserved' => 'That label name is reserved for ticket filtering.',
+    ],
 ];
