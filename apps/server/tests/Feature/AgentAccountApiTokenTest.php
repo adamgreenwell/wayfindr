@@ -796,3 +796,49 @@ test('the active count agrees with the number in Italian', function (): void {
     $this->assertStringNotContainsString('1 attivi', $html,
         'the active count did not agree with the number');
 });
+
+test('the issued credential is announced as characters, not as words', function (): void {
+    // The one-time banner shows the plaintext token and the header it goes in.
+    // Neither is words in any language, and the token is the one string on this
+    // page a reader may need to transcribe character by character.
+    //
+    // This state exists only AFTER a create -- the banner is absent on the page
+    // the render audit visits -- so nothing else renders it. Reached by
+    // following the redirect rather than by faking the flash, or the test would
+    // prove the markup and not that the action reaches it.
+    ['admin' => $admin] = tokenAdmin();
+    $admin->update(['locale' => 'de']);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']])
+        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+
+    $html = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $banner = $xpath->query('//section[@aria-labelledby="api-token-issued-heading"]')->item(0);
+
+    expect($banner)->not->toBeNull('the issuance banner did not render; this guard is checking nothing');
+
+    $codes = $xpath->query('.//code', $banner);
+
+    expect($codes->length)->toBe(2, 'the banner no longer shows both the credential and the header');
+
+    foreach ($codes as $code) {
+        expect($code->hasAttribute('lang'))
+            ->toBeTrue('a credential string in the issuance banner is announced in the agent language');
+
+        expect($code->getAttribute('lang'))->toBe('');
+    }
+
+    // The prose around them is still German.
+    $heading = $xpath->query('//h2[@id="api-token-issued-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull()
+        ->and($heading->hasAttribute('lang'))->toBeFalse()
+        ->and(trim($heading->textContent))->toBe(__('api_tokens.issued.heading', [], 'de'));
+});

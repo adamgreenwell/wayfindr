@@ -23,13 +23,16 @@
             </div>
             <div class="notice-copy" data-state="warning">
                 <p>{{ __('api_tokens.issued.hashed') }}</p>
-                <p><code>{{ $issuedToken }}</code></p>
+                {{-- The credential itself. Not words in any language, and the
+                     one string on this page a reader may need to transcribe
+                     character by character. --}}
+                <p><code lang="">{{ $issuedToken }}</code></p>
                 <p>
                     {{-- The header is a WIRE FORMAT, not copy: it is sent
                          verbatim or the request fails. It is passed in rather
                          than translated, and is identical in every language on
                          purpose -- the same reasoning as an IANA zone name. --}}
-                    {!! __('api_tokens.issued.send_as', ['header' => '<code>Authorization: Bearer &lt;token&gt;</code>']) !!}
+                    {!! __('api_tokens.issued.send_as', ['header' => '<code lang="">Authorization: Bearer &lt;token&gt;</code>']) !!}
                 </p>
             </div>
         </section>
