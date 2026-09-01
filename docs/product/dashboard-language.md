@@ -1,8 +1,16 @@
 # The language the dashboard speaks
 
-Status: **in progress.** The plumbing is shipped and the agent profile page is
-translated, with one recorded exception below. The remaining views are being
-extracted surface by surface.
+Status: **in progress.** The plumbing is shipped, and
+`DashboardLanguage::EXTRACTED_ROUTES` names **28 routes — 11 of them pages** a
+reader can open, the rest the write and partial endpoints those pages call. The
+extracted surfaces are the app shell, the agent profile, the conversation queue
+and detail, the ticket queue, reply templates, ticket labels, articles, API
+tokens and the live-visitors board.
+
+That list is the one the guards read, and counting it is the only honest way to
+answer how far this has got: counting *views* that call `__()` overstates it,
+because a page is not extracted until its endpoints are. The operator console is
+the largest surface still untouched. The rest is going view by view.
 
 ### Copy an agent reads, and copy an agent SENDS
 
@@ -128,6 +136,46 @@ right while the extraction is half done, and it is why
 **A model can be reached where no request exists** — a queued job, a console
 command, a mail build — and there the locale is whatever the process last set,
 scoped to nothing. That is the reason models hand out state.
+
+### Copy rendered by a SCRIPT is invisible to the render audit
+
+The completeness guard renders a page in English and in German and reports any
+sentence identical in both. It strips `<script>` and `<style>` before it looks
+at anything, deliberately: on every other dashboard page a script body is code
+rather than copy, and reading it produced noise.
+
+The live-visitors board broke that assumption. Nine hundred of its thousand
+lines are a script, and most of its sentences — the reconnect notice, the
+durations, the empty page cell, the row for somebody who has not been in touch —
+are written by that script as the board rewrites itself. **The audit passing on
+that route proves the table and the notices and nothing else.**
+
+The strings themselves need no new mechanism. Blade renders the script, so
+`@json(__('...'))` reaches it exactly the way the reply composer already does,
+and the words are still chosen per request in the language the agent asked for.
+What is needed is a second guard, and the shape that works is to render the
+page in both languages, pull the script's copy objects out of the HTML, and
+apply the same identical-means-untranslated rule to those:
+
+```php
+preg_match('/var copy = (\{.*?\});/s', $html, $found);
+```
+
+Two objects, not one, and the second is the one that matters. `copy` is the
+page's own strings; `labels` is the presence vocabulary, handed to the script by
+the controller because one socket message reaches every agent watching and they
+do not all read the same language. Reading only `copy` left the controller free
+to go back to the English support class with the whole suite green — a mutation
+that survived until the guard read both.
+
+**Two client-side seams have no server equivalent.** Numbers need
+`toLocaleString(document.documentElement.lang)`, since `ReaderNumber` cannot
+reach a value the browser computes. And a plural selected in JavaScript cannot
+call Laravel's selector, so both branches are rendered into the script and
+chosen there — which is correct for every language this dashboard ships and
+**not correct in general**, because Polish and Arabic have more than two. The
+comment saying so lives at the selection site, where a third form would be
+added.
 
 ### A guard's catalogue list and state list both rot
 
