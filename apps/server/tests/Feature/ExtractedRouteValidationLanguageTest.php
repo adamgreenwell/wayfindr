@@ -58,30 +58,9 @@ test('no extracted route throws a hard-coded validation message', function (): v
 
     $offenders = [];
 
-    foreach ($controllers as $class => $file) {
-        $source = file_get_contents($file);
-
-        if ($source === false) {
-            continue;
-        }
-
-        // A quoted string on the value side of a `withMessages` array entry.
-        // `__('...')` and `trans_choice('...')` do not match, because the
-        // quote is preceded by `(` rather than `> `.
-        foreach (file($file) as $number => $line) {
-            if (preg_match("/^\s*'[a-z_]+' => '[^']/i", $line) !== 1) {
-                continue;
-            }
-
-            // Only inside a withMessages call. Cheap proxy: the preceding few
-            // lines mention it.
-            $context = implode('', array_slice(file($file), max(0, $number - 4), 4));
-
-            if (! str_contains($context, 'withMessages')) {
-                continue;
-            }
-
-            $offenders[] = basename($file).':'.($number + 1).'  '.trim($line);
+    foreach ($controllers as $file) {
+        foreach (hardCodedValidationMessages($file) as $offence) {
+            $offenders[] = $offence;
         }
     }
 
@@ -92,4 +71,126 @@ test('no extracted route throws a hard-coded validation message', function (): v
         'Move the message into that page\'s catalogue and translate it at the',
         'throw, the way conversations.validation.* already is.',
     ]));
+});
+
+/**
+ * Literal strings handed to `withMessages()` in one file.
+ *
+ * Tokenised rather than matched with a regex. The first version of this
+ * anchored on a single-quoted value at the start of a line, which meant it
+ * could not see a double-quoted message or the same-line
+ * `withMessages(['title' => 'Give the article a title.'])` form -- and that
+ * second shape is sitting in `AgentArticleController` right now, waiting for
+ * the slice that extracts articles. A guard blind to the exact code it will
+ * next be asked about is worse than no guard, because it reports success.
+ *
+ * @return list<string>
+ */
+function hardCodedValidationMessages(string $file): array
+{
+    $source = file_get_contents($file);
+
+    if ($source === false) {
+        return [];
+    }
+
+    $tokens = token_get_all($source);
+    $offenders = [];
+    $depth = null;
+
+    foreach ($tokens as $index => $token) {
+        // Entering a withMessages(...) call: start counting parentheses so the
+        // scan ends where the call does, however many lines it spans.
+        if (is_array($token) && $token[0] === T_STRING && $token[1] === 'withMessages') {
+            $depth = 0;
+
+            continue;
+        }
+
+        if ($depth === null) {
+            continue;
+        }
+
+        if ($token === '(') {
+            $depth++;
+
+            continue;
+        }
+
+        if ($token === ')') {
+            $depth--;
+
+            if ($depth <= 0) {
+                $depth = null;
+            }
+
+            continue;
+        }
+
+        // A quoted string on the value side of `=>`, in either quote style.
+        // `__('...')` does not match: there the string follows `(`, not `=>`.
+        if (! is_array($token) || $token[0] !== T_CONSTANT_ENCAPSED_STRING) {
+            continue;
+        }
+
+        $previous = null;
+
+        for ($back = $index - 1; $back >= 0; $back--) {
+            if (is_array($tokens[$back]) && in_array($tokens[$back][0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
+                continue;
+            }
+
+            $previous = $tokens[$back];
+            break;
+        }
+
+        if (is_array($previous) && $previous[0] === T_DOUBLE_ARROW) {
+            $offenders[] = basename($file).':'.$token[2].'  '.trim($token[1]);
+        }
+    }
+
+    return $offenders;
+}
+
+/**
+ * The sweep above passes on a clean tree whether or not the recogniser still
+ * works, so the recogniser is asserted here or not at all.
+ *
+ * Each shape below is one the first version missed. `AgentArticleController`
+ * uses the same-line form today, and articles is a likely next slice -- so the
+ * guard would have reported success on precisely the page it was written for.
+ */
+test('the guard recognises every shape a literal message takes', function (): void {
+    $scratch = sys_get_temp_dir().'/wayfindr-validation-guard-'.bin2hex(random_bytes(4)).'.php';
+
+    $shapes = [
+        'same-line array' => "<?php throw ValidationException::withMessages(['title' => 'Give the article a title.']);",
+        'double quotes' => "<?php throw ValidationException::withMessages(['title' => \"Give the article a title.\"]);",
+        'multi-line' => "<?php\nthrow ValidationException::withMessages([\n    'title' => 'Give the article a title.',\n]);",
+        'second entry only' => "<?php throw ValidationException::withMessages(['a' => __('x.y'), 'b' => 'English.']);",
+    ];
+
+    foreach ($shapes as $label => $source) {
+        file_put_contents($scratch, $source);
+
+        expect(hardCodedValidationMessages($scratch))
+            ->not->toBeEmpty("the guard no longer sees a literal message written as a {$label}");
+    }
+
+    // And it does not fire on the translated forms, or it would make the fix
+    // impossible rather than required.
+    $clean = [
+        'translated' => "<?php throw ValidationException::withMessages(['title' => __('articles.validation.title')]);",
+        'translated with argument' => "<?php throw ValidationException::withMessages(['title' => __('articles.validation.title', ['name' => \$name])]);",
+        'unrelated array' => "<?php \$config = ['title' => 'Not a validation message at all'];",
+    ];
+
+    foreach ($clean as $label => $source) {
+        file_put_contents($scratch, $source);
+
+        expect(hardCodedValidationMessages($scratch))
+            ->toBe([], "the guard fires on a {$label}, which would make the fix impossible");
+    }
+
+    @unlink($scratch);
 });
