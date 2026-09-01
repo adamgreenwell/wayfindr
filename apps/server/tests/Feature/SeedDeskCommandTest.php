@@ -819,10 +819,16 @@ test('the reports have something to report', function (): void {
     expect($activity->sum(fn (array $row): int => (int) ($row['replies'] ?? 0)))
         ->toBeGreaterThan(0, 'every agent replied to no tickets, so the replies column measures nothing');
 
-    // More than one agent is credited, or the column is a single row wearing a
-    // table's clothes.
-    expect($activity->filter(fn (array $row): bool => (int) ($row['replies'] ?? 0) > 0))
-        ->toHaveCount($activity->count(), 'some agents replied to nothing');
+    // Spread across more than one agent, or the column is a single row wearing
+    // a table's clothes.
+    //
+    // NOT "every agent has replies", which is what this asked for first. That
+    // was true only while replies were invented per ticket and handed to a
+    // mixed-in agent. They come from real agent messages now, so an agent can
+    // appear in the table on their closes while somebody else wrote the
+    // messages on those conversations -- which is what a real desk looks like.
+    expect($activity->filter(fn (array $row): bool => (int) ($row['replies'] ?? 0) > 0)->count())
+        ->toBeGreaterThan(1, 'ticket replies are credited to a single agent');
 });
 
 test('a rating answers a close that actually happened', function (): void {
@@ -1015,6 +1021,31 @@ test('whoever wrote the message is who reopened the conversation', function (): 
     $actors = $reopens->map(fn (AuditEvent $e): string => (string) ($e->metadata['actor'] ?? ''))->unique();
 
     expect($actors->sort()->values()->all())->toBe(['agent', 'visitor']);
+});
+
+test('a visitor still reopens something at the smallest message count', function (): void {
+    // The boundary that broke the split, and the one I checked at six messages
+    // and not at two. Counts there are 1-3: a single message skips the branch,
+    // and both 2 and 3 put the middle at index 1 -- always an agent, because
+    // messages alternate starting with the visitor. Every reopen came out
+    // agent-driven and `reopened_by_visitor` read zero.
+    //
+    // The pivot searches outward from the middle for a message sent by the kind
+    // of actor the conversation is meant to be reopened by, so the split holds
+    // wherever there is one to find.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 200, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $actors = AuditEvent::query()
+        ->where('action', 'conversation.reopened')
+        ->get()
+        ->map(fn (AuditEvent $e): string => (string) ($e->metadata['actor'] ?? ''))
+        ->countBy();
+
+    expect($actors->get('visitor', 0))
+        ->toBeGreaterThan(0, 'no visitor reopened anything, so reopened_by_visitor reads zero');
+    expect($actors->get('agent', 0))
+        ->toBeGreaterThan(0, 'no agent reopened anything');
 });
 
 test('an answer never arrives after the episode it answers was reopened', function (): void {

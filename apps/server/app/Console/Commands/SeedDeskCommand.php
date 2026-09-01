@@ -18,6 +18,7 @@ use App\Support\ReaderNumber;
 use App\Support\Reporting\ReportingWindow;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -958,14 +959,26 @@ final class SeedDeskCommand extends Command
             ->chunkById(self::CHUNK, function ($conversations) use (&$written, $accountId, $agentIds): void {
                 $rows = [];
 
-                // The messages these conversations already carry. A close has
-                // to sit in a GAP between two of them: in the product a message
-                // on a closed conversation reopens it, so a fixture with
-                // messages arriving while it is supposedly closed depicts a
-                // state no install can reach -- and `ResolutionEpisodes` starts
+                // The messages carried by the conversations that will actually
+                // be REOPENED -- a quarter of them, and the mix is deterministic
+                // so it can be asked before the loop rather than inside it. A
+                // close has to sit in a GAP between two messages: in the product
+                // a message on a closed conversation reopens it, so a fixture
+                // with messages arriving while it is supposedly closed depicts a
+                // state no install can reach, and `ResolutionEpisodes` starts
                 // the second episode at the wrong moment because of it.
-                $messageTimes = DB::table('conversation_messages')
-                    ->whereIn('conversation_id', $conversations->pluck('id'))
+                //
+                // Filtered rather than loading every message in the chunk: at
+                // `--conversations=500 --messages=400` that was 200,000 rows in
+                // memory at once, which is the peak `seedMessages()` avoids by
+                // writing in batches. This asks for a quarter of them, and only
+                // the four columns it reads.
+                $reopening = $conversations
+                    ->filter(fn ($row): bool => self::mix($this->seededIndex((string) $row->support_code), 'reopened', 4) === 0)
+                    ->pluck('id');
+
+                $messageTimes = $reopening->isEmpty() ? collect() : DB::table('conversation_messages')
+                    ->whereIn('conversation_id', $reopening)
                     ->orderBy('conversation_id')
                     ->orderBy('created_at')
                     ->get(['conversation_id', 'created_at', 'sender_type', 'sender_id'])
@@ -1000,9 +1013,19 @@ final class SeedDeskCommand extends Command
                         // the traffic. With too few messages to split, the
                         // conversation is left with its single close rather
                         // than inventing a gap that its own messages contradict.
-                        $pivot = intdiv($messages->count(), 2);
+                        // A pivot whose SENDER is the one this conversation is
+                        // meant to be reopened by, searching outward from the
+                        // middle. Taking the middle message unconditionally
+                        // collapsed the split at `--messages=2`: counts are 1-3
+                        // there, and both 2 and 3 pick index 1, which is always
+                        // an agent because messages alternate from the visitor.
+                        // Every reopen came out agent-driven and
+                        // `reopened_by_visitor` read zero -- the figure this
+                        // history exists to exercise.
+                        $wantVisitor = self::mix($n, 'reopened_by', 3) === 0;
+                        $pivot = self::pivotFor($messages, $wantVisitor);
 
-                        if ($messages->count() < 2 || $pivot < 1) {
+                        if ($pivot === null) {
                             $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $closedAt);
 
                             continue;
@@ -1088,6 +1111,26 @@ final class SeedDeskCommand extends Command
             ->chunkById(self::CHUNK, function ($tickets) use (&$written, $accountId, $agentIds): void {
                 $rows = [];
 
+                // The AGENT messages on these tickets' conversations. A ticket
+                // reply is not an event on its own: `storeReply()` writes a
+                // conversation message and puts the conversation back to open.
+                // Inventing reply events at arbitrary moments claimed replies
+                // with no transcript behind them, usually after the
+                // conversation had closed and with no later close -- so the
+                // ticket activity figures contradicted the conversation ones.
+                //
+                // Placed ON existing agent messages instead. Nothing new is
+                // written, the timestamps are inside the conversation's life by
+                // construction, and the reply the figure counts is one an agent
+                // actually sent.
+                $agentMessages = DB::table('conversation_messages')
+                    ->whereIn('conversation_id', $tickets->pluck('conversation_id')->filter())
+                    ->where('sender_type', (new User)->getMorphClass())
+                    ->orderBy('conversation_id')
+                    ->orderBy('created_at')
+                    ->get(['conversation_id', 'created_at', 'sender_id'])
+                    ->groupBy('conversation_id');
+
                 foreach ($tickets as $ticket) {
                     $raisedAt = Carbon::parse($ticket->created_at);
 
@@ -1117,24 +1160,31 @@ final class SeedDeskCommand extends Command
                     };
 
                     // Replies, which `TicketReport::agentActivity()` counts on
-                    // their own action. Without them every agent read zero
-                    // ticket replies and the aggregation was measured against
-                    // an empty result at every desk size -- the same shape as
-                    // the ratings that carried no comment.
+                    // their own action. Without them every agent read zero and
+                    // the aggregation measured an empty result at every desk
+                    // size -- the same shape as ratings that carried no comment.
                     //
-                    // One to three, spread across the ticket's own life so they
-                    // land inside a report window rather than all at its start.
-                    $replies = self::mix($n, 'ticket_replies', 3) + 1;
-                    $span = max(60, (int) $raisedAt->diffInSeconds(
-                        $ticket->closed_at !== null ? Carbon::parse($ticket->closed_at) : Carbon::now()
-                    ));
+                    // One per agent message, up to three, and credited to the
+                    // agent who sent it rather than to a mixed-in one.
+                    $onConversation = $agentMessages[$ticket->conversation_id] ?? collect();
+                    $take = min($onConversation->count(), self::mix($n, 'ticket_replies', 3) + 1);
 
-                    for ($r = 0; $r < $replies; $r++) {
-                        $event(
-                            'ticket.reply_sent',
-                            $raisedAt->copy()->addSeconds((int) ($span * ($r + 1) / ($replies + 1))),
-                            'open',
-                        );
+                    for ($r = 0; $r < $take; $r++) {
+                        $message = $onConversation[$r];
+
+                        $rows[] = [
+                            'account_id' => $accountId,
+                            'site_id' => $ticket->site_id,
+                            'actor_type' => (new User)->getMorphClass(),
+                            'actor_id' => $message->sender_id,
+                            'subject_type' => (new Ticket)->getMorphClass(),
+                            'subject_id' => $ticket->id,
+                            'action' => 'ticket.reply_sent',
+                            'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
+                            'occurred_at' => $message->created_at,
+                            'created_at' => $message->created_at,
+                            'updated_at' => $message->created_at,
+                        ];
                     }
 
                     // A held ticket has been put on hold, whatever it did next.
@@ -1354,6 +1404,44 @@ final class SeedDeskCommand extends Command
      * @param  list<int>  $agentIds
      * @return array<string, mixed>
      */
+    /**
+     * The index of a message to reopen on, preferring one sent by the kind of
+     * actor this conversation is meant to be reopened by.
+     *
+     * Never index 0: the close has to sit in the gap BEFORE the pivot, and
+     * there is no gap before the first message. Falls back to any valid pivot
+     * when the preferred sender has none, and to null when nothing qualifies --
+     * a conversation with too few messages keeps its single close rather than
+     * being given a gap its own transcript contradicts.
+     *
+     * @param  Collection<int, object>  $messages
+     */
+    private static function pivotFor($messages, bool $wantVisitor): ?int
+    {
+        $visitor = (new Visitor)->getMorphClass();
+        $middle = intdiv($messages->count(), 2);
+        $preferred = null;
+        $any = null;
+
+        // Outward from the middle, so both episodes carry some of the traffic
+        // and the choice stays deterministic.
+        for ($step = 0; $step < $messages->count(); $step++) {
+            foreach ([$middle + $step, $middle - $step] as $index) {
+                if ($index < 1 || $index >= $messages->count()) {
+                    continue;
+                }
+
+                $any ??= $index;
+
+                if ($preferred === null && (($messages[$index]->sender_type === $visitor) === $wantVisitor)) {
+                    $preferred = $index;
+                }
+            }
+        }
+
+        return $preferred ?? $any;
+    }
+
     private function closeRow(object $conversation, ?int $accountId, array $agentIds, int $n, Carbon $at): array
     {
         return [
