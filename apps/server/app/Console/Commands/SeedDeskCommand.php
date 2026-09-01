@@ -381,7 +381,11 @@ final class SeedDeskCommand extends Command
                 // once they exist -- and left NULL when none were asked for,
                 // rather than claiming activity `--messages=0` never created.
                 'last_message_at' => $messagesEach === 0 ? null : $openedAt->copy()->addMinutes(30),
-                'closed_at' => $open ? null : $openedAt->copy()->addHours(4),
+                // Never later than now, the same clamp the tickets carry. The
+                // newest conversation opens minutes before seeding, so four
+                // hours later is several hours from now -- and the closed queue
+                // reported a resolution that has not happened.
+                'closed_at' => $open ? null : $openedAt->copy()->addHours(4)->min(Carbon::now()),
                 'created_at' => $openedAt,
                 'updated_at' => $openedAt,
             ];
@@ -864,7 +868,7 @@ final class SeedDeskCommand extends Command
             ->whereIn('site_id', $this->siteIds($desk))
             ->where('support_code', 'like', 'WF-DESK-%')
             ->orderBy('id')
-            ->select(['id', 'last_message_at'])
+            ->select(['id', 'last_message_at', 'created_at'])
             ->chunk(self::CHUNK, function ($conversations) use ($agentIds, &$written): void {
                 $rows = [];
 
@@ -875,7 +879,10 @@ final class SeedDeskCommand extends Command
                         continue;
                     }
 
-                    $lastMessageAt = Carbon::parse($conversation->last_message_at);
+                    // `Carbon::parse(null)` is NOW, so with `--messages=0` the
+                    // read positions were anchored to the moment of seeding
+                    // rather than to the conversation's own activity boundary.
+                    $lastMessageAt = Carbon::parse($conversation->last_message_at ?? $conversation->created_at);
 
                     $lastReadAt = $state === 0
                         ? $lastMessageAt->copy()->addMinute()

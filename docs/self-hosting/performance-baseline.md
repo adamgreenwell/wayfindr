@@ -148,6 +148,13 @@ Stated because a baseline with silent gaps is worse than one with named ones:
   and for portability (`docs/product/reporting.md`), and that decision has never
   been measured against a busy desk. The seeder produces data spread across
   twelve months specifically so this can be measured next; it has not been.
+
+  **And the fixture is not ready for it yet.** Conversations are inserted
+  closed rather than closed through the application, so there are no
+  `conversation.closed` audit events — and the resolution metrics are computed
+  from those. Measuring the report tabs against this data would time a query
+  over an empty table and report it as fast. Seeding the lifecycle events is the
+  first piece of that work, not a detail of it.
 - **Attachments and the retention sweep.** No large object count has been run
   through either.
 - **Cobrowse mutation batches** on a heavy page.

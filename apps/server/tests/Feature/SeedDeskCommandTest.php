@@ -6,6 +6,7 @@ use App\Console\Commands\SeedDeskCommand;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationReadState;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -364,6 +365,41 @@ test('--messages is exact at every conversation count', function (): void {
 
         expect(ConversationMessage::query()->count())
             ->toBe($count * 6, "--conversations={$count} did not write exactly six messages each on average");
+    }
+});
+
+test('nothing is closed or read in the future', function (): void {
+    // The newest conversation opens minutes before seeding, so a fixed offset
+    // put its closure hours ahead of now -- and the closed queue reported a
+    // resolution that has not happened. Same clamp on both tables.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 40, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    expect(Conversation::query()->where('closed_at', '>', now())->count())
+        ->toBe(0, 'a conversation is closed at a time that has not arrived');
+
+    expect(ConversationReadState::query()->where('last_read_at', '>', now())->count())
+        ->toBe(0, 'an agent has read a conversation in the future');
+
+    // And some ARE closed, or this passes on a fixture with no closures.
+    expect(Conversation::query()->whereNotNull('closed_at')->count())->toBeGreaterThan(0);
+});
+
+test('read positions follow the conversation when there are no messages', function (): void {
+    // `Carbon::parse(null)` is NOW, so with `--messages=0` the read positions
+    // were anchored to the moment of seeding rather than to the conversation's
+    // own activity boundary -- every one of them within a second of each other,
+    // months away from the conversation they belong to.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 0, '--fresh' => true])
+        ->assertSuccessful();
+
+    $states = ConversationReadState::query()->with('conversation')->get();
+
+    expect($states)->not->toBeEmpty();
+
+    foreach ($states as $state) {
+        expect(abs($state->last_read_at->diffInHours($state->conversation->created_at)))
+            ->toBeLessThan(24, 'a read position is anchored to seeding time rather than to its conversation');
     }
 });
 
