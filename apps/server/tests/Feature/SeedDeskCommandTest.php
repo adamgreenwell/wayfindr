@@ -362,6 +362,60 @@ test('--messages holds even for one conversation', function (): void {
         ->toBe(6, 'one conversation did not get the number of messages asked for');
 });
 
+test('a visitor is not active on one surface and long gone on another', function (): void {
+    // `Visitor::saving()` advances `last_seen_at` whenever `last_web_seen_at`
+    // does, and a bulk insert bypasses it -- so a visitor showed as active on
+    // the live board while the directory said they were last seen months ago.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 40, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $contradictory = Visitor::query()
+        ->whereNotNull('last_web_seen_at')
+        ->whereColumn('last_web_seen_at', '>', 'last_seen_at')
+        ->count();
+
+    expect($contradictory)->toBe(0, 'a visitor was seen on the web after the last time they were seen at all');
+});
+
+test('--messages=0 claims no activity it did not create', function (): void {
+    // Every conversation was stamped `last_message_at` thirty minutes after it
+    // opened whether or not a message existed -- phantom activity that the
+    // queue, the reports and the seeded read states all read, and which for a
+    // recent conversation sat in the future.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 0, '--fresh' => true])
+        ->assertSuccessful();
+
+    expect(ConversationMessage::query()->count())->toBe(0);
+
+    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->whereNotNull('last_message_at')->count())
+        ->toBe(0, 'a conversation with no messages claims a last message');
+});
+
+test('last_message_at is the last message that exists', function (): void {
+    // Not a fixed offset from when the conversation opened. The offset put it
+    // in the future for a recent conversation, and disagreed with the messages
+    // for every other one.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 4, '--fresh' => true])
+        ->assertSuccessful();
+
+    $wrong = Conversation::query()
+        ->where('support_code', 'like', 'WF-DESK-%')
+        ->get()
+        ->filter(function (Conversation $conversation): bool {
+            $last = $conversation->messages()->max('created_at');
+
+            return $last === null
+                ? $conversation->last_message_at !== null
+                : $conversation->last_message_at?->toJSON() !== Carbon::parse($last)->toJSON();
+        });
+
+    expect($wrong)->toHaveCount(0, 'a conversation disagrees with its own messages about when the last one arrived');
+
+    // And none of it is in the future.
+    expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->where('last_message_at', '>', now())->count())
+        ->toBe(0, 'a conversation reports activity that has not happened yet');
+});
+
 test('fresh refuses an empty account that is not named as ours', function (): void {
     // Allowing ANY empty account through was meant to unblock an interrupted
     // first run, and it let a legitimate but not-yet-configured account at this

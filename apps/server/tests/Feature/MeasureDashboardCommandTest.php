@@ -12,6 +12,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -439,4 +440,20 @@ test('it measures the ticket queue for an agent with no conversations', function
 
     expect($pages)->toHaveCount(2)
         ->and($pages->every(fn (string $page): bool => str_contains(mb_strtolower($page), 'ticket')))->toBeTrue();
+});
+
+test('it leaves the caller\'s locale alone', function (): void {
+    // Every synthetic request passes through `SetDashboardLocale`, which calls
+    // `App::setLocale()` globally -- so measuring a German agent left the rest
+    // of a long-lived process translating into German.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    User::query()->where('email', 'desk-agent-0@example.test')->update(['locale' => 'de']);
+
+    App::setLocale('en');
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(App::getLocale())
+        ->toBe('en', 'the command left the process speaking the measured agent\'s language');
 });

@@ -158,8 +158,9 @@ final class SeedDeskCommand extends Command
             $desk = $this->desk($agentCount, $siteCount);
 
             $written['visitors'] = $this->measure('Visitors', fn (): int => $this->seedVisitors($desk, $conversations, $months));
-            $written['conversations'] = $this->measure('Conversations', fn (): int => $this->seedConversations($desk, $conversations, $months));
+            $written['conversations'] = $this->measure('Conversations', fn (): int => $this->seedConversations($desk, $conversations, $months, $messagesEach));
             $written['messages'] = $this->measure('Messages', fn (): int => $this->seedMessages($desk, $messagesEach));
+            $this->syncLastMessageAt($desk);
             $written['tickets'] = $this->measure('Tickets', fn (): int => $this->seedTickets($desk));
             $written['read states'] = $this->measure('Read states', fn (): int => $this->seedReadStates($desk));
         } catch (Throwable $failure) {
@@ -277,7 +278,6 @@ final class SeedDeskCommand extends Command
                 'name' => $i % 3 === 0 ? null : 'Visitor '.$i,
                 'email' => $i % 3 === 0 ? null : 'visitor'.$i.'@example.test',
                 'metadata' => json_encode(['last_page_url' => 'https://desk-'.($i % $siteCount).'.example.test/page/'.($i % 50)]),
-                'last_seen_at' => $seenAt,
                 // The WEB sighting, which is what presence is computed from --
                 // `last_seen_at` alone leaves every visitor `not_reported`, so
                 // the queue never rendered an active or recent marker and the
@@ -286,12 +286,17 @@ final class SeedDeskCommand extends Command
                 // Spread across all four states: inside two minutes is active,
                 // inside fifteen is recent, older is quiet, and absent is not
                 // reported at all.
-                'last_web_seen_at' => match (self::mix($i, 'presence', 4)) {
+                'last_web_seen_at' => $webSeenAt = match (self::mix($i, 'presence', 4)) {
                     0 => $now->copy()->subMinute(),
                     1 => $now->copy()->subMinutes(7),
                     2 => $now->copy()->subHours(3),
                     default => null,
                 },
+                // The LATER of the two, which is what `Visitor::saving()` keeps
+                // true and a bulk insert bypasses. Without it a visitor shows
+                // as active on the live board while the directory says they
+                // were last seen months ago.
+                'last_seen_at' => $webSeenAt !== null && $webSeenAt->greaterThan($seenAt) ? $webSeenAt : $seenAt,
                 'created_at' => $seenAt,
                 'updated_at' => $seenAt,
             ];
@@ -316,9 +321,13 @@ final class SeedDeskCommand extends Command
      *
      * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
      */
-    private function seedConversations(array $desk, int $conversations, int $months): int
+    private function seedConversations(array $desk, int $conversations, int $months, int $messagesEach): int
     {
-        $now = Carbon::now();
+        // Headroom for the messages, which are written a minute apart from the
+        // conversation's own start. Without it the newest conversation's last
+        // message lands in the FUTURE -- and `last_message_at` follows it, so
+        // the queue reported activity that had not happened yet.
+        $now = Carbon::now()->subMinutes($messagesEach + 5);
         $siteCount = count($desk['sites']);
         $agentCount = count($desk['agents']);
 
@@ -368,7 +377,10 @@ final class SeedDeskCommand extends Command
                 'status' => $open ? 'open' : 'closed',
                 'subject' => $subjects[$i % count($subjects)].' '.$i,
                 'metadata' => json_encode([]),
-                'last_message_at' => $openedAt->copy()->addMinutes(30),
+                // Provisional. Corrected from the messages actually written
+                // once they exist -- and left NULL when none were asked for,
+                // rather than claiming activity `--messages=0` never created.
+                'last_message_at' => $messagesEach === 0 ? null : $openedAt->copy()->addMinutes(30),
                 'closed_at' => $open ? null : $openedAt->copy()->addHours(4),
                 'created_at' => $openedAt,
                 'updated_at' => $openedAt,
@@ -775,6 +787,32 @@ final class SeedDeskCommand extends Command
     private function siteIds(array $desk): array
     {
         return array_map(fn (Site $site): int => $site->id, $desk['sites']);
+    }
+
+    /**
+     * Point `last_message_at` at the last message that exists.
+     *
+     * Written provisionally as "thirty minutes after it opened", which is wrong
+     * twice: it claims activity that `--messages=0` never created, and for a
+     * recent conversation it can sit in the FUTURE. The queue, the reports and
+     * the read states seeded next all read it.
+     *
+     * One statement, after the messages exist. A conversation with none gets
+     * null, which is what the subquery returns for it.
+     *
+     * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function syncLastMessageAt(array $desk): void
+    {
+        DB::table('conversations')
+            ->whereIn('site_id', $this->siteIds($desk))
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->update([
+                'last_message_at' => DB::raw(
+                    '(select max(created_at) from conversation_messages'
+                    .' where conversation_messages.conversation_id = conversations.id)'
+                ),
+            ]);
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
@@ -63,6 +64,12 @@ final class MeasureDashboardCommand extends Command
         // afterwards authenticated as the measured agent.
         $caller = Auth::user();
 
+        // The LOCALE too. Every synthetic request passes through
+        // `SetDashboardLocale`, which calls `App::setLocale()` globally -- so
+        // measuring a German agent left the rest of a long-lived process
+        // translating into German.
+        $callerLocale = App::getLocale();
+
         Auth::login($agent);
 
         // Inherited state, turned off before anything is timed. Called through
@@ -110,6 +117,8 @@ final class MeasureDashboardCommand extends Command
             }
 
             $caller === null ? Auth::logout() : Auth::login($caller);
+
+            App::setLocale($callerLocale);
         }
     }
 

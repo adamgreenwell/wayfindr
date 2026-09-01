@@ -72,11 +72,11 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,843 | 21 | 38.9 MB |
-| Conversation queue (closed) | 25,542 | 16 | 192.1 MB |
-| Ticket queue (open) | 3,141 | 4,187 | 20.9 MB |
-| Ticket queue (all) | 9,573 | 12,518 | 62.5 MB |
-| **Conversation detail** | **12** | **26** | **149 KB** |
+| Conversation queue (open) | 5,035 | 21 | 38.9 MB |
+| Conversation queue (closed) | 27,000 | 15 | 192.1 MB |
+| Ticket queue (open) | 3,289 | 4,187 | 21.0 MB |
+| Ticket queue (all) | 9,894 | 12,518 | 62.6 MB |
+| **Conversation detail** | **14** | **26** | **149 KB** |
 
 ### How it grows
 
@@ -88,7 +88,7 @@ them:
 | 1,000 | 112 ms | 473 ms | 3.9 MB | 184 ms | 268 | 11 ms / 26 q |
 | 5,000 | 479 ms | 2,355 ms | 19.2 MB | 958 ms | 1,268 | 12 ms / 26 q |
 | 25,000 | 2,356 ms | 12,058 ms | 96.0 MB | 4,793 ms | 6,268 | 14 ms / 25 q |
-| 50,000 | 4,843 ms | 25,542 ms | 192.1 MB | 9,573 ms | 12,518 | 12 ms / 26 q |
+| 50,000 | 5,035 ms | 27,000 ms | 192.1 MB | 9,894 ms | 12,518 | 14 ms / 26 q |
 
 The last column is the control, and it is the point: the same page, at fifty
 times the data, costs the same.
@@ -103,12 +103,12 @@ is queried, hydrated and rendered into one response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane
 is **192 MB of HTML** — a response no browser will render pleasantly and many
-proxies will refuse outright, arriving after twenty-six seconds. The open lane
+proxies will refuse outright, arriving after twenty-seven seconds. The open lane
 is better only because a desk that is keeping up has fewer open rows; it is the
 same query with a narrower `where`.
 
 Response size is the number to watch here rather than milliseconds. The server
-builds 192 MB in twenty-six seconds; the browser then has to parse it.
+builds 192 MB in twenty-seven seconds; the browser then has to parse it.
 
 ### The ticket queue issues one query per ticket
 
@@ -128,7 +128,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-12 ms, 26 queries and 149 KB at *every* size measured, from 20 conversations to
+14 ms, 26 queries and 149 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 
