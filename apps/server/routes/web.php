@@ -35,6 +35,7 @@ use App\Http\Controllers\OperatorBackupSettingsController;
 use App\Http\Controllers\OperatorBreakGlassController;
 use App\Http\Controllers\OperatorBreakGlassViewerController;
 use App\Http\Controllers\OperatorDashboardController;
+use App\Http\Controllers\OperatorLocalizationSettingsController;
 use App\Http\Controllers\OperatorMailSettingsController;
 use App\Http\Controllers\OperatorOnboardingController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
@@ -185,6 +186,10 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
 
     Route::put('/dashboard/sites/{site}/rating', [AgentSiteController::class, 'updateRating'])
         ->name('dashboard.sites.rating.update');
+    Route::get('/dashboard/sites/{site}/live', [AgentSiteController::class, 'live'])
+        ->name('dashboard.sites.live');
+    Route::put('/dashboard/sites/{site}/presence', [AgentSiteController::class, 'updatePresence'])
+        ->name('dashboard.sites.presence.update');
     Route::put('/dashboard/sites/{site}/language', [AgentSiteController::class, 'updateLanguage'])
         ->name('dashboard.sites.language.update');
     Route::put('/dashboard/sites/{site}/availability', [AgentSiteController::class, 'updateAvailability'])
@@ -306,6 +311,10 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
             ->name('settings.storage.update');
         Route::post('/settings/storage/test', [OperatorStorageSettingsController::class, 'test'])
             ->name('settings.storage.test');
+        Route::get('/settings/localization', [OperatorLocalizationSettingsController::class, 'edit'])
+            ->name('settings.localization.edit');
+        Route::post('/settings/localization', [OperatorLocalizationSettingsController::class, 'update'])
+            ->name('settings.localization.update');
         Route::get('/settings/scanning', [OperatorScanningSettingsController::class, 'edit'])
             ->name('settings.scanning.edit');
         Route::post('/settings/scanning', [OperatorScanningSettingsController::class, 'update'])

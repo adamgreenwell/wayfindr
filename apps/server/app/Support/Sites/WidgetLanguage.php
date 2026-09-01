@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Sites;
 
 use App\Models\Site;
+use App\Support\DashboardLanguage;
 
 /**
  * The language a site's widget speaks by default.
@@ -45,6 +46,42 @@ final class WidgetLanguage
         $configured = $site->settings['locale'] ?? null;
 
         return self::sanitize(is_string($configured) ? $configured : null);
+    }
+
+    /**
+     * The language THIS visitor is reading the widget in.
+     *
+     * The widget resolves host page → browser → site default → English, and
+     * only the first two are knowable on the client. So it tells us, and we
+     * take it if it names a catalogue we ship; anything else falls back to what
+     * the server can work out alone.
+     *
+     * Sanitised rather than validated: a locale we do not ship is not an error
+     * the visitor should see, it is a question we answer ourselves. Validating
+     * it would also mean producing a validation message before we knew which
+     * language to write it in.
+     */
+    public static function forVisitor(mixed $requested, ?Site $site): string
+    {
+        return self::sanitize(is_string($requested) ? $requested : null)
+            ?? self::toSpeak($site);
+    }
+
+    /**
+     * The language a server-written answer to this site's visitors must speak.
+     *
+     * `for()` answers null when the site pins nothing, and null does not mean
+     * English -- it means the widget is following the visitor's BROWSER, a
+     * choice made on the other side of the wire that the server never sees.
+     *
+     * English is the honest answer to a question the server cannot answer, and
+     * it is what the widget itself falls back to. What it must never be is the
+     * install's language: that is the operator's choice about their own
+     * dashboard, and it has nothing to do with who is visiting.
+     */
+    public static function toSpeak(?Site $site): string
+    {
+        return ($site ? self::for($site) : null) ?? DashboardLanguage::FALLBACK;
     }
 
     /**

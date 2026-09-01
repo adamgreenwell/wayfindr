@@ -1,32 +1,38 @@
-<x-layouts.app title="API tokens" :agent="$agent" :account="$account">
-    <x-page-header title="API tokens" subtitle="Programmatic access to this account's support data, for integrations you or somebody else builds." :back-href="route('dashboard.account.show')" back-label="Back to account">
+<x-layouts.app :title="__('api_tokens.title')" :agent="$agent" :account="$account">
+    <x-page-header :title="__('api_tokens.title')" :subtitle="__('api_tokens.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('api_tokens.back')">
         <x-slot:actions>
             {{-- Usable, not merely un-revoked. A token past its expiry is refused
                  at authentication and labelled Expired in the table below, so
-                 counting it as active contradicts the same page. --}}
-            <span class="lede">{{ $tokens->filter->isUsable()->count() }} active</span>
+                 counting it as active would contradict the same page. --}}
+            <span class="lede">{{ trans_choice('api_tokens.active', $tokens->filter->isUsable()->count(), ['count' => \App\Support\ReaderNumber::count($tokens->filter->isUsable()->count())]) }}</span>
         </x-slot:actions>
     </x-page-header>
 
     @if (session('status'))
-        <p class="status-message">{{ session('status') }}</p>
+        {{-- A KEY rather than a sentence: the request that redirected and the
+             request that renders are different requests, and the agent's
+             language is resolved per request. --}}
+        <p class="status-message">{{ __(session('status')) }}</p>
     @endif
 
     @if ($issuedToken)
         <section class="section" aria-labelledby="api-token-issued-heading">
             <div class="section-header">
-                <h2 id="api-token-issued-heading">Copy this now</h2>
-                <span class="lede">Shown once</span>
+                <h2 id="api-token-issued-heading">{{ __('api_tokens.issued.heading') }}</h2>
+                <span class="lede">{{ __('api_tokens.issued.once') }}</span>
             </div>
             <div class="notice-copy" data-state="warning">
+                <p>{{ __('api_tokens.issued.hashed') }}</p>
+                {{-- The credential itself. Not words in any language, and the
+                     one string on this page a reader may need to transcribe
+                     character by character. --}}
+                <p><code lang="">{{ $issuedToken }}</code></p>
                 <p>
-                    This is the only time this token is shown. Wayfindr stores a hash of it, not the token
-                    itself, so it cannot be recovered &mdash; if you lose it, revoke it and issue another.
-                </p>
-                <p><code>{{ $issuedToken }}</code></p>
-                <p>
-                    Send it as <code>Authorization: Bearer &lt;token&gt;</code>. Treat it like a password:
-                    anyone holding it can read this account's conversations and tickets.
+                    {{-- The header is a WIRE FORMAT, not copy: it is sent
+                         verbatim or the request fails. It is passed in rather
+                         than translated, and is identical in every language on
+                         purpose -- the same reasoning as an IANA zone name. --}}
+                    {!! __('api_tokens.issued.send_as', ['header' => '<code lang="">Authorization: Bearer &lt;token&gt;</code>']) !!}
                 </p>
             </div>
         </section>
@@ -34,35 +40,52 @@
 
     <section class="section" aria-labelledby="api-token-list-heading">
         <div class="section-header">
-            <h2 id="api-token-list-heading">Tokens</h2>
-            <span class="lede">{{ $tokens->count() }} {{ $tokens->count() === 1 ? 'token' : 'tokens' }}</span>
+            <h2 id="api-token-list-heading">{{ __('api_tokens.list.heading') }}</h2>
+            <span class="lede">{{ trans_choice('api_tokens.list.total', $tokens->count(), ['count' => \App\Support\ReaderNumber::count($tokens->count())]) }}</span>
         </div>
 
         @if ($tokens->isEmpty())
             <div class="notice-copy">
-                <p>No tokens yet. Nothing outside this dashboard can read this account's support data.</p>
+                <p>{{ __('api_tokens.list.empty') }}</p>
             </div>
         @else
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th scope="col">Name</th>
-                            <th scope="col">Token</th>
-                            <th scope="col">Reaches</th>
-                            <th scope="col">Last used</th>
-                            <th scope="col">State</th>
-                            <th scope="col">Action</th>
+                            <th scope="col">{{ __('api_tokens.list.column_name') }}</th>
+                            <th scope="col">{{ __('api_tokens.list.column_token') }}</th>
+                            <th scope="col">{{ __('api_tokens.list.column_reaches') }}</th>
+                            <th scope="col">{{ __('api_tokens.list.column_last_used') }}</th>
+                            <th scope="col">{{ __('api_tokens.list.column_state') }}</th>
+                            <th scope="col">{{ __('api_tokens.list.column_action') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($tokens as $token)
                             <tr>
                                 <td>
-                                    <strong>{{ $token->name }}</strong>
-                                    <span class="lede">Created {{ $token->created_at->diffForHumans() }}{{ $token->createdBy ? ' by '.$token->createdBy->name : '' }}</span>
+                                    {{-- The token's name, the sites it reaches and the
+                                         agent who issued it are the account's own words.
+                                         `lang=""` is HTML's "unknown": the page around
+                                         them is German, these are not. --}}
+                                    <strong lang="">{{ $token->name }}</strong>
+                                    {{-- Two whole sentences rather than one with an
+                                         optional tail. German puts the issuing agent
+                                         somewhere English does not, and a sentence
+                                         assembled by concatenation cannot move it. --}}
+                                    <span class="lede">
+                                        @if ($token->createdBy)
+                                            {!! __('api_tokens.list.created_by', [
+                                                'when' => e($token->created_at->diffForHumans()),
+                                                'name' => '<span lang="">'.e($token->createdBy->name).'</span>',
+                                            ]) !!}
+                                        @else
+                                            {{ __('api_tokens.list.created', ['when' => $token->created_at->diffForHumans()]) }}
+                                        @endif
+                                    </span>
                                 </td>
-                                <td><code>{{ $token->displayHint() }}</code></td>
+                                <td><code lang="">{{ $token->displayHint() }}</code></td>
                                 <td>
                                     @php
                                         // Site access restricts an admin too, so a token can reach sites
@@ -71,38 +94,49 @@
                                         // acknowledged without names where they do not.
                                         $namedSites = $token->sites->whereIn('id', $visibleSiteIds);
                                         $hiddenSiteCount = $token->sites->count() - $namedSites->count();
+
+                                        // Abilities ARE translated, unlike the header above. The `read`
+                                        // slug is what the API takes, but nobody types it -- it is a
+                                        // checkbox on this very page, and this column exists so an admin
+                                        // can see at a glance what a token may do. An unknown slug falls
+                                        // back to itself rather than rendering a missing-key path.
+                                        $abilityLabels = collect($token->abilities)
+                                            ->map(fn (string $ability): string => \Illuminate\Support\Facades\Lang::has('api_tokens.abilities.'.$ability)
+                                                ? __('api_tokens.abilities.'.$ability)
+                                                : $ability)
+                                            ->join(', ');
                                     @endphp
                                     @if ($token->restricts_sites && $token->sites->isEmpty())
                                         {{-- Restricted, and every site it named has been purged. Reaches
                                              nothing -- the opposite of what an empty relationship means
                                              for an unrestricted token. --}}
-                                        <span class="lede">No sites &mdash; every site it was limited to has been purged</span>
+                                        <span class="lede">{{ __('api_tokens.reaches.purged') }}</span>
                                     @elseif ($token->sites->isEmpty())
-                                        <span class="lede">Every site on this account</span>
+                                        <span class="lede">{{ __('api_tokens.reaches.every_site') }}</span>
                                     @else
                                         <span class="lede">
-                                            {{ $namedSites->pluck('name')->join(', ') }}@if ($namedSites->isNotEmpty() && $hiddenSiteCount > 0), @endif@if ($hiddenSiteCount > 0)sites you do not support@endif
+                                            <span lang="">{{ $namedSites->pluck('name')->join(', ') }}</span>{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? __('api_tokens.reaches.unsupported') : '' }}
                                         </span>
                                     @endif
-                                    <span class="lede">{{ $token->abilities === [] ? 'No abilities' : implode(', ', $token->abilities) }}</span>
+                                    <span class="lede">{{ $token->abilities === [] ? __('api_tokens.reaches.no_abilities') : $abilityLabels }}</span>
                                 </td>
                                 <td>
                                     {{-- The figure that separates a live token from a forgotten one. --}}
                                     @if ($token->last_used_at)
                                         {{ $token->last_used_at->diffForHumans() }}
                                     @else
-                                        <span class="lede">Never used</span>
+                                        <span class="lede">{{ __('api_tokens.last_used.never') }}</span>
                                     @endif
                                 </td>
                                 <td>
                                     @if ($token->isRevoked())
-                                        Revoked {{ $token->revoked_at->diffForHumans() }}
+                                        {{ __('api_tokens.state.revoked', ['when' => $token->revoked_at->diffForHumans()]) }}
                                     @elseif ($token->isExpired())
-                                        Expired {{ $token->expires_at->diffForHumans() }}
+                                        {{ __('api_tokens.state.expired', ['when' => $token->expires_at->diffForHumans()]) }}
                                     @elseif ($token->expires_at)
-                                        Expires {{ $token->expires_at->diffForHumans() }}
+                                        {{ __('api_tokens.state.expires', ['when' => $token->expires_at->diffForHumans()]) }}
                                     @else
-                                        Active
+                                        {{ __('api_tokens.state.active') }}
                                     @endif
                                 </td>
                                 <td>
@@ -110,7 +144,7 @@
                                         <form method="POST" action="{{ route('dashboard.account.api-tokens.destroy', $token) }}">
                                             @csrf
                                             @method('DELETE')
-                                            <button class="button secondary" type="submit">Revoke</button>
+                                            <button class="button secondary" type="submit">{{ __('api_tokens.list.revoke') }}</button>
                                         </form>
                                     @endunless
                                 </td>
@@ -119,46 +153,52 @@
                     </tbody>
                 </table>
             </div>
-            <p class="lede">
-                Revoking keeps the row. What it existed for and when it was last used is the part worth
-                keeping after somebody turns it off.
-            </p>
+            <p class="lede">{{ __('api_tokens.list.revoking_keeps') }}</p>
         @endif
     </section>
 
     <section class="section" aria-labelledby="api-token-create-heading">
         <div class="section-header">
-            <h2 id="api-token-create-heading">Issue a token</h2>
-            <span class="lede">Read-only for now</span>
+            <h2 id="api-token-create-heading">{{ __('api_tokens.create.heading') }}</h2>
+            <span class="lede">{{ __('api_tokens.create.read_only') }}</span>
         </div>
 
             <form class="section-form" method="POST" action="{{ route('dashboard.account.api-tokens.store') }}">
                 @csrf
 
                 <div class="field">
-                    <label for="api_token_name">What is it for</label>
-                    <input type="text" id="api_token_name" name="name" maxlength="120" required
-                        placeholder="Reporting sync" value="{{ old('name') }}">
-                    <p class="field-help">Written for whoever finds this row in a year and has to decide whether it is still needed.</p>
+                    <label for="api_token_name">{{ __('api_tokens.create.name_label') }}</label>
+                    {{-- The same reset the table's names carry. A token name is
+                         what this admin calls their own integration, not a
+                         sentence in the language they read the dashboard in.
+
+                         The placeholder is our copy and inherits the reset,
+                         which is the accepted cost of a control declaring one
+                         language for both -- the value is read back on every
+                         keystroke and outlives a hint shown only while the
+                         field is empty. --}}
+                    <input type="text" id="api_token_name" name="name" maxlength="120" required lang=""
+                        placeholder="{{ __('api_tokens.create.name_placeholder') }}" value="{{ old('name') }}">
+                    <p class="field-help">{{ __('api_tokens.create.name_help') }}</p>
                     @error('name')
                         <p class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 
                 <div class="field">
-                    <label for="api_token_abilities">What it may do</label>
+                    <label for="api_token_abilities">{{ __('api_tokens.create.abilities_label') }}</label>
                     <label for="api_token_read">
                         <input type="checkbox" id="api_token_read" name="abilities[]" value="read" checked>
-                        Read conversations, messages, tickets and visitors
+                        {{ __('api_tokens.create.ability_read') }}
                     </label>
-                    <p class="field-help">Writing is not offered yet. When it is, it will be a separate ability rather than implied by this one.</p>
+                    <p class="field-help">{{ __('api_tokens.create.abilities_help') }}</p>
                 </div>
 
                 <div class="field">
-                    <label for="api_token_expires">Expires after</label>
+                    <label for="api_token_expires">{{ __('api_tokens.create.expires_label') }}</label>
                     <input type="number" id="api_token_expires" name="expires_in_days" min="1" max="730"
                         placeholder="90" value="{{ old('expires_in_days') }}">
-                    <p class="field-help">Days. Left empty the token never expires, which means it stops being anybody's job to notice it.</p>
+                    <p class="field-help">{{ __('api_tokens.create.expires_help') }}</p>
                     @error('expires_in_days')
                         <p class="field-error">{{ $message }}</p>
                     @enderror
@@ -166,34 +206,27 @@
 
                 @if ($sites->isNotEmpty())
                     <div class="field">
-                        <label for="api_token_sites">Restrict to sites</label>
+                        <label for="api_token_sites">{{ __('api_tokens.create.sites_label') }}</label>
                         @foreach ($sites as $site)
                             <label for="api_token_site_{{ $site->id }}">
                                 <input type="checkbox" id="api_token_site_{{ $site->id }}" name="site_ids[]" value="{{ $site->id }}">
-                                {{ $site->name }}
+                                <span lang="">{{ $site->name }}</span>
                             </label>
                         @endforeach
                         <p class="field-help">
                             {{-- Said where the decision is made rather than only in the docs. A token is
                                  always pinned to a list: it cannot reach further than the person issuing
                                  it, and it does not widen later as the account grows. --}}
-                            Tick none and the token reaches every site <strong>you support today</strong>.
-                            A site created afterwards is not added to it &mdash; issue a new token when you
-                            want one to cover more. An integration that watches one site should not be a
-                            credential for all of them.
+                            {!! __('api_tokens.create.sites_help', ['today' => '<strong>'.e(__('api_tokens.create.sites_help_today')).'</strong>']) !!}
                         </p>
                     </div>
                 @endif
 
-                <button class="button" type="submit">Issue token</button>
+                <button class="button" type="submit">{{ __('api_tokens.create.submit') }}</button>
             </form>
 
         <div class="notice-copy">
-            <p>
-                A token has no person behind it, so a read made with one cannot answer <em>who</em> read it the
-                way a dashboard read can. That is why a token is limited by what it can reach rather than by
-                who is holding it &mdash; and why an operator access grant never widens one.
-            </p>
+            <p>{!! __('api_tokens.accountability', ['who' => '<em>'.e(__('api_tokens.accountability_who')).'</em>']) !!}</p>
         </div>
     </section>
 </x-layouts.app>

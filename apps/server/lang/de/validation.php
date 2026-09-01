@@ -72,6 +72,25 @@ return [
      * spells them.
      */
     'attributes' => [
+        // Every field a German page can submit, because the framework rules
+        // interpolate `:attribute` and an unnamed one puts the column name into
+        // the middle of a German sentence: "body darf höchstens 4000 Zeichen
+        // lang sein." The house terms come from the shipped catalogues -- a
+        // reply helper is an Antworthilfe, not a Vorlage.
+        'assignee_id' => 'Zuweisung',
+        'attachment_ids' => 'Anhänge',
+        'body' => 'Antwort',
+        'label_name' => 'Label',
+        'message' => 'Nachricht',
+        'note_template' => 'Notizhilfe',
+        'pending_note' => 'Notiz zum Wartestatus',
+        'post_to_external' => 'Veröffentlichung im verknüpften Issue',
+        'reason' => 'Grund',
+        'reopen_note' => 'Notiz zur Wiedereröffnung',
+        'reply_template' => 'Antworthilfe',
+        'target_agent_id' => 'Eskalationsziel',
+        'resolution_note' => 'Abschlussnotiz',
+        'file' => 'Datei',
         'alert_cadence' => 'Häufigkeit',
         'alert_mode' => 'Benachrichtigungen',
         'current_password' => 'Aktuelles Passwort',
@@ -80,5 +99,21 @@ return [
         'name' => 'Name',
         'password' => 'Passwort',
         'password_confirmation' => 'Passwortbestätigung',
+
+        // The articles page. `body` was already here for the reply composer;
+        // `title` was not, so an over-long article title produced a correct
+        // German sentence with the English column name sitting inside it.
+        'title' => 'Titel',
+
+        // The API-tokens page. `abilities` and `site_ids` arrive as arrays.
+        // The per-entry `abilities.*` and `site_ids.*` forms are deliberately
+        // NOT here: a literal dotted key cannot coexist with its own parent in
+        // a catalogue that nests on dots, and neither rule is reachable from
+        // the form -- the ability checkbox has a fixed value and the site ids
+        // come from rendered checkboxes, so only a hand-built request fails
+        // them, and that request gets the framework's own wording.
+        'expires_in_days' => 'Gültigkeitsdauer in Tagen',
+        'abilities' => 'Berechtigungen',
+        'site_ids' => 'Websites',
     ],
 ];

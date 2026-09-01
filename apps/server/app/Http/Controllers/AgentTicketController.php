@@ -147,7 +147,7 @@ class AgentTicketController extends Controller
 
         if ($body === '') {
             throw ValidationException::withMessages([
-                'body' => 'Please enter an internal note.',
+                'body' => __('tickets.errors.note_required'),
             ]);
         }
 
@@ -161,7 +161,7 @@ class AgentTicketController extends Controller
 
         $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
 
-        $status = 'Ticket note added.';
+        $status = 'tickets.flash.note_added';
 
         // Internal notes stay internal unless the agent explicitly opts to relay
         // this one to the linked external issue (conservative-by-default per the
@@ -170,9 +170,9 @@ class AgentTicketController extends Controller
             $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body);
 
             if ($relay['failed'] > 0) {
-                $status = 'Ticket note added, but the external comment could not be posted. See ticket activity.';
+                $status = 'tickets.flash.note_added_not_posted';
             } elseif ($relay['posted'] > 0) {
-                $status = 'Ticket note added and posted to the linked issue.';
+                $status = 'tickets.flash.note_added_posted';
             }
         }
 
@@ -315,13 +315,13 @@ class AgentTicketController extends Controller
 
         if ($name === '' || $slug === '') {
             throw ValidationException::withMessages([
-                'label_name' => 'Use at least one letter or number for the label.',
+                'label_name' => __('tickets.errors.label_needs_content'),
             ]);
         }
 
         if (TicketLabel::isReservedSlug($slug)) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label name is reserved for ticket filtering.',
+                'label_name' => __('tickets.errors.label_reserved'),
             ]);
         }
 
@@ -340,7 +340,7 @@ class AgentTicketController extends Controller
             'label_slug' => $label->slug,
         ]);
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket label added.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.label_added');
     }
 
     public function destroyLabel(Request $request, Ticket $ticket, TicketLabel $ticketLabel): RedirectResponse
@@ -363,7 +363,7 @@ class AgentTicketController extends Controller
             'label_slug' => $ticketLabel->slug,
         ]);
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket label removed.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.label_removed');
     }
 
     public function storeReply(Request $request, Ticket $ticket, ReplyTemplateOptions $replyTemplateOptions): RedirectResponse
@@ -389,7 +389,7 @@ class AgentTicketController extends Controller
 
             if (! $resolvedTemplate) {
                 throw ValidationException::withMessages([
-                    'reply_template' => 'Choose an available reply helper.',
+                    'reply_template' => __('tickets.errors.reply_helper'),
                 ]);
             }
         }
@@ -400,7 +400,7 @@ class AgentTicketController extends Controller
 
         if ($body === '') {
             throw ValidationException::withMessages([
-                'message' => 'Please enter a reply.',
+                'message' => __('tickets.errors.reply_required'),
             ]);
         }
 
@@ -450,7 +450,7 @@ class AgentTicketController extends Controller
 
         event(new ConversationMessageCreated($message));
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Reply sent.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.reply_sent');
     }
 
     /**
@@ -500,7 +500,7 @@ class AgentTicketController extends Controller
             ]);
         }
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket updated.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.updated');
     }
 
     public function pending(Request $request, Ticket $ticket): RedirectResponse
@@ -539,7 +539,7 @@ class AgentTicketController extends Controller
             },
         );
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket marked pending.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.marked_pending');
     }
 
     public function close(Request $request, Ticket $ticket): RedirectResponse
@@ -581,7 +581,7 @@ class AgentTicketController extends Controller
             },
         );
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket closed.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.closed');
     }
 
     public function reopen(Request $request, Ticket $ticket): RedirectResponse
@@ -629,7 +629,7 @@ class AgentTicketController extends Controller
             },
         );
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket reopened.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.reopened');
     }
 
     public function updateAssignee(Request $request, Ticket $ticket): RedirectResponse
@@ -656,7 +656,7 @@ class AgentTicketController extends Controller
 
         if ($newAssignee && ! $ticket->site->supportsAgent($newAssignee)) {
             throw ValidationException::withMessages([
-                'assignee_id' => 'Choose an agent assigned to this site.',
+                'assignee_id' => __('tickets.errors.assignee_not_on_site'),
             ]);
         }
 
@@ -682,7 +682,7 @@ class AgentTicketController extends Controller
             $newAssignee->notify(new TicketAssigned($freshTicket, $agent));
         }
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket assignee updated.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.assignee_updated');
     }
 
     public function storeEscalation(Request $request, Ticket $ticket): RedirectResponse
@@ -709,13 +709,13 @@ class AgentTicketController extends Controller
 
         if (! $targetAgent || ! $ticket->site->supportsAgent($targetAgent)) {
             throw ValidationException::withMessages([
-                'target_agent_id' => 'Choose an agent assigned to this site.',
+                'target_agent_id' => __('tickets.errors.assignee_not_on_site'),
             ]);
         }
 
         if ($targetAgent->is($agent)) {
             throw ValidationException::withMessages([
-                'target_agent_id' => 'Choose another agent to escalate this ticket to.',
+                'target_agent_id' => __('tickets.errors.escalate_other_agent'),
             ]);
         }
 
@@ -746,7 +746,7 @@ class AgentTicketController extends Controller
             $targetAgent->notify(new TicketAssigned($freshTicket, $agent));
         }
 
-        return $this->redirectAfterUpdate($ticket, $request, 'Ticket escalated.');
+        return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.escalated');
     }
 
     private function authorizeTicketAbility(User $agent, string $ability, Ticket $ticket): void

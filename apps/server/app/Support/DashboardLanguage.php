@@ -44,6 +44,7 @@ final class DashboardLanguage
     public const SUPPORTED = [
         'en' => 'English',
         'de' => 'Deutsch',
+        'it' => 'Italiano',
     ];
 
     public const FALLBACK = 'en';
@@ -79,6 +80,56 @@ final class DashboardLanguage
         'dashboard.profile.alerts.update',
         'dashboard.profile.password.update',
         'dashboard.conversations.index',
+        'dashboard.tickets.index',
+        'dashboard.conversations.show',
+        // The detail page's own endpoints. It replaces its transcript from
+        // `messages.index` and posts replies to `messages.store`, and an
+        // unlisted route renders English -- so a refreshed partial arrived in a
+        // different language from the page around it.
+        'dashboard.conversations.messages.index',
+        'dashboard.conversations.messages.store',
+        // And the attachment endpoint. The composer prefers the response's own
+        // message over its local fallback, so an oversized file answered in
+        // English replaced the German live state on an ordinary upload.
+        'dashboard.conversations.attachments.store',
+
+        // The account reply-templates page. An agent reaches it from the reply
+        // composer on a conversation, which is already extracted -- so before
+        // this it was a German conversation and an English page one click away.
+        'dashboard.account.reply-templates.index',
+        'dashboard.account.reply-templates.store',
+        'dashboard.account.reply-templates.update',
+        'dashboard.account.reply-templates.archive',
+
+        // The account ticket-labels page. Reached from the ticket queue, which
+        // is extracted, and it links straight back there -- so English here put
+        // two languages either side of one click.
+        'dashboard.account.labels.index',
+        'dashboard.account.labels.store',
+        'dashboard.account.labels.update',
+        'dashboard.account.labels.destroy',
+
+        // The account articles pages -- the help-centre answers a visitor finds
+        // in the widget. Both views, because extracting one of a pair puts the
+        // flip inside the section instead of at its edge.
+        'dashboard.account.articles.index',
+        'dashboard.account.articles.store',
+        'dashboard.account.articles.show',
+        'dashboard.account.articles.update',
+        'dashboard.account.articles.destroy',
+        'dashboard.account.articles.publish',
+
+        // The account API-tokens page. The surface that hands out credentials
+        // was the one place an admin switched back to English -- where
+        // misreading a sentence costs the most on this platform.
+        'dashboard.account.api-tokens.index',
+        'dashboard.account.api-tokens.store',
+        'dashboard.account.api-tokens.destroy',
+
+        // The live-visitors board. Most of this page's copy is rendered by its
+        // SCRIPT rather than by Blade, which is why it needed no new mechanism
+        // and does need the render audit to open it with the board populated.
+        'dashboard.sites.live',
     ];
 
     /**
@@ -88,11 +139,45 @@ final class DashboardLanguage
      * everywhere else -- including for an install whose own default is German,
      * because an unextracted page has no German to show.
      */
-    public static function forRequest(?User $agent, ?string $routeName): string
+    public static function forRequest(?User $agent, ?string $routeName, ?string $rendersBackTo = null): string
     {
-        return $routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)
+        if ($routeName !== null && in_array($routeName, self::EXTRACTED_ROUTES, true)) {
+            return self::for($agent);
+        }
+
+        // A write that renders back onto an extracted page belongs to that
+        // page, whoever owns the endpoint.
+        //
+        // Listing the write route alongside its own page (above) only works
+        // when the endpoint serves one surface. A linked-ticket action does
+        // not: the same `AgentTicketController::close()` is submitted from the
+        // ticket page and from the conversation panel, and its validation runs
+        // before the redirect. Listing it would answer in German on the English
+        // ticket page; not listing it put English errors on the German
+        // conversation page. Neither is a locale for the endpoint to have --
+        // the language belongs to whichever surface will render the answer.
+        return $rendersBackTo !== null && in_array($rendersBackTo, self::EXTRACTED_ROUTES, true)
             ? self::for($agent)
             : self::FALLBACK;
+    }
+
+    /**
+     * The language for content that is STORED rather than rendered.
+     *
+     * A ticket's subject and description are written once and read by everyone
+     * -- other agents on other language settings, notification emails, the API,
+     * and whatever external issue tracker the account has linked. Generating
+     * them in the creating agent's language puts one person's dashboard
+     * preference into shared data permanently, where nothing can translate it
+     * back.
+     *
+     * The install's own language is the neutral answer: it is what every
+     * unextracted surface already renders, and it does not change with whoever
+     * happened to press the button.
+     */
+    public static function forStoredContent(): string
+    {
+        return self::for(null);
     }
 
     /**

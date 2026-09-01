@@ -2,8 +2,10 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-alpha. Read each release as an operator change and validate it
-on a disposable VM before upgrading a persistent installation.
+Wayfindr is pre-1.0. Read each release as an operator change and validate it on
+a disposable VM before upgrading a persistent installation.
+
+The latest published release is `v0.7.0`.
 
 ## Where to Look
 
@@ -25,6 +27,16 @@ rollback target, and record clean-install or upgrade evidence from the same
 artifact you intend to run.
 
 ## Current Release Evidence
+
+Evidence below is recorded per artifact and is not superseded by a later
+release: each entry states what was proved, for which version, on which date.
+
+**None of it covers `v0.7.0`.** That release adds schema migrations — articles,
+inbound mail, ratings, lifecycle recording boundaries, API tokens, reporting
+indexes and per-user locales — so an older artifact's clean-install and upgrade
+runs prove nothing about this one's install path. Record fresh evidence from the
+`v0.7.0` artifact before adopting it on anything that matters, exactly as the
+rule above says.
 
 - `v0.3.2` has passing hosted public-artifact clean-install evidence from
   August 11, 2026:

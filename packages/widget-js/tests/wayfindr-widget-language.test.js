@@ -367,3 +367,76 @@ test('the intake questions are drawn in the language, not translated after', asy
   assert.equal(fields.querySelector('[name="name"]').parentNode.firstChild.nodeValue, 'Ihr Name');
   assert.equal(fields.querySelector('[name="email"]').parentNode.firstChild.nodeValue, 'Ihre E-Mail-Adresse (optional)');
 });
+
+test('the widget tells the server which language it resolved', async () => {
+  // The server sees exactly one of the widget's four inputs: the site default.
+  // It cannot see the host page's choice or the visitor's browser, so on a
+  // German-default site showing an English host-page override it answered
+  // upload and send errors in German while the panel was in English.
+  //
+  // The widget therefore says what it resolved, and the request carries it.
+  const sent = [];
+
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    // Browser and site default both German; the host page overrides to English.
+    navigator: { languages: ['de'] },
+    locale: 'en',
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: memoryStorage({
+      'wayfindr:site_public_shop:anonymous-id': 'anon-shop',
+      'wayfindr:site_public_shop:visitor-token': 'visitor-token-shop',
+      'wayfindr:site_public_shop:support-code': 'WF-SHOP',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    fetch: async (url, init) => {
+      if (url.endsWith('/api/widget/bootstrap')) {
+        return jsonResponse(200, {
+          data: {
+            site: { public_key: 'site_public_shop', settings: {}, locale: 'de', color: 'blue' },
+            visitor: { anonymous_id: 'anon-shop', token: 'visitor-token-shop' },
+          },
+        });
+      }
+
+      if (url.includes('/messages') && init && init.method === 'POST') {
+        sent.push(JSON.parse(init.body));
+
+        return jsonResponse(200, {
+          data: { conversation: { support_code: 'WF-SHOP', status: 'open' }, message: { id: 1 } },
+        });
+      }
+
+      if (url.includes('/messages')) {
+        return jsonResponse(200, { data: { conversation: { support_code: 'WF-SHOP', status: 'open' }, messages: [] } });
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  await widget.open();
+  await settle();
+
+  // The panel resolved English despite a German browser AND a German site
+  // default, which is the whole point of the ordering.
+  assert.equal(widget.root.lang, 'en');
+
+  const el = chrome(widget);
+
+  el.textarea.value = 'Where is my order?';
+  el.send.click();
+  await settle();
+
+  assert.ok(sent.length > 0, 'no message was sent, so this proves nothing');
+  assert.equal(sent[0].locale, 'en', 'the send did not carry the language the widget resolved');
+});

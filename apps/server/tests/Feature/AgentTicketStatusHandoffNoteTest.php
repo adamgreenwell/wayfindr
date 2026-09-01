@@ -27,7 +27,7 @@ test('agent can leave a handoff note when marking a ticket pending', function ()
             'pending_note' => 'Waiting for the customer to confirm their billing contact.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket marked pending.');
+        ->assertSessionHas('status', 'tickets.flash.marked_pending');
 
     $ticket->refresh();
 
@@ -64,7 +64,7 @@ test('agent can leave a handoff note when reopening a ticket', function (): void
             'reopen_note' => 'Customer replied with a new invoice screenshot.',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Ticket reopened.');
+        ->assertSessionHas('status', 'tickets.flash.reopened');
 
     $ticket->refresh();
 

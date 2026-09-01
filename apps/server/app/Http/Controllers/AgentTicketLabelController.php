@@ -43,7 +43,7 @@ class AgentTicketLabelController extends Controller
 
         if ($this->accountLabelSlugExists((int) $account->id, $label['slug'])) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label already exists for this account.',
+                'label_name' => __('ticket_labels.validation.duplicate'),
             ]);
         }
 
@@ -51,7 +51,7 @@ class AgentTicketLabelController extends Controller
 
         return redirect()
             ->route('dashboard.account.labels.index')
-            ->with('status', 'Ticket label created.');
+            ->with('status', 'ticket_labels.flash.created');
     }
 
     public function update(Request $request, TicketLabel $ticketLabel): RedirectResponse
@@ -63,7 +63,7 @@ class AgentTicketLabelController extends Controller
 
         if ($this->labelSlugExists($ticketLabel, $label['slug'])) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label already exists for this account.',
+                'label_name' => __('ticket_labels.validation.duplicate'),
             ]);
         }
 
@@ -71,7 +71,7 @@ class AgentTicketLabelController extends Controller
 
         return redirect()
             ->route('dashboard.account.labels.index')
-            ->with('status', 'Ticket label renamed.');
+            ->with('status', 'ticket_labels.flash.renamed');
     }
 
     public function destroy(Request $request, TicketLabel $ticketLabel): RedirectResponse
@@ -82,7 +82,7 @@ class AgentTicketLabelController extends Controller
 
         if ($ticketLabel->tickets()->exists()) {
             throw ValidationException::withMessages([
-                'label' => 'Remove this label from tickets before deleting it.',
+                'label' => __('ticket_labels.validation.in_use'),
             ]);
         }
 
@@ -90,7 +90,7 @@ class AgentTicketLabelController extends Controller
 
         return redirect()
             ->route('dashboard.account.labels.index')
-            ->with('status', 'Unused ticket label deleted.');
+            ->with('status', 'ticket_labels.flash.deleted');
     }
 
     private function authorizeManageLabel(mixed $agent, TicketLabel $ticketLabel): void
@@ -117,13 +117,13 @@ class AgentTicketLabelController extends Controller
 
         if ($name === '' || $slug === '') {
             throw ValidationException::withMessages([
-                'label_name' => 'Use at least one letter or number for the label.',
+                'label_name' => __('ticket_labels.validation.empty'),
             ]);
         }
 
         if (TicketLabel::isReservedSlug($slug)) {
             throw ValidationException::withMessages([
-                'label_name' => 'That label name is reserved for ticket filtering.',
+                'label_name' => __('ticket_labels.validation.reserved'),
             ]);
         }
 

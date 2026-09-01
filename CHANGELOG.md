@@ -30,214 +30,417 @@ missed while skimming.
 
 ## [Unreleased]
 
-**No operator action required.** Pull, restart, and migrations run themselves.
+**Requires operator action in two cases, neither of them universal.**
+Everything else is pull-and-restart, and migrations run themselves.
+
+1. **If you run your own nginx in front of Wayfindr** — Laravel Forge installs,
+   and anything built from the sample in
+   `docs/self-hosting/runtime-requirements.md`, whose block through 0.7.0
+   omitted the setting. See *Changed*. The shipped Docker Compose stack runs no
+   nginx: it proxies Reverb through Caddy, which imposes no idle timeout on a
+   proxied WebSocket, and needs nothing.
+2. **If your scheduler is not running**, run `wayfindr:sanitise-page-urls` once
+   by hand after upgrading. The page-address rewrite under *Security* happens
+   automatically in two passes — a migration, then the daily scheduled sweep
+   that catches anything the old code wrote during the migration window. With a
+   working scheduler that window closes within a day and you need do nothing.
+   Without one, only the migration pass ever runs, and rows written during that
+   window keep their query strings indefinitely.
+
+**Two things you will notice within a minute of upgrading, neither of them
+broken:**
+
+- **The operator console flips from Ready to "Needs attention."** A new
+  readiness check asks whether anybody has confirmed the install's language and
+  clock, and it gates on a stored value rather than on your environment — so an
+  install already configured correctly through `APP_LOCALE` and
+  `WAYFINDR_DASHBOARD_TIMEZONE` still flips. Visit **Operator console →
+  Language and region** and save once; confirming that English and UTC were
+  right all along is a valid answer and clears it permanently.
+- **Every agent's profile gains a third language.** Italian ships in this
+  release. See the caveat under *Added* before you promise it to anyone.
+
+**And one change to your traffic.** The widget now makes one additional
+unauthenticated `GET /api/widget/appearance` per page view, on every install,
+whether or not you turn presence on. It writes nothing and returns the same
+bytes to every visitor on a site, so it is cacheable — but it is a request per
+page view that was not there before.
 
 ### Added
 
+- **A per-agent timezone, and a dashboard that renders on it.** An agent picks a
+  timezone on their profile beside their language, and times, dates and report
+  day boundaries follow it. Everything is still stored in UTC — a single seam
+  converts on the way to a screen and nowhere else — so this changes what is
+  shown and never what is written, and changing it re-reads existing history
+  rather than rewriting it. It also fixes a real miscount: activity in the
+  offset band (00:30 in Berlin) was being filed under the previous day.
+
+  A site's **support hours** are deliberately excluded and stay in the site's
+  own zone, because "visitors are told support is back at 09:00" would be untrue
+  read on an agent's clock.
+
+  New optional key `WAYFINDR_DASHBOARD_TIMEZONE`, defaulting to `UTC`, which is
+  what every existing install already renders. **Not `APP_TIMEZONE`** — that is
+  read nowhere in Wayfindr, and the storage clock it would set is hardcoded to
+  `UTC` on purpose, because Laravel writes `created_at` through it into columns
+  that carry no offset.
+
+- **Language and region as an operator setting**, under **Operator console →
+  Language and region**, DB-backed and overriding the environment the same way
+  mail, storage, scanning and backups already do. `APP_LOCALE` and
+  `WAYFINDR_DASHBOARD_TIMEZONE` now seed a new install and pre-fill that form;
+  once you save there, the console value is what the dashboard uses.
+
+  There is deliberately **no "go back to the environment" control**. It would
+  let you un-confirm the setup step while the checklist still read ready.
+
+- **Italian.** The agent dashboard speaks English, German and Italian on the
+  surfaces extracted so far. **Neither the German nor the Italian pack has been
+  read by a qualified speaker**, and 13 of the 14 Italian catalogues open with
+  `NOT YET REVIEWED`. The mechanical checks pass — consistent terms, no lost
+  placeholders, the right register attempted — and they establish nothing about
+  whether a sentence is good Italian. Do not promise either language to a
+  customer until somebody who speaks it has read the rendered screens.
+
+- **Five more surfaces speak the agent's language**: reply templates, ticket
+  labels, articles, API tokens and the live-visitors board.
+
+  **Most of the dashboard is still English.** The account home itself is not
+  extracted, and neither are Integrations, Sites, the audit log or operator
+  access — so a German or Italian agent still reaches an English page in one
+  click from any of the four translated account pages, and the operator console
+  has not been extracted at all. `DashboardLanguage::EXTRACTED_ROUTES` is the
+  authority on which pages are translated; a page missing from it renders
+  English by design.
+
+  Content the *account* wrote — an article's title and body, a token's name, a
+  site's name, a visitor's name and the page they are on — now carries `lang=""`
+  on the surfaces listed above **and on the conversation queue and detail
+  page**, where several visitor-derived values had been inheriting the agent's
+  language since those pages were extracted. Assistive technology stops
+  pronouncing a visitor's English words with German phonetics there. Surfaces
+  that are still English are unaffected: the whole document is English, so
+  nothing is being announced as the wrong language.
+
+- **Live visitor presence.** You can see who is on the site right now, with the
+  privacy question settled first (ADR 0019) rather than after: a visitor is told
+  before anything is reported, can decline, and what is kept is bounded and
+  pruned rather than held forever.
+
+- **The conversation detail page speaks the agent's language**, including its
+  cobrowse panel — the half that 0.7.0 said would arrive in 0.7.1.
+
+- **`wayfindr:translate-catalogue`**, the command that drafted the Italian pack.
+  It reads a new `MURF_API_KEY` and **sends catalogue strings to an outside
+  service**. Nothing calls it on your behalf; it exists for whoever maintains
+  the packs. If that is not you, leave the key unset and the command unused.
+
+### Changed
+
+- **⚠ Operator action, nginx installs only.** Add `proxy_read_timeout 3600s;`
+  and `proxy_send_timeout 3600s;` to **both** the `/app` and `/apps` location
+  blocks, then reload. nginx defaults to 60 seconds and the sample Wayfindr
+  shipped through 0.7.0 omitted the setting, so an install built from it drops
+  and reconnects the agent conversation page and the live visitor board roughly
+  once a minute. The client now sends its own keepalive, which helps and **does
+  not replace this** — a proxy that closes an idle connection closes it whatever
+  the client does. `docs/self-hosting/runtime-requirements.md` and the Forge
+  guide both carry the corrected block. **The Docker Compose stack needs no
+  change.**
+
+- **Email can be switched on by pasting a webhook URL.** 0.7.0 told you that no
+  provider's inbound webhook could be pointed at Wayfindr and that you needed a
+  re-signing proxy in front that Wayfindr does not ship. That was true when it
+  was written and is no longer. Mailgun and Postmark can now be pointed straight
+  at `POST /api/mail/inbound`; set `WAYFINDR_INBOUND_MAIL_PROVIDER` to name the
+  scheme. **If you built that proxy, you can retire it** — the original
+  `X-Wayfindr-Signature` scheme still verifies, so nothing breaks if you keep
+  it. If you gave up on email in 0.7.0, this is the release to try again.
+  `docs/self-hosting/inbound-mail.md` is new and covers all three.
+
+- **The shipped image now sets PHP's upload limits** (`upload_max_filesize`,
+  `post_max_size`, `memory_limit`) to match what Wayfindr itself accepts. They
+  were the compiled-in 2M/8M defaults, below the application's own 10 MB limit,
+  so a visitor attaching a 4 MB screenshot was refused by PHP before any
+  Wayfindr code ran. If you run your own PHP rather than the image, raise them
+  yourself — `post_max_size` bounds the whole request, not one file.
+
+- **Numbers and dates follow the reading agent's language**, not the server's
+  and not the browser's. Nothing changes for an English reader's *numbers*.
+  Some English *dates* do shift, cosmetically: report and backup-history dates
+  lose the weekday (`Mon, Aug 24, 2026` → `Aug 24, 2026`), and break-glass
+  stamps move to a 12-hour clock with the year (`Aug 24, 15:05` →
+  `Aug 24, 2026 3:05 PM`). The account audit list and its CSV export
+  deliberately keep a sortable `Y-m-d H:i:s`, because a localized cell is
+  reparsed by whatever spreadsheet opens it.
+
+### Fixed
+
+- **The unattended-alert digest was mailing a raw UTC timestamp** —
+  `2026-08-24T15:05:00.000000Z`, mid-sentence — instead of a readable time on
+  the recipient's own clock.
+
+- **Blade directives were reaching the browser as text** on one page, where a
+  directive written flush against a word character was never compiled.
+
+- **The agent conversation socket** now reconnects with the same discipline the
+  visitor board already had, rather than going quiet after a drop.
+
+- **Widget rejection messages reach the visitor in their own language.** The
+  widget was being handed an English sentence to display; it is now handed the
+  key and says it itself, with the server sentence kept as the fallback for the
+  cases a key cannot reach.
+
+- **The cobrowse pressure indicator** no longer derives its state by comparing
+  the rendered sentence against English literals — a comparison that would have
+  pinned the indicator on permanently for German and Italian agents the moment
+  that surface was translated.
+
+### Security
+
+- **Query strings are no longer stored with the page addresses Wayfindr keeps**,
+  and the ones already stored have been rewritten. A visitor carrying a password
+  reset token or a session id in a URL had it kept whole and shown to an agent
+  on the visitor profile, the conversation, the ticket snapshot, and — longest
+  of all — the cobrowse session, which keeps addresses by design after pruning
+  strips everything else.
+
+  **⚠ The rewrite is irreversible**, which is the point: the query strings are
+  gone.
+
+  It runs automatically, and it needs two passes rather than one. On a
+  zero-downtime deploy the migration runs while the *previous* release is still
+  serving, so rows written after the sweep passed them keep their query strings
+  and the migration reports success anyway. The Forge deploy script runs
+  `wayfindr:sanitise-page-urls` after activation to catch exactly those, and the
+  scheduler runs it daily besides — which is what covers Docker and Compose
+  installs, since they never run that script. **If your scheduler is not
+  running, run the command once by hand after upgrading.** It is idempotent, and
+  reports nothing on every run after the first.
+
+  `audit_events` is deliberately **not** rewritten. An audit trail you rewrite
+  is not an audit trail; the protection there is that the account audit screen
+  and its export carry only time, action, actor, subject and site, and never raw
+  event metadata.
+
+- **Inbound mail deliveries are bound to the message they carry.** Mailgun signs
+  a timestamp and a token and not the body, so a captured signature would
+  otherwise authenticate any payload for as long as it stayed fresh. A token is
+  now good for one message however many times the provider redelivers it, and a
+  delivery that differs in sender, recipients, subject, body, threading headers
+  or attachments is refused.
+
+## [0.7.0] - 2026-08-25
+
+**No operator action required.** Pull, restart, and migrations run themselves.
+
+**One note if your desk is busy.** This release adds ten migrations. All are
+additive and none needs a decision from you, but five of them build indexes —
+on `visitors`, `conversations`, `conversation_messages`, `tickets` and
+`audit_events`. PostgreSQL blocks writes to a table while a non-concurrent index
+builds, so on an install with a large message or audit history the migration
+step may pause the desk for longer than you are used to. On a small install it
+is instant. We have not measured where the line is; take the upgrade at a quiet
+hour if that matters to you.
+
+0.6.0 changed how Wayfindr looks. **0.7.0 changes what it can do.** It is the
+largest functional release since the product went public: a support desk that
+could only be reached through a chat widget can now be reached by email, answers
+questions before they are asked, tells visitors when nobody is home, and — for
+the first time — can tell you whether any of it is working.
+
+Seven of the nine gaps that separated Wayfindr from an established support
+product are closed in this release. The two that remain are live visitor
+monitoring, which needs a privacy decision before it is built, and the second
+half of interface language support.
+
+### Added
+
+- **Reporting.** Wayfindr had no measurement surface at all. It now has one, at
+  **Reports**, admin and owner only: conversation and ticket volume, first
+  response and resolution times as median and 90th percentile, how often
+  resolutions did not hold, who is carrying the queue, and what visitors said
+  when asked whether it helped.
+
+  **Some of these numbers are older than the others, and the page says so.**
+  Conversations opened, first-response times and agent replies are recoverable
+  from data Wayfindr has always kept.
+
+  **Conversation** closes, resolution times and reopens are not: they are read
+  from a lifecycle log that starts being written in this release, because before
+  it the previous answer was destroyed on every reopen and cannot be backfilled.
+  **Ticket** closes and reopens have been audited for far longer, so an upgraded
+  desk can describe months of ticket work while its conversation figures are
+  still accumulating. The page states each boundary separately, and a flat line
+  before one of them is an absence of records rather than an absence of work.
+
+- **Satisfaction ratings.** Every other figure reports how *fast* the desk moved.
+  A desk can improve volume, first-response and resolution time all at once while
+  getting worse at helping people. Visitors can now be asked whether it helped,
+  and the percentage is never reported over people who said nothing.
+
+- **A help centre.** Articles written in the dashboard, published deliberately,
+  and searchable from inside the widget — so a visitor can find the answer before
+  they open a conversation.
+
+- **Email as a conversation channel — with a caveat worth reading first.** Every
+  ticket used to have to begin as a widget chat, and a customer replying to a
+  Wayfindr notification was replying into nothing. Mail can now open and continue
+  conversations.
+
+  **You cannot point a mail provider straight at it yet.** Wayfindr accepts one
+  signature scheme, its own, and no provider emits it — so using this today means
+  running a small intermediary that verifies your provider and re-signs, and
+  Wayfindr does not ship one. The mechanism is real and tested; the last mile to
+  your provider is not built. It is tracked as
+  [#799](https://github.com/adamgreenwell/wayfindr/issues/799) and is a 1.0.0
+  blocker rather than a nice-to-have.
+
+  If you have that intermediary, or you are posting to Wayfindr from your own
+  code, here is the contract. **Three things, and missing the third fails
+  silently:**
+
+  1. Set `WAYFINDR_INBOUND_MAIL_SECRET`. Until you do, the endpoint answers `404`
+     to everything — an open endpoint that writes conversations is worse than one
+     an operator has to enable.
+  2. Point your provider's inbound webhook at `POST /api/mail/inbound`, and have
+     it send an `X-Wayfindr-Signature` header of exactly
+     `sha256=<hex HMAC-SHA256 of the raw body, keyed with that secret>`. **The
+     `sha256=` prefix is part of the value**, not a description of it — a bare
+     hex digest is rejected. A bad or unprefixed signature answers `401`.
+
+     The payload is read flexibly rather than in one fixed shape: sender from
+     `from` / `From` / `sender`, recipient from `to` / `To` / `recipient` /
+     `OriginalRecipient` (and the `Cc` equivalents), subject from `subject` /
+     `Subject`, body from `body` / `TextBody` / `body-plain` / `stripped-text`,
+     threading from `in_reply_to` / `In-Reply-To` and `references` /
+     `References`, and **the delivery's own id from `message_id` / `MessageID` /
+     `Message-Id` / `message-id`**. Mailgun's and Postmark's field *names* are
+     both recognised.
+
+     **Their signatures are not.** `X-Wayfindr-Signature` is Wayfindr's own
+     scheme, and no provider emits it: Mailgun signs a timestamp and token with
+     its own key, Postmark does not HMAC the body with your secret at all. So a
+     provider's inbound webhook cannot be pointed straight at this endpoint —
+     every delivery answers `401`. Something has to sit in front that verifies
+     the provider's own signature and re-signs the body as `sha256=<hex>`. That
+     is a small function or worker, and Wayfindr does not ship one yet.
+
+     **Send the message id even though nothing rejects you for omitting it.** It
+     is what makes a redelivery safe: a provider that retries after a timeout or
+     a lost response is recognised and ignored. Without it, the retry is treated
+     as a new email — a second conversation, or a threaded reply inserted twice.
+
+     Only the **sender** and **recipient** fields decide whether a delivery is
+     usable at all. The rest have defaults, which is a separate problem
+     described in step 3.
+  3. **Give each site the address mail arrives at**, under **Sites → the site →
+     Email to this site**. A delivery whose recipient matches no site's address
+     is answered `200 Ignored` — deliberately, so a provider does not retry
+     forever — which means a correctly signed webhook can look perfectly healthy
+     while creating nothing at all.
+
+     **Three things can go wrong after a delivery is signed correctly, and none
+     of them says so in the response.**
+
+     - *Nothing appears, response says `200 Ignored`.* Either the sender address
+       is unusable, or the recipient matches no site. Nothing was created.
+     - *A conversation appears but is empty or misthreaded, response says
+       `200 Accepted`.* The sender and recipient mapped; the **body**, **subject**
+       or **threading** fields did not, so the delivery was accepted with
+       defaults. A conversation reading `(no message text)`, or a reply that
+       opened its own conversation instead of joining the original.
+     - *Duplicates appear on a retry.* The message id was not sent — see step 2.
+
+     A `404` or a `401` means the secret or the signature, and both say so.
+
+  Outbound replies use your existing mail configuration.
+
+- **Support hours, an away state, and offline capture.** The widget behaved
+  identically at 3pm Tuesday and 3am Sunday. A site can now say when it is open,
+  in **its own timezone**, show the words you choose when it is closed, and still
+  take the question. Somebody can also close the desk early and have it mean
+  something.
+
+- **A pre-chat form.** Sites that need to know who is asking can ask before the
+  conversation reaches the queue, with the fields they choose.
+
+- **Password recovery.** There was no forgot-password route. Recovery meant an
+  operator with production shell access running a command. Agents can now
+  recover their own password.
+
+  **Configure and test outbound mail before you rely on this.** Laravel's default
+  mailer writes to the log rather than sending, and the reset form tells the
+  agent a link is on its way either way — so an install without working mail
+  gives a locked-out agent a dead end that looks like success. The operator
+  console's mail settings include a send test; use it.
+
+- **Per-site widget appearance.** A site's widget can wear its own colour, sit in
+  the corner it chooses, and speak the operator's own words.
+
 - **The widget speaks the visitor's language.** Every word in the chat box was
   English, hardcoded. A visitor did not choose Wayfindr and cannot be asked to
-  read a language they do not speak &mdash; they arrived on somebody's website
-  with a question.
+  read a language they do not speak — they arrived on somebody's website with a
+  question.
 
-  The widget now carries a language catalogue, and **German ships complete**.
-  It picks a language before it draws anything: your own page's choice first (add
+  The widget now carries a language catalogue, and **German ships complete**. It
+  picks a language before it draws anything: your own page's choice first (add
   `data-wayfindr-locale="de"` to the install snippet if your app knows what the
   visitor reads), then the visitor's own browser, then the site default under
-  **Sites &rarr; the site &rarr; What language the widget speaks**, then English.
+  **Sites → the site → What language the widget speaks**, then English.
 
   The browser deliberately outranks the site default. The default is your guess
   at who visits; the browser is the visitor answering for themselves.
 
   **Nothing changes unless you want it to.** With no default configured the
   widget follows each visitor's browser and falls back to English, exactly as
-  before. Your own words &mdash; the away message, the intake introduction, the
-  cobrowse notice &mdash; are shown as you wrote them, in whatever language you
-  wrote them.
+  before. Your own words — the away message, the intake introduction, the
+  cobrowse notice — are shown as you wrote them, in whatever language you wrote
+  them.
 
-  The German translations were produced during development rather than by a
-  professional translator. They are consistent and grammatical; have a native
-  speaker read them before you promise German to a customer.
+- **The dashboard speaks German, on some surfaces.** An agent can choose their
+  language under **Profile**, and four surfaces follow it: the profile page
+  itself, the conversation queue, the ticket list, and the app shell around
+  them — the rail, the topbar and the search.
 
-  Right-to-left languages are prepared for but not shipped: the widget sets its
-  own text direction and its layout no longer assumes left-to-right, so an
-  Arabic or Hebrew catalogue can be added without touching the layout. The
-  dashboard is still English throughout.
+  **The conversation detail page does not yet.** It arrives in 0.7.1. A page
+  that has not been translated renders in English rather than showing a
+  half-translated screen, and the shell renders in whatever language the page
+  it is framing does. So an agent who chooses German sees German on the queue
+  and English the moment they open a conversation. That is deliberate and it is
+  visible; it is not a bug you need to report.
 
-- **An agent who forgets their password can recover it.** There was no
-  forgot-password flow at all: recovery meant asking somebody with production
-  shell access to run a command against the database on your behalf.
+- **A visitor directory.** The desk can now list the visitors it has heard from,
+  with a path into each profile and any live conversation. Live presence — who is
+  on the site *right now* — is not part of this and is recorded in ADR 0016,
+  because it is the first surface that makes Wayfindr's visitor data feel like
+  surveillance and needs a retention decision before it is built.
 
-  **Sign in → Forgotten your password?** emails a link that expires. Setting a new
-  password also signs that account out everywhere else, so a reset ends whatever
-  access prompted it rather than running alongside it.
+- **A read-only public API.** The API surface was previously the widget talking
+  to its own backend, plus inbound webhooks from GitHub, GitLab and Jira — there
+  was nothing an account could call on its own behalf. There is now an
+  authenticated public surface with a decided isolation model, documented in
+  ADR 0018. Writes are deliberately not included yet.
 
-  ⚠ **Operator action** if this install has never configured outbound mail: there
-  is no recovery path without it, because the link is an email. `/operator` →
-  **Mail** sets it up, and its test button confirms delivery before you need it.
+### Changed
 
-- **The widget can ask whether it helped.** Every figure on the reports page
-  described how *fast* the desk moved &mdash; volume, response time, resolution
-  time. A team can improve every one of those while getting worse at helping
-  people, and Wayfindr would have shown that as unambiguous progress. A site can
-  now ask the visitor how it went when a conversation closes, with three answers
-  &mdash; good, ok, bad &mdash; and an optional comment, which is usually where
-  the actual information is. Off until an operator turns it on, under **Asking
-  how it went** in a site's settings.
+- **Conversation closes and reopens are recorded from this release forward.**
+  `conversations.closed_at` was a current-state column, nulled on every reopen,
+  so the previous answer was destroyed each time. There is now a lifecycle log.
+  Nothing you do changes because of this, but reporting can only measure from the
+  date your install began keeping it, and the Reports page names that date.
 
-  Two things it deliberately does not do. It never reports a percentage of the
-  people who were *asked*, only of the people who *answered*: response rates are
-  low everywhere, a non-response is not a neutral score, and an average over
-  silence is fiction. And a visitor answers once per close &mdash; changing their
-  mind replaces the answer rather than adding one, so a small number of
-  responses cannot be swamped. A conversation that is reopened and closed again
-  is asked afresh, because that is a genuinely different question.
-- **Reports cover tickets, not just conversations.** The reports page described
-  conversations only, while the ticket half of the desk went unreported &mdash;
-  the half that, on an install running since May, has a full quarter of history
-  where conversations have weeks. Tickets now get their own tab: volume, resolution
-  times, reopens, and who carried the work, in the same shapes the conversation
-  tab uses. Both halves now measure a resolution through one shared walk, so
-  they cannot drift apart on what "resolution time" means &mdash; a ticket
-  closed three times contributes three resolutions rather than one long one.
-  Each half states its own recording boundary and reports closes it cannot
-  measure as *counted but not measured*, rather than folding an unknowable
-  duration into the median.
-
-  Ticket lifecycle now records only **transitions**, the rule conversations have
-  followed since ADR 0015. Closing a ticket twice &mdash; a double-click, a
-  retry, a stale page &mdash; used to write two closes, making one resolution
-  contribute two durations. And the same **Reopen** control serves a closed
-  ticket and a pending one, so taking a ticket off hold was recorded as a
-  reopen: it claimed a resolution had failed when none was ever reached, and
-  restarted the resolution clock at the un-hold, hiding every hour before the
-  ticket went on hold. Off-hold is now its own event, shown in the ticket's
-  activity as *Ticket taken off hold*. A stale **Mark pending** submitted against
-  an already-closed ticket un-closed it while recording only the hold, so the
-  resolution looked like it held; leaving *closed* now records the reopen it
-  performs whichever control did it. History already recorded is read correctly
-  rather than rewritten.
-- **A public API, so integrations do not all have to be built by us.** Every
-  route Wayfindr served was either the widget talking to its own backend or a
-  provider posting inbound &mdash; no authenticated public surface at all, which
-  meant every integration anyone would ever want was ours to write. There is now
-  a read-only, token-authenticated API under `/api/v1/`: conversations,
-  transcripts, tickets and visitors. Tokens are issued and revoked under
-  **Account → API tokens**, carry a last-used time so a live token can be told
-  from a forgotten one, and can be restricted to specific sites. See
-  [the API guide](docs/product/api.md) and
-  [ADR 0018](docs/decisions/0018-public-api-and-programmatic-access.md).
-
-  The limits are the interesting part. `metadata` and `anonymous_id` are never
-  published &mdash; the first is whatever somebody's website wrote into it, the
-  second is a browser-session handle rather than a person. A `site_id` filter can
-  only narrow, because "unknown filter is ignored" would be a silent scope
-  escalation. Records outside a token's reach return 404 rather than 403, since
-  403 confirms they exist. Operator access grants do not extend to tokens in
-  either direction: a grant is built around a person being accountable for
-  having looked, and a token has nobody behind it. And cobrowse is not reachable
-  at all.
-
-  Authentication is hand-rolled rather than pulling in Sanctum, whose
-  distinctive feature is a session mode this project does not use. Wayfindr's
-  dependencies stay at six.
-
-- **A site can have support hours.** Until now the widget behaved identically at
-  3pm Tuesday and 3am Sunday: a visitor arriving out of hours opened a
-  conversation, saw nothing suggesting anyone was away, and waited for a reply
-  that was not coming.
-
-  Set them under **Sites → the site → When the desk is open**: a timezone, hours
-  per weekday, and what to tell a visitor who arrives outside them. Out of hours
-  the widget says so before they start typing, and says when you are back.
-
-  **Sites without hours configured are unchanged** — always open, exactly as
-  before. Nothing to do unless you want hours.
-
-  The away message is yours to write, so it can be in your visitors' language. It
-  is shown to every visitor of that site, so keep it free of anything private;
-  the schedule itself is never sent to the widget.
-
-- **You can ask a visitor who they are before the conversation starts.** An
-  anonymous visitor — most traffic on most sites — started with no name, no email
-  and no stated reason, and ended with no way to be reached about anything
-  unresolved. `name` and `email` have been columns on the visitor record since the
-  first release and nothing ever filled them in.
-
-  Under **Sites → the site → What to ask before a conversation starts**, each of
-  name, email and reason can be off, optional, or required. Name and email are
-  remembered for the visitor's next visit; the reason belongs to the conversation
-  it was given for.
-
-  **A question already answered is not asked again** — a stored name or email
-  turns that field off on the next visit, and a stored address also satisfies the
-  out-of-hours rule. The reason is asked each time, because it belongs to the
-  conversation it was given for.
-
-  **Out of hours an email is required**, whatever you otherwise ask, because it
-  is the only way back to somebody who arrived at 3am.
-
-  Sites that configure nothing ask nothing, exactly as before.
-
-- **Reports.** Wayfindr shipped 39 controllers and none of them answered "are we
-  getting faster, and who is carrying the queue?". Five were dedicated to
-  operator settings and none to whether support delivered through the product was
-  working.
-
-  **Reports** in the sidebar, for admins and owners: conversations opened and
-  closed per day, first-response and resolution time, how often a resolution did
-  not hold, and replies and closes per agent. Range of 7, 30 or 90 days, one site
-  or all of them, and CSV for the daily series and the agent table.
-
-  Times are reported as a median and a 90th percentile rather than an average.
-  Support work is long-tailed — most replies are quick and a few take a day — so
-  an average sits in the gap between the two and describes neither.
-
-  **Two of the numbers are older than the others, and the page says which.**
-  Conversations opened and first-response times reach back through the whole life
-  of your install. Closes, resolution times and reopens are read from the
-  lifecycle records described below, so they begin the day that release was
-  installed — before it, closes overwrote each other and nothing can recover
-  them. The page names that date rather than drawing a flat line you might read
-  as a quiet month.
-
-  Archived sites still count toward history: archiving takes a site out of
-  service without destroying anything, and tidying one up should not rewrite last
-  quarter's numbers. Purging still removes its history, and that is what purging
-  is for.
-
-- **Conversation closes and reopens are recorded.** They were not, and the
-  consequence was quiet: `closed_at` holds only the most recent close, so it is
-  overwritten every time a conversation comes back. A visitor replying to a
-  closed conversation — the clearest signal that a resolution did not hold —
-  reopened it silently, indistinguishable from any other message.
-
-  Closes and reopens now appear in your account audit log, with who caused them
-  and what the conversation was before. Tickets already recorded theirs.
-
-  This is groundwork for reporting ([#742](https://github.com/adamgreenwell/wayfindr/issues/742)),
-  and it ships first for a reason: **history cannot be backfilled.** Every
-  release without it is a period no future report can describe.
-
-- **A list of the visitors you have heard from.** A visitor profile page existed
-  with no way to reach it except from a conversation or a support-code lookup, so
-  you could ask "tell me about this visitor" but not "who has been in touch".
-  **Visitors** in the sidebar lists them, most recently seen first, with search by
-  name, email or identifier, and filters for site and how recently they were seen.
-
-  It lists people who **made contact** — Wayfindr records somebody when they open
-  the chat, send a message or start typing, and deliberately not when they load a
-  page. It is not a live board of everyone on your site, and whether it should ever
-  become one is an open question rather than a missing feature: watching visitors
-  who never got in touch is the opposite of the consent-based posture cobrowse
-  takes. See ADR 0016.
+- **The test suite runs against PostgreSQL as well as SQLite.** CI ran SQLite
+  only, while every documented install runs PostgreSQL — so a query valid on
+  SQLite and invalid on Postgres could ship green. Both engines now run on every change. This is invisible in
+  the product and is the reason several of the above features are trustworthy.
 
 ### Fixed
 
-- **The installer no longer sends you to the old readiness address.** Its closing
-  message pointed at `/dashboard/readiness`, which 0.6.0 made operator-only. The
-  link still resolves — it redirects, and the account you create at `/setup` is
-  the install's first platform operator — but it named a page that had moved. It
-  now points at `/operator` and says why that account can open it.
+- The installer's closing message pointed at the readiness page's old address.
+  It still redirects, so nobody was stranded — but the last thing a fresh
+  install printed was a detour rather than the page that owns readiness now.
 
 ## [0.6.0] - 2026-08-21
 

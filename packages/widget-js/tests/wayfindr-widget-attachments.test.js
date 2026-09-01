@@ -220,6 +220,15 @@ test('renders received image and file attachments in the transcript', async () =
   assert.ok(img, 'the image attachment renders inline');
   assert.match(img.getAttribute('src'), /\/api\/conversations\/WF-DOCS\/attachments\/100\?/);
   assert.equal(img.getAttribute('alt'), 'diagram.png');
+  // The browser fetches this URL itself, so `no-referrer` on the widget's own
+  // requests does not cover it and `rel` does not apply to an image. Without
+  // this attribute the host page's full address -- reset token, invitation
+  // code and all -- rides along as a Referer header on every preview.
+  assert.equal(
+    img.getAttribute('referrerpolicy'),
+    'no-referrer',
+    'an image preview sent the host page address',
+  );
 
   const fileLink = widget.root.querySelector('.wayfindr-widget__attachment--file');
   assert.ok(fileLink, 'the non-image attachment renders as a file row');
@@ -602,4 +611,139 @@ test('removing a chip is a no-op while a send is in flight', async () => {
   assert.equal(widget.root.querySelectorAll('.wayfindr-widget__attach-chip').length, 0, 'chips clear once the send completes');
 
   widget.destroy();
+});
+
+test('every request the widget makes withholds the host page address', async () => {
+  // `no-referrer` reached the JSON and form helpers and stopped there. The two
+  // requests that do not go through them are the ones that carry the host
+  // page's full URL to the server: deleting a staged upload, and the image
+  // preview the browser fetches from an <img src> the widget writes.
+  //
+  // The address is the point. Presence exists around the fact that a path can
+  // hold a reset token or an invitation code, and the widget strips one before
+  // reporting it -- while the browser attached the same URL to these two
+  // requests as a Referer header, after the visitor declined and whether or not
+  // the operator allows addresses at all.
+  const calls = [];
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-browser-123',
+    visitorToken: 'visitor-token-123',
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+
+      return jsonResponse(204, {});
+    },
+  });
+
+  await client.deleteAttachment('WF-TEST123', 42);
+
+  assert.equal(calls.length, 1);
+  assert.equal(
+    calls[0].options.referrerPolicy,
+    'no-referrer',
+    'deleting an upload sent the host page address',
+  );
+});
+
+test('a rejected upload is shown to the visitor in the widget\'s language', async (t) => {
+  // The point of the key is what the VISITOR reads. Asserting it reached the
+  // Error object proves the plumbing and not the product: the chip renders
+  // `entry.error`, and that line took the server's sentence verbatim -- which
+  // on an unpinned site is English, inside an otherwise German panel.
+  const dom = new JSDOM('<!doctype html><html><body><div id="support"></div></body></html>', {
+    url: 'https://shop.example.test/pricing',
+  });
+
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    // No pinned site language: the widget follows the browser, which the
+    // server cannot see. This is the case the whole change exists for.
+    navigator: { languages: ['de-DE', 'de'] },
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_shop',
+    storage: memoryStorage({
+      'wayfindr:site_public_shop:anonymous-id': 'anon-de',
+      'wayfindr:site_public_shop:visitor-token': 'visitor-token-de',
+      'wayfindr:site_public_shop:support-code': 'WF-DE1',
+    }),
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    messagePollMs: 0,
+    presencePollMs: 0,
+    fetch: async (url) => {
+      if (url.includes('/attachments') && !url.includes('?')) {
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({
+            message: 'This file type is not allowed.',
+            errors: { file: ['This file type is not allowed.'] },
+            error_key: 'composer.rejected.type',
+            error_params: {},
+          }),
+        };
+      }
+
+      return jsonResponse(200, { data: {} });
+    },
+  });
+
+  t.after(() => widget.destroy());
+
+  await settle();
+  await widget.open();
+  await settle();
+
+  const input = widget.root.querySelector('input[type="file"]');
+  const file = new dom.window.File(['x'], 'payload.bin', { type: 'application/x-msdownload' });
+
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+
+  await settle();
+  await settle();
+
+  const state = widget.root.querySelector('.wayfindr-widget__attach-chip-state');
+
+  assert.ok(state, 'no attachment chip was rendered, so this proves nothing');
+  assert.equal(
+    state.textContent,
+    'Dieser Dateityp ist nicht zulässig.',
+    'the visitor was shown the server English sentence rather than the widget German copy',
+  );
+});
+
+test('a rejection key this build does not carry falls back to the server sentence', async () => {
+  // A newer server naming a rejection this widget predates. Showing the
+  // visitor `composer.rejected.something_new` would be worse than the English
+  // sentence the server already sent, so the key is ignored unless we have it.
+  const client = Wayfindr.createClient({
+    apiBaseUrl: 'http://127.0.0.1:8000',
+    sitePublicKey: 'site_public_docs',
+    anonymousId: 'anon-new',
+    visitorToken: 'visitor-token-new',
+    fetch: async () => ({
+      ok: false,
+      status: 422,
+      json: async () => ({
+        message: 'This file was rejected for a reason this widget has never heard of.',
+        error_key: 'composer.rejected.invented_after_this_build',
+      }),
+    }),
+  });
+
+  let thrown = null;
+  try {
+    await client.uploadAttachment('WF-NEW1', new Blob(['x']), 'payload.bin');
+  } catch (error) {
+    thrown = error;
+  }
+
+  assert.ok(thrown);
+  assert.equal(thrown.wayfindrKey, undefined, 'an unknown key was adopted and would render raw to a visitor');
+  assert.match(thrown.message, /never heard of/, 'the server sentence was lost');
 });

@@ -23,19 +23,30 @@ use App\Http\Controllers\Widget\ConversationController;
 use App\Http\Controllers\Widget\ConversationMessageController;
 use App\Http\Controllers\Widget\ConversationRatingController;
 use App\Http\Controllers\Widget\ConversationTypingController;
+use App\Http\Controllers\Widget\PresenceController;
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
 use Illuminate\Support\Facades\Route;
 
+Route::post('/widget/presence', PresenceController::class)
+    ->middleware('throttle:widget-presence')
+    ->name('widget.presence');
 Route::post('/widget/bootstrap', BootstrapController::class)
     ->middleware('throttle:widget-bootstrap')
     ->name('widget.bootstrap');
 Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)
     ->middleware('throttle:widget-broadcast-auth')
     ->name('widget.broadcasting.auth');
+// Its own budget, not bootstrap's. This is now read on every PAGE LOAD --
+// presence configuration has to reach a visitor who never opens the panel --
+// while bootstrap is read once somebody does. Sharing a bucket meant passive
+// browsing from a busy shared address could exhaust it and leave visitors who
+// then tried to start a chat unable to initialise one.
+Route::get('/widget/appearance', AppearanceController::class)
+    ->middleware('throttle:widget-config')
+    ->name('widget.appearance');
+
 Route::middleware('throttle:widget-bootstrap')->group(function (): void {
-    Route::get('/widget/appearance', AppearanceController::class)
-        ->name('widget.appearance');
     Route::get('/widget/articles', [ArticleController::class, 'index'])
         ->name('widget.articles.index');
     Route::get('/widget/articles/{slug}', [ArticleController::class, 'show'])

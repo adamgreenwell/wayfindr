@@ -401,7 +401,11 @@ test('conversation presence updates use a private conversation channel and safe 
                     'status' => 'open',
                 ],
                 'visitor_presence' => [
+                    // `state` and `detail_key` are the language-neutral half:
+                    // one broadcast reaches agents reading different languages,
+                    // so prose in a payload cannot be right for all of them.
                     'state' => 'active',
+                    'detail_key' => 'seen_recently',
                     'label' => 'Active recently',
                     'detail' => 'Seen in the last 2 minutes',
                     'last_seen_at' => now()->toJSON(),

@@ -36,11 +36,25 @@
 
                 updateTemplatePreview(selectedTemplate);
 
+                if (templateTarget) {
+                    // Cleared FIRST, and before the early return below. Choosing
+                    // "write a custom reply" has no body, so the handler used to
+                    // return with the previous template's language still on the
+                    // textarea -- and the agent then wrote their own reply into
+                    // an element still claiming to be English.
+                    templateTarget.setAttribute('lang', '');
+                }
+
                 if (! body || ! templateTarget) {
                     return;
                 }
 
                 templateTarget.value = body;
+                // The draft is now the template's text, not the agent's, so the
+                // textarea stops inheriting the document language and says what
+                // the body actually is. An empty value is HTML's "unknown",
+                // which is what a managed template reports.
+                templateTarget.setAttribute('lang', templatePicker.selectedOptions[0]?.dataset.bodyLang ?? '');
                 templateTarget.focus();
             });
         });
@@ -49,7 +63,7 @@
             var submit = form.querySelector('[data-reply-submit]');
             var body = form.querySelector('[data-reply-body]');
             var status = form.querySelector('[data-reply-status]');
-            var submittingLabel = form.getAttribute('data-submitting-label') || 'Sending...';
+            var submittingLabel = form.getAttribute('data-submitting-label') || @json(__('composer.sending'));
             var typingUrl = form.getAttribute('data-typing-url') || '';
             var csrf = document.querySelector('meta[name="csrf-token"]');
             var typingThrottleMs = 5000;
@@ -158,6 +172,18 @@
 
             if (body) {
                 body.addEventListener('input', function () {
+                    // The draft belongs to the agent the moment they touch it,
+                    // whatever a template put there a second ago. Without this,
+                    // picking an English helper and rewriting it in German left
+                    // the textarea still claiming English, and a screen reader
+                    // read the agent's own German with English pronunciation.
+                    //
+                    // Empty is HTML's "unknown", which is the honest answer for
+                    // something a person just typed.
+                    if (body.getAttribute('lang') !== '') {
+                        body.setAttribute('lang', '');
+                    }
+
                     reportTyping(body.value.trim() !== '');
                 });
             }
@@ -168,12 +194,14 @@
 
                 var nameEl = document.createElement('span');
                 nameEl.className = 'reply-attach-chip-name';
-                nameEl.textContent = file.name || 'attachment';
+                // The agent's own filename, in whatever language they named it.
+                nameEl.setAttribute('lang', '');
+                nameEl.textContent = file.name || @json(__('composer.attachment'));
                 chip.appendChild(nameEl);
 
                 var stateEl = document.createElement('span');
                 stateEl.className = 'reply-attach-chip-state';
-                stateEl.textContent = 'Uploading…';
+                stateEl.textContent = @json(__('composer.uploading'));
                 chip.appendChild(stateEl);
 
                 // Release this upload's hold on the in-flight count exactly once,
@@ -210,7 +238,17 @@
                 var removeEl = document.createElement('button');
                 removeEl.type = 'button';
                 removeEl.className = 'reply-attach-chip-remove';
-                removeEl.setAttribute('aria-label', 'Remove ' + (file.name || 'attachment'));
+                // A FUNCTION replacement, not a string one. `String.replace`
+                // reads `$&`, `` $` `` and `$'` in the replacement as
+                // backreferences, so a file called `$&.pdf` would produce an
+                // aria-label naming `:name.pdf` -- the token, not the file.
+                // A filename is user data and can contain anything.
+                var attachmentName = file.name || @json(__('composer.attachment'));
+
+                removeEl.setAttribute('aria-label',
+                    @json(__('composer.remove', ['name' => ':name'])).replace(':name', function () {
+                        return attachmentName;
+                    }));
                 removeEl.textContent = '×';
                 removeEl.addEventListener('click', function () {
                     if (form.getAttribute('data-submitting') === 'true') {
@@ -255,7 +293,7 @@
                     return response.json().catch(function () {
                         return {};
                     }).then(function (data) {
-                        return { ok: response.ok, data: data };
+                        return { ok: response.ok, status: response.status, data: data };
                     });
                 }).then(function (result) {
                     settleUpload();
@@ -275,9 +313,15 @@
 
                     if (! attachment || ! attachment.id) {
                         chip.className = 'reply-attach-chip reply-attach-chip--error';
-                        stateEl.textContent = (result.data && result.data.message)
+                        // Only a 422 carries a message we wrote and translated.
+                        // Everything else -- a failed storage write, a 403, a
+                        // 404 -- answers with a framework exception message in
+                        // English, and preferring it puts 'Not Found.' on a
+                        // German page. The local fallback is ours and is
+                        // already in the right language.
+                        stateEl.textContent = (result.status === 422 && result.data && result.data.message)
                             ? result.data.message
-                            : 'That file could not be attached.';
+                            : @json(__('composer.attach_failed'));
 
                         return;
                     }
@@ -298,7 +342,7 @@
                     }
 
                     chip.className = 'reply-attach-chip reply-attach-chip--error';
-                    stateEl.textContent = 'That file could not be attached.';
+                    stateEl.textContent = @json(__('composer.attach_failed'));
                 });
             }
 
@@ -331,7 +375,7 @@
                     event.preventDefault();
 
                     if (status) {
-                        status.textContent = 'Waiting for uploads to finish…';
+                        status.textContent = @json(__('composer.waiting_uploads'));
                     }
 
                     return;

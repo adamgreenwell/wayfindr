@@ -24,7 +24,14 @@ Run Composer, Artisan, queue, scheduler, and Reverb commands from
 
 Minimum runtime:
 
-- PHP 8.4 or newer.
+- PHP 8.4 or newer, with `ext-intl`. It is declared in
+  `apps/server/composer.json`, so `composer install` refuses an environment
+  without it rather than letting one reach production — most distributions ship
+  it as `php8.4-intl` and the official PHP images include it. Wayfindr uses it
+  to compare hostnames in one representation: an operator configures the domain
+  they own (`bücher.example`) and browsers report its Punycode form
+  (`xn--bcher-kva.example`), and without normalisation those read as different
+  sites, so every page address on such a site is silently discarded.
 - Composer 2.
 - A web server that can serve Laravel through PHP-FPM or an equivalent PHP
   runtime.
@@ -244,6 +251,12 @@ location /app {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
 
+    # Without these the WebSocket inherits nginx's 60-second default and is
+    # torn down whenever nothing crosses it for that long -- see the note
+    # below for which connections that actually reaches.
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
     proxy_pass http://127.0.0.1:8080;
 }
 
@@ -257,9 +270,60 @@ location /apps {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
 
+    # Without these the WebSocket inherits nginx's 60-second default and is
+    # torn down whenever nothing crosses it for that long -- see the note
+    # below for which connections that actually reaches.
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
     proxy_pass http://127.0.0.1:8080;
 }
 ```
+
+**Do not leave the two timeouts out.** nginx's default `proxy_read_timeout` is
+60 seconds, and it is measured between successive reads **from Reverb** — not
+from traffic in either direction. When nothing arrives from upstream for that
+long the socket is torn down with no close frame, the browser reports an
+abnormal close, and the page reconnects, losing whatever was published in the
+gap until the next resync.
+
+That the timer watches the *upstream* is why a keepalive works: Wayfindr's
+pages send `pusher:ping` every 15 seconds and Reverb answers `pusher:pong`, so
+something arrives from upstream well inside the window. A client that sent
+frames Reverb does not answer would still time out, however chatty it was.
+
+So a quiet conversation is **not** by itself an idle connection — a visible tab
+carries traffic whether or not anybody is typing.
+
+What the setting protects is every connection whose keepalive is delayed past
+60 seconds — a tab the browser has throttled, any other client speaking to this
+Reverb, and anything at all if that keepalive stops.
+
+It does not rescue a tab the browser has **suspended**, and no proxy setting
+can. A frozen page cannot send the keepalive and cannot answer Reverb's own
+`pusher:ping` either, so Reverb closes the connection after its
+`activity_timeout` regardless of what nginx permits. Such a tab reconnects when
+it wakes, which is the designed path.
+
+The overlap is what makes this easy to misdiagnose: Reverb's `ping_interval`
+also defaults to 60 seconds, so on a default nginx the proxy closes the
+connection at the same moment the keepalive that would have held it open was
+due.
+
+**Where to look.** Nothing surfaces in the application or the browser — no
+error, no failed request, just a page that quietly reconnects. nginx does
+record it, though, and its error log is the most direct evidence you will get:
+
+```
+upstream timed out (110: Connection timed out) while reading upstream
+```
+
+entries against the `/app` or `/apps` location are this exact problem.
+
+They appear only for the sockets actually affected, roughly once a minute
+each. A healthy Wayfindr page produces none, so a quiet log does not mean the
+setting is unnecessary — it means the clients you happen to be serving are the
+ones that keep themselves alive.
 
 Other reverse proxies can use the same idea: public HTTPS outside, private
 Reverb port inside, WebSocket upgrade headers preserved.

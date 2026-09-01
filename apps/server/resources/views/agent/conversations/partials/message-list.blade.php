@@ -16,9 +16,13 @@
         @foreach ($transcriptMessages as $transcriptMessage)
             @php
                 $isAgent = $transcriptMessage->sender_type === \App\Models\User::class;
+                // Shared with the ticket page, which is not an extracted route --
+                // there the locale is the install default and these answer in
+                // English, correctly. A shared VIEW may read the catalogue
+                // because it only renders inside a request.
                 $senderName = $isAgent
-                    ? ($transcriptMessage->sender?->name ?? 'Agent')
-                    : 'Visitor';
+                    ? ($transcriptMessage->sender?->name ?? __('conversations.detail.roles.agent'))
+                    : __('conversations.detail.roles.visitor');
                 $secondsSincePrevious = $previousTranscriptMessage?->created_at?->diffInSeconds($transcriptMessage->created_at, false);
                 $isGrouped = $previousTranscriptMessage
                     && $previousTranscriptMessage->sender_type === $transcriptMessage->sender_type
@@ -38,10 +42,10 @@
                                 class="message-seen"
                                 @if ((string) $transcriptMessage->id === (string) $latestAgentMessageId) data-agent-message-seen-id="{{ $transcriptMessage->id }}" @endif
                             >
-                                Seen by visitor {{ $transcriptMessage->seen_at->diffForHumans() }}
+                                {{ __('conversations.detail.reply.seen_by_visitor', ['elapsed' => $transcriptMessage->seen_at->diffForHumans()]) }}
                             </span>
                         @elseif ($isAgent && (string) $transcriptMessage->id === (string) $latestAgentMessageId)
-                            <span class="message-seen" data-agent-message-seen-id="{{ $transcriptMessage->id }}">Not seen yet</span>
+                            <span class="message-seen" data-agent-message-seen-id="{{ $transcriptMessage->id }}">{{ __('conversations.detail.reply.not_seen') }}</span>
                         @endif
                     </span>
                 </div>
@@ -52,9 +56,18 @@
                 @endphp
 
                 @if (filled($transcriptMessage->body))
-                    <p class="message-body">{{ $transcriptMessage->body }}</p>
+                    {{-- The conversation's own content, not the dashboard's. A
+                         visitor writes in whatever language they came in with,
+                         and an agent replies in whatever language they chose to
+                         reply in -- neither has anything to do with the language
+                         this agent reads the DASHBOARD in. `lang=""` is HTML's
+                         "unknown", the same answer a managed reply template
+                         gives, and the honest one: guessing German because the
+                         chrome is German would have a screen reader pronounce an
+                         English conversation with German rules. --}}
+                    <p class="message-body" lang="">{{ $transcriptMessage->body }}</p>
                 @elseif ($messageAttachments->isEmpty())
-                    <p class="message-empty">This message has no text or attachment.</p>
+                    <p class="message-empty">{{ __('conversations.detail.reply.no_body') }}</p>
                 @endif
 
                 @if ($supportCode && $messageAttachments->isNotEmpty())
@@ -69,12 +82,15 @@
 
                             @if ($attachment->isImage())
                                 <a class="message-attachment message-attachment-image-link" href="{{ $attachmentUrl }}" target="_blank" rel="noopener noreferrer">
-                                    <img class="message-attachment-image" src="{{ $attachmentUrl }}" alt="{{ $attachment->original_filename }}" loading="lazy">
+                                    {{-- `lang` on the img, not around it: alt is an ATTRIBUTE and takes
+                                         its language from its element. The filename is whatever
+                                         the visitor called it. --}}
+                                    <img class="message-attachment-image" src="{{ $attachmentUrl }}" alt="{{ $attachment->original_filename }}" lang="" loading="lazy">
                                 </a>
                             @else
                                 <a class="message-attachment message-attachment-file" href="{{ $attachmentUrl }}" target="_blank" rel="noopener noreferrer" download>
                                     <x-icon name="attachment" :size="14" class="message-attachment-icon" />
-                                    <span class="message-attachment-name">{{ $attachment->original_filename }}</span>
+                                    <span class="message-attachment-name" lang="">{{ $attachment->original_filename }}</span>
                                 </a>
                             @endif
                         @endforeach

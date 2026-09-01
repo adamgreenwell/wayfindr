@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\OperatorReadinessConfirmation;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -31,6 +32,12 @@ function greenExceptWorkers(): void
     config()->set('mail.mailers.smtp.port', 587);
     config()->set('mail.mailers.smtp.scheme', null);
     config()->set('mail.from.address', 'support@acme.test');
+
+    // Language and region is an essential too (#795): unset means "we guessed
+    // and nobody confirmed", which is an unanswered step like any other.
+    $settings = app(OperatorSettings::class);
+    $settings->set('localization.language', 'en');
+    $settings->set('localization.timezone', 'UTC');
 }
 
 function confirmReadiness(string $key, User $operator): void
@@ -55,12 +62,12 @@ test('the onboarding checklist is mail-first with an inline configure action', f
         ->assertOk()
         ->assertSee('Essential steps')
         ->assertSee('Configure the essentials')
-        ->assertSee('of 4 ready')
+        ->assertSee('of 5 ready')
         // The mail step offers a GUI Configure action, not just a CLI command.
         ->assertSee(route('operator.settings.mail.edit'), false)
         // Mail leads the guided order; background workers are a single confirmable
         // step (not a driver-only "Queue worker" that overclaims readiness).
-        ->assertSeeInOrder(['Mail transport', 'Public URL', 'Confirm background workers', 'Backups and restore'])
+        ->assertSeeInOrder(['Mail transport', 'Public URL', 'Confirm background workers', 'Backups and restore', 'Language and region'])
         ->assertDontSee('Queue worker');
 });
 
@@ -76,7 +83,7 @@ test('a scheduler-only confirmation does not complete the background-workers ess
     $this->actingAs($operator)
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertSee('3 of 4 ready')
+        ->assertSee('4 of 5 ready')
         ->assertDontSee('All essentials ready');
 });
 
@@ -90,7 +97,7 @@ test('confirming background workers completes the checklist', function (): void 
     $this->actingAs($operator)
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertSee('4 of 4 ready')
+        ->assertSee('5 of 5 ready')
         ->assertSee('All essentials ready');
 });
 

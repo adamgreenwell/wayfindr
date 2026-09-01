@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\SanitisesStoredPageUrls;
 use App\Support\Conversations\ConversationLifecycleLog;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -29,6 +30,16 @@ use Illuminate\Support\Str;
 ])]
 class Conversation extends Model
 {
+    use SanitisesStoredPageUrls;
+
+    /**
+     * @return array<int, string>
+     */
+    protected static function pageUrlPaths(): array
+    {
+        return ['started_page_url'];
+    }
+
     /** @use HasFactory<ConversationFactory> */
     use HasFactory;
 
@@ -411,6 +422,27 @@ class Conversation extends Model
         return $message->seen_at ? 'seen' : 'unseen';
     }
 
+    /**
+     * When the visitor last saw an agent reply, as a KEY plus the moment.
+     *
+     * Keys rather than sentences, for the reason on `attentionLabel()`. The
+     * English labels below stay for surfaces that are not extracted.
+     *
+     * @return array{key: string, detail_key: string, seen_at: CarbonInterface|null}
+     */
+    public function visitorReadCue(): array
+    {
+        $message = $this->latestAgentMessageForReadReceipt();
+
+        if (! $message) {
+            return ['key' => 'none', 'detail_key' => 'detail_none', 'seen_at' => null];
+        }
+
+        return $message->seen_at
+            ? ['key' => 'seen', 'detail_key' => 'detail_seen', 'seen_at' => $message->seen_at]
+            : ['key' => 'unseen', 'detail_key' => 'detail_unseen', 'seen_at' => null];
+    }
+
     public function visitorReadLabel(): string
     {
         return match ($this->visitorReadState()) {
@@ -511,11 +543,26 @@ class Conversation extends Model
             : $this->visitor()->first();
 
         return [
+            // `state` and `detail_key` are what a consumer should read: this
+            // payload is broadcast to every agent watching, and they do not all
+            // read the same language. `label` and `detail` stay English for the
+            // surfaces that have not been extracted.
             'state' => $visitor?->presenceState() ?? 'unknown',
+            'detail_key' => $visitor?->presenceCue()['key'] ?? 'no_heartbeat',
             'label' => $visitor?->presenceLabel() ?? 'Not reported',
             'detail' => $visitor?->presenceDetail() ?? 'No visitor heartbeat yet.',
-            'last_seen_at' => $visitor?->last_seen_at?->toJSON(),
-            'last_seen_label' => $visitor?->last_seen_at?->diffForHumans() ?? 'Not reported',
+            // The WEBSITE sighting, matching the state above it. Serializing
+            // the cross-channel one produced a payload that disagreed with
+            // itself -- state `quiet`, moment two minutes ago -- and the agent
+            // page interpolates that moment into the detail line, so a visitor
+            // who had emailed read as having just been on the site.
+            'last_seen_at' => $visitor?->last_web_seen_at?->toJSON(),
+            // The same timestamp as `last_seen_at` above it, which is the
+            // website sighting. Computed from the cross-channel one, this
+            // caption disagreed with the state beside it: `quiet`, "2 minutes
+            // ago" -- the state describing the website and the words
+            // describing an email.
+            'last_seen_label' => $visitor?->last_web_seen_at?->diffForHumans() ?? 'Not reported',
         ];
     }
 

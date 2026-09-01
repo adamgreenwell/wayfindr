@@ -674,7 +674,7 @@ test('a revocation decides from the locked row, not the one read before it', fun
     $this->actingAs($admin)
         ->delete(route('dashboard.account.api-tokens.destroy', $token))
         ->assertRedirect(route('dashboard.account.api-tokens.index'))
-        ->assertSessionHas('status', 'That API token was already revoked.');
+        ->assertSessionHas('status', 'api_tokens.flash.already_revoked');
 
     // The moment it was actually disabled survives, rather than being stamped
     // over with the moment somebody asked a second time.
@@ -700,8 +700,145 @@ test('revoking twice in a row records it once', function (): void {
 
     $this->actingAs($admin)
         ->delete(route('dashboard.account.api-tokens.destroy', $token))
-        ->assertSessionHas('status', 'That API token was already revoked.');
+        ->assertSessionHas('status', 'api_tokens.flash.already_revoked');
 
     expect($token->fresh()->revoked_at->timestamp)->toBe($firstRevokedAt->timestamp)
         ->and(AuditEvent::query()->where('action', 'api_token.revoked')->count())->toBe(1);
+});
+
+test('every flashed status is a key, taken from the action that flashes it', function (): void {
+    // The controller flashes a KEY rather than a sentence, because it
+    // redirects: the request that renders the flash is a different request
+    // from the one that chose it, and an agent's language is resolved per
+    // request.
+    //
+    // Driven through the ACTIONS rather than over the catalogue. The first
+    // version of this test iterated the four keys and asserted each resolved
+    // in German -- which proves the catalogue has them and nothing about what
+    // the controller does. Reverting `flash.revoked` to an English sentence
+    // left it green.
+    ['admin' => $admin, 'account' => $account, 'site' => $site] = tokenAdmin();
+
+    $flashes = [];
+
+    $flashes['created_limited'] = $this->actingAs($admin)
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']])
+        ->getSession()->get('status');
+
+    $flashes['created'] = $this->actingAs($admin)
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Scoped sync',
+            'abilities' => ['read'],
+            'site_ids' => [$site->id],
+        ])
+        ->getSession()->get('status');
+
+    $token = ApiToken::query()->firstOrFail();
+
+    $flashes['revoked'] = $this->actingAs($admin)
+        ->delete(route('dashboard.account.api-tokens.destroy', $token))
+        ->getSession()->get('status');
+
+    $flashes['already_revoked'] = $this->actingAs($admin)
+        ->delete(route('dashboard.account.api-tokens.destroy', $token))
+        ->getSession()->get('status');
+
+    foreach ($flashes as $action => $flashed) {
+        expect($flashed)->toBeString()->not->toBe('', "the {$action} action flashed nothing");
+
+        // A key, not a sentence -- `__()` on a sentence returns the sentence.
+        expect(__($flashed, [], 'de'))
+            ->not->toBe($flashed, "the {$action} action flashed '{$flashed}', which is not a catalogue key")
+            ->and(__($flashed, [], 'de'))->not->toBe(__($flashed, [], 'en'));
+    }
+
+    // And all four are distinct, so a controller collapsing two of them into
+    // one key cannot pass on the other's translation.
+    expect(array_unique(array_values($flashes)))->toHaveCount(4);
+});
+
+test('the active count agrees with the number in Italian', function (): void {
+    // `:count attivi` flat read `1 attivi` for an admin with one usable token.
+    // Italian inflects the adjective, so the key carries branches and the view
+    // selects between them.
+    //
+    // Exactly ONE usable token, which is the case no other test produces: the
+    // render audit's world has two, so it renders the plural whether or not a
+    // singular branch exists.
+    ['admin' => $admin, 'account' => $account] = tokenAdmin();
+    $admin->update(['locale' => 'it']);
+
+    $generated = ApiToken::generate();
+    ApiToken::query()->create([
+        'account_id' => $account->id,
+        'name' => 'Solo',
+        'token_hash' => $generated['hash'],
+        'last_four' => $generated['last_four'],
+        'abilities' => [ApiToken::ABILITY_READ],
+    ]);
+
+    // A second token that is NOT usable, so a page counting rows rather than
+    // usable ones would say two and fail here rather than passing by accident.
+    $revoked = ApiToken::generate();
+    ApiToken::query()->create([
+        'account_id' => $account->id,
+        'name' => 'Revocato',
+        'token_hash' => $revoked['hash'],
+        'last_four' => $revoked['last_four'],
+        'abilities' => [ApiToken::ABILITY_READ],
+        'revoked_at' => now(),
+    ]);
+
+    $html = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    expect($html)->toContain('1 attivo');
+    $this->assertStringNotContainsString('1 attivi', $html,
+        'the active count did not agree with the number');
+});
+
+test('the issued credential is announced as characters, not as words', function (): void {
+    // The one-time banner shows the plaintext token and the header it goes in.
+    // Neither is words in any language, and the token is the one string on this
+    // page a reader may need to transcribe character by character.
+    //
+    // This state exists only AFTER a create -- the banner is absent on the page
+    // the render audit visits -- so nothing else renders it. Reached by
+    // following the redirect rather than by faking the flash, or the test would
+    // prove the markup and not that the action reaches it.
+    ['admin' => $admin] = tokenAdmin();
+    $admin->update(['locale' => 'de']);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']])
+        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+
+    $html = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $banner = $xpath->query('//section[@aria-labelledby="api-token-issued-heading"]')->item(0);
+
+    expect($banner)->not->toBeNull('the issuance banner did not render; this guard is checking nothing');
+
+    $codes = $xpath->query('.//code', $banner);
+
+    expect($codes->length)->toBe(2, 'the banner no longer shows both the credential and the header');
+
+    foreach ($codes as $code) {
+        expect($code->hasAttribute('lang'))
+            ->toBeTrue('a credential string in the issuance banner is announced in the agent language');
+
+        expect($code->getAttribute('lang'))->toBe('');
+    }
+
+    // The prose around them is still German.
+    $heading = $xpath->query('//h2[@id="api-token-issued-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull()
+        ->and($heading->hasAttribute('lang'))->toBeFalse()
+        ->and(trim($heading->textContent))->toBe(__('api_tokens.issued.heading', [], 'de'));
 });

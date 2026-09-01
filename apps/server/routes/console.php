@@ -31,3 +31,25 @@ Schedule::command('wayfindr:expire-break-glass-grants')
 Schedule::command('wayfindr:sweep-orphaned-attachments')
     ->hourly()
     ->description('Remove abandoned/failed unbound attachment uploads and orphaned storage objects.');
+
+// Daily rather than only at deploy time, because the deploy's own sweep cannot
+// be the last word. `$ACTIVATE_RELEASE()` stops NEW requests reaching the old
+// release; it does not cancel requests already executing, and one of those is
+// still running the unsanitised writer. If it writes after the sweep passed its
+// row, the credential is back and nothing looks wrong.
+//
+// This also covers the install shapes that never run the Forge script at all --
+// Docker and Compose upgrade without it, and would otherwise have only the
+// migration's pass.
+//
+// It is a cheap scan that reports nothing on every run after the first, and it
+// can be retired once no install can still be carrying pre-sanitiser rows.
+Schedule::command('wayfindr:sanitise-page-urls')
+    ->daily()
+    ->description('Rewrite stored visitor page addresses that still carry a query string.');
+
+// Retention for presence-only visitors (ADR 0019 §4). Daily, because the window
+// is measured in days and an hourly pass would scan for nothing 23 times over.
+Schedule::command('wayfindr:prune-presence-visitors')
+    ->daily()
+    ->description('Delete visitors who never made contact and whose last heartbeat is past the retention window.');

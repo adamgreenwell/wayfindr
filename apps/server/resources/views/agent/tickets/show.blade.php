@@ -13,7 +13,10 @@
             </x-page-header>
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                {{-- Ticket actions flash a KEY, because `redirect()->back()` can land on
+                     the conversation detail page, which is extracted. This page is not,
+                     so `__()` answers in the install default here -- English, correctly. --}}
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             @php
@@ -396,7 +399,7 @@
                             method="POST"
                             action="{{ route('dashboard.tickets.replies.store', $ticket) }}"
                             data-reply-composer
-                            data-submitting-label="Sending visitor reply..."
+                            data-submitting-label="{{ __('composer.sending_visitor_reply') }}"
                         >
                             @csrf
                             @include('agent.tickets.partials.return-query-fields')

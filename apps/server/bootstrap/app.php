@@ -9,9 +9,11 @@ use App\Console\Commands\ExpireBreakGlassGrantsCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
 use App\Console\Commands\RestoreCommand;
+use App\Console\Commands\SanitiseStoredPageUrlsCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
 use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
+use App\Console\Commands\TranslateCatalogueCommand;
 use App\Console\Commands\UpgradeGuardCommand;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use App\Http\Middleware\SetDashboardLocale;
@@ -38,9 +40,11 @@ return Application::configure(basePath: dirname(__DIR__))
         MailTestCommand::class,
         PruneCobrowseContentCommand::class,
         RestoreCommand::class,
+        SanitiseStoredPageUrlsCommand::class,
         SendAlertDigestsCommand::class,
         SendUnattendedConversationAlertsCommand::class,
         SweepOrphanedAttachmentsCommand::class,
+        TranslateCatalogueCommand::class,
         UpgradeGuardCommand::class,
     ])
     ->withMiddleware(function (Middleware $middleware): void {

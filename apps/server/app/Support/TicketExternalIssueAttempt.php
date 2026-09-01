@@ -8,7 +8,11 @@ use App\Models\TicketExternalLink;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
-final class TicketExternalIssueAttempt
+final /*
+ * Reached only from controllers and views -- never a job, command or mail build
+ * -- so it may use the catalogue directly. A class that CAN run outside a
+ * request must hand out keys instead; see Ticket::attentionLabelKey().
+ */ class TicketExternalIssueAttempt
 {
     /**
      * @param  Collection<int, TicketExternalLink>|null  $externalLinks
@@ -18,8 +22,8 @@ final class TicketExternalIssueAttempt
     public static function latestForTicket(Ticket $ticket, ?Collection $externalLinks = null, ?Collection $auditEvents = null): array
     {
         return self::latestCueForTicket($ticket, $externalLinks, $auditEvents) ?? [
-            'label' => 'No external attempt yet',
-            'body' => 'Create or link an external issue when this ticket needs work in another tracker.',
+            'label' => __('tickets.external_attempt.none_label'),
+            'body' => __('tickets.external_attempt.none_body'),
             'occurred_at' => null,
         ];
     }
@@ -64,7 +68,7 @@ final class TicketExternalIssueAttempt
 
         return is_string($projectKey) && trim($projectKey) !== ''
             ? trim($projectKey)
-            : 'Project not recorded';
+            : __('tickets.external_attempt.project_unknown');
     }
 
     /**
@@ -105,28 +109,28 @@ final class TicketExternalIssueAttempt
     private static function linkAttemptItem(TicketExternalLink $externalLink): array
     {
         $provider = $externalLink->providerLabel();
-        $projectKey = $externalLink->project_key ?: 'Project not recorded';
+        $projectKey = $externalLink->project_key ?: __('tickets.external_attempt.project_unknown');
         $externalReference = $externalLink->external_key ?: $externalLink->external_id;
         $occurredAt = $externalLink->last_synced_at ?? $externalLink->updated_at;
 
         return match ($externalLink->sync_status) {
             ExternalIssueSyncStatus::FAILED => [
-                'body' => "{$projectKey} needs attention. Provider details withheld.",
-                'label' => "{$provider} sync failed",
+                'body' => __('tickets.external_attempt.failed_body', ['project' => $projectKey]),
+                'label' => __('tickets.external_attempt.failed_label', ['provider' => $provider]),
                 'occurred_at' => $occurredAt,
                 'sequence' => (int) $externalLink->id,
             ],
             ExternalIssueSyncStatus::PENDING => [
-                'body' => "{$projectKey} is waiting for provider confirmation.",
-                'label' => "{$provider} sync pending",
+                'body' => __('tickets.external_attempt.pending_body', ['project' => $projectKey]),
+                'label' => __('tickets.external_attempt.pending_label', ['provider' => $provider]),
                 'occurred_at' => $occurredAt,
                 'sequence' => (int) $externalLink->id,
             ],
             default => [
                 'body' => $externalReference
-                    ? "{$projectKey} is linked to {$externalReference}."
-                    : "{$projectKey} is linked.",
-                'label' => "{$provider} link active",
+                    ? __('tickets.external_attempt.linked_body', ['project' => $projectKey, 'reference' => $externalReference])
+                    : __('tickets.external_attempt.linked_body_bare', ['project' => $projectKey]),
+                'label' => __('tickets.external_attempt.linked_label', ['provider' => $provider]),
                 'occurred_at' => $occurredAt,
                 'sequence' => (int) $externalLink->id,
             ],
@@ -147,9 +151,9 @@ final class TicketExternalIssueAttempt
 
             return [
                 'body' => $externalReference
-                    ? "{$projectKey} is no longer linked to {$externalReference}."
-                    : "{$projectKey} external link was removed.",
-                'label' => "{$providerLabel} link removed",
+                    ? __('tickets.external_attempt.removed_body', ['project' => $projectKey, 'reference' => $externalReference])
+                    : __('tickets.external_attempt.removed_body_bare', ['project' => $projectKey]),
+                'label' => __('tickets.external_attempt.removed_label', ['provider' => $providerLabel]),
                 'occurred_at' => $event->occurred_at,
                 'sequence' => (int) $event->id,
             ];
@@ -160,17 +164,21 @@ final class TicketExternalIssueAttempt
 
             return [
                 'body' => $externalReference
-                    ? "{$projectKey} is linked to {$externalReference}."
-                    : "{$projectKey} was created in the external tracker.",
-                'label' => "{$providerLabel} issue created",
+                    ? __('tickets.external_attempt.created_body', ['project' => $projectKey, 'reference' => $externalReference])
+                    : __('tickets.external_attempt.created_body_bare', ['project' => $projectKey]),
+                'label' => __('tickets.external_attempt.created_label', ['provider' => $providerLabel]),
                 'occurred_at' => $event->occurred_at,
                 'sequence' => (int) $event->id,
             ];
         }
 
+        // The fall-through, which every audit action that is not a create or
+        // a remove lands in -- `ticket.external_sync_failed` among them. It was
+        // the one branch of this class still building English, and it is the
+        // most common of the three.
         return [
-            'body' => "{$projectKey} needs attention. Provider details withheld.",
-            'label' => "{$providerLabel} sync failed",
+            'body' => __('tickets.external_attempt.failed_body', ['project' => $projectKey]),
+            'label' => __('tickets.external_attempt.failed_label', ['provider' => $providerLabel]),
             'occurred_at' => $event->occurred_at,
             'sequence' => (int) $event->id,
         ];
