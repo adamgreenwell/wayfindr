@@ -1262,6 +1262,8 @@ test('an italian plural branch inflects something', function (): void {
     $invariable = [
         // `ticket` is an unadapted loanword; Italian does not pluralise it.
         'tickets.counts.tickets',
+        'ticket_labels.usage.tickets',
+        'ticket_labels.manage.in_use',
         // `in sospeso` is a prepositional phrase, invariable by construction.
         'tickets.summary.heading.pending',
         // Both branches are one noun phrase (`Visualizzazione di ...`); the

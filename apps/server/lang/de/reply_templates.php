@@ -78,4 +78,9 @@ return [
         'archive' => 'Archivieren',
         'archived_note' => 'Archivierte Vorlagen erscheinen nicht in den Antworthilfen.',
     ],
+
+    'validation' => [
+        'name' => 'Bitte geben Sie dieser Antwortvorlage einen Namen.',
+        'body' => 'Bitte ergänzen Sie einen Antworttext.',
+    ],
 ];

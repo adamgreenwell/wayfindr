@@ -28,7 +28,7 @@
 return [
     'title' => 'Modelli di risposta',
     'subtitle' => 'Gestione dei modelli di risposta condivisi per gli aggiornamenti più comuni ai visitatori.',
-    'back' => 'Torna al conto',
+    'back' => 'Torna all\'account',
 
     'flash' => [
         'created' => 'Modello di risposta creato.',
@@ -77,5 +77,10 @@ return [
         'save' => 'Salva modello',
         'archive' => 'Archivia',
         'archived_note' => 'I modelli archiviati non compaiono tra gli assistenti di risposta.',
+    ],
+
+    'validation' => [
+        'name' => 'Assegni un nome a questo modello di risposta.',
+        'body' => 'Aggiunga un testo della risposta.',
     ],
 ];

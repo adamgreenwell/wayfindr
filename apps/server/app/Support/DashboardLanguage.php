@@ -100,6 +100,14 @@ final class DashboardLanguage
         'dashboard.account.reply-templates.store',
         'dashboard.account.reply-templates.update',
         'dashboard.account.reply-templates.archive',
+
+        // The account ticket-labels page. Reached from the ticket queue, which
+        // is extracted, and it links straight back there -- so English here put
+        // two languages either side of one click.
+        'dashboard.account.labels.index',
+        'dashboard.account.labels.store',
+        'dashboard.account.labels.update',
+        'dashboard.account.labels.destroy',
     ];
 
     /**

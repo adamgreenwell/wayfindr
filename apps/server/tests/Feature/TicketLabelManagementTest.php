@@ -84,7 +84,7 @@ test('account admins can create reusable ticket labels from management', functio
             'label_name' => 'VIP Customer',
         ])
         ->assertRedirect('/dashboard/account/labels')
-        ->assertSessionHas('status', 'Ticket label created.');
+        ->assertSessionHas('status', 'ticket_labels.flash.created');
 
     $this->assertDatabaseHas('ticket_labels', [
         'account_id' => $account->id,
@@ -363,7 +363,7 @@ test('account admins can rename ticket labels', function (): void {
             'label_name' => 'Escalation',
         ])
         ->assertRedirect('/dashboard/account/labels')
-        ->assertSessionHas('status', 'Ticket label renamed.');
+        ->assertSessionHas('status', 'ticket_labels.flash.renamed');
 
     $this->assertDatabaseHas('ticket_labels', [
         'id' => $label->id,
@@ -459,7 +459,7 @@ test('account admins can delete unused labels but not labels still on tickets', 
         ->from('/dashboard/account/labels')
         ->delete("/dashboard/account/labels/{$unusedLabel->id}")
         ->assertRedirect('/dashboard/account/labels')
-        ->assertSessionHas('status', 'Unused ticket label deleted.');
+        ->assertSessionHas('status', 'ticket_labels.flash.deleted');
 
     $this->assertDatabaseMissing('ticket_labels', [
         'id' => $unusedLabel->id,
@@ -501,4 +501,38 @@ test('ticket label management actions stay inside same account admin boundaries'
         'name' => 'Other Account',
         'slug' => 'other-account',
     ]);
+});
+
+test('an agent who reads German gets the labels page, counts included, in German', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $label = TicketLabel::factory()->for($account)->create(['name' => 'Eskalation']);
+
+    // Two tickets, so the PLURAL branch renders. A singular fixture would let
+    // a catalogue whose plural was pasted from its singular pass.
+    Ticket::factory()->count(2)->for($account)->for($site)->create()
+        ->each(fn (Ticket $ticket) => $ticket->labels()->attach($label));
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.labels.index'))
+        ->assertOk()
+        ->assertSee('Ticket-Labels')
+        ->assertSee('Label erstellen')
+        // The count sentence, inflected -- not `2 tickets` welded to an English
+        // pluraliser, which is what `Str::plural` produced whatever the
+        // catalogue said.
+        //
+        // The NEGATIVE is what actually catches that. This page renders the
+        // count twice, in the usage column and in the in-use note, so
+        // asserting only the German form passes while one of the two is still
+        // English -- which is how the first version of this test survived
+        // reverting exactly the line it was written for.
+        ->assertSee('2 Tickets')
+        ->assertDontSee('2 tickets')
+        ->assertDontSee('Create label')
+        ->assertDontSee('Ticket labels');
 });

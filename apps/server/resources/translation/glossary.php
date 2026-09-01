@@ -75,6 +75,11 @@ return [
             'Status',
             'Label',
             'Labels',
+
+            // The URL-safe identifier, and the word German technical writing
+            // uses for it. `Kürzel` means an abbreviation and would describe
+            // the wrong thing beside a column showing `vip-customer`.
+            'Slug',
             'Normal',
             'System',
             ':count ms',
@@ -97,6 +102,8 @@ return [
             'Bug',
             'Payload',
             'Viewport',
+            // The URL-safe identifier; Italian technical writing borrows it.
+            'Slug',
 
             // The DOM/keyboard sense, which Italian borrows. `Messa a
             // fuoco` is the OPTICAL sense and would be wrong here -- this
@@ -336,6 +343,11 @@ return [
             'istantanea' => 'snapshot is snapshot',
             'operatore' => 'agent is agente and operator is gestore -- in Italian support vocabulary this word means the agent, so it swaps the two roles',
             'proprietario' => 'owner_role is titolare, owner_assignee is responsabile',
+            // The leading space is load-bearing. `conto` alone is a substring
+            // of `resoconto` -- Italian for a report, and the reports page is
+            // not extracted yet -- as well as `sconto` and `racconto`, so a
+            // bare entry would start crying wolf on the next slice but one.
+            ' conto' => 'account is account -- `conto` is a bank account',
         ],
 
         'de' => [

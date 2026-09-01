@@ -1233,6 +1233,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
         route('dashboard.account.reply-templates.index'),
+        route('dashboard.account.labels.index'),
     ];
 
     // Every GET-able extracted route is covered, whether or not it is listed
@@ -2423,6 +2424,9 @@ test('every catalogue file answers the same set of keys', function (): void {
         'tickets.row.actor_system = System',
         'reply_templates.list.column_status = Status',
         'reply_templates.manage.name = Name',
+        'ticket_labels.list.heading = Labels',
+        'ticket_labels.list.column_label = Label',
+        'ticket_labels.list.column_slug = Slug',
     ];
 
     expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],
