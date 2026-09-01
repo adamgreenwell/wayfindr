@@ -145,7 +145,13 @@ final class MeasureDashboardCommand extends Command
                 : app()->instance('request', $callerRequest);
 
             if ($callerSessionId !== null) {
+                // STARTED, then filled. Each synthetic request's `StartSession`
+                // save leaves the shared store stopped, so putting back the id
+                // and attributes without starting it left the caller holding a
+                // session that reads as closed -- and anything checking
+                // `isStarted()` behaved as if they had none.
                 Session::setId($callerSessionId);
+                Session::start();
                 Session::flush();
                 Session::replace($callerSession);
             }

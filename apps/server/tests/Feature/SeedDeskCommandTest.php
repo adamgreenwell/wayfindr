@@ -381,6 +381,16 @@ test('nothing is closed or read in the future', function (): void {
     expect(ConversationReadState::query()->where('last_read_at', '>', now())->count())
         ->toBe(0, 'an agent has read a conversation in the future');
 
+    // Nor before it existed. An hour before the last message is an hour before
+    // the conversation opened on anything short, and with `--messages=0` it is
+    // exactly an hour before it was created.
+    $early = ConversationReadState::query()
+        ->join('conversations', 'conversations.id', '=', 'conversation_read_states.conversation_id')
+        ->whereColumn('conversation_read_states.last_read_at', '<', 'conversations.created_at')
+        ->count();
+
+    expect($early)->toBe(0, 'an agent has read a conversation before it existed');
+
     // And some ARE closed, or this passes on a fixture with no closures.
     expect(Conversation::query()->whereNotNull('closed_at')->count())->toBeGreaterThan(0);
 });

@@ -496,4 +496,10 @@ test('it does not touch the caller\'s session', function (): void {
 
     expect(Session::get('theirs'))
         ->toBe('kept', 'the command discarded what the caller had in their session');
+
+    // And it is still STARTED. Each synthetic request's save leaves the shared
+    // store stopped, so restoring the id and attributes without restarting left
+    // the caller holding a session that reads as closed.
+    expect(Session::isStarted())
+        ->toBeTrue('the command left the caller\'s session stopped');
 });

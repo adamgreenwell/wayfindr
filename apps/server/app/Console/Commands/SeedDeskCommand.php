@@ -900,9 +900,16 @@ final class SeedDeskCommand extends Command
                     // rather than to the conversation's own activity boundary.
                     $lastMessageAt = Carbon::parse($conversation->last_message_at ?? $conversation->created_at);
 
+                    $openedAt = Carbon::parse($conversation->created_at);
+
+                    // Never before the conversation existed. An hour before the
+                    // last message is an hour before the conversation opened on
+                    // anything short -- and with `--messages=0` it is exactly
+                    // an hour before it was created, so an agent had read a
+                    // conversation that did not yet exist.
                     $lastReadAt = $state === 0
                         ? $lastMessageAt->copy()->addMinute()
-                        : $lastMessageAt->copy()->subHour();
+                        : $lastMessageAt->copy()->subHour()->max($openedAt);
 
                     // The FIRST agent always, because that is the one the
                     // measurement signs in as and the queue evaluates read
@@ -926,7 +933,10 @@ final class SeedDeskCommand extends Command
                         $rows[] = [
                             'conversation_id' => $conversation->id,
                             'user_id' => $agentIds[$colleague],
-                            'last_read_at' => $lastReadAt->copy()->subMinutes(5),
+                            // Clamped like the first one. Five minutes earlier
+                            // than a position already pinned to the opening is
+                            // five minutes before the conversation existed.
+                            'last_read_at' => $lastReadAt->copy()->subMinutes(5)->max($openedAt),
                             'created_at' => $lastMessageAt,
                             'updated_at' => $lastMessageAt,
                         ];
