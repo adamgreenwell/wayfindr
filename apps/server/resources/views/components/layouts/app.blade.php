@@ -1,5 +1,14 @@
 @props([
     'title' => config('app.name', 'Wayfindr'),
+    // A document title that is the USER's words -- an article's title, a
+    // conversation's subject -- is not the dashboard's language. Pass '' for
+    // HTML's "unknown"; leave null when the title is our own copy.
+    //
+    // `lang` is a global attribute and applies to `<title>` like anything else.
+    // Support in assistive technology is uneven, but the alternative is a
+    // document title that positively claims the wrong language, which is worse
+    // than one that declines to say.
+    'titleLang' => null,
     'agent' => null,
     'account' => null,
     // A deeper crumb for surfaces that have their own sections, so the bar can
@@ -25,7 +34,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $title }}</title>
+    {{-- Built inline so a title with no language declaration renders exactly
+         `<title>`, not `<title >`. Only the attribute is unescaped; its value
+         is escaped on the way in. --}}
+    <title{!! $titleLang !== null ? ' lang="'.e(str_replace('_', '-', $titleLang)).'"' : '' !!}>{{ $title }}</title>
     <script>
         (function () {
             try {

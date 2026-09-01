@@ -4166,6 +4166,9 @@ test('an article is announced as the account\'s words, not the agent\'s language
     foreach ([
         'the new-article title field' => '//input[@id="article_title"]',
         'the new-article body field' => '//textarea[@id="article_body"]',
+        // The query is a search for the account's own words. Its LABEL stays
+        // in the agent's language and is checked below.
+        'the search field' => '//input[@id="article_search"]',
     ] as $label => $query) {
         $control = $index->query($query)->item(0);
 
@@ -4201,8 +4204,26 @@ test('an article is announced as the account\'s words, not the agent\'s language
 
     expect($echoed)->not->toBeNull('the search term is echoed in the agent language rather than as the words the agent typed');
 
+    // The search field's own label is ours and is not reset with it, or the
+    // agent would be told what the field is for in an undeclared language.
+    $searchLabel = $index->query('//label[@for="article_search"]')->item(0);
+
+    expect($searchLabel)->not->toBeNull('the search label did not render')
+        ->and($searchLabel->hasAttribute('lang'))->toBeFalse('the search LABEL was reset along with its field');
+
     $detail = $xpathFor((string) $this->actingAs($world['admins']['de'])
         ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent());
+
+    // The document title, which is what a tab and every navigation
+    // announcement read out. `<title>` takes `lang` like any other element.
+    $documentTitle = $detail->query('//title')->item(0);
+
+    expect($documentTitle)->not->toBeNull('the document has no title')
+        ->and(trim($documentTitle->textContent))->toBe($article->title)
+        ->and($documentTitle->hasAttribute('lang'))
+        ->toBeTrue('the document title is the article\'s words announced in the agent language');
+
+    expect($documentTitle->getAttribute('lang'))->toBe('');
 
     // Each region that holds the article, named separately so a deletion in
     // one cannot be covered by another.

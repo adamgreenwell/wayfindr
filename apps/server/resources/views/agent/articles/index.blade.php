@@ -77,7 +77,9 @@
                 <form class="section-form" method="GET" action="{{ route('dashboard.account.articles.index') }}">
                     <div class="field">
                         <label for="article_search">{{ __('articles.list.search_label') }}</label>
-                        <input type="search" id="article_search" name="article_search" maxlength="120"
+                        {{-- The LABEL above stays German; what is typed into the
+                             field is a search for the account's own words. --}}
+                        <input type="search" id="article_search" name="article_search" maxlength="120" lang=""
                             value="{{ $articleSearch }}" placeholder="{{ __('articles.list.search_placeholder') }}">
                     </div>
 
