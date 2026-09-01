@@ -34,7 +34,7 @@ test('account admins can create edit and archive reply templates', function (): 
             'body' => 'Thanks for reaching out. I will check the billing details and follow up shortly.',
         ])
         ->assertRedirect('/dashboard/account/reply-templates')
-        ->assertSessionHas('status', 'Reply template created.');
+        ->assertSessionHas('status', 'reply_templates.flash.created');
 
     $template = ReplyTemplate::query()
         ->where('account_id', $account->id)
@@ -52,7 +52,7 @@ test('account admins can create edit and archive reply templates', function (): 
             'body' => 'I am checking the billing status and will keep this ticket updated.',
         ])
         ->assertRedirect('/dashboard/account/reply-templates')
-        ->assertSessionHas('status', 'Reply template updated.');
+        ->assertSessionHas('status', 'reply_templates.flash.updated');
 
     $this->assertDatabaseHas('reply_templates', [
         'id' => $template->id,
@@ -66,7 +66,7 @@ test('account admins can create edit and archive reply templates', function (): 
         ->from('/dashboard/account/reply-templates')
         ->post("/dashboard/account/reply-templates/{$template->id}/archive")
         ->assertRedirect('/dashboard/account/reply-templates')
-        ->assertSessionHas('status', 'Reply template archived.');
+        ->assertSessionHas('status', 'reply_templates.flash.archived');
 
     expect($template->fresh()->is_active)->toBeFalse();
 });
@@ -416,4 +416,51 @@ test('the account management hub links admins to reply template management', fun
         ->assertOk()
         ->assertSee('Reply templates')
         ->assertSee('/dashboard/account/reply-templates', false);
+});
+
+test('the flash message reaches the agent in their own language', function (): void {
+    // The key travels, not the sentence. The request that redirects and the
+    // request that renders are different requests, and the agent's language is
+    // resolved per request -- so a sentence chosen at redirect time would be
+    // the language of whoever happened to be acting, not of whoever reads it.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.account.reply-templates.store'), [
+            'name' => 'Rückfrage',
+            'body' => 'Danke für die Rückmeldung.',
+        ])
+        ->assertRedirect();
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.reply-templates.index'))
+        ->assertOk()
+        ->assertSee('Antwortvorlage erstellt.')
+        // Neither the key nor the English sentence reaches the screen.
+        ->assertDontSee('reply_templates.flash.created')
+        ->assertDontSee('Reply template created.');
+});
+
+test('an agent who reads German gets the page in German', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.reply-templates.index'))
+        ->assertOk()
+        ->assertSee('Antwortvorlagen')
+        ->assertSee('Vorlagenstandards')
+        // The two words this page exists to keep apart: the account template it
+        // manages, and the built-in composer helper it says stays available.
+        ->assertSee('Antwortvorlage')
+        ->assertSee('Antworthilfen')
+        ->assertDontSee('Reply templates')
+        ->assertDontSee('Template standards');
 });

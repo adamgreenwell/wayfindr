@@ -32,6 +32,9 @@ return [
         'language' => 'Sprache des Dashboards',
         'language_default' => 'Voreinstellung der Installation verwenden',
         'language_help' => 'Gilt nur für Sie. Es ändert das Dashboard für Sie und niemanden sonst und hat keinen Einfluss darauf, welche Sprache das Widget mit Ihren Besuchenden spricht — das wird pro Website festgelegt.',
+        'timezone' => 'Zeitzone',
+        'timezone_default' => 'Voreinstellung der Installation verwenden',
+        'timezone_help' => 'Uhrzeiten und Daten im gesamten Dashboard werden in dieser Zone angezeigt, einschließlich der Frage, welchem Tag ein Bericht einen Vorgang zuordnet.',
         'save' => 'Profil speichern',
     ],
 

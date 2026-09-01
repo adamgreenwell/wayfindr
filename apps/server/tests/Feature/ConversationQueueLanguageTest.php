@@ -4,7 +4,10 @@
 // looks at most, and the one where the copy is least visible in the view: the
 // Blade file holds about seven sentences and the controller builds sixty.
 
+use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\ApiToken;
+use App\Models\Article;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -29,6 +32,7 @@ use App\Support\TicketExternalIssueAttempt;
 use App\Support\VisitorSessionToken;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\File;
@@ -135,8 +139,34 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
     // and should.
     $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
     $agentFor = fn (Account $a): User => User::factory()->for($a)->create(['name' => 'Sender Datenpunkt']);
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Datenpunkt Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-datenpunkt']);
+    // Presence REPORTING on, or the live board renders its disabled notice and
+    // nothing else -- no table, no rows, no script. The first version of this
+    // world left it off and the audit measured one paragraph of a page whose
+    // copy is mostly in the other branch.
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Docs',
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-datenpunkt',
+        // A name of its own rather than faker's, because the live board renders
+        // it and a guard has to be able to find it.
+        'name' => 'Acme Datenpunkt Person',
+        // On the site NOW, so the live board has a row rather than its empty
+        // state. Named, so the row reaches the branch that links to a profile
+        // and counts conversations.
+        'last_web_seen_at' => now()->subMinute(),
+        // The board reads the page address out of metadata, not a column.
+        'metadata' => ['last_page_url' => 'https://acme.example/datenpunkt/preise'],
+    ]);
+
+    // And a second, never in touch, which is a different row: no link, no
+    // name, and the "not in touch yet" sentence instead of a count.
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-datenpunkt-stranger',
+        'last_web_seen_at' => now()->subMinutes(2),
+        'presence_only' => true,
+    ]);
 
     // NOT range(1, $conversations): PHP counts DOWN when the end is lower
     // than the start, so range(1, 0) is [1, 0] and an "empty" world got two
@@ -234,12 +264,85 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         ]);
     }
 
+    // A published article, so the articles DETAIL page has something to render.
+    // Its own title and body are account content and stay identical in both
+    // languages -- the token marks them as data, the way the account name does.
+    $article = Article::factory()->for($account)->create([
+        'title' => 'Acme Datenpunkt Artikel',
+        // The slug is DATA and is rendered on the detail page, so it carries
+        // the token too. Left to the factory it is faker output, which the
+        // guard correctly reports as a string identical in both renders.
+        'slug' => 'acme-datenpunkt-artikel',
+        'body' => 'Acme Datenpunkt.',
+        'published_at' => now(),
+    ]);
+
+    // API tokens, one per branch of the tokens table. A single active row
+    // leaves the expiry, revocation, purged-site, no-abilities and never-used
+    // copy unrendered -- on this page most of the sentences ARE the branches,
+    // so a one-row fixture would measure the headings and little else.
+    // A name of its own rather than another `Ada Datenpunkt`: every agent in
+    // this world is called that, and the topbar renders the viewer's name on
+    // every page -- so a guard looking for the ISSUER by name would match the
+    // person reading the page instead.
+    $issuer = User::factory()->for($account)->create(['name' => 'Ausgeber Datenpunkt']);
+
+    // Active, unrestricted, used, and issued by somebody -- the only row that
+    // reaches the `created_by` form of the sentence.
+    ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Sync',
+        'created_by_id' => $issuer->id,
+        'last_four' => 'a1b2',
+        'last_used_at' => now()->subHours(3),
+    ]);
+
+    // Expiring rather than expired, restricted to a site it can name, and
+    // never used.
+    $restricted = ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Report',
+        'last_four' => 'c3d4',
+        'restricts_sites' => true,
+        'expires_at' => now()->addDays(30),
+    ]);
+    $restricted->sites()->attach($site);
+
+    ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Legacy',
+        'last_four' => 'e5f6',
+        'expires_at' => now()->subDay(),
+    ]);
+
+    // Revoked, with no abilities, and restricted to sites that have all since
+    // been purged. That last combination reaches NOTHING, which is the
+    // opposite of what an empty site list means for an unrestricted token --
+    // the two have separate sentences and this is the only row that renders
+    // the second one.
+    ApiToken::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Retired',
+        'last_four' => 'g7h8',
+        'abilities' => [],
+        'restricts_sites' => true,
+        'revoked_at' => now()->subWeek(),
+    ]);
+
     return [
         'account' => $account,
         'site' => $site,
+        'article' => $article,
         'agents' => [
             'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt']),
             'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt']),
+        ],
+
+        // A second pair with the admin role, for account-management surfaces
+        // that 403 without it -- a guard that cannot load a page cannot check
+        // it. Kept SEPARATE rather than promoting the pair above, because the
+        // role is rendered: making everyone an admin removes `Agent` from the
+        // screen, and the cognate list has a guard that notices when one of its
+        // entries stops appearing.
+        'admins' => [
+            'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
+            'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
         ],
     ];
 }
@@ -1083,6 +1186,7 @@ function conversationQueueLanguageCognates(): array
         'Normal' => 'the same word in both languages, as a priority',
         'Live' => 'the same word in both languages, as a transport state',
         'URL' => 'the same word in both languages',
+        'Token' => 'the same word in both languages -- German writes DAS Token and hyphenates the compound, so the bare column header is identical while the page title is not',
         'Label' => 'a loanword German uses as-is',
         'Labels' => 'a loanword German uses as-is',
         'English' => 'an autonym -- the language selector names each language in its own language',
@@ -1125,10 +1229,28 @@ function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $engli
     // "does this string appear at all", not where or in what language.
     $english = array_flip(array_column(conversationQueueLanguageAnnouncements($englishHtml), 'text'));
 
-    $isData = fn (string $text): bool => str_contains($text, 'Datenpunkt')
+    // The token match is deliberately case-INSENSITIVE. Fixture data does not
+    // always reach the page in the casing it was written in: an article's slug
+    // is `acme-datenpunkt-artikel`, lower-cased by the same slug rule the
+    // product uses, and a marker that only survives in its original casing
+    // stops marking things the moment the product touches them. Nothing this
+    // platform says in English contains `datenpunkt` in any casing.
+    $isData = fn (string $text): bool => stripos($text, 'Datenpunkt') !== false
         || str_contains($text, 'WF-LANG')
         || str_contains($text, 'anon-')
+        // A token hint (`wfk_…a1b2`) is the credential's own identifier, and
+        // the prefix alone reads as a three-letter word to the check below.
+        || str_starts_with($text, ApiToken::PREFIX)
         || str_contains($text, '@')
+        // IANA time zone identifiers. `Europe/Berlin` is a NAME, not copy:
+        // the same string in every language by design, and a translated one is
+        // a value the platform's own zone database rejects.
+        //
+        // Asked of the zone database rather than matched on shape. A shape
+        // rule looked right and quietly missed the abbreviation forms --
+        // `UTC`, `GMT`, `CET` -- which are identifiers too and read as
+        // three-letter words to every other check here.
+        || in_array($text, DateTimeZone::listIdentifiers(), true)
         // Numbers, punctuation and single letters read the same in both
         // languages, correctly.
         || preg_match('/\p{L}{3}/u', $text) !== 1;
@@ -1211,6 +1333,15 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'ticket']),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
+        route('dashboard.account.reply-templates.index'),
+        route('dashboard.account.labels.index'),
+        route('dashboard.account.api-tokens.index'),
+        route('dashboard.sites.live', $world['site']),
+        route('dashboard.account.articles.index'),
+        // The DETAIL page explicitly. The prefix match above would let it pass
+        // on the index's coverage without ever rendering it -- which the loop's
+        // own comment names as how `conversations.show` went unaudited.
+        route('dashboard.account.articles.show', $world['article']),
     ];
 
     // Every GET-able extracted route is covered, whether or not it is listed
@@ -1238,10 +1369,41 @@ test('no English is rendered as German on any extracted surface', function (): v
         $this->assertTrue($matched, "extracted route not audited: {$name} ({$route->uri()})");
     }
 
+    // And the same question asked from the other end, which is the direction
+    // that was missing. The loop above proves every extracted route is
+    // rendered here; it cannot notice a route that is rendered here and is no
+    // longer extracted.
+    //
+    // That gap is not theoretical -- deleting the articles routes from
+    // EXTRACTED_ROUTES left this whole file green. The page drops back to
+    // `lang="en"`, the audit only inspects surfaces that ANNOUNCE German, and a
+    // page that stops claiming German stops being looked at. The check and the
+    // behaviour were both defined by the same list, so removing an entry
+    // removed the thing that would have complained.
+    //
+    // `$states` is the deliberate statement of which pages are meant to speak
+    // the agent's language, so it is the honest place to hold that list to.
     foreach ($states as $url) {
+        $name = app('router')->getRoutes()
+            ->match(Request::create(parse_url($url, PHP_URL_PATH), 'GET'))
+            ->getName();
+
+        $this->assertContains($name, DashboardLanguage::EXTRACTED_ROUTES, implode(' ', [
+            "audited page is not an extracted route: {$name}.",
+            'It renders in English for every agent, and this audit skips it in',
+            'silence because it never announces German.',
+        ]));
+    }
+
+    foreach ($states as $url) {
+        // Account management needs the role, everything else must be checked
+        // WITHOUT it -- an admin sees controls a plain agent does not, and
+        // auditing only the admin view would leave the ordinary one unchecked.
+        $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
+
         $leaks = conversationQueueLanguageEnglishLeaks(
-            (string) $this->actingAs($agent)->get($url)->assertOk()->getContent(),
-            (string) $this->actingAs($world['agents']['en'])->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs($admin ? $world['admins']['de'] : $agent)->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs($world[$admin ? 'admins' : 'agents']['en'])->get($url)->assertOk()->getContent(),
         );
 
         expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
@@ -1404,6 +1566,13 @@ test('every cognate on the list still appears, so the list cannot rot', function
         // that is perfectly real.
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['agents']['de'])->get(route('dashboard.conversations.show', $conversation->support_code))->getContent()
+        ),
+        // And the API-tokens page, where `Token` is a column header and
+        // appears nowhere else. ADMIN rather than agent: the page 403s
+        // otherwise, and a page that does not load announces nothing -- which
+        // this guard would read as a cognate that has stopped appearing.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.account.api-tokens.index'))->getContent()
         ),
     ), 'text');
 
@@ -2394,6 +2563,16 @@ test('every catalogue file answers the same set of keys', function (): void {
         'tickets.chips.status = Status: :value',
         'tickets.chips.label = Label: :value',
         'tickets.row.actor_system = System',
+        'reply_templates.list.column_status = Status',
+        'reply_templates.manage.name = Name',
+        'ticket_labels.list.heading = Labels',
+        'ticket_labels.list.column_label = Label',
+        'ticket_labels.list.column_slug = Slug',
+        'api_tokens.list.column_name = Name',
+        'api_tokens.list.column_token = Token',
+        // An em dash. Punctuation rather than a word, and in the catalogue so a
+        // language that prefers a different dash can say so.
+        'sites_live.duration.unknown = —',
     ];
 
     expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],
@@ -3183,10 +3362,21 @@ test('a reported byte count is German too', function (): void {
 
     $page = conversationQueueLanguageVisibleText($html);
 
-    $this->assertStringContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'de'), $page,
+    // Both halves of this pair used to compute their expectation with
+    // `number_format()`, which froze the en-US separator into a test about
+    // language. It could not see the defect it was standing next to: the
+    // German page really did say `2,048 Bytes`, and the negative half kept
+    // passing for the wrong reason -- the English NOUN was absent, so nobody
+    // looked at the number.
+    $this->assertStringContainsString(__('cobrowse.units.bytes', ['count' => '2.048'], 'de'), $page,
         'the payload size is not in the agent language');
-    $this->assertStringNotContainsString(__('cobrowse.units.bytes', ['count' => number_format(2048)], 'en'), $page,
+    $this->assertStringNotContainsString(__('cobrowse.units.bytes', ['count' => '2,048'], 'en'), $page,
         'the English byte unit is still on the German page');
+
+    // The separator on its own, which is what neither half was checking. A
+    // German reader parses `2,048` as two-point-zero-four-eight.
+    $this->assertStringNotContainsString('2,048', $page,
+        'an en-US grouped number is on the German page');
 });
 
 test('a region that declares English is English all the way down', function (): void {
@@ -3918,5 +4108,673 @@ test('a German cobrowse sentence is never marked English because its value is', 
 
         expect($openedEnglish === false || $closedSince !== false)
             ->toBeTrue("German sentence for {$key} is inside an English-marked region");
+    }
+});
+
+test('a four-digit count is grouped the way the reading agent groups numbers', function (): void {
+    // The revert-detector for the number seam. `number_format()` writes
+    // `4,213` in every language the dashboard speaks, and this page is
+    // extracted, so a German agent was reading a four-thousand count as
+    // four-point-two-one-three. Plausible at both readings, which is why it
+    // shipped.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+    $conversation = $session->conversation;
+
+    $metadata = $session->metadata;
+    $metadata['snapshot']['node_count'] = 4213;
+    // The telemetry counts are rendered on their own rather than inside a
+    // sentence, and were formatted inside the model -- so a whole-file
+    // exemption in the coverage guard hid them.
+    $metadata['telemetry']['dropped_batches'] = 5314;
+    $metadata['telemetry']['reconnects'] = 6415;
+    $metadata['telemetry']['samples'] = 7516;
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $german = conversationQueueLanguageVisibleText((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent());
+
+    expect($german)->toContain('4.213')
+        ->and($german)->not->toContain('4,213')
+        ->and($german)->toContain('5.314')
+        ->and($german)->toContain('6.415')
+        ->and($german)->toContain('7.516')
+        // `reconnects` can be asserted negatively now: the transport-health
+        // block used to render it bare under a translated label with an en-US
+        // separator, so the page carried `6,415` and `6.415` at once. The
+        // model hands out the raw value and the surface formats it.
+        //
+        // `dropped_batches` still cannot: it also appears in the pressure
+        // sentence, which really is English inside a model. `5,314` is
+        // legitimately on this page welded to an English noun, and asserting
+        // against it here would be asserting that the extraction slice's work
+        // was done.
+        ->and($german)->not->toContain('6,415')
+        ->and($german)->not->toContain('7,516');
+
+    // Both halves matter. The negative one is what catches a partial revert
+    // that leaves the seam in place and bypasses it at one call site.
+    $english = conversationQueueLanguageVisibleText((string) $this->actingAs($world['agents']['en'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk()
+        ->getContent());
+
+    expect($english)->toContain('4,213')
+        ->and($english)->not->toContain('4.213')
+        ->and($english)->toContain('7,516')
+        ->and($english)->not->toContain('7.516');
+});
+
+test('the live-update path is given the agent language, not the browser', function (): void {
+    // The server half of this is undone within seconds without the client
+    // half: `applyPreviewState()` rewrites the same nodes the server just
+    // painted, and `toLocaleString()` with no argument follows the browser.
+    // The live block only renders when broadcasting is configured, which is
+    // the only condition under which any of this runs at all.
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'test-key');
+    config()->set('broadcasting.connections.reverb.options.host', 'localhost');
+    config()->set('broadcasting.connections.reverb.options.port', 8080);
+
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $session->conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    // The block is present at all -- without this the rest asserts nothing.
+    expect($html)->toContain('var realtimeLabels =');
+
+    // The agent's language reaches the script.
+    expect($html)->toContain('"locale":"de"');
+
+    // ...and every live formatter goes through the helper that uses it.
+    expect(substr_count($html, 'toLocaleString()'))->toBe(0)
+        ->and($html)->toContain('function readerNumber(');
+});
+
+test('the queue-pressure count is grouped for the agent, on both renders', function (): void {
+    // This sentence is fully translated -- `:count verworfene Stapel` -- and
+    // renders on two extracted routes, so the only English thing left in it
+    // was the number. It was exempted from the number guard as "English
+    // awaiting extraction", which it is not, and the exemption hid it.
+    //
+    // The live handler already formatted these for the agent, so the two
+    // halves disagreed: the server painted `1,000` and the first websocket
+    // message rewrote the same node as `1.000`.
+    $world = conversationQueueLanguageWorld();
+    $session = conversationQueueLanguageCobrowseSession();
+
+    $metadata = $session->metadata;
+    $metadata['telemetry']['dropped_batches'] = 1000;
+    $metadata['telemetry']['reported_at'] = now()->toIso8601String();
+    $session->forceFill(['metadata' => $metadata])->save();
+
+    $german = conversationQueueLanguageVisibleText((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $session->conversation->support_code))
+        ->assertOk()
+        ->getContent());
+
+    expect($german)->toContain('1.000 verworfene Stapel')
+        ->and($german)->not->toContain('1,000 verworfene Stapel');
+});
+
+test('an article is announced as the account\'s words, not the agent\'s language', function (): void {
+    // An article is written for VISITORS, so its language is whatever the
+    // account writes in -- which is not the language this admin happens to read
+    // the dashboard in. The extracted page declares the agent's language for
+    // the whole document, so without a reset a screen reader pronounces English
+    // article prose with German phonetics.
+    //
+    // The render audit cannot see this: the article's text is marked as DATA
+    // there, so it is excused from the translation check and nothing looks at
+    // how it is announced.
+    //
+    // Asserted per ELEMENT, not by asking whether the article's words appear
+    // inside SOME `lang=""` node anywhere on the page. The first version did
+    // that, and the title alone is rendered in three marked places -- so
+    // deleting any one of them left another to answer for it and five of six
+    // deletions passed. The strings collide by design; the elements do not.
+    $world = conversationQueueLanguageWorld();
+    $article = $world['article'];
+
+    $xpathFor = function (string $html): DOMXPath {
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+        return new DOMXPath($document);
+    };
+
+    $index = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.index'))->assertOk()->getContent());
+
+    // The CREATION controls as well as the list. Codex found these on the
+    // second pass: the detail page's editor was reset and the create form one
+    // section above it was not, so the same words were announced differently
+    // depending on which form the agent was in.
+    foreach ([
+        'the new-article title field' => '//input[@id="article_title"]',
+        'the new-article body field' => '//textarea[@id="article_body"]',
+        // The query is a search for the account's own words. Its LABEL stays
+        // in the agent's language and is checked below.
+        'the search field' => '//input[@id="article_search"]',
+    ] as $label => $query) {
+        $control = $index->query($query)->item(0);
+
+        expect($control)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($control)->toBeInstanceOf(DOMElement::class);
+
+        expect($control->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so what the agent writes is announced in the dashboard language");
+
+        expect($control->getAttribute('lang'))->toBe('');
+    }
+
+    $link = $index->query('//a[contains(@href, "'.$article->slug.'") or contains(@href, "/articles/'.$article->id.'")]')->item(0);
+
+    expect($link)->not->toBeNull('the article did not render in the list')
+        ->and($link)->toBeInstanceOf(DOMElement::class);
+
+    // `hasAttribute` FIRST. `getAttribute('lang')` returns the empty string
+    // both for `lang=""` and for no `lang` at all, so a value check alone
+    // passes on exactly the markup this guard exists to reject.
+    expect($link->hasAttribute('lang'))->toBeTrue('the list title carries no lang reset')
+        ->and($link->getAttribute('lang'))->toBe('', 'the list title is announced in the agent language');
+
+    // The search term echoed back in the empty state. The sentence around it
+    // is ours and stays German; the term is whatever the agent typed, which is
+    // the account's language. Interpolated data is excused from the render
+    // audit's translation check, so only this can see it.
+    $searched = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.index', ['article_search' => 'Kundenrueckerstattung zzz']))
+        ->assertOk()->getContent());
+
+    $echoed = $searched->query('//*[@lang=""][contains(text(), "Kundenrueckerstattung zzz")]')->item(0);
+
+    expect($echoed)->not->toBeNull('the search term is echoed in the agent language rather than as the words the agent typed');
+
+    // The search field's own label is ours and is not reset with it, or the
+    // agent would be told what the field is for in an undeclared language.
+    $searchLabel = $index->query('//label[@for="article_search"]')->item(0);
+
+    expect($searchLabel)->not->toBeNull('the search label did not render')
+        ->and($searchLabel->hasAttribute('lang'))->toBeFalse('the search LABEL was reset along with its field');
+
+    $detail = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent());
+
+    // The document title, which is what a tab and every navigation
+    // announcement read out. `<title>` takes `lang` like any other element.
+    $documentTitle = $detail->query('//title')->item(0);
+
+    expect($documentTitle)->not->toBeNull('the document has no title')
+        ->and(trim($documentTitle->textContent))->toBe($article->title)
+        ->and($documentTitle->hasAttribute('lang'))
+        ->toBeTrue('the document title is the article\'s words announced in the agent language');
+
+    expect($documentTitle->getAttribute('lang'))->toBe('');
+
+    // Each region that holds the article, named separately so a deletion in
+    // one cannot be covered by another.
+    $regions = [
+        'the page heading' => '//h1',
+        'the slug' => '//code[normalize-space(text())="'.$article->slug.'"]',
+        'the title field' => '//input[@id="article_title"]',
+        'the body field' => '//textarea[@id="article_body"]',
+        'the preview' => '//*[contains(@class, "article-preview")]',
+    ];
+
+    foreach ($regions as $label => $query) {
+        $node = $detail->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class);
+
+        expect($node->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so it is announced in the agent language");
+
+        expect($node->getAttribute('lang'))
+            ->toBe('', "{$label} declares a language rather than the account's unknown one");
+    }
+
+    // And the reset stopped at the article: the page's own copy is still
+    // announced in the agent's language, or this would be marking the whole
+    // document unknown and calling it a fix.
+    $heading = $detail->query('//h2[@id="article-preview-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull('the preview heading did not render')
+        ->and($heading->hasAttribute('lang'))
+        ->toBeFalse('the page\'s own copy was reset along with the article, which marks the document unknown and calls it a fix');
+});
+
+test('an API token is announced as the account\'s words, not the agent\'s language', function (): void {
+    // Same class as the articles page one commit below: a token's name, the
+    // sites it reaches, the agent who issued it and the credential hint are the
+    // account's own data, and the extracted page declares the agent's locale
+    // for the whole document.
+    //
+    // Per ELEMENT and via `hasAttribute` first, for the two reasons the
+    // articles guard records: the same string renders in several marked places,
+    // and `getAttribute('lang')` cannot tell `lang=""` from no `lang` at all.
+    $world = conversationQueueLanguageWorld();
+
+    $html = (string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $regions = [
+        // The CREATE form as well as the table. The articles slice shipped with
+        // its editor reset and its create form not, and the same split was
+        // sitting here.
+        'the new-token name field' => '//input[@id="api_token_name"]',
+        'the token name' => '//strong[normalize-space(text())="Acme Datenpunkt Sync"]',
+        'the issuing agent' => '//span[normalize-space(text())="Ausgeber Datenpunkt"]',
+        'the credential hint' => '//code[starts-with(normalize-space(text()), "'.ApiToken::PREFIX.'")]',
+        'a site the token reaches' => '//span[normalize-space(text())="Acme Datenpunkt Docs"]',
+    ];
+
+    foreach ($regions as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class);
+
+        expect($node->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so it is announced in the agent language");
+
+        expect($node->getAttribute('lang'))
+            ->toBe('', "{$label} declares a language rather than the account's unknown one");
+    }
+
+    // And the page's own copy is untouched, or this marks the document unknown
+    // and calls it a fix.
+    $heading = $xpath->query('//h2[@id="api-token-list-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull('the tokens heading did not render')
+        ->and($heading->hasAttribute('lang'))->toBeFalse('the page\'s own heading was reset along with the account\'s data');
+});
+
+test('the live board\'s script speaks the agent language', function (): void {
+    // MOST of this page's copy is in its script, and the render audit cannot
+    // see a word of it: `conversationQueueLanguageVisibleText` strips
+    // `<script>` before it looks at anything, deliberately, because script
+    // bodies are not copy on every other page in the dashboard.
+    //
+    // So the audit passing on this route proves the table and the notices and
+    // nothing about the board's live state -- the reconnect notice, the
+    // durations, the empty page cell, the "not in touch yet" row. Those are
+    // rendered into one object by Blade, and this reads that object.
+    config([
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.options.host' => 'wayfindr.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+    ]);
+
+    $world = conversationQueueLanguageWorld();
+
+    $copyFor = function (User $agent) use ($world): array {
+        $html = (string) $this->actingAs($agent)
+            ->get(route('dashboard.sites.live', $world['site']))->assertOk()->getContent();
+
+        $this->assertStringContainsString('data-live-board', $html,
+            'the board did not render, so its script never ran');
+
+        // BOTH objects the script gets its words from. `copy` is this page's
+        // own strings; `labels` is the presence vocabulary, handed over by the
+        // controller because one socket message reaches every agent watching
+        // and they do not all read the same language.
+        //
+        // Reading only `copy` left the controller free to go back to the
+        // English support class with the whole suite green -- the labels are
+        // rendered into the script, and the audit strips scripts.
+        $objects = [];
+
+        foreach (['copy', 'labels'] as $name) {
+            $matched = preg_match('/var '.$name.' = (\{.*?\});/s', $html, $found);
+
+            expect($matched)->toBe(1, "the script no longer declares `{$name}`; this guard is reading nothing");
+
+            $decoded = json_decode($found[1], true);
+
+            expect($decoded)->toBeArray()->not->toBeEmpty();
+
+            foreach ($decoded as $key => $value) {
+                $objects[$name.'.'.$key] = $value;
+            }
+        }
+
+        return $objects;
+    };
+
+    $german = $copyFor($world['admins']['de']);
+    $english = $copyFor($world['admins']['en']);
+
+    expect(array_keys($german))->toBe(array_keys($english), 'the two renders declare different copy keys');
+
+    // An em dash is punctuation. Everything else on both objects, including
+    // all four presence states, has to differ.
+    $identicalIsCorrect = ['copy.unknown_duration'];
+
+    $untranslated = [];
+
+    foreach ($german as $key => $value) {
+        if (in_array($key, $identicalIsCorrect, true)) {
+            continue;
+        }
+
+        if ($value === $english[$key]) {
+            $untranslated[] = "{$key} = {$value}";
+        }
+    }
+
+    expect($untranslated)->toBe([], implode("\n", [
+        'These reach the board in English on a German page:',
+        ...$untranslated,
+        '',
+        'The render audit cannot see them -- it strips <script> -- so this is',
+        'the only thing that will.',
+    ]));
+
+    // And the one that is meant to be identical still is, or the exception
+    // above is excusing something that has started to differ.
+    expect($german['copy.unknown_duration'])->toBe($english['copy.unknown_duration']);
+});
+
+test('the live board announces the account\'s words as its own', function (): void {
+    // Three fragments on this page belong to the account and not to the agent:
+    // the site's name inside our heading, the visitor's name, and the address
+    // of the page they are on. The document declares the agent's language, so
+    // each is reset to `lang=""` -- HTML's "unknown".
+    //
+    // The heading is the interesting one. It MIXES the two, so neither
+    // `titleLang` nor leaving it bare is right: `x-page-header` takes a slot so
+    // the catalogue keeps the word order and only the site's name is marked.
+    $world = conversationQueueLanguageWorld();
+
+    $html = (string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.sites.live', $world['site']))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $regions = [
+        'the site name inside the heading' => '//h1/span',
+        'the visitor name' => '//span[normalize-space(text())="Acme Datenpunkt Person"]',
+        'the page the visitor is on' => '//code[contains(text(), "datenpunkt/preise")]',
+    ];
+
+    foreach ($regions as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class);
+
+        expect($node->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so it is announced in the agent language");
+
+        expect($node->getAttribute('lang'))->toBe('');
+    }
+
+    // The heading's OWN words are not reset with the fragment inside it, which
+    // is the whole reason this is a slot rather than `title-lang=""`.
+    $heading = $xpath->query('//h1')->item(0);
+
+    expect($heading)->not->toBeNull()
+        ->and($heading->hasAttribute('lang'))->toBeFalse('the whole heading was marked unknown, not just the site name');
+
+    // And it reads as the whole German sentence with the site's name in the
+    // place the catalogue puts it -- which is the thing a slot can get wrong by
+    // rendering the fragment and dropping our half, or the other way round.
+    expect(trim((string) preg_replace('/\s+/u', ' ', $heading->textContent)))
+        ->toBe(__('sites_live.heading', ['site' => $world['site']->name], 'de'));
+});
+
+test('the live count is grouped for the reader and raw for the script', function (): void {
+    // Grouping the count broke the board. The script initialises and resyncs
+    // `presentTotal` from the element, and a grouped string is not a number any
+    // more: `Number('1.000')` is 1 for a German agent and `Number('1,000')` is
+    // NaN for an English one, so the next socket event or fifteen-second
+    // refresh collapsed the total toward the rendered rows.
+    //
+    // FOUR FIGURES, built here rather than assumed. Under a thousand nothing is
+    // grouped, so the shared world's three visitors pass this whether or not
+    // the split exists -- which is how the defect got past a green suite in the
+    // first place.
+    $world = conversationQueueLanguageWorld();
+
+    $seen = now()->subMinute();
+    $rows = [];
+
+    for ($i = 0; $i < 1200; $i++) {
+        $rows[] = [
+            'site_id' => $world['site']->id,
+            'anonymous_id' => 'anon-crowd-'.$i,
+            'metadata' => '[]',
+            'last_seen_at' => $seen,
+            'last_web_seen_at' => $seen,
+            'created_at' => $seen,
+            'updated_at' => $seen,
+        ];
+    }
+
+    // One statement rather than 1200 model saves: the point is the size of the
+    // number, not the shape of the rows.
+    Visitor::query()->insert($rows);
+
+    $html = (string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.sites.live', $world['site']))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $count = $xpath->query('//*[@data-live-count]')->item(0);
+
+    expect($count)->not->toBeNull('the live count did not render')
+        ->and($count)->toBeInstanceOf(DOMElement::class);
+
+    $raw = $count->getAttribute('data-live-total');
+    $shown = trim($count->textContent);
+
+    expect($count->hasAttribute('data-live-total'))
+        ->toBeTrue('the script has nothing to read but the reader-facing text');
+
+    expect($raw)->toMatch('/^\d+$/', 'the machine-readable total is grouped too, so the script still cannot parse it');
+    expect((int) $raw)->toBeGreaterThan(999, 'the fixture did not reach the size where grouping happens');
+
+    // The reader's number IS grouped, or this test is passing on a page that
+    // never had the problem.
+    expect($shown)->not->toBe($raw, 'the count was not grouped for the reader, so this proves nothing');
+
+    // And the German grouping is exactly what JavaScript would misread as 1.
+    expect($shown)->toContain('.');
+});
+
+test('nothing in the live board parses a number out of rendered text', function (): void {
+    // The count is grouped for the reader, so the rendered text is not a number
+    // any more. Two places read it back and I fixed one: start-up took the new
+    // attribute while `resyncBoard()` kept parsing the fetched snapshot's TEXT,
+    // so the corruption moved from page load to every resync.
+    //
+    // Source-level and pattern-based, because that is the shape of the mistake:
+    // I swept for the variable I knew (`countEl`) rather than for what the code
+    // was doing, and the second site used a different name.
+    $source = (string) file_get_contents(
+        resource_path('views/agent/sites/live.blade.php')
+    );
+
+    // Comments describe the trap; they are not the trap.
+    $code = (string) preg_replace('#//[^\n]*#', '', $source);
+
+    $matched = preg_match_all('/(?:Number|parseInt|parseFloat)\s*\(\s*[A-Za-z_$][\w$.]*\.textContent/', $code, $found);
+
+    expect($matched)->toBe(0, implode("\n", [
+        'A number is being parsed out of text that is grouped for the reader:',
+        ...($found[0] ?? []),
+        '',
+        'Read `data-live-total` instead. `Number("1.000")` is 1 and',
+        '`Number("1,000")` is NaN.',
+    ]));
+
+    // And the guard can still see the shape it is looking for, or a rename
+    // would quietly retire it.
+    expect(preg_match('/(?:Number|parseInt|parseFloat)\s*\(\s*[A-Za-z_$][\w$.]*\.textContent/', 'x = Number(freshCount.textContent) || 0;'))
+        ->toBe(1, 'the pattern no longer recognises the call it was written for');
+});
+
+test('the conversation surfaces announce the visitor\'s words as the visitor\'s', function (): void {
+    // The queue and the detail page were extracted before the `lang=""` rule
+    // was being applied consistently, so three visitor-derived values on the
+    // busiest pages in the product still inherited the agent's language: the
+    // queue's visitor label, and the detail page's visitor name and two page
+    // addresses.
+    //
+    // Each has a translated FALLBACK, which is why the reset follows the branch
+    // rather than sitting on the element. Marking unconditionally would
+    // announce our own sentence as unknown, which is the same defect pointing
+    // the other way.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+
+    $conversation->visitor->update([
+        'name' => 'Acme Datenpunkt Besuch',
+        'metadata' => ['last_page_url' => 'https://acme.example/datenpunkt/kasse'],
+    ]);
+
+    // The ENTRY page is the conversation's, not the visitor's: one visitor can
+    // start several conversations from different pages.
+    $conversation->update([
+        'metadata' => ['started_page_url' => 'https://acme.example/datenpunkt/start'],
+    ]);
+
+    $xpathFor = function (string $html): DOMXPath {
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+        return new DOMXPath($document);
+    };
+
+    $queue = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.index'))->assertOk()->getContent());
+
+    $label = $queue->query('//span[contains(@class, "wf-queue-assignee")][contains(text(), "Acme Datenpunkt")]')->item(0);
+
+    expect($label)->not->toBeNull('the visitor label did not render; this guard is checking nothing')
+        ->and($label->hasAttribute('lang'))->toBeTrue('the queue announces the visitor name in the agent language');
+
+    $detail = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))->assertOk()->getContent());
+
+    // Found by its own LABEL, not by its text. `Nicht gemeldet` is the German
+    // for two different keys on this page -- `conversations.detail.context`
+    // and `cobrowse.units` -- so a text match returns whichever comes first in
+    // the document, and the negative assertion below passed against a node
+    // this test never meant to look at.
+    // EVERY row under that label, not the first. This page carries two rows
+    // labelled `Besucher` -- one showing the anonymous identifier and one the
+    // name -- and taking `item(0)` meant the guard checked the marked one and
+    // reported clean while the other was announced in German.
+    $metaValues = function (string $labelKey) use ($detail): array {
+        $label = __($labelKey, [], 'de');
+
+        $nodes = [];
+
+        foreach ($detail->query(
+            '//div[contains(@class, "meta-item")][span[contains(@class, "meta-label")][normalize-space(text())="'.$label.'"]]'
+            .'/span[contains(@class, "meta-value")]'
+        ) as $node) {
+            $nodes[] = $node;
+        }
+
+        return $nodes;
+    };
+
+    foreach ([
+        'the visitor' => 'conversations.detail.context.visitor',
+        'the latest page' => 'conversations.detail.context.latest_page',
+        'the entry page' => 'conversations.detail.context.entry_page',
+        'the visitor reference' => 'conversations.detail.references.visitor_reference',
+    ] as $what => $labelKey) {
+        $nodes = $metaValues($labelKey);
+
+        expect($nodes)->not->toBeEmpty("{$what} did not render; this guard is checking nothing");
+
+        foreach ($nodes as $node) {
+            expect($node->hasAttribute('lang'))
+                ->toBeTrue("the detail page announces {$what} (\"{$node->textContent}\") in the agent language");
+
+            expect($node->getAttribute('lang'))->toBe('');
+        }
+    }
+
+    // A visitor who gave NOTHING -- an inbound email whose `From` header has no
+    // display name leaves both `name` and `anonymous_id` null, and
+    // `visitorContext()` substitutes a translated sentence. That sentence is
+    // ours, so the two spans that would otherwise show the visitor's own
+    // identifier must not be reset.
+    //
+    // Nothing else in this suite builds that visitor, which is why the first
+    // version of this fix marked both spans unconditionally and was wrong for
+    // every email-originated conversation.
+    $conversation->visitor->forceFill(['name' => null, 'anonymous_id' => null])->save();
+
+    $anonymous = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))->assertOk()->getContent());
+
+    $unknown = __('conversations.detail.unknown_visitor', [], 'de');
+
+    foreach ($anonymous->query('//span[contains(@class, "meta-value")]') as $node) {
+        if (trim($node->textContent) !== $unknown) {
+            continue;
+        }
+
+        expect($node->hasAttribute('lang'))
+            ->toBeFalse('the unknown-visitor sentence is ours and is announced as an unknown language');
+    }
+
+    expect($anonymous->query('//span[contains(@class, "meta-value")][normalize-space(text())="'.$unknown.'"]')->length)
+        ->toBeGreaterThan(0, 'the unknown-visitor fallback did not render; this half of the guard checked nothing');
+
+    $conversation->visitor->forceFill(['name' => 'Acme Datenpunkt Besuch', 'anonymous_id' => 'anon-datenpunkt'])->save();
+
+    // And with nothing reported, the FALLBACK is ours and is not reset -- the
+    // half of this that marking the element unconditionally would get wrong.
+    $conversation->visitor->update(['metadata' => []]);
+    $conversation->update(['metadata' => []]);
+
+    $bare = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.conversations.show', $conversation->support_code))->assertOk()->getContent());
+
+    foreach (['conversations.detail.context.latest_page', 'conversations.detail.context.entry_page'] as $labelKey) {
+        $label = __($labelKey, [], 'de');
+
+        $nodes = [];
+
+        foreach ($bare->query(
+            '//div[contains(@class, "meta-item")][span[contains(@class, "meta-label")][normalize-space(text())="'.$label.'"]]'
+            .'/span[contains(@class, "meta-value")]'
+        ) as $node) {
+            $nodes[] = $node;
+        }
+
+        expect($nodes)->not->toBeEmpty("the {$label} row did not render");
+
+        foreach ($nodes as $node) {
+            expect(trim($node->textContent))->toBe(__('conversations.detail.context.not_reported', [], 'de'),
+                'the row is not showing its fallback, so this proves nothing');
+
+            expect($node->hasAttribute('lang'))
+                ->toBeFalse('our own fallback sentence is announced as an unknown language');
+        }
     }
 });

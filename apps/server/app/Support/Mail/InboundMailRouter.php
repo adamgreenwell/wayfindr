@@ -14,6 +14,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * An arriving email, turned into a message on the right conversation.
@@ -97,7 +98,30 @@ final class InboundMailRouter
         // notify eligible agents and reopen pending tickets, and dispatching
         // inside the transaction would have them read rows nothing else can see
         // yet -- or act on a message a rollback then removed.
-        event(new ConversationMessageCreated($stored));
+        //
+        // Failures here are logged and swallowed, and that is the difference
+        // between a late notification and a duplicated conversation. These
+        // listeners are synchronous -- `ConversationMessageCreated` is
+        // `ShouldBroadcastNow` -- so an unreachable Reverb or a refused SMTP
+        // connection throws PAST the commit. Letting it escape answers the
+        // provider with a 5xx for a message that is already stored, and the
+        // provider then redelivers it. Mail carrying no `Message-Id` has
+        // nothing for `alreadyAccepted()` to match on, so the redelivery is
+        // not recognised and opens a SECOND conversation about the same
+        // question.
+        //
+        // Once the row is committed the delivery has been accepted, and the
+        // provider is owed that answer. What happens to the live update
+        // afterwards is this install's problem, not something to solve by
+        // asking for the message again.
+        try {
+            event(new ConversationMessageCreated($stored));
+        } catch (Throwable $exception) {
+            Log::error('Inbound mail stored, but announcing it failed.', [
+                'conversation_message_id' => $stored->id,
+                'exception' => $exception->getMessage(),
+            ]);
+        }
 
         return $stored;
     }
@@ -212,11 +236,44 @@ final class InboundMailRouter
      *
      * @return list<string>
      */
+    /**
+     * How many refused filenames the transcript notice spells out before it
+     * starts counting instead.
+     */
+    private const NAMED_SKIPS = 5;
+
+    /**
+     * How much of a refused filename the notice repeats.
+     *
+     * Long enough to recognise the file that did not arrive, short enough that
+     * the notice cannot become a message.
+     */
+    private const NAME_LENGTH = 60;
+
     private function attach(Conversation $conversation, ConversationMessage $stored, InboundMessage $message, Visitor $visitor): array
     {
         $skipped = [];
+        $bound = 0;
+
+        // The per-message cap, enforced here because the binder cannot enforce
+        // it here. `AttachmentBinder::bind()` checks the size of the array it
+        // is handed, which is the right check for the composer -- one call,
+        // every file. This loop binds one file per call, so the binder sees an
+        // array of one every time and the limit never fires however many files
+        // arrive. The cap is not decoration: this branch's own operator
+        // documentation sizes `post_max_size` from it.
+        $maxPerMessage = (int) config('wayfindr.attachments.max_per_message');
 
         foreach ($message->attachments as $attachment) {
+            // Refused BEFORE the bytes are decoded or stored, so an overflow
+            // file costs no disk and leaves no orphaned row. Reported rather
+            // than dropped, which is the contract this method already keeps.
+            if ($bound >= $maxPerMessage) {
+                $skipped[] = $attachment['name'];
+
+                continue;
+            }
+
             $decoded = base64_decode($attachment['content'], true);
 
             if ($decoded === false) {
@@ -243,6 +300,10 @@ final class InboundMailRouter
                 // it is the path that already checks the attachment belongs to
                 // this conversation and this sender.
                 $this->binder->bind($conversation, $stored, [$record->id], $visitor);
+
+                // Counted only once the bind returns, so a file the binder
+                // refused for its own reasons costs no budget.
+                $bound++;
             } catch (AttachmentRejected $exception) {
                 $skipped[] = $attachment['name'];
             } finally {
@@ -258,9 +319,27 @@ final class InboundMailRouter
      */
     private function skippedNotice(array $skipped): string
     {
+        $total = count($skipped);
+
+        // Every one of these names is a string the SENDER chose, and this
+        // notice is written into a message body attributed to the visitor --
+        // so an agent reads it as the customer's own words. Capping the count
+        // alone was not enough: a filename may be 998 characters, so five of
+        // them is still five kilobytes of attacker-written prose in someone
+        // else's transcript. Both dimensions are bounded, and each name is cut
+        // to something that still identifies the file.
+        $named = [];
+
+        foreach (array_slice($skipped, 0, self::NAMED_SKIPS) as $name) {
+            $named[] = Str::limit(trim(preg_replace('/\s+/u', ' ', (string) $name) ?? ''), self::NAME_LENGTH);
+        }
+
+        $remainder = $total - count($named);
+
         return '[Wayfindr could not accept '
-            .Str::plural('this file', count($skipped)).': '
-            .implode(', ', $skipped)
+            .Str::plural('this file', $total).': '
+            .implode(', ', $named)
+            .($remainder > 0 ? sprintf(' and %d more', $remainder) : '')
             .'. The sender was not told.]';
     }
 }

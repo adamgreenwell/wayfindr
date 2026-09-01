@@ -1,41 +1,59 @@
-<x-layouts.app title="Live visitors" :agent="$agent" :account="$account">
-    <x-page-header
-        :title="'Live visitors: '.$site->name"
-        subtitle="Who is on this site right now, including people who have not got in touch." />
+<x-layouts.app :title="__('sites_live.document_title')" :agent="$agent" :account="$account">
+    {{-- The heading MIXES our words with the account's: the site's name is
+         theirs, in whatever language they named it, and the rest is ours. The
+         catalogue keeps the word order, and the one fragment that is not ours
+         carries `lang=""` -- HTML's "unknown".
+
+         A SLOT rather than an attribute, because what goes in is an element and
+         an element cannot live in an attribute value. --}}
+    <x-page-header :subtitle="__('sites_live.subtitle')">
+        <x-slot:title-content>
+            {!! __('sites_live.heading', ['site' => '<span lang="">'.e($site->name).'</span>']) !!}
+        </x-slot:title-content>
+    </x-page-header>
 
     <section class="section" aria-labelledby="live-board-heading">
         <div class="section-header">
-            <h2 id="live-board-heading">On the site now</h2>
+            <h2 id="live-board-heading">{{ __('sites_live.board.heading') }}</h2>
             {{-- The server's clock, so the board can measure against the same
                  one that stamped the rows. Refreshed by every resync. --}}
-            <span class="lede" data-live-count data-server-now="{{ now()->toJSON() }}">{{ $presentCount }}</span>
+            {{-- Two values, deliberately. The TEXT is grouped for the reader -- `1.000`
+                 for a German agent -- and the script must never parse it back:
+                 `Number('1.000')` is 1 and `Number('1,000')` is NaN, so reading
+                 the rendered text collapsed the total on the next socket event.
+                 `data-live-total` is the raw integer, for the script alone. --}}
+            <span class="lede" data-live-count data-live-total="{{ $presentCount }}" data-server-now="{{ now()->toJSON() }}">{{ \App\Support\ReaderNumber::count($presentCount) }}</span>
         </div>
 
         @if (! $reporting->enabled)
             {{-- Not an empty board. An operator looking at nothing deserves to
                  know whether nobody is here or nothing is being recorded. --}}
             <div class="notice-copy">
-                <p>This site does not record visitors who have not made contact, so this board stays empty by design.</p>
+                <p>{{ __('sites_live.disabled.body') }}</p>
 
                 @if ($canUpdatePrivacy)
-                    <p><a href="{{ route('dashboard.sites.show', $site) }}#presence-settings-heading">Turn on live visitor presence</a> to see people browsing before they get in touch.</p>
+                    {{-- One sentence with the link as a parameter, so a language
+                         that puts the clause first can still do so. --}}
+                    <p>{!! __('sites_live.disabled.turn_on', [
+                        'link' => '<a href="'.e(route('dashboard.sites.show', $site).'#presence-settings-heading').'">'.e(__('sites_live.disabled.turn_on_link')).'</a>',
+                    ]) !!}</p>
                 @else
-                    <p>Account owners and admins decide whether this site watches visitors who have not made contact.</p>
+                    <p>{{ __('sites_live.disabled.ask_admin') }}</p>
                 @endif
             </div>
         @else
             <p class="field-help">
-                Somebody appears here while their browser reports in, and drops off {{ $presentMinutes }} minutes after it stops. Visitors are told in the widget and can decline.
+                {{ trans_choice('sites_live.board.note', $presentMinutes, ['count' => \App\Support\ReaderNumber::count($presentMinutes)]) }}
             </p>
 
             <div class="table-scroll">
                 <table class="table" data-live-board>
                     <thead>
                         <tr>
-                            <th scope="col">Visitor</th>
-                            <th scope="col">Page</th>
-                            <th scope="col">On site for</th>
-                            <th scope="col">Presence</th>
+                            <th scope="col">{{ __('sites_live.board.column_visitor') }}</th>
+                            <th scope="col">{{ __('sites_live.board.column_page') }}</th>
+                            <th scope="col">{{ __('sites_live.board.column_duration') }}</th>
+                            <th scope="col">{{ __('sites_live.board.column_presence') }}</th>
                         </tr>
                     </thead>
                     <tbody data-live-rows>
@@ -43,33 +61,39 @@
                             <tr data-visitor-id="{{ $visitor['id'] }}" data-last-seen="{{ $visitor['last_web_seen_at'] }}">
                                 <td>
                                     @if ($visitor['made_contact'])
-                                        <a href="{{ $visitor['profile_url'] }}">{{ $visitor['name'] ?? $visitor['email'] ?? 'Visitor '.$visitor['id'] }}</a>
-                                        <span class="lede">{{ $visitor['conversations_count'] }} {{ Str::plural('conversation', $visitor['conversations_count']) }}</span>
+                                        {{-- A name or address the VISITOR gave, so it is
+                                             their words and not the agent's language. The
+                                             `Visitor 41` fallback is ours and is not marked. --}}
+                                        <a href="{{ $visitor['profile_url'] }}">@if ($visitor['name'] ?? $visitor['email'])<span lang="">{{ $visitor['name'] ?? $visitor['email'] }}</span>@else{{ __('sites_live.board.unnamed', ['id' => $visitor['id']]) }}@endif</a>
+                                        <span class="lede">{{ trans_choice('sites_live.board.conversations', $visitor['conversations_count'], ['count' => \App\Support\ReaderNumber::count($visitor['conversations_count'])]) }}</span>
                                     @else
                                         {{-- No link: there is nothing on the other side of it yet, and
                                              a name we were never told is not one to invent. --}}
-                                        <span>Not in touch yet</span>
+                                        <span>{{ __('sites_live.board.stranger') }}</span>
                                     @endif
                                 </td>
                                 <td data-live-page>
                                     @if ($visitor['page_url'])
-                                        <code>{{ $visitor['page_url'] }}</code>
+                                        <code lang="">{{ $visitor['page_url'] }}</code>
                                     @else
-                                        <span class="empty">Not reported</span>
+                                        <span class="empty">{{ __('sites_live.board.no_page') }}</span>
                                     @endif
                                 </td>
                                 <td data-live-duration data-started="{{ $visitor['visit_started_at'] }}">
-                                    {{ $visitor['visit_started_at'] ? \Carbon\CarbonImmutable::parse($visitor['visit_started_at'])->diffForHumans(null, true) : '—' }}
+                                    {{ $visitor['visit_started_at'] ? \Carbon\CarbonImmutable::parse($visitor['visit_started_at'])->diffForHumans(null, true) : __('sites_live.duration.unknown') }}
                                 </td>
                                 <td>
                                     <span class="readiness-status" data-live-state data-status="{{ $visitor['state'] === 'active' ? 'ready' : 'manual' }}">
-                                        {{ \App\Support\Visitors\VisitorPresence::label($visitor['state']) }}
+                                        {{-- Translated at the CALL SITE. The support class
+                                             stays English because it can be reached where no
+                                             request has scoped a locale. --}}
+                                        {{ __('presence.'.$visitor['state']) }}
                                     </span>
                                 </td>
                             </tr>
                         @empty
                             <tr data-live-empty>
-                                <td colspan="4"><span class="empty">Nobody is on the site right now.</span></td>
+                                <td colspan="4"><span class="empty">{{ __('sites_live.board.empty') }}</span></td>
                             </tr>
                         @endforelse
                     </tbody>
@@ -78,9 +102,9 @@
 
             <p class="field-help" data-live-status role="status" aria-live="polite">
                 @if ($realtime)
-                    Updating live.
+                    {{ __('sites_live.status.live') }}
                 @else
-                    This install does not run realtime updates, so this list is correct as of when the page loaded.
+                    {{ __('sites_live.status.no_realtime') }}
                 @endif
             </p>
         @endif
@@ -96,13 +120,70 @@
 
                 if (!config || !rows || !window.WebSocket) {
                     if (statusEl) {
-                        statusEl.textContent = 'Live updates are unavailable, so this list is correct as of when the page loaded.';
+                        statusEl.textContent = @json(__('sites_live.status.unavailable'));
                     }
 
                     return;
                 }
 
                 var labels = @json($presenceLabels);
+
+                // Copy for the script, from the same catalogue the markup above
+                // used. `@json(__(...))` is the pattern the reply composer
+                // already uses -- Blade renders the script, so the words are
+                // chosen per request in the language the agent asked for, and
+                // there is no second mechanism to keep in step.
+                @php
+                    // Assigned in a @php block rather than written inline in
+                    // `@json([...])`: Blade's directive parser reads to the
+                    // first `)` and a multi-line array with nested `__()` calls
+                    // ends it early, which compiles to a PHP parse error rather
+                    // than to anything you can see in the browser.
+                    $liveCopy = [
+                    'unavailable' => __('sites_live.status.unavailable'),
+                    'presence_off' => __('sites_live.status.presence_off'),
+                    'reconnecting' => __('sites_live.status.reconnecting'),
+                    'live' => __('sites_live.status.live'),
+                    'no_access' => __('sites_live.status.no_access'),
+                    'stranger' => __('sites_live.board.stranger'),
+                    'no_page' => __('sites_live.board.no_page'),
+                    'unnamed' => __('sites_live.board.unnamed', ['id' => ':id']),
+                    'unknown_duration' => __('sites_live.duration.unknown'),
+                    'seconds' => __('sites_live.duration.seconds', ['count' => ':count']),
+                    'minutes' => __('sites_live.duration.minutes', ['count' => ':count']),
+                    'hours' => __('sites_live.duration.hours', ['count' => ':count', 'minutes' => ':minutes']),
+                    // Both plural branches, selected below by the count the
+                    // socket reports. Rendered here rather than in the script
+                    // because the SELECTOR is Laravel's and the browser has no
+                    // access to it.
+                    'conversations_one' => trans_choice('sites_live.board.conversations', 1, ['count' => ':count']),
+                    'conversations_many' => trans_choice('sites_live.board.conversations', 2, ['count' => ':count']),
+                    ];
+                @endphp
+
+                var copy = @json($liveCopy);
+
+                // The reader's locale, for grouping numbers the way the server
+                // already groups the ones it rendered.
+                var readerLocale = document.documentElement.lang || 'en';
+
+                function readerNumber(value) {
+                    try {
+                        return Number(value).toLocaleString(readerLocale);
+                    } catch (error) {
+                        return String(value);
+                    }
+                }
+
+                // Two branches only, which is right for every language this
+                // dashboard ships and NOT right in general: Polish and Arabic
+                // have more. A language pack that needs a third form has to
+                // extend this, and the comment is here so it is found.
+                function conversationsLabel(total) {
+                    var form = total === 1 ? copy.conversations_one : copy.conversations_many;
+
+                    return form.replace(':count', readerNumber(total));
+                }
 
                 // State travels, words are local. The payload is broadcast to
                 // every agent watching and they do not all read the same
@@ -122,7 +203,9 @@
                 // limit, and overwriting the total with it on the first
                 // heartbeat put the capped figure back on a page that had
                 // rendered the real one.
-                var presentTotal = countEl ? Number(countEl.textContent) || 0 : 0;
+                // From the data attribute, never from the rendered text. The
+                // text is grouped for the reader and is not a number any more.
+                var presentTotal = countEl ? Number(countEl.getAttribute('data-live-total')) || 0 : 0;
 
                 var displayLimit = Number(config.displayLimit) || 0;
 
@@ -155,7 +238,8 @@
                     }
 
                     if (countEl) {
-                        countEl.textContent = String(presentTotal);
+                        countEl.setAttribute('data-live-total', String(presentTotal));
+                        countEl.textContent = readerNumber(presentTotal);
                     }
 
                     var empty = emptyRow();
@@ -196,28 +280,30 @@
 
                 function durationFrom(startedAt) {
                     if (!startedAt) {
-                        return '\u2014';
+                        return copy.unknown_duration;
                     }
 
                     var started = Date.parse(startedAt);
 
                     if (isNaN(started)) {
-                        return '\u2014';
+                        return copy.unknown_duration;
                     }
 
                     var seconds = Math.max(0, Math.round((serverNow() - started) / 1000));
 
                     if (seconds < 60) {
-                        return seconds + 's';
+                        return copy.seconds.replace(':count', readerNumber(seconds));
                     }
 
                     var minutes = Math.floor(seconds / 60);
 
                     if (minutes < 60) {
-                        return minutes + 'm';
+                        return copy.minutes.replace(':count', readerNumber(minutes));
                     }
 
-                    return Math.floor(minutes / 60) + 'h ' + (minutes % 60) + 'm';
+                    return copy.hours
+                        .replace(':count', readerNumber(Math.floor(minutes / 60)))
+                        .replace(':minutes', readerNumber(minutes % 60));
                 }
 
                 function textCell(value, fallback) {
@@ -229,6 +315,9 @@
                         // textContent, never innerHTML. The page address is
                         // reported by a public endpoint, so it is attacker
                         // controlled, and this is an agent's browser.
+                        // The page address is the visitor's, not words in the
+                        // agent's language.
+                        code.setAttribute('lang', '');
                         code.textContent = value;
                         cell.appendChild(code);
                     } else {
@@ -258,7 +347,15 @@
                         // and looking like the page had simply lost them.
                         var link = document.createElement('a');
 
-                        link.textContent = visitor.name || visitor.email || ('Visitor ' + visitor.id);
+                        // A name or address the VISITOR gave is their words; the
+                        // numbered fallback is ours, so only the first is marked.
+                        if (visitor.name || visitor.email) {
+                            link.setAttribute('lang', '');
+                            link.textContent = visitor.name || visitor.email;
+                        } else {
+                            link.removeAttribute('lang');
+                            link.textContent = copy.unnamed.replace(':id', visitor.id);
+                        }
 
                         if (visitor.profile_url) {
                             link.href = visitor.profile_url;
@@ -271,18 +368,18 @@
                         var total = Number(visitor.conversations_count) || 0;
 
                         count.className = 'lede';
-                        count.textContent = total + (total === 1 ? ' conversation' : ' conversations');
+                        count.textContent = conversationsLabel(total);
                         who.appendChild(count);
                     } else {
                         var stranger = document.createElement('span');
 
-                        stranger.textContent = 'Not in touch yet';
+                        stranger.textContent = copy.stranger;
                         who.appendChild(stranger);
                     }
 
                     row.appendChild(who);
 
-                    var page = textCell(visitor.page_url, 'Not reported');
+                    var page = textCell(visitor.page_url, copy.no_page);
 
                     page.setAttribute('data-live-page', '');
                     row.appendChild(page);
@@ -433,7 +530,7 @@
                     }
 
                     if (statusEl) {
-                        statusEl.textContent = reason || 'Live visitor presence is off for this site.';
+                        statusEl.textContent = reason || copy.presence_off;
                     }
                 }
 
@@ -460,7 +557,7 @@
                     reconnectDelay = 1000;
 
                     if (statusEl) {
-                        statusEl.textContent = 'Reconnecting to live updates.';
+                        statusEl.textContent = copy.reconnecting;
                     }
 
                     // The old socket was closed on the way in here, so this
@@ -576,7 +673,7 @@
                             // request that overtook it land first, and the flag
                             // keeps two denials from becoming two re-asks.
                             if (seq === resyncSequence) {
-                                clearBoard('You no longer have access to this site.');
+                                clearBoard(copy.no_access);
                             } else if (!denialRecheckPending) {
                                 denialRecheckPending = true;
 
@@ -650,7 +747,11 @@
                         // at whatever it was on page load.
                         adoptServerClock(freshCount);
 
-                        refreshCount(freshCount ? Number(freshCount.textContent) || 0 : undefined);
+                        // The ATTRIBUTE, for the same reason as at start-up:
+                        // the fetched snapshot's count is grouped for its
+                        // reader too, so parsing its text turns `1.200` into 1
+                        // on every resync rather than only on page load.
+                        refreshCount(freshCount ? Number(freshCount.getAttribute('data-live-total')) || 0 : undefined);
 
                         // Re-applied on top, in arrival order, so the newer
                         // state wins over the snapshot that did not have it.
@@ -789,7 +890,7 @@
                         reconnectDelay = 1000;
 
                         if (statusEl) {
-                            statusEl.textContent = 'Updating live.';
+                            statusEl.textContent = copy.live;
                         }
 
                         // NOT resynced here. Authorization succeeding only
@@ -804,7 +905,7 @@
                         }
 
                         if (statusEl) {
-                            statusEl.textContent = 'Reconnecting to live updates.';
+                            statusEl.textContent = copy.reconnecting;
                         }
 
                         // A failed authorization leaves the socket HEALTHY and
@@ -954,7 +1055,7 @@
                         stopKeepalive();
 
                         if (statusEl && !pageClosing) {
-                            statusEl.textContent = 'Reconnecting to live updates.';
+                            statusEl.textContent = copy.reconnecting;
                         }
 
                         scheduleReconnect();

@@ -92,6 +92,21 @@ class OperatorSettings
         'backup.s3_use_path_style' => ['config' => 'filesystems.disks.backups.use_path_style_endpoint', 'secret' => false, 'group' => 'backup', 'cast' => 'bool'],
         'backup.s3_acl' => ['config' => 'filesystems.disks.backups.options.ACL', 'secret' => false, 'group' => 'backup'],
         'backup.s3_root' => ['config' => 'filesystems.disks.backups.root', 'secret' => false, 'group' => 'backup'],
+
+        // Language and region (#795). The install's own answer for agents who
+        // have not chosen their own -- the last of ADR 0011's settings that was
+        // still env-only, for no reason other than that nobody had moved it.
+        //
+        // Both override a `wayfindr.*` key rather than `app.locale` and
+        // `app.timezone`, and that is load-bearing in two different ways.
+        // `App::setLocale()` WRITES to `config('app.locale')` while serving a
+        // request, so an install default read back from there would return
+        // whichever agent was served last. And `app.timezone` is the storage
+        // clock -- Laravel writes `created_at` through it into columns with no
+        // offset -- so pointing it anywhere but UTC corrupts rows rather than
+        // formatting them.
+        'localization.language' => ['config' => 'wayfindr.dashboard_locale', 'secret' => false, 'group' => 'localization'],
+        'localization.timezone' => ['config' => 'wayfindr.dashboard_timezone', 'secret' => false, 'group' => 'localization'],
     ];
 
     /**

@@ -7446,7 +7446,7 @@ test('agent can see cobrowse page state on a conversation', function (): void {
         ->assertOk()
         ->assertSee('Visitor page')
         ->assertSee('Install Guide')
-        ->assertSee('https://docs.example.test/install?step=2')
+        ->assertSee('https://docs.example.test/install')
         ->assertSee('1,366 x 768')
         ->assertSee('0, 420')
         ->assertSee('visible')
@@ -7486,7 +7486,7 @@ test('agent can see a safe cobrowse snapshot preview on a conversation', functio
         ->assertOk()
         ->assertSee('Page snapshot')
         ->assertSee('Install Guide')
-        ->assertSee('https://docs.example.test/install?step=2')
+        ->assertSee('https://docs.example.test/install')
         ->assertSee('8 nodes')
         ->assertSee('2 masked')
         ->assertSee('Public checkout content. [masked]')
@@ -7705,7 +7705,7 @@ test('agent can see cobrowse mutation stream diagnostics on a conversation', fun
         ->assertSee('2 dropped')
         ->assertSee('1 skipped')
         ->assertSee('Sequence 42')
-        ->assertSee('https://docs.example.test/install?step=2');
+        ->assertSee('https://docs.example.test/install');
 });
 
 test('agent can see a sandboxed cobrowse replay preview on a conversation', function (): void {

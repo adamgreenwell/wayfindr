@@ -11,6 +11,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\ReaderClock;
 use App\Support\SpreadsheetSafeCsv;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -180,7 +181,16 @@ class AgentAccountAuditController extends Controller
             ->limit($limit)
             ->get()
             ->map(fn (AuditEvent $event): array => [
-                'occurred_at' => $event->occurred_at?->toDateTimeString() ?? '',
+                // Deliberately a sortable `Y-m-d H:i:s` and NOT `ReaderClock::dateTime()`.
+                // One array feeds two consumers: the audit table and the CSV
+                // export below it. A localized shape would reach the export,
+                // where the reader's spreadsheet reparses it under its own
+                // conventions -- and an `08/24/2026` cell is read as the wrong
+                // day by half the world. Splitting the screen from the export
+                // has to come first; the zone conversion is already correct.
+                'occurred_at' => $event->occurred_at === null
+                    ? ''
+                    : ReaderClock::moment($event->occurred_at)->toDateTimeString(),
                 'action' => $event->action,
                 'label' => $this->auditLabel($event->action),
                 'actor' => $this->auditActor($event),

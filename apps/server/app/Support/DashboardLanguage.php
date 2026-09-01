@@ -92,6 +92,44 @@ final class DashboardLanguage
         // message over its local fallback, so an oversized file answered in
         // English replaced the German live state on an ordinary upload.
         'dashboard.conversations.attachments.store',
+
+        // The account reply-templates page. An agent reaches it from the reply
+        // composer on a conversation, which is already extracted -- so before
+        // this it was a German conversation and an English page one click away.
+        'dashboard.account.reply-templates.index',
+        'dashboard.account.reply-templates.store',
+        'dashboard.account.reply-templates.update',
+        'dashboard.account.reply-templates.archive',
+
+        // The account ticket-labels page. Reached from the ticket queue, which
+        // is extracted, and it links straight back there -- so English here put
+        // two languages either side of one click.
+        'dashboard.account.labels.index',
+        'dashboard.account.labels.store',
+        'dashboard.account.labels.update',
+        'dashboard.account.labels.destroy',
+
+        // The account articles pages -- the help-centre answers a visitor finds
+        // in the widget. Both views, because extracting one of a pair puts the
+        // flip inside the section instead of at its edge.
+        'dashboard.account.articles.index',
+        'dashboard.account.articles.store',
+        'dashboard.account.articles.show',
+        'dashboard.account.articles.update',
+        'dashboard.account.articles.destroy',
+        'dashboard.account.articles.publish',
+
+        // The account API-tokens page. The surface that hands out credentials
+        // was the one place an admin switched back to English -- where
+        // misreading a sentence costs the most on this platform.
+        'dashboard.account.api-tokens.index',
+        'dashboard.account.api-tokens.store',
+        'dashboard.account.api-tokens.destroy',
+
+        // The live-visitors board. Most of this page's copy is rendered by its
+        // SCRIPT rather than by Blade, which is why it needed no new mechanism
+        // and does need the render audit to open it with the board populated.
+        'dashboard.sites.live',
     ];
 
     /**

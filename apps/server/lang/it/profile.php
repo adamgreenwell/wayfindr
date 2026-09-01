@@ -43,6 +43,9 @@ return [
         'language' => 'Lingua della dashboard',
         'language_default' => 'Usa l\'impostazione predefinita di installazione',
         'language_help' => 'Solo suo. Cambia la dashboard solo per lei e per nessun altro, e non influisce sulla lingua in cui il widget parla ai suoi visitatori — quella è impostata per ogni sito.',
+        'timezone' => 'Fuso orario',
+        'timezone_default' => 'Usa l\'impostazione predefinita dell\'installazione',
+        'timezone_help' => 'Orari e date in tutta la dashboard sono mostrati in questo fuso, compreso il giorno a cui un report attribuisce un evento.',
         'save' => 'Salva profilo',
     ],
     'readiness' => [

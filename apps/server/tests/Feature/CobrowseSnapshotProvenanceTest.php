@@ -86,9 +86,14 @@ test('provenance records the ruleset the widget reports it actually masked with'
 
     expect($event->actor_type)->toBe(Visitor::class)
         ->and($event->actor_id)->toBe($fixture['visitor']->id)
+        // Reduced, like every other stored copy. This is the audit trail, so
+        // the distinction matters and is deliberate: nothing REWRITES an
+        // existing audit row -- that would be editing a record of what
+        // happened -- but a new one has no business carrying a credential into
+        // a trail that is retained indefinitely. Write time, not rewrite.
         ->and($event->metadata)->toMatchArray([
             'support_code' => 'WF-PROV',
-            'page_url' => 'https://docs.example.test/install?step=2',
+            'page_url' => 'https://docs.example.test/install',
             'node_count' => 3,
             'masked_count' => 2,
             'mutation_sequence' => 7,

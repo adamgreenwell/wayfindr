@@ -15,6 +15,7 @@
         ['label' => 'Storage', 'href' => route('operator.settings.storage.edit'), 'active' => request()->routeIs('operator.settings.storage.*')],
         ['label' => 'Scanning', 'href' => route('operator.settings.scanning.edit'), 'active' => request()->routeIs('operator.settings.scanning.*')],
         ['label' => 'Backups', 'href' => route('operator.settings.backups.edit'), 'active' => request()->routeIs('operator.settings.backups.*')],
+        ['label' => 'Language and region', 'href' => route('operator.settings.localization.edit'), 'active' => request()->routeIs('operator.settings.localization.*')],
         ['label' => 'Operator access', 'href' => route('operator.break-glass.index'), 'active' => request()->routeIs('operator.break-glass.*')],
     ];
 @endphp

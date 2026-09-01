@@ -825,7 +825,11 @@ test('a resync applies its total before replaying what it missed', function (): 
     // it away again, leaving the table holding somebody the heading did not.
     $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
 
-    $applyTotal = mb_strpos($source, 'refreshCount(freshCount ? Number(freshCount.textContent) || 0 : undefined);');
+    // Anchored on the CALL, not on how its argument is spelled. The full
+    // expression was the anchor until the count became grouped for the reader
+    // and the argument had to change -- which broke a test whose subject is the
+    // ORDER of two statements and has nothing to say about either's contents.
+    $applyTotal = mb_strpos($source, 'refreshCount(freshCount');
     $replayBuffer = mb_strpos($source, 'pending.forEach(applyVisitor);');
 
     expect($applyTotal)->not->toBeFalse('the resync no longer applies a snapshot total')

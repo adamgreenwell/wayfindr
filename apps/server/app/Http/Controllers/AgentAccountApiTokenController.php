@@ -155,9 +155,14 @@ class AgentAccountApiTokenController extends Controller
             // The app key is the same at-rest boundary provider credentials
             // already sit behind.
             ->with('issued_api_token', Crypt::encryptString($generated['plain']))
+            // A KEY, not a sentence. This redirects, and the request that
+            // renders the flash is a different request from this one -- the
+            // agent's language is resolved per request, so a sentence chosen
+            // here would be chosen in whatever language THIS request happened
+            // to be resolved in.
             ->with('status', $askedForSpecificSites
-                ? 'API token created. Copy it now — it cannot be shown again.'
-                : 'API token created, limited to the sites you support today. Copy it now — it cannot be shown again.');
+                ? 'api_tokens.flash.created'
+                : 'api_tokens.flash.created_limited');
     }
 
     /**
@@ -238,8 +243,8 @@ class AgentAccountApiTokenController extends Controller
         return redirect()
             ->route('dashboard.account.api-tokens.index')
             ->with('status', $alreadyRevoked
-                ? 'That API token was already revoked.'
-                : 'API token revoked.');
+                ? 'api_tokens.flash.already_revoked'
+                : 'api_tokens.flash.revoked');
     }
 
     /**

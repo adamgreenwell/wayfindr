@@ -35,6 +35,7 @@ use App\Http\Controllers\OperatorBackupSettingsController;
 use App\Http\Controllers\OperatorBreakGlassController;
 use App\Http\Controllers\OperatorBreakGlassViewerController;
 use App\Http\Controllers\OperatorDashboardController;
+use App\Http\Controllers\OperatorLocalizationSettingsController;
 use App\Http\Controllers\OperatorMailSettingsController;
 use App\Http\Controllers\OperatorOnboardingController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
@@ -310,6 +311,10 @@ Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::c
             ->name('settings.storage.update');
         Route::post('/settings/storage/test', [OperatorStorageSettingsController::class, 'test'])
             ->name('settings.storage.test');
+        Route::get('/settings/localization', [OperatorLocalizationSettingsController::class, 'edit'])
+            ->name('settings.localization.edit');
+        Route::post('/settings/localization', [OperatorLocalizationSettingsController::class, 'update'])
+            ->name('settings.localization.update');
         Route::get('/settings/scanning', [OperatorScanningSettingsController::class, 'edit'])
             ->name('settings.scanning.edit');
         Route::post('/settings/scanning', [OperatorScanningSettingsController::class, 'update'])

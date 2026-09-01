@@ -9,6 +9,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\ReaderClock;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -67,7 +68,7 @@ test('an empty closed series is explained rather than left to be guessed at', fu
     $this->actingAs($world['agent'])->get('/dashboard/reports')
         ->assertOk()
         ->assertSee('this install began keeping on', false)
-        ->assertSee(CarbonImmutable::now()->subDays(3)->toFormattedDayDateString(), false);
+        ->assertSee(ReaderClock::date(CarbonImmutable::now()->subDays(3)), false);
 });
 
 test('the report dates the start of lifecycle recording once it exists', function (): void {
@@ -90,7 +91,7 @@ test('the report dates the start of lifecycle recording once it exists', functio
     $this->actingAs($world['agent'])->get('/dashboard/reports?report_days=30')
         ->assertOk()
         ->assertSee('this install began keeping on', false)
-        ->assertSee(CarbonImmutable::now()->subDays(2)->toFormattedDayDateString(), false);
+        ->assertSee(ReaderClock::date(CarbonImmutable::now()->subDays(2)), false);
 });
 
 test('a range outside the offered choices falls back rather than failing', function (): void {

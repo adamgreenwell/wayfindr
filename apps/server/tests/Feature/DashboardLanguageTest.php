@@ -262,7 +262,14 @@ test('nothing on the profile page reads the same in both languages', function ()
         // address read the same in every language, correctly.
         || str_contains($line, 'Acme Support Datenpunkt')
         || str_contains($line, 'Ada Agent')
-        || str_contains($line, '@');
+        || str_contains($line, '@')
+        // IANA time zone identifiers. `Europe/Berlin` is a name, not copy:
+        // the same string in every language by design, and translating one
+        // would produce a value the platform's own zone database rejects.
+        //
+        // Asked of the zone database rather than matched on shape, which
+        // quietly missed `UTC` and the other abbreviation forms.
+        || in_array($line, DateTimeZone::listIdentifiers(), true);
 
     foreach ($states as $label => $attributes) {
         $english = User::factory()->for($account)->create($attributes + ['locale' => 'en', 'name' => 'Ada Agent']);

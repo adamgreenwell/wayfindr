@@ -1,8 +1,9 @@
-<x-layouts.app title="Articles" :agent="$agent" :account="$account">
-            <x-page-header title="Articles" subtitle="Answers a visitor can find without asking." :back-href="route('dashboard.account.show')" back-label="Back to account" />
+<x-layouts.app :title="__('articles.title')" :agent="$agent" :account="$account">
+            <x-page-header :title="__('articles.title')" :subtitle="__('articles.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('articles.back_to_account')" />
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                {{-- A catalogue key rather than a sentence -- see AgentArticleController. --}}
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             @error('title')
@@ -16,8 +17,8 @@
             <section class="section" aria-labelledby="new-article-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="new-article-heading">Write an article</h2>
-                        <p class="lede">Saved as a draft. Nothing reaches a visitor until you publish it.</p>
+                        <h2 id="new-article-heading">{{ __('articles.write.heading') }}</h2>
+                        <p class="lede">{{ __('articles.write.lede') }}</p>
                     </div>
                 </div>
 
@@ -25,54 +26,78 @@
                     @csrf
 
                     <div class="field">
-                        <label for="article_title">Title</label>
-                        <input type="text" id="article_title" name="title" maxlength="160" required
-                            value="{{ old('title') }}" placeholder="How refunds work">
+                        <label for="article_title">{{ __('articles.write.title_label') }}</label>
+                        {{-- The same reset the detail page's editor carries: what
+                             the agent types here is the ARTICLE, written for
+                             visitors, not a sentence in the language they read the
+                             dashboard in.
+
+                             The placeholder is our copy and is translated, so it
+                             inherits the reset too. That is the accepted cost of a
+                             control carrying one language for both: the value is
+                             read back on every keystroke and outlives the hint,
+                             which is shown only while the field is empty. --}}
+                        <input type="text" id="article_title" name="title" maxlength="160" required lang=""
+                            value="{{ old('title') }}" placeholder="{{ __('articles.write.title_placeholder') }}">
                     </div>
 
                     <div class="field">
-                        <label for="article_body">Body</label>
-                        <textarea id="article_body" name="body" rows="8" maxlength="20000" required
-                            placeholder="## Refunds&#10;&#10;We refund within **14 days**. Email [support](mailto:help@example.com)."></textarea>
+                        <label for="article_body">{{ __('articles.write.body_label') }}</label>
+                        <textarea id="article_body" name="body" rows="8" maxlength="20000" required lang=""
+                            placeholder="{{ __('articles.write.body_placeholder') }}"></textarea>
+                        {{-- `##` and `-` are pure syntax and pass through. The link
+                             and emphasis examples are not: their brackets are syntax
+                             but the words inside them tell the reader what goes there,
+                             so those come from the catalogue. --}}
                         <p class="field-hint">
-                            Headings with <code>##</code>, bullets with <code>-</code>, links as
-                            <code>[words](https://…)</code>, emphasis with <code>**bold**</code>.
-                            Anything else is read as ordinary text.
+                            {!! __('articles.write.markup_hint', [
+                                'headings' => '<code>##</code>',
+                                'bullets' => '<code>-</code>',
+                                'links' => '<code>'.e(__('articles.write.markup_links')).'</code>',
+                                'emphasis' => '<code>'.e(__('articles.write.markup_emphasis')).'</code>',
+                            ]) !!}
                         </p>
                     </div>
 
-                    <button class="button" type="submit">Create draft</button>
+                    <button class="button" type="submit">{{ __('articles.write.submit') }}</button>
                 </form>
             </section>
 
             <section class="section" aria-labelledby="article-list-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="article-list-heading">Everything written so far</h2>
-                        <p class="lede">Drafts first, because they are the ones still wanting work.</p>
+                        <h2 id="article-list-heading">{{ __('articles.list.heading') }}</h2>
+                        <p class="lede">{{ __('articles.list.lede') }}</p>
                     </div>
                     <span class="readiness-status" data-status="{{ $articles->isEmpty() ? 'manual' : 'ready' }}">
-                        {{ trans_choice(':count article|:count articles', $articles->count(), ['count' => $articles->count()]) }}
+                        {{ trans_choice('articles.list.count', $articles->count(), ['count' => \App\Support\ReaderNumber::count($articles->count())]) }}
                     </span>
                 </div>
 
                 <form class="section-form" method="GET" action="{{ route('dashboard.account.articles.index') }}">
                     <div class="field">
-                        <label for="article_search">Search</label>
-                        <input type="search" id="article_search" name="article_search" maxlength="120"
-                            value="{{ $articleSearch }}" placeholder="By title">
+                        <label for="article_search">{{ __('articles.list.search_label') }}</label>
+                        {{-- The LABEL above stays German; what is typed into the
+                             field is a search for the account's own words. --}}
+                        <input type="search" id="article_search" name="article_search" maxlength="120" lang=""
+                            value="{{ $articleSearch }}" placeholder="{{ __('articles.list.search_placeholder') }}">
                     </div>
 
-                    <button class="button secondary" type="submit">Search articles</button>
+                    <button class="button secondary" type="submit">{{ __('articles.list.search_submit') }}</button>
                 </form>
 
                 @if ($articles->isEmpty())
                     <div class="notice-copy">
                         <p>
                             @if ($articleSearch !== '')
-                                No article title matches “{{ $articleSearch }}”.
+                                {{-- The sentence is ours and stays German; the term
+                                     quoted inside it is whatever the agent typed,
+                                     which is the account's language. The render audit
+                                     structurally cannot see this -- interpolated data
+                                     is excused from the translation check. --}}
+                                {!! __('articles.list.no_match', ['search' => '<span lang="">'.e($articleSearch).'</span>']) !!}
                             @else
-                                Nothing written yet. The first article is usually the question your desk answers most.
+                                {{ __('articles.list.empty') }}
                             @endif
                         </p>
                     </div>
@@ -80,20 +105,22 @@
                     <table class="data-table">
                         <thead>
                             <tr>
-                                <th scope="col">Article</th>
-                                <th scope="col">State</th>
-                                <th scope="col">Last edited</th>
+                                <th scope="col">{{ __('articles.list.column_article') }}</th>
+                                <th scope="col">{{ __('articles.list.column_state') }}</th>
+                                <th scope="col">{{ __('articles.list.column_edited') }}</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach ($articles as $article)
                                 <tr>
                                     <td>
-                                        <a href="{{ route('dashboard.account.articles.show', $article) }}">{{ $article->title }}</a>
+                                        {{-- The title is the account's own words, in whatever
+                                             language it writes for its visitors. --}}
+                                        <a href="{{ route('dashboard.account.articles.show', $article) }}" lang="">{{ $article->title }}</a>
                                     </td>
                                     <td>
                                         <span class="readiness-status" data-status="{{ $article->isPublished() ? 'ready' : 'manual' }}">
-                                            {{ $article->isPublished() ? 'Published' : 'Draft' }}
+                                            {{ $article->isPublished() ? __('articles.state.published') : __('articles.state.draft') }}
                                         </span>
                                     </td>
                                     <td>{{ $article->updated_at?->diffForHumans() }}</td>

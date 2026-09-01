@@ -44,20 +44,23 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   language — **English and German**.
 - **A dashboard an agent can read in their own language** — **English, German
   and Italian** — on the surfaces extracted so far: the profile pages, the
-  conversation queue, the ticket list, and the conversation detail page with its
-  cobrowse panel.
+  conversation queue, the ticket list, the conversation detail page with its
+  cobrowse panel, the live-visitors board, and four account pages — reply
+  templates, ticket labels, articles and API tokens. An agent who has chosen
+  nothing reads the install's language, which the operator sets in the browser
+  under **Language and region**; `APP_LOCALE` seeds a new install and is the
+  fallback until somebody saves one.
 
-  **Most of the dashboard is still English** — the home page, Alerts, Reports,
-  Visitors, site settings, ticket detail, and all of account management:
-  Account, Integrations, API tokens, Operator access, Audit, Labels, Articles,
-  Reply templates. A German or Italian agent moving from the queue to Reports
-  changes language mid-session.
+  **Much of the dashboard is still English** — the home page, Alerts, Reports,
+  Visitors, site settings, ticket detail, and the rest of account management:
+  Account, Integrations, Operator access, Audit. The **operator console** is the
+  largest untouched surface and has never been extracted at all. A German or
+  Italian agent moving from the queue to Reports changes language mid-session.
 
   `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
   are translated, and it is the authority rather than this paragraph: a page
   missing from it renders English by design rather than by accident. A prose
   list will drift from the constant, so read the constant.
-
   **Write endpoints are the deliberate exception.** A form submitted from a
   translated page answers in that page's language even when its own route is
   absent from the constant, because `DashboardLanguage::forRequest()` resolves
@@ -75,20 +78,49 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   **Neither pack has been read by a qualified speaker, and they are unreviewed
   in different ways.** German was drafted during development: written by hand,
   in context, by somebody who is not a professional translator. Italian is
-  mostly machine output. Eight of its nine catalogues came out of a pipeline
-  with a glossary, a protection scheme for placeholders and a policy scorer;
-  each opens with `NOT YET REVIEWED` and describes its own values as proposals.
-  The ninth, `validation.php`, is not pipeline output at all — the pipeline only
-  translates files it finds in `lang/en`, and there is no English validation
-  catalogue — so it was written by hand against the German one, covering the
-  rules the dashboard actually validates with and falling back to Laravel's own
-  English for any rule it does not name.
+  mostly machine output. Thirteen of its fourteen catalogues came out of a
+  pipeline with a glossary, a protection scheme for placeholders and a policy
+  scorer; each opens with `NOT YET REVIEWED` and describes its own values as
+  proposals. The fourteenth, `validation.php`, is not pipeline output at all —
+  the pipeline only translates files it finds in `lang/en`, and there is no
+  English validation catalogue — so it was written by hand against the German
+  one, covering the rules the dashboard actually validates with and falling back
+  to Laravel's own English for any rule it does not name.
+
+  The count grows with every extracted surface, so treat it as of this writing
+  rather than as a fixed figure: `ls apps/server/lang/it` is the answer, and
+  `grep -l 'NOT YET REVIEWED'` over it is the unreviewed share.
 
   Those checks establish mechanical consistency: the same term rendered the same
   way everywhere, no placeholder lost in translation, the right register
   attempted. They establish nothing about whether a sentence is good Italian,
   and the translation policy says so directly. Do not promise either language to
   a customer until somebody who speaks it has read the rendered screens.
+- **A dashboard an agent can read on their own clock.** An agent picks a
+  timezone on their profile beside their language; everyone who has not picked
+  one follows the install's. The operator sets that in the browser, under
+  **Language and region**, and it is authoritative —
+  `WAYFINDR_DASHBOARD_TIMEZONE` seeds a new install and is the fallback until
+  somebody saves one. It changes what is **shown**, never what is stored —
+  every record stays in UTC — so changing it re-reads existing history rather
+  than rewriting it, and it applies to report day boundaries as well as
+  timestamps.
+
+  A site's **support hours** are the deliberate exception: they belong to the
+  site and stay in the site's own zone, because "visitors are told support is
+  back at 09:00" would become untrue read on an agent's clock.
+
+  **`app.timezone` is the storage clock, and it is hardcoded to `UTC`** in
+  `config/app.php` — deliberately, and with no environment variable for it.
+  Laravel writes `created_at` through that value into columns that carry no
+  offset, so pointing it anywhere else would record local wall-clock time where
+  every reader, and every report query, expects UTC. The display clock is a
+  separate setting for exactly that reason.
+- **Numbers grouped the way the reading agent groups them** — `4.213` for a
+  German agent, `4,213` for an English one — on the same extracted pages, and
+  in live updates as well as the first render. Values that something reads back
+  are deliberately left alone: chart bar widths, data attributes, CSV cells,
+  and anything on a broadcast.
 - **A visitor directory**, and a read-only public API with a decided isolation
   model (ADR 0018).
 - **Live visitor presence** ([#747](https://github.com/adamgreenwell/wayfindr/issues/747)):

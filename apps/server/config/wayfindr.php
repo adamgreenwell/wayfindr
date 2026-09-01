@@ -9,6 +9,11 @@ return [
         // means the channel is off, and the endpoint answers 404 rather than
         // standing open.
         'inbound_secret' => env('WAYFINDR_INBOUND_MAIL_SECRET', ''),
+
+        // Which scheme the configured provider actually speaks. Defaults to
+        // Wayfindr's own, so an install already re-signing through a proxy --
+        // the only way this channel worked before -- is unaffected.
+        'inbound_provider' => env('WAYFINDR_INBOUND_MAIL_PROVIDER', 'wayfindr'),
     ],
 
     'documentation' => [
@@ -81,6 +86,15 @@ return [
     // "de" and the next agent with no preference inherits a language they never
     // chose. Laravel never touches this key.
     'dashboard_locale' => (string) env('APP_LOCALE', 'en'),
+
+    // The install's own clock, kept here for exactly the reason above: the
+    // request-scoped timezone is applied by moving `app.timezone`, so reading
+    // the default back out of it would return whichever agent was served last.
+    // Laravel never touches this key either.
+    //
+    // UTC when unset, and honestly so -- guessing from the server's clock would
+    // silently adopt whichever region the host happens to sit in.
+    'dashboard_timezone' => (string) env('WAYFINDR_DASHBOARD_TIMEZONE', 'UTC'),
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),

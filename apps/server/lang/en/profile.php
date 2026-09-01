@@ -32,6 +32,9 @@ return [
         'language' => 'Dashboard language',
         'language_default' => 'Use the install default',
         'language_help' => 'Yours alone. It changes the dashboard for you and nobody else, and does not affect what language the widget speaks to your visitors — that is set per site.',
+        'timezone' => 'Time zone',
+        'timezone_default' => 'Use the install default',
+        'timezone_help' => 'Times and dates across the dashboard are shown in this zone, including which day a report groups something under.',
         'save' => 'Save profile',
     ],
 

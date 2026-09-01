@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Support\CobrowsePayloadBudget;
+use App\Support\Visitors\VisitorPageUrl;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
@@ -108,7 +109,9 @@ class CobrowseMutationController extends Controller
             'mutation_count' => count($mutations),
             'dropped_count' => $droppedCount,
             'skipped_count' => $skippedCount,
-            'page_url' => $validated['page_url'],
+            // See CobrowsePageStateController: the hook is the guarantee, this
+            // keeps the echoed value honest.
+            'page_url' => VisitorPageUrl::reduce($validated['page_url']),
             'reported_at' => now()->toJSON(),
             'mutations' => $mutations,
         ];
@@ -126,7 +129,7 @@ class CobrowseMutationController extends Controller
             'mutation_count' => ((int) ($previous['mutation_count'] ?? 0)) + $batch['mutation_count'],
             'dropped_count' => ((int) ($previous['dropped_count'] ?? 0)) + $droppedCount,
             'skipped_count' => ((int) ($previous['skipped_count'] ?? 0)) + $skippedCount,
-            'last_page_url' => $validated['page_url'],
+            'last_page_url' => VisitorPageUrl::reduce($validated['page_url']),
             'last_reported_at' => $batch['reported_at'],
             'recent_batches' => $recentBatches,
         ];

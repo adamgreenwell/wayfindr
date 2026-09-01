@@ -180,6 +180,14 @@
                                         ]);
                                         $presenceState = $conversation->visitor?->presenceState();
                                         $needsReply = $conversation->attentionState() !== 'waiting_on_visitor';
+                                        // The visitor's own words in the first three
+                                        // branches and OURS in the fourth, so the reset
+                                        // has to follow the branch rather than the
+                                        // element: marking it unconditionally announces
+                                        // our fallback as unknown.
+                                        $visitorGaveTheirOwn = filled($conversation->visitor?->name
+                                            ?: $conversation->visitor?->email
+                                            ?: $conversation->visitor?->anonymous_id);
                                         $visitorLabel = $conversation->visitor?->name
                                             ?: $conversation->visitor?->email
                                             ?: $conversation->visitor?->anonymous_id
@@ -221,7 +229,9 @@
                                             </a>
                                         </td>
                                         <td>
-                                            <span class="wf-queue-assignee" title="{{ $visitorLabel }}">{{ Str::limit($visitorLabel, 22) }}</span>
+                                            {{-- The `title` takes its language from this
+                                                 element, so one attribute covers both. --}}
+                                            <span class="wf-queue-assignee" title="{{ $visitorLabel }}" @if ($visitorGaveTheirOwn) lang="" @endif>{{ Str::limit($visitorLabel, 22) }}</span>
                                         </td>
                                         <td>
                                             <span class="wf-queue-state" @if ($needsReply) data-tone="waiting" @endif>
