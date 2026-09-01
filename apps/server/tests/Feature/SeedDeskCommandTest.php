@@ -115,6 +115,16 @@ test('it writes a desk with the spread a measurement needs', function (): void {
     expect(Visitor::query()->whereColumn('last_web_seen_at', '<', 'created_at')->count())
         ->toBe(0, 'a visitor was seen on the web before they existed');
 
+    // Nor after their own conversation opened. The conversations shift back to
+    // make room for their messages and the visitors did not, so a conversation
+    // could open before the visitor who started it existed.
+    $late = Conversation::query()
+        ->join('visitors', 'visitors.id', '=', 'conversations.visitor_id')
+        ->whereColumn('visitors.created_at', '>', 'conversations.created_at')
+        ->count();
+
+    expect($late)->toBe(0, 'a conversation opened before its visitor existed');
+
     // Read states exist, and in both shapes. Without them every conversation
     // reads as new activity -- `scopeWithNewActivityFor()` treats a missing row
     // as unread -- so the queue's marker was on for every row and its absence

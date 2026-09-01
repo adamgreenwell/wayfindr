@@ -157,7 +157,7 @@ final class SeedDeskCommand extends Command
 
             $desk = $this->desk($agentCount, $siteCount);
 
-            $written['visitors'] = $this->measure('Visitors', fn (): int => $this->seedVisitors($desk, $conversations, $months));
+            $written['visitors'] = $this->measure('Visitors', fn (): int => $this->seedVisitors($desk, $conversations, $months, $messagesEach));
             $written['conversations'] = $this->measure('Conversations', fn (): int => $this->seedConversations($desk, $conversations, $months, $messagesEach));
             $written['messages'] = $this->measure('Messages', fn (): int => $this->seedMessages($desk, $messagesEach));
             $this->syncLastMessageAt($desk);
@@ -259,9 +259,21 @@ final class SeedDeskCommand extends Command
      *
      * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
      */
-    private function seedVisitors(array $desk, int $conversations, int $months): int
+    private function seedVisitors(array $desk, int $conversations, int $months, int $messagesEach): int
     {
-        $now = Carbon::now();
+        // The SAME headroom the conversations reserve, plus a margin. Visitor
+        // `i` and conversation `i` are placed by the same formula over their own
+        // clock, so a window five minutes earlier puts every visitor ahead of
+        // the conversation they belong to -- which was not true while the
+        // conversations shifted back for their messages and the visitors did
+        // not.
+        $now = Carbon::now()->subMinutes($messagesEach + 10);
+
+        // Presence is relative to REAL time, not to the shifted window. Inside
+        // two minutes is `active`, and measured from a window pushed back for
+        // the message span, "a minute ago" is already too old to be -- so every
+        // visitor collapsed into the two older states.
+        $present = Carbon::now();
         $siteCount = count($desk['sites']);
         $written = 0;
         $rows = [];
@@ -287,9 +299,9 @@ final class SeedDeskCommand extends Command
                 // inside fifteen is recent, older is quiet, and absent is not
                 // reported at all.
                 'last_web_seen_at' => $webSeenAt = match (self::mix($i, 'presence', 4)) {
-                    0 => $now->copy()->subMinute(),
-                    1 => $now->copy()->subMinutes(7),
-                    2 => $now->copy()->subHours(3),
+                    0 => $present->copy()->subMinute(),
+                    1 => $present->copy()->subMinutes(7),
+                    2 => $present->copy()->subHours(3),
                     default => null,
                 },
                 // The LATER of the two, which is what `Visitor::saving()` keeps

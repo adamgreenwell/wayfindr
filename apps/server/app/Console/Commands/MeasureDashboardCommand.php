@@ -55,9 +55,12 @@ final class MeasureDashboardCommand extends Command
      * The cache this command measures against.
      *
      * Its own store rather than the shared `array` one, so clearing it between
-     * requests cannot reach a caller whose default happens to be `array` too.
+     * requests cannot reach a caller whose default happens to be `array` too --
+     * and uniquely named per invocation, because a caller who already defined
+     * and RESOLVED a store by a fixed name would have theirs flushed instead:
+     * changing the config does not evict what the cache manager has memoised.
      */
-    private const CACHE_STORE = 'wayfindr-measure';
+    private string $cacheStore = 'wayfindr-measure';
 
     public function handle(Kernel $kernel): int
     {
@@ -115,9 +118,11 @@ final class MeasureDashboardCommand extends Command
         // whose default is already `array` had their keys flushed between every
         // synthetic request -- the isolation reaching into exactly what it was
         // added to protect.
+        $this->cacheStore = 'wayfindr-measure-'.bin2hex(random_bytes(6));
+
         config([
-            'cache.stores.'.self::CACHE_STORE => ['driver' => 'array', 'serialize' => false],
-            'cache.default' => self::CACHE_STORE,
+            'cache.stores.'.$this->cacheStore => ['driver' => 'array', 'serialize' => false],
+            'cache.default' => $this->cacheStore,
         ]);
 
         // `setUser`, not `login`. Invoked through `Artisan::call()` during an
@@ -173,6 +178,11 @@ final class MeasureDashboardCommand extends Command
             }
 
             config(['cache.default' => $callerCache]);
+
+            // The store goes with it, so nothing of this run is left resolvable
+            // in a long-lived process.
+            Cache::forgetDriver($this->cacheStore);
+            config(['cache.stores.'.$this->cacheStore => null]);
 
             $caller === null ? Auth::forgetUser() : Auth::setUser($caller);
 
@@ -431,7 +441,7 @@ final class MeasureDashboardCommand extends Command
      */
     private function isolate(): void
     {
-        Cache::store(self::CACHE_STORE)->flush();
+        Cache::store($this->cacheStore)->flush();
     }
 
     /**
