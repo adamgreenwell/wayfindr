@@ -282,7 +282,20 @@ test('it leaves the caller\'s query log entries alone', function (): void {
     expect(count(DB::getQueryLog()))
         ->toBeGreaterThanOrEqual($theirs, 'the command discarded the caller\'s logged queries');
 
+    // And the same when logging is OFF but the log was kept for later.
+    // `disableQueryLog()` changes the flag and leaves the entries, so a caller
+    // who turned it off still has something to lose.
     DB::disableQueryLog();
+
+    $kept = count(DB::getQueryLog());
+
+    expect($kept)->toBeGreaterThan(0, 'the log emptied itself, so this proves nothing');
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(count(DB::getQueryLog()))
+        ->toBeGreaterThanOrEqual($kept, 'the command discarded a log the caller had disabled but kept');
+
     DB::flushQueryLog();
 });
 

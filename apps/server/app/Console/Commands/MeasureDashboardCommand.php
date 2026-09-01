@@ -96,18 +96,17 @@ final class MeasureDashboardCommand extends Command
         } finally {
             DB::rollBack();
 
+            // The caller's log is the CALLER's, and it is never flushed here.
+            // `disableQueryLog()` only changes the flag, so entries survive it
+            // -- a caller who turned logging off and kept the log for later had
+            // it erased by the branch that used to be here.
+            //
+            // Their log gains this command's counted requests either way, which
+            // is the lesser harm and is what any code running inside a query
+            // log does to it. Counting by DIFFERENCE is what makes not
+            // flushing possible.
             if ($wasLogging) {
-                // The caller's log is the CALLER's. Flushing it here erased
-                // whatever diagnostics they had accumulated before calling --
-                // restoring the switch and discarding the contents is not
-                // restoring the state.
-                //
-                // Their log gains this command's counted requests, which is the
-                // lesser harm and is what any code running inside a query log
-                // does to it.
                 DB::enableQueryLog();
-            } else {
-                DB::flushQueryLog();
             }
 
             $caller === null ? Auth::logout() : Auth::login($caller);
