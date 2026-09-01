@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\HttpFoundation\Response;
+use Throwable;
 
 /**
  * How long the dashboard's heaviest pages take, against whatever is in the
@@ -43,6 +44,13 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class MeasureDashboardCommand extends Command
 {
+    /**
+     * Session ids this command's own requests created, purged at the end.
+     *
+     * @var list<string>
+     */
+    private array $sessionIds = [];
+
     protected $signature = 'wayfindr:measure-dashboard
         {--email= : The agent to measure as; defaults to the seeded desk owner}
         {--runs=3 : Measured runs per page, after one warm-up}
@@ -167,6 +175,9 @@ final class MeasureDashboardCommand extends Command
             return $this->measureAll($kernel, $agent);
         } finally {
             DB::rollBack();
+
+            // Outside the transaction above, or the rollback undoes it.
+            $this->purgeSessions();
 
             // The caller's log is the CALLER's, and it is never flushed here.
             // `disableQueryLog()` only changes the flag, so entries survive it
@@ -461,6 +472,28 @@ final class MeasureDashboardCommand extends Command
      * as leaving the query log on inside the measured interval, in a smaller
      * amount.
      */
+    /**
+     * Remove the sessions this command's own requests created.
+     *
+     * By id, which is exact: the only sessions removed are ones recorded by
+     * `dispatch()`. Failing here must not mask the measurement, so a store that
+     * cannot destroy is reported and the rest are still attempted.
+     */
+    private function purgeSessions(): void
+    {
+        $handler = Session::getHandler();
+
+        foreach ($this->sessionIds as $id) {
+            try {
+                $handler->destroy($id);
+            } catch (Throwable $e) {
+                $this->warn('Could not remove the session '.$id.': '.$e->getMessage());
+            }
+        }
+
+        $this->sessionIds = [];
+    }
+
     private function dispatch(Kernel $kernel, User $agent, string $uri): Response
     {
         $request = Request::create($uri, 'GET');
@@ -473,10 +506,14 @@ final class MeasureDashboardCommand extends Command
             // measurement left one stored row or file per request behind --
             // four for a single page, and the store is the caller's.
             //
-            // Destroyed by id, which is exact: the only sessions removed are the
-            // ones this request created.
+            // RECORDED here and purged at the end, not destroyed here. Doing it
+            // in place put the delete inside both windows this command reports:
+            // it counted as a query the measured page never issues -- three
+            // pages gained exactly one -- and on a database-backed store it sat
+            // inside the per-request transaction, so the rollback undid the
+            // cleanup and it never removed anything at all.
             if ($request->hasSession()) {
-                Session::getHandler()->destroy($request->session()->getId());
+                $this->sessionIds[] = $request->session()->getId();
             }
         }
     }

@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Session;
 
 uses(RefreshDatabase::class);
@@ -576,23 +577,36 @@ test('it does not flush a caller who is also using an array cache', function ():
 });
 
 test('it does not leave a session behind for every request it made', function (): void {
-    // NOT mutation-proven either: the test environment's session store does not
-    // reach the database table this counts, so removing the cleanup leaves it
-    // green. The cleanup was verified by hand instead -- four requests against
-    // a `file` driver left four session files before it and none after.
     // Every cookie-less synthetic request starts a session and persists it, so
-    // a measurement left one stored row per request behind -- four for a single
-    // page, in the caller's own session store.
-    config(['session.driver' => 'database']);
+    // a measurement left one stored file per request behind -- four for a
+    // single page, in the caller's own session store.
+    //
+    // Measured on the FILE store, which is where the leak is real. On a
+    // database-backed store it cannot happen: the session row is written inside
+    // the same per-request transaction the command rolls back, so it never
+    // survives to be left behind. That is also why the cleanup has to sit
+    // outside that transaction -- inside it, the rollback undid the delete and
+    // it counted as a query the measured page never issues.
+    config(['session.driver' => 'file']);
+    app()->forgetInstance('session');
+    app()->forgetInstance('session.store');
+
+    $path = config('session.files');
+    File::ensureDirectoryExists($path);
+
+    $count = fn (): int => count(File::files($path));
 
     Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
 
-    $before = DB::table('sessions')->count();
+    $before = $count();
 
-    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 2, '--page' => ['detail'], '--json' => true]);
+    expect(Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 2,
+        '--page' => ['detail'],
+        '--json' => true,
+    ]))->toBe(0);
 
-    expect(DB::table('sessions')->count())
-        ->toBe($before, 'the measurement left its own sessions in the store');
+    expect($count())->toBe($before, 'the measurement left its own sessions in the store');
 });
 
 test('it refuses rather than measure as somebody real', function (): void {
