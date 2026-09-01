@@ -159,6 +159,11 @@ Stated because a baseline with silent gaps is worse than one with named ones:
 - **Attachments and the retention sweep.** No large object count has been run
   through either.
 - **Cobrowse mutation batches** on a heavy page.
+
+- **The conversation detail page's cobrowse panel.** The seeder creates no
+  cobrowse sessions, so the panel — a substantial part of that page, and the
+  only path on it that touches the cache — never renders in these figures. The
+  15 ms above is a detail page without it.
 - **Concurrency of any kind.** Every figure here is one request at a time on an
   otherwise idle machine. Real contention will be worse.
 

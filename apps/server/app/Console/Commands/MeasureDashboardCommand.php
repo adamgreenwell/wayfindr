@@ -84,6 +84,26 @@ final class MeasureDashboardCommand extends Command
         $callerSessionId = Session::isStarted() ? Session::getId() : null;
         $callerSession = $callerSessionId === null ? [] : Session::all();
 
+        // And the CACHE, which the transaction cannot reach. The detail page's
+        // cobrowse audit trail claims a throttle key with `Cache::add()`, so a
+        // benchmark was taking a claim that belongs to a real agent -- and
+        // suppressing the audit entry their next view should have written.
+        //
+        // Measured against an array store instead. It keeps the run out of the
+        // caller's cache entirely, and it makes every measurement start cold
+        // and identical rather than inheriting whatever the last one warmed --
+        // which is what a baseline wants anyway.
+        //
+        // The restore is tested; the isolation is not, and the reason is worth
+        // stating rather than leaving as a gap. Nothing the seeded fixture
+        // renders writes to the cache -- the cobrowse audit trail is the path
+        // that does, and the seeder creates no cobrowse sessions -- so there is
+        // no observable difference to assert. That is also a caveat on the
+        // detail page's own figure, and the baseline says so.
+        $callerCache = config('cache.default');
+
+        config(['cache.default' => 'array']);
+
         // `setUser`, not `login`. Invoked through `Artisan::call()` during an
         // HTTP request, `Auth::login()` writes to and MIGRATES the caller's
         // session -- a benchmark rotating a live session id. Setting the user
@@ -135,6 +155,8 @@ final class MeasureDashboardCommand extends Command
             if ($wasLogging) {
                 DB::enableQueryLog();
             }
+
+            config(['cache.default' => $callerCache]);
 
             $caller === null ? Auth::forgetUser() : Auth::setUser($caller);
 

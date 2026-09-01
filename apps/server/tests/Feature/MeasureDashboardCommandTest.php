@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Session;
 
@@ -531,4 +532,26 @@ test('it measures a conversation an agent would actually open', function (): voi
     // And it really is open, or this asserts nothing about the lane.
     expect(Conversation::query()->where('status', 'closed')->count())
         ->toBeGreaterThan(0, 'the fixture has no closed conversations to have picked by mistake');
+});
+
+test('it does not write to the caller\'s cache', function (): void {
+    // The transaction cannot reach the cache. The detail page's cobrowse audit
+    // trail claims a throttle key with `Cache::add()`, so a benchmark was
+    // taking a claim belonging to a real agent -- and suppressing the audit
+    // entry their next view should have written.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    config(['cache.default' => 'file']);
+
+    Cache::flush();
+    Cache::put('theirs', 'kept', 60);
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(config('cache.default'))->toBe('file', 'the command left the cache pointed elsewhere');
+
+    expect(Cache::get('theirs'))
+        ->toBe('kept', 'the command disturbed the caller\'s cache');
+
+    Cache::flush();
 });
