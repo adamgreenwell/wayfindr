@@ -132,6 +132,13 @@ quarter as many rows. It would be invisible on a demo install and severe on a
 busy one — and unlike the pagination issue, it does not need a large desk to be
 worth fixing, only a large enough one to notice.
 
+**The figure above is a floor, not a typical value.** The fixture writes no
+audit events, so all 12,499 of those queries return nothing: they cost a round
+trip and an index probe and no more. On an install with real lifecycle history
+each one returns rows to hydrate into models, so the same page is more expensive
+there than it is here. The query *count* is exact and the milliseconds are the
+best case.
+
 ### The conversation detail page is fine
 
 12-14 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
@@ -157,12 +164,14 @@ Stated because a baseline with silent gaps is worse than one with named ones:
   been measured against a busy desk. The seeder produces data spread across
   twelve months specifically so this can be measured next; it has not been.
 
-  **And the fixture is not ready for it yet.** Conversations are inserted
-  closed rather than closed through the application, so there are no
-  `conversation.closed` audit events — and the resolution metrics are computed
-  from those. Measuring the report tabs against this data would time a query
-  over an empty table and report it as fast. Seeding the lifecycle events is the
-  first piece of that work, not a detail of it.
+  **And the fixture is not ready for it yet.** Everything is inserted directly
+  rather than driven through the application, so three tables the reports read
+  are empty: `audit_events` has no `conversation.closed` or `conversation.
+  reopened` rows, none of the ticket lifecycle actions `TicketReport` walks, and
+  `conversation_ratings` has nothing for the satisfaction figures. Measuring the
+  report tabs against this data would time queries over empty tables and report
+  them as fast. Seeding that history is the first piece of the reporting
+  measurement, not a detail of it — tracked as #839.
 - **Attachments and the retention sweep.** No large object count has been run
   through either.
 - **Cobrowse mutation batches** on a heavy page.
