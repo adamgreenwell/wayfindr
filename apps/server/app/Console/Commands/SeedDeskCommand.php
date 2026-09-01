@@ -8,7 +8,6 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationRating;
-use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -945,16 +944,38 @@ final class SeedDeskCommand extends Command
                     $n = $this->seededIndex((string) $conversation->support_code);
                     $closedAt = Carbon::parse($conversation->closed_at);
 
-                    // A quarter were reopened first, and a third of those by
-                    // the visitor -- the report splits on exactly that, so a
-                    // fixture where every reopen is an agent leaves half the
-                    // figure unexercised.
+                    // A quarter were CLOSED, reopened, and closed again. The
+                    // earlier close is the point: `ResolutionEpisodes::walk()`
+                    // starts every conversation in OPEN and ignores a reopen
+                    // from OPEN, so a reopen with nothing before it inflated the
+                    // raw counter without starting a second episode -- and the
+                    // final close was still measured from the original opening.
+                    // The ticket half had this right and the conversation half
+                    // did not.
+                    //
+                    // A third of the reopens are by the VISITOR, because the
+                    // report splits on exactly that, so a fixture where every
+                    // reopen is an agent leaves half the figure unexercised.
                     if (self::mix($n, 'reopened', 4) === 0) {
                         $openedAt = Carbon::parse($conversation->created_at);
-                        $reopenedAt = $openedAt->copy()->addSeconds(
-                            max(1, (int) ($openedAt->diffInSeconds($closedAt) / 2))
-                        );
+                        $span = max(3, (int) $openedAt->diffInSeconds($closedAt));
+                        $firstCloseAt = $openedAt->copy()->addSeconds((int) ($span / 3));
+                        $reopenedAt = $openedAt->copy()->addSeconds((int) ($span * 2 / 3));
                         $byVisitor = self::mix($n, 'reopened_by', 3) === 0;
+
+                        $rows[] = [
+                            'account_id' => $accountId,
+                            'site_id' => $conversation->site_id,
+                            'actor_type' => (new User)->getMorphClass(),
+                            'actor_id' => $agentIds[self::mix($n, 'agent', count($agentIds))],
+                            'subject_type' => (new Conversation)->getMorphClass(),
+                            'subject_id' => $conversation->id,
+                            'action' => ConversationLifecycleLog::CLOSED,
+                            'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
+                            'occurred_at' => $firstCloseAt,
+                            'created_at' => $firstCloseAt,
+                            'updated_at' => $firstCloseAt,
+                        ];
 
                         $rows[] = [
                             'account_id' => $accountId,
@@ -1013,22 +1034,27 @@ final class SeedDeskCommand extends Command
     private function seedTicketLifecycle(array $desk, ?int $accountId, array $agentIds): int
     {
         $written = 0;
-        $earliest = null;
 
         Ticket::query()
+            ->with('conversation:id,support_code')
             ->whereIn('site_id', $this->siteIds($desk))
             ->orderBy('id')
-            ->chunkById(self::CHUNK, function ($tickets) use (&$written, &$earliest, $accountId, $agentIds): void {
+            ->chunkById(self::CHUNK, function ($tickets) use (&$written, $accountId, $agentIds): void {
                 $rows = [];
 
                 foreach ($tickets as $ticket) {
                     $raisedAt = Carbon::parse($ticket->created_at);
-                    $n = (int) $ticket->id;
+
+                    // The conversation's SEEDED INDEX, not the ticket's id.
+                    // `--fresh` does not reset a PostgreSQL sequence, so ids
+                    // move on every reseed -- which would change which tickets
+                    // get a reopen episode and which agent acted, and make two
+                    // runs of the same command incomparable. Every other shape
+                    // in this file is keyed the same way for the same reason.
+                    $n = $this->seededIndex((string) $ticket->conversation->support_code);
                     $actorId = $agentIds[self::mix($n, 'ticket_actor', count($agentIds))];
 
-                    $event = function (string $action, Carbon $at, string $previous) use (&$rows, &$earliest, $accountId, $ticket, $actorId): void {
-                        $earliest = $earliest === null ? $at->copy() : $at->copy()->min($earliest);
-
+                    $event = function (string $action, Carbon $at, string $previous) use (&$rows, $accountId, $ticket, $actorId): void {
                         $rows[] = [
                             'account_id' => $accountId,
                             'site_id' => $ticket->site_id,
@@ -1071,16 +1097,17 @@ final class SeedDeskCommand extends Command
                 }
             });
 
-        // What the report reads to know its history is trustworthy from here.
-        // Without it a fixture full of events is reported against a window that
-        // claims to have recorded none of them.
-        if ($earliest !== null) {
-            OperatorSetting::query()->updateOrCreate(
-                ['key' => 'reporting.ticket_lifecycle_recording_began_at'],
-                ['value' => $earliest->toIso8601String()],
-            );
-        }
-
+        // `reporting.ticket_lifecycle_recording_began_at` is deliberately NOT
+        // written. It is installation-wide, so setting it here would move a
+        // reporting fact belonging to every real account on the install --
+        // backwards, on an upgraded install whose genuine boundary is recent,
+        // which would tell those accounts' reports to trust unaudited ticket
+        // history. This command writes inside its own account and nowhere else.
+        //
+        // Nothing is lost by leaving it: a null boundary means the history
+        // always was trustworthy, which is exactly true of a desk whose entire
+        // history this command wrote. Writing it was solving a problem that
+        // does not exist, at the cost of one that does.
         return $written;
     }
 
@@ -1124,7 +1151,14 @@ final class SeedDeskCommand extends Command
                         // answers are "bad" is not a desk anyone recognises.
                         'score' => $scores[self::mix((int) $event->subject_id, 'score', 6) < 4 ? 0 : (self::mix((int) $event->subject_id, 'score2', 2) === 0 ? 1 : 2)],
                         'comment' => null,
-                        'rated_at' => $closedAt->copy()->addMinutes(self::mix((int) $event->subject_id, 'rated_after', 90) + 1),
+                        // Never later than now. `closed_at` is clamped to the
+                        // present, so a recent conversation's close plus an
+                        // unconditional offset put its answer in the future --
+                        // and the report counts answers by `episode_closed_at`,
+                        // so it was already counting them.
+                        'rated_at' => $closedAt->copy()
+                            ->addMinutes(self::mix((int) $event->subject_id, 'rated_after', 90) + 1)
+                            ->min(Carbon::now()),
                         'episode_closed_at' => $closedAt,
                         'episode_event_id' => $event->id,
                         'created_at' => $closedAt,

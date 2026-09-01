@@ -598,6 +598,71 @@ test('a reseed writes the same words, not just the same shapes', function (): vo
     expect($descriptions())->toBe($firstDescriptions, 'a reseed wrote different ticket descriptions');
 });
 
+test('a reseed writes the same lifecycle history', function (): void {
+    // The report figures are computed from these events, so a fixture whose
+    // history changes shape between rebuilds cannot be compared against its own
+    // earlier measurement -- which is the entire point of a baseline.
+    //
+    // The ticket half was keyed on `tickets.id`, and `--fresh` does not reset a
+    // PostgreSQL sequence: the same ticket came back with a different id, so a
+    // different set of tickets got reopen episodes and different agents acted
+    // on them. Keyed on the conversation's support code now, like everything
+    // else here.
+    // The clock is FROZEN across both seeds. Every timestamp here is derived
+    // from `now()`, so two runs seconds apart legitimately differ -- and this
+    // test is about whether the ids churn, not about how long it takes to seed
+    // twice. Without the freeze it passed on SQLite, where both seeds landed in
+    // the same second, and failed on PostgreSQL, where they did not.
+    Carbon::setTestNow(Carbon::parse('2026-09-01 12:00:00', 'UTC'));
+
+    $seed = fn () => $this->artisan('wayfindr:seed-desk', [
+        '--conversations' => 40,
+        '--messages' => 2,
+        '--fresh' => true,
+    ])->assertSuccessful();
+
+    // By SUPPORT CODE, never by id -- comparing ids would fail on correct data
+    // for the very reason this test exists.
+    //
+    // BOTH subject types. Written for conversations alone it passed with the
+    // ticket half still keyed on `tickets.id`, which is the only place the bug
+    // was: an assertion that looks everywhere except where the defect lives is
+    // not a guard.
+    $codeFor = function (AuditEvent $event): string {
+        if ($event->subject_type === (new Ticket)->getMorphClass()) {
+            return (string) Ticket::query()->find($event->subject_id)?->conversation?->support_code;
+        }
+
+        return (string) Conversation::query()->find($event->subject_id)?->support_code;
+    };
+
+    $shape = fn (): array => AuditEvent::query()
+        ->orderBy('subject_id')
+        ->orderBy('occurred_at')
+        ->get()
+        ->map(fn (AuditEvent $e): string => $codeFor($e)
+            .'|'.$e->action.'|'.$e->occurred_at->toIso8601String()
+            .'|'.($e->metadata['actor'] ?? '')
+            .'|actor:'.($e->actor_id === null ? 'none' : 'set'))
+        ->sort()
+        ->values()
+        ->all();
+
+    $seed();
+    $first = $shape();
+
+    expect($first)->not->toBeEmpty();
+
+    $seed();
+
+    expect(AuditEvent::query()->min('id'))
+        ->toBeGreaterThan(count($first), 'the ids did not advance, so a reseed cannot show this');
+
+    expect($shape())->toBe($first, 'a reseed wrote a different lifecycle history');
+
+    Carbon::setTestNow();
+});
+
 test('a visitor was seen no earlier than the last thing they said', function (): void {
     // `last_seen_at` means the latest contact by ANY channel, and the visitor
     // directory orders by it. Visitors are written before their conversations
@@ -675,6 +740,24 @@ test('the reports have something to report', function (): void {
         ->and($satisfaction['answered'])->toBeGreaterThan(0)
         ->and($satisfaction['answered'])->toBeLessThan($satisfaction['closed']);
 
+    // A reopened conversation contributes TWO resolutions, not one long one.
+    // This is what the raw counters cannot see: `ResolutionEpisodes::walk()`
+    // starts every conversation in OPEN and ignores a reopen from OPEN, so
+    // reopens with no earlier close inflated `reopened` above while producing
+    // no second episode at all -- and the assertion on that counter passed
+    // anyway. Episodes must outnumber the conversations that produced them.
+    // Counted in the SAME window the report used, or this compares a 90-day
+    // figure against twelve months of history and fails on correct data.
+    $closedConversations = AuditEvent::query()
+        ->where('action', 'conversation.closed')
+        ->whereBetween('occurred_at', [$window->start, $window->end])
+        ->distinct()
+        ->count('subject_id');
+
+    expect($resolution['summary']->count)
+        ->toBeGreaterThan($closedConversations,
+            'no conversation resolved twice, so the reopens started no episode');
+
     // The ticket half walks its OWN actions, so seeding the conversation half
     // gives it nothing.
     $tickets = (new TicketReport($scope, $window))->resolution();
@@ -725,16 +808,20 @@ test('a lifecycle event never happens before or after it could have', function (
             ->toBeTrue("a {$event->action} is recorded in the future");
     }
 
-    // A reopen belongs BEFORE the close it precedes, or the walk reads a
-    // conversation as reopened after it was last closed and counts a
-    // resolution that never finished.
+    // Every reopen sits BETWEEN two closes. The one before it is what makes it
+    // a reopen at all -- the walk ignores a reopen from OPEN -- and the one
+    // after it is what closes the episode it began. Asserted as both, because
+    // checking only "a close exists" passed on a fixture where the reopen came
+    // first and no episode was ever started.
     foreach ($events->where('action', 'conversation.reopened') as $reopen) {
-        $close = $events->first(fn (AuditEvent $e): bool => $e->action === 'conversation.closed'
+        $closes = $events->filter(fn (AuditEvent $e): bool => $e->action === 'conversation.closed'
             && (int) $e->subject_id === (int) $reopen->subject_id);
 
-        expect($close)->not->toBeNull('a conversation was reopened and never closed')
-            ->and($reopen->occurred_at->lessThanOrEqualTo($close->occurred_at))
-            ->toBeTrue('a conversation was reopened after the close it precedes');
+        expect($closes->filter(fn (AuditEvent $e): bool => $e->occurred_at->lessThanOrEqualTo($reopen->occurred_at)))
+            ->not->toBeEmpty('a conversation was reopened without having been closed first');
+
+        expect($closes->filter(fn (AuditEvent $e): bool => $e->occurred_at->greaterThanOrEqualTo($reopen->occurred_at)))
+            ->not->toBeEmpty('a conversation was reopened and never closed again');
     }
 });
 
