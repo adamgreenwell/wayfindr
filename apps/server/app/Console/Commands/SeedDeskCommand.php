@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\ReaderNumber;
+use App\Support\Reporting\ReportingWindow;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -1236,7 +1237,14 @@ final class SeedDeskCommand extends Command
      */
     private function warnAboutRecordingBoundaries(int $months): void
     {
-        $seededFrom = Carbon::now()->subMonths($months);
+        // Compared against the LONGEST report anyone can select, not against
+        // the twelve months this desk covers. `historyIsPartial()` measures the
+        // boundary against the chosen window, and the choices stop at 90 days
+        // -- so a boundary six months back sits inside the seeded span and
+        // still leaves every available report complete. Warning on the span
+        // would have turned into a permanent false positive as installs age,
+        // which is how a warning teaches people to ignore it.
+        $longestReport = Carbon::now()->subDays(max(ReportingWindow::CHOICES));
 
         $boundaries = OperatorSetting::query()
             ->whereIn('key', [
@@ -1245,7 +1253,7 @@ final class SeedDeskCommand extends Command
             ])
             ->pluck('value', 'key')
             ->filter(fn ($value): bool => is_string($value) && $value !== '')
-            ->filter(fn (string $value): bool => Carbon::parse($value)->greaterThan($seededFrom));
+            ->filter(fn (string $value): bool => Carbon::parse($value)->greaterThan($longestReport));
 
         if ($boundaries->isEmpty()) {
             return;
@@ -1255,8 +1263,9 @@ final class SeedDeskCommand extends Command
         $this->components->warn(
             'This install records lifecycle history only from '
             .$boundaries->map(fn (string $value): string => Carbon::parse($value)->toDateString())->implode(' and ')
-            .', which is later than the '.$months.' months this desk covers. The report tabs will mark '
-            .'themselves partial and report resolution durations as unmeasurable for anything older. '
+            .', which is inside the longest report window anyone can select ('.max(ReportingWindow::CHOICES)
+            .' days). The report tabs will mark themselves partial and report resolution durations as '
+            .'unmeasurable for anything older, even though this desk covers '.$months.' months. '
             .'Those settings belong to every account on this install, so this command will not move them. '
             .'A measurement install with no history recorded before the desk existed reports it whole.'
         );

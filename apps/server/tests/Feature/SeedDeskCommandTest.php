@@ -897,6 +897,25 @@ test('it says when this install will report the desk as partial', function (): v
         ->not->toBeNull('the seeder moved an installation-wide reporting boundary');
 });
 
+test('it says nothing about a boundary no report can reach', function (): void {
+    // The false positive this warning invited. A boundary six months back sits
+    // inside the twelve months the desk covers, so comparing against the seeded
+    // span warned about it -- but `historyIsPartial()` measures the boundary
+    // against the SELECTED window, and the choices stop at 90 days. Every
+    // available report is complete in that case, and the warning was wrong.
+    //
+    // It gets truer as installs age, which is the worst shape for a warning:
+    // eventually it fires on every run and teaches people to skip the output.
+    OperatorSetting::query()->create([
+        'key' => 'reporting.ticket_lifecycle_recording_began_at',
+        'value' => now()->subMonths(6)->toIso8601String(),
+    ]);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1, '--fresh' => true])
+        ->doesntExpectOutputToContain('records lifecycle history only from')
+        ->assertSuccessful();
+});
+
 test('it says nothing about boundaries a measurement install does not have', function (): void {
     // The documented case: no history recorded before the desk existed, so
     // nothing to warn about. A warning on every run is noise that teaches
