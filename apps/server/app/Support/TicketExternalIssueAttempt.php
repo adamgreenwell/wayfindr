@@ -93,6 +93,13 @@ final /*
      */
     private static function auditEventsForTicket(Ticket $ticket, ?Collection $auditEvents = null): Collection
     {
+        // Queried unless the CALLER hands over a collection, and deliberately
+        // not `relationLoaded()`. Loaded is not the same as loaded with these
+        // rows: the ticket detail page eager-loads `auditEvents` constrained to
+        // `ticket.note_added`, which is not a tracked action, so reusing it
+        // because it happens to be present reports "no external attempt yet" on
+        // a ticket whose latest attempt is an event. Only a caller knows whether
+        // its own eager load matches this scope.
         $auditEvents ??= $ticket->auditEvents()
             ->whereIn('action', TicketExternalIssueState::trackedAuditActions())
             ->get();
