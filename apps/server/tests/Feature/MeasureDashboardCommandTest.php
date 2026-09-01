@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
 
@@ -595,6 +596,56 @@ test('the same fixture measures the same bytes after a reseed', function (): voi
     foreach ($first as $page => $bytes) {
         expect(abs($second[$page] - $bytes))
             ->toBeLessThanOrEqual(64, "{$page} measured {$bytes} then {$second[$page]} for the same fixture");
+    }
+});
+
+test('it leaves the router pointing where the caller left it', function (): void {
+    // Each synthetic dispatch replaces the router's current route PROCESS-WIDE.
+    // Restoring the container's `request` binding does not touch it, so a
+    // caller invoked mid-request -- `Artisan::call()` from a controller -- was
+    // left with `Route::current()`, `currentRouteName()` and `Route::is()` all
+    // answering for the last dashboard page this command measured.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    $agent = User::query()->firstOrFail();
+
+    // Put the router somewhere real first, the way a request would.
+    $this->actingAs($agent)->get('/dashboard/conversations')->assertOk();
+
+    $before = Route::currentRouteName();
+
+    expect($before)->not->toBeNull('the router was not on a route, so this asserts nothing');
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(Route::currentRouteName())
+        ->toBe($before, 'the command left the router on the page it measured');
+});
+
+test('the published baseline names every page the command measures', function (): void {
+    // The table listed five of seven: the search and assigned-to-me lanes were
+    // measured on every run and published nowhere, so an operator following the
+    // documented command got two figures with no committed value to compare
+    // against. Adding a target is the moment this drifts, so the document is
+    // asserted against the command rather than against a copy of its list.
+    $baseline = file_get_contents(base_path('../../docs/self-hosting/performance-baseline.md'));
+
+    expect($baseline)->not->toBeFalse('the baseline document was not found');
+
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+    expect(Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--json' => true]))->toBe(0);
+
+    $measured = collect(json_decode(Artisan::output(), true)['pages'])->pluck('page');
+
+    expect($measured)->toHaveCount(7);
+
+    foreach ($measured as $page) {
+        // `str_contains` rather than `toContain($page, $message)`: that matcher
+        // is VARIADIC, so the failure message is read as a second needle and
+        // the assertion asks for both. Written the natural way it failed on a
+        // document that was correct.
+        expect(str_contains($baseline, $page))
+            ->toBeTrue("the baseline does not publish a figure for '{$page}', which the command measures");
     }
 });
 

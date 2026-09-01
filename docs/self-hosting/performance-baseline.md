@@ -85,9 +85,17 @@ At 50,000 conversations:
 | --- | ---: | ---: | ---: |
 | Conversation queue (open) | 4,598 | 21 | 39.0 MB |
 | Conversation queue (closed) | 25,108 | 15 | 192.8 MB |
+| Conversation queue (search) | 628 | 21 | 3.5 MB |
+| Conversation queue (mine) | 415 | 21 | 2.5 MB |
 | Ticket queue (open) | 2,320 | 18 | 21.0 MB |
 | Ticket queue (all) | 6,928 | 18 | 62.8 MB |
 | **Conversation detail** | **11** | **26** | **148 KB** |
+
+All seven, because the command measures seven: a table listing fewer than the
+documented command prints leaves an operator with figures they cannot compare
+against anything. The two filtered lanes are cheap for the reason the open lane
+is — they match fewer rows, and it is the same unpaginated query with a narrower
+`where`.
 
 ### How it grows
 

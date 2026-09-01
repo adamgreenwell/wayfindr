@@ -11,11 +11,14 @@ use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Route as RoutingRoute;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
+use ReflectionProperty;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -96,6 +99,14 @@ final class MeasureDashboardCommand extends Command
         // stayed bound afterwards -- and anything reading `request()` in that
         // process then read a benchmark's request instead of its own.
         $callerRequest = app()->bound('request') ? app('request') : null;
+
+        // And the ROUTER's idea of where it is. Each synthetic dispatch replaces
+        // it process-wide, so restoring only the container's `request` left
+        // `Route::current()`, `currentRouteName()` and `Route::is()` answering
+        // for the last dashboard page this command measured -- and a caller
+        // invoked mid-request makes routing decisions against that.
+        $callerRoute = Route::getCurrentRoute();
+        $callerRouteRequest = Route::getCurrentRequest();
 
         // And the SESSION. `Auth::setUser()` no longer migrates it, but the
         // synthetic requests still pass through `StartSession`, which starts
@@ -210,6 +221,8 @@ final class MeasureDashboardCommand extends Command
             $callerRequest === null
                 ? app()->forgetInstance('request')
                 : app()->instance('request', $callerRequest);
+
+            $this->restoreRouterTo($callerRoute, $callerRouteRequest);
 
             // STARTED, then filled. Each synthetic request's `StartSession`
             // save leaves the shared store stopped, so putting back the id and
@@ -478,6 +491,32 @@ final class MeasureDashboardCommand extends Command
      * `dispatch()`. Failing here must not mask the measurement, so a store that
      * cannot destroy is reported and the rest are still attempted.
      */
+    /**
+     * Put the router's current route and request back.
+     *
+     * By reflection, because `Router` exposes `getCurrentRoute()` and
+     * `getCurrentRequest()` and no setter for either -- the properties are
+     * assigned during dispatch and nowhere else. Rebinding the router instead
+     * would discard every registered route.
+     *
+     * Failure is swallowed on purpose. If a future framework renames these, the
+     * measurement is still correct and the only loss is a restoration nothing
+     * in a CLI run depends on; throwing here would fail a benchmark over its
+     * own tidying.
+     */
+    private function restoreRouterTo(?RoutingRoute $route, ?Request $request): void
+    {
+        $router = app('router');
+
+        foreach (['current' => $route, 'currentRequest' => $request] as $property => $value) {
+            try {
+                (new ReflectionProperty($router, $property))->setValue($router, $value);
+            } catch (Throwable) {
+                // Left as the measurement found it.
+            }
+        }
+    }
+
     private function purgeSessions(): void
     {
         $handler = Session::getHandler();
