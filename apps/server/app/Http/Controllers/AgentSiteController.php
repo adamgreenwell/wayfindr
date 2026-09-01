@@ -709,7 +709,11 @@ class AgentSiteController extends Controller
             // every agent watching cannot know which language each of them
             // reads.
             'presenceLabels' => collect(VisitorPresence::states())
-                ->mapWithKeys(fn (string $state): array => [$state => VisitorPresence::label($state)])
+                // From the CATALOGUE, not from the support class. The class
+                // deliberately answers in English because it can be reached
+                // where no request has scoped a locale; a surface translating a
+                // state is the only thing that may consult `presence.php`.
+                ->mapWithKeys(fn (string $state): array => [$state => __('presence.'.$state)])
                 ->all(),
         ]);
     }

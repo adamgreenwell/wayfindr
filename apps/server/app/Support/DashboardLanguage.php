@@ -125,6 +125,11 @@ final class DashboardLanguage
         'dashboard.account.api-tokens.index',
         'dashboard.account.api-tokens.store',
         'dashboard.account.api-tokens.destroy',
+
+        // The live-visitors board. Most of this page's copy is rendered by its
+        // SCRIPT rather than by Blade, which is why it needed no new mechanism
+        // and does need the render audit to open it with the board populated.
+        'dashboard.sites.live',
     ];
 
     /**

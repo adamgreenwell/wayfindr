@@ -139,8 +139,34 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
     // and should.
     $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
     $agentFor = fn (Account $a): User => User::factory()->for($a)->create(['name' => 'Sender Datenpunkt']);
-    $site = Site::factory()->for($account)->create(['name' => 'Acme Datenpunkt Docs']);
-    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-datenpunkt']);
+    // Presence REPORTING on, or the live board renders its disabled notice and
+    // nothing else -- no table, no rows, no script. The first version of this
+    // world left it off and the audit measured one paragraph of a page whose
+    // copy is mostly in the other branch.
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Datenpunkt Docs',
+        'settings' => ['presence' => ['enabled' => true]],
+    ]);
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-datenpunkt',
+        // A name of its own rather than faker's, because the live board renders
+        // it and a guard has to be able to find it.
+        'name' => 'Acme Datenpunkt Person',
+        // On the site NOW, so the live board has a row rather than its empty
+        // state. Named, so the row reaches the branch that links to a profile
+        // and counts conversations.
+        'last_web_seen_at' => now()->subMinute(),
+        // The board reads the page address out of metadata, not a column.
+        'metadata' => ['last_page_url' => 'https://acme.example/datenpunkt/preise'],
+    ]);
+
+    // And a second, never in touch, which is a different row: no link, no
+    // name, and the "not in touch yet" sentence instead of a count.
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-datenpunkt-stranger',
+        'last_web_seen_at' => now()->subMinutes(2),
+        'presence_only' => true,
+    ]);
 
     // NOT range(1, $conversations): PHP counts DOWN when the end is lower
     // than the start, so range(1, 0) is [1, 0] and an "empty" world got two
@@ -1310,6 +1336,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.reply-templates.index'),
         route('dashboard.account.labels.index'),
         route('dashboard.account.api-tokens.index'),
+        route('dashboard.sites.live', $world['site']),
         route('dashboard.account.articles.index'),
         // The DETAIL page explicitly. The prefix match above would let it pass
         // on the index's coverage without ever rendering it -- which the loop's
@@ -2543,6 +2570,9 @@ test('every catalogue file answers the same set of keys', function (): void {
         'ticket_labels.list.column_slug = Slug',
         'api_tokens.list.column_name = Name',
         'api_tokens.list.column_token = Token',
+        // An em dash. Punctuation rather than a word, and in the catalogue so a
+        // language that prefers a different dash can say so.
+        'sites_live.duration.unknown = —',
     ];
 
     expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],
@@ -4369,4 +4399,235 @@ test('an API token is announced as the account\'s words, not the agent\'s langua
 
     expect($heading)->not->toBeNull('the tokens heading did not render')
         ->and($heading->hasAttribute('lang'))->toBeFalse('the page\'s own heading was reset along with the account\'s data');
+});
+
+test('the live board\'s script speaks the agent language', function (): void {
+    // MOST of this page's copy is in its script, and the render audit cannot
+    // see a word of it: `conversationQueueLanguageVisibleText` strips
+    // `<script>` before it looks at anything, deliberately, because script
+    // bodies are not copy on every other page in the dashboard.
+    //
+    // So the audit passing on this route proves the table and the notices and
+    // nothing about the board's live state -- the reconnect notice, the
+    // durations, the empty page cell, the "not in touch yet" row. Those are
+    // rendered into one object by Blade, and this reads that object.
+    config([
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.options.host' => 'wayfindr.example.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+    ]);
+
+    $world = conversationQueueLanguageWorld();
+
+    $copyFor = function (User $agent) use ($world): array {
+        $html = (string) $this->actingAs($agent)
+            ->get(route('dashboard.sites.live', $world['site']))->assertOk()->getContent();
+
+        $this->assertStringContainsString('data-live-board', $html,
+            'the board did not render, so its script never ran');
+
+        // BOTH objects the script gets its words from. `copy` is this page's
+        // own strings; `labels` is the presence vocabulary, handed over by the
+        // controller because one socket message reaches every agent watching
+        // and they do not all read the same language.
+        //
+        // Reading only `copy` left the controller free to go back to the
+        // English support class with the whole suite green -- the labels are
+        // rendered into the script, and the audit strips scripts.
+        $objects = [];
+
+        foreach (['copy', 'labels'] as $name) {
+            $matched = preg_match('/var '.$name.' = (\{.*?\});/s', $html, $found);
+
+            expect($matched)->toBe(1, "the script no longer declares `{$name}`; this guard is reading nothing");
+
+            $decoded = json_decode($found[1], true);
+
+            expect($decoded)->toBeArray()->not->toBeEmpty();
+
+            foreach ($decoded as $key => $value) {
+                $objects[$name.'.'.$key] = $value;
+            }
+        }
+
+        return $objects;
+    };
+
+    $german = $copyFor($world['admins']['de']);
+    $english = $copyFor($world['admins']['en']);
+
+    expect(array_keys($german))->toBe(array_keys($english), 'the two renders declare different copy keys');
+
+    // An em dash is punctuation. Everything else on both objects, including
+    // all four presence states, has to differ.
+    $identicalIsCorrect = ['copy.unknown_duration'];
+
+    $untranslated = [];
+
+    foreach ($german as $key => $value) {
+        if (in_array($key, $identicalIsCorrect, true)) {
+            continue;
+        }
+
+        if ($value === $english[$key]) {
+            $untranslated[] = "{$key} = {$value}";
+        }
+    }
+
+    expect($untranslated)->toBe([], implode("\n", [
+        'These reach the board in English on a German page:',
+        ...$untranslated,
+        '',
+        'The render audit cannot see them -- it strips <script> -- so this is',
+        'the only thing that will.',
+    ]));
+
+    // And the one that is meant to be identical still is, or the exception
+    // above is excusing something that has started to differ.
+    expect($german['copy.unknown_duration'])->toBe($english['copy.unknown_duration']);
+});
+
+test('the live board announces the account\'s words as its own', function (): void {
+    // Three fragments on this page belong to the account and not to the agent:
+    // the site's name inside our heading, the visitor's name, and the address
+    // of the page they are on. The document declares the agent's language, so
+    // each is reset to `lang=""` -- HTML's "unknown".
+    //
+    // The heading is the interesting one. It MIXES the two, so neither
+    // `titleLang` nor leaving it bare is right: `x-page-header` takes a slot so
+    // the catalogue keeps the word order and only the site's name is marked.
+    $world = conversationQueueLanguageWorld();
+
+    $html = (string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.sites.live', $world['site']))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $regions = [
+        'the site name inside the heading' => '//h1/span',
+        'the visitor name' => '//span[normalize-space(text())="Acme Datenpunkt Person"]',
+        'the page the visitor is on' => '//code[contains(text(), "datenpunkt/preise")]',
+    ];
+
+    foreach ($regions as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class);
+
+        expect($node->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so it is announced in the agent language");
+
+        expect($node->getAttribute('lang'))->toBe('');
+    }
+
+    // The heading's OWN words are not reset with the fragment inside it, which
+    // is the whole reason this is a slot rather than `title-lang=""`.
+    $heading = $xpath->query('//h1')->item(0);
+
+    expect($heading)->not->toBeNull()
+        ->and($heading->hasAttribute('lang'))->toBeFalse('the whole heading was marked unknown, not just the site name');
+
+    // And it reads as the whole German sentence with the site's name in the
+    // place the catalogue puts it -- which is the thing a slot can get wrong by
+    // rendering the fragment and dropping our half, or the other way round.
+    expect(trim((string) preg_replace('/\s+/u', ' ', $heading->textContent)))
+        ->toBe(__('sites_live.heading', ['site' => $world['site']->name], 'de'));
+});
+
+test('the live count is grouped for the reader and raw for the script', function (): void {
+    // Grouping the count broke the board. The script initialises and resyncs
+    // `presentTotal` from the element, and a grouped string is not a number any
+    // more: `Number('1.000')` is 1 for a German agent and `Number('1,000')` is
+    // NaN for an English one, so the next socket event or fifteen-second
+    // refresh collapsed the total toward the rendered rows.
+    //
+    // FOUR FIGURES, built here rather than assumed. Under a thousand nothing is
+    // grouped, so the shared world's three visitors pass this whether or not
+    // the split exists -- which is how the defect got past a green suite in the
+    // first place.
+    $world = conversationQueueLanguageWorld();
+
+    $seen = now()->subMinute();
+    $rows = [];
+
+    for ($i = 0; $i < 1200; $i++) {
+        $rows[] = [
+            'site_id' => $world['site']->id,
+            'anonymous_id' => 'anon-crowd-'.$i,
+            'metadata' => '[]',
+            'last_seen_at' => $seen,
+            'last_web_seen_at' => $seen,
+            'created_at' => $seen,
+            'updated_at' => $seen,
+        ];
+    }
+
+    // One statement rather than 1200 model saves: the point is the size of the
+    // number, not the shape of the rows.
+    Visitor::query()->insert($rows);
+
+    $html = (string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.sites.live', $world['site']))->assertOk()->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $count = $xpath->query('//*[@data-live-count]')->item(0);
+
+    expect($count)->not->toBeNull('the live count did not render')
+        ->and($count)->toBeInstanceOf(DOMElement::class);
+
+    $raw = $count->getAttribute('data-live-total');
+    $shown = trim($count->textContent);
+
+    expect($count->hasAttribute('data-live-total'))
+        ->toBeTrue('the script has nothing to read but the reader-facing text');
+
+    expect($raw)->toMatch('/^\d+$/', 'the machine-readable total is grouped too, so the script still cannot parse it');
+    expect((int) $raw)->toBeGreaterThan(999, 'the fixture did not reach the size where grouping happens');
+
+    // The reader's number IS grouped, or this test is passing on a page that
+    // never had the problem.
+    expect($shown)->not->toBe($raw, 'the count was not grouped for the reader, so this proves nothing');
+
+    // And the German grouping is exactly what JavaScript would misread as 1.
+    expect($shown)->toContain('.');
+});
+
+test('nothing in the live board parses a number out of rendered text', function (): void {
+    // The count is grouped for the reader, so the rendered text is not a number
+    // any more. Two places read it back and I fixed one: start-up took the new
+    // attribute while `resyncBoard()` kept parsing the fetched snapshot's TEXT,
+    // so the corruption moved from page load to every resync.
+    //
+    // Source-level and pattern-based, because that is the shape of the mistake:
+    // I swept for the variable I knew (`countEl`) rather than for what the code
+    // was doing, and the second site used a different name.
+    $source = (string) file_get_contents(
+        resource_path('views/agent/sites/live.blade.php')
+    );
+
+    // Comments describe the trap; they are not the trap.
+    $code = (string) preg_replace('#//[^\n]*#', '', $source);
+
+    $matched = preg_match_all('/(?:Number|parseInt|parseFloat)\s*\(\s*[A-Za-z_$][\w$.]*\.textContent/', $code, $found);
+
+    expect($matched)->toBe(0, implode("\n", [
+        'A number is being parsed out of text that is grouped for the reader:',
+        ...($found[0] ?? []),
+        '',
+        'Read `data-live-total` instead. `Number("1.000")` is 1 and',
+        '`Number("1,000")` is NaN.',
+    ]));
+
+    // And the guard can still see the shape it is looking for, or a rename
+    // would quietly retire it.
+    expect(preg_match('/(?:Number|parseInt|parseFloat)\s*\(\s*[A-Za-z_$][\w$.]*\.textContent/', 'x = Number(freshCount.textContent) || 0;'))
+        ->toBe(1, 'the pattern no longer recognises the call it was written for');
 });
