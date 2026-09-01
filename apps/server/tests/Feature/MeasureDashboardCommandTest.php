@@ -516,11 +516,19 @@ test('it measures a conversation an agent would actually open', function (): voi
 
     $detail = collect(json_decode(Artisan::output(), true)['pages'])->firstWhere('page', 'Conversation detail');
 
-    $newest = Conversation::query()->orderByDesc('last_message_at')->orderByDesc('id')->firstOrFail();
+    // The most recently active OPEN one: the queue measured beside it shows
+    // open conversations by default, so a closed control is a page reached from
+    // a lane nobody is timing.
+    $newest = Conversation::query()->where('status', 'open')
+        ->orderByDesc('last_message_at')->orderByDesc('id')->firstOrFail();
     $oldest = Conversation::query()->orderBy('last_message_at')->firstOrFail();
 
     expect($newest->support_code)->not->toBe($oldest->support_code, 'the fixture has no spread of activity');
 
     expect($detail['uri'])->toContain($newest->support_code)
         ->and($detail['uri'])->not->toContain($oldest->support_code);
+
+    // And it really is open, or this asserts nothing about the lane.
+    expect(Conversation::query()->where('status', 'closed')->count())
+        ->toBeGreaterThan(0, 'the fixture has no closed conversations to have picked by mistake');
 });

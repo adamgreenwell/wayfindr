@@ -430,11 +430,17 @@ final class MeasureDashboardCommand extends Command
         // default fixture that last row also carries the balancing message delta
         // and no ticket, so it was the least representative conversation
         // available.
-        $conversation = Conversation::query()
+        $visible = Conversation::query()
             ->whereIn('site_id', Site::query()->visibleToAgent($agent)->select('id'))
             ->orderByDesc('last_message_at')
-            ->orderByDesc('id')
-            ->first();
+            ->orderByDesc('id');
+
+        // An OPEN one, because the queue measured beside it shows open
+        // conversations by default -- so the control was a page reached from a
+        // lane nobody was timing. Falls back to any conversation on a desk that
+        // has closed everything, where measuring something beats measuring
+        // nothing.
+        $conversation = (clone $visible)->where('status', 'open')->first() ?? $visible->first();
 
         // The TICKET pages do not need one, and an agent can hold tickets
         // without a visible conversation. Returning nothing when there is no
