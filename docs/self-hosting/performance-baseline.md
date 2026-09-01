@@ -8,8 +8,9 @@ This page is the first answer to the question a self-hosted `1.0` has to be able
 to answer: *how much can it take?*
 
 **The short version: the conversation and ticket queues do not paginate, and at
-a year of real traffic they stop being usable.** The conversation detail page is
-fine and stays fine. Numbers below.
+a year of real traffic they stop being usable.** Measuring also turned up an N+1
+on the ticket queue, now fixed — 12,518 queries down to 18. The conversation
+detail page is fine and stays fine. Numbers below.
 
 ## Reproducing this
 
@@ -28,9 +29,9 @@ Every figure on this page was taken with `--runs=3`.
 
 **Timings are taken with query logging OFF.** Laravel's query log allocates and
 retains an entry per query, so measuring with it on charges the page for the
-measuring — and that overhead grows with query count, which is exactly the axis
-the ticket queue's N+1 sits on. Query counts come from a separate, untimed
-request.
+measuring — and that overhead grows with query count, which mattered most on the
+ticket queue before its N+1 was fixed. Query counts come from a separate,
+untimed request.
 
 **Read the milliseconds as approximate and the other two as near-exact.** Query
 counts are deterministic. Response sizes are stable to within a few bytes on a
@@ -82,11 +83,11 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,642 | 21 | 37.7 MB |
-| Conversation queue (closed) | 25,477 | 15 | 186.0 MB |
-| Ticket queue (open) | 3,187 | 4,185 | 20.9 MB |
-| Ticket queue (all) | 9,503 | 12,518 | 62.5 MB |
-| **Conversation detail** | **12** | **26** | **148 KB** |
+| Conversation queue (open) | 4,598 | 21 | 39.0 MB |
+| Conversation queue (closed) | 25,108 | 15 | 192.8 MB |
+| Ticket queue (open) | 2,320 | 18 | 21.0 MB |
+| Ticket queue (all) | 6,928 | 18 | 62.8 MB |
+| **Conversation detail** | **11** | **26** | **148 KB** |
 
 ### How it grows
 
@@ -95,13 +96,16 @@ them:
 
 | Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 136 ms | 499 ms | 3.9 MB | 215 ms | 268 | 14 ms / 26 q |
-| 5,000 | 545 ms | 2,472 ms | 19.3 MB | 950 ms | 1,268 | 13 ms / 26 q |
-| 25,000 | 2,659 ms | 13,269 ms | 96.0 MB | 5,108 ms | 6,268 | 14 ms / 26 q |
-| 50,000 | 4,642 ms | 25,477 ms | 186.0 MB | 9,503 ms | 12,518 | 12 ms / 26 q |
+| 1,000 | 109 ms | 456 ms | 3.9 MB | 139 ms | 18 | 11 ms / 26 q |
+| 5,000 | 479 ms | 2,258 ms | 19.3 MB | 674 ms | 18 | 12 ms / 26 q |
+| 25,000 | 2,324 ms | 11,811 ms | 96.3 MB | 3,402 ms | 18 | 11 ms / 26 q |
+| 50,000 | 4,598 ms | 25,108 ms | 192.8 MB | 6,928 ms | 18 | 11 ms / 26 q |
 
-The last column is the control, and it is the point: the same page, at fifty
-times the data, costs the same.
+Two columns do not move. The last one is the control and always was: the same
+page, at fifty times the data, costs the same. **Ticket queries** joined it when
+the N+1 was fixed — that column read 268, 1,268, 6,268, 12,518 before, one query
+per ticket, and it is now flat at 18 while the milliseconds beside it still climb
+with the rows the page renders.
 
 ## What that means
 
@@ -114,40 +118,47 @@ ticket matching the current filters is queried, hydrated and rendered into one
 response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane
-is **186 MB of HTML** — a response no browser will render pleasantly and many
+is **193 MB of HTML** — a response no browser will render pleasantly and many
 proxies will refuse outright, arriving after twenty-five seconds. The open lane
 is better only because a desk that is keeping up has fewer open rows; it is the
 same query with a narrower `where`.
 
 Response size is the number to watch here rather than milliseconds. The server
-builds 186 MB in twenty-five seconds; the browser then has to parse it.
+builds 193 MB in twenty-five seconds; the browser then has to parse it.
 
-### The ticket queue issues one query per ticket
+### The ticket queue used to issue one query per ticket
 
-12,518 queries to render the ticket list, of which **12,499 are the same query**
-— one per ticket:
+Fixed in #838 while this page was being written, and recorded because the size
+of the difference is the argument for measuring at all:
+
+| Ticket queue (all), 50,000 conversations | Queries | ms |
+| --- | ---: | ---: |
+| Before | 12,518 | 9,503 |
+| After | **18** | **6,928** |
+
+The queue eagerly loaded each ticket's lifecycle events and then threw that work
+away: the helper reading them went to the relation rather than to what had
+already been loaded, so every ticket paid for its own query.
 
 ```sql
 select * from "audit_events"
 where "subject_type" = ? and "subject_id" = ? and "action" in (...)
 ```
 
-One per ticket, lazily loaded while rendering. This is an N+1, and it is the
-reason the ticket queue is slower than the conversation queue despite holding a
-quarter as many rows. It would be invisible on a demo install and severe on a
-busy one — and unlike the pagination issue, it does not need a large desk to be
-worth fixing, only a large enough one to notice.
+Two things are worth carrying forward from it. **The 12,499 wasted queries each
+returned nothing**, because this fixture writes no audit events — they cost a
+round trip and an index probe and no hydration, so on an install with real
+lifecycle history the same defect was costing more than the numbers above show.
+And **the fix was one missing condition**: of three helpers reading that
+relation, two asked whether it was already loaded and one did not.
 
-**The figure above is a floor, not a typical value.** The fixture writes no
-audit events, so all 12,499 of those queries return nothing: they cost a round
-trip and an index probe and no more. On an install with real lifecycle history
-each one returns rows to hydrate into models, so the same page is more expensive
-there than it is here. The query *count* is exact and the milliseconds are the
-best case.
+What remains is the pagination problem, which the ticket queue shares with the
+conversation queue: 18 queries is the right number, and it still renders every
+matching row into one response.
 
 ### The conversation detail page is fine
 
-12-14 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
+11-12 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
 to 50,000. The queries and the response size do not move at all; the
 milliseconds vary by a millisecond or two between runs, which is the noise floor
 on a page this cheap. Its cost is bounded by one conversation's own messages
@@ -192,9 +203,12 @@ Stated because a baseline with silent gaps is worse than one with named ones:
 ## What this does not say
 
 It does not say Wayfindr is slow. It says two specific pages are unbounded, one
-of them additionally holds an N+1, and one page that could have been either is
-neither.
+of them held an N+1 that has since been fixed, and one page that could have been
+either is neither.
 
-Fixing any of that is deliberately not part of taking this measurement. The
-point of a baseline is to exist before the change, so the next set of numbers
-can be compared rather than guessed at.
+Fixing it was not the point of taking the measurement — but the ticket queue's
+N+1 was fixed before this page was published, and the figures here were then
+taken again against the same fixture. That is the baseline doing its job in
+miniature: 12,518 queries became 18, and the claim is a subtraction rather than
+an impression. The pagination problem is left standing on purpose, so the next
+set of numbers has something to be compared against.
