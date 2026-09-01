@@ -75,6 +75,11 @@ return [
             'Status',
             'Label',
             'Labels',
+
+            // The URL-safe identifier, and the word German technical writing
+            // uses for it. `Kürzel` means an abbreviation and would describe
+            // the wrong thing beside a column showing `vip-customer`.
+            'Slug',
             'Normal',
             'System',
             ':count ms',
@@ -97,6 +102,8 @@ return [
             'Bug',
             'Payload',
             'Viewport',
+            // The URL-safe identifier; Italian technical writing borrows it.
+            'Slug',
 
             // The DOM/keyboard sense, which Italian borrows. `Messa a
             // fuoco` is the OPTICAL sense and would be wrong here -- this

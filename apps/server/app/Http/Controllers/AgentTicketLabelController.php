@@ -51,7 +51,7 @@ class AgentTicketLabelController extends Controller
 
         return redirect()
             ->route('dashboard.account.labels.index')
-            ->with('status', 'Ticket label created.');
+            ->with('status', 'ticket_labels.flash.created');
     }
 
     public function update(Request $request, TicketLabel $ticketLabel): RedirectResponse
@@ -71,7 +71,7 @@ class AgentTicketLabelController extends Controller
 
         return redirect()
             ->route('dashboard.account.labels.index')
-            ->with('status', 'Ticket label renamed.');
+            ->with('status', 'ticket_labels.flash.renamed');
     }
 
     public function destroy(Request $request, TicketLabel $ticketLabel): RedirectResponse
@@ -90,7 +90,7 @@ class AgentTicketLabelController extends Controller
 
         return redirect()
             ->route('dashboard.account.labels.index')
-            ->with('status', 'Unused ticket label deleted.');
+            ->with('status', 'ticket_labels.flash.deleted');
     }
 
     private function authorizeManageLabel(mixed $agent, TicketLabel $ticketLabel): void
