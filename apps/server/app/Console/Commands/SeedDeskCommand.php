@@ -418,7 +418,14 @@ final class SeedDeskCommand extends Command
                     // Varied, not uniform. Every conversation holding exactly
                     // six messages makes the detail page's cost a constant, and
                     // the long ones are where it is worth knowing.
-                    $count = max(1, $messagesEach + ($index % 5) - 2);
+                    //
+                    // The spread is narrowed rather than CLAMPED, so the average
+                    // stays what was asked for. `max(1, $n + $i % 5 - 2)` gave
+                    // `--messages=1` the counts 1,1,1,2,3 -- an average of 1.6
+                    // against an advertised 1, which is exactly the wrong thing
+                    // to get wrong in a fixture whose size is reported.
+                    $spread = max(0, min(2, $messagesEach - 1));
+                    $count = $messagesEach + ($index % (2 * $spread + 1)) - $spread;
 
                     // Roughly a third, independent of everything else.
                     $unread = self::mix((int) $conversation->id, 'unread', 3) === 0;
@@ -634,7 +641,14 @@ final class SeedDeskCommand extends Command
      */
     private static function isSeededAgentAddress(string $email): bool
     {
-        return str_starts_with($email, self::AGENT_PREFIX) && str_ends_with($email, self::AGENT_SUFFIX);
+        // The whole shape, including the INDEX. Checking the affixes alone
+        // accepted `desk-agent-owner@example.test`, which this command never
+        // creates -- so a real person on an account at the reserved slug could
+        // be read as one of ours and deleted with it.
+        return preg_match(
+            '/^'.preg_quote(self::AGENT_PREFIX, '/').'\d+'.preg_quote(self::AGENT_SUFFIX, '/').'$/',
+            $email,
+        ) === 1;
     }
 
     /**

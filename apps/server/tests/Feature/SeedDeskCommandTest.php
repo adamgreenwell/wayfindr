@@ -288,6 +288,42 @@ test('running twice without --fresh refuses before it changes anything', functio
         ->toBe($passwords, 'the failed run rehashed the existing agents\' passwords');
 });
 
+test('an address that only looks seeded does not count as provenance', function (): void {
+    // The command creates `desk-agent-<integer>@example.test` and nothing else,
+    // so checking the affixes alone accepted `desk-agent-owner@example.test` --
+    // a real person on an account at the reserved slug, read as one of ours and
+    // deleted with it.
+    $real = Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'A Real Desk']);
+    $person = User::factory()->for($real)->create(['email' => 'desk-agent-owner@example.test']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1, '--fresh' => true])
+        ->assertFailed();
+
+    expect(User::query()->whereKey($person->id)->exists())
+        ->toBeTrue('a real user was deleted because their address resembled a seeded one');
+});
+
+test('--messages is the average it says it is', function (): void {
+    // The spread is narrowed rather than clamped, so a low request keeps its
+    // average. `max(1, $n + $i % 5 - 2)` gave `--messages=1` the counts
+    // 1,1,1,2,3 -- an average of 1.6 against an advertised 1, in a fixture
+    // whose size is reported alongside the timings taken from it.
+    foreach ([1, 2, 6] as $requested) {
+        $this->artisan('wayfindr:seed-desk', [
+            '--conversations' => 60,
+            '--messages' => $requested,
+            '--fresh' => true,
+        ])->assertSuccessful();
+
+        $conversations = Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count();
+        $messages = ConversationMessage::query()->count();
+
+        expect($messages / $conversations)
+            ->toBeGreaterThan($requested - 0.2, "--messages={$requested} averaged below what was asked for")
+            ->toBeLessThan($requested + 0.2, "--messages={$requested} averaged above what was asked for");
+    }
+});
+
 test('fresh still cleans up a half-made desk', function (): void {
     // The provenance check must not strand an operator whose first run was
     // interrupted: an account with no sites and no users is what that looks

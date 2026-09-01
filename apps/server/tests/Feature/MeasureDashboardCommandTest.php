@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
@@ -325,4 +326,27 @@ test('any failed run decides the reported status, not the last one', function ()
 
     // All-good stays good.
     expect($worst(200, 200))->toBe(200);
+});
+
+test('it leaves the caller signed in as whoever they were', function (): void {
+    // In a long-lived process -- `Artisan::call()`, Tinker -- logging in to
+    // measure left everything afterwards authenticated as the measured agent.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    $someoneElse = User::factory()->create();
+
+    Auth::login($someoneElse);
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(Auth::id())
+        ->toBe($someoneElse->id, 'the command left the process authenticated as the agent it measured');
+
+    // And nobody signed in stays nobody signed in.
+    Auth::logout();
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(Auth::check())
+        ->toBeFalse('the command left a process signed in that was not before');
 });

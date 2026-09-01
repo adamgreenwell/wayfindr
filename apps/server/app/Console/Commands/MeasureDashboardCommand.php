@@ -58,6 +58,11 @@ final class MeasureDashboardCommand extends Command
             return self::FAILURE;
         }
 
+        // Whoever was signed in stays signed in. In a long-lived process --
+        // `Artisan::call()`, Tinker -- logging in here left everything
+        // afterwards authenticated as the measured agent.
+        $caller = Auth::user();
+
         Auth::login($agent);
 
         // Inherited state, turned off before anything is timed. Called through
@@ -95,6 +100,8 @@ final class MeasureDashboardCommand extends Command
             if ($wasLogging) {
                 DB::enableQueryLog();
             }
+
+            $caller === null ? Auth::logout() : Auth::login($caller);
         }
     }
 
@@ -254,12 +261,35 @@ final class MeasureDashboardCommand extends Command
         return $seen;
     }
 
+    /**
+     * One request, isolated from the ones around it.
+     *
+     * The outer transaction stops writes surviving the COMMAND; this stops them
+     * surviving the REQUEST. Without it the warm-up's read-state write is
+     * visible to every timed run after it, so the runs measure a conversation
+     * that has already been read while the first visit -- the expensive one, and
+     * the one an agent actually makes -- is the only one discarded.
+     *
+     * NOT covered by a test, and the reason is worth stating rather than
+     * leaving as a gap somebody assumes is filled. The difference is invisible
+     * from outside the command: the query count comes from a request that runs
+     * after the timed ones either way, so it reports the same figure whether or
+     * not the earlier requests were isolated. Observing it would mean reaching
+     * inside the loop, and a test that reaches that far mostly asserts the
+     * shape of the code it is testing.
+     */
     private function send(Kernel $kernel, User $agent, string $uri): Response
     {
         $request = Request::create($uri, 'GET');
         $request->setUserResolver(fn (): User => $agent);
 
-        return $kernel->handle($request);
+        DB::beginTransaction();
+
+        try {
+            return $kernel->handle($request);
+        } finally {
+            DB::rollBack();
+        }
     }
 
     private function agent(): ?User
