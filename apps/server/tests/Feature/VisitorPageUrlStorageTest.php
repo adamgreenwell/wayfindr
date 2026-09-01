@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Account;
+use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -452,4 +453,69 @@ test('the ticket snapshot converges on save too', function (): void {
     $metadata = json_decode((string) DB::table('tickets')->where('id', $ticket->id)->value('metadata'), true);
 
     expect($metadata['visitor_context']['started_page_url'])->toBe('https://shop.test/x');
+});
+
+test('the sweep reaches all four addresses a cobrowse session keeps', function (): void {
+    // Cobrowse is the copy that outlives the rest: pruning strips the heavy
+    // payloads on schedule and keeps the addresses by design, so one written
+    // before the forward fix outlives every other trace of that session.
+    $site = visitorPageUrlSite();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    $session = CobrowseSession::factory()->for($conversation)->create();
+
+    // Planted underneath the model, the way a row written by the old code
+    // would look. Going through the model would sanitise on the way in and
+    // leave nothing for the sweep to find.
+    DB::table('cobrowse_sessions')->where('id', $session->id)->update([
+        'metadata' => json_encode([
+            'page_state' => ['page_url' => 'https://shop.test/reset?token=page-state'],
+            'snapshot' => ['page_url' => 'https://shop.test/reset?token=snapshot'],
+            'mutations' => [
+                'last_page_url' => 'https://shop.test/reset?token=last',
+                'recent_batches' => [
+                    ['page_url' => 'https://shop.test/reset?token=batch-one'],
+                    ['page_url' => 'https://shop.test/reset?token=batch-two'],
+                    ['page_url' => 'https://shop.test/reset?token=batch-three'],
+                ],
+            ],
+        ]),
+    ]);
+
+    StoredPageUrlSweep::run();
+
+    $metadata = json_decode((string) DB::table('cobrowse_sessions')->where('id', $session->id)->value('metadata'), true);
+
+    expect($metadata['page_state']['page_url'])->toBe('https://shop.test/reset')
+        ->and($metadata['snapshot']['page_url'])->toBe('https://shop.test/reset')
+        ->and($metadata['mutations']['last_page_url'])->toBe('https://shop.test/reset');
+
+    // Every batch, not just the first. A wildcard that stopped at its first
+    // hit would leave the rest of the run whole and report success.
+    foreach ($metadata['mutations']['recent_batches'] as $index => $batch) {
+        expect($batch['page_url'])->toBe('https://shop.test/reset', "batch {$index} kept its query string");
+    }
+
+    // And nothing else in the document was disturbed.
+    expect(array_keys($metadata))->toBe(['page_state', 'snapshot', 'mutations']);
+});
+
+test('the cobrowse sweep is idempotent, because it runs twice by design', function (): void {
+    $site = visitorPageUrlSite();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $session = CobrowseSession::factory()->for($conversation)->create();
+
+    DB::table('cobrowse_sessions')->where('id', $session->id)->update([
+        'metadata' => json_encode([
+            'snapshot' => ['page_url' => 'https://shop.test/reset?token=abc'],
+        ]),
+    ]);
+
+    $first = StoredPageUrlSweep::run();
+    $second = StoredPageUrlSweep::run();
+
+    expect($first['cobrowse_sessions'])->toBe(1)
+        ->and($second['cobrowse_sessions'])->toBe(0, 'a clean row must not be rewritten again');
 });
