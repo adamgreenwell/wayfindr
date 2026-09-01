@@ -6,6 +6,7 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\Article;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -30,6 +31,7 @@ use App\Support\TicketExternalIssueAttempt;
 use App\Support\VisitorSessionToken;
 use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\File;
@@ -235,9 +237,23 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         ]);
     }
 
+    // A published article, so the articles DETAIL page has something to render.
+    // Its own title and body are account content and stay identical in both
+    // languages -- the token marks them as data, the way the account name does.
+    $article = Article::factory()->for($account)->create([
+        'title' => 'Acme Datenpunkt Artikel',
+        // The slug is DATA and is rendered on the detail page, so it carries
+        // the token too. Left to the factory it is faker output, which the
+        // guard correctly reports as a string identical in both renders.
+        'slug' => 'acme-datenpunkt-artikel',
+        'body' => 'Acme Datenpunkt.',
+        'published_at' => now(),
+    ]);
+
     return [
         'account' => $account,
         'site' => $site,
+        'article' => $article,
         'agents' => [
             'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt']),
             'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt']),
@@ -1137,7 +1153,13 @@ function conversationQueueLanguageEnglishLeaks(string $germanHtml, string $engli
     // "does this string appear at all", not where or in what language.
     $english = array_flip(array_column(conversationQueueLanguageAnnouncements($englishHtml), 'text'));
 
-    $isData = fn (string $text): bool => str_contains($text, 'Datenpunkt')
+    // The token match is deliberately case-INSENSITIVE. Fixture data does not
+    // always reach the page in the casing it was written in: an article's slug
+    // is `acme-datenpunkt-artikel`, lower-cased by the same slug rule the
+    // product uses, and a marker that only survives in its original casing
+    // stops marking things the moment the product touches them. Nothing this
+    // platform says in English contains `datenpunkt` in any casing.
+    $isData = fn (string $text): bool => stripos($text, 'Datenpunkt') !== false
         || str_contains($text, 'WF-LANG')
         || str_contains($text, 'anon-')
         || str_contains($text, '@')
@@ -1234,6 +1256,11 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
         route('dashboard.account.reply-templates.index'),
         route('dashboard.account.labels.index'),
+        route('dashboard.account.articles.index'),
+        // The DETAIL page explicitly. The prefix match above would let it pass
+        // on the index's coverage without ever rendering it -- which the loop's
+        // own comment names as how `conversations.show` went unaudited.
+        route('dashboard.account.articles.show', $world['article']),
     ];
 
     // Every GET-able extracted route is covered, whether or not it is listed
@@ -1259,6 +1286,32 @@ test('no English is rendered as German on any extracted surface', function (): v
         // as a second argument becomes a second required value and the failure
         // reports the message itself as missing.
         $this->assertTrue($matched, "extracted route not audited: {$name} ({$route->uri()})");
+    }
+
+    // And the same question asked from the other end, which is the direction
+    // that was missing. The loop above proves every extracted route is
+    // rendered here; it cannot notice a route that is rendered here and is no
+    // longer extracted.
+    //
+    // That gap is not theoretical -- deleting the articles routes from
+    // EXTRACTED_ROUTES left this whole file green. The page drops back to
+    // `lang="en"`, the audit only inspects surfaces that ANNOUNCE German, and a
+    // page that stops claiming German stops being looked at. The check and the
+    // behaviour were both defined by the same list, so removing an entry
+    // removed the thing that would have complained.
+    //
+    // `$states` is the deliberate statement of which pages are meant to speak
+    // the agent's language, so it is the honest place to hold that list to.
+    foreach ($states as $url) {
+        $name = app('router')->getRoutes()
+            ->match(Request::create(parse_url($url, PHP_URL_PATH), 'GET'))
+            ->getName();
+
+        $this->assertContains($name, DashboardLanguage::EXTRACTED_ROUTES, implode(' ', [
+            "audited page is not an extracted route: {$name}.",
+            'It renders in English for every agent, and this audit skips it in',
+            'silence because it never announces German.',
+        ]));
     }
 
     foreach ($states as $url) {
@@ -4075,4 +4128,132 @@ test('the queue-pressure count is grouped for the agent, on both renders', funct
 
     expect($german)->toContain('1.000 verworfene Stapel')
         ->and($german)->not->toContain('1,000 verworfene Stapel');
+});
+
+test('an article is announced as the account\'s words, not the agent\'s language', function (): void {
+    // An article is written for VISITORS, so its language is whatever the
+    // account writes in -- which is not the language this admin happens to read
+    // the dashboard in. The extracted page declares the agent's language for
+    // the whole document, so without a reset a screen reader pronounces English
+    // article prose with German phonetics.
+    //
+    // The render audit cannot see this: the article's text is marked as DATA
+    // there, so it is excused from the translation check and nothing looks at
+    // how it is announced.
+    //
+    // Asserted per ELEMENT, not by asking whether the article's words appear
+    // inside SOME `lang=""` node anywhere on the page. The first version did
+    // that, and the title alone is rendered in three marked places -- so
+    // deleting any one of them left another to answer for it and five of six
+    // deletions passed. The strings collide by design; the elements do not.
+    $world = conversationQueueLanguageWorld();
+    $article = $world['article'];
+
+    $xpathFor = function (string $html): DOMXPath {
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+        return new DOMXPath($document);
+    };
+
+    $index = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.index'))->assertOk()->getContent());
+
+    // The CREATION controls as well as the list. Codex found these on the
+    // second pass: the detail page's editor was reset and the create form one
+    // section above it was not, so the same words were announced differently
+    // depending on which form the agent was in.
+    foreach ([
+        'the new-article title field' => '//input[@id="article_title"]',
+        'the new-article body field' => '//textarea[@id="article_body"]',
+        // The query is a search for the account's own words. Its LABEL stays
+        // in the agent's language and is checked below.
+        'the search field' => '//input[@id="article_search"]',
+    ] as $label => $query) {
+        $control = $index->query($query)->item(0);
+
+        expect($control)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($control)->toBeInstanceOf(DOMElement::class);
+
+        expect($control->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so what the agent writes is announced in the dashboard language");
+
+        expect($control->getAttribute('lang'))->toBe('');
+    }
+
+    $link = $index->query('//a[contains(@href, "'.$article->slug.'") or contains(@href, "/articles/'.$article->id.'")]')->item(0);
+
+    expect($link)->not->toBeNull('the article did not render in the list')
+        ->and($link)->toBeInstanceOf(DOMElement::class);
+
+    // `hasAttribute` FIRST. `getAttribute('lang')` returns the empty string
+    // both for `lang=""` and for no `lang` at all, so a value check alone
+    // passes on exactly the markup this guard exists to reject.
+    expect($link->hasAttribute('lang'))->toBeTrue('the list title carries no lang reset')
+        ->and($link->getAttribute('lang'))->toBe('', 'the list title is announced in the agent language');
+
+    // The search term echoed back in the empty state. The sentence around it
+    // is ours and stays German; the term is whatever the agent typed, which is
+    // the account's language. Interpolated data is excused from the render
+    // audit's translation check, so only this can see it.
+    $searched = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.index', ['article_search' => 'Kundenrueckerstattung zzz']))
+        ->assertOk()->getContent());
+
+    $echoed = $searched->query('//*[@lang=""][contains(text(), "Kundenrueckerstattung zzz")]')->item(0);
+
+    expect($echoed)->not->toBeNull('the search term is echoed in the agent language rather than as the words the agent typed');
+
+    // The search field's own label is ours and is not reset with it, or the
+    // agent would be told what the field is for in an undeclared language.
+    $searchLabel = $index->query('//label[@for="article_search"]')->item(0);
+
+    expect($searchLabel)->not->toBeNull('the search label did not render')
+        ->and($searchLabel->hasAttribute('lang'))->toBeFalse('the search LABEL was reset along with its field');
+
+    $detail = $xpathFor((string) $this->actingAs($world['admins']['de'])
+        ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent());
+
+    // The document title, which is what a tab and every navigation
+    // announcement read out. `<title>` takes `lang` like any other element.
+    $documentTitle = $detail->query('//title')->item(0);
+
+    expect($documentTitle)->not->toBeNull('the document has no title')
+        ->and(trim($documentTitle->textContent))->toBe($article->title)
+        ->and($documentTitle->hasAttribute('lang'))
+        ->toBeTrue('the document title is the article\'s words announced in the agent language');
+
+    expect($documentTitle->getAttribute('lang'))->toBe('');
+
+    // Each region that holds the article, named separately so a deletion in
+    // one cannot be covered by another.
+    $regions = [
+        'the page heading' => '//h1',
+        'the slug' => '//code[normalize-space(text())="'.$article->slug.'"]',
+        'the title field' => '//input[@id="article_title"]',
+        'the body field' => '//textarea[@id="article_body"]',
+        'the preview' => '//*[contains(@class, "article-preview")]',
+    ];
+
+    foreach ($regions as $label => $query) {
+        $node = $detail->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class);
+
+        expect($node->hasAttribute('lang'))
+            ->toBeTrue("{$label} carries no lang reset, so it is announced in the agent language");
+
+        expect($node->getAttribute('lang'))
+            ->toBe('', "{$label} declares a language rather than the account's unknown one");
+    }
+
+    // And the reset stopped at the article: the page's own copy is still
+    // announced in the agent's language, or this would be marking the whole
+    // document unknown and calling it a fix.
+    $heading = $detail->query('//h2[@id="article-preview-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull('the preview heading did not render')
+        ->and($heading->hasAttribute('lang'))
+        ->toBeFalse('the page\'s own copy was reset along with the article, which marks the document unknown and calls it a fix');
 });

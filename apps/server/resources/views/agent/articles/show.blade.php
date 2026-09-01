@@ -1,8 +1,17 @@
-<x-layouts.app title="{{ $article->title }}" :agent="$agent" :account="$account">
-            <x-page-header :title="$article->title" subtitle="Edit the answer, then decide who can see it." :back-href="route('dashboard.account.articles.index')" back-label="Back to articles" />
+{{-- The document title is the article's, so the tab and every navigation
+     announcement carry the account's words rather than the agent's language --
+     the same reset the heading below already had. --}}
+<x-layouts.app title="{{ $article->title }}" title-lang="" :agent="$agent" :account="$account">
+            {{-- `title-lang=""` is HTML's "unknown". The article is written for
+                 VISITORS, so its language is whatever the account writes in --
+                 not the language this admin reads the dashboard in. Without
+                 this, a screen reader pronounces English article prose with
+                 German phonetics on a German dashboard. --}}
+            <x-page-header :title="$article->title" title-lang="" :subtitle="__('articles.detail.subtitle')" :back-href="route('dashboard.account.articles.index')" :back-label="__('articles.back_to_articles')" />
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                {{-- A catalogue key rather than a sentence -- see AgentArticleController. --}}
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             @error('title')
@@ -16,29 +25,28 @@
             <section class="section" aria-labelledby="article-state-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="article-state-heading">Who can see this</h2>
+                        <h2 id="article-state-heading">{{ __('articles.detail.visibility_heading') }}</h2>
                         <p class="lede">
                             @if ($article->isPublished())
-                                Visitors can find this in the widget when they search.
+                                {{ __('articles.detail.visible') }}
                             @else
-                                A draft. Only this account can see it.
+                                {{ __('articles.detail.hidden') }}
                             @endif
                         </p>
                     </div>
                     <span class="readiness-status" data-status="{{ $article->isPublished() ? 'ready' : 'manual' }}">
-                        {{ $article->isPublished() ? 'Published' : 'Draft' }}
+                        {{ $article->isPublished() ? __('articles.state.published') : __('articles.state.draft') }}
                     </span>
                 </div>
 
                 <div class="desk-closure">
                     <p class="desk-closure-state">
-                        Referred to as <code>{{ $article->slug }}</code>, which stays the same if you retitle it —
-                        so a link an agent already sent keeps working.
+                        {!! __('articles.detail.slug', ['slug' => '<code lang="">'.e($article->slug).'</code>']) !!}
                     </p>
 
                     <form method="POST" action="{{ route('dashboard.account.articles.publish', $article) }}">
                         @csrf
-                        <button class="button" type="submit">{{ $article->isPublished() ? 'Unpublish' : 'Publish' }}</button>
+                        <button class="button" type="submit">{{ $article->isPublished() ? __('articles.detail.unpublish') : __('articles.detail.publish') }}</button>
                     </form>
                 </div>
             </section>
@@ -46,7 +54,7 @@
             <section class="section" aria-labelledby="article-edit-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="article-edit-heading">The answer</h2>
+                        <h2 id="article-edit-heading">{{ __('articles.detail.edit_heading') }}</h2>
                     </div>
                 </div>
 
@@ -55,29 +63,31 @@
                     @method('PUT')
 
                     <div class="field">
-                        <label for="article_title">Title</label>
+                        <label for="article_title">{{ __('articles.write.title_label') }}</label>
                         <input type="text" id="article_title" name="title" maxlength="160" required
-                            value="{{ old('title', $article->title) }}">
+                            lang="" value="{{ old('title', $article->title) }}">
                     </div>
 
                     <div class="field">
-                        <label for="article_body">Body</label>
-                        <textarea id="article_body" name="body" rows="14" maxlength="20000" required>{{ old('body', $article->body) }}</textarea>
+                        <label for="article_body">{{ __('articles.write.body_label') }}</label>
+                        <textarea id="article_body" name="body" rows="14" maxlength="20000" required lang="">{{ old('body', $article->body) }}</textarea>
                     </div>
 
-                    <button class="button" type="submit">Save article</button>
+                    <button class="button" type="submit">{{ __('articles.detail.save') }}</button>
                 </form>
             </section>
 
             <section class="section" aria-labelledby="article-preview-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="article-preview-heading">What a visitor sees</h2>
-                        <p class="lede">Built from the same blocks the widget builds, so this is the article rather than an impression of it.</p>
+                        <h2 id="article-preview-heading">{{ __('articles.detail.preview_heading') }}</h2>
+                        <p class="lede">{{ __('articles.detail.preview_lede') }}</p>
                     </div>
                 </div>
 
-                <div class="notice-copy article-preview">
+                {{-- The entire preview is the article, so the reset goes on the
+                     region rather than on each block inside it. --}}
+                <div class="notice-copy article-preview" lang="">
                     @foreach ($blocks as $block)
                         @if ($block['type'] === 'heading')
                             <h3>{{ $block['text'] }}</h3>
@@ -97,15 +107,15 @@
             <section class="section" aria-labelledby="article-delete-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="article-delete-heading">Delete</h2>
-                        <p class="lede">Removes the article outright. Unpublishing is the reversible option.</p>
+                        <h2 id="article-delete-heading">{{ __('articles.detail.delete_heading') }}</h2>
+                        <p class="lede">{{ __('articles.detail.delete_lede') }}</p>
                     </div>
                 </div>
 
                 <form class="section-form" method="POST" action="{{ route('dashboard.account.articles.destroy', $article) }}">
                     @csrf
                     @method('DELETE')
-                    <button class="button danger" type="submit">Delete this article</button>
+                    <button class="button danger" type="submit">{{ __('articles.detail.delete') }}</button>
                 </form>
             </section>
 </x-layouts.app>

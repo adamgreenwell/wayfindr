@@ -108,6 +108,16 @@ final class DashboardLanguage
         'dashboard.account.labels.store',
         'dashboard.account.labels.update',
         'dashboard.account.labels.destroy',
+
+        // The account articles pages -- the help-centre answers a visitor finds
+        // in the widget. Both views, because extracting one of a pair puts the
+        // flip inside the section instead of at its edge.
+        'dashboard.account.articles.index',
+        'dashboard.account.articles.store',
+        'dashboard.account.articles.show',
+        'dashboard.account.articles.update',
+        'dashboard.account.articles.destroy',
+        'dashboard.account.articles.publish',
     ];
 
     /**

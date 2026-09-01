@@ -85,7 +85,7 @@ class AgentArticleController extends Controller
 
         return redirect()
             ->route('dashboard.account.articles.show', $article)
-            ->with('status', 'Article created as a draft.');
+            ->with('status', 'articles.flash.created');
     }
 
     public function update(Request $request, Article $article): RedirectResponse
@@ -103,7 +103,7 @@ class AgentArticleController extends Controller
 
         return redirect()
             ->route('dashboard.account.articles.show', $article)
-            ->with('status', 'Article saved.');
+            ->with('status', 'articles.flash.saved');
     }
 
     /**
@@ -126,8 +126,8 @@ class AgentArticleController extends Controller
         return redirect()
             ->route('dashboard.account.articles.show', $article)
             ->with('status', $publishing
-                ? 'Article published. Visitors can find it now.'
-                : 'Article unpublished. Visitors can no longer find it.');
+                ? 'articles.flash.published'
+                : 'articles.flash.unpublished');
     }
 
     public function destroy(Request $request, Article $article): RedirectResponse
@@ -140,7 +140,7 @@ class AgentArticleController extends Controller
 
         return redirect()
             ->route('dashboard.account.articles.index')
-            ->with('status', 'Article deleted.');
+            ->with('status', 'articles.flash.deleted');
     }
 
     private function authorizeManageArticle(mixed $agent, Article $article): void
@@ -169,14 +169,14 @@ class AgentArticleController extends Controller
         ];
 
         if ($input['title'] === '') {
-            throw ValidationException::withMessages(['title' => 'Give the article a title.']);
+            throw ValidationException::withMessages(['title' => __('articles.validation.title')]);
         }
 
         // A body of nothing but syntax produces no blocks, so a visitor would
         // open an article and find an empty panel. Checked against what the
         // reader gets rather than against what was typed.
         if (ArticleDocument::text($input['body']) === '') {
-            throw ValidationException::withMessages(['body' => 'Write something a visitor can read.']);
+            throw ValidationException::withMessages(['body' => __('articles.validation.body')]);
         }
 
         return $input;
