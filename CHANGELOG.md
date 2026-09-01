@@ -30,15 +30,22 @@ missed while skimming.
 
 ## [Unreleased]
 
-**Requires operator action — but only if you run your own nginx in front of
-Wayfindr.** Everything else in this release is pull-and-restart, and migrations
-run themselves.
+**Requires operator action in two cases, neither of them universal.**
+Everything else is pull-and-restart, and migrations run themselves.
 
-If you run the shipped Docker Compose stack, there is nothing to do: it proxies
-Reverb through Caddy, which imposes no idle timeout on a proxied WebSocket. The
-action below applies to Laravel Forge installs and to anything built from the
-sample in `docs/self-hosting/runtime-requirements.md`, whose nginx block through
-0.7.0 omitted the setting.
+1. **If you run your own nginx in front of Wayfindr** — Laravel Forge installs,
+   and anything built from the sample in
+   `docs/self-hosting/runtime-requirements.md`, whose block through 0.7.0
+   omitted the setting. See *Changed*. The shipped Docker Compose stack runs no
+   nginx: it proxies Reverb through Caddy, which imposes no idle timeout on a
+   proxied WebSocket, and needs nothing.
+2. **If your scheduler is not running**, run `wayfindr:sanitise-page-urls` once
+   by hand after upgrading. The page-address rewrite under *Security* happens
+   automatically in two passes — a migration, then the daily scheduled sweep
+   that catches anything the old code wrote during the migration window. With a
+   working scheduler that window closes within a day and you need do nothing.
+   Without one, only the migration pass ever runs, and rows written during that
+   window keep their query strings indefinitely.
 
 **Two things you will notice within a minute of upgrading, neither of them
 broken:**
@@ -181,10 +188,17 @@ page view that was not there before.
   strips everything else.
 
   **⚠ The rewrite is irreversible**, which is the point: the query strings are
-  gone. It runs automatically as two migrations, and the deploy script also runs
-  `wayfindr:sanitise-page-urls` after activation to catch rows written by the
-  old code during the migration window. If you deploy some other way, run that
-  command once by hand afterwards. It is idempotent.
+  gone.
+
+  It runs automatically, and it needs two passes rather than one. On a
+  zero-downtime deploy the migration runs while the *previous* release is still
+  serving, so rows written after the sweep passed them keep their query strings
+  and the migration reports success anyway. The Forge deploy script runs
+  `wayfindr:sanitise-page-urls` after activation to catch exactly those, and the
+  scheduler runs it daily besides — which is what covers Docker and Compose
+  installs, since they never run that script. **If your scheduler is not
+  running, run the command once by hand after upgrading.** It is idempotent, and
+  reports nothing on every run after the first.
 
   `audit_events` is deliberately **not** rewritten. An audit trail you rewrite
   is not an audit trail; the protection there is that the account audit screen
