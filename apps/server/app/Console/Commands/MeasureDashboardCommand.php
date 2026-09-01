@@ -196,7 +196,8 @@ final class MeasureDashboardCommand extends Command
             $timings[] = (microtime(true) - $startedAt) * 1000;
 
             $bytes = strlen((string) $response->getContent());
-            $status = $response->getStatusCode();
+
+            $status = self::worstStatus($status, $response->getStatusCode());
         }
 
         // Counted separately, once, and not timed.
@@ -230,6 +231,27 @@ final class MeasureDashboardCommand extends Command
             'bytes' => $bytes,
             'status' => $status,
         ];
+    }
+
+    /**
+     * The status a set of runs should be judged by: any failure, not the last.
+     *
+     * Overwriting per run kept only the final status, so a transient error page
+     * early in the set left its very fast timing in the median while the
+     * command reported success -- the misleading-baseline case the status check
+     * exists to prevent.
+     *
+     * A pure function because the case cannot be produced through the command:
+     * arranging a page that fails once and then succeeds is not something a
+     * measurement run can be asked for.
+     */
+    public static function worstStatus(int $seen, int $latest): int
+    {
+        if ($seen === 0 || $seen === 200) {
+            return $latest;
+        }
+
+        return $seen;
     }
 
     private function send(Kernel $kernel, User $agent, string $uri): Response

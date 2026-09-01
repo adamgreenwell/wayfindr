@@ -140,6 +140,8 @@ final class SeedDeskCommand extends Command
                 });
             }
 
+            $this->refuseCollidingSupportCodes($conversations);
+
             $desk = $this->desk($agentCount, $siteCount);
 
             $written['visitors'] = $this->measure('Visitors', fn (): int => $this->seedVisitors($desk, $conversations, $months));
@@ -328,6 +330,13 @@ final class SeedDeskCommand extends Command
         }
 
         $subjects = $this->subjects();
+
+        // `conversations.support_code` is globally unique, so a real or legacy
+        // row already holding one of these deterministic codes aborts the
+        // insert -- after the account, agents, sites and visitors are written,
+        // and with `--fresh` unable to help because the conflicting row is
+        // somebody else's. Checked first, so the run fails before it builds
+        // anything.
         $written = 0;
         $rows = [];
 
@@ -348,7 +357,7 @@ final class SeedDeskCommand extends Command
                 'assigned_agent_id' => self::mix($i, 'assignee', 2) === 0
                     ? $desk['agents'][self::mix($i, 'agent', $agentCount)]->id
                     : null,
-                'support_code' => 'WF-DESK-'.str_pad((string) $i, 7, '0', STR_PAD_LEFT),
+                'support_code' => $this->supportCode($i),
                 'status' => $open ? 'open' : 'closed',
                 'subject' => $subjects[$i % count($subjects)].' '.$i,
                 'metadata' => json_encode([]),
@@ -425,13 +434,17 @@ final class SeedDeskCommand extends Command
                             'body' => 'Message '.$m.' on conversation '.$conversation->id.'. '
                                 .'Enough words that a body column holds something worth reading past.',
                             'metadata' => json_encode([]),
-                            // The LAST visitor message on an open conversation is
-                            // unread, which is what a desk that has not caught up
-                            // looks like -- and what the queue's attention lanes
-                            // are computed from. Marking every message seen left
-                            // those branches unrendered and made the detail page's
-                            // read-marking a no-op, so nothing measured it.
-                            'seen_at' => $unread && $fromVisitor && $m === $count - 1
+                            // The last message on an open conversation is unread,
+                            // whoever sent it -- and the sender decides which
+                            // branch that exercises. An unseen VISITOR message is
+                            // what the queue's attention lanes are computed from;
+                            // an unseen AGENT reply is the read-receipt branch on
+                            // the detail page, which `seen_at` actually describes.
+                            //
+                            // Requiring `$fromVisitor` here left every agent reply
+                            // stamped, so the receipt branch never rendered in any
+                            // measurement.
+                            'seen_at' => $unread && $m === $count - 1
                                 ? null
                                 : $startedAt->copy()->addMinutes($m + 1),
                             'created_at' => $startedAt->copy()->addMinutes($m),
@@ -622,6 +635,57 @@ final class SeedDeskCommand extends Command
     private static function isSeededAgentAddress(string $email): bool
     {
         return str_starts_with($email, self::AGENT_PREFIX) && str_ends_with($email, self::AGENT_SUFFIX);
+    }
+
+    /**
+     * Stop if another account already holds a code this run will generate.
+     *
+     * `conversations.support_code` is globally unique, so a real or legacy row
+     * in the range aborts the insert -- and `--fresh` cannot help, because the
+     * conflicting row is not this command's to delete.
+     *
+     * Checked BEFORE anything is built. Discovering it during the conversation
+     * pass left the account, its agents, its sites and fifty thousand visitors
+     * behind on a run that could never have finished.
+     *
+     * The RANGE, not every code sharing the prefix: the codes are zero-padded
+     * to a fixed width so they sort lexicographically, and `like 'WF-DESK-%'`
+     * would also refuse a `WF-DESK-LEGACY-1` that can never collide with one.
+     */
+    private function refuseCollidingSupportCodes(int $conversations): void
+    {
+        $ours = Site::query()
+            ->whereIn('account_id', Account::query()->where('slug', self::SLUG)->select('id'))
+            ->pluck('id')
+            ->all();
+
+        $collisions = DB::table('conversations')
+            ->whereBetween('support_code', [$this->supportCode(0), $this->supportCode($conversations - 1)])
+            ->when($ours !== [], fn ($query) => $query->whereNotIn('site_id', $ours))
+            ->limit(3)
+            ->pluck('support_code');
+
+        if ($collisions->isEmpty()) {
+            return;
+        }
+
+        throw new RuntimeException(
+            'Conversations outside the measurement desk already use codes this command generates: '
+            .$collisions->implode(', ').'. Rename or remove them; `--fresh` cannot, because they are '
+            .'not this command\'s to delete.'
+        );
+    }
+
+    /**
+     * The support code for one seeded conversation.
+     *
+     * Zero-padded to a fixed width so the codes sort lexicographically, which
+     * is what lets the collision check above ask about a RANGE rather than
+     * about everything sharing the prefix.
+     */
+    private function supportCode(int $index): string
+    {
+        return 'WF-DESK-'.str_pad((string) $index, 7, '0', STR_PAD_LEFT);
     }
 
     /**

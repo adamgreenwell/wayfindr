@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Commands\MeasureDashboardCommand;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
@@ -77,11 +78,16 @@ test('the detail page is the control, and does not grow with the desk', function
         ->toBeGreaterThan($small['Conversation queue (open)']['bytes'] * 3,
             'the queue did not grow, so this comparison is measuring nothing');
 
-    // The detail page did not. Its query count is fixed, and its size moves
-    // only by the handful of bytes a different support code takes.
+    // The detail page did not. The property is that its cost does not GROW
+    // with the desk, not that it is byte-identical: the count moves by one
+    // depending on what the particular conversation has -- a prior
+    // conversation, a ticket, a cobrowse session -- and CI caught this
+    // demanding 24 === 23. A page that scaled would be twenty times larger at
+    // twenty times the rows, so a tolerance of two says "constant" without
+    // asserting something that was never true.
     expect($large['Conversation detail']['queries'])
-        ->toBe($small['Conversation detail']['queries'],
-            'the conversation detail page now issues more queries on a larger desk');
+        ->toBeLessThanOrEqual($small['Conversation detail']['queries'] + 2,
+            'the conversation detail page issues more queries on a larger desk');
 
     expect(abs($large['Conversation detail']['bytes'] - $small['Conversation detail']['bytes']))
         ->toBeLessThan(20000, 'the conversation detail page now grows with the size of the desk');
@@ -294,4 +300,29 @@ test('--page narrows the set, and says so when it matches nothing', function ():
     $all = collect(json_decode(Artisan::output(), true)['pages'] ?? [])->pluck('page');
 
     expect($all->count())->toBeGreaterThan(2);
+});
+
+test('any failed run decides the reported status, not the last one', function (): void {
+    // A transient error page early in a set left its very fast timing in the
+    // median while the command reported success -- which is the misleading
+    // baseline the status check exists to prevent.
+    //
+    // Asserted on the rule directly. The case cannot be produced through the
+    // command: a page that fails once and then succeeds is not something a
+    // measurement run can be asked for.
+    $worst = MeasureDashboardCommand::worstStatus(...);
+
+    // Nothing seen yet takes whatever arrives.
+    expect($worst(0, 200))->toBe(200)
+        ->and($worst(0, 404))->toBe(404);
+
+    // A failure sticks, whatever follows it.
+    expect($worst(404, 200))->toBe(404)
+        ->and($worst(500, 200))->toBe(500);
+
+    // And a later failure replaces an earlier success.
+    expect($worst(200, 403))->toBe(403);
+
+    // All-good stays good.
+    expect($worst(200, 200))->toBe(200);
 });

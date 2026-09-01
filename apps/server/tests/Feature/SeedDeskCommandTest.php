@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Console\Commands\SeedDeskCommand;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -81,6 +82,19 @@ test('it writes a desk with the spread a measurement needs', function (): void {
         ->count('subject');
 
     expect($distinctSubjects)->toBe(160);
+
+    // Unseen messages from BOTH sides. `seen_at` describes whether a message
+    // has been seen, and the two senders exercise different surfaces: an unseen
+    // VISITOR message drives the queue's attention lanes, an unseen AGENT reply
+    // is the read-receipt branch on the detail page. Requiring the sender to be
+    // the visitor left every agent reply stamped, so that branch never rendered
+    // in any measurement.
+    $unseen = ConversationMessage::query()
+        ->whereNull('seen_at')
+        ->get()
+        ->groupBy('sender_type');
+
+    expect($unseen->keys())->toHaveCount(2, 'only one side ever leaves an unseen message');
 
     // Message counts are NOT uniform, or the detail page's cost is a constant
     // and the long conversations -- the ones worth knowing about -- never
@@ -284,6 +298,28 @@ test('fresh still cleans up a half-made desk', function (): void {
         ->assertSuccessful();
 
     expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())->toBe(5);
+});
+
+test('it refuses a support code another account already holds', function (): void {
+    // `conversations.support_code` is globally unique, so a real or legacy row
+    // holding one of the codes this run generates aborts the insert -- after
+    // the account, agents, sites and visitors are written, and with `--fresh`
+    // unable to help, because the conflicting row is not this command's to
+    // delete.
+    $other = Account::query()->create(['slug' => 'someone-elses-desk', 'name' => 'Theirs']);
+    $otherSite = Site::factory()->for($other)->create();
+    $otherVisitor = Visitor::factory()->for($otherSite)->create();
+
+    Conversation::factory()->for($otherSite)->for($otherVisitor)
+        ->create(['support_code' => 'WF-DESK-0000003']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1])
+        ->assertFailed()
+        ->expectsOutputToContain('WF-DESK-0000003');
+
+    // And it stopped BEFORE building anything.
+    expect(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())
+        ->toBeFalse('the run created its account before discovering it could not finish');
 });
 
 test('it refuses rather than take over an address somebody else holds', function (): void {

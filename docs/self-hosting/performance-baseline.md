@@ -32,6 +32,13 @@ measuring — and that overhead grows with query count, which is exactly the axi
 the ticket queue's N+1 sits on. Query counts come from a separate, untimed
 request.
 
+**Read the milliseconds as approximate and the other two as exact.** Query
+counts and response sizes are deterministic — the same fixture produces the same
+figures every run. Timings move by several per cent between runs on the same
+machine, and by much more if anything else is using it, so treat them as an
+order of magnitude rather than a benchmark. Nothing here turns on the
+difference between 22.1 and 22.3 seconds.
+
 **Measurement cannot change what it measures.** Every request runs inside a
 transaction that is always rolled back. The conversation detail page is not a
 read — it marks the conversation read for the viewer — so without that, an
@@ -65,11 +72,11 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,134 | 21 | 37.7 MB |
-| Conversation queue (closed) | 22,340 | 15 | 186.1 MB |
-| Ticket queue (open) | 3,090 | 4,187 | 20.9 MB |
-| Ticket queue (all) | 9,489 | 12,518 | 62.5 MB |
-| **Conversation detail** | **11** | **26** | **149 KB** |
+| Conversation queue (open) | 3,987 | 21 | 37.7 MB |
+| Conversation queue (closed) | 22,195 | 16 | 186.1 MB |
+| Ticket queue (open) | 3,099 | 4,187 | 20.9 MB |
+| Ticket queue (all) | 10,150 | 12,518 | 62.5 MB |
+| **Conversation detail** | **12** | **25** | **149 KB** |
 
 ### How it grows
 
@@ -121,7 +128,7 @@ worth fixing, only a large enough one to notice.
 
 ### The conversation detail page is fine
 
-11 ms, 26 queries and 149 KB at *every* size measured, from 20 conversations to
+12 ms, 25 queries and 149 KB at *every* size measured, from 20 conversations to
 50,000. Its cost is bounded by one conversation's own messages rather than by
 the desk around it, which is what the other pages are not.
 
