@@ -818,7 +818,8 @@ final class SeedDeskCommand extends Command
     }
 
     /**
-     * Point `last_message_at` at the last message that exists.
+     * Point `last_message_at` at the last message that exists, and keep the
+     * closure after it.
      *
      * Written provisionally as "thirty minutes after it opened", which is wrong
      * twice: it claims activity that `--messages=0` never created, and for a
@@ -839,6 +840,21 @@ final class SeedDeskCommand extends Command
                 'last_message_at' => DB::raw(
                     '(select max(created_at) from conversation_messages'
                     .' where conversation_messages.conversation_id = conversations.id)'
+                ),
+            ]);
+
+        // A conversation cannot close before its last message. The closure was
+        // a fixed four hours after opening, and messages are a minute apart --
+        // so `--messages=500`, which is exactly what somebody measuring a long
+        // conversation detail would reach for, put most of them after it.
+        DB::table('conversations')
+            ->whereIn('site_id', $this->siteIds($desk))
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->whereNotNull('closed_at')
+            ->update([
+                'closed_at' => DB::raw(
+                    'case when last_message_at is not null and last_message_at > closed_at'
+                    .' then last_message_at else closed_at end'
                 ),
             ]);
     }

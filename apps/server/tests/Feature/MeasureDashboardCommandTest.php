@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Session;
 
 uses(RefreshDatabase::class);
 
@@ -474,4 +475,25 @@ test('it leaves the caller\'s bound request alone', function (): void {
 
     expect(app('request')->getPathInfo())
         ->toBe('/their/own/page', 'the command left its own request bound in the container');
+});
+
+test('it does not touch the caller\'s session', function (): void {
+    // Invoked through `Artisan::call()` during an HTTP request, `Auth::login()`
+    // writes to and MIGRATES the caller's session -- a benchmark rotating a
+    // live session id. `setUser` resolves the user for anything reading
+    // `Auth::user()` and touches no session at all.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 8, '--messages' => 2, '--fresh' => true]);
+
+    Session::start();
+    Session::put('theirs', 'kept');
+
+    $sessionId = Session::getId();
+
+    Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail'], '--json' => true]);
+
+    expect(Session::getId())
+        ->toBe($sessionId, 'the command migrated the caller\'s session');
+
+    expect(Session::get('theirs'))
+        ->toBe('kept', 'the command discarded what the caller had in their session');
 });

@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Session;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -76,7 +77,20 @@ final class MeasureDashboardCommand extends Command
         // process then read a benchmark's request instead of its own.
         $callerRequest = app()->bound('request') ? app('request') : null;
 
-        Auth::login($agent);
+        // And the SESSION. `Auth::setUser()` no longer migrates it, but the
+        // synthetic requests still pass through `StartSession`, which starts
+        // its own session on the same shared store -- so the caller was left
+        // holding a benchmark's session id and none of their own data.
+        $callerSessionId = Session::isStarted() ? Session::getId() : null;
+        $callerSession = $callerSessionId === null ? [] : Session::all();
+
+        // `setUser`, not `login`. Invoked through `Artisan::call()` during an
+        // HTTP request, `Auth::login()` writes to and MIGRATES the caller's
+        // session -- a benchmark rotating a live session id. Setting the user
+        // resolves it for anything reading `Auth::user()` and touches no
+        // session at all; the synthetic requests carry their own user through
+        // `setUserResolver` regardless.
+        Auth::setUser($agent);
 
         // Inherited state, turned off before anything is timed. Called through
         // `Artisan::call()` or from Tinker, the connection's query log may
@@ -122,13 +136,19 @@ final class MeasureDashboardCommand extends Command
                 DB::enableQueryLog();
             }
 
-            $caller === null ? Auth::logout() : Auth::login($caller);
+            $caller === null ? Auth::forgetUser() : Auth::setUser($caller);
 
             App::setLocale($callerLocale);
 
             $callerRequest === null
                 ? app()->forgetInstance('request')
                 : app()->instance('request', $callerRequest);
+
+            if ($callerSessionId !== null) {
+                Session::setId($callerSessionId);
+                Session::flush();
+                Session::replace($callerSession);
+            }
         }
     }
 

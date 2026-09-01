@@ -403,6 +403,25 @@ test('read positions follow the conversation when there are no messages', functi
     }
 });
 
+test('a conversation does not close before its last message', function (): void {
+    // The closure was a fixed four hours after opening while messages are a
+    // minute apart -- so a high `--messages`, exactly what somebody measuring a
+    // long conversation detail reaches for, put most of them after it.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 6, '--messages' => 400, '--fresh' => true])
+        ->assertSuccessful();
+
+    $closed = Conversation::query()->whereNotNull('closed_at')->get();
+
+    expect($closed)->not->toBeEmpty('nothing is closed, so this proves nothing');
+
+    foreach ($closed as $conversation) {
+        $last = $conversation->messages()->max('created_at');
+
+        expect($conversation->closed_at->greaterThanOrEqualTo(Carbon::parse($last)))
+            ->toBeTrue('a conversation closed before its own last message');
+    }
+});
+
 test('a ticket is not closed in the future', function (): void {
     // A conversation raised minutes ago was getting `closed_at` two days out,
     // so the ticket queue reported a resolution that has not happened.
