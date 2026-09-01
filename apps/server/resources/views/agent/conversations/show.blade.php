@@ -499,7 +499,7 @@
                             </div>
                             <div class="meta-item">
                                 <span class="meta-label">{{ __('conversations.detail.cobrowse.reconnects') }}</span>
-                                <span class="meta-value" data-cobrowse-transport-reconnects>{{ $cobrowseConsent['transport']['reconnects'] }}</span>
+                                <span class="meta-value" data-cobrowse-transport-reconnects>{{ \App\Support\ReaderNumber::count($cobrowseConsent['transport']['reconnects_value'] ?? 0) }}</span>
                             </div>
                             <div class="meta-item">
                                 <span class="meta-label">{{ __('conversations.detail.cobrowse.pressure') }}</span>

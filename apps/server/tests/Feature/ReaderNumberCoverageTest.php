@@ -45,6 +45,13 @@ const READER_NUMBER_EXEMPT = [
     // en-US separator on a German page. They now hand out `*_value` and the
     // view formats them. An exemption that covers more than it means to is a
     // guard that has stopped checking.
+    // Its `label`, `message` and `guidance` really are English sentences. But
+    // the file also hands out standalone VALUES that a view renders under a
+    // translated label, and a whole-file exemption cannot tell those apart --
+    // it hid the telemetry trio once and the transport reconnect count again.
+    // Those are `*_value` now, formatted at the surface. A number leaving this
+    // file for a view to print on its own is a bug however English the
+    // sentences beside it are.
     'app/Support/CobrowseConsentState.php' => 'English sentences awaiting extraction',
     'app/Support/CobrowseTransportPressure.php' => 'English sentences awaiting extraction',
     'app/Support/CobrowseReplayPreview.php' => 'English sentences awaiting extraction',

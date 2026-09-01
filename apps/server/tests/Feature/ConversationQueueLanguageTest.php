@@ -3971,13 +3971,17 @@ test('a four-digit count is grouped the way the reading agent groups numbers', f
         ->and($german)->toContain('5.314')
         ->and($german)->toContain('6.415')
         ->and($german)->toContain('7.516')
-        // A negative only for `samples`, which is the one of the three with a
-        // single render site. `dropped_batches` and `reconnects` also appear
-        // in the transport-health sentences, still assembled in English inside
-        // a model and exempted from the number guard for that reason -- so
-        // `5,314` really is on this page, welded to an English noun. That is
-        // the extraction slice's defect, and asserting against it here would
-        // be asserting that someone else's work was done.
+        // `reconnects` can be asserted negatively now: the transport-health
+        // block used to render it bare under a translated label with an en-US
+        // separator, so the page carried `6,415` and `6.415` at once. The
+        // model hands out the raw value and the surface formats it.
+        //
+        // `dropped_batches` still cannot: it also appears in the pressure
+        // sentence, which really is English inside a model. `5,314` is
+        // legitimately on this page welded to an English noun, and asserting
+        // against it here would be asserting that the extraction slice's work
+        // was done.
+        ->and($german)->not->toContain('6,415')
         ->and($german)->not->toContain('7,516');
 
     // Both halves matter. The negative one is what catches a partial revert
