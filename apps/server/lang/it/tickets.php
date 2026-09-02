@@ -127,6 +127,7 @@ return [
         'matching_tickets' => '{1} 1 ticket corrispondente|[2,*] :count ticket corrispondenti',
     ],
     'summary' => [
+        'capped_notice' => 'Vengono visualizzati i primi :shown di :total ticket nell\'ordine della coda. Restringa la coda con i filtri sopra per vedere gli altri.',
         'lane_narrowed_heading' => ':shown visualizzati su :matching',
         'heading' => [
             'open' => '{1} :count aperto|[2,*] :count aperti',

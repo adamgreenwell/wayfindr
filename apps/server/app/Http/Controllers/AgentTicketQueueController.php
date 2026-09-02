@@ -222,6 +222,10 @@ class AgentTicketQueueController extends Controller
         // already selects `attention_state` and selecting it again leaves
         // PostgreSQL with two columns of that name and an ambiguous `group by`.
         $ticketAttentionCounts = (clone $ticketResults)->attentionStateCounts();
+        $matchingTicketCount = array_sum($ticketAttentionCounts);
+        $ticketLaneCount = $ticketAttention === 'all'
+            ? $matchingTicketCount
+            : (int) ($ticketAttentionCounts[$ticketAttention] ?? 0);
 
         $ticketResults = $ticketResults
             ->select(['tickets.*'])
@@ -231,6 +235,10 @@ class AgentTicketQueueController extends Controller
                 fn ($query) => $query->whereAttentionState($ticketAttention)
             )
             ->orderByAttention()
+            // The count above stays uncapped. Only the row graphs and HTML are
+            // bounded, so a busy lane reads as 200 of 12,431 rather than as
+            // 200 tickets that appear to be the entire desk (#847).
+            ->limit(Ticket::QUEUE_DISPLAY_LIMIT)
             ->get();
         $ticketQueueSummary = $this->ticketQueueSummary($ticketAttentionCounts, $ticketQuery, $ticketAttentionFilters);
         $tickets = $ticketResults;
@@ -241,8 +249,9 @@ class AgentTicketQueueController extends Controller
         // with itself reports nothing as narrowed.
         //
         $ticketQueueCountSummary = $this->ticketQueueCountSummary(
-            $tickets,
-            array_sum($ticketAttentionCounts),
+            $ticketLaneCount,
+            $tickets->count(),
+            $matchingTicketCount,
             $ticketStatusSummary,
             $ticketAttention,
             $ticketAttentionFilters,
@@ -262,6 +271,7 @@ class AgentTicketQueueController extends Controller
             'ticketPriority' => $ticketPriority,
             'ticketPriorityFilters' => $ticketPriorityFilters,
             'ticketQueueCountSummary' => $ticketQueueCountSummary,
+            'ticketQueueShownOf' => $ticketLaneCount,
             'ticketQueueSummary' => $ticketQueueSummary,
             'ticketActiveFilters' => $this->activeTicketFilters(
                 $ticketQuery,
@@ -490,22 +500,30 @@ class AgentTicketQueueController extends Controller
     }
 
     /**
-     * @param  Collection<int, Ticket>  $tickets
      * @param  array<string, string>  $ticketAttentionFilters
      * @return array{heading: string, detail: string}
      */
-    private function ticketQueueCountSummary(Collection $tickets, int $matchingCount, string $ticketStatusSummary, string $ticketAttention, array $ticketAttentionFilters): array
-    {
-        $shownCount = $tickets->count();
-        $nextStepNarrowed = $ticketAttention !== 'all' && $shownCount !== $matchingCount;
+    private function ticketQueueCountSummary(
+        int $laneCount,
+        int $renderedCount,
+        int $matchingCount,
+        string $ticketStatusSummary,
+        string $ticketAttention,
+        array $ticketAttentionFilters,
+    ): array {
+        // The row cap makes these different facts. `$laneCount` is how many
+        // tickets exist in this lane; `$renderedCount` is how many rows this
+        // response actually contains. Headings describe the lane while
+        // "Showing ..." sentences describe the page.
+        $nextStepNarrowed = $ticketAttention !== 'all' && $laneCount !== $matchingCount;
 
         if (! $nextStepNarrowed) {
             return [
-                'detail' => trans_choice('tickets.summary.filtered_detail', $shownCount, [
-                    'shown' => $this->ticketCountLabel($shownCount),
+                'detail' => trans_choice('tickets.summary.filtered_detail', $renderedCount, [
+                    'shown' => $this->ticketCountLabel($renderedCount),
                 ]),
-                'heading' => trans_choice('tickets.summary.heading.'.$ticketStatusSummary, $shownCount, [
-                    'count' => $shownCount,
+                'heading' => trans_choice('tickets.summary.heading.'.$ticketStatusSummary, $laneCount, [
+                    'count' => $laneCount,
                 ]),
             ];
         }
@@ -516,13 +534,13 @@ class AgentTicketQueueController extends Controller
             // verb from `:matching`, which carries one -- it used to pick a
             // verb separately from the count it agreed with, which is right in
             // English by luck and wrong in German.
-            'detail' => trans_choice('tickets.summary.lane_narrowed_detail', $shownCount, [
-                'shown' => $this->ticketCountLabel($shownCount),
+            'detail' => trans_choice('tickets.summary.lane_narrowed_detail', $renderedCount, [
+                'shown' => $this->ticketCountLabel($renderedCount),
                 'lane' => $ticketAttentionFilters[$ticketAttention],
                 'matching' => trans_choice('tickets.counts.matches', $matchingCount, ['count' => $matchingCount]),
             ]),
             'heading' => __('tickets.summary.lane_narrowed_heading', [
-                'shown' => (string) $shownCount,
+                'shown' => (string) $renderedCount,
                 'matching' => trans_choice('tickets.counts.matching_tickets', $matchingCount, ['count' => $matchingCount]),
             ]),
         ];

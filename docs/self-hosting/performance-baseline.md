@@ -1,19 +1,20 @@
 # What Wayfindr does with a desk's worth of data in it
 
-**Measured 1 September 2026.** Before this, Wayfindr had never been measured
+**Measured 2 September 2026.** Before this work, Wayfindr had never been measured
 under load — not badly, at all. Everything the disposable-VM matrix proves is a
 correctness proof on an empty install.
 
 This page is the first answer to the question a self-hosted `1.0` has to be able
 to answer: *how much can it take?*
 
-**The short version: the queues rendered every matching row, and at a year of
-real traffic that stopped being usable.** The conversation queue is capped now —
-its closed lane went from 187 MB and twenty-three seconds to 1 MB and 161 ms —
-and the ticket queue still is not. Measuring also turned up an N+1 on the ticket
-queue, now fixed: 12,518 queries down to 19. The conversation detail page is fine
-and stays fine. The report tabs grow with the desk but sub-linearly, and hold
-up at this size. Numbers below.
+**The short version: both queues used to render every matching row, and at a
+year of real traffic that stopped being usable. Both are capped now.** The
+conversation queue's closed lane went from 187 MB and twenty-three seconds to
+about 1 MB and 175 ms. The ticket queue's all lane went from 62.8 MB and seven
+seconds to 1.1 MB and 227 ms. Measuring also turned up an N+1 on the ticket
+queue, fixed before the cap: 12,518 queries down to a bounded 20. The
+conversation detail page is fine and stays fine. The report tabs grow with the
+desk but sub-linearly, and hold up at this size. Numbers below.
 
 ## Reproducing this
 
@@ -25,7 +26,7 @@ php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```
 
 ```bash
-php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+php artisan wayfindr:measure-dashboard --runs=3
 ```
 
 On the documented Docker installs `artisan` is inside the `web` container. The
@@ -38,7 +39,7 @@ docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:seed
 ```
 
 ```bash
-docker compose -f compose.yml --env-file .env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:measure-dashboard --runs=3
 ```
 
 A by-hand Compose install runs from the checkout, with the stack files under
@@ -49,10 +50,8 @@ docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting
 ```
 
 ```bash
-docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php artisan wayfindr:measure-dashboard --runs=3
 ```
-
-In every form the override goes after `php`, not after `artisan`.
 
 Every figure on this page was taken with `--runs=3`.
 
@@ -66,13 +65,12 @@ They go to an account of the seeder's own (`wayfindr-measurement-desk`), and
 `--fresh` deletes exactly that account and refuses if anything it did not
 create is sitting there. Nothing else is touched.
 
-**Do not run this on an install serving real traffic.** Not because of the
-load, though a real install is being asked to hold a second desk and serve the
-ticket queue's 63 MB responses while you measure. Because of what the seeder
-leaves behind: an owner account `desk-agent-0@example.test` whose password is
-literally `password`, committed. Only the measurement transaction rolls back.
-The desk stays, login-capable, until somebody removes it — a publicly known
-owner credential on an internet-facing box.
+**Do not run this on an install serving real traffic.** The load matters, but
+the sharper reason is what the seeder leaves behind: an owner account
+`desk-agent-0@example.test` whose password is literally `password`, committed.
+Only the measurement transaction rolls back. The desk stays, login-capable,
+until somebody removes it — a publicly known owner credential on an
+internet-facing box.
 
 Measure a staging copy, a restored backup, or a throwaway VM. If a desk was
 seeded somewhere it should not have been, `--purge` removes it — the account,
@@ -103,19 +101,12 @@ the seeder's slug holds a site or a user the seeder did not create, and does
 not ask for `--force` — it is the remedy, and a remedy that asks to be told
 twice is one an operator postpones.
 
-**The memory override is required, not a precaution.** The shipped image sets
-`memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size
-the measurement dies without ever printing the table. It needs somewhere between
-512M and 1G: 512M is fatal, 1G completes. The seeding command is unaffected and
-runs inside 256M, because it writes in chunks.
-
-That requirement is worth reading as a finding rather than a footnote, and it
-names which page is still unbounded. It used to be 2 GB, because the conversation
-queue rendered every matching row and the closed lane built a 187 MB response;
-capping that queue took it to 1 GB. What is left is the **ticket** queue, which
-still hydrates every matching row — the [pagination problem](#the-ticket-queue-still-renders-every-row)
-showing up as a memory bill before it shows up as a number. Scale the override
-with the desk: a smaller fixture needs proportionally less.
+**No memory override is required now.** The full 50,000-conversation measurement
+completed at the shipped image's `memory_limit = 256M`
+(`docker/self-hosting/php.ini`). Before both row caps, it needed 2 GB; after the
+conversation cap alone it still needed 1 GB because the ticket queue hydrated
+12,500 rows. The seeding command also stays inside 256M because it writes in
+chunks.
 
 **Timings are taken with query logging OFF.** Laravel's query log allocates and
 retains an entry per query, so measuring with it on charges the page for the
@@ -163,7 +154,7 @@ Figures are only comparable against the machine that produced them, so:
 | Machine | Apple M4 Max, 16 cores, 128 GB |
 | OS | macOS 27.0 |
 | PHP | 8.5.8 |
-| Database | PostgreSQL 18.4, local |
+| Database | PostgreSQL 17, local Docker |
 | Dataset | 50,000 conversations, 300,000 messages, 12,500 tickets, 50,000 visitors, 95,604 lifecycle events, 21,082 ratings, over 12 months |
 
 **This is a fast development machine, so read these as a floor.** A modest VPS —
@@ -177,16 +168,16 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 303 | 22 | 1.0 MB |
-| Conversation queue (closed) | 161 | 16 | 1.0 MB |
-| Conversation queue (search) | 402 | 22 | 1.0 MB |
-| Conversation queue (mine) | 298 | 22 | 1.0 MB |
-| Ticket queue (open) | 2,206 | 18 | 21.0 MB |
-| Ticket queue (all) | 7,052 | 19 | 62.8 MB |
-| Reports (7 days) | 151 | 34 | 140 KB |
-| Reports (90 days) | 613 | 80 | 223 KB |
-| Reports export (90 days) | 94 | 7 | 2 KB |
-| **Conversation detail** | **13** | **26** | **148 KB** |
+| Conversation queue (open) | 360 | 22 | 1.0 MB |
+| Conversation queue (closed) | 175 | 16 | 1.0 MB |
+| Conversation queue (search) | 530 | 22 | 1.0 MB |
+| Conversation queue (mine) | 365 | 22 | 1.0 MB |
+| Ticket queue (open) | 172 | 19 | 1.0 MB |
+| Ticket queue (all) | 227 | 20 | 1.1 MB |
+| Reports (7 days) | 196 | 34 | 140 KB |
+| Reports (90 days) | 752 | 80 | 223 KB |
+| Reports export (90 days) | 102 | 7 | 2 KB |
+| **Conversation detail** | **23** | **26** | **148 KB** |
 
 All ten, because the command measures ten: a table listing fewer than the
 documented command prints leaves an operator with figures they cannot compare
@@ -194,27 +185,23 @@ against anything. The two filtered lanes are cheap for the reason the open lane
 is — they match fewer rows, and it is the same capped query with a narrower
 `where`.
 
-### How it grows
+### How the ticket queue grows after the cap
 
-The capped queue is not, and the uncapped one still is:
+Each point below was rebuilt and measured independently with three runs. The
+response stays at roughly one megabyte because every desk has enough tickets to
+fill the same 200-row window; the remaining growth is the uncapped count query.
 
-| Conversations | Conversations closed (capped) | Tickets all (uncapped) | Reports (90d) | Detail |
-| ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 121 ms / 1.0 MB | 138 ms / 1.4 MB | 26 ms | 12 ms |
-| 5,000 | 126 ms / 1.0 MB | 665 ms / 6.4 MB | 69 ms | 13 ms |
-| 25,000 | 127 ms / 1.0 MB | 3,382 ms / 31.4 MB | 289 ms | 14 ms |
-| 50,000 | 161 ms / 1.0 MB | 7,052 ms / 62.8 MB | 613 ms | 13 ms |
+| Conversations | Tickets | Ticket queue (all) |
+| ---: | ---: | ---: |
+| 1,000 | 250 | 147 ms / 1.2 MB |
+| 5,000 | 1,250 | 143 ms / 1.1 MB |
+| 25,000 | 6,250 | 219 ms / 1.1 MB |
+| 50,000 | 12,500 | 227 ms / 1.1 MB |
 
-**The first two columns are the argument for capping, side by side.** The
-conversation queue is flat — fifty times the data, the same megabyte, and the
-milliseconds move only because the count query beside it runs over a bigger
-table. The ticket queue is not capped and is linear in both: fifty times the
-rows, fifty times the response.
-
-The last column is the control and always was: the same page, at fifty times the
-data, costs the same. The reports grow mildly in both time and queries, the
-latter because `ResolutionEpisodes::walk()` chunks the subjects it walks by 500
-and asks twice per chunk.
+Before the cap those same response sizes grew from 1.4 MB to 62.8 MB and the
+50,000-conversation point took 7,052 ms. The new curve is not perfectly flat —
+the count still has to walk a larger indexed set — but row hydration and HTML
+no longer grow with the desk.
 
 ## What that means
 
@@ -250,16 +237,32 @@ nobody reaches row 12,000 by scrolling — they narrow it with the filters above
 it. Choosing the affordance the product had already validated elsewhere seemed
 better than inventing a third pattern for the page agents live in.
 
-### The ticket queue still renders every row
+### The ticket queue is capped too
 
-It shares the same defect and does not have the same fix, because it filters
-and sorts **in PHP after the query**: the external-issue and attention states are
-computed from loaded relations. Capping the query would silently show fewer rows
-than the cap whenever a refinement is active, and make any "of N" beside it
-misleading.
+The ticket queue needed a prerequisite the conversation queue did not. Its
+attention and external-issue states were derived in PHP after every matching
+ticket had already been loaded. Applying a SQL limit there would have selected
+an arbitrary window first and then filtered it down, producing a short or empty
+lane while older matching tickets existed.
 
-Moving those filters into SQL is the real fix and a larger change than a cap.
-Tracked separately rather than bundled in.
+The attention state and its ordering moved into one SQL expression first. The
+external-issue state followed as correlated predicates that preserve the audit
+pairing rules: later successes resolve failures, and later removals cancel
+creations only when they name the same link. Ticket-by-ticket parity tests run
+against SQLite and PostgreSQL so those SQL rules cannot quietly drift from the
+PHP presentation rule.
+
+Only then was the same 200-row display cap applied:
+
+| Ticket queue, 50,000 conversations | Before | After |
+| --- | ---: | ---: |
+| Open | 2,206 ms / 21.0 MB | **172 ms / 1.0 MB** |
+| All | 7,052 ms / 62.8 MB | **227 ms / 1.1 MB** |
+
+The count remains uncapped. A desk with 12,500 tickets says how many are in the
+selected lane while rendering only the first 200 in the established attention
+order. Every filter is applied before that window, and an id tie-break keeps the
+boundary stable when bulk-created tickets share timestamps.
 
 ### The ticket queue used to issue one query per ticket
 
@@ -272,10 +275,9 @@ of the difference is the argument for measuring at all:
 | After | **18** | **6,928** |
 
 Both rows are on the fixture as it stood then, which wrote no lifecycle history
-— that is what makes them comparable to each other. The current figure in the
-table above is 19 queries and 7,052 ms, measured on a desk that now has a
-history to hydrate; the paragraph after this measures that difference directly
-rather than leaving two numbers to be reconciled by the reader.
+— that is what makes them comparable to each other. They predate the row cap;
+the current figure in the table above is 20 bounded queries and 227 ms on a desk
+that does carry lifecycle history.
 
 The queue eagerly loaded each ticket's lifecycle events and then threw that work
 away: the helper reading them went to the relation rather than to what had
@@ -307,18 +309,14 @@ the answer inside the run-to-run noise this page already warns about:
 | With none | 6,699 | 18 |
 
 Both rows are from that sitting, which is what makes them comparable to each
-other and slightly adrift of the 7,052 ms in the table above — that is a
-different run, and the gap between them is the run-to-run variance this page
-opens by warning about.
+other. They are historical uncapped figures; comparing either directly to the
+current 227 ms result would mix the lifecycle experiment with the much larger
+effect of rendering only 200 rows.
 
-**About three per cent, and one query.** That is what the eager load costs when
-it has something to load — a long way from the 9,503 ms the N+1 was costing, and
-small enough that the pagination problem remains the only thing on this page
-worth acting on.
-
-What remains is the pagination problem, which the ticket queue shares with the
-conversation queue: 19 queries is the right number, and it still renders every
-matching row into one response.
+**About three per cent, and one query.** That was what the eager load cost when
+it had something to load — a long way from the 9,503 ms the N+1 was costing.
+The row cap now bounds that eager load too, which is why the current response is
+roughly one megabyte rather than sixty-three.
 
 ### The reports hold up
 
@@ -412,13 +410,14 @@ Stated because a baseline with silent gaps is worse than one with named ones:
 
 ## What this does not say
 
-It does not say Wayfindr is slow. It says two specific pages are unbounded, one
-of them held an N+1 that has since been fixed, and one page that could have been
-either is neither.
+It does not say Wayfindr is universally fast. It says two specific queues were
+unbounded, one of them also held an N+1, and those measured defects are now
+bounded. The named gaps above — Reverb concurrency, attachments, heavy cobrowse
+mutation batches and real contention — remain gaps.
 
-Fixing it was not the point of taking the measurement — but the ticket queue's
-N+1 was fixed before this page was published, and the figures here were then
-taken again against the same fixture. That is the baseline doing its job in
-miniature: 12,518 queries became 18, and the claim is a subtraction rather than
-an impression. The pagination problem is left standing on purpose, so the next
-set of numbers has something to be compared against.
+Fixing it was not the point of taking the measurement, but measuring again is
+what makes the result more than an impression. The ticket queue moved from
+12,518 queries to 20, from 62.8 MB to 1.1 MB, and from about seven seconds to
+227 ms on the same shaped 50,000-conversation fixture. Those are separate
+query-count and row-cap improvements, recorded separately above so one does not
+borrow the other's credit.

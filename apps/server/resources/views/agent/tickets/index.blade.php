@@ -126,6 +126,17 @@
                     {{ $ticketQueueCountSummary['detail'] }}
                 </p>
 
+                {{-- Only when the cap actually bit. The total describes the
+                     selected lane; the table below contains the bounded page. --}}
+                @if ($ticketQueueShownOf > $tickets->count())
+                    <p class="wf-queue-summary" role="status">
+                        {{ __('tickets.summary.capped_notice', [
+                            'shown' => \App\Support\ReaderNumber::count($tickets->count()),
+                            'total' => \App\Support\ReaderNumber::count($ticketQueueShownOf),
+                        ]) }}
+                    </p>
+                @endif
+
                 @if ($ticketActiveFilters !== [])
                     <div class="filter-summary" aria-label="{{ __('tickets.regions.filters') }}">
                         <div>

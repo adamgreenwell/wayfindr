@@ -10,9 +10,70 @@ use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\ReaderNumber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+test('the ticket queue caps rows while reporting the full lane size', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $total = Ticket::QUEUE_DISPLAY_LIMIT + 25;
+
+    $created = Ticket::factory()
+        ->count($total)
+        ->for($account)
+        ->for($site)
+        ->create([
+            'status' => 'open',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+    $response = $this->actingAs($agent)->get('/dashboard/tickets');
+
+    $response->assertOk();
+
+    $rendered = $response->viewData('tickets');
+
+    expect($rendered)->toHaveCount(Ticket::QUEUE_DISPLAY_LIMIT)
+        ->and($response->viewData('ticketQueueShownOf'))->toBe($total);
+
+    expect($rendered->pluck('id')->all())->toBe(
+        $created->sortByDesc('id')->take(Ticket::QUEUE_DISPLAY_LIMIT)->pluck('id')->values()->all(),
+        'timestamp ties made the capped queue boundary unstable'
+    );
+
+    $summary = $response->viewData('ticketQueueCountSummary');
+
+    expect($summary['heading'])->toContain((string) $total)
+        ->and($summary['detail'])->toContain((string) Ticket::QUEUE_DISPLAY_LIMIT);
+
+    $response->assertSee(__('tickets.summary.capped_notice', [
+        'shown' => ReaderNumber::count(Ticket::QUEUE_DISPLAY_LIMIT),
+        'total' => ReaderNumber::count($total),
+    ]));
+});
+
+test('a ticket queue that fits does not announce a display cap', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    Ticket::factory()->count(3)->for($account)->for($site)->create(['status' => 'open']);
+
+    $response = $this->actingAs($agent)->get('/dashboard/tickets');
+
+    $response->assertOk();
+
+    expect($response->viewData('ticketQueueShownOf'))->toBe(3);
+
+    $response->assertDontSee(__('tickets.summary.capped_notice', [
+        'shown' => '3',
+        'total' => '3',
+    ]));
+});
 
 test('ticket links preserve the current ticket queue filters for detail page return navigation', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
