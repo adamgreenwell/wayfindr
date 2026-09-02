@@ -6,6 +6,8 @@ namespace App\Support\Conversations;
 
 use App\Models\Conversation;
 use App\Support\CobrowseConsentState;
+use Closure;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -23,12 +25,14 @@ final class CobrowseAttentionFinder
     /** @param Builder<Conversation> $query */
     public function count(Builder $query): int
     {
-        $query = (clone $query)
-            ->select('conversations.id')
-            ->reorder()
-            ->orderBy('conversations.id');
+        return $this->withinStableSnapshot($query, function () use ($query): int {
+            $query = (clone $query)
+                ->select('conversations.id')
+                ->reorder()
+                ->orderBy('conversations.id');
 
-        return $this->scan($query, collectMatchingIds: false)['count'];
+            return $this->scan($query, collectMatchingIds: false)['count'];
+        });
     }
 
     /**
@@ -41,16 +45,18 @@ final class CobrowseAttentionFinder
      */
     public function page(Builder $query, int $limit): array
     {
-        $result = $this->scan(clone $query, collectMatchingIds: true);
-        $conversations = $this->hydratePage(clone $query, $result['matching_ids'], $limit);
+        return $this->withinStableSnapshot($query, function () use ($query, $limit): array {
+            $result = $this->scan(clone $query, collectMatchingIds: true);
+            $conversations = $this->hydratePage(clone $query, $result['matching_ids'], $limit);
 
-        return [
-            'count' => $result['count'],
-            'conversations' => $conversations,
-            'transportByConversationId' => $conversations->mapWithKeys(fn (Conversation $conversation): array => [
-                $conversation->id => $this->cobrowseConsentState->queueTransportForConversation($conversation),
-            ]),
-        ];
+            return [
+                'count' => $result['count'],
+                'conversations' => $conversations,
+                'transportByConversationId' => $conversations->mapWithKeys(fn (Conversation $conversation): array => [
+                    $conversation->id => $this->cobrowseConsentState->queueTransportForConversation($conversation),
+                ]),
+            ];
+        });
     }
 
     /**
@@ -59,9 +65,11 @@ final class CobrowseAttentionFinder
      */
     public function take(Builder $query, int $limit): Collection
     {
-        $result = $this->scan(clone $query, collectMatchingIds: true);
+        return $this->withinStableSnapshot($query, function () use ($query, $limit): Collection {
+            $result = $this->scan(clone $query, collectMatchingIds: true);
 
-        return $this->hydratePage(clone $query, $result['matching_ids'], $limit);
+            return $this->hydratePage(clone $query, $result['matching_ids'], $limit);
+        });
     }
 
     /**
@@ -119,10 +127,10 @@ final class CobrowseAttentionFinder
             return collect();
         }
 
-        // Keep every match reconsiderable until one current SQL ordering picks
-        // the rendered window. Retaining only the current top 200 full models
-        // permanently loses an evicted match if a new message moves it back
-        // into the window while later id chunks are still being evaluated.
+        // Keep every match reconsiderable until one snapshot-consistent SQL
+        // ordering picks the rendered window. Retaining only the current top
+        // 200 full models permanently loses an evicted match if a new message
+        // moves it back into the window while later id chunks are evaluated.
         $query
             ->whereIntegerInRaw('conversations.id', $matchingIds)
             ->reorder();
@@ -130,5 +138,43 @@ final class CobrowseAttentionFinder
         ConversationQueueQuery::ordered($query);
 
         return $query->limit($limit)->get();
+    }
+
+    /**
+     * Give every chunk, the exact count, and the final ordering one database
+     * view. The supported runtime is PostgreSQL; its default READ COMMITTED
+     * would otherwise refresh the active-session predicate on every chunk.
+     *
+     * An existing transaction owns its own isolation contract. That path is
+     * used by the transactional test harness; web callers enter here without
+     * one, so PostgreSQL can set the isolation before the snapshot's first
+     * query.
+     *
+     * @template TResult
+     *
+     * @param  Closure(): TResult  $read
+     * @return TResult
+     */
+    private function withinStableSnapshot(Builder $query, Closure $read): mixed
+    {
+        $connection = $query->getConnection();
+
+        if ($connection->transactionLevel() > 0) {
+            return $read();
+        }
+
+        return $connection->transaction(function () use ($connection, $read): mixed {
+            $this->useStableReadIsolation($connection);
+
+            return $read();
+        });
+    }
+
+    private function useStableReadIsolation(Connection $connection): void
+    {
+        if ($connection->getDriverName() === 'pgsql') {
+            // PostgreSQL accepts this after BEGIN and before the first query.
+            $connection->statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+        }
     }
 }
