@@ -1542,7 +1542,7 @@ test('every cognate on the list still appears, so the list cannot rot', function
     $world = conversationQueueLanguageWorld();
 
     // Tickets too, since several cognates only appear on that queue.
-    $conversation = Conversation::query()->firstOrFail();
+    $conversation = conversationQueueLanguageCobrowseSession()->conversation;
 
     Ticket::factory()
         ->for($world['account'])
@@ -2074,7 +2074,7 @@ test('every extracted cobrowse group renders translated', function (): void {
     // list grows as the vocabulary lands, and when it covers the panel the
     // marker comes off and the ordinary guards take over.
     $world = conversationQueueLanguageWorld();
-    $conversation = Conversation::query()->firstOrFail();
+    $conversation = conversationQueueLanguageCobrowseSession()->conversation;
 
     $page = conversationQueueLanguageVisibleText(
         (string) $this->actingAs($world['agents']['de'])
