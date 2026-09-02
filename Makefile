@@ -1,6 +1,6 @@
 SERVER_DIR := apps/server
 
-.PHONY: help design-fonts-test design-tokens design-tokens-test php-version-test public-artifact-install-test public-info-check public-info-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
+.PHONY: help design-fonts-test design-tokens design-tokens-test php-version-test public-artifact-install-test public-info-check public-info-test reverb-capacity-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
 
 help:
 	@printf '%s\n' 'Wayfindr development commands:'
@@ -12,6 +12,8 @@ help:
 	@printf '%s\n' '                          Test public release artifacts in Docker (destructive to its evidence project)'
 	@printf '%s\n' '  make public-info-check  Check tracked files for sensitive markers'
 	@printf '%s\n' '  make public-info-test   Test the public-info boundary guard'
+	@printf '%s\n' '  make reverb-capacity-test'
+	@printf '%s\n' '                          Test the concurrent-agent capacity harness guards'
 	@printf '%s\n' '  make self-host-test     Test the installer and compose stack (needs Docker)'
 	@printf '%s\n' '  make wiki-test          Validate Wiki navigation and authority links'
 	@printf '%s\n' '  make wiki-sync-dry-run  Preview docs/wiki against the GitHub Wiki'
@@ -41,6 +43,9 @@ public-info-check:
 public-info-test:
 	scripts/test-public-info-boundary.sh
 
+reverb-capacity-test:
+	scripts/test-reverb-agent-capacity.sh
+
 php-version-test:
 	scripts/test-php-version-contract.sh
 
@@ -53,13 +58,14 @@ wiki-sync-dry-run: wiki-test
 # The installer is shipped code that operators curl into bash, and two of these
 # guard rules the artifact ALSO implements — see docs/development/testing.md.
 self-host-test: php-version-test
-	bash -n scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh
+	bash -n scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh
 	scripts/test-disposable-vm-evidence-runner.sh
 	scripts/test-self-host-env-generator.sh
 	scripts/test-self-host-compose-template.sh
 	scripts/test-self-host-env-value.sh
 	scripts/test-self-host-classification.sh
 	scripts/test-widget-bundle.sh
+	scripts/test-reverb-agent-capacity.sh
 
 public-artifact-install-test:
 	scripts/smoke/public-artifact-install.sh
