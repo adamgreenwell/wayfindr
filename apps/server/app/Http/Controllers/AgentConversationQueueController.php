@@ -148,35 +148,57 @@ class AgentConversationQueueController extends Controller
             ->when($conversationSearch !== '', fn ($query) => ConversationQueueQuery::applySearch($query, $conversationSearch))
             ->tap(fn ($query) => ConversationQueueQuery::applyLane($query, $conversationFilter, $agent));
 
-        // Capped, because this rendered every matching row into one response:
-        // 187 MB of HTML on a year of a busy desk, after twenty-three seconds
-        // of server time (#837).
+        // The ATTENTION lane decides membership in PHP, from a transport state
+        // computed off loaded relations, so it cannot be capped in SQL: the 200
+        // most recent active cobrowse sessions could all be healthy while an
+        // older one is degraded, and the lane would render empty next to a
+        // badge insisting something needs attention.
+        //
+        // Capping it after the filter is safe because the SQL set is already
+        // narrow -- `withActiveCobrowseSession()` bounds it to sessions that
+        // are live right now, not to the whole desk.
+        $narrowsInPhp = $conversationFilter === 'cobrowse_attention';
+
         $conversations = (clone $conversationRows)
             ->tap(fn ($query) => ConversationQueueQuery::ordered($query))
-            ->limit(ConversationQueueQuery::DISPLAY_LIMIT)
+            // Capped, because this rendered every matching row into one
+            // response: 187 MB of HTML on a year of a busy desk, after
+            // twenty-three seconds of server time (#837).
+            ->when(! $narrowsInPhp, fn ($query) => $query->limit(ConversationQueueQuery::DISPLAY_LIMIT))
             ->get();
-
-        // And the total is NOT capped, so a busy lane reads as "200 of 12,431"
-        // rather than as 200 -- reporting the cap as the count is the one
-        // number an agent would have trusted.
-        //
-        // Only asked for when the cap was actually reached: a lane that fits
-        // already knows its own size, and this is the queue's hottest page.
-        $conversationsShownOf = $conversations->count() < ConversationQueueQuery::DISPLAY_LIMIT
-            ? $conversations->count()
-            : (clone $conversationRows)->count();
 
         $cobrowseTransportByConversationId = $conversations
             ->mapWithKeys(fn (Conversation $conversation): array => [
                 $conversation->id => $cobrowseConsentState->queueTransportForConversation($conversation),
             ]);
 
-        if ($conversationFilter === 'cobrowse_attention') {
+        if ($narrowsInPhp) {
             $conversations = $conversations
                 ->filter(fn (Conversation $conversation): bool => $cobrowseConsentState->transportNeedsAttention(
                     $cobrowseTransportByConversationId->get($conversation->id, [])
                 ))
                 ->values();
+        }
+
+        // The total is NOT capped, so a busy lane reads as "200 of 12,431"
+        // rather than as 200 -- reporting the cap as the count is the one
+        // number an agent would have trusted.
+        //
+        // Counted AFTER the PHP filter where there is one, or the attention
+        // lane would report how many sessions are live rather than how many
+        // need attention, and show a capped notice for rows it is not hiding.
+        //
+        // For the SQL lanes it is only asked for when the cap was actually
+        // reached: a lane that fits already knows its own size, and this is the
+        // queue's hottest page.
+        $conversationsShownOf = match (true) {
+            $narrowsInPhp => $conversations->count(),
+            $conversations->count() < ConversationQueueQuery::DISPLAY_LIMIT => $conversations->count(),
+            default => (clone $conversationRows)->count(),
+        };
+
+        if ($narrowsInPhp) {
+            $conversations = $conversations->take(ConversationQueueQuery::DISPLAY_LIMIT)->values();
         }
         $conversationQueueCountSummary = $this->conversationQueueCountSummary(
             $conversations,
