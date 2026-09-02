@@ -222,6 +222,7 @@ async function runSample(browser, runNumber) {
     const naturalFailures = allTransportFailures.filter((failure) => !failure.injected).length
       + failedResponses.length;
     const mutationRequests = visitorNetwork.records.filter((record) => record.kind === 'mutations');
+    const statusPolls = visitorNetwork.responses.filter((response) => response.kind === 'status').length;
 
     const allTransportMasked = [
       consentMetric,
@@ -245,6 +246,7 @@ async function runSample(browser, runNumber) {
     assert(successfulBatches > retainedBatches, 'workload did not exercise retained-batch trimming');
     assert(realtime.update_events > 0, 'agent received no cobrowse Reverb updates');
     assert(agentNetwork.records.some((record) => record.kind === 'preview'), 'Reverb updates triggered no agent preview fetch');
+    assert(statusPolls > 0, 'workload completed without exercising the cobrowse status poll');
     assert(naturalFailures === 0, `observed ${naturalFailures} unplanned cobrowse request failures`);
     assert(pageErrors.length === 0, `browser reported ${pageErrors.length} uncaught page errors`);
 
@@ -259,6 +261,7 @@ async function runSample(browser, runNumber) {
         dropped_batches: pressureSummary.dropped_count || 0,
         injected_request_failures: injectedFailures,
         natural_request_failures: naturalFailures,
+        cobrowse_status_polls: statusPolls,
         console_errors_before_forced_loss: consoleErrorsBeforeInjectedLoss,
         console_errors_during_forced_loss: Math.max(0, consoleErrors - consoleErrorsBeforeInjectedLoss),
         uncaught_page_errors: pageErrors.length,
@@ -550,6 +553,7 @@ function observeNetwork(page) {
   const injected = new WeakSet();
   const records = [];
   const failures = [];
+  const responses = [];
   const failedResponses = [];
 
   page.on('request', (request) => {
@@ -581,8 +585,15 @@ function observeNetwork(page) {
   page.on('response', (response) => {
     const kind = requestKind(response.url());
 
-    if (kind && (response.status() < 200 || response.status() >= 300)) {
-      failedResponses.push({ kind, status: response.status() });
+    if (!kind) {
+      return;
+    }
+
+    const observed = { kind, status: response.status() };
+    responses.push(observed);
+
+    if (observed.status < 200 || observed.status >= 300) {
+      failedResponses.push(observed);
     }
   });
 
@@ -598,6 +609,7 @@ function observeNetwork(page) {
     failures,
     failedResponses,
     records,
+    responses,
     starts,
     markInjectedFailure(request) {
       injected.add(request);
@@ -696,6 +708,10 @@ function requestKind(url) {
 
   if (/\/api\/conversations\/[^/]+\/cobrowse-mutations$/.test(pathname)) {
     return 'mutations';
+  }
+
+  if (/\/api\/conversations\/[^/]+\/cobrowse$/.test(pathname)) {
+    return 'status';
   }
 
   if (/\/dashboard\/conversations\/[^/]+\/cobrowse\/preview$/.test(pathname)) {
