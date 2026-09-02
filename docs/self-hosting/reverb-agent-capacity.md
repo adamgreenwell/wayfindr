@@ -21,7 +21,7 @@ large launch.
 
 | | |
 | --- | --- |
-| Revision | `e3b93119061f1acb71df9b30fd5a5c832cc84af1` |
+| Revision | `72c27f6c8eb12275d0196173e0a4e213fee74e1f` |
 | Working tree | Clean |
 | Machine | Apple M4 Max, 16 logical CPUs, 128 GB |
 | OS | macOS 27.0 (Darwin 27.0.0), arm64 |
@@ -37,6 +37,10 @@ large launch.
 The machine was not isolated from ordinary development activity. Timing and
 sampled CPU figures are therefore approximate. Counts, subscriptions,
 deliveries, disconnects, and protocol errors are the useful pass/fail evidence.
+CPU percent is derived from the Reverb process's cumulative CPU-time delta over
+each sampling interval (Linux `/proc` ticks or cumulative process time on
+Darwin), not the lifetime average reported by `ps %cpu`. The harness takes and
+excludes a new baseline at every ramp and hold boundary.
 
 ## Workload
 
@@ -70,11 +74,11 @@ HTTP request. The one PHP worker serializes parts of those 10-way bursts.
 
 | Active agents | New sign-ins / subscriptions | Login p95 | Private channel ready p95 | Delivery p95 | Delivered | Reverb CPU max | Reverb RSS max |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 10 | 10 / 10 | 2,425 ms | 379 ms | 22.8 ms | 30 / 30 | 0.7% | 62.3 MiB |
-| 25 | 15 / 15 | 2,661 ms | 408 ms | 23.3 ms | 75 / 75 | 0.6% | 62.4 MiB |
-| 50 | 25 / 25 | 2,670 ms | 402 ms | 26.5 ms | 150 / 150 | 0.7% | 62.9 MiB |
-| 100 | 50 / 50 | 2,680 ms | 429 ms | 24.7 ms | 300 / 300 | 1.2% | 63.9 MiB |
-| 200 | 100 / 100 | 2,707 ms | 422 ms | 25.9 ms | 600 / 600 | 1.0% | 65.8 MiB |
+| 10 | 10 / 10 | 2,432 ms | 366 ms | 32.2 ms | 30 / 30 | 1.4% | 62.4 MiB |
+| 25 | 15 / 15 | 2,697 ms | 419 ms | 27.1 ms | 75 / 75 | 1.2% | 62.4 MiB |
+| 50 | 25 / 25 | 2,690 ms | 424 ms | 24.6 ms | 150 / 150 | 1.0% | 62.8 MiB |
+| 100 | 50 / 50 | 2,770 ms | 438 ms | 23.6 ms | 300 / 300 | 2.8% | 63.8 MiB |
+| 200 | 100 / 100 | 2,828 ms | 446 ms | 26.0 ms | 600 / 600 | 2.1% | 65.8 MiB |
 
 Every stage had zero login, connection, subscription, and delivery failures;
 zero disconnects and reconnect attempts; and zero WebSocket errors.
@@ -86,18 +90,18 @@ zero disconnects and reconnect attempts; and zero WebSocket errors.
 | Duration | 90.0 seconds |
 | Realtime events | 6 |
 | Deliveries | 1,200 / 1,200 |
-| Delivery latency | 63.1 ms median / 74.0 ms p95 / 74.9 ms max |
+| Delivery latency | 51.5 ms median / 73.6 ms p95 / 74.1 ms max |
 | Disconnects / reconnect attempts / WebSocket errors | 0 / 0 / 0 |
 | Subscribed at end | 200 / 200 |
 | Application pings sent during hold | 1,200 |
 | Matched pongs received during hold | 1,200 |
 | Clients sending pings / receiving matched pongs | 200 / 200 |
-| Pong latency | 1.3 ms median / 2.6 ms p95 / 5.7 ms max |
+| Pong latency | 0.7 ms median / 2.4 ms p95 / 7.8 ms max |
 | Keepalive timeouts | 0 |
 | Unacknowledged pings after deadline drain | 0 |
-| Reverb CPU | 0.6% median / 3.3% p95 / 4.3% max |
+| Reverb CPU | 1.0% median / 2.0% p95 / 2.0% max |
 | Reverb RSS | 65.8 MiB median / 65.8 MiB max |
-| Load-client RSS | 225.6 MiB median / 228.2 MiB max |
+| Load-client RSS | 233.7 MiB median / 233.7 MiB max |
 
 The harness permits only one outstanding application ping per connection and
 gives each ping a 10-second response deadline. At the exact end of the hold it
@@ -114,7 +118,7 @@ MiB from the 10-agent stage and its sampled CPU remained low through 200
 connections. The visible
 pressure was the **single PHP development worker used for login, conversation
 loading, channel authorization, and event-trigger HTTP requests**. A new
-agent's login reached 2.71 seconds p95 in the 10-way onboarding bursts, while
+agent's login reached 2.83 seconds p95 in the 10-way onboarding bursts, while
 the already-connected 200-recipient event stayed below 27 ms p95 during the
 ramp.
 
@@ -223,10 +227,11 @@ stage, 10-way connection concurrency, a 90-second top-stage hold, and an event
 every 15 seconds. The JSON output contains environment metadata, aggregate
 durations, counts, and process samples; it does not contain the app key,
 password, cookies, CSRF values, channel name, support code, or event payloads.
-The harness refuses a dirty Git worktree by default so the recorded revision
-cannot mislabel modified code. `WAYFINDR_CAPACITY_ALLOW_DIRTY=1` is available
-only for development shakedowns, and records `working_tree_clean: false` in the
-report.
+The harness checks the Git worktree both before and after the measurement and
+refuses to publish a report if either check is dirty, so edits made during a run
+cannot be mislabeled as the recorded revision. `WAYFINDR_CAPACITY_ALLOW_DIRTY=1`
+is available only for development shakedowns; those reports record start, end,
+and combined cleanliness explicitly.
 
 Stop both application processes, then remove the login-capable fixture:
 
