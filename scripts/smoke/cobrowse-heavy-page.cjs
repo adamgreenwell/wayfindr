@@ -101,6 +101,9 @@ async function runSample(browser, runNumber) {
       mutationBatchMaxBytes: 60000,
       mutationQueueMaxRecords: 250,
       mutationFlushMs: 50,
+      pressureResyncMs: 30000,
+      statusPollMs: 5000,
+      resyncMaxAttempts: 3,
     }, 'stock widget');
 
     const supportCode = await createConversation(visitorPage, runNumber);
@@ -136,11 +139,20 @@ async function runSample(browser, runNumber) {
     const initialSnapshot = initialSnapshotBody?.data?.snapshot || {};
 
     assertExactBudgets(serverBudget, {
+      snapshot_html_max_characters: 65535,
+      snapshot_text_max_characters: 10000,
       mutation_batch_max_items: 50,
+      mutation_text_max_characters: 5000,
+      mutation_html_max_characters: 10000,
+      mutation_attribute_value_max_characters: 2048,
       mutation_recent_batches_retained: 20,
+      telemetry_payload_max_bytes: 10485760,
       widget_mutation_batch_max_bytes: 60000,
       widget_mutation_queue_max_records: 250,
       widget_mutation_flush_ms: 50,
+      widget_pressure_resync_ms: 30000,
+      widget_status_poll_ms: 5000,
+      widget_resync_max_attempts: 3,
     }, 'server');
 
     await agentPage.locator('[data-cobrowse-replay-frame]').waitFor({ state: 'attached', timeout: timeoutMs });
@@ -204,8 +216,9 @@ async function runSample(browser, runNumber) {
     const finalMutation = mutationMetrics.at(-1) || {};
     const successfulBatches = pressureSummary.batch_count || finalMutation.batch_count || 0;
     const retainedBatches = pressureSummary.recent_batches_count || finalMutation.recent_batches_count || 0;
-    const injectedFailures = visitorNetwork.failures.filter((failure) => failure.injected).length;
-    const naturalFailures = visitorNetwork.failures.filter((failure) => !failure.injected).length;
+    const allRequestFailures = [...visitorNetwork.failures, ...agentNetwork.failures];
+    const injectedFailures = allRequestFailures.filter((failure) => failure.injected).length;
+    const naturalFailures = allRequestFailures.filter((failure) => !failure.injected).length;
     const mutationRequests = visitorNetwork.records.filter((record) => record.kind === 'mutations');
 
     const allTransportMasked = [
