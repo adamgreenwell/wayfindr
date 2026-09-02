@@ -3,8 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Models\ConversationMessageAttachment;
+use App\Support\Attachments\AttachmentRetentionRequestCounter;
 use App\Support\Attachments\AttachmentStorage;
 use Illuminate\Console\Command;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 
@@ -22,6 +24,14 @@ class SweepOrphanedAttachmentsCommand extends Command
         // surface (e.g. attachments-s3 after switching back to local) must keep
         // being reconciled for as long as rows still call it home.
         $diskNames = $this->sweepableDiskNames();
+
+        if (AttachmentRetentionRequestCounter::enabled()) {
+            foreach ($diskNames as $diskName) {
+                /** @var FilesystemAdapter $disk */
+                $disk = Storage::disk($diskName);
+                AttachmentRetentionRequestCounter::attach($disk);
+            }
+        }
 
         $removedRows = $this->sweepAbandonedUploads($dryRun);
         $removedFiles = $this->sweepOrphanedFiles($diskNames, $dryRun);
