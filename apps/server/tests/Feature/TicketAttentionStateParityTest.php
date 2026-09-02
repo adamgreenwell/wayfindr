@@ -9,7 +9,9 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -87,11 +89,16 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     // Assigned and open, so the earlier branches cannot decide it first.
     $assignee = User::query()->firstOrFail();
 
-    $withNullSender = Ticket::factory()->for($account)->for($site)->create([
-        'status' => 'open',
-        'assignee_id' => $assignee->id,
-        'conversation_id' => Conversation::factory()->for($site)->create()->id,
-    ]);
+    $ticketOnItsOwnConversation = fn (string $status, ?int $assigneeId): Ticket => Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->create([
+            'status' => $status,
+            'assignee_id' => $assigneeId,
+            'conversation_id' => Conversation::factory()->for($site)->create()->id,
+        ]);
+
+    $withNullSender = $ticketOnItsOwnConversation('open', $assignee->id);
 
     ConversationMessage::factory()->create([
         'conversation_id' => $withNullSender->conversation_id,
@@ -102,6 +109,50 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
 
     expect($withNullSender->fresh()->attentionState())->toBe('needs_reply',
         'the fixture no longer produces the null-sender case this guard exists for');
+
+    // Messages with a NULL `created_at`, which the column allows -- and which
+    // separate `ofMany(max)` from an `order by ... desc limit 1`. A MAX skips
+    // them; a descending sort puts them FIRST on PostgreSQL. Nothing in a
+    // seeded desk is null-dated, so the fixture agreed about a case it never
+    // built, on the one driver where the two disagree.
+    $undate = fn (ConversationMessage $message) => DB::table('conversation_messages')
+        ->where('id', $message->id)
+        ->update(['created_at' => null]);
+
+    // A dated visitor message and a null-dated agent one. The dated visitor
+    // message is the latest, so this is `needs_reply`. Read the other way the
+    // agent message wins and it becomes `waiting_on_customer` -- the wrong
+    // lane, from the wrong message.
+    $mixedDates = $ticketOnItsOwnConversation('open', $assignee->id);
+
+    ConversationMessage::factory()->create([
+        'conversation_id' => $mixedDates->conversation_id,
+        'sender_type' => (new Visitor)->getMorphClass(),
+        'sender_id' => Visitor::query()->firstOrFail()->id,
+        'created_at' => now()->subMinutes(5),
+    ]);
+
+    $undate(ConversationMessage::factory()->create([
+        'conversation_id' => $mixedDates->conversation_id,
+        'sender_type' => (new User)->getMorphClass(),
+        'sender_id' => $assignee->id,
+    ]));
+
+    // Every message null-dated. `latestMessage` is null here, so the ticket has
+    // no latest message at all and lands on `needs_agent` -- not `needs_reply`,
+    // which is what an existence check that counts undated rows would say.
+    $allUndated = $ticketOnItsOwnConversation('open', $assignee->id);
+
+    $undate(ConversationMessage::factory()->create([
+        'conversation_id' => $allUndated->conversation_id,
+        'sender_type' => (new Visitor)->getMorphClass(),
+        'sender_id' => Visitor::query()->firstOrFail()->id,
+    ]));
+
+    expect($mixedDates->fresh()->attentionState())->toBe('needs_reply',
+        'the fixture no longer separates a MAX from a descending sort')
+        ->and($allUndated->fresh()->attentionState())->toBe('needs_agent',
+            'the fixture no longer covers a conversation whose messages are all undated');
 
     $inSql = Ticket::query()
         ->selectAttentionState()

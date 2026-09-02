@@ -92,10 +92,21 @@ class Ticket extends Model
      */
     private static function attentionStateSql(): array
     {
-        // The latest message on the ticket's conversation, by the ordering
-        // `latestConversationMessage()` uses: newest `created_at`, newest id.
-        $latestSender = '(select m.sender_type from conversation_messages m'
+        // The latest message on the ticket's conversation, matching
+        // `Conversation::latestMessage()` -- which is `ofMany(max)`, not an
+        // `order by ... desc limit 1`.
+        //
+        // The difference is null `created_at`, which the column allows. A MAX
+        // skips nulls, so `ofMany` never returns a null-dated message; a
+        // descending sort puts one FIRST on PostgreSQL and last on SQLite. The
+        // `is not null` is what makes this a MAX rather than a sort, and it has
+        // to be on the existence check too: with every message null-dated,
+        // `latestMessage` is null and the ticket has no latest message at all.
+        $datedMessage = 'from conversation_messages m'
             .' where m.conversation_id = tickets.conversation_id'
+            .' and m.created_at is not null';
+
+        $latestSender = "(select m.sender_type {$datedMessage}"
             .' order by m.created_at desc, m.id desc limit 1)';
 
         // Whether the conversation has a message AT ALL, asked separately from
@@ -105,8 +116,7 @@ class Ticket extends Model
         // message. `attentionState()` branches on the message OBJECT and then
         // on its sender, so a null-sender message is `needs_reply` there while
         // the collapsed version answered `needs_agent`.
-        $hasMessage = 'exists (select 1 from conversation_messages m2'
-            .' where m2.conversation_id = tickets.conversation_id)';
+        $hasMessage = "exists (select 1 {$datedMessage})";
 
         // Escalated within the last day and not closed, matching
         // `latestRecentEscalationEvent()`, which returns null for a closed
@@ -662,12 +672,16 @@ class Ticket extends Model
 
     private function latestConversationMessage(): ?ConversationMessage
     {
+        // One definition, reached two ways. The fallback used to be its own
+        // `latest('created_at')->latest('id')` query, which is NOT what
+        // `latestMessage()` means: that relation is `ofMany(max)`, and a MAX
+        // ignores null `created_at` while an `order by ... desc` sorts it to
+        // the front on PostgreSQL. So a null-dated message was the latest
+        // message on any page that had not eager-loaded the relation, and was
+        // invisible on the queue, which had. Two answers from one method.
         return $this->conversation?->relationLoaded('latestMessage')
             ? $this->conversation->latestMessage
-            : $this->conversation?->messages()
-                ->latest('created_at')
-                ->latest('id')
-                ->first();
+            : $this->conversation?->latestMessage()->first();
     }
 
     private function activityPreviewLabelKey(ConversationMessage $message): string
