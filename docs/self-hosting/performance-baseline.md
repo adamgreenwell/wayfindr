@@ -18,7 +18,7 @@ up at this size. Numbers below.
 ## Reproducing this
 
 Two commands. Both are shipped, so an operator can run them against their own
-hardware rather than trusting these figures:
+hardware rather than trusting these figures. With PHP on the host:
 
 ```bash
 php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
@@ -27,6 +27,22 @@ php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```bash
 php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
+
+On the documented Docker installs `artisan` is inside the `web` container. The
+one-line installer puts the stack in `./wayfindr`, so from the directory it was
+run in:
+
+```bash
+docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+```
+
+```bash
+docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+```
+
+A by-hand Compose install uses `-f docker/self-hosting/compose.yml --env-file
+docker/self-hosting/.env` from the checkout, exactly as it was brought up. The
+override goes after `php`, not after `artisan`.
 
 Every figure on this page was taken with `--runs=3`.
 
@@ -49,9 +65,18 @@ The desk stays, login-capable, until somebody removes it — a publicly known
 owner credential on an internet-facing box.
 
 Measure a staging copy, a restored backup, or a throwaway VM. If a desk was
-seeded somewhere it should not have been, `--fresh` deletes exactly that account
-before seeding, so a `--fresh` run on a machine you are about to discard is the
-way to be sure it is gone.
+seeded somewhere it should not have been, `--purge` removes it — the account,
+everything under it, and the `desk-agent-` sign-ins — and writes nothing:
+
+```bash
+php artisan wayfindr:seed-desk --purge
+```
+
+`--fresh` is not that: it deletes and then seeds again, so it replaces the
+credential rather than removing it. `--purge` refuses if the account at the
+seeder's slug holds anything the seeder did not create, and does not ask for
+`--force` — it is the remedy, and a remedy that asks to be told twice is one an
+operator postpones.
 
 **The memory override is required, not a precaution.** The shipped image sets
 `memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size

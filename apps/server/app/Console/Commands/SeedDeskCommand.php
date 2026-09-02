@@ -49,6 +49,8 @@ use Throwable;
  *
  * Everything lands in its own account so it cannot be confused with real data,
  * and `--fresh` removes exactly that account rather than truncating tables.
+ * `--purge` removes it and writes nothing, for a desk seeded where it should
+ * not have been.
  */
 final class SeedDeskCommand extends Command
 {
@@ -59,6 +61,7 @@ final class SeedDeskCommand extends Command
         {--sites=3 : Sites the conversations are split between}
         {--messages=6 : Average messages per conversation}
         {--fresh : Delete a previously seeded desk first}
+        {--purge : Delete a previously seeded desk and write nothing}
         {--force : Required to run when the app is in production}';
 
     protected $description = 'Write a desk-sized account to measure the dashboard against.';
@@ -114,6 +117,10 @@ final class SeedDeskCommand extends Command
 
     public function handle(): int
     {
+        if ($this->option('purge')) {
+            return $this->purge();
+        }
+
         if (app()->isProduction() && ! $this->option('force')) {
             $this->components->error('This writes tens of thousands of rows. Re-run with --force if that is really what you want here.');
 
@@ -145,38 +152,7 @@ final class SeedDeskCommand extends Command
 
             if ($this->option('fresh')) {
                 $this->components->task('Removing the previous desk', function (): bool {
-                    // The account cascade takes its sites, and theirs takes the
-                    // visitors, conversations, messages and tickets underneath. One
-                    // delete rather than a truncate, so a real account sitting in
-                    // the same database is untouched.
-                    //
-                    // Users are NOT part of that cascade: `users.account_id` is
-                    // `nullOnDelete()`, so deleting the account detaches them and
-                    // leaves them behind. Reseeding with fewer agents would then
-                    // strand sign-in-capable accounts with this command's known
-                    // password and no account at all -- which is a worse thing to
-                    // leave on a machine than the rows it was asked to remove.
-                    //
-                    // Scoped to THIS account and taken first, while the link still
-                    // exists. Matching on the address alone is global, and would
-                    // delete a real person who happens to hold a `desk-agent-`
-                    // address on another account -- which is the same promise this
-                    // command makes about the rest of the database, broken by the
-                    // fix for the orphans.
-                    $previous = Account::query()->where('slug', self::SLUG)->first();
-
-                    if ($previous === null) {
-                        return true;
-                    }
-
-                    $this->refuseUnlessSeeded($previous);
-
-                    User::query()
-                        ->where('account_id', $previous->id)
-                        ->where('email', 'like', 'desk-agent-%@example.test')
-                        ->delete();
-
-                    $previous->delete();
+                    $this->removePreviousDesk();
 
                     return true;
                 });
@@ -213,6 +189,95 @@ final class SeedDeskCommand extends Command
 
         $this->newLine();
         $this->components->info('Sign in as '.$desk['agents'][0]->email.' with the password `password`.');
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * Delete the desk this command seeded, and nothing else.
+     *
+     * The account cascade takes its sites, and theirs takes the visitors,
+     * conversations, messages and tickets underneath. One delete rather than a
+     * truncate, so a real account sitting in the same database is untouched.
+     *
+     * Users are NOT part of that cascade: `users.account_id` is
+     * `nullOnDelete()`, so deleting the account detaches them and leaves them
+     * behind -- sign-in-capable, holding this command's known password, and
+     * belonging to no account at all, which is a worse thing to leave on a
+     * machine than the rows this was asked to remove. So they go first, while
+     * the link still exists.
+     *
+     * Scoped to THIS account. Matching on the address alone is global, and
+     * would delete a real person who happens to hold a `desk-agent-` address
+     * on another account -- the same promise this command makes about the rest
+     * of the database, broken by the fix for the orphans.
+     *
+     * Shared by `--fresh` and `--purge`, so the two cannot drift: what one
+     * removes before seeding is exactly what the other removes and stops.
+     *
+     * @return int|null Seeded agents removed with the desk, or null when there was no desk
+     *
+     * @throws RuntimeException when the account at the slug is not this command's to delete
+     */
+    private function removePreviousDesk(): ?int
+    {
+        $previous = Account::query()->where('slug', self::SLUG)->first();
+
+        if ($previous === null) {
+            return null;
+        }
+
+        $this->refuseUnlessSeeded($previous);
+
+        $agents = User::query()
+            ->where('account_id', $previous->id)
+            ->where('email', 'like', 'desk-agent-%@example.test')
+            ->delete();
+
+        $previous->delete();
+
+        return $agents;
+    }
+
+    /**
+     * `--purge`: remove the desk and write nothing.
+     *
+     * `--fresh` deletes and then unconditionally seeds, so it cannot make the
+     * credential this command creates go away -- it replaces it. This is the
+     * path for a desk seeded somewhere it should not have been.
+     *
+     * Deliberately NOT behind `--force`. That flag guards writing tens of
+     * thousands of rows; this is the remedy for having done that on the wrong
+     * machine, and a remedy that asks to be told twice is one an operator
+     * postpones. The provenance check inside removePreviousDesk() is the guard
+     * that matters here, and it applies unchanged.
+     */
+    private function purge(): int
+    {
+        $removed = null;
+
+        try {
+            $this->components->task('Removing the measurement desk', function () use (&$removed): bool {
+                $removed = $this->removePreviousDesk();
+
+                return true;
+            });
+        } catch (Throwable $failure) {
+            $this->components->error('Nothing was removed: '.$failure->getMessage());
+
+            return self::FAILURE;
+        }
+
+        if ($removed === null) {
+            $this->components->info('No measurement desk is seeded here. Nothing to remove.');
+
+            return self::SUCCESS;
+        }
+
+        $this->components->info(
+            'Removed the measurement desk and '.ReaderNumber::count($removed)
+            .' seeded agent sign-in'.($removed === 1 ? '' : 's').'. Nothing else was touched.'
+        );
 
         return self::SUCCESS;
     }

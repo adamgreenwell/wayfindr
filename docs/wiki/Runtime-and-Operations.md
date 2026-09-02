@@ -64,19 +64,43 @@ login-capable, until you remove it. On an internet-facing install that is a
 publicly known owner credential.
 
 Use a staging copy, a restored backup, or a throwaway VM. If a desk was already
-seeded somewhere it should not have been, `--fresh` deletes exactly that account
-before seeding, so a `--fresh` run on a machine you are about to discard is the
-way to be sure it is gone.
+seeded somewhere it should not have been, `--purge` removes it — the account,
+everything under it, and the `desk-agent-` sign-ins — and writes nothing.
+`--fresh` is not that: it deletes and then seeds again, so it replaces the
+credential rather than removing it. `--purge` refuses if the account at the
+seeder's slug holds anything the seeder did not create, and it does not ask for
+`--force`: it is the remedy, and a remedy that asks to be told twice is one an
+operator postpones.
 
-Docker Compose, which is what the [one-line and Compose installs](Installation)
-produce — `artisan` lives in the `web` container, not on the host:
+The commands depend on where `artisan` is. The one-line installer puts the
+stack in `./wayfindr` (or wherever `--dir` pointed) with `artisan` inside the
+`web` container, so from the directory you ran the installer in:
 
 ```bash
-docker compose --env-file .env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```
 
 ```bash
-docker compose --env-file .env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+```
+
+```bash
+docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --purge
+```
+
+A by-hand Compose install runs from the repository checkout, with the stack
+files under `docker/self-hosting`:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+```
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+```
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php artisan wayfindr:seed-desk --purge
 ```
 
 Source or Forge deployments, where PHP is on the host:
@@ -89,7 +113,11 @@ php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
 
+```bash
+php artisan wayfindr:seed-desk --purge
+```
+
 `--force` is required because the image runs as production, and it is a real
 warning: this writes tens of thousands of rows to an account of the seeder's
-own. `--fresh` deletes exactly that account and refuses if anything it did not
-create is sitting there.
+own. `--fresh` deletes exactly that account before seeding again and refuses if
+anything it did not create is sitting there; `--purge` deletes it and stops.

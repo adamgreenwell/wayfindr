@@ -1505,3 +1505,89 @@ test('a refused run leaves the desk it was going to replace', function (): void 
         'WF-DESK-0000000', 'WF-DESK-0000001', 'WF-DESK-0000002', 'WF-DESK-0000003', 'WF-DESK-0000004',
     ])->count())->toBe(5, 'the refused run deleted the desk it was replacing');
 });
+
+test('purge removes the desk and its agents, and seeds nothing', function (): void {
+    // `--fresh` deletes and then seeds again, so it cannot make the credential
+    // this command creates go away -- it replaces it. Purge is the path for a
+    // desk seeded somewhere it should not have been, and the thing to prove is
+    // that afterwards there is NOTHING: no account, no rows under it, and no
+    // `desk-agent-` sign-in holding a published password.
+    $bystander = Account::query()->create(['slug' => 'a-real-account', 'name' => 'Real']);
+    $bystanderSite = Site::factory()->for($bystander)->create();
+    $bystanderVisitor = Visitor::factory()->for($bystanderSite)->create();
+    Conversation::factory()->for($bystanderSite)->for($bystanderVisitor)->create(['support_code' => 'WF-REAL-1']);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 6, '--messages' => 1, '--agents' => 3])->assertSuccessful();
+
+    expect(User::query()->where('email', 'like', 'desk-agent-%@example.test')->count())->toBe(3);
+
+    $this->artisan('wayfindr:seed-desk', ['--purge' => true])
+        ->expectsOutputToContain('3 seeded agent sign-ins')
+        ->assertSuccessful();
+
+    expect(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())->toBeFalse('the desk account survived a purge')
+        ->and(User::query()->where('email', 'like', 'desk-agent-%@example.test')->count())->toBe(0, 'a seeded agent with a published password survived a purge')
+        ->and(Conversation::query()->where('support_code', 'like', 'WF-DESK-%')->count())->toBe(0, 'seeded conversations survived a purge')
+        ->and(Account::query()->whereKey($bystander->id)->exists())->toBeTrue('a real account was purged')
+        ->and(Conversation::query()->where('support_code', 'WF-REAL-1')->exists())->toBeTrue('a real conversation was purged');
+});
+
+test('purge refuses an account at its slug that it did not create', function (): void {
+    // The same provenance check as `--fresh`, and it has to be: purge deletes
+    // a whole account cascade on the strength of a slug anybody can choose.
+    $real = Account::query()->create(['slug' => 'wayfindr-measurement-desk', 'name' => 'A Real Desk']);
+    $realSite = Site::factory()->for($real)->create(['name' => 'Production']);
+    $person = User::factory()->for($real)->create(['email' => 'owner@acme.example']);
+
+    $this->artisan('wayfindr:seed-desk', ['--purge' => true])
+        ->expectsOutputToContain('Nothing was removed')
+        ->assertFailed();
+
+    expect(Account::query()->whereKey($real->id)->exists())->toBeTrue('a real account was purged')
+        ->and(Site::query()->whereKey($realSite->id)->exists())->toBeTrue('a real site was purged')
+        ->and(User::query()->whereKey($person->id)->exists())->toBeTrue('a real user was purged');
+});
+
+test('purge with nothing seeded says so and succeeds', function (): void {
+    // An operator checking that a machine is clean should get a yes, not a
+    // failure they then have to interpret.
+    $this->artisan('wayfindr:seed-desk', ['--purge' => true])
+        ->expectsOutputToContain('No measurement desk is seeded here')
+        ->assertSuccessful();
+});
+
+test('purge does not need --force in production', function (): void {
+    // `--force` guards WRITING tens of thousands of rows. Purge is the remedy
+    // for having done that on the wrong machine -- which is production by
+    // definition -- and a remedy that asks to be told twice is one an operator
+    // postpones. The provenance check is the guard that matters, and it still
+    // applies.
+    //
+    // Restored in a `finally`: `app()['env']` is process-global and leaks into
+    // every later test otherwise.
+    $environment = app()['env'];
+
+    try {
+        $this->artisan('wayfindr:seed-desk', ['--conversations' => 4, '--messages' => 1, '--force' => true])->assertSuccessful();
+
+        app()['env'] = 'production';
+
+        $this->artisan('wayfindr:seed-desk', ['--purge' => true])->assertSuccessful();
+
+        expect(User::query()->where('email', 'like', 'desk-agent-%@example.test')->count())
+            ->toBe(0, 'the published password survived a purge in production');
+    } finally {
+        app()['env'] = $environment;
+    }
+});
+
+test('purge writes nothing even when asked to seed', function (): void {
+    // `--purge` beside seeding options is a purge. Doing both would be
+    // `--fresh` under another name, and the whole point of this flag is that
+    // nothing is left behind.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 4, '--messages' => 1])->assertSuccessful();
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 4, '--messages' => 1, '--fresh' => true, '--purge' => true])->assertSuccessful();
+
+    expect(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())
+        ->toBeFalse('purge beside seeding options seeded a desk');
+});
