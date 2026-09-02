@@ -7,7 +7,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
-use App\Support\CobrowseConsentState;
+use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\RealtimeHealth;
 use App\Support\VisitorSupportReadiness;
 use Illuminate\Contracts\View\View;
@@ -17,7 +17,7 @@ use Illuminate\Support\Collection;
 
 class AgentDashboardController extends Controller
 {
-    public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness, CobrowseConsentState $cobrowseConsentState): View|RedirectResponse
+    public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness, CobrowseAttentionFinder $cobrowseAttentionFinder): View|RedirectResponse
     {
         if ($redirect = $this->legacyQueueRedirect($request)) {
             return $redirect;
@@ -42,7 +42,7 @@ class AgentDashboardController extends Controller
                 ->orderBy('expires_at')
                 ->get(),
             'conversationNextSteps' => $this->conversationNextSteps($agent),
-            'supportQueues' => $this->supportQueues($agent, $cobrowseConsentState),
+            'supportQueues' => $this->supportQueues($agent, $cobrowseAttentionFinder),
             'ticketNextSteps' => $this->ticketNextSteps($agent),
             'visitorSupportReadiness' => $visitorSupportReadiness->summary(
                 sites: $sites,
@@ -81,7 +81,7 @@ class AgentDashboardController extends Controller
      *     unassigned_tickets_count: int
      * }
      */
-    private function supportQueues(User $agent, CobrowseConsentState $cobrowseConsentState): array
+    private function supportQueues(User $agent, CobrowseAttentionFinder $cobrowseAttentionFinder): array
     {
         $visibleOpenConversations = Conversation::query()
             ->where('status', 'open')
@@ -95,13 +95,9 @@ class AgentDashboardController extends Controller
         return [
             'open_conversations_count' => (clone $visibleOpenConversations)->count(),
             'new_activity_conversations_count' => (clone $visibleOpenConversations)->withNewActivityFor($agent)->count(),
-            'cobrowse_attention_conversations_count' => (clone $visibleOpenConversations)
-                ->withActiveCobrowseSession()
-                ->with('latestCobrowseSession')
-                ->get()
-                ->map(fn (Conversation $conversation): array => $cobrowseConsentState->queueTransportForConversation($conversation))
-                ->filter(fn (array $transport): bool => $cobrowseConsentState->transportNeedsAttention($transport))
-                ->count(),
+            'cobrowse_attention_conversations_count' => $cobrowseAttentionFinder->count(
+                (clone $visibleOpenConversations)->withActiveCobrowseSession()
+            ),
             'open_tickets_count' => (clone $visibleOpenTickets)->count(),
             'unassigned_tickets_count' => (clone $visibleOpenTickets)->whereNull('assignee_id')->count(),
         ];

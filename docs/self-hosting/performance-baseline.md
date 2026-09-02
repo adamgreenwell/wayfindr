@@ -231,6 +231,20 @@ is the one number an agent would have trusted. That costs one extra query, and
 only when the cap is actually reached; a lane that fits already knows its own
 size.
 
+The cobrowse-attention lane needs a PHP transport-state check before it knows
+which rows belong. It still reports the exact total, but it evaluates recent
+active sessions in chunks of 200, records matching integer IDs, then hydrates
+only the 200 matches the queue can render after one current database ordering.
+Keeping the cheap ID list until that final ordering lets a conversation move
+back into the rendered window if new activity arrives during the scan; keeping
+only 200 full models would lose an already-evicted match. The scan and final
+ordering share one repeatable-read snapshot, so session membership and
+telemetry do not change underneath later chunks. Sessions outside the configured
+idle window (15 minutes by default) do not enter that scan. This bounds
+expensive model hydration without hiding an older degraded session behind a
+page of healthy ones. The fixture below creates no cobrowse sessions, so the
+timings in this document do not quantify that path.
+
 This is a cap rather than pagination on purpose. The queue is a workspace an
 agent scans, filters and returns to all day, not a list they page through, and
 nobody reaches row 12,000 by scrolling — they narrow it with the filters above

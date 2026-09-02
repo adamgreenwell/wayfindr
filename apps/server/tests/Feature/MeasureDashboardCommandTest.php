@@ -11,6 +11,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationQueueQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
@@ -663,9 +664,9 @@ test('the published baseline names every page the command measures', function ()
 });
 
 test('it says up front when the memory limit will not survive the desk', function (): void {
-    // The normal row-rendering paths are capped now. The estimator still has
-    // to warn for a large recent live-cobrowse set, without warning merely
-    // because the desk tables are large.
+    // Queue rows and cobrowse-attention evaluation are bounded now. The warning
+    // rule remains general, but the estimator must pass it the bounded peak
+    // rather than the size of either desk table.
     //
     // Asserted on the RULE rather than by running the command under a small
     // limit: `ini_set` refuses any value below current usage, so a test can
@@ -690,15 +691,6 @@ test('it says up front when the memory limit will not survive the desk', functio
 
     // Room to spare says nothing, or it is noise on every run.
     expect($warn(50_000, 4 * 1024 * 1024 * 1024))->toBeNull();
-
-    // A desk whose LIVE COBROWSE set is large is not bounded by the row cap:
-    // those conversations are hydrated in full on every queue render to count
-    // how many need attention. The active scope ages abandoned sessions out,
-    // but a busy recent set can still exceed the cap. Clamping the
-    // estimate to the cap alone would promise a warning the command then does
-    // not give, and it would run out of memory in a path the estimate had
-    // decided was safe.
-    expect($warn(50_000, 256 * 1024 * 1024))->toContain('memory_limit=2G');
 
     // A small desk fits inside the shipped limit and must not be warned about.
     expect($warn(200, 256 * 1024 * 1024))->toBeNull();
@@ -932,15 +924,11 @@ test('it refuses rather than measure as somebody real', function (): void {
         ->toBe(1, 'the command measured as a user it was never pointed at');
 });
 
-test('the memory estimate counts live cobrowse sessions the cap does not bound', function (): void {
-    // The conversation queue is capped, but conversations with a LIVE cobrowse
-    // session are hydrated in full on every render to count how many need
-    // attention. The active scope now excludes sessions outside the configured
-    // idle window, but a busy recent set can still be larger than the row cap.
-    //
-    // Estimating from the row cap alone reports a comfortable figure for a run
-    // that then dies in that large path, which is worse than not warning:
-    // the operator was told it would fit.
+test('the memory estimate caps cobrowse attention at one chunk plus the rendered page', function (): void {
+    // Attention candidates are still evaluated exactly, but only one chunk or
+    // rendered page is hydrated at a time. The second cap is conservative
+    // headroom for the scalar matching-id list used by the final SQL ordering;
+    // the estimate does not grow like a set of full Eloquent models.
     //
     // Asserted on the RULE, because the interesting desks are ones no test can
     // afford to seed and the arithmetic is where the mistakes are.
@@ -950,10 +938,11 @@ test('the memory estimate counts live cobrowse sessions the cap does not bound',
     expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 0, 0))
         ->toBe($cap);
 
-    // The same desk with more live cobrowse sessions than the cap: NOT bounded,
-    // because that set is hydrated whole.
+    $attentionPeak = ConversationQueueQuery::DISPLAY_LIMIT + CobrowseAttentionFinder::CHUNK_SIZE;
+
+    // A much larger live set stops at the chunk-plus-display peak.
     expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 5_000, 0))
-        ->toBe(5_000, 'the estimate ignored a live-cobrowse set above the row cap');
+        ->toBe($attentionPeak, 'the estimate still grows with the whole live-cobrowse set');
 
     // Fewer live sessions than the cap changes nothing.
     expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 12, 0))
