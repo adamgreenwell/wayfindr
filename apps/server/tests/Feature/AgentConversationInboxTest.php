@@ -17,6 +17,7 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\CobrowseConsentState;
 use App\Support\Conversations\CobrowseAttentionFinder;
+use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\ExternalIssueSyncStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -8487,4 +8488,76 @@ test('the attention lane finds an older degraded session behind a page of health
         ->assertSee('Refreshed retained cobrowse')
         ->assertSee('Newer degraded cobrowse')
         ->assertSee('Buried degraded cobrowse');
+});
+
+test('the attention lane reconsiders a match evicted before a later chunk', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    $evicted = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-EVICTEDDEGRADED',
+        'status' => 'open',
+        'last_message_at' => now()->subDays(4),
+    ]);
+
+    CobrowseSession::factory()->for($evicted)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'ended_at' => null,
+        'metadata' => ['telemetry' => [
+            'reported_at' => now()->subSeconds(12)->toJSON(),
+            'reconnects' => 0,
+            'dropped_batches' => 2,
+        ]],
+    ]);
+
+    foreach (range(1, CobrowseAttentionFinder::CHUNK_SIZE * 2) as $i) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'status' => 'open',
+            'last_message_at' => now()->subMinute(),
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => ['telemetry' => [
+                'reported_at' => now()->subSeconds(12)->toJSON(),
+                'reconnects' => 0,
+                'dropped_batches' => 2,
+            ]],
+        ]);
+    }
+
+    $laterKeysetPages = 0;
+    $movedAfterEviction = false;
+    DB::listen(function ($query) use ($evicted, &$laterKeysetPages, &$movedAfterEviction): void {
+        if (! str_starts_with($query->sql, 'select * from "conversations"')
+            || ! str_contains($query->sql, 'cobrowse_sessions')
+            || ! str_contains($query->sql, '"conversations"."id" > ?')) {
+            return;
+        }
+
+        $laterKeysetPages++;
+
+        if ($laterKeysetPages === 2) {
+            $movedAfterEviction = true;
+            DB::table('conversations')
+                ->where('id', $evicted->id)
+                ->update(['last_message_at' => now()->addMinute()]);
+        }
+    });
+
+    $page = app(CobrowseAttentionFinder::class)->page(
+        Conversation::query()
+            ->where('status', 'open')
+            ->withActiveCobrowseSession(),
+        ConversationQueueQuery::DISPLAY_LIMIT,
+    );
+
+    expect($movedAfterEviction)->toBeTrue('the regression did not move the evicted match')
+        ->and($page['count'])->toBe(CobrowseAttentionFinder::CHUNK_SIZE * 2 + 1)
+        ->and($page['conversations'])->toHaveCount(ConversationQueueQuery::DISPLAY_LIMIT)
+        ->and($page['conversations']->first()->id)->toBe($evicted->id);
 });

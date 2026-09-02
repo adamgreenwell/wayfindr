@@ -925,9 +925,10 @@ test('it refuses rather than measure as somebody real', function (): void {
 });
 
 test('the memory estimate caps cobrowse attention at one chunk plus the rendered page', function (): void {
-    // Attention candidates are still evaluated exactly, but only one chunk is
-    // hydrated while the rendered matches are retained. The estimate follows
-    // that peak rather than growing with the live-session count.
+    // Attention candidates are still evaluated exactly, but only one chunk or
+    // rendered page is hydrated at a time. The second cap is conservative
+    // headroom for the scalar matching-id list used by the final SQL ordering;
+    // the estimate does not grow like a set of full Eloquent models.
     //
     // Asserted on the RULE, because the interesting desks are ones no test can
     // afford to seed and the arithmetic is where the mistakes are.

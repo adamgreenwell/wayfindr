@@ -28,7 +28,7 @@ final class CobrowseAttentionFinder
             ->reorder()
             ->orderBy('conversations.id');
 
-        return $this->scan($query, retain: 0)['count'];
+        return $this->scan($query, collectMatchingIds: false)['count'];
     }
 
     /**
@@ -41,7 +41,16 @@ final class CobrowseAttentionFinder
      */
     public function page(Builder $query, int $limit): array
     {
-        return $this->scan(clone $query, retain: $limit);
+        $result = $this->scan(clone $query, collectMatchingIds: true);
+        $conversations = $this->hydratePage(clone $query, $result['matching_ids'], $limit);
+
+        return [
+            'count' => $result['count'],
+            'conversations' => $conversations,
+            'transportByConversationId' => $conversations->mapWithKeys(fn (Conversation $conversation): array => [
+                $conversation->id => $this->cobrowseConsentState->queueTransportForConversation($conversation),
+            ]),
+        ];
     }
 
     /**
@@ -50,34 +59,34 @@ final class CobrowseAttentionFinder
      */
     public function take(Builder $query, int $limit): Collection
     {
-        return $this->scan(clone $query, retain: $limit)['conversations'];
+        $result = $this->scan(clone $query, collectMatchingIds: true);
+
+        return $this->hydratePage(clone $query, $result['matching_ids'], $limit);
     }
 
     /**
      * @param  Builder<Conversation>  $query
-     * @return array{
-     *     count: int,
-     *     conversations: Collection<int, Conversation>,
-     *     transportByConversationId: Collection<int, array<string, mixed>>
-     * }
+     * @return array{count: int, matching_ids: list<int>}
      */
-    private function scan(Builder $query, int $retain): array
+    private function scan(Builder $query, bool $collectMatchingIds): array
     {
         $count = 0;
-        $conversations = collect();
-        $transportByConversationId = collect();
+        $matchingIds = [];
 
         // Snapshot the high-water id, then walk by immutable primary key. The
         // queue order includes last_message_at, which changes under ordinary
         // traffic; OFFSET pages in that order can duplicate or skip a row when
         // a message arrives between queries.
-        $query = $query->with('latestCobrowseSession')->reorder();
+        $query = $query
+            ->setEagerLoads([])
+            ->with('latestCobrowseSession')
+            ->reorder();
         $maximumId = (clone $query)->max('conversations.id');
 
         if ($maximumId !== null) {
             $query
                 ->where('conversations.id', '<=', $maximumId)
-                ->chunkById(self::CHUNK_SIZE, function (Collection $candidates) use (&$count, &$conversations, &$transportByConversationId, $retain): void {
+                ->chunkById(self::CHUNK_SIZE, function (Collection $candidates) use (&$count, &$matchingIds, $collectMatchingIds): void {
                     foreach ($candidates as $conversation) {
                         $transport = $this->cobrowseConsentState->queueTransportForConversation($conversation);
 
@@ -87,54 +96,39 @@ final class CobrowseAttentionFinder
 
                         $count++;
 
-                        if ($retain > 0) {
-                            $conversations->push($conversation);
-                            $transportByConversationId->put($conversation->id, $transport);
+                        if ($collectMatchingIds) {
+                            $matchingIds[] = $conversation->id;
                         }
-                    }
-
-                    if ($retain > 0 && $conversations->count() > $retain) {
-                        $conversations = $this->retainMostRecent($conversations, $retain);
-                        $transportByConversationId = $transportByConversationId->only($conversations->pluck('id')->all());
                     }
                 }, 'conversations.id', 'id');
         }
 
-        if ($retain > 0 && $conversations->isNotEmpty()) {
-            // A retained conversation can receive a message after its id chunk
-            // was read. Rank the bounded set in SQL again so the rendered page
-            // agrees with the shared queue order at the end of the scan.
-            $conversations = $this->retainMostRecent($conversations, $retain);
-            $transportByConversationId = $transportByConversationId->only($conversations->pluck('id')->all());
-        }
-
         return [
             'count' => $count,
-            'conversations' => $conversations,
-            'transportByConversationId' => $transportByConversationId,
+            'matching_ids' => $matchingIds,
         ];
     }
 
     /**
-     * Re-rank only the bounded retained set using current ordering columns.
-     *
-     * @param  Collection<int, Conversation>  $conversations
+     * @param  list<int>  $matchingIds
      * @return Collection<int, Conversation>
      */
-    private function retainMostRecent(Collection $conversations, int $retain): Collection
+    private function hydratePage(Builder $query, array $matchingIds, int $limit): Collection
     {
-        $conversationsById = $conversations->keyBy('id');
-        $orderedIds = ConversationQueueQuery::ordered(
-            Conversation::query()
-                ->select('id')
-                ->whereKey($conversationsById->keys()->all())
-        )
-            ->limit($retain)
-            ->pluck('id');
+        if ($matchingIds === []) {
+            return collect();
+        }
 
-        return $orderedIds
-            ->map(fn (int $id): ?Conversation => $conversationsById->get($id))
-            ->filter()
-            ->values();
+        // Keep every match reconsiderable until one current SQL ordering picks
+        // the rendered window. Retaining only the current top 200 full models
+        // permanently loses an evicted match if a new message moves it back
+        // into the window while later id chunks are still being evaluated.
+        $query
+            ->whereIntegerInRaw('conversations.id', $matchingIds)
+            ->reorder();
+
+        ConversationQueueQuery::ordered($query);
+
+        return $query->limit($limit)->get();
     }
 }

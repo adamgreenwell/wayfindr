@@ -561,9 +561,11 @@ final class MeasureDashboardCommand extends Command
         // raise the limit to gigabytes for a page that now renders a bounded
         // response, contradicting the command's own measurement.
         //
-        // Cobrowse attention is evaluated in chunks while the matching display
-        // page is retained. Count only as far as that peak can grow: the query
-        // needs no knowledge of rows beyond the chunk-plus-display ceiling.
+        // Cobrowse attention is evaluated in chunks, records matching scalar
+        // ids, then hydrates the display page. Count only far enough to keep
+        // conservative headroom for that id buffer as well as the 200 full
+        // models: the query needs no knowledge of rows beyond the existing
+        // chunk-plus-display ceiling.
         // Counted only for the kinds actually selected. Extracting the rule
         // into a pure function moved these out of the per-kind `match` and made
         // them unconditional, so `--page=ticket` opened with two unrelated
@@ -654,10 +656,10 @@ final class MeasureDashboardCommand extends Command
     public static function estimatedRows(array $kinds, int $conversations, int $activeCobrowse, int $tickets): int
     {
         $perKind = array_map(fn (string $kind): int => match ($kind) {
-            // The rendered page retains at most DISPLAY_LIMIT matches while
-            // the finder evaluates one CHUNK_SIZE page. Once both are full,
-            // later candidates replace the chunk rather than increasing peak
-            // model hydration.
+            // The rendered page and candidate chunks each hydrate at most the
+            // cap. They no longer coexist as full models, but keeping the old
+            // two-cap ceiling leaves conservative room for the scalar match-id
+            // list used by the final database ordering.
             'conversations' => max(
                 min($conversations, ConversationQueueQuery::DISPLAY_LIMIT),
                 min($activeCobrowse, ConversationQueueQuery::DISPLAY_LIMIT + CobrowseAttentionFinder::CHUNK_SIZE),
