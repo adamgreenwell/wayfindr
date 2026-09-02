@@ -10,6 +10,8 @@ to answer: *how much can it take?*
 The browser-to-Reverb path has its own
 [heavy-page cobrowse baseline](cobrowse-performance-baseline.md). It uses a
 populated cobrowse session rather than the empty-session detail control below.
+Concurrent signed-in agents and private-channel fan-out have a separate
+[Reverb capacity baseline](reverb-agent-capacity.md).
 
 **The short version: both queues used to render every matching row, and at a
 year of real traffic that stopped being usable. Both are capped now.** The
