@@ -146,6 +146,9 @@ jobs:
       - name: Test the widget
         run: npm test --prefix packages/widget-js
 
+      - name: Test the concurrent-agent capacity harness guards
+        run: make reverb-capacity-test
+
       - name: Check the design tokens are generated from one source
         run: make design-tokens-test
 
