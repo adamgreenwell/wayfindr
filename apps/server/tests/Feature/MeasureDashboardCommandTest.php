@@ -664,8 +664,8 @@ test('the published baseline names every page the command measures', function ()
 
 test('it says up front when the memory limit will not survive the desk', function (): void {
     // The normal row-rendering paths are capped now. The estimator still has
-    // to warn for a genuinely unbounded path, such as a pathological live-
-    // cobrowse set, without warning merely because the desk tables are large.
+    // to warn for a large recent live-cobrowse set, without warning merely
+    // because the desk tables are large.
     //
     // Asserted on the RULE rather than by running the command under a small
     // limit: `ini_set` refuses any value below current usage, so a test can
@@ -693,7 +693,8 @@ test('it says up front when the memory limit will not survive the desk', functio
 
     // A desk whose LIVE COBROWSE set is large is not bounded by the row cap:
     // those conversations are hydrated in full on every queue render to count
-    // how many need attention, and the scope has no age cutoff. Clamping the
+    // how many need attention. The active scope ages abandoned sessions out,
+    // but a busy recent set can still exceed the cap. Clamping the
     // estimate to the cap alone would promise a warning the command then does
     // not give, and it would run out of memory in a path the estimate had
     // decided was safe.
@@ -934,11 +935,11 @@ test('it refuses rather than measure as somebody real', function (): void {
 test('the memory estimate counts live cobrowse sessions the cap does not bound', function (): void {
     // The conversation queue is capped, but conversations with a LIVE cobrowse
     // session are hydrated in full on every render to count how many need
-    // attention, and `withActiveCobrowseSession()` has no age cutoff -- a desk
-    // that never ends sessions accumulates them.
+    // attention. The active scope now excludes sessions outside the configured
+    // idle window, but a busy recent set can still be larger than the row cap.
     //
     // Estimating from the row cap alone reports a comfortable figure for a run
-    // that then dies in that unbounded path, which is worse than not warning:
+    // that then dies in that large path, which is worse than not warning:
     // the operator was told it would fit.
     //
     // Asserted on the RULE, because the interesting desks are ones no test can
@@ -952,7 +953,7 @@ test('the memory estimate counts live cobrowse sessions the cap does not bound',
     // The same desk with more live cobrowse sessions than the cap: NOT bounded,
     // because that set is hydrated whole.
     expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 5_000, 0))
-        ->toBe(5_000, 'the estimate ignored an unbounded live-cobrowse set');
+        ->toBe(5_000, 'the estimate ignored a live-cobrowse set above the row cap');
 
     // Fewer live sessions than the cap changes nothing.
     expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 12, 0))

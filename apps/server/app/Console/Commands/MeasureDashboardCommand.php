@@ -525,7 +525,7 @@ final class MeasureDashboardCommand extends Command
      *
      * Normal queue rows are capped now, but the conversation queue still
      * hydrates every live cobrowse session to count the ones needing transport
-     * attention. A pathological stale-session set can therefore outgrow the
+     * attention. A very busy recent-session set can therefore outgrow the
      * shipped 256M limit even though the visible rows themselves are bounded.
      *
      * A WARNING, never a refusal. The estimate below is a straight line fitted
@@ -563,8 +563,7 @@ final class MeasureDashboardCommand extends Command
         //
         // Conversations with a LIVE cobrowse session are hydrated in full on
         // every conversation-queue render, to count how many need attention,
-        // and `withActiveCobrowseSession()` has no age cutoff -- a desk that
-        // never ends sessions accumulates them. That set is not capped, so
+        // inside the configured idle window. That recent set is not capped, so
         // clamping the estimate to the row cap alone would let this method
         // promise a warning it does not give: the command would run out of
         // memory in a path the estimate had decided was bounded.
@@ -659,9 +658,10 @@ final class MeasureDashboardCommand extends Command
             // The conversation queue is capped, so its rows stop growing with
             // the desk -- EXCEPT for conversations with a live cobrowse
             // session, which are hydrated in full on every render to count how
-            // many need attention, and which `withActiveCobrowseSession()`
-            // never ages out. Taking the cap alone would promise a warning the
-            // command does not give and then die in the path it called safe.
+            // many need attention. The active scope now ages abandoned rows
+            // out, but a busy recent set can still exceed the cap. Taking the
+            // cap alone would promise a warning the command does not give and
+            // then die in the path it called safe.
             'conversations' => max(min($conversations, ConversationQueueQuery::DISPLAY_LIMIT), $activeCobrowse),
             'tickets' => min($tickets, Ticket::QUEUE_DISPLAY_LIMIT),
             default => 0,

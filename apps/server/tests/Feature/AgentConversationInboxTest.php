@@ -1300,6 +1300,28 @@ test('dashboard shows cobrowse transport health in the conversation queue', func
             ],
         ]);
 
+        $abandonedConversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'support_code' => 'WF-COUNTIDLE',
+            'subject' => 'Abandoned cobrowse should not count',
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(4),
+        ]);
+        $abandonedSession = CobrowseSession::factory()->for($abandonedConversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(20),
+            'ended_at' => null,
+            'metadata' => [
+                'telemetry' => [
+                    'reported_at' => now()->subMinutes(20)->toJSON(),
+                    'reconnects' => 0,
+                    'dropped_batches' => 0,
+                ],
+            ],
+        ]);
+        DB::table('cobrowse_sessions')
+            ->where('id', $abandonedSession->id)
+            ->update(['updated_at' => now()->subMinutes(20)]);
+
         $liveConversation = Conversation::factory()->for($site)->for($visitor)->create([
             'support_code' => 'WF-COBLIVE',
             'subject' => 'Live cobrowse session',
@@ -1968,10 +1990,12 @@ test('dashboard shows cobrowse transport attention counts', function (): void {
             'last_message_at' => now()->subMinutes(4),
         ]);
 
-        $this->actingAs($agent)
+        $response = $this->actingAs($agent)
             ->get('/dashboard/conversations')
             ->assertOk()
             ->assertSee('2 cobrowse sessions need attention');
+
+        expect($response->viewData('cobrowseAttentionConversationCount'))->toBe(2);
     } finally {
         Carbon::setTestNow();
     }

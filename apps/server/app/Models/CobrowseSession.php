@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\SanitisesStoredPageUrls;
+use Carbon\CarbonInterface;
 use Database\Factories\CobrowseSessionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -27,6 +28,17 @@ class CobrowseSession extends Model
     use HasFactory;
 
     use SanitisesStoredPageUrls;
+
+    /** The idle window shared by active reads and the scheduled expiry write. */
+    public static function idleExpiryMinutes(): int
+    {
+        return max(1, (int) config('wayfindr.cobrowse.session_idle_expiry_minutes', 15));
+    }
+
+    public static function idleCutoff(): CarbonInterface
+    {
+        return now()->subMinutes(self::idleExpiryMinutes());
+    }
 
     /**
      * Every place the three cobrowse writers put a page address.
