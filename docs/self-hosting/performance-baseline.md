@@ -7,6 +7,10 @@ correctness proof on an empty install.
 This page is the first answer to the question a self-hosted `1.0` has to be able
 to answer: *how much can it take?*
 
+The browser-to-Reverb path has its own
+[heavy-page cobrowse baseline](cobrowse-performance-baseline.md). It uses a
+populated cobrowse session rather than the empty-session detail control below.
+
 **The short version: both queues used to render every matching row, and at a
 year of real traffic that stopped being usable. Both are capped now.** The
 conversation queue's closed lane went from 187 MB and twenty-three seconds to
@@ -163,6 +167,11 @@ slower, and the measurements exclude the network, the web server and TLS because
 requests are dispatched through the HTTP kernel directly.
 
 ## The numbers
+
+These are the three figures recorded by the original dashboard run. The command
+now also prints peak allocated PHP memory; that fourth field was added for the
+[populated cobrowse measurement](cobrowse-performance-baseline.md) and was not
+reconstructed for this historical table.
 
 At 50,000 conversations:
 
