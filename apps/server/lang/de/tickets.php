@@ -127,6 +127,7 @@ return [
     ],
 
     'summary' => [
+        'capped_notice' => 'Angezeigt werden die ersten :shown von :total Tickets in der Warteschlangenreihenfolge. Grenzen Sie die Warteschlange mit den Filtern oben ein, um die übrigen zu sehen.',
         'lane_narrowed_heading' => ':shown von :matching angezeigt',
         'heading' => [
             'open' => '{1} :count offen|[2,*] :count offen',

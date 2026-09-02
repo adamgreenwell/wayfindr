@@ -663,9 +663,9 @@ test('the published baseline names every page the command measures', function ()
 });
 
 test('it says up front when the memory limit will not survive the desk', function (): void {
-    // The queues render every matching row into one response, so the shipped
-    // image's 256M dies inside the closed queue and prints no table at all. An
-    // operator who missed the override in the docs got a fatal and no reason.
+    // The normal row-rendering paths are capped now. The estimator still has
+    // to warn for a genuinely unbounded path, such as a pathological live-
+    // cobrowse set, without warning merely because the desk tables are large.
     //
     // Asserted on the RULE rather than by running the command under a small
     // limit: `ini_set` refuses any value below current usage, so a test can
@@ -679,22 +679,10 @@ test('it says up front when the memory limit will not survive the desk', functio
         'wayfindr:measure-dashboard',
     );
 
-    // The shipped image against the documented fixture. The row count here is
-    // the TICKET table, because the conversation queue is capped now and its
-    // caller passes the cap rather than the table -- 12,500 tickets on a
-    // 50,000-conversation desk. The recommendation has to match what
-    // `docs/self-hosting/performance-baseline.md` tells operators to run, or
-    // the command contradicts its own documentation the first time somebody
-    // follows it.
-    $shipped = $warn(12_500, 256 * 1024 * 1024);
-
-    expect($shipped)->toContain('memory_limit is 256M')
-        ->and($shipped)->toContain('12,500 rows')
-        ->and($shipped)->toContain('memory_limit=1G')
-        // "up to", because the figure counts the table and the filtered lanes
-        // render a subset of it. A precise-sounding number would be wrong for
-        // them, in the safe direction, which is still wrong.
-        ->and($shipped)->toContain('up to');
+    // Both row-rendering paths are capped now, so the shipped limit has room
+    // for the normal queue. The caller passes this bounded estimate instead of
+    // the ticket table's 12,500 rows.
+    expect($warn(Ticket::QUEUE_DISPLAY_LIMIT, 256 * 1024 * 1024))->toBeNull();
 
     // And the rule itself still scales past that, for whatever is uncapped
     // next: the estimator is not special-cased to today's fixture.
@@ -970,13 +958,13 @@ test('the memory estimate counts live cobrowse sessions the cap does not bound',
     expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 12, 0))
         ->toBe($cap);
 
-    // Tickets are not capped at all yet, so they are the table.
+    // Tickets are capped independently of the size of their table.
     expect(MeasureDashboardCommand::estimatedRows(['tickets'], 50_000, 0, 12_500))
-        ->toBe(12_500);
+        ->toBe(Ticket::QUEUE_DISPLAY_LIMIT);
 
     // Both selected takes the larger.
     expect(MeasureDashboardCommand::estimatedRows(['conversations', 'tickets'], 50_000, 300, 12_500))
-        ->toBe(12_500);
+        ->toBe(300);
 
     // No queue selected estimates nothing rather than erroring on an empty max.
     expect(MeasureDashboardCommand::estimatedRows([], 50_000, 5_000, 12_500))->toBe(0);

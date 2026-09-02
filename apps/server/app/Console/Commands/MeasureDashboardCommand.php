@@ -523,11 +523,10 @@ final class MeasureDashboardCommand extends Command
     /**
      * Say up front when the memory limit will not survive the run.
      *
-     * The queues render every matching row into one response, so the cost is
-     * the desk's size and not a constant: the shipped image allows 256M and the
-     * documented 50,000-conversation fixture needs somewhere between 1.5G and
-     * 2G. Without this an operator who missed the override in the docs gets a
-     * fatal inside the closed queue and no table.
+     * Normal queue rows are capped now, but the conversation queue still
+     * hydrates every live cobrowse session to count the ones needing transport
+     * attention. A pathological stale-session set can therefore outgrow the
+     * shipped 256M limit even though the visible rows themselves are bounded.
      *
      * A WARNING, never a refusal. The estimate below is a straight line fitted
      * to one measured point, which is enough to be useful and not enough to
@@ -557,13 +556,11 @@ final class MeasureDashboardCommand extends Command
         // queue will never render.
         $sites = Site::query()->visibleToAgent($agent)->select('id');
 
-        // The conversation queue is CAPPED, so its cost stops growing with the
-        // desk at `ConversationQueueQuery::DISPLAY_LIMIT` rows -- estimating it
-        // from the table would tell an operator to raise the limit to two
-        // gigabytes for a page that now renders one megabyte, and contradict
-        // the figure this command's own documentation recommends.
+        // Both queues are CAPPED, so their rendered-row cost stops growing with
+        // the desk. Estimating either from the table would tell an operator to
+        // raise the limit to gigabytes for a page that now renders a bounded
+        // response, contradicting the command's own measurement.
         //
-        // The ticket queue is not capped yet (#847), so it is still the table.
         // Conversations with a LIVE cobrowse session are hydrated in full on
         // every conversation-queue render, to count how many need attention,
         // and `withActiveCobrowseSession()` has no age cutoff -- a desk that
@@ -581,13 +578,16 @@ final class MeasureDashboardCommand extends Command
 
         $rows = self::estimatedRows(
             $kinds,
-            $wantsConversations ? Conversation::query()->whereIn('site_id', $sites)->count() : 0,
+            // The precise table sizes no longer affect the normal row cost;
+            // pass the cap and avoid scanning a table just to clamp the answer
+            // back to this same number.
+            $wantsConversations ? ConversationQueueQuery::DISPLAY_LIMIT : 0,
             $wantsConversations ? Conversation::query()
                 ->whereIn('site_id', $sites)
                 ->where('status', 'open')
                 ->withActiveCobrowseSession()
                 ->count() : 0,
-            $wantsTickets ? Ticket::query()->whereIn('site_id', $sites)->count() : 0,
+            $wantsTickets ? Ticket::QUEUE_DISPLAY_LIMIT : 0,
         );
 
         $warning = self::memoryWarning(
@@ -663,8 +663,8 @@ final class MeasureDashboardCommand extends Command
             // never ages out. Taking the cap alone would promise a warning the
             // command does not give and then die in the path it called safe.
             'conversations' => max(min($conversations, ConversationQueueQuery::DISPLAY_LIMIT), $activeCobrowse),
-            // Not capped yet (#847), so it is still the table.
-            default => $tickets,
+            'tickets' => min($tickets, Ticket::QUEUE_DISPLAY_LIMIT),
+            default => 0,
         }, $kinds);
 
         return $perKind === [] ? 0 : max($perKind);

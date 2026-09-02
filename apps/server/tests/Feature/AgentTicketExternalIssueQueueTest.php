@@ -218,12 +218,9 @@ test('the ticket detail page still finds an attempt that is only an audit event'
 });
 
 test('the attention chips do not advertise tickets the external filter removes', function (): void {
-    // The two refinements interact. Attention is decided in SQL now and the
-    // external-issue state is still decided in PHP, so counting states in the
-    // query while filtering externally afterwards advertises chips including
-    // tickets that are then removed -- and following one of those chips shows
-    // fewer tickets than it promised, because the link carries
-    // `ticket_external` with it.
+    // The two refinements interact. Counts have to come from the SQL query
+    // after external state narrows it and before attention state does, or a
+    // chip advertises tickets the linked queue will remove.
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create();
     $site = Site::factory()->for($account)->create();
@@ -262,13 +259,10 @@ test('the attention chips do not advertise tickets the external filter removes',
 });
 
 test('the attention filter still applies when the external filter is active', function (): void {
-    // With the external refinement active, the attention work moves back to
-    // PHP: counts taken after the external filter, and the attention filter
-    // applied to what is left. That branch had no test at all -- the chip test
-    // above exercises the counts but never asks for an attention state as
-    // well. Two failed exports in different attention states, and a
-    // needs-owner ticket with no export, so each of the three ways this can
-    // go wrong shows a different subject.
+    // Both refinements run in SQL now: attention counts are taken after the
+    // external filter, and the attention predicate is applied to what is left.
+    // Two failed exports in different attention states, and a needs-owner
+    // ticket with no export, make each ordering mistake visible.
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create();
     $site = Site::factory()->for($account)->create();
@@ -316,4 +310,44 @@ test('the attention filter still applies when the external filter is active', fu
 
     expect($chips['needs_owner'])->toBe(1, 'the needs-owner chip counted a ticket the external filter removes')
         ->and($chips['needs_agent'])->toBe(1, 'the needs-agent chip lost the failed ticket the attention filter hides');
+});
+
+test('external issue filtering happens before the ticket row cap', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    // Newer local-only tickets can fill the whole page. If the cap runs before
+    // the external-state predicate, the older failed ticket disappears and a
+    // refined queue lies by looking empty.
+    Ticket::factory()
+        ->count(Ticket::QUEUE_DISPLAY_LIMIT)
+        ->for($account)
+        ->for($site)
+        ->create([
+            'status' => 'open',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+    $failed = Ticket::factory()->for($account)->for($site)->create([
+        'subject' => 'Older failed export still belongs in this lane',
+        'status' => 'open',
+        'created_at' => now()->subDay(),
+        'updated_at' => now()->subDay(),
+    ]);
+    TicketExternalLink::factory()
+        ->for($account)
+        ->for($site)
+        ->for($failed)
+        ->create(['sync_status' => ExternalIssueSyncStatus::FAILED]);
+
+    $response = $this->actingAs($agent)
+        ->get('/dashboard/tickets?ticket_external=failed');
+
+    $response->assertOk()
+        ->assertSee('Older failed export still belongs in this lane');
+
+    expect($response->viewData('tickets'))->toHaveCount(1)
+        ->and($response->viewData('ticketQueueShownOf'))->toBe(1);
 });

@@ -134,6 +134,7 @@ return [
     ],
 
     'summary' => [
+        'capped_notice' => 'Showing the first :shown of :total tickets in queue order. Narrow the queue with the filters above to see the rest.',
         'lane_narrowed_heading' => ':shown shown of :matching',
         'heading' => [
             'open' => '{1} :count open|[2,*] :count open',

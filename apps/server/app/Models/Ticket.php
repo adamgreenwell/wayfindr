@@ -34,6 +34,14 @@ use Illuminate\Support\Str;
 ])]
 class Ticket extends Model
 {
+    /**
+     * How many ordered ticket rows one queue response renders.
+     *
+     * Counts remain uncapped, so a busy desk still reports the real lane size.
+     * This only bounds the Eloquent graphs and HTML built for one page (#847).
+     */
+    public const QUEUE_DISPLAY_LIMIT = 200;
+
     use SanitisesStoredPageUrls;
 
     /**
@@ -241,7 +249,11 @@ class Ticket extends Model
                 $bindings
             )
             ->orderByDesc('tickets.updated_at')
-            ->orderByDesc('tickets.created_at');
+            ->orderByDesc('tickets.created_at')
+            // Stable boundary for the row cap: timestamps only have
+            // second-level precision in the supported schema, so bulk-created
+            // tickets routinely tie on every key above.
+            ->orderByDesc('tickets.id');
     }
 
     public function attentionState(): string
