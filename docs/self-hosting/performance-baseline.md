@@ -331,12 +331,12 @@ ratings behind them:
 | --- | ---: | ---: | ---: |
 | 7 days | 150 | 34 | 140 KB |
 | 90 days | 607 | 80 | 223 KB |
+| Export, 90 days | 94 | 7 | 2 KB |
 
 A separate run from the table at the top of the page, which has 151 and 613 ms
 for the same two windows. That spread — a millisecond on one, six on the other,
 under one percent — is what three-run timings on this machine look like, and
 the query counts and sizes agree exactly.
-| Export, 90 days | 94 | 7 | 2 KB |
 
 The window matters — 90 days is about four times the work of 7 — but so does the
 desk, and the query count grows with it:
