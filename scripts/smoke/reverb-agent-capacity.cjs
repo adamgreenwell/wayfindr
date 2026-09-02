@@ -113,6 +113,7 @@ async function run() {
       await monitor.sample();
 
       const deliveryFailures = stageDeliveries.reduce((total, delivery) => total + delivery.missed, 0);
+      const triggerFailures = stageDeliveries.filter((delivery) => delivery.trigger_error);
       const stageDisconnects = sum(attemptedClients, (client) => client.disconnects) - disconnectsBefore;
       const stageReconnects = sum(attemptedClients, (client) => client.reconnectAttempts) - reconnectsBefore;
       const stageWebsocketErrors = sum(attemptedClients, (client) => client.websocketErrors) - websocketErrorsBefore;
@@ -120,6 +121,7 @@ async function run() {
         && clients.length === target
         && stageDeliveries.length === stageEvents
         && deliveryFailures === 0
+        && triggerFailures.length === 0
         && stageDisconnects === 0
         && stageReconnects === 0
         && stageWebsocketErrors === 0;
@@ -143,6 +145,8 @@ async function run() {
         expected_deliveries: stageDeliveries.reduce((total, delivery) => total + delivery.expected, 0),
         delivered: stageDeliveries.reduce((total, delivery) => total + delivery.delivered, 0),
         missed_deliveries: deliveryFailures,
+        trigger_failures: triggerFailures.length,
+        trigger_failure_kinds: countBy(triggerFailures.map((delivery) => delivery.trigger_error?.name || 'Error')),
         broadcast_http_ms: distribution(stageDeliveries.map((delivery) => delivery.trigger_http_ms)),
         delivery_ms: distribution(stageDeliveries.flatMap((delivery) => delivery.latencies_ms)),
         disconnects: stageDisconnects,
@@ -167,7 +171,9 @@ async function run() {
           ? 'login'
           : (connectionFailures.length > 0
             ? 'connection_or_subscription'
-            : (deliveryFailures > 0 ? 'broadcast_delivery' : 'transport_instability')),
+            : (triggerFailures.length > 0
+              ? 'broadcast_trigger'
+              : (deliveryFailures > 0 ? 'broadcast_delivery' : 'transport_instability'))),
       };
 
       while (clients.length > previousStable) {
@@ -216,6 +222,10 @@ async function run() {
         expected_deliveries: deliveries.reduce((total, delivery) => total + delivery.expected, 0),
         delivered: deliveries.reduce((total, delivery) => total + delivery.delivered, 0),
         missed_deliveries: deliveries.reduce((total, delivery) => total + delivery.missed, 0),
+        trigger_failures: deliveries.filter((delivery) => delivery.trigger_error).length,
+        trigger_failure_kinds: countBy(deliveries
+          .filter((delivery) => delivery.trigger_error)
+          .map((delivery) => delivery.trigger_error?.name || 'Error')),
         broadcast_http_ms: distribution(deliveries.map((delivery) => delivery.trigger_http_ms)),
         delivery_ms: distribution(deliveries.flatMap((delivery) => delivery.latencies_ms)),
         disconnects: sum(clients, (client) => client.disconnects) - disconnectsBefore,
@@ -268,7 +278,12 @@ async function run() {
         .every((stage) => stage.missed_deliveries === 0 && stage.delivered === stage.expected_deliveries),
       qualifying_keepalive_hold: Boolean(hold && hold.actual_seconds >= 70),
       hold_kept_every_client_subscribed: Boolean(hold && hold.subscribed_at_end === hold.agents),
-      hold_delivered_every_event: Boolean(hold && hold.missed_deliveries === 0 && hold.delivered === hold.expected_deliveries),
+      hold_delivered_every_event: Boolean(
+        hold
+        && hold.trigger_failures === 0
+        && hold.missed_deliveries === 0
+        && hold.delivered === hold.expected_deliveries,
+      ),
       hold_had_no_disconnects: Boolean(hold && hold.disconnects === 0),
       hold_had_no_reconnects: Boolean(hold && hold.reconnect_attempts === 0),
       hold_had_no_websocket_errors: Boolean(hold && hold.websocket_errors === 0),

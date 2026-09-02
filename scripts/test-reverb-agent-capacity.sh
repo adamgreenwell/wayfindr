@@ -35,6 +35,16 @@ grep -F 'HTTP target must be loopback' "$output" >/dev/null
 
 if env "${common_environment[@]}" \
     WAYFINDR_BASE_URL=http://127.0.0.1:8000 \
+    WAYFINDR_REVERB_URL=wss://support.example.com \
+    node "$harness" >"$output" 2>&1; then
+    echo "Capacity harness accepted a remote WebSocket target." >&2
+    exit 1
+fi
+
+grep -F 'WebSocket target must be loopback' "$output" >/dev/null
+
+if env "${common_environment[@]}" \
+    WAYFINDR_BASE_URL=http://127.0.0.1:8000 \
     WAYFINDR_CAPACITY_DISPOSABLE=NO \
     node "$harness" >"$output" 2>&1; then
     echo "Capacity harness ran without the disposable-target confirmation." >&2
