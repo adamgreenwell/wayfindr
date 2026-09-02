@@ -60,7 +60,8 @@ return [
         'active_conversations' => '{1} :count active conversation|[2,*] :count active conversations',
         'active_tickets' => '{1} :count active ticket|[2,*] :count active tickets',
         'fields' => '{1} :count field|[2,*] :count fields',
-        'shown' => '{1} :count shown|[2,*] :count shown',
+        'shown_conversations' => '{1} :count shown|[2,*] :count shown',
+        'shown_tickets' => '{1} :count shown|[2,*] :count shown',
     ],
 
     'common' => [

@@ -878,6 +878,24 @@ test('visitor surfaces translate their copy and keep account content language ne
             ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
             ->and($node->getAttribute('lang'))->toBe('');
     }
+
+    $world['agents']['de']->forceFill(['locale' => 'it'])->save();
+    $italianProfile = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.visitors.show', $visitor))->assertOk()
+            ->getContent()
+    );
+
+    expect($italianProfile)->toContain('3 visualizzate')
+        ->toContain('1 visualizzato')
+        ->not->toContain('3 visualizzati');
+
+    App::setLocale('it');
+
+    expect(trans_choice('visitors.counts.shown_conversations', 1, ['count' => 1]))->toBe('1 visualizzata')
+        ->and(trans_choice('visitors.counts.shown_conversations', 2, ['count' => 2]))->toBe('2 visualizzate')
+        ->and(trans_choice('visitors.counts.shown_tickets', 1, ['count' => 1]))->toBe('1 visualizzato')
+        ->and(trans_choice('visitors.counts.shown_tickets', 2, ['count' => 2]))->toBe('2 visualizzati');
 });
 
 test('the form labels and the untitled fallback are translated', function (): void {

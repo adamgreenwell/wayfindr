@@ -57,7 +57,8 @@ return [
         'active_conversations' => '{1} :count aktive Unterhaltung|[2,*] :count aktive Unterhaltungen',
         'active_tickets' => '{1} :count aktives Ticket|[2,*] :count aktive Tickets',
         'fields' => '{1} :count Feld|[2,*] :count Felder',
-        'shown' => '{1} :count angezeigt|[2,*] :count angezeigt',
+        'shown_conversations' => '{1} :count angezeigt|[2,*] :count angezeigt',
+        'shown_tickets' => '{1} :count angezeigt|[2,*] :count angezeigt',
     ],
 
     'common' => [

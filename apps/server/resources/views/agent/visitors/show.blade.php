@@ -173,7 +173,7 @@
 
         <div class="section-header">
             <strong>{{ __('visitors.history.conversations') }}</strong>
-            <span class="lede">{{ trans_choice('visitors.counts.shown', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}</span>
+            <span class="lede">{{ trans_choice('visitors.counts.shown_conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}</span>
         </div>
 
         @if ($conversations->isEmpty())
@@ -203,7 +203,7 @@
 
         <div class="section-header">
             <strong>{{ __('visitors.history.tickets') }}</strong>
-            <span class="lede">{{ trans_choice('visitors.counts.shown', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}</span>
+            <span class="lede">{{ trans_choice('visitors.counts.shown_tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}</span>
         </div>
 
         @if ($tickets->isEmpty())
