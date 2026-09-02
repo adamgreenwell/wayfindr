@@ -320,7 +320,7 @@ test('the account audit page names exactly what an operator reached', function (
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
         ->assertSee('Operator viewed a record')
-        ->assertSeeInOrder(['Operator access:', 'Conversation '.$w['conversation']->support_code]);
+        ->assertSeeInOrder(['Operator access: Conversation', $w['conversation']->support_code]);
 });
 
 test('the transcript renders in chronological order, not insertion order', function (): void {
@@ -349,7 +349,7 @@ test('audit search finds break-glass events by their surfaced label', function (
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index', ['audit_search' => $w['conversation']->support_code]))
         ->assertOk()
-        ->assertSeeInOrder(['Operator access:', 'Conversation '.$w['conversation']->support_code]);
+        ->assertSeeInOrder(['Operator access: Conversation', $w['conversation']->support_code]);
 
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index', ['audit_search' => 'WF-ZZZZZZZZ']))

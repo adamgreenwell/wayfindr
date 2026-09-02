@@ -28,8 +28,8 @@
                             <label class="meta-label" for="audit_action">{{ __('account_audit.filters.action') }}</label>
                             <select id="audit_action" name="audit_action">
                                 <option value="">{{ __('account_audit.filters.any_action') }}</option>
-                                @foreach ($auditActions as $actionValue => $actionLabel)
-                                    <option value="{{ $actionValue }}" @selected($auditAction === $actionValue)>{{ $actionLabel }}</option>
+                                @foreach ($auditActions as $actionValue => $actionOption)
+                                    <option value="{{ $actionValue }}" @if ($actionOption['language'] !== null) lang="{{ $actionOption['language'] }}" @endif @selected($auditAction === $actionValue)>{{ $actionOption['label'] }}</option>
                                 @endforeach
                             </select>
                         </div>

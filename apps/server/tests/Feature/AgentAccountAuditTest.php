@@ -3,6 +3,7 @@
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -196,15 +197,126 @@ test('unknown audit actions use localized fallback copy while preserving their i
         'action' => 'provider.future_action',
         'metadata' => [],
     ]);
+    AuditEvent::factory()->for($account)->create([
+        'actor_type' => null,
+        'actor_id' => null,
+        'subject_type' => null,
+        'subject_id' => null,
+        'action' => 'provider.second_future_action',
+        'metadata' => [],
+    ]);
+
+    $response = $this->actingAs($admin)->get(route('dashboard.account.audit.index'));
+
+    $response->assertOk()
+        ->assertSee('Andere aufgezeichnete Aktion')
+        ->assertSee('provider.future_action')
+        ->assertSee('provider.second_future_action')
+        ->assertSee('System')
+        ->assertSee('Konto')
+        ->assertDontSee('Provider Future Action');
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    expect($xpath->query('//option[@value="provider.future_action" and @lang="" and normalize-space(.)="provider.future_action"]')?->length)->toBe(1)
+        ->and($xpath->query('//option[@value="provider.second_future_action" and @lang="" and normalize-space(.)="provider.second_future_action"]')?->length)->toBe(1);
+
+    $filtered = $this->actingAs($admin)->get(route('dashboard.account.audit.index', [
+        'audit_action' => 'provider.second_future_action',
+    ]));
+    $filteredDocument = new DOMDocument;
+    $filteredDocument->loadHTML((string) $filtered->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $filteredXpath = new DOMXPath($filteredDocument);
+
+    expect($filteredXpath->query('//tbody//span[@lang="" and normalize-space(.)="provider.second_future_action"]')?->length)->toBe(1)
+        ->and($filteredXpath->query('//tbody//span[@lang="" and normalize-space(.)="provider.future_action"]')?->length)->toBe(0);
+});
+
+test('generated break glass references are localized separately from their stored identifiers', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+    $operator = User::factory()->for($account)->create(['platform_role' => 'operator']);
+    $grant = BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => $operator->id,
+    ]);
+
+    $events = [
+        ['action' => 'break_glass.resource_viewed', 'metadata' => [
+            'resource_type' => 'conversation',
+            'resource_id' => 21,
+            'resource_label' => 'Conversation WF-LOCALIZED',
+        ]],
+        ['action' => 'break_glass.resource_viewed', 'metadata' => [
+            'resource_type' => 'ticket',
+            'resource_id' => 42,
+            'resource_label' => 'Ticket #42',
+        ]],
+        ['action' => 'break_glass.approved', 'metadata' => [
+            'scope_type' => BreakGlassGrant::SCOPE_SITE,
+            'scope_label' => 'Site Kundenportal',
+        ]],
+        ['action' => 'break_glass.approved', 'metadata' => [
+            'scope_type' => BreakGlassGrant::SCOPE_ACCOUNT,
+            'scope_label' => 'Entire account',
+        ]],
+        ['action' => 'break_glass.approved', 'metadata' => [
+            'scope_type' => BreakGlassGrant::SCOPE_CONVERSATION,
+            'scope_label' => 'Conversation (deleted)',
+        ]],
+        ['action' => 'break_glass.approved', 'metadata' => [
+            'scope_type' => BreakGlassGrant::SCOPE_SITE,
+            'scope_label' => 'Site (out of scope)',
+        ]],
+    ];
+
+    foreach ($events as $event) {
+        AuditEvent::factory()->for($account)->for($grant, 'subject')->create([
+            'actor_type' => $admin->getMorphClass(),
+            'actor_id' => $admin->id,
+            ...$event,
+        ]);
+    }
 
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
-        ->assertSee('Andere aufgezeichnete Aktion')
-        ->assertSee('provider.future_action')
-        ->assertSee('System')
-        ->assertSee('Konto')
-        ->assertDontSee('Provider Future Action');
+        ->assertSeeInOrder(['Betreiberzugriff: Unterhaltung', 'WF-LOCALIZED'])
+        ->assertSeeInOrder(['Betreiberzugriff: Ticket', '#42'])
+        ->assertSeeInOrder(['Betreiberzugriff: Website', 'Kundenportal'])
+        ->assertSee('Betreiberzugriff: Gesamtes Konto')
+        ->assertSee('Betreiberzugriff: Gelöschte Unterhaltung')
+        ->assertSee('Betreiberzugriff: Website außerhalb des Bereichs')
+        ->assertDontSee('Conversation WF-LOCALIZED')
+        ->assertDontSee('Site Kundenportal')
+        ->assertDontSee('Entire account')
+        ->assertDontSee('Conversation (deleted)')
+        ->assertDontSee('Site (out of scope)');
+
+    $italianAdmin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'it',
+    ]);
+
+    $this->actingAs($italianAdmin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSeeInOrder(['Accesso del gestore: Conversazione', 'WF-LOCALIZED'])
+        ->assertSeeInOrder(['Accesso del gestore: Ticket', '#42'])
+        ->assertSeeInOrder(['Accesso del gestore: Sito', 'Kundenportal'])
+        ->assertSee('Accesso del gestore: Intero account')
+        ->assertSee('Accesso del gestore: Conversazione eliminata')
+        ->assertSee('Accesso del gestore: Sito fuori ambito')
+        ->assertDontSee('Conversation WF-LOCALIZED')
+        ->assertDontSee('Site Kundenportal')
+        ->assertDontSee('Entire account')
+        ->assertDontSee('Conversation (deleted)')
+        ->assertDontSee('Site (out of scope)');
 });
 
 test('regular agents cannot view or export account audit activity', function (): void {

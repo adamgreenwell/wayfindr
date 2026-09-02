@@ -131,7 +131,7 @@ class AgentAccountAuditController extends Controller
 
     /**
      * @param  Builder<AuditEvent>  $baseQuery
-     * @return array<string, string>
+     * @return array<string, array{label: string, language: string|null}>
      */
     private function availableActions(Builder $baseQuery): array
     {
@@ -141,12 +141,18 @@ class AgentAccountAuditController extends Controller
             ->orderBy('action')
             ->pluck('action')
             ->filter(fn ($action): bool => is_string($action) && $action !== '')
-            ->mapWithKeys(fn (string $action): array => [$action => $this->translatedAuditLabel($action)])
+            ->mapWithKeys(function (string $action): array {
+                $key = $this->auditActionKey($action);
+
+                return [$action => Lang::has($key)
+                    ? ['label' => __($key), 'language' => null]
+                    : ['label' => $action, 'language' => '']];
+            })
             ->all();
     }
 
     /**
-     * @param  array<string, string>  $availableActions
+     * @param  array<string, array{label: string, language: string|null}>  $availableActions
      * @param  array<int, int>  $visibleSiteIds
      * @return array{0: string, 1: string, 2: int|null}
      */
@@ -325,9 +331,14 @@ class AgentAccountAuditController extends Controller
 
     private function translatedAuditLabel(string $action): string
     {
-        $key = 'account_audit.actions.'.str_replace(['.', '-'], '_', $action);
+        $key = $this->auditActionKey($action);
 
         return Lang::has($key) ? __($key) : __('account_audit.actions.other');
+    }
+
+    private function auditActionKey(string $action): string
+    {
+        return 'account_audit.actions.'.str_replace(['.', '-'], '_', $action);
     }
 
     /** @return array{prefix: string|null, value: string|null} */
@@ -351,11 +362,7 @@ class AgentAccountAuditController extends Controller
     private function auditSubjectParts(AuditEvent $event): array
     {
         if ($event->subject instanceof BreakGlassGrant) {
-            $label = data_get($event->metadata, 'resource_label')
-                ?? data_get($event->metadata, 'scope_label')
-                ?? $event->subject->scopeLabel();
-
-            return ['prefix' => __('account_audit.references.operator_access'), 'value' => $label];
+            return $this->breakGlassReferenceParts($event);
         }
 
         if ($event->subject instanceof User || $event->subject instanceof Site) {
@@ -386,6 +393,76 @@ class AgentAccountAuditController extends Controller
         }
 
         return ['prefix' => __('account_audit.references.account'), 'value' => null];
+    }
+
+    /** @return array{prefix: string|null, value: string|null} */
+    private function breakGlassReferenceParts(AuditEvent $event): array
+    {
+        $resourceType = data_get($event->metadata, 'resource_type');
+
+        if (is_string($resourceType) && $resourceType !== '') {
+            return $this->typedBreakGlassReferenceParts(
+                $resourceType,
+                data_get($event->metadata, 'resource_label'),
+                data_get($event->metadata, 'resource_id'),
+            );
+        }
+
+        $scopeType = data_get($event->metadata, 'scope_type');
+        $scopeType = is_string($scopeType) && $scopeType !== ''
+            ? $scopeType
+            : $event->subject->scope_type;
+
+        return $this->typedBreakGlassReferenceParts(
+            $scopeType,
+            data_get($event->metadata, 'scope_label') ?? $event->subject->scopeLabel(),
+        );
+    }
+
+    /** @return array{prefix: string|null, value: string|null} */
+    private function typedBreakGlassReferenceParts(string $type, mixed $label, mixed $fallbackId = null): array
+    {
+        if ($type === BreakGlassGrant::SCOPE_ACCOUNT) {
+            return ['prefix' => __('account_audit.references.operator_access_account'), 'value' => null];
+        }
+
+        [$sourcePrefix, $translationSuffix] = match ($type) {
+            BreakGlassGrant::SCOPE_CONVERSATION => ['Conversation', 'conversation'],
+            BreakGlassGrant::SCOPE_SITE => ['Site', 'site'],
+            'ticket' => ['Ticket', 'ticket'],
+            default => [null, null],
+        };
+
+        if ($sourcePrefix === null || $translationSuffix === null) {
+            return [
+                'prefix' => __('account_audit.references.operator_access'),
+                'value' => is_string($label) && $label !== '' ? $label : null,
+            ];
+        }
+
+        $value = is_string($label) ? $label : '';
+
+        if (str_starts_with($value, $sourcePrefix.' ')) {
+            $value = substr($value, strlen($sourcePrefix) + 1);
+        }
+
+        if ($value === '(deleted)' || $value === '(out of scope)') {
+            $state = $value === '(deleted)' ? 'deleted' : 'out_of_scope';
+
+            return [
+                'prefix' => __('account_audit.references.operator_access_'.$translationSuffix.'_'.$state),
+                'value' => null,
+            ];
+        }
+
+        if ($value === '' && (is_int($fallbackId) || is_string($fallbackId))) {
+            $value = '#'.$fallbackId;
+        }
+
+        return [
+            'prefix' => __('account_audit.references.operator_access_'.$translationSuffix),
+            'value' => $value !== '' ? $value : null,
+        ];
     }
 
     private function auditActor(AuditEvent $event): string
