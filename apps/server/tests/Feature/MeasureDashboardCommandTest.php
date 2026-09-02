@@ -79,11 +79,10 @@ test('the detail page is the control, and does not grow with the desk', function
             ->all();
     };
 
-    // The row counts stay: the queue carries about 110KB of fixed chrome, so a
-    // ratio of three needs this many rows to clear it -- cutting them to 5
-    // against 200 failed the guard at 2.3x, which is the guard working. What
-    // drops is MESSAGES per conversation, three to one, because the bytes come
-    // from the number of rows rather than what is behind each one.
+    // The row counts matter: the queue carries about 110KB of fixed chrome, so
+    // a ratio of three needs this many rows to clear it -- cutting them to 5
+    // against 200 failed the guard at 2.3x, which is the guard working. The
+    // bytes come from the number of rows rather than what is behind each one.
     //
     // MESSAGES was cut to one while chasing a PostgreSQL CI job that hung to
     // its 20-minute timeout, and is back at three now that #843 has a

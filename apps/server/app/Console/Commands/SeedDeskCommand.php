@@ -131,9 +131,10 @@ final class SeedDeskCommand extends Command
      * Autovacuum cannot see rows that are still inside an open transaction, so
      * a desk seeded under `RefreshDatabase` leaves every table with no
      * statistics at all -- `last_analyze` and `last_autoanalyze` both null and
-     * `reltuples` at 0. PostgreSQL then estimates one row everywhere and picks
-     * nested loops, which are fine against the empty table it believes in and
-     * quadratic against the rows actually there.
+     * `reltuples` at 0. With nothing measured, PostgreSQL falls back to
+     * defaults for row counts and selectivity, and here that put nested loops
+     * everywhere -- fine for the small tables it assumed, quadratic against the
+     * rows actually there.
      *
      * That is #843: a single count on the conversation queue, over a fixture of
      * 400 conversations, taking fourteen minutes in CI and over twenty seconds
