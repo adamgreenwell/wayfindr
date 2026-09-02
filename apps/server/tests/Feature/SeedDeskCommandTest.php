@@ -1591,3 +1591,21 @@ test('purge writes nothing even when asked to seed', function (): void {
     expect(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())
         ->toBeFalse('purge beside seeding options seeded a desk');
 });
+
+test('purge sweeps orphaned agents an earlier desk left behind', function (): void {
+    // Before the agents were deleted with their account, `--fresh` detached
+    // them instead: sign-in-capable, published password, no account. A machine
+    // in that state has no desk for a purge to find, and a purge that stopped
+    // at "nothing seeded" would leave in place the one thing it exists to
+    // remove. An address that only LOOKS seeded is not touched -- the same
+    // exact-shape rule the provenance check uses.
+    $orphan = User::factory()->create(['email' => 'desk-agent-4@example.test', 'account_id' => null]);
+    $lookalike = User::factory()->create(['email' => 'desk-agent-owner@example.test', 'account_id' => null]);
+
+    $this->artisan('wayfindr:seed-desk', ['--purge' => true])
+        ->expectsOutputToContain('orphaned')
+        ->assertSuccessful();
+
+    expect(User::query()->whereKey($orphan->id)->exists())->toBeFalse('an orphaned seeded sign-in survived a purge')
+        ->and(User::query()->whereKey($lookalike->id)->exists())->toBeTrue('an address that only looks seeded was deleted');
+});

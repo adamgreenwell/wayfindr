@@ -67,10 +67,11 @@ Use a staging copy, a restored backup, or a throwaway VM. If a desk was already
 seeded somewhere it should not have been, `--purge` removes it — the account,
 everything under it, and the `desk-agent-` sign-ins — and writes nothing.
 `--fresh` is not that: it deletes and then seeds again, so it replaces the
-credential rather than removing it. `--purge` refuses if the account at the
-seeder's slug holds anything the seeder did not create, and it does not ask for
-`--force`: it is the remedy, and a remedy that asks to be told twice is one an
-operator postpones.
+credential rather than removing it. `--purge` also sweeps up seeded sign-ins an
+older `--fresh` left behind without an account. It refuses if the account at
+the seeder's slug holds a site or a user the seeder did not create, and it does
+not ask for `--force`: it is the remedy, and a remedy that asks to be told twice
+is one an operator postpones.
 
 The commands depend on where `artisan` is. The one-line installer puts the
 stack in `./wayfindr` (or wherever `--dir` pointed) with `artisan` inside the

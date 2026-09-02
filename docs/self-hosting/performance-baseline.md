@@ -95,10 +95,11 @@ docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting
 ```
 
 `--fresh` is not that: it deletes and then seeds again, so it replaces the
-credential rather than removing it. `--purge` refuses if the account at the
-seeder's slug holds anything the seeder did not create, and does not ask for
-`--force` — it is the remedy, and a remedy that asks to be told twice is one an
-operator postpones.
+credential rather than removing it. `--purge` also sweeps up seeded sign-ins an
+older `--fresh` left behind without an account. It refuses if the account at
+the seeder's slug holds a site or a user the seeder did not create, and does
+not ask for `--force` — it is the remedy, and a remedy that asks to be told
+twice is one an operator postpones.
 
 **The memory override is required, not a precaution.** The shipped image sets
 `memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size
@@ -146,7 +147,9 @@ operator benchmarking their own install with `--email` would clear a real
 agent's state while taking the numbers.
 
 The seeder writes to its own account (`wayfindr-measurement-desk`) and `--fresh`
-deletes exactly that account, so it is safe to run beside real data. It refuses
+deletes exactly that account, so nothing else in the database is touched. That
+is a property of the delete, not permission to run it beside real data — the
+account it leaves behind is the problem, as the warning above says. It refuses
 to run in production without `--force`.
 
 ## The hardware these numbers came from
@@ -326,6 +329,11 @@ ratings behind them:
 | --- | ---: | ---: | ---: |
 | 7 days | 150 | 34 | 140 KB |
 | 90 days | 607 | 80 | 223 KB |
+
+A separate run from the table at the top of the page, which has 151 and 613 ms
+for the same two windows. That spread — a millisecond on one, six on the other,
+under one percent — is what three-run timings on this machine look like, and
+the query counts and sizes agree exactly.
 | Export, 90 days | 94 | 7 | 2 KB |
 
 The window matters — 90 days is about four times the work of 7 — but so does the

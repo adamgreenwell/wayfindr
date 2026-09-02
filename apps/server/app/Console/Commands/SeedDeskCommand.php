@@ -255,10 +255,12 @@ final class SeedDeskCommand extends Command
     private function purge(): int
     {
         $removed = null;
+        $orphans = 0;
 
         try {
-            $this->components->task('Removing the measurement desk', function () use (&$removed): bool {
+            $this->components->task('Removing the measurement desk', function () use (&$removed, &$orphans): bool {
                 $removed = $this->removePreviousDesk();
+                $orphans = $this->removeOrphanedAgents();
 
                 return true;
             });
@@ -268,18 +270,58 @@ final class SeedDeskCommand extends Command
             return self::FAILURE;
         }
 
-        if ($removed === null) {
+        if ($removed === null && $orphans === 0) {
             $this->components->info('No measurement desk is seeded here. Nothing to remove.');
 
             return self::SUCCESS;
         }
 
+        if ($removed === null) {
+            $this->components->info(
+                'No measurement desk is seeded here, but '.ReaderNumber::count($orphans).' orphaned seeded '
+                .'sign-in'.($orphans === 1 ? '' : 's').' left by an earlier desk could still log in. Removed.'
+            );
+
+            return self::SUCCESS;
+        }
+
         $this->components->info(
-            'Removed the measurement desk and '.ReaderNumber::count($removed)
-            .' seeded agent sign-in'.($removed === 1 ? '' : 's').'. Nothing else was touched.'
+            'Removed the measurement desk and '.ReaderNumber::count($removed + $orphans)
+            .' seeded agent sign-in'.($removed + $orphans === 1 ? '' : 's')
+            .($orphans > 0 ? ' ('.ReaderNumber::count($orphans).' orphaned from an earlier desk)' : '')
+            .'. Nothing else was touched.'
         );
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Seeded sign-ins that belong to no account at all.
+     *
+     * Before removePreviousDesk() took the agents with the account, `--fresh`
+     * left them behind: `users.account_id` is `nullOnDelete()`, so deleting the
+     * account detached them -- sign-in-capable, holding the published
+     * password, and attached to nothing. A machine in that state has no desk
+     * for a purge to find, and a purge that stopped at "nothing seeded" would
+     * leave in place the one thing it exists to remove.
+     *
+     * Only the exact seeded shape (`desk-agent-<n>@example.test`), checked in
+     * PHP the way refuseUnlessSeeded() does, and only with no account: a real
+     * person on a real account is never in this set.
+     */
+    private function removeOrphanedAgents(): int
+    {
+        $orphans = User::query()
+            ->whereNull('account_id')
+            ->where('email', 'like', self::AGENT_PREFIX.'%'.self::AGENT_SUFFIX)
+            ->get()
+            ->filter(fn (User $user): bool => self::isSeededAgentAddress((string) $user->email));
+
+        foreach ($orphans as $orphan) {
+            $orphan->delete();
+        }
+
+        return $orphans->count();
     }
 
     /**
