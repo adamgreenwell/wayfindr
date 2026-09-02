@@ -2,6 +2,7 @@
 
 use App\Models\Account;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -29,6 +30,10 @@ test('the attachment retention measurement refuses to clean up without both disp
 });
 
 test('the local measurement proves deletion survival and bounded cleanup', function (): void {
+    if (DB::connection()->getDriverName() !== 'sqlite') {
+        $this->markTestSkipped('The measurement command deliberately requires an isolated SQLite database.');
+    }
+
     Storage::fake('attachments');
     config()->set('wayfindr.attachments.storage_disk', 'attachments');
     config()->set('wayfindr.attachments.pending_expiry_hours', 24);

@@ -11,6 +11,7 @@ use App\Models\ConversationMessageAttachment;
 use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentRetentionRequestCounter;
+use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
 use Illuminate\Console\Scheduling\Event;
 use Illuminate\Filesystem\FilesystemAdapter;
@@ -192,7 +193,7 @@ final class MeasureAttachmentRetentionCommand extends Command
             $this->components->info(sprintf(
                 'Measured %s with %s synthetic objects. Report: %s',
                 $this->diskName,
-                number_format($objects),
+                ReaderNumber::count($objects),
                 $output,
             ));
 
