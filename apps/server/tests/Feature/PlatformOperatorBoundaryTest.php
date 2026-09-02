@@ -185,49 +185,57 @@ test('platform operators cannot confirm unsupported readiness keys', function ()
 });
 
 test('operator console shows safe system identity and documentation links', function (): void {
-    $this->app->detectEnvironment(fn (): string => 'production');
+    // This is process-global test state, not database state. Leaving it as
+    // production has already surfaced as unrelated queue-language failures.
+    $environment = app()['env'];
 
-    config([
-        'app.debug' => false,
-        'broadcasting.default' => 'reverb',
-        'queue.default' => 'redis',
-        'wayfindr.documentation.forge_url' => 'https://example.test/docs/forge',
-        'wayfindr.documentation.runtime_requirements_url' => 'https://example.test/docs/runtime',
-        'wayfindr.documentation.self_hosting_url' => 'https://example.test/docs/self-hosting',
-        'wayfindr.release.commit' => 'abc1234',
-        'wayfindr.release.version' => '0.1.0',
-    ]);
+    try {
+        $this->app->detectEnvironment(fn (): string => 'production');
 
-    $operator = User::factory()->for(Account::factory())->create([
-        'platform_role' => PlatformRole::Operator,
-    ]);
+        config([
+            'app.debug' => false,
+            'broadcasting.default' => 'reverb',
+            'queue.default' => 'redis',
+            'wayfindr.documentation.forge_url' => 'https://example.test/docs/forge',
+            'wayfindr.documentation.runtime_requirements_url' => 'https://example.test/docs/runtime',
+            'wayfindr.documentation.self_hosting_url' => 'https://example.test/docs/self-hosting',
+            'wayfindr.release.commit' => 'abc1234',
+            'wayfindr.release.version' => '0.1.0',
+        ]);
 
-    $this->actingAs($operator)
-        ->get('/operator')
-        ->assertOk()
-        ->assertSee('System identity')
-        ->assertSee('Wayfindr version')
-        ->assertSee('0.1.0')
-        ->assertSee('Source revision')
-        ->assertSee('abc1234')
-        ->assertSee('Environment')
-        ->assertSeeInOrder(['Environment', 'production', 'Debug mode'])
-        ->assertSee('Debug mode')
-        ->assertSee('Disabled')
-        ->assertSee('PHP version')
-        ->assertSee(PHP_VERSION)
-        ->assertSee('Laravel version')
-        ->assertSee(LaravelApplication::VERSION)
-        ->assertSee('Queue driver')
-        ->assertSee('redis')
-        ->assertSee('Broadcast driver')
-        ->assertSee('reverb')
-        ->assertSee('Self-hosting docs')
-        ->assertSee('https://example.test/docs/self-hosting', false)
-        ->assertSee('Runtime requirements')
-        ->assertSee('https://example.test/docs/runtime', false)
-        ->assertSee('Forge deploy guide')
-        ->assertSee('https://example.test/docs/forge', false);
+        $operator = User::factory()->for(Account::factory())->create([
+            'platform_role' => PlatformRole::Operator,
+        ]);
+
+        $this->actingAs($operator)
+            ->get('/operator')
+            ->assertOk()
+            ->assertSee('System identity')
+            ->assertSee('Wayfindr version')
+            ->assertSee('0.1.0')
+            ->assertSee('Source revision')
+            ->assertSee('abc1234')
+            ->assertSee('Environment')
+            ->assertSeeInOrder(['Environment', 'production', 'Debug mode'])
+            ->assertSee('Debug mode')
+            ->assertSee('Disabled')
+            ->assertSee('PHP version')
+            ->assertSee(PHP_VERSION)
+            ->assertSee('Laravel version')
+            ->assertSee(LaravelApplication::VERSION)
+            ->assertSee('Queue driver')
+            ->assertSee('redis')
+            ->assertSee('Broadcast driver')
+            ->assertSee('reverb')
+            ->assertSee('Self-hosting docs')
+            ->assertSee('https://example.test/docs/self-hosting', false)
+            ->assertSee('Runtime requirements')
+            ->assertSee('https://example.test/docs/runtime', false)
+            ->assertSee('Forge deploy guide')
+            ->assertSee('https://example.test/docs/forge', false);
+    } finally {
+        app()['env'] = $environment;
+    }
 });
 
 test('operator console summarizes readiness proof coverage without evidence notes or support data', function (): void {

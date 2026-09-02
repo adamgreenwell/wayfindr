@@ -935,34 +935,48 @@ test('readiness diagnostics accept a public https app url and outbound mail tran
 });
 
 test('readiness security posture flags debug mode enabled in production', function (): void {
-    $this->app->detectEnvironment(fn (): string => 'production');
-    config(['app.debug' => true]);
+    // `detectEnvironment()` mutates the application instance for every test
+    // that follows in this process; RefreshDatabase does not restore it.
+    $environment = app()['env'];
 
-    $readiness = app(OperatorReadiness::class)->summary();
-    $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
+    try {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        config(['app.debug' => true]);
 
-    expect($security)->toMatchArray([
-        'label' => 'Debug mode',
-        'status' => 'attention',
-        'summary' => 'Debug mode is enabled in production.',
-        'commands' => ['php artisan config:cache'],
-    ])
-        ->and($security['detail'])->toContain('APP_DEBUG=true')
-        ->and(collect($readiness['checks'])->where('status', 'attention')->pluck('key'))->toContain('security_posture');
+        $readiness = app(OperatorReadiness::class)->summary();
+        $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
+
+        expect($security)->toMatchArray([
+            'label' => 'Debug mode',
+            'status' => 'attention',
+            'summary' => 'Debug mode is enabled in production.',
+            'commands' => ['php artisan config:cache'],
+        ])
+            ->and($security['detail'])->toContain('APP_DEBUG=true')
+            ->and(collect($readiness['checks'])->where('status', 'attention')->pluck('key'))->toContain('security_posture');
+    } finally {
+        app()['env'] = $environment;
+    }
 });
 
 test('readiness security posture is ready when debug is disabled in production', function (): void {
-    $this->app->detectEnvironment(fn (): string => 'production');
-    config(['app.debug' => false]);
+    $environment = app()['env'];
 
-    $readiness = app(OperatorReadiness::class)->summary();
-    $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
+    try {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        config(['app.debug' => false]);
 
-    expect($security)->toMatchArray([
-        'label' => 'Debug mode',
-        'status' => 'ready',
-        'summary' => 'Debug mode is disabled.',
-    ]);
+        $readiness = app(OperatorReadiness::class)->summary();
+        $security = collect($readiness['checks'])->firstWhere('key', 'security_posture');
+
+        expect($security)->toMatchArray([
+            'label' => 'Debug mode',
+            'status' => 'ready',
+            'summary' => 'Debug mode is disabled.',
+        ]);
+    } finally {
+        app()['env'] = $environment;
+    }
 });
 
 test('readiness security posture stays ready when debug is on outside production', function (): void {
@@ -990,18 +1004,24 @@ test('readiness cache store check round-trips a working store', function (): voi
 });
 
 test('readiness flags a non-persistent cache store in production', function (): void {
-    $this->app->detectEnvironment(fn (): string => 'production');
-    config(['cache.default' => 'array']);
+    $environment = app()['env'];
 
-    $readiness = app(OperatorReadiness::class)->summary();
-    $cache = collect($readiness['checks'])->firstWhere('key', 'cache_store');
+    try {
+        $this->app->detectEnvironment(fn (): string => 'production');
+        config(['cache.default' => 'array']);
 
-    expect($cache)->toMatchArray([
-        'label' => 'Cache store',
-        'status' => 'attention',
-        'summary' => 'CACHE_STORE is array in production.',
-    ])
-        ->and(collect($readiness['checks'])->where('status', 'attention')->pluck('key'))->toContain('cache_store');
+        $readiness = app(OperatorReadiness::class)->summary();
+        $cache = collect($readiness['checks'])->firstWhere('key', 'cache_store');
+
+        expect($cache)->toMatchArray([
+            'label' => 'Cache store',
+            'status' => 'attention',
+            'summary' => 'CACHE_STORE is array in production.',
+        ])
+            ->and(collect($readiness['checks'])->where('status', 'attention')->pluck('key'))->toContain('cache_store');
+    } finally {
+        app()['env'] = $environment;
+    }
 });
 
 test('readiness flags a cache store that cannot be reached', function (): void {
