@@ -112,6 +112,38 @@ final class SeedDeskCommand extends Command
 
     private const AGENT_SUFFIX = '@example.test';
 
+    /**
+     * Tell the planner what was just written.
+     *
+     * Autovacuum cannot see rows that are still inside an open transaction, so
+     * a desk seeded under `RefreshDatabase` leaves every table with no
+     * statistics at all -- `last_analyze` and `last_autoanalyze` both null and
+     * `reltuples` at 0. PostgreSQL then estimates one row everywhere and picks
+     * nested loops, which are fine against the empty table it believes in and
+     * quadratic against the rows actually there.
+     *
+     * That is #843: a single count on the conversation queue, over a fixture of
+     * 400 conversations, taking fourteen minutes in CI and over twenty seconds
+     * locally, on a plan built for a database the planner thought was empty.
+     * Nothing was slow. Everything was mis-estimated.
+     *
+     * ANALYZE is allowed inside a transaction and its statistics are visible to
+     * that transaction, which is what makes this work where autovacuum cannot.
+     * A committed desk gets analysed eventually anyway, so this changes nothing
+     * for an operator beyond arriving at a good plan sooner.
+     */
+    private function analyseForThePlanner(): void
+    {
+        // SQLite's ANALYZE writes a table it only consults for some queries and
+        // the driver has no equivalent problem to solve, so this is asked of
+        // PostgreSQL only rather than guessed at generically.
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        DB::statement('analyze');
+    }
+
     public function handle(): int
     {
         if (app()->isProduction() && ! $this->option('force')) {
@@ -198,6 +230,8 @@ final class SeedDeskCommand extends Command
 
             return self::FAILURE;
         }
+
+        $this->analyseForThePlanner();
 
         $this->newLine();
         $this->components->twoColumnDetail('<fg=green;options=bold>Desk</>', self::SLUG);
