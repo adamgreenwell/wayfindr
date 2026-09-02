@@ -22,6 +22,7 @@ large launch.
 | | |
 | --- | --- |
 | Revision | `a65c95e7185eacba74fb48a5e388a06e3bf3bb8f` |
+| Working tree | Clean |
 | Machine | Apple M4 Max, 16 logical CPUs, 128 GB |
 | OS | macOS 27.0 (Darwin 27.0.0), arm64 |
 | Client runtime | Node.js 24.20.0 built-in `fetch` and `WebSocket` |
@@ -219,6 +220,10 @@ stage, 10-way connection concurrency, a 90-second top-stage hold, and an event
 every 15 seconds. The JSON output contains environment metadata, aggregate
 durations, counts, and process samples; it does not contain the app key,
 password, cookies, CSRF values, channel name, support code, or event payloads.
+The harness refuses a dirty Git worktree by default so the recorded revision
+cannot mislabel modified code. `WAYFINDR_CAPACITY_ALLOW_DIRTY=1` is available
+only for development shakedowns, and records `working_tree_clean: false` in the
+report.
 
 Stop both application processes, then remove the login-capable fixture:
 

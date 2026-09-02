@@ -4,7 +4,8 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 harness="$root_dir/scripts/smoke/reverb-agent-capacity.cjs"
 output="$(mktemp)"
-trap 'rm -f "$output"' EXIT
+dirty_probe="$root_dir/.wayfindr-capacity-dirty-probe.$$"
+trap 'rm -f "$output" "$dirty_probe"' EXIT
 
 common_environment=(
     WAYFINDR_REVERB_URL=ws://127.0.0.1:8080
@@ -62,5 +63,19 @@ if env "${common_environment[@]}" \
 fi
 
 grep -F 'requires at least a 70-second keepalive hold' "$output" >/dev/null
+
+: >"$dirty_probe"
+
+if env "${common_environment[@]}" \
+    WAYFINDR_BASE_URL=http://127.0.0.1:8000 \
+    WAYFINDR_CAPACITY_HOLD_SECONDS=1 \
+    WAYFINDR_CAPACITY_ALLOW_SHORT_HOLD=1 \
+    node "$harness" >"$output" 2>&1; then
+    echo "Capacity harness accepted a dirty worktree without an explicit override." >&2
+    exit 1
+fi
+
+grep -F 'Capacity harness refuses a dirty worktree' "$output" >/dev/null
+rm -f "$dirty_probe"
 
 echo "Reverb capacity harness safety guards are intact."

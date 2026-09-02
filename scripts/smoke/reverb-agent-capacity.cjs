@@ -20,6 +20,7 @@ const connectConcurrency = positiveIntegerEnv('WAYFINDR_CAPACITY_CONNECT_CONCURR
 const timeoutMs = positiveIntegerEnv('WAYFINDR_CAPACITY_TIMEOUT_MS', 10000);
 const agentPassword = process.env.WAYFINDR_CAPACITY_AGENT_PASSWORD || 'password';
 const allowShortHold = process.env.WAYFINDR_CAPACITY_ALLOW_SHORT_HOLD === '1';
+const allowDirty = process.env.WAYFINDR_CAPACITY_ALLOW_DIRTY === '1';
 const metadata = {
   database_placement: requiredEnv('WAYFINDR_CAPACITY_DATABASE_PLACEMENT'),
   redis_placement: requiredEnv('WAYFINDR_CAPACITY_REDIS_PLACEMENT'),
@@ -211,6 +212,17 @@ async function run() {
       }
 
       const holdFinishedAt = performance.now();
+      clients.forEach((client) => client.pauseKeepalive());
+      const pendingKeepalives = clients
+        .map((client) => client.pendingKeepalive)
+        .filter((pending) => (
+          pending
+          && pending.sentAt >= holdStartedAt
+          && pending.sentAt <= holdFinishedAt
+        ));
+      const keepaliveSettleStartedAt = performance.now();
+      await Promise.all(pendingKeepalives.map((pending) => pending.settled));
+      const keepaliveSettleMs = performance.now() - keepaliveSettleStartedAt;
       await monitor.sample();
       const perClientKeepalives = clients.map((client) => ({
         sends: client.keepaliveSentAt.filter((sentAt) => sentAt >= holdStartedAt && sentAt <= holdFinishedAt).length,
@@ -242,7 +254,11 @@ async function run() {
         reconnect_successes: sum(clients, (client) => client.reconnectSuccesses) - reconnectSuccessesBefore,
         keepalives_sent: sum(perClientKeepalives, (client) => client.sends),
         keepalive_pongs: sum(perClientKeepalives, (client) => client.acknowledgements.length),
+        unacknowledged_keepalives: sum(perClientKeepalives, (client) => (
+          client.sends - client.acknowledgements.length
+        )),
         keepalive_timeouts: sum(perClientKeepalives, (client) => client.timeouts),
+        keepalive_settle_ms: round(keepaliveSettleMs),
         clients_sending_keepalives: perClientKeepalives.filter((client) => client.sends > 0).length,
         clients_receiving_keepalive_pongs: perClientKeepalives
           .filter((client) => client.acknowledgements.length > 0).length,
@@ -263,7 +279,7 @@ async function run() {
   }
 
   const report = {
-    schema_version: 1,
+    schema_version: 2,
     measured_at: new Date().toISOString(),
     environment: {
       ...runtime,
@@ -305,6 +321,8 @@ async function run() {
       application_keepalives_exercised: Boolean(
         hold
         && hold.keepalive_timeouts === 0
+        && hold.unacknowledged_keepalives === 0
+        && hold.keepalives_sent === hold.keepalive_pongs
         && hold.clients_sending_keepalives === hold.agents
         && hold.clients_receiving_keepalive_pongs === hold.agents,
       ),
@@ -516,14 +534,16 @@ class CapacityAgent {
         if (envelope.event === 'pusher:pong') {
           if (this.pendingKeepalive && this.pendingKeepalive.socket === socket) {
             const receivedAt = performance.now();
-            clearTimeout(this.pendingKeepalive.timer);
+            const pending = this.pendingKeepalive;
+            clearTimeout(pending.timer);
             this.keepalivePongs += 1;
             this.keepaliveAcks.push({
-              sentAt: this.pendingKeepalive.sentAt,
+              sentAt: pending.sentAt,
               receivedAt,
-              latencyMs: round(receivedAt - this.pendingKeepalive.sentAt),
+              latencyMs: round(receivedAt - pending.sentAt),
             });
             this.pendingKeepalive = null;
+            pending.settle();
           }
 
           return;
@@ -706,9 +726,14 @@ class CapacityAgent {
 
       this.keepalivesSent += 1;
       this.keepaliveSentAt.push(sentAt);
+      let settle;
       const pending = {
         socket,
         sentAt,
+        settled: new Promise((resolve) => {
+          settle = resolve;
+        }),
+        settle: () => settle(),
         timer: setTimeout(() => {
           if (this.pendingKeepalive !== pending) {
             return;
@@ -717,6 +742,7 @@ class CapacityAgent {
           this.pendingKeepalive = null;
           this.keepaliveTimeoutAt.push(performance.now());
           this.websocketErrors += 1;
+          pending.settle();
           socket.close(4000, 'Pusher keepalive timed out');
         }, timeoutMs),
       };
@@ -725,14 +751,20 @@ class CapacityAgent {
   }
 
   stopKeepalive() {
+    this.pauseKeepalive();
+
+    if (this.pendingKeepalive) {
+      const pending = this.pendingKeepalive;
+      clearTimeout(pending.timer);
+      this.pendingKeepalive = null;
+      pending.settle();
+    }
+  }
+
+  pauseKeepalive() {
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = null;
-    }
-
-    if (this.pendingKeepalive) {
-      clearTimeout(this.pendingKeepalive.timer);
-      this.pendingKeepalive = null;
     }
   }
 
@@ -962,6 +994,7 @@ function runtimeEnvironment() {
 
   return {
     revision: command('git', ['rev-parse', 'HEAD'], repoRoot),
+    working_tree_clean: workingTreeStatus() === '',
     machine: os.cpus()[0]?.model || 'unknown',
     logical_cpus: os.cpus().length,
     memory_bytes: os.totalmem(),
@@ -999,6 +1032,15 @@ function guardDisposableTarget() {
   if (!allowShortHold) {
     assert(holdSeconds >= 70, 'The default capacity result requires at least a 70-second keepalive hold.');
   }
+
+  assert(
+    allowDirty || workingTreeStatus() === '',
+    'Capacity harness refuses a dirty worktree; commit or stash changes, or set WAYFINDR_CAPACITY_ALLOW_DIRTY=1 for a development-only run.',
+  );
+}
+
+function workingTreeStatus() {
+  return command('git', ['status', '--porcelain', '--untracked-files=normal'], repoRoot);
 }
 
 function verifyReverbProcess(pid) {
