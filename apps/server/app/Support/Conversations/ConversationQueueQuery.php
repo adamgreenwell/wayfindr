@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\LiteralLike;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -128,6 +129,30 @@ final class ConversationQueueQuery
             // same second do not swap places between requests -- which a
             // capped queue would show as a row appearing and disappearing.
             ->orderByDesc('id');
+    }
+
+    /**
+     * Apply the same order to models gathered through a stable id-keyset scan.
+     *
+     * @param  Collection<int, Conversation>  $conversations
+     * @return Collection<int, Conversation>
+     */
+    public static function sortModels(Collection $conversations): Collection
+    {
+        return $conversations->sort(function (Conversation $left, Conversation $right): int {
+            $leftActivity = $left->last_message_at ?? $left->created_at;
+            $rightActivity = $right->last_message_at ?? $right->created_at;
+
+            if (! $leftActivity->equalTo($rightActivity)) {
+                return $leftActivity->greaterThan($rightActivity) ? -1 : 1;
+            }
+
+            if (! $left->created_at->equalTo($right->created_at)) {
+                return $left->created_at->greaterThan($right->created_at) ? -1 : 1;
+            }
+
+            return $right->id <=> $left->id;
+        })->values();
     }
 
     public static function searchPattern(string $search): string

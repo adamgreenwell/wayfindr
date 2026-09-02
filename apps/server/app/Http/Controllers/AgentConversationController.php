@@ -301,7 +301,7 @@ class AgentConversationController extends Controller
         // shown.
         if ($narrowsInPhp) {
             $siblings = $cobrowseAttentionFinder->take(
-                $query->select(['id', 'support_code', 'subject']),
+                $query->select(['id', 'support_code', 'subject', 'created_at', 'last_message_at']),
                 ConversationQueueQuery::DISPLAY_LIMIT,
             );
         } else {

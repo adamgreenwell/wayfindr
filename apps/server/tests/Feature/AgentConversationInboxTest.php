@@ -8373,6 +8373,26 @@ test('the attention lane finds an older degraded session behind a page of health
         ]);
     }
 
+    $olderDegraded = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-BURIEDDEGRADED',
+        'subject' => 'Buried degraded cobrowse',
+        'status' => 'open',
+        'last_message_at' => now()->subDays(3),
+    ]);
+
+    CobrowseSession::factory()->for($olderDegraded)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'ended_at' => null,
+        'metadata' => ['telemetry' => [
+            'reported_at' => now()->subSeconds(12)->toJSON(),
+            'reconnects' => 0,
+            'dropped_batches' => 2,
+        ]],
+    ]);
+
+    // Both degraded sessions are OLDER than every healthy one, so an SQL cap
+    // before transport evaluation would discard them.
     $newerDegraded = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-NEWERDEGRADED',
         'subject' => 'Newer degraded cobrowse',
@@ -8391,31 +8411,22 @@ test('the attention lane finds an older degraded session behind a page of health
         ]],
     ]);
 
-    // Both degraded sessions are OLDER than every healthy one, so an SQL cap
-    // before transport evaluation would discard them.
-    $degraded = Conversation::factory()->for($site)->for($visitor)->create([
-        'support_code' => 'WF-BURIEDDEGRADED',
-        'subject' => 'Buried degraded cobrowse',
-        'status' => 'open',
-        'last_message_at' => now()->subDays(3),
-    ]);
-
-    CobrowseSession::factory()->for($degraded)->for($site)->for($visitor)->create([
-        'status' => 'granted',
-        'consented_at' => now()->subMinutes(5),
-        'ended_at' => null,
-        'metadata' => ['telemetry' => [
-            'reported_at' => now()->subSeconds(12)->toJSON(),
-            'reconnects' => 0,
-            'dropped_batches' => 2,
-        ]],
-    ]);
-
     $candidateQueries = [];
-    DB::listen(function ($query) use (&$candidateQueries): void {
+    $movedBetweenChunks = false;
+    DB::listen(function ($query) use ($olderDegraded, &$candidateQueries, &$movedBetweenChunks): void {
+        if (! $movedBetweenChunks
+            && str_starts_with($query->sql, 'select * from "conversations"')
+            && str_contains($query->sql, 'cobrowse_sessions')
+            && ! str_contains($query->sql, '"conversations"."id" > ?')) {
+            $movedBetweenChunks = true;
+            DB::table('conversations')
+                ->where('id', $olderDegraded->id)
+                ->update(['last_message_at' => now()]);
+        }
+
         if (str_contains($query->sql, 'from "conversations"')
             && str_contains($query->sql, 'cobrowse_sessions')
-            && str_contains($query->sql, ' offset ')) {
+            && str_contains($query->sql, '"conversations"."id" > ?')) {
             $candidateQueries[] = $query->sql;
         }
     });
@@ -8424,22 +8435,22 @@ test('the attention lane finds an older degraded session behind a page of health
         ->get('/dashboard/conversations?conversation_filter=cobrowse_attention');
 
     $response->assertOk()
-        ->assertSee('Newer degraded cobrowse')
-        ->assertSee('Buried degraded cobrowse');
+        ->assertSeeInOrder(['Buried degraded cobrowse', 'Newer degraded cobrowse']);
 
     // And the total counts what needs attention, not how many sessions are
     // live -- otherwise the lane claims to be hiding rows it is not.
     expect($response->viewData('conversationsShownOf'))
         ->toBe(2, 'the attention lane counted healthy sessions as rows it was hiding');
 
-    expect(collect($candidateQueries)->contains(
-        fn (string $query): bool => preg_match('/offset\s+200\b/i', $query) === 1
-    ))->toBeTrue('the attention candidates were loaded as one unbounded query');
+    expect($candidateQueries)->not->toBeEmpty(
+        'the attention candidates were not paged through a stable id keyset'
+    );
+    expect($movedBetweenChunks)->toBeTrue('the concurrency regression did not move a candidate');
 
     // The detail-page switcher runs the same post-filtered lane. It must also
     // scan past the healthy first chunk without rebuilding one giant model set.
     $this->actingAs($agent)
-        ->get('/dashboard/conversations/WF-NEWERDEGRADED?from_queue=1&conversation_filter=cobrowse_attention')
+        ->get('/dashboard/conversations/WF-BURIEDDEGRADED?from_queue=1&conversation_filter=cobrowse_attention')
         ->assertOk()
         ->assertSee('1 of 2')
         ->assertSee('Newer degraded cobrowse')

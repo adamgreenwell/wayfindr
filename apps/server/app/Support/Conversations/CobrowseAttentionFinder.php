@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 /**
- * Evaluate cobrowse transport attention without holding every candidate model.
+ * Evaluate cobrowse attention from stable id chunks without holding every model.
  */
 final class CobrowseAttentionFinder
 {
@@ -28,7 +28,7 @@ final class CobrowseAttentionFinder
             ->reorder()
             ->orderBy('conversations.id');
 
-        return $this->scan($query, retain: 0, countAll: true)['count'];
+        return $this->scan($query, retain: 0)['count'];
     }
 
     /**
@@ -41,7 +41,7 @@ final class CobrowseAttentionFinder
      */
     public function page(Builder $query, int $limit): array
     {
-        return $this->scan(clone $query, retain: $limit, countAll: true);
+        return $this->scan(clone $query, retain: $limit);
     }
 
     /**
@@ -50,7 +50,7 @@ final class CobrowseAttentionFinder
      */
     public function take(Builder $query, int $limit): Collection
     {
-        return $this->scan(clone $query, retain: $limit, countAll: false)['conversations'];
+        return $this->scan(clone $query, retain: $limit)['conversations'];
     }
 
     /**
@@ -61,29 +61,45 @@ final class CobrowseAttentionFinder
      *     transportByConversationId: Collection<int, array<string, mixed>>
      * }
      */
-    private function scan(Builder $query, int $retain, bool $countAll): array
+    private function scan(Builder $query, int $retain): array
     {
         $count = 0;
         $conversations = collect();
         $transportByConversationId = collect();
 
-        foreach ($query->with('latestCobrowseSession')->lazy(self::CHUNK_SIZE) as $conversation) {
-            $transport = $this->cobrowseConsentState->queueTransportForConversation($conversation);
+        // Snapshot the high-water id, then walk by immutable primary key. The
+        // queue order includes last_message_at, which changes under ordinary
+        // traffic; OFFSET pages in that order can duplicate or skip a row when
+        // a message arrives between queries.
+        $query = $query->with('latestCobrowseSession')->reorder();
+        $maximumId = (clone $query)->max('conversations.id');
 
-            if (! $this->cobrowseConsentState->transportNeedsAttention($transport)) {
-                continue;
-            }
+        if ($maximumId !== null) {
+            $query
+                ->where('conversations.id', '<=', $maximumId)
+                ->chunkById(self::CHUNK_SIZE, function (Collection $candidates) use (&$count, &$conversations, &$transportByConversationId, $retain): void {
+                    foreach ($candidates as $conversation) {
+                        $transport = $this->cobrowseConsentState->queueTransportForConversation($conversation);
 
-            $count++;
+                        if (! $this->cobrowseConsentState->transportNeedsAttention($transport)) {
+                            continue;
+                        }
 
-            if ($conversations->count() < $retain) {
-                $conversations->push($conversation);
-                $transportByConversationId->put($conversation->id, $transport);
-            }
+                        $count++;
 
-            if (! $countAll && $conversations->count() >= $retain) {
-                break;
-            }
+                        if ($retain > 0) {
+                            $conversations->push($conversation);
+                            $transportByConversationId->put($conversation->id, $transport);
+                        }
+                    }
+
+                    if ($retain > 0) {
+                        $conversations = ConversationQueueQuery::sortModels($conversations)
+                            ->take($retain)
+                            ->values();
+                        $transportByConversationId = $transportByConversationId->only($conversations->pluck('id')->all());
+                    }
+                }, 'conversations.id', 'id');
         }
 
         return [
