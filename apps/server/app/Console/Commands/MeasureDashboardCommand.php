@@ -36,12 +36,14 @@ use Throwable;
  * how much can it take? Pair it with `wayfindr:seed-desk`, which writes a
  * desk-sized account to point this at.
  *
- * **It reports three numbers per page and all three matter.** Milliseconds is
+ * **It reports four numbers per page and all four matter.** Milliseconds is
  * what an agent feels. Query count is where an N+1 shows up -- a page whose
  * queries grow with its rows will be fine on the machine you test on and
  * unusable on a busy one. Response size is the one that is easy to forget and
  * was the largest finding the first time this ran: a page can be quick to build
- * and still be a hundred megabytes of HTML that a browser has to parse.
+ * and still be a hundred megabytes of HTML that a browser has to parse. Peak
+ * allocated memory is where a page that rendered correctly on a developer
+ * machine can cross the shipped process limit and die in production.
  *
  * Requests are dispatched through the HTTP kernel rather than over a socket, so
  * these figures exclude the network, the web server and TLS. That makes them a
@@ -63,6 +65,7 @@ final class MeasureDashboardCommand extends Command
         {--email= : The agent to measure as; defaults to the seeded desk owner}
         {--runs=3 : Measured runs per page, after one warm-up}
         {--page=* : Measure only pages whose name contains this, e.g. --page=ticket}
+        {--support-code= : Measure this exact conversation when the detail page is selected}
         {--json : Emit machine-readable rows instead of a table}';
 
     protected $description = 'Time the dashboard\'s heaviest pages against the data currently in the database.';
@@ -318,12 +321,13 @@ final class MeasureDashboardCommand extends Command
         $this->newLine();
 
         $this->table(
-            ['Page', 'ms (median)', 'Queries', 'Response'],
+            ['Page', 'ms (median)', 'Queries', 'Response', 'Peak memory'],
             array_map(fn (array $row): array => [
                 $row['page'],
                 ReaderNumber::count((int) $row['ms']),
                 ReaderNumber::count((int) $row['queries']),
                 $this->humanBytes($row['bytes']),
+                $this->humanBytes($row['peak_memory_bytes']),
             ], $rows),
         );
 
@@ -331,7 +335,7 @@ final class MeasureDashboardCommand extends Command
     }
 
     /**
-     * @return array{page: string, uri: string, ms: float, queries: int, bytes: int, status: int}
+     * @return array{page: string, uri: string, ms: float, queries: int, bytes: int, peak_memory_bytes: int, status: int}
      */
     private function measure(Kernel $kernel, User $agent, string $label, string $uri, int $runs): array
     {
@@ -358,6 +362,7 @@ final class MeasureDashboardCommand extends Command
         $bytes = 0;
         $status = 0;
         $queries = 0;
+        $peakMemory = [];
 
         // TIMED runs are uninstrumented. Laravel's query log allocates and
         // retains an entry per query, so leaving it on inside the measured
@@ -382,10 +387,15 @@ final class MeasureDashboardCommand extends Command
             ob_start();
 
             try {
+                if (function_exists('memory_reset_peak_usage')) {
+                    memory_reset_peak_usage();
+                }
+
                 $startedAt = microtime(true);
                 $response = $this->dispatch($kernel, $agent, $uri);
                 $body = self::realise($response);
                 $timings[] = (microtime(true) - $startedAt) * 1000;
+                $peakMemory[] = memory_get_peak_usage(true);
             } finally {
                 ob_end_clean();
                 DB::rollBack();
@@ -439,6 +449,8 @@ final class MeasureDashboardCommand extends Command
             'ms' => round($median, 1),
             'queries' => $queries,
             'bytes' => $bytes,
+            // A process is killed at its high-water mark, not its median one.
+            'peak_memory_bytes' => max($peakMemory),
             'status' => $status,
         ];
     }
@@ -927,7 +939,15 @@ final class MeasureDashboardCommand extends Command
             $targets['Reports export (90 days)'] = '/dashboard/reports/export?report_days=90';
         }
 
-        if ($conversation !== null) {
+        $supportCode = trim((string) $this->option('support-code'));
+
+        if ($supportCode !== '') {
+            // An exact target for follow-up measurements whose state matters,
+            // such as #861's populated cobrowse panel. Let the normal 404
+            // guard fail an inaccessible or mistyped code rather than quietly
+            // substituting a different, faster conversation.
+            $targets['Conversation detail'] = '/dashboard/conversations/'.rawurlencode($supportCode);
+        } elseif ($conversation !== null) {
             // The one page whose cost should NOT grow with the desk, and the
             // control that says so when the others do.
             $targets['Conversation detail'] = '/dashboard/conversations/'.$conversation->support_code;

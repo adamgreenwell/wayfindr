@@ -58,6 +58,7 @@ test('every measured page answers 200, or its timing means nothing', function ()
         expect($page['status'])->toBe(200, "{$page['page']} answered {$page['status']} at {$page['uri']}");
         expect($page['bytes'])->toBeGreaterThan(0);
         expect($page['queries'])->toBeGreaterThan(0);
+        expect($page['peak_memory_bytes'])->toBeGreaterThan(0);
     }
 
 });
@@ -157,6 +158,26 @@ test('it measures a conversation the agent can actually open', function (): void
 
     expect($detail['status'])->toBe(200)
         ->and($detail['uri'])->not->toContain('WF-STRANGER-1');
+});
+
+test('it can measure an exact conversation detail when the populated state matters', function (): void {
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 2, '--fresh' => true]);
+
+    $conversation = Conversation::query()->orderBy('id')->firstOrFail();
+    $exit = Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--page' => ['detail'],
+        '--support-code' => $conversation->support_code,
+        '--json' => true,
+    ]);
+
+    expect($exit)->toBe(0);
+
+    $detail = collect(json_decode(Artisan::output(), true)['pages'])->firstWhere('page', 'Conversation detail');
+
+    expect($detail['uri'])->toEndWith('/'.$conversation->support_code)
+        ->and($detail['status'])->toBe(200)
+        ->and($detail['peak_memory_bytes'])->toBeGreaterThan(0);
 });
 
 test('it skips a site on the agent\'s own account that the agent cannot see', function (): void {
