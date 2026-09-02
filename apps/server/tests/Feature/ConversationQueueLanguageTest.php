@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\Article;
 use App\Models\AuditEvent;
+use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -355,6 +356,39 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         'action' => 'datenpunkt.future_action',
         'metadata' => [],
         'occurred_at' => now(),
+    ]);
+
+    // Every section of the account-side operator-access page. These are
+    // deliberately different scope and lifecycle branches so the extracted
+    // route audit measures the row copy, not just three empty-state messages.
+    $operator = User::factory()->for($account)->create([
+        'name' => 'Betreiber Datenpunkt',
+        'platform_role' => 'operator',
+    ]);
+
+    if ($first !== null) {
+        BreakGlassGrant::factory()
+            ->scopedToConversation($first)
+            ->create([
+                'requester_id' => $operator->id,
+                'reason' => 'Datenpunkt ausstehender Grund',
+            ]);
+    }
+
+    BreakGlassGrant::factory()
+        ->activeFor($account, $operator)
+        ->scopedToSite($site)
+        ->create([
+            'approver_id' => $admins['de']->id,
+            'self_approved' => false,
+            'reason' => 'Datenpunkt aktiver Grund',
+        ]);
+
+    BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => $operator->id,
+        'status' => BreakGlassGrant::STATUS_DENIED,
+        'reason' => 'Datenpunkt abgelehnter Grund',
     ]);
 
     return [
@@ -1492,6 +1526,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.labels.index'),
         route('dashboard.account.api-tokens.index'),
         route('dashboard.account.audit.index'),
+        route('dashboard.account.break-glass.index'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -1943,7 +1978,9 @@ test('every extracted page translates its document title', function (): void {
     $conversation = Conversation::query()->firstOrFail();
 
     $titleOf = function (string $url, string $locale) use ($world): string {
-        $html = (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent();
+        $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
+        $reader = $world[$admin ? 'admins' : 'agents'][$locale];
+        $html = (string) $this->actingAs($reader)->get($url)->assertOk()->getContent();
 
         preg_match('#<title>(.*?)</title>#is', $html, $found);
 
@@ -1955,6 +1992,7 @@ test('every extracted page translates its document title', function (): void {
         route('dashboard.conversations.index'),
         route('dashboard.tickets.index'),
         route('dashboard.conversations.show', $conversation->support_code),
+        route('dashboard.account.break-glass.index'),
     ];
 
     foreach ($urls as $url) {
@@ -3707,12 +3745,17 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('dashboard.conversations.index'),
         route('dashboard.tickets.index'),
         route('dashboard.conversations.show', $conversation->support_code),
+        route('dashboard.account.break-glass.index'),
     ];
 
     foreach (['de', 'en'] as $locale) {
         foreach ($states as $url) {
+            $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
             $text = conversationQueueLanguageVisibleText(
-                (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent()
+                (string) $this->actingAs($world[$admin ? 'admins' : 'agents'][$locale])
+                    ->get($url)
+                    ->assertOk()
+                    ->getContent()
             );
 
             foreach ($placeholders as $placeholder) {
@@ -3774,6 +3817,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
         route('dashboard.account.audit.index'),
+        route('dashboard.account.break-glass.index'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
 

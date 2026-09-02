@@ -14,6 +14,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -224,6 +225,234 @@ test('an account admin sees pending requests and approves one', function (): voi
     expect($grant->status)->toBe(BreakGlassGrant::STATUS_ACTIVE)
         ->and($grant->self_approved)->toBeFalse()
         ->and((int) $grant->approver_id)->toBe($admin->id);
+});
+
+test('the account operator access page localizes its empty states in German and Italian', function (): void {
+    foreach ([
+        'de' => [
+            'title' => 'Betreiberzugriff',
+            'pending' => 'Ihre Genehmigung steht aus',
+            'pending_empty' => 'Keine ausstehenden Anfragen.',
+            'active_empty' => 'Kein Betreiber kann derzeit die Supportinhalte dieses Kontos einsehen.',
+            'history_empty' => 'Keine früheren Zugriffsfreigaben.',
+            'count' => '0 aktive Zugriffsfreigaben',
+        ],
+        'it' => [
+            'title' => 'Accesso del gestore',
+            'pending' => 'In attesa della sua approvazione',
+            'pending_empty' => 'Nessuna richiesta in attesa.',
+            'active_empty' => 'Nessun gestore può vedere i contenuti di supporto di questo account in questo momento.',
+            'history_empty' => 'Nessuna concessione precedente.',
+            'count' => '0 concessioni attive',
+        ],
+    ] as $locale => $copy) {
+        $account = Account::factory()->create();
+        $admin = User::factory()->for($account)->create([
+            'account_role' => AccountRole::Admin,
+            'locale' => $locale,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.account.break-glass.index'))
+            ->assertOk()
+            ->assertSee('<html lang="'.$locale.'">', escape: false)
+            ->assertSee($copy['title'])
+            ->assertSee($copy['pending'])
+            ->assertSee($copy['pending_empty'])
+            ->assertSee($copy['active_empty'])
+            ->assertSee($copy['history_empty'])
+            ->assertSee($copy['count'])
+            ->assertDontSee('Awaiting your approval')
+            ->assertDontSee('No pending requests.')
+            ->assertDontSee('No past grants.');
+    }
+});
+
+test('the account operator access page translates grant states while keeping account data language neutral', function (): void {
+    $account = Account::factory()->create(['name' => 'Datenpunkt Konto']);
+    $germanAdmin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+        'name' => 'Ada Datenpunkt',
+    ]);
+    $italianAdmin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'it',
+        'name' => 'Arianna Datenpunkt',
+    ]);
+    $operator = User::factory()->for($account)->create([
+        'platform_role' => 'operator',
+        'name' => 'Oskar Datenpunkt',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Datenpunkt Portal']);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->create([
+        'visitor_id' => $visitor->id,
+        'support_code' => 'WF-LANGACCESS',
+    ]);
+
+    BreakGlassGrant::factory()->scopedToConversation($conversation)->create([
+        'requester_id' => $operator->id,
+        'reason' => 'Datenpunkt pending reason',
+        'requested_minutes' => 60,
+    ]);
+    BreakGlassGrant::factory()->activeFor($account, $operator)->scopedToSite($site)->create([
+        'approver_id' => $germanAdmin->id,
+        'self_approved' => false,
+        'reason' => 'Datenpunkt active reason',
+    ]);
+    BreakGlassGrant::factory()->activeFor($account, $operator)->create([
+        'self_approved' => true,
+        'reason' => 'Datenpunkt self-approved reason',
+    ]);
+    BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => null,
+        'status' => BreakGlassGrant::STATUS_DENIED,
+        'reason' => 'Datenpunkt denied reason',
+    ]);
+    BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => $operator->id,
+        'scope_type' => BreakGlassGrant::SCOPE_CONVERSATION,
+        'conversation_id' => null,
+        'site_id' => null,
+        'status' => BreakGlassGrant::STATUS_CLOSED,
+        'reason' => 'Datenpunkt deleted reason',
+    ]);
+    $foreignSite = Site::factory()->create(['name' => 'Never reveal this foreign site']);
+    BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => $operator->id,
+        'scope_type' => BreakGlassGrant::SCOPE_SITE,
+        'site_id' => $foreignSite->id,
+        'status' => BreakGlassGrant::STATUS_EXPIRED,
+        'reason' => 'Datenpunkt out-of-scope reason',
+    ]);
+    BreakGlassGrant::factory()->activeFor($account, $operator)->create([
+        'approver_id' => $germanAdmin->id,
+        'self_approved' => false,
+        'approved_at' => now()->subHours(2),
+        'expires_at' => now()->subHour(),
+        'reason' => 'Datenpunkt overdue reason',
+    ]);
+
+    $german = $this->actingAs($germanAdmin)->get(route('dashboard.account.break-glass.index'));
+
+    $german->assertOk()
+        ->assertSee('Betreiberzugriff')
+        ->assertSee('Ihre Genehmigung steht aus')
+        ->assertSeeInOrder(['Unterhaltung', 'WF-LANGACCESS', '60 Minuten', 'nur lesend'])
+        ->assertSeeInOrder(['Website', 'Datenpunkt Portal'])
+        ->assertSee('Gesamtes Konto')
+        ->assertSee('Abgelehnt')
+        ->assertSee('Gelöschte Unterhaltung')
+        ->assertSee('Vorzeitig beendet')
+        ->assertSee('Website außerhalb des Bereichs')
+        ->assertSee('Abgelaufen')
+        ->assertSee('Selbst genehmigt')
+        ->assertDontSee('Conversation WF-LANGACCESS')
+        ->assertDontSee('Site Datenpunkt Portal')
+        ->assertDontSee('Entire account')
+        ->assertDontSee('Never reveal this foreign site')
+        ->assertDontSee('Closed early');
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $german->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    foreach (['WF-LANGACCESS', 'Datenpunkt Portal', 'Oskar Datenpunkt', 'Ada Datenpunkt', 'Datenpunkt pending reason'] as $value) {
+        expect($xpath->query('//span[@lang="" and normalize-space(.)="'.$value.'"]')?->length)
+            ->toBeGreaterThan(0, "{$value} is not marked as language-neutral account data");
+    }
+
+    $this->actingAs($italianAdmin)
+        ->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->assertSee('Accesso del gestore')
+        ->assertSee('In attesa della sua approvazione')
+        ->assertSeeInOrder(['Conversazione', 'WF-LANGACCESS', '60 minuti', 'sola lettura'])
+        ->assertSeeInOrder(['Sito', 'Datenpunkt Portal'])
+        ->assertSee('Intero account')
+        ->assertSee('Negato')
+        ->assertSee('Conversazione eliminata')
+        ->assertSee('Terminato in anticipo')
+        ->assertSee('Sito fuori ambito')
+        ->assertSee('Scaduto')
+        ->assertSee('Autoapprovata')
+        ->assertDontSee('Conversation WF-LANGACCESS')
+        ->assertDontSee('Site Datenpunkt Portal')
+        ->assertDontSee('Entire account')
+        ->assertDontSee('Never reveal this foreign site')
+        ->assertDontSee('Closed early');
+});
+
+test('account operator access lifecycle flashes follow the reader language and clock', function (): void {
+    $this->travelTo(CarbonImmutable::create(2026, 8, 24, 14, 0, 0, 'UTC'));
+
+    $w = breakGlassFlowWorld();
+    $admin = User::factory()->for($w['account'])->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+        'timezone' => 'Europe/Berlin',
+    ]);
+    $pending = BreakGlassGrant::factory()
+        ->scopedToConversation($w['conversation'])
+        ->create(['requester_id' => $w['operator']->id, 'account_id' => $w['account']->id]);
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.break-glass.index'))
+        ->post(route('dashboard.account.break-glass.approve', $pending))
+        ->assertRedirect(route('dashboard.account.break-glass.index'))
+        ->assertSessionHas('status', 'operator_access.flash.approved');
+
+    $this->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->assertSee('Zugriff bis 17:00 CEST genehmigt: Unterhaltung')
+        ->assertSee($w['conversation']->support_code)
+        ->assertDontSee('Access approved until');
+
+    $admin->forceFill(['locale' => 'it', 'timezone' => 'Europe/Rome'])->save();
+    $admin = $admin->fresh();
+    $denied = BreakGlassGrant::factory()
+        ->scopedToConversation($w['conversation'])
+        ->create(['requester_id' => $w['operator']->id, 'account_id' => $w['account']->id]);
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.break-glass.index'))
+        ->post(route('dashboard.account.break-glass.deny', $denied))
+        ->assertSessionHas('status', 'operator_access.flash.denied');
+
+    $this->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->assertSee('Richiesta rifiutata. Non è stato concesso alcun accesso.')
+        ->assertDontSee('Request denied.');
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.break-glass.index'))
+        ->post(route('dashboard.account.break-glass.close', $pending->fresh()))
+        ->assertSessionHas('status', 'operator_access.flash.closed');
+
+    $this->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->assertSee('Concessione terminata. L’accesso è stato revocato.')
+        ->assertDontSee('Grant closed.');
+
+    $overdue = BreakGlassGrant::factory()->activeFor($w['account'], $w['operator'])->create([
+        'approver_id' => $admin->id,
+        'self_approved' => false,
+        'expires_at' => now()->subMinute(),
+    ]);
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.break-glass.index'))
+        ->post(route('dashboard.account.break-glass.close', $overdue))
+        ->assertSessionHas('status', 'operator_access.flash.already_expired');
+
+    $this->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->assertSee('Questa concessione era già scaduta; viene registrata come scaduta.')
+        ->assertDontSee('That grant had already expired');
 });
 
 test('an account admin denies a request', function (): void {
