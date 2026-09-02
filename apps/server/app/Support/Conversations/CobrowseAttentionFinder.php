@@ -93,13 +93,19 @@ final class CobrowseAttentionFinder
                         }
                     }
 
-                    if ($retain > 0) {
-                        $conversations = ConversationQueueQuery::sortModels($conversations)
-                            ->take($retain)
-                            ->values();
+                    if ($retain > 0 && $conversations->count() > $retain) {
+                        $conversations = $this->retainMostRecent($conversations, $retain);
                         $transportByConversationId = $transportByConversationId->only($conversations->pluck('id')->all());
                     }
                 }, 'conversations.id', 'id');
+        }
+
+        if ($retain > 0 && $conversations->isNotEmpty()) {
+            // A retained conversation can receive a message after its id chunk
+            // was read. Rank the bounded set in SQL again so the rendered page
+            // agrees with the shared queue order at the end of the scan.
+            $conversations = $this->retainMostRecent($conversations, $retain);
+            $transportByConversationId = $transportByConversationId->only($conversations->pluck('id')->all());
         }
 
         return [
@@ -107,5 +113,28 @@ final class CobrowseAttentionFinder
             'conversations' => $conversations,
             'transportByConversationId' => $transportByConversationId,
         ];
+    }
+
+    /**
+     * Re-rank only the bounded retained set using current ordering columns.
+     *
+     * @param  Collection<int, Conversation>  $conversations
+     * @return Collection<int, Conversation>
+     */
+    private function retainMostRecent(Collection $conversations, int $retain): Collection
+    {
+        $conversationsById = $conversations->keyBy('id');
+        $orderedIds = ConversationQueueQuery::ordered(
+            Conversation::query()
+                ->select('id')
+                ->whereKey($conversationsById->keys()->all())
+        )
+            ->limit($retain)
+            ->pluck('id');
+
+        return $orderedIds
+            ->map(fn (int $id): ?Conversation => $conversationsById->get($id))
+            ->filter()
+            ->values();
     }
 }

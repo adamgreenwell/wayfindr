@@ -8353,6 +8353,24 @@ test('the attention lane finds an older degraded session behind a page of health
     $site = Site::factory()->for($account)->create();
     $visitor = Visitor::factory()->for($site)->create();
 
+    $refreshedBetweenChunks = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REFRESHEDDEGRADED',
+        'subject' => 'Refreshed retained cobrowse',
+        'status' => 'open',
+        'last_message_at' => now()->subDays(4),
+    ]);
+
+    CobrowseSession::factory()->for($refreshedBetweenChunks)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'ended_at' => null,
+        'metadata' => ['telemetry' => [
+            'reported_at' => now()->subSeconds(12)->toJSON(),
+            'reconnects' => 0,
+            'dropped_batches' => 2,
+        ]],
+    ]);
+
     $healthy = CobrowseAttentionFinder::CHUNK_SIZE + 5;
 
     foreach (range(1, $healthy) as $i) {
@@ -8413,7 +8431,8 @@ test('the attention lane finds an older degraded session behind a page of health
 
     $candidateQueries = [];
     $movedBetweenChunks = false;
-    DB::listen(function ($query) use ($olderDegraded, &$candidateQueries, &$movedBetweenChunks): void {
+    $refreshedAfterHydration = false;
+    DB::listen(function ($query) use ($olderDegraded, $refreshedBetweenChunks, &$candidateQueries, &$movedBetweenChunks, &$refreshedAfterHydration): void {
         if (! $movedBetweenChunks
             && str_starts_with($query->sql, 'select * from "conversations"')
             && str_contains($query->sql, 'cobrowse_sessions')
@@ -8428,6 +8447,13 @@ test('the attention lane finds an older degraded session behind a page of health
             && str_contains($query->sql, 'cobrowse_sessions')
             && str_contains($query->sql, '"conversations"."id" > ?')) {
             $candidateQueries[] = $query->sql;
+
+            if (! $refreshedAfterHydration) {
+                $refreshedAfterHydration = true;
+                DB::table('conversations')
+                    ->where('id', $refreshedBetweenChunks->id)
+                    ->update(['last_message_at' => now()->addMinute()]);
+            }
         }
     });
 
@@ -8435,24 +8461,30 @@ test('the attention lane finds an older degraded session behind a page of health
         ->get('/dashboard/conversations?conversation_filter=cobrowse_attention');
 
     $response->assertOk()
-        ->assertSeeInOrder(['Buried degraded cobrowse', 'Newer degraded cobrowse']);
+        ->assertSeeInOrder([
+            'Refreshed retained cobrowse',
+            'Buried degraded cobrowse',
+            'Newer degraded cobrowse',
+        ]);
 
     // And the total counts what needs attention, not how many sessions are
     // live -- otherwise the lane claims to be hiding rows it is not.
     expect($response->viewData('conversationsShownOf'))
-        ->toBe(2, 'the attention lane counted healthy sessions as rows it was hiding');
+        ->toBe(3, 'the attention lane counted healthy sessions as rows it was hiding');
 
     expect($candidateQueries)->not->toBeEmpty(
         'the attention candidates were not paged through a stable id keyset'
     );
     expect($movedBetweenChunks)->toBeTrue('the concurrency regression did not move a candidate');
+    expect($refreshedAfterHydration)->toBeTrue('the concurrency regression did not refresh a retained candidate');
 
     // The detail-page switcher runs the same post-filtered lane. It must also
     // scan past the healthy first chunk without rebuilding one giant model set.
     $this->actingAs($agent)
         ->get('/dashboard/conversations/WF-BURIEDDEGRADED?from_queue=1&conversation_filter=cobrowse_attention')
         ->assertOk()
-        ->assertSee('1 of 2')
+        ->assertSee('2 of 3')
+        ->assertSee('Refreshed retained cobrowse')
         ->assertSee('Newer degraded cobrowse')
         ->assertSee('Buried degraded cobrowse');
 });
