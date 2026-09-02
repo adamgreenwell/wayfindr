@@ -17,7 +17,7 @@ use.
 
 | | |
 | --- | --- |
-| Revision | `7961dcb897d73cc8a70b7e82f7a1aa4b3f3dc29e` |
+| Revision | `7dd625fcfb120a9125b46e50ef8ec28ed885e961` |
 | Working tree | Clean before and after both measurements |
 | Machine | Apple M4 Max, 16 logical CPUs, 128 GB |
 | OS | macOS 27.0 (Darwin 27.0.0), arm64 |
@@ -45,8 +45,8 @@ remained downloadable.
 
 | Storage driver | Seed | Dry run | Real sweep | Sweep PHP peak | Removed rows | Removed orphan objects | Objects left |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Local filesystem | 997.4 ms | 61.3 ms | 1,344.7 ms | 44.0 MiB | 3,000 | 1,500 | 5,500 |
-| S3-compatible MinIO | 25,454.7 ms | 4,211.1 ms | 18,509.6 ms | 68.5 MiB | 3,000 | 2,000 | 5,000 |
+| Local filesystem | 943.8 ms | 61.4 ms | 1,263.5 ms | 44.0 MiB | 3,000 | 1,500 | 5,500 |
+| S3-compatible MinIO | 27,094.9 ms | 5,381.3 ms | 21,661.1 ms | 68.5 MiB | 3,000 | 2,000 | 5,000 |
 
 The 3,000 removed rows in each run were 2,000 expired pending uploads and
 1,000 failed uploads. The 4,000 bound and 1,000 fresh pending rows survived,
@@ -88,8 +88,8 @@ scheduled deletion completed.
 The JSON reports contained no credentials or attachment contents. Their
 SHA-256 digests were:
 
-- local: `ba1c60870625d856acced70c478188d5d4a94d79de2a20f685c5b2e3e0deedd0`;
-- S3-compatible: `92bf25c60fd0911250fd7466d00a14f3a6e8d0a8a3b7fa7678a5492e50276f49`.
+- local: `90b43adddcb0987bf779f3e701b300f0e6d61a3efa03167f13b892b65cf4ecb3`;
+- S3-compatible: `5c4ce14aeb3c7495c821ba57a47abf30d814192db777d2e76f84cb74693979c4`.
 
 ## Reproducing it
 
