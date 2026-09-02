@@ -363,6 +363,7 @@ final class MeasureDashboardCommand extends Command
         $status = 0;
         $queries = 0;
         $peakMemory = [];
+        $ownsPeakMemoryCounter = in_array($this->getName(), $_SERVER['argv'] ?? [], true);
 
         // TIMED runs are uninstrumented. Laravel's query log allocates and
         // retains an entry per query, so leaving it on inside the measured
@@ -387,7 +388,10 @@ final class MeasureDashboardCommand extends Command
             ob_start();
 
             try {
-                if (function_exists('memory_reset_peak_usage')) {
+                // A direct CLI run owns its short-lived process. Artisan::call
+                // and Tinker do not, so they must not erase their caller's
+                // process-global high-water mark.
+                if ($ownsPeakMemoryCounter && function_exists('memory_reset_peak_usage')) {
                     memory_reset_peak_usage();
                 }
 
