@@ -36,6 +36,8 @@ over twelve months. The figures, the hardware, and the gaps are published in the
 [performance baseline](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/performance-baseline.md).
 The real widget-to-Reverb path and populated agent replay have a separate
 [cobrowse performance baseline](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/cobrowse-performance-baseline.md).
+Concurrent signed-in agents and private-channel fan-out have a separate
+[Reverb capacity baseline](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/reverb-agent-capacity.md).
 
 Before that measurement, Wayfindr had never been run under load at all, and both
 queues rendered every matching row. What an operator should know:
