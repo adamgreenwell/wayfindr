@@ -183,8 +183,8 @@ of the difference is the argument for measuring at all:
 Both rows are on the fixture as it stood then, which wrote no lifecycle history
 — that is what makes them comparable to each other. The current figure in the
 table above is 19 queries and 7,071 ms, measured on a desk that now has a
-history to hydrate; the paragraph after this explains that difference rather
-than leaving two numbers to be reconciled by the reader.
+history to hydrate; the paragraph after this measures that difference directly
+rather than leaving two numbers to be reconciled by the reader.
 
 The queue eagerly loaded each ticket's lifecycle events and then threw that work
 away: the helper reading them went to the relation rather than to what had
@@ -203,11 +203,22 @@ condition**: of three helpers reading that relation, two asked whether it was
 already loaded and one did not.
 
 That caveat has since been settled by measurement rather than left standing. The
-fixture writes lifecycle history now — 95,604 events at this size — so those
-queries return rows to hydrate. The all-tickets queue moved from 6,928 ms and 18
-queries on the empty fixture to **7,071 ms and 19** with a real history behind
-it: about six per cent, which is what the eager load costs when it has something
-to load, and a long way from the 9,503 ms the N+1 was costing.
+fixture writes lifecycle history now — 95,604 events, of which 33,229 belong to
+tickets — so those queries return rows to hydrate.
+
+Measured as an A/B on one desk in one sitting, deleting only the ticket events
+between the two runs, because comparing figures from different days would put
+the answer inside the run-to-run noise this page already warns about:
+
+| Ticket queue (all), 50,000 conversations | ms | Queries |
+| --- | ---: | ---: |
+| With 33,229 ticket lifecycle events | 6,917 | 19 |
+| With none | 6,699 | 18 |
+
+**About three per cent, and one query.** That is what the eager load costs when
+it has something to load — a long way from the 9,503 ms the N+1 was costing, and
+small enough that the pagination problem remains the only thing on this page
+worth acting on.
 
 What remains is the pagination problem, which the ticket queue shares with the
 conversation queue: 19 queries is the right number, and it still renders every
