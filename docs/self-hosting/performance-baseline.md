@@ -12,6 +12,8 @@ The browser-to-Reverb path has its own
 populated cobrowse session rather than the empty-session detail control below.
 Concurrent signed-in agents and private-channel fan-out have a separate
 [Reverb capacity baseline](reverb-agent-capacity.md).
+Large-object-count attachment cleanup has a separate
+[attachment-retention capacity baseline](attachment-retention-capacity.md).
 
 **The short version: both queues used to render every matching row, and at a
 year of real traffic that stopped being usable. Both are capped now.** The
@@ -419,12 +421,6 @@ of their day inside does not degrade, and the guard in
 
 Stated because a baseline with silent gaps is worse than one with named ones:
 
-- **Reverb, and concurrent agent count.** #796 asks for a figure an operator can
-  size against. Producing one needs many real WebSocket clients against a
-  running Reverb, which is a different kind of harness from this one. Nothing
-  here establishes it.
-- **Attachments and the retention sweep.** No large object count has been run
-  through either.
 - **Cobrowse mutation batches** on a heavy page.
 - **The conversation detail page's cobrowse panel.** The seeder creates no
   cobrowse sessions, so the panel — a substantial part of that page, and the
@@ -437,8 +433,9 @@ Stated because a baseline with silent gaps is worse than one with named ones:
 
 It does not say Wayfindr is universally fast. It says two specific queues were
 unbounded, one of them also held an N+1, and those measured defects are now
-bounded. The named gaps above — Reverb concurrency, attachments, heavy cobrowse
-mutation batches and real contention — remain gaps.
+bounded. Reverb concurrency and attachment retention now have the separate
+baselines linked above; heavy cobrowse mutation batches and real contention
+remain gaps.
 
 Fixing it was not the point of taking the measurement, but measuring again is
 what makes the result more than an impression. The ticket queue moved from
