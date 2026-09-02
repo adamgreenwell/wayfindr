@@ -204,12 +204,14 @@ class AgentTicketQueueController extends Controller
         // query is the prerequisite, and `TicketAttentionStateParityTest`
         // holds the SQL and the PHP rule in step ticket by ticket.
 
-        // The external-issue state is still decided in PHP, so when it is
-        // ACTIVE the attention work has to stay in PHP with it. Counting states
-        // in SQL there would advertise chips including tickets the external
-        // filter then removes, and following one of those chips would show
-        // fewer tickets than it promised.
-        $externallyRefined = $ticketExternalIssue !== 'all';
+        // External-issue state is queryable now too. It pairs creation/removal
+        // and failure/success audit events in correlated subqueries, preserving
+        // the PHP state machine while letting every refinement happen before
+        // rows are hydrated. `TicketExternalIssueStateParityTest` is the guard
+        // against the two implementations drifting.
+        if ($ticketExternalIssue !== 'all') {
+            TicketExternalIssueState::whereState($ticketResults, $ticketExternalIssue);
+        }
 
         // The chips need EVERY state's count, so they are taken before the
         // attention filter narrows the list to one. On the default path that is
@@ -219,48 +221,17 @@ class AgentTicketQueueController extends Controller
         // From the base query, BEFORE the row selects: cloning a query that
         // already selects `attention_state` and selecting it again leaves
         // PostgreSQL with two columns of that name and an ambiguous `group by`.
-        $ticketAttentionCounts = $externallyRefined
-            ? []
-            : (clone $ticketResults)->attentionStateCounts();
+        $ticketAttentionCounts = (clone $ticketResults)->attentionStateCounts();
 
         $ticketResults = $ticketResults
             ->select(['tickets.*'])
             ->selectAttentionState()
             ->when(
-                ! $externallyRefined && $ticketAttention !== 'all',
+                $ticketAttention !== 'all',
                 fn ($query) => $query->whereAttentionState($ticketAttention)
             )
-            // Ordered in SQL either way: filtering in PHP afterwards preserves
-            // the order it came back in.
             ->orderByAttention()
             ->get();
-
-        // The external-issue state is still decided in PHP. It pairs audit
-        // events against each other -- a creation cancelled by a later removal,
-        // a failure resolved by a later success -- which is not a `where`. That
-        // is what still stands between this page and a row cap, and it is the
-        // remaining half of #847.
-        if ($externallyRefined) {
-            $ticketResults = $ticketResults
-                ->filter(fn (Ticket $ticket): bool => TicketExternalIssueState::forTicket($ticket) === $ticketExternalIssue)
-                ->values();
-
-            // Counted AFTER the external filter and BEFORE the attention one,
-            // which is the order the previous implementation used and the only
-            // one where both numbers describe the same set of tickets.
-            //
-            // Read off the column the query already selected, so the two paths
-            // cannot disagree about what state a ticket is in.
-            $ticketAttentionCounts = $ticketResults
-                ->countBy(fn (Ticket $ticket): string => (string) $ticket->attention_state)
-                ->all();
-
-            if ($ticketAttention !== 'all') {
-                $ticketResults = $ticketResults
-                    ->filter(fn (Ticket $ticket): bool => $ticket->attention_state === $ticketAttention)
-                    ->values();
-            }
-        }
         $ticketQueueSummary = $this->ticketQueueSummary($ticketAttentionCounts, $ticketQuery, $ticketAttentionFilters);
         $tickets = $ticketResults;
 
@@ -269,9 +240,6 @@ class AgentTicketQueueController extends Controller
         // from the list -- they are the same collection now, and comparing it
         // with itself reports nothing as narrowed.
         //
-        // Summed BEFORE the external-issue refinement, which still runs in PHP:
-        // the count is what the other filters matched, which is what the
-        // sentence claims.
         $ticketQueueCountSummary = $this->ticketQueueCountSummary(
             $tickets,
             array_sum($ticketAttentionCounts),
