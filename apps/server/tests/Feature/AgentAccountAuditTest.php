@@ -8,6 +8,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -90,6 +91,122 @@ test('admins can search filtered account audit activity without leaking restrict
         ->assertDontSee('should-not-render');
 });
 
+test('the German audit screen localizes its copy and reader-facing values without claiming account data is German', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+        'timezone' => 'Europe/Berlin',
+        'name' => 'Ada Datenpunkt',
+    ]);
+    $owner = User::factory()->for($account)->create(['name' => 'Olive Datenpunkt']);
+    $site = Site::factory()->for($account)->create(['name' => 'VIP Datenpunkt']);
+    $site->supportAgents()->attach($admin);
+
+    AuditEvent::factory()->for($account)->for($site)->create([
+        'actor_type' => $owner->getMorphClass(),
+        'actor_id' => $owner->id,
+        'subject_type' => $site->getMorphClass(),
+        'subject_id' => $site->id,
+        'action' => 'site_access.updated',
+        'metadata' => [],
+        'occurred_at' => CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC'),
+    ]);
+
+    $response = $this->actingAs($admin)->get(route('dashboard.account.audit.index', [
+        'audit_action' => 'site_access.updated',
+        'audit_search' => 'Datenpunkt',
+        'audit_site' => $site->id,
+    ]));
+
+    $response->assertOk()
+        ->assertSee('<html lang="de">', escape: false)
+        ->assertSee('Kontoprotokoll')
+        ->assertSee('Websitezugriff aktualisiert')
+        ->assertSee('1 angezeigt')
+        ->assertSee('24. Aug 2026 17:05')
+        ->assertDontSee('Account audit')
+        ->assertDontSee('Site access updated')
+        ->assertDontSee('2026-08-24 17:05:00');
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    expect($xpath->query('//option[@value="'.$site->id.'" and @lang="" and @selected]')?->length)->toBe(1)
+        ->and($xpath->query('//input[@id="audit_search" and @lang=""]')?->length)->toBe(1)
+        ->and($xpath->query('//span[@class="lede" and @lang="" and normalize-space(.)="site_access.updated"]')?->length)->toBe(1)
+        ->and($xpath->query('//span[@lang="" and normalize-space(.)="Olive Datenpunkt"]')?->length)->toBe(1)
+        ->and($xpath->query('//span[@lang="" and normalize-space(.)="VIP Datenpunkt"]')?->length)->toBeGreaterThanOrEqual(1);
+
+    $blankResponse = $this->actingAs($admin)->get(route('dashboard.account.audit.index'));
+    $blankDocument = new DOMDocument;
+    $blankDocument->loadHTML((string) $blankResponse->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $blankXpath = new DOMXPath($blankDocument);
+
+    // A filled search term is account data. An empty control has only our
+    // translated placeholder, so it must keep the page's German language.
+    expect($blankXpath->query('//input[@id="audit_search" and not(@lang) and @placeholder="Ausführende Person, Gegenstand, Website, Aktion"]')?->length)->toBe(1);
+});
+
+test('the Italian audit screen uses the Italian catalogue and date order', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'it',
+        'timezone' => 'Europe/Rome',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Portale clienti']);
+    $site->supportAgents()->attach($admin);
+
+    AuditEvent::factory()->for($account)->for($site)->create([
+        'actor_type' => $admin->getMorphClass(),
+        'actor_id' => $admin->id,
+        'subject_type' => $site->getMorphClass(),
+        'subject_id' => $site->id,
+        'action' => 'site_access.updated',
+        'metadata' => [],
+        'occurred_at' => CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC'),
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('<html lang="it">', escape: false)
+        ->assertSee('Registro account')
+        ->assertSee('Accesso al sito aggiornato')
+        ->assertSee('1 visualizzato')
+        ->assertSee('24 ago 2026 17:05')
+        ->assertDontSee('Account audit')
+        ->assertDontSee('Site access updated');
+});
+
+test('unknown audit actions use localized fallback copy while preserving their identifier', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+
+    AuditEvent::factory()->for($account)->create([
+        'actor_type' => null,
+        'actor_id' => null,
+        'subject_type' => null,
+        'subject_id' => null,
+        'action' => 'provider.future_action',
+        'metadata' => [],
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('Andere aufgezeichnete Aktion')
+        ->assertSee('provider.future_action')
+        ->assertSee('System')
+        ->assertSee('Konto')
+        ->assertDontSee('Provider Future Action');
+});
+
 test('regular agents cannot view or export account audit activity', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
@@ -109,6 +226,8 @@ test('account audit export includes scoped safe fields without raw metadata', fu
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+        'timezone' => 'Europe/Berlin',
         'name' => 'Ada Admin',
     ]);
     $owner = User::factory()->for($account)->create([
@@ -127,7 +246,7 @@ test('account audit export includes scoped safe fields without raw metadata', fu
         'subject_id' => $visibleSite->id,
         'action' => 'site_access.updated',
         'metadata' => ['token' => 'should-not-render'],
-        'occurred_at' => now()->subMinute(),
+        'occurred_at' => CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC'),
     ]);
 
     AuditEvent::factory()->for($account)->for($restrictedSite)->create([
@@ -151,8 +270,11 @@ test('account audit export includes scoped safe fields without raw metadata', fu
         ->toContain('occurred_at,action,label,actor,subject,site')
         ->toContain('site_access.updated')
         ->toContain('Site access updated')
+        ->toContain('2026-08-24 17:05:00')
         ->toContain('Olive Owner')
         ->toContain('VIP Portal')
+        ->not->toContain('Websitezugriff aktualisiert')
+        ->not->toContain('24. Aug 2026')
         ->not->toContain('Restricted Store')
         ->not->toContain('should-not-render');
 });
@@ -264,9 +386,9 @@ test('admins can find cobrowse audit activity by support code without exposing m
     $this->actingAs($admin)
         ->get('/dashboard/account/audit?audit_search=WF-AUDITUI')
         ->assertOk()
-        ->assertSee('Cobrowse Resync Fulfilled')
-        ->assertSee('Visitor anon-cobrowse')
-        ->assertSee('Cobrowse WF-AUDITUI')
+        ->assertSee('Cobrowse resync fulfilled')
+        ->assertSeeInOrder(['Visitor', 'anon-cobrowse'])
+        ->assertSeeInOrder(['Cobrowse', 'WF-AUDITUI'])
         ->assertSee('Docs Site')
         ->assertDontSee('Do not render me')
         ->assertDontSee('https://docs.example.test/private');

@@ -1,16 +1,23 @@
 # The language the dashboard speaks
 
 Status: **in progress.** The plumbing is shipped, and
-`DashboardLanguage::EXTRACTED_ROUTES` names **30 routes — 13 of them pages** a
+`DashboardLanguage::EXTRACTED_ROUTES` names **31 routes — 14 of them pages** a
 reader can open, the rest the write and partial endpoints those pages call. The
 extracted surfaces are the app shell, the agent profile, the conversation queue
 and detail, the ticket queue, reply templates, ticket labels, articles, API
-tokens, the live-visitors board, and the visitor directory and profile.
+tokens, the account audit, the live-visitors board, and the visitor directory
+and profile.
 
 That list is the one the guards read, and counting it is the only honest way to
 answer how far this has got: counting *views* that call `__()` overstates it,
 because a page is not extracted until its endpoints are. The operator console is
 the largest surface still untouched. The rest is going view by view.
+
+The account audit draws a deliberate line between its screen and its download.
+The screen's action labels, counts, and timestamps follow the agent's language
+and clock. Its CSV keeps stable English headers and labels plus a sortable
+timestamp, because a spreadsheet or script may consume the file under a
+different locale from the dashboard that produced it.
 
 ### Copy an agent reads, and copy an agent SENDS
 

@@ -265,7 +265,8 @@ it('renders the account audit list on the reader clock', function () {
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
-        ->assertSee('2026-08-24 16:32:00')
+        ->assertSee('Aug 24, 2026 4:32 PM')
+        ->assertDontSee('2026-08-24 16:32:00')
         ->assertDontSee('2026-08-24 14:32:00');
 });
 
