@@ -110,6 +110,19 @@ final class SeedDeskCommand extends Command
 
     private const AGENT_PREFIX = 'desk-agent-';
 
+    /**
+     * Every table this command writes, and so the only ones it asks the
+     * planner to re-read. Keep in step with the seed methods; the test
+     * `the seeder tells the planner about its own tables and nothing else`
+     * holds the same list.
+     *
+     * @var list<string>
+     */
+    private const ANALYSED_TABLES = [
+        'accounts', 'sites', 'users', 'visitors', 'conversations', 'conversation_messages',
+        'tickets', 'conversation_read_states', 'audit_events', 'conversation_ratings',
+    ];
+
     private const AGENT_SUFFIX = '@example.test';
 
     /**
@@ -141,7 +154,12 @@ final class SeedDeskCommand extends Command
             return;
         }
 
-        DB::statement('analyze');
+        // NAMED tables, never a bare ANALYZE. Bare, it walks every table the
+        // role can see and takes a lock on each -- fine on a test database,
+        // and on the populated production database this command can be
+        // pointed at with --force it scans everything unrelated and contends
+        // with maintenance and DDL. The seeder knows exactly what it wrote.
+        DB::statement('analyze '.implode(', ', self::ANALYSED_TABLES));
     }
 
     public function handle(): int

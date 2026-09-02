@@ -22,6 +22,7 @@ use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -1504,4 +1505,39 @@ test('a refused run leaves the desk it was going to replace', function (): void 
     expect(Conversation::query()->where('support_code', 'like', 'WF-DESK-000000%')->whereIn('support_code', [
         'WF-DESK-0000000', 'WF-DESK-0000001', 'WF-DESK-0000002', 'WF-DESK-0000003', 'WF-DESK-0000004',
     ])->count())->toBe(5, 'the refused run deleted the desk it was replacing');
+});
+
+test('the seeder tells the planner about its own tables and nothing else', function (): void {
+    // RefreshDatabase holds everything this command writes inside an open
+    // transaction, which autovacuum cannot see, so without this the planner
+    // believes every table is empty and plans accordingly (#843). But a bare
+    // ANALYZE walks every table the role can see and locks each one -- on the
+    // populated production database this command can be pointed at with
+    // --force, that is a scan of everything unrelated. So: named tables, only
+    // the ones written, and on PostgreSQL only.
+    $analyzes = [];
+
+    DB::listen(function ($query) use (&$analyzes): void {
+        if (str_starts_with(strtolower(ltrim($query->sql)), 'analyze')) {
+            $analyzes[] = strtolower($query->sql);
+        }
+    });
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 5, '--messages' => 1])->assertSuccessful();
+
+    if (DB::connection()->getDriverName() !== 'pgsql') {
+        expect($analyzes)->toBe([], 'ANALYZE was issued on a driver with no planner problem to solve');
+
+        return;
+    }
+
+    expect($analyzes)->toHaveCount(1, 'expected exactly one ANALYZE after seeding');
+
+    expect(preg_match('/^analyze\s*;?\s*$/', trim($analyzes[0])))
+        ->toBe(0, 'a bare ANALYZE was issued, which walks every table in the database');
+
+    foreach (['accounts', 'sites', 'users', 'visitors', 'conversations', 'conversation_messages', 'tickets', 'conversation_read_states', 'audit_events', 'conversation_ratings'] as $table) {
+        expect(preg_match('/\b'.$table.'\b/', $analyzes[0]))
+            ->toBe(1, "ANALYZE does not name {$table}, which the seeder writes");
+    }
 });
