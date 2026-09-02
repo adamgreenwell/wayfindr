@@ -23,13 +23,13 @@ The product has moved past a spine. It now includes:
 - Reporting over conversations and tickets, plus visitor satisfaction ratings.
 - Per-site widget appearance, a widget language catalogue in English and German,
   and an agent-selectable dashboard language in English, German and Italian on
-  the surfaces extracted so far: the profile pages, the conversation queue, the
-  ticket list, and the conversation detail page with its cobrowse panel.
+  the surfaces extracted so far: the profile pages, conversation queue and
+  detail, ticket queue, live-visitors board, visitor directory and profile,
+  reply templates, ticket labels, articles, and API tokens.
 
-  **Everything else is still English**, and it is most of the dashboard: the
-  home page, Alerts, Reports, Visitors, site settings, ticket detail, and the
-  whole account-management side — Account, Integrations, API tokens, Operator
-  access, Audit, Labels, Articles, Reply templates.
+  **Much of the rest is still English**: the home page, Alerts, Reports, site
+  settings, ticket detail, the account overview, Integrations, Operator access,
+  Audit, and the operator console.
 
   `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
   are translated, and it is the only place worth reading: a page missing from it

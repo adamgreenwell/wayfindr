@@ -1262,6 +1262,7 @@ test('an italian plural branch inflects something', function (): void {
     $invariable = [
         // `ticket` is an unadapted loanword; Italian does not pluralise it.
         'tickets.counts.tickets',
+        'visitors.counts.tickets',
         'ticket_labels.usage.tickets',
         'ticket_labels.manage.in_use',
         // `token` is the same kind of loanword -- `i token`, never `i tokens`

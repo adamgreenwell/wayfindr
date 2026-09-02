@@ -1,11 +1,11 @@
 # The language the dashboard speaks
 
 Status: **in progress.** The plumbing is shipped, and
-`DashboardLanguage::EXTRACTED_ROUTES` names **28 routes — 11 of them pages** a
+`DashboardLanguage::EXTRACTED_ROUTES` names **30 routes — 13 of them pages** a
 reader can open, the rest the write and partial endpoints those pages call. The
 extracted surfaces are the app shell, the agent profile, the conversation queue
 and detail, the ticket queue, reply templates, ticket labels, articles, API
-tokens and the live-visitors board.
+tokens, the live-visitors board, and the visitor directory and profile.
 
 That list is the one the guards read, and counting it is the only honest way to
 answer how far this has got: counting *views* that call `__()` overstates it,
@@ -609,22 +609,23 @@ copy. A key for a name would be a key for something no catalogue can hold.
 
 The first version of the queue extraction put `__()` inside
 `Conversation::attentionLabel()` and `Visitor::presenceLabel()`, and recorded
-the consequence here as a cost worth paying: the visitors directory would render
+the consequence here as a cost worth paying: the visitors directory rendered
 those labels in German while the rest of that page stayed English.
 
 It was not worth paying, and the reasoning was wrong in a way worth keeping.
 **A model is read by every surface that touches it, so translating in one is
-unscopeable by construction.** Those two methods reached the conversation detail
-page and the visitors directory — documents that are not extracted and correctly
-declare `<html lang="en">` — which is precisely the mixed-language problem the
+unscopeable by construction.** At the time those two methods reached the
+conversation detail page and the visitors directory while both correctly
+declared `<html lang="en">`. That was precisely the mixed-language problem the
 per-surface flag exists to prevent, arriving through the model instead of through
 the layout.
 
 So a model answers with a **state** (`attentionState()`, `presenceState()`) and
-each extracted surface translates that state at its own call site. The label
-methods stay English until their last consumer is extracted, and then they go
-away. A test asserts the unextracted page still reads English for a German
-agent, which is the correct answer until somebody extracts it.
+each extracted surface translates that state at its own call site. English
+fallbacks stay English for model consumers such as broadcast payloads and pages
+that have not been extracted. The visitor-directory test now states the durable
+version of that contract: with the process locale set to German, the model still
+answers in English while the extracted page renders its state in German.
 
 English-as-key reads well in a diff and fails badly in practice here: this
 codebase's copy is edited constantly, and prose in a key position means every

@@ -130,6 +130,12 @@ final class DashboardLanguage
         // SCRIPT rather than by Blade, which is why it needed no new mechanism
         // and does need the render audit to open it with the board populated.
         'dashboard.sites.live',
+
+        // The visitor directory and profile are one navigation path: the live
+        // board already links to the profile, and translating only the list or
+        // only the destination would put a language switch inside the section.
+        'dashboard.visitors.index',
+        'dashboard.visitors.show',
     ];
 
     /**
