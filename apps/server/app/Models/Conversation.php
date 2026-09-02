@@ -256,7 +256,8 @@ class Conversation extends Model
     {
         return $query->whereHas('cobrowseSessions', fn (Builder $query) => $query
             ->where('status', 'granted')
-            ->whereNull('ended_at'));
+            ->whereNull('ended_at')
+            ->where('updated_at', '>', CobrowseSession::idleCutoff()));
     }
 
     public function attentionState(): string

@@ -13,8 +13,8 @@ class ExpireIdleCobrowseSessionsCommand extends Command
 
     public function handle(): int
     {
-        $minutes = max(1, (int) config('wayfindr.cobrowse.session_idle_expiry_minutes', 15));
-        $cutoff = now()->subMinutes($minutes);
+        $minutes = CobrowseSession::idleExpiryMinutes();
+        $cutoff = CobrowseSession::idleCutoff();
         $dryRun = (bool) $this->option('dry-run');
         $expired = 0;
 

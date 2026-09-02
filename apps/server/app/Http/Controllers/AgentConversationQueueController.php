@@ -155,8 +155,8 @@ class AgentConversationQueueController extends Controller
         // badge insisting something needs attention.
         //
         // Capping it after the filter is safe because the SQL set is already
-        // narrow -- `withActiveCobrowseSession()` bounds it to sessions that
-        // are live right now, not to the whole desk.
+        // narrow -- `withActiveCobrowseSession()` bounds it to sessions with
+        // activity inside the configured idle window, not to the whole desk.
         $narrowsInPhp = $conversationFilter === 'cobrowse_attention';
 
         $conversations = (clone $conversationRows)

@@ -10,6 +10,7 @@
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
@@ -98,9 +99,41 @@ test('the idle window is configurable', function (): void {
     // 20 minutes idle is within a 30-minute window, so it stays active.
     $idle = idleGrantedSession(20);
 
+    expect(Conversation::query()
+        ->whereKey($idle->conversation_id)
+        ->withActiveCobrowseSession()
+        ->exists())->toBeTrue();
+
     $this->artisan('wayfindr:expire-idle-cobrowse-sessions')
         ->expectsOutputToContain('past the 30-minute idle window')
         ->assertSuccessful();
 
     expect($idle->fresh()->status)->toBe('granted');
+});
+
+test('active conversation queries and the expiry command meet at the idle cutoff', function (): void {
+    Carbon::setTestNow(Carbon::parse('2026-09-02 12:00:00', 'UTC'));
+
+    try {
+        $recent = idleGrantedSession(14);
+        $idle = idleGrantedSession(15);
+
+        $activeConversationIds = Conversation::query()
+            ->withActiveCobrowseSession()
+            ->pluck('id')
+            ->all();
+
+        expect($activeConversationIds)
+            ->toContain($recent->conversation_id)
+            ->not->toContain($idle->conversation_id);
+
+        $this->artisan('wayfindr:expire-idle-cobrowse-sessions')
+            ->expectsOutputToContain('Expired 1 idle cobrowse session')
+            ->assertSuccessful();
+
+        expect($recent->fresh()->status)->toBe('granted')
+            ->and($idle->fresh()->status)->toBe('ended');
+    } finally {
+        Carbon::setTestNow();
+    }
 });
