@@ -216,13 +216,16 @@ async function runSample(browser, runNumber) {
     const finalMutation = mutationMetrics.at(-1) || {};
     const successfulBatches = pressureSummary.batch_count || finalMutation.batch_count || 0;
     const retainedBatches = pressureSummary.recent_batches_count || finalMutation.recent_batches_count || 0;
+    const allObservedRequests = [...visitorNetwork.requests, ...agentNetwork.requests];
     const allTransportFailures = [...visitorNetwork.failures, ...agentNetwork.failures];
     const failedResponses = [...visitorNetwork.failedResponses, ...agentNetwork.failedResponses];
     const injectedFailures = allTransportFailures.filter((failure) => failure.injected).length;
     const naturalFailures = allTransportFailures.filter((failure) => !failure.injected).length
       + failedResponses.length;
     const mutationRequests = visitorNetwork.records.filter((record) => record.kind === 'mutations');
-    const statusPolls = visitorNetwork.responses.filter((response) => response.kind === 'status').length;
+    const statusPolls = visitorNetwork.responses.filter((response) => {
+      return response.kind === 'status' && response.started_at_ms >= workloadStartedAt;
+    }).length;
 
     const allTransportMasked = [
       consentMetric,
@@ -232,7 +235,8 @@ async function runSample(browser, runNumber) {
       pressureMutationMetric,
       pressureSnapshotMetric,
       ...mutationMetrics,
-    ].every((metric) => metric.masked_sentinel_absent === true);
+    ].every((metric) => metric.masked_sentinel_absent === true)
+      && allObservedRequests.every((request) => request.masked_sentinel_absent === true);
 
     assert(initialPrivacy.masked_sentinel_absent, 'masked sentinel reached the initial agent preview');
     assert(finalPrivacy.masked_sentinel_absent, 'masked sentinel reached the final agent preview');
@@ -246,7 +250,7 @@ async function runSample(browser, runNumber) {
     assert(successfulBatches > retainedBatches, 'workload did not exercise retained-batch trimming');
     assert(realtime.update_events > 0, 'agent received no cobrowse Reverb updates');
     assert(agentNetwork.records.some((record) => record.kind === 'preview'), 'Reverb updates triggered no agent preview fetch');
-    assert(statusPolls > 0, 'workload completed without exercising the cobrowse status poll');
+    assert(statusPolls > 0, 'workload completed without exercising a periodic cobrowse status poll');
     assert(naturalFailures === 0, `observed ${naturalFailures} unplanned cobrowse request failures`);
     assert(pageErrors.length === 0, `browser reported ${pageErrors.length} uncaught page errors`);
 
@@ -261,7 +265,7 @@ async function runSample(browser, runNumber) {
         dropped_batches: pressureSummary.dropped_count || 0,
         injected_request_failures: injectedFailures,
         natural_request_failures: naturalFailures,
-        cobrowse_status_polls: statusPolls,
+        periodic_cobrowse_status_polls: statusPolls,
         console_errors_before_forced_loss: consoleErrorsBeforeInjectedLoss,
         console_errors_during_forced_loss: Math.max(0, consoleErrors - consoleErrorsBeforeInjectedLoss),
         uncaught_page_errors: pageErrors.length,
@@ -550,7 +554,9 @@ async function measureAgentReload(page, network) {
 
 function observeNetwork(page) {
   const starts = new WeakMap();
+  const durations = new WeakMap();
   const injected = new WeakSet();
+  const requests = [];
   const records = [];
   const failures = [];
   const responses = [];
@@ -561,6 +567,10 @@ function observeNetwork(page) {
 
     if (kind) {
       starts.set(request, performance.now());
+      requests.push({
+        kind,
+        masked_sentinel_absent: !(request.postData() || '').includes(maskedSentinel),
+      });
     }
   });
 
@@ -571,14 +581,16 @@ function observeNetwork(page) {
       return;
     }
 
-    const response = await request.response();
     const startedAt = starts.get(request);
+    const httpMs = startedAt === undefined ? null : round(performance.now() - startedAt);
+    durations.set(request, httpMs);
+    const response = await request.response();
 
     records.push({
       kind,
       status: response?.status() || 0,
       request_bytes: Buffer.byteLength(request.postData() || ''),
-      http_ms: startedAt === undefined ? null : round(performance.now() - startedAt),
+      http_ms: httpMs,
     });
   });
 
@@ -589,7 +601,11 @@ function observeNetwork(page) {
       return;
     }
 
-    const observed = { kind, status: response.status() };
+    const observed = {
+      kind,
+      status: response.status(),
+      started_at_ms: starts.get(response.request()) ?? performance.now(),
+    };
     responses.push(observed);
 
     if (observed.status < 200 || observed.status >= 300) {
@@ -608,7 +624,9 @@ function observeNetwork(page) {
   return {
     failures,
     failedResponses,
+    durations,
     records,
+    requests,
     responses,
     starts,
     markInjectedFailure(request) {
@@ -670,7 +688,6 @@ async function waitForSuccessfulResponse(page, kind, predicate = () => true) {
 async function responseMetric(response, network, sentinel) {
   await response.finished();
   const request = response.request();
-  const startedAt = network.starts.get(request);
   const body = await response.body();
   const postData = request.postData() || '';
 
@@ -678,7 +695,7 @@ async function responseMetric(response, network, sentinel) {
     status: response.status(),
     request_bytes: Buffer.byteLength(postData),
     response_bytes: body.length,
-    http_ms: startedAt === undefined ? null : round(performance.now() - startedAt),
+    http_ms: network.durations.get(request) ?? null,
     masked_sentinel_absent: !postData.includes(sentinel),
   };
 }
