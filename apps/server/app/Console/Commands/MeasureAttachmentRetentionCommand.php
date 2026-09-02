@@ -85,7 +85,7 @@ final class MeasureAttachmentRetentionCommand extends Command
             $output = (string) $this->option('output');
             $allowDirty = (bool) $this->option('allow-dirty');
 
-            $this->guardDisposableTarget($objects, $this->bytesPerObject, $output, $allowDirty);
+            $output = $this->guardDisposableTarget($objects, $this->bytesPerObject, $output, $allowDirty);
 
             if ($this->option('preflight-only')) {
                 $this->components->info('Attachment-retention disposable-target preflight passed.');
@@ -227,7 +227,7 @@ final class MeasureAttachmentRetentionCommand extends Command
         }
     }
 
-    private function guardDisposableTarget(int $objects, int $bytes, string $output, bool $allowDirty): void
+    private function guardDisposableTarget(int $objects, int $bytes, string $output, bool $allowDirty): string
     {
         $this->assert(
             getenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE') === 'YES' && $this->option('confirm-disposable'),
@@ -239,9 +239,14 @@ final class MeasureAttachmentRetentionCommand extends Command
         $this->assert($bytes >= 1 && $bytes <= 1_048_576, '--bytes must be between 1 byte and 1 MiB.');
         $this->assert($objects * $bytes <= 268_435_456, 'The synthetic fixture is capped at 256 MiB.');
         $this->assert($output !== '' && str_starts_with($output, DIRECTORY_SEPARATOR), '--output must be an absolute path.');
-        $this->assert(! file_exists($output) && ! file_exists($output.'.tmp'), 'Refusing to overwrite an existing report or temporary report.');
+        $outputDirectory = realpath(dirname($output));
+        $this->assert($outputDirectory !== false, '--output parent directory must already exist.');
+        $canonicalOutput = $this->normalPath((string) $outputDirectory).DIRECTORY_SEPARATOR.basename($output);
+        $this->assert(! file_exists($canonicalOutput) && ! file_exists($canonicalOutput.'.tmp'), 'Refusing to overwrite an existing report or temporary report.');
+        $repositoryRoot = $this->normalPath((string) realpath(base_path('../..')));
         $this->assert(
-            ! str_starts_with($this->normalPath($output), $this->normalPath((string) realpath(base_path('../..'))).DIRECTORY_SEPARATOR),
+            $canonicalOutput !== $repositoryRoot
+            && ! str_starts_with($canonicalOutput, $repositoryRoot.DIRECTORY_SEPARATOR),
             'Write the measurement report outside the repository so evidence runs remain clean.',
         );
         $this->assert(DB::connection()->getDriverName() === 'sqlite', 'Measurement requires an isolated SQLite database.');
@@ -326,6 +331,8 @@ final class MeasureAttachmentRetentionCommand extends Command
 
         $git = $this->gitState();
         $this->assert($allowDirty || $git['clean'], 'Measurement refuses a dirty worktree; commit or stash changes first.');
+
+        return $canonicalOutput;
     }
 
     /**
@@ -808,7 +815,7 @@ final class MeasureAttachmentRetentionCommand extends Command
     private function writeReport(string $output, array $report): void
     {
         $directory = dirname($output);
-        $this->assert(is_dir($directory) || mkdir($directory, 0755, true), 'Could not create the report directory.');
+        $this->assert(is_dir($directory), 'The report directory no longer exists.');
         $json = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
         $temporary = $output.'.tmp';
         $this->assert(file_put_contents($temporary, $json) !== false, 'Could not write the temporary report.');

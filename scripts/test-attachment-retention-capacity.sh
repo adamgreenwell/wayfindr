@@ -16,6 +16,7 @@ grep -F 'S3-compatible measurement requires a loopback endpoint.' "$command" >/d
 grep -F 'SQLite must live under the operating-system temporary directory.' "$command" >/dev/null
 grep -F 'Attachment-retention measurement refuses cached configuration.' "$command" >/dev/null
 grep -F 'Measurement refuses additional configured attachment disks:' "$command" >/dev/null
+grep -F '$outputDirectory = realpath(dirname($output));' "$command" >/dev/null
 grep -F 'Refusing to publish: HEAD changed during the measurement.' "$command" >/dev/null
 grep -F "Schedule::events()" "$command" >/dev/null
 

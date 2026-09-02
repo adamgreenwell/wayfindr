@@ -107,6 +107,44 @@ test('the local preflight refuses another configured attachment disk', function 
     }
 });
 
+test('the preflight resolves a symlinked report parent before enforcing the repository boundary', function (): void {
+    if (DB::connection()->getDriverName() !== 'sqlite') {
+        $this->markTestSkipped('The measurement preflight deliberately requires an isolated SQLite database.');
+    }
+
+    $repositoryRoot = (string) realpath(base_path('../..'));
+    $linkedParent = sys_get_temp_dir().'/wayfindr-retention-report-link-'.Str::lower((string) Str::ulid());
+    $output = $linkedParent.'/report.json';
+
+    expect(symlink($repositoryRoot, $linkedParent))->toBeTrue();
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    config()->set('wayfindr.attachments.orphan_grace_hours', 1);
+    config()->set('filesystems.disks.attachments-s3.bucket', null);
+    putenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE=YES');
+    putenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY=testing report boundary');
+
+    try {
+        $this->artisan('wayfindr:measure-attachment-retention', [
+            '--objects' => 20,
+            '--bytes' => 64,
+            '--output' => $output,
+            '--confirm-disposable' => true,
+            '--allow-dirty' => true,
+            '--preflight-only' => true,
+        ])->expectsOutputToContain('outside the repository')
+            ->assertFailed();
+
+        expect(file_exists($output))->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE');
+        putenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY');
+
+        if (is_link($linkedParent)) {
+            unlink($linkedParent);
+        }
+    }
+});
+
 test('the local measurement proves deletion survival and bounded cleanup', function (): void {
     if (DB::connection()->getDriverName() !== 'sqlite') {
         $this->markTestSkipped('The measurement command deliberately requires an isolated SQLite database.');
