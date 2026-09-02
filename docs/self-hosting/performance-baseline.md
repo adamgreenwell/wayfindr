@@ -40,9 +40,18 @@ docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php art
 docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
 
-A by-hand Compose install uses `-f docker/self-hosting/compose.yml --env-file
-docker/self-hosting/.env` from the checkout, exactly as it was brought up. The
-override goes after `php`, not after `artisan`.
+A by-hand Compose install runs from the checkout, with the stack files under
+`docker/self-hosting`, exactly as it was brought up:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+```
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+```
+
+In every form the override goes after `php`, not after `artisan`.
 
 Every figure on this page was taken with `--runs=3`.
 
@@ -66,10 +75,23 @@ owner credential on an internet-facing box.
 
 Measure a staging copy, a restored backup, or a throwaway VM. If a desk was
 seeded somewhere it should not have been, `--purge` removes it — the account,
-everything under it, and the `desk-agent-` sign-ins — and writes nothing:
+everything under it, and the `desk-agent-` sign-ins — and writes nothing. With
+PHP on the host:
 
 ```bash
 php artisan wayfindr:seed-desk --purge
+```
+
+From the directory the one-line installer was run in:
+
+```bash
+docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --purge
+```
+
+From a by-hand Compose checkout:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php artisan wayfindr:seed-desk --purge
 ```
 
 `--fresh` is not that: it deletes and then seeds again, so it replaces the
