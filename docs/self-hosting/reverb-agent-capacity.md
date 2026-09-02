@@ -21,7 +21,7 @@ large launch.
 
 | | |
 | --- | --- |
-| Revision | `24086d33ca5cf622681d60773ce39d20bd168b01` |
+| Revision | `a65c95e7185eacba74fb48a5e388a06e3bf3bb8f` |
 | Machine | Apple M4 Max, 16 logical CPUs, 128 GB |
 | OS | macOS 27.0 (Darwin 27.0.0), arm64 |
 | Client runtime | Node.js 24.20.0 built-in `fetch` and `WebSocket` |
@@ -69,11 +69,11 @@ HTTP request. The one PHP worker serializes parts of those 10-way bursts.
 
 | Active agents | New sign-ins / subscriptions | Login p95 | Private channel ready p95 | Delivery p95 | Delivered | Reverb CPU max | Reverb RSS max |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 10 | 10 / 10 | 2,519 ms | 428 ms | 26.6 ms | 30 / 30 | 0.7% | 65.9 MiB |
-| 25 | 15 / 15 | 2,744 ms | 419 ms | 25.2 ms | 75 / 75 | 0.6% | 65.9 MiB |
-| 50 | 25 / 25 | 2,735 ms | 413 ms | 27.5 ms | 150 / 150 | 0.5% | 65.9 MiB |
-| 100 | 50 / 50 | 2,756 ms | 433 ms | 24.1 ms | 300 / 300 | 1.0% | 65.9 MiB |
-| 200 | 100 / 100 | 2,747 ms | 428 ms | 26.7 ms | 600 / 600 | 1.2% | 66.0 MiB |
+| 10 | 10 / 10 | 2,431 ms | 385 ms | 23.0 ms | 30 / 30 | 0.9% | 34.0 MiB |
+| 25 | 15 / 15 | 2,708 ms | 417 ms | 24.9 ms | 75 / 75 | 0.7% | 34.4 MiB |
+| 50 | 25 / 25 | 2,675 ms | 412 ms | 24.8 ms | 150 / 150 | 0.7% | 34.9 MiB |
+| 100 | 50 / 50 | 2,725 ms | 418 ms | 27.3 ms | 300 / 300 | 1.6% | 35.9 MiB |
+| 200 | 100 / 100 | 2,708 ms | 420 ms | 26.0 ms | 600 / 600 | 1.9% | 37.8 MiB |
 
 Every stage had zero login, connection, subscription, and delivery failures;
 zero disconnects and reconnect attempts; and zero WebSocket errors.
@@ -85,32 +85,36 @@ zero disconnects and reconnect attempts; and zero WebSocket errors.
 | Duration | 90.0 seconds |
 | Realtime events | 6 |
 | Deliveries | 1,200 / 1,200 |
-| Delivery latency | 63.9 ms median / 74.6 ms p95 / 75.2 ms max |
+| Delivery latency | 69.0 ms median / 77.0 ms p95 / 77.6 ms max |
 | Disconnects / reconnect attempts / WebSocket errors | 0 / 0 / 0 |
 | Subscribed at end | 200 / 200 |
 | Application pings sent during hold | 1,200 |
-| Pongs received during hold | 1,201 |
-| Reverb CPU | 1.0% median / 2.2% p95 / 2.5% max |
-| Reverb RSS | 66.0 MiB median / 66.0 MiB max |
-| Load-client RSS | 275.1 MiB median / 276.4 MiB max |
+| Matched pongs received during hold | 1,200 |
+| Clients sending pings / receiving matched pongs | 200 / 200 |
+| Pong latency | 1.3 ms median / 2.5 ms p95 / 14.9 ms max |
+| Keepalive timeouts | 0 |
+| Reverb CPU | 0.9% median / 2.8% p95 / 3.1% max |
+| Reverb RSS | 37.8 MiB median / 37.8 MiB max |
+| Load-client RSS | 230.4 MiB median / 236.8 MiB max |
 
-The extra pong is an interval-boundary artifact: a ping sent just before the
-hold produced its reply just after the hold counters were captured. Pusher
-pings do not carry an identifier the harness could use to assign that reply
-back to the preceding interval. All 200 connections exercised multiple
-application keepalives, and none timed out.
+The harness permits only one outstanding application ping per connection and
+gives each ping a 10-second response deadline. A missed deadline records a
+WebSocket error and closes the connection so the disconnect and reconnect path
+is measured too. Every client completed six independent ping-to-pong exchanges
+during this hold.
 
 ## First observed constraint
 
-Reverb was not the first constraint in this run. Its memory stayed effectively
-flat and its sampled CPU remained low through 200 connections. The visible
+Reverb was not the first constraint in this run. Its memory grew by only 3.8
+MiB from the 10-agent stage and its sampled CPU remained low through 200
+connections. The visible
 pressure was the **single PHP development worker used for login, conversation
 loading, channel authorization, and event-trigger HTTP requests**. A new
-agent's login reached 2.75 seconds p95 in the 10-way onboarding bursts, while
-the already-connected 200-recipient event stayed below 27 ms p95 during the
+agent's login reached 2.73 seconds p95 in the 10-way onboarding bursts, while
+the already-connected 200-recipient event stayed below 28 ms p95 during the
 ramp.
 
-During the hold, the typing POST and its 200 deliveries reached 75 ms maximum.
+During the hold, the typing POST and its 200 deliveries reached 78 ms maximum.
 That is still healthy, but it includes both Laravel broadcast creation and
 Reverb delivery, so this run cannot attribute all of the latency to Reverb.
 
