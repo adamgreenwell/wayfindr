@@ -146,9 +146,10 @@ the N+1 was fixed — that column read 268, 1,268, 6,268, 12,518 before, one que
 per ticket, and it is now flat at 19 while the milliseconds beside it still climb
 with the rows the page renders.
 
-The reports column grows in both, and mildly: twenty-two times the milliseconds
-for fifty times the data, with the query count rising because the rows are
-streamed in chunks.
+The reports column grows in both, and mildly: about twenty times the
+milliseconds for fifty times the data, with the query count rising because
+`ResolutionEpisodes::walk()` chunks the subjects it walks by 500 and asks twice
+per chunk.
 
 ## What that means
 
@@ -235,12 +236,18 @@ desk, and the query count grows with it:
 | 25,000 | 350 ms / 57 q |
 | 50,000 | 607 ms / 80 q |
 
-Fifty times the data costs about twenty-two times the milliseconds, so it grows
+Fifty times the data costs about twenty times the milliseconds, so it grows
 sub-linearly rather than flatly — the window bounds how much of the desk is in
-scope, and a bigger desk puts more inside the same window. **The queries grow
-because the rows are streamed in chunks**, which is the bucketing decision
-showing up as query count rather than as memory: more rows in the window means
-more chunks to fetch.
+scope, and a bigger desk puts more inside the same window.
+
+**The queries grow with the number of resolved subjects, not with the rows
+read.** The streaming itself is one query per section: `SupportReport` reads with
+`cursor()`, which walks a single result set rather than fetching pages. The
+growth is in `ResolutionEpisodes::walk()`, which splits the subject ids it has to
+walk into chunks of 500 — a bind-parameter limit, not a memory one — and issues
+two queries per chunk, one for creation times and one for the lifecycle events.
+More closed conversations and tickets inside the window means more chunks, and
+the conversation and ticket halves each pay it.
 
 That is a fair trade at this size and worth watching rather than fixing: 607 ms
 for the busiest window on a year of a fifty-thousand-conversation desk is not

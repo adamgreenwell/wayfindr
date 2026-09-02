@@ -331,7 +331,20 @@ final class MeasureDashboardCommand extends Command
         // autoloading, container resolution and the view cache, none of which an
         // agent's second page view pays again -- so counting it measures the
         // process rather than the page.
-        $this->send($kernel, $agent, $uri);
+        //
+        // REALISED, not just dispatched. A streamed response has done almost
+        // nothing until its callback runs, so warming it without running that
+        // callback left its cold start -- autoloading the CSV escaper, for one
+        // -- to be paid by the first TIMED run instead. At `--runs=2` that cold
+        // figure went straight into the median. Streamed and ordinary targets
+        // get the same warm-up this way.
+        ob_start();
+
+        try {
+            self::realise($this->send($kernel, $agent, $uri));
+        } finally {
+            ob_end_clean();
+        }
 
         $timings = [];
         $bytes = 0;
