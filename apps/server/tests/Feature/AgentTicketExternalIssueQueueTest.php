@@ -216,3 +216,47 @@ test('the ticket detail page still finds an attempt that is only an audit event'
         ->assertSee('acme/api')
         ->assertDontSee(__('tickets.external_attempt.none_label'));
 });
+
+test('the attention chips do not advertise tickets the external filter removes', function (): void {
+    // The two refinements interact. Attention is decided in SQL now and the
+    // external-issue state is still decided in PHP, so counting states in the
+    // query while filtering externally afterwards advertises chips including
+    // tickets that are then removed -- and following one of those chips shows
+    // fewer tickets than it promised, because the link carries
+    // `ticket_external` with it.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    // Unassigned, so both are `needs_owner`, and both open.
+    $withFailure = Ticket::factory()->for($account)->for($site)->create([
+        'subject' => 'Has a failed export',
+        'status' => 'open',
+        'assignee_id' => null,
+    ]);
+
+    AuditEvent::factory()->for($account)->for($withFailure, 'subject')->create([
+        'action' => 'ticket.external_sync_failed',
+        'metadata' => ['provider' => 'github', 'project_key' => 'acme/api'],
+        'occurred_at' => now()->subMinutes(5),
+    ]);
+
+    Ticket::factory()->for($account)->for($site)->create([
+        'subject' => 'Has no external issue at all',
+        'status' => 'open',
+        'assignee_id' => null,
+    ]);
+
+    // Filtered to tickets whose external issue FAILED: one of the two.
+    $response = $this->actingAs($agent)->get('/dashboard/tickets?ticket_external=failed');
+
+    $response->assertOk()
+        ->assertSee('Has a failed export')
+        ->assertDontSee('Has no external issue at all');
+
+    $chips = collect($response->viewData('ticketQueueSummary'))
+        ->mapWithKeys(fn (array $row): array => [$row['state'] => $row['count']]);
+
+    expect($chips['needs_owner'])
+        ->toBe(1, 'the needs-owner chip counted a ticket the external filter removes');
+});

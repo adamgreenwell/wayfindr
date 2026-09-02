@@ -204,20 +204,34 @@ class AgentTicketQueueController extends Controller
         // query is the prerequisite, and `TicketAttentionStateParityTest`
         // holds the SQL and the PHP rule in step ticket by ticket.
 
-        // The summary's chips need EVERY state's count, so they are taken
-        // before the attention filter narrows the list to one -- in a single
-        // grouped query rather than by counting a hydrated collection, which is
-        // part of what made this page unbounded.
+        // The external-issue state is still decided in PHP, so when it is
+        // ACTIVE the attention work has to stay in PHP with it. Counting states
+        // in SQL there would advertise chips including tickets the external
+        // filter then removes, and following one of those chips would show
+        // fewer tickets than it promised.
+        $externallyRefined = $ticketExternalIssue !== 'all';
+
+        // The chips need EVERY state's count, so they are taken before the
+        // attention filter narrows the list to one. On the default path that is
+        // one grouped query rather than a tally over every hydrated row, which
+        // is part of what made this page unbounded.
         //
         // From the base query, BEFORE the row selects: cloning a query that
-        // already selects `attention_state` and then selecting it again leaves
+        // already selects `attention_state` and selecting it again leaves
         // PostgreSQL with two columns of that name and an ambiguous `group by`.
-        $ticketAttentionCounts = (clone $ticketResults)->attentionStateCounts();
+        $ticketAttentionCounts = $externallyRefined
+            ? []
+            : (clone $ticketResults)->attentionStateCounts();
 
         $ticketResults = $ticketResults
             ->select(['tickets.*'])
             ->selectAttentionState()
-            ->when($ticketAttention !== 'all', fn ($query) => $query->whereAttentionState($ticketAttention))
+            ->when(
+                ! $externallyRefined && $ticketAttention !== 'all',
+                fn ($query) => $query->whereAttentionState($ticketAttention)
+            )
+            // Ordered in SQL either way: filtering in PHP afterwards preserves
+            // the order it came back in.
             ->orderByAttention()
             ->get();
 
@@ -226,10 +240,27 @@ class AgentTicketQueueController extends Controller
         // a failure resolved by a later success -- which is not a `where`. That
         // is what still stands between this page and a row cap, and it is the
         // remaining half of #847.
-        $ticketResults = $ticketResults
-            ->filter(fn (Ticket $ticket): bool => $ticketExternalIssue === 'all'
-                || TicketExternalIssueState::forTicket($ticket) === $ticketExternalIssue)
-            ->values();
+        if ($externallyRefined) {
+            $ticketResults = $ticketResults
+                ->filter(fn (Ticket $ticket): bool => TicketExternalIssueState::forTicket($ticket) === $ticketExternalIssue)
+                ->values();
+
+            // Counted AFTER the external filter and BEFORE the attention one,
+            // which is the order the previous implementation used and the only
+            // one where both numbers describe the same set of tickets.
+            //
+            // Read off the column the query already selected, so the two paths
+            // cannot disagree about what state a ticket is in.
+            $ticketAttentionCounts = $ticketResults
+                ->countBy(fn (Ticket $ticket): string => (string) $ticket->attention_state)
+                ->all();
+
+            if ($ticketAttention !== 'all') {
+                $ticketResults = $ticketResults
+                    ->filter(fn (Ticket $ticket): bool => $ticket->attention_state === $ticketAttention)
+                    ->values();
+            }
+        }
         $ticketQueueSummary = $this->ticketQueueSummary($ticketAttentionCounts, $ticketQuery, $ticketAttentionFilters);
         $tickets = $ticketResults;
 
