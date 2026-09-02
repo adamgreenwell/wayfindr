@@ -33,6 +33,8 @@ fi
 grep -F 'cpuTimeSeconds - previous.cpuTimeSeconds' "$harness" >/dev/null
 grep -F 'working_tree_clean_at_end' "$harness" >/dev/null
 grep -F 'worktree became dirty during the measurement' "$harness" >/dev/null
+grep -F 'url.origin === this.origin.origin' "$harness" >/dev/null
+grep -F 'no_reconnect_attempts:' "$harness" >/dev/null
 
 if env "${common_environment[@]}" \
     WAYFINDR_BASE_URL=https://support.example.com \

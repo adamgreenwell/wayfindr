@@ -53,12 +53,12 @@ async function run() {
   try {
     for (const target of steps) {
       monitor.setContext(`ramp-${target}`, clients.length);
-      await monitor.sample();
-      const resourceStart = monitor.samples.length;
       const previousStable = highestStable;
       const disconnectsBefore = sum(attemptedClients, (client) => client.disconnects);
       const reconnectsBefore = sum(attemptedClients, (client) => client.reconnectAttempts);
       const websocketErrorsBefore = sum(attemptedClients, (client) => client.websocketErrors);
+      await monitor.sample();
+      const resourceStart = monitor.samples.length;
       const additions = [];
 
       if (clients.length === 0) {
@@ -187,13 +187,13 @@ async function run() {
 
     if (highestStable > 0) {
       monitor.setContext(`hold-${highestStable}`, clients.length);
-      await monitor.sample();
-      const resourceStart = monitor.samples.length;
       const disconnectsBefore = sum(clients, (client) => client.disconnects);
       const reconnectsBefore = sum(clients, (client) => client.reconnectAttempts);
       const reconnectSuccessesBefore = sum(clients, (client) => client.reconnectSuccesses);
       const serverPingsBefore = sum(clients, (client) => client.serverPings);
       const websocketErrorsBefore = sum(clients, (client) => client.websocketErrors);
+      await monitor.sample();
+      const resourceStart = monitor.samples.length;
       const holdStartedAt = performance.now();
       const deliveries = [];
 
@@ -338,6 +338,8 @@ async function run() {
         && hold.clients_sending_keepalives === hold.agents
         && hold.clients_receiving_keepalive_pongs === hold.agents,
       ),
+      no_disconnects: sum(attemptedClients, (client) => client.disconnects) === 0,
+      no_reconnect_attempts: sum(attemptedClients, (client) => client.reconnectAttempts) === 0,
       no_websocket_errors: sum(attemptedClients, (client) => client.websocketErrors) === 0,
       no_resource_sampling_errors: monitor.errors.length === 0,
     },
@@ -354,6 +356,8 @@ async function run() {
   assert(report.verification.hold_had_no_disconnects, 'One or more clients disconnected during the hold.');
   assert(report.verification.hold_had_no_reconnects, 'One or more clients reconnected during the hold.');
   assert(report.verification.hold_had_no_websocket_errors, 'One or more clients reported a WebSocket error during the hold.');
+  assert(report.verification.no_disconnects, 'One or more clients disconnected during the measurement.');
+  assert(report.verification.no_reconnect_attempts, 'One or more clients attempted to reconnect during the measurement.');
   assert(report.verification.no_websocket_errors, 'One or more clients reported a WebSocket error during the measurement.');
 
   if (!allowShortHold) {
@@ -819,7 +823,7 @@ class CapacityAgent {
 class HttpSession {
   constructor(origin) {
     this.origin = origin;
-    this.cookies = new Map();
+    this.cookiesByOrigin = new Map();
   }
 
   async request(relative, options = {}) {
@@ -829,8 +833,10 @@ class HttpSession {
     let redirects = 0;
 
     while (true) {
+      this.assertSafeUrl(url);
       const headers = { ...(options.headers || {}) };
-      const cookie = Array.from(this.cookies.entries()).map(([name, value]) => `${name}=${value}`).join('; ');
+      const cookies = this.cookiesByOrigin.get(url.origin) || new Map();
+      const cookie = Array.from(cookies.entries()).map(([name, value]) => `${name}=${value}`).join('; ');
 
       if (cookie) {
         headers.Cookie = cookie;
@@ -851,7 +857,7 @@ class HttpSession {
         signal: AbortSignal.timeout(timeoutMs),
       });
 
-      this.storeCookies(response.headers);
+      this.storeCookies(url.origin, response.headers);
 
       if ([301, 302, 303, 307, 308].includes(response.status) && redirects < 5) {
         const location = response.headers.get('location');
@@ -861,7 +867,9 @@ class HttpSession {
         }
 
         redirects += 1;
-        url = new URL(location, url);
+        const redirectUrl = new URL(location, url);
+        this.assertSafeUrl(redirectUrl);
+        url = redirectUrl;
 
         if ([301, 302, 303].includes(response.status)) {
           method = 'GET';
@@ -880,7 +888,16 @@ class HttpSession {
     }
   }
 
-  storeCookies(headers) {
+  assertSafeUrl(url) {
+    assertLoopback(url, 'HTTP redirect');
+    assert(
+      url.origin === this.origin.origin,
+      `HTTP requests must stay on the configured loopback origin ${this.origin.origin}; refused ${url.origin}.`,
+    );
+  }
+
+  storeCookies(origin, headers) {
+    const cookies = this.cookiesByOrigin.get(origin) || new Map();
     const values = typeof headers.getSetCookie === 'function' ? headers.getSetCookie() : [];
 
     for (const value of values) {
@@ -895,11 +912,13 @@ class HttpSession {
       const cookieValue = pair.slice(separator + 1);
 
       if (/max-age=0/i.test(value)) {
-        this.cookies.delete(name);
+        cookies.delete(name);
       } else {
-        this.cookies.set(name, cookieValue);
+        cookies.set(name, cookieValue);
       }
     }
+
+    this.cookiesByOrigin.set(origin, cookies);
   }
 }
 
