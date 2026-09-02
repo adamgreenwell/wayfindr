@@ -115,5 +115,13 @@ return [
         'expires_in_days' => 'Gültigkeitsdauer in Tagen',
         'abilities' => 'Berechtigungen',
         'site_ids' => 'Websites',
+
+        // The integrations page. Provider and capability values come from
+        // fixed controls; these names cover the fields an admin can type.
+        'provider' => 'Anbieter',
+        'base_url' => 'Basis-URL',
+        'credential_token' => 'Token oder Zugangsdaten',
+        'webhook_secret' => 'Webhook-Geheimnis',
+        'capabilities' => 'Verbindungsfunktionen',
     ],
 ];

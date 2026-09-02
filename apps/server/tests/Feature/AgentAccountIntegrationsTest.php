@@ -69,10 +69,269 @@ test('the empty state guides admins toward the first connection', function (): v
         ->get(route('dashboard.account.integrations'))
         ->assertOk()
         ->assertSee('No provider connections yet.')
-        ->assertSee('Connect GitHub or GitLab')
+        ->assertSeeInOrder(['Connect', 'GitHub', 'GitLab'])
         ->assertSee('Save the provider connection first.')
         ->assertSee('creates its unique inbound webhook URL only after the connection exists')
         ->assertSee('Map a site to a project.');
+});
+
+test('empty integration states and the read-only role are localized', function (): void {
+    foreach ([
+        'de' => [
+            'empty_connections' => 'Noch keine Anbieter-Verbindungen.',
+            'empty_sites' => 'Noch keine Websites.',
+            'admin_hint' => 'Anbieter-Verbindungen werden von einer Admin-Person des Kontos verwaltet.',
+            'add' => 'Anbieter-Verbindung hinzufügen',
+        ],
+        'it' => [
+            'empty_connections' => 'Ancora nessuna connessione provider.',
+            'empty_sites' => 'Ancora nessun sito.',
+            'admin_hint' => 'Le connessioni provider sono gestite da un amministratore dell’account.',
+            'add' => 'Aggiungi connessione provider',
+        ],
+    ] as $locale => $copy) {
+        $account = Account::factory()->create();
+        $admin = User::factory()->for($account)->create([
+            'account_role' => 'admin',
+            'locale' => $locale,
+        ]);
+        $agent = User::factory()->for($account)->create([
+            'account_role' => 'agent',
+            'locale' => $locale,
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('dashboard.account.integrations'))
+            ->assertOk()
+            ->assertSee($copy['empty_connections'])
+            ->assertSee($copy['empty_sites'])
+            ->assertSee($copy['add'])
+            ->assertDontSee('No provider connections yet.')
+            ->assertDontSee('No sites yet.');
+
+        $this->actingAs($agent)
+            ->get(route('dashboard.account.integrations'))
+            ->assertOk()
+            ->assertSee($copy['admin_hint'])
+            ->assertDontSee($copy['add'])
+            ->assertDontSee('managed by an account admin');
+    }
+});
+
+test('the integrations page follows the reader language across provider states', function (): void {
+    $account = Account::factory()->create(['name' => 'Datenpunkt Account']);
+    $german = User::factory()->for($account)->create([
+        'name' => 'Ada Datenpunkt',
+        'account_role' => 'admin',
+        'locale' => 'de',
+    ]);
+    $italian = User::factory()->for($account)->create([
+        'name' => 'Arianna Datenpunkt',
+        'account_role' => 'admin',
+        'locale' => 'it',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Datenpunkt Docs']);
+
+    $github = ExternalIssueProviderConnection::factory()->for($account)->create([
+        'name' => 'Datenpunkt GitHub',
+        'provider' => 'github',
+        'base_url' => 'https://datenpunkt.example/github',
+        'credentials' => ['token' => 'datenpunkt-token'],
+        'capabilities' => [
+            'create_issue' => true,
+            'add_comment' => true,
+            'sync_status' => false,
+        ],
+    ]);
+    ExternalIssueProviderConnection::factory()->for($account)->create([
+        'name' => 'Datenpunkt GitLab',
+        'provider' => 'gitlab',
+        'credentials' => ['token' => 'datenpunkt-token', 'webhook_secret' => 'datenpunkt-secret'],
+    ]);
+    ExternalIssueProviderConnection::factory()->for($account)->create([
+        'name' => 'Datenpunkt Jira',
+        'provider' => 'jira',
+        'credentials' => ['token' => 'datenpunkt-token', 'webhook_secret' => 'datenpunkt-secret'],
+        'settings' => [
+            'inbound_webhook' => [
+                'verified' => true,
+                'event' => 'datenpunkt_event',
+                'status_code' => 202,
+            ],
+        ],
+        'last_checked_at' => now()->subMinutes(3),
+    ]);
+    ExternalIssueProviderConnection::factory()->for($account)->create([
+        'name' => 'Datenpunkt custom',
+        'provider' => 'other',
+        'is_enabled' => false,
+    ]);
+    ExternalIssueProviderConnection::factory()->for($account)->create([
+        'name' => 'Datenpunkt future provider',
+        'provider' => 'future_provider',
+    ]);
+
+    $site->externalIssueProjects()->create([
+        'account_id' => $account->id,
+        'external_issue_provider_connection_id' => $github->id,
+        'project_key' => 'datenpunkt/project',
+        'project_name' => 'Datenpunkt project',
+        'web_url' => 'https://datenpunkt.example/project',
+        'settings' => [],
+    ]);
+
+    $germanResponse = $this->actingAs($german)->get(route('dashboard.account.integrations'));
+
+    $germanResponse->assertOk()
+        ->assertSee('<html lang="de">', false)
+        ->assertSee('Anbieter-Verbindungen')
+        ->assertSee('5 Verbindungen')
+        ->assertSee('Verbindungsfunktionen')
+        ->assertSee('Anbieter kann Issues erstellen')
+        ->assertSee('Eingehender Abgleich nicht eingerichtet.')
+        ->assertSee('Eingehender Abgleich eingerichtet, nicht bestätigt.')
+        ->assertSee('Eingehender Abgleich bestätigt.')
+        ->assertSee('Letztes bestätigtes Ereignis:')
+        ->assertSee('HTTP-Status:')
+        ->assertSee('vor 3 Minuten')
+        ->assertSee('GitHub-Einstellungen:')
+        ->assertSee('GitLab-Einstellungen:')
+        ->assertSee('Jira-Einstellungen:')
+        ->assertSee('Deaktiviert')
+        ->assertSee('Andere')
+        ->assertSee('Externer Tracker')
+        ->assertSee('Website-Projektzuordnungen')
+        ->assertSee('1 von 1 Website zugeordnet')
+        ->assertDontSee('Provider connections')
+        ->assertDontSee('Inbound sync not configured.')
+        ->assertDontSee('Map a project');
+
+    $italianResponse = $this->actingAs($italian)->get(route('dashboard.account.integrations'));
+
+    $italianResponse->assertOk()
+        ->assertSee('<html lang="it">', false)
+        ->assertSee('Connessioni provider')
+        ->assertSee('5 connessioni')
+        ->assertSee('Funzioni della connessione')
+        ->assertSee('Il provider può creare segnalazioni')
+        ->assertSee('Sincronizzazione in ingresso non configurata.')
+        ->assertSee('Sincronizzazione in ingresso configurata, non verificata.')
+        ->assertSee('Sincronizzazione in ingresso verificata.')
+        ->assertSee('Ultimo evento verificato:')
+        ->assertSee('Stato HTTP:')
+        ->assertSee('3 minuti fa')
+        ->assertSee('Impostazioni GitHub:')
+        ->assertSee('Impostazioni GitLab:')
+        ->assertSee('Impostazioni Jira:')
+        ->assertSee('Disabilitata')
+        ->assertSee('Altro')
+        ->assertSee('Sistema esterno')
+        ->assertSee('Associazioni fra siti e progetti')
+        ->assertSee('1 su 1 sito con associazioni')
+        ->assertDontSee('Provider connections')
+        ->assertDontSee('Inbound sync not configured.')
+        ->assertDontSee('Map a project');
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $germanResponse->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    foreach (['Datenpunkt GitHub', 'https://datenpunkt.example/github', 'Datenpunkt Docs', 'datenpunkt/project', 'datenpunkt_event', '202'] as $value) {
+        expect($xpath->query('//*[@lang="" and normalize-space(.)="'.$value.'"]')?->length)
+            ->toBeGreaterThan(0, "{$value} is not marked as language-neutral integration data");
+    }
+
+    foreach (['GitHub', 'GitLab', 'Bitbucket', 'Jira'] as $provider) {
+        expect($xpath->query('//option[@lang="" and normalize-space(.)="'.$provider.'"]')?->length)
+            ->toBe(1, "{$provider} is not marked as a provider-owned name");
+    }
+});
+
+test('integration writes answer in the language of the page they return to', function (): void {
+    $fixture = integrationsAccount();
+    $admin = $fixture['admin'];
+    $admin->forceFill(['locale' => 'de'])->save();
+    $admin = $admin->fresh();
+
+    // Connection creation is shared with the still-English site page, so the
+    // Referer decides the validation language instead of the write route.
+    $invalid = [
+        'return_to' => 'integrations',
+        'provider' => 'github',
+        'name' => 'Datenpunkt connection',
+        'base_url' => 'not-a-url',
+    ];
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.integrations'))
+        ->post(route('dashboard.external-issue-provider-connections.store'), $invalid)
+        ->assertSessionHasErrors('base_url');
+
+    expect((string) session('errors')->first('base_url'))
+        ->toContain('Basis-URL')
+        ->not->toContain('valid URL');
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.sites.show', $fixture['site']))
+        ->post(route('dashboard.external-issue-provider-connections.store'), array_diff_key($invalid, ['return_to' => true]))
+        ->assertSessionHasErrors('base_url');
+
+    expect((string) session('errors')->first('base_url'))
+        ->toContain('valid URL')
+        ->not->toContain('Basis-URL');
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.integrations'))
+        ->post(route('dashboard.external-issue-provider-connections.store'), [
+            'return_to' => 'integrations',
+            'provider' => 'github',
+            'name' => 'Datenpunkt connection',
+            'capabilities' => ['create_issue'],
+        ])
+        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertSessionHas('status', 'integrations.flash.connection_saved');
+
+    $this->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Anbieter-Verbindung gespeichert.')
+        ->assertDontSee('Provider connection saved.');
+
+    $connection = $fixture['account']->externalIssueProviderConnections()->sole();
+
+    // These two writes belong only to integrations and therefore resolve the
+    // locale even without a Referer header.
+    $this->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
+        'webhook_secret' => str_repeat('x', 4097),
+    ])->assertSessionHasErrors('webhook_secret');
+
+    expect((string) session('errors')->first('webhook_secret'))
+        ->toContain('Webhook-Geheimnis')
+        ->not->toContain('webhook secret');
+
+    $admin->forceFill(['locale' => 'it'])->save();
+    $admin = $admin->fresh();
+
+    $this->actingAs($admin)
+        ->put(route('dashboard.external-issue-provider-connections.capabilities.update', $connection), [
+            'capabilities' => ['create_issue', 'add_comment'],
+        ])
+        ->assertSessionHas('status', 'integrations.flash.capabilities_updated');
+
+    $this->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Funzioni del provider aggiornate.')
+        ->assertDontSee('Provider capabilities updated.');
+
+    $this->actingAs($admin)
+        ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
+            'webhook_secret' => 'datenpunkt-secret',
+        ])
+        ->assertSessionHas('status', 'integrations.flash.secret_saved');
+
+    $this->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->assertSee('Segreto del webhook in ingresso salvato.')
+        ->assertDontSee('Inbound webhook secret saved.');
 });
 
 test('the account page links every agent to the integrations home', function (): void {
@@ -115,7 +374,7 @@ test('saving a connection from the integrations home returns to it', function ()
             'capabilities' => ['create_issue'],
         ])
         ->assertRedirect(route('dashboard.account.integrations'))
-        ->assertSessionHas('status', 'Provider connection saved.');
+        ->assertSessionHas('status', 'integrations.flash.connection_saved');
 
     expect($fixture['account']->externalIssueProviderConnections()->count())->toBe(1);
 });
@@ -192,7 +451,7 @@ test('the integrations page surfaces inbound webhook setup per connection', func
         ->assertSee('Inbound sync verified.')
         ->assertSee('Latest verified event:')
         ->assertSee('issues')
-        ->assertSee('HTTP 200');
+        ->assertSeeInOrder(['HTTP', '200']);
 
     // Non-admins see the status but not the URL, and never the secret.
     $response = $this->actingAs($fixture['agent'])
@@ -261,7 +520,7 @@ test('an admin can set and clear the inbound webhook secret on an existing conne
             'webhook_secret' => 'whsec_new',
         ])
         ->assertRedirect(route('dashboard.account.integrations'))
-        ->assertSessionHas('status', 'Inbound webhook secret saved.');
+        ->assertSessionHas('status', 'integrations.flash.secret_saved');
 
     $connection->refresh();
     expect($connection->hasWebhookSecret())->toBeTrue()
@@ -276,7 +535,8 @@ test('an admin can set and clear the inbound webhook secret on an existing conne
         ->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
             'webhook_secret' => '',
         ])
-        ->assertRedirect(route('dashboard.account.integrations'));
+        ->assertRedirect(route('dashboard.account.integrations'))
+        ->assertSessionHas('status', 'integrations.flash.secret_cleared');
 
     $connection->refresh();
     expect($connection->hasWebhookSecret())->toBeFalse()
@@ -296,7 +556,7 @@ test('an admin can update saved connection capabilities without replacing creden
             'capabilities' => ['create_issue', 'add_comment', 'sync_status'],
         ])
         ->assertRedirect(route('dashboard.account.integrations'))
-        ->assertSessionHas('status', 'Provider capabilities updated.');
+        ->assertSessionHas('status', 'integrations.flash.capabilities_updated');
 
     $connection->refresh();
 

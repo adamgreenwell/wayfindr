@@ -39,9 +39,35 @@ class AgentAccountIntegrationsController extends Controller
             'account' => $account,
             'providerConnections' => $providerConnections,
             'sites' => $sites,
-            'externalIssueProviders' => ExternalIssueProvider::options(),
-            'externalIssueCapabilities' => ExternalIssueCapability::options(),
+            'externalIssueProviders' => collect(ExternalIssueProvider::values())
+                ->mapWithKeys(fn (string $provider): array => [$provider => $this->providerParts($provider)])
+                ->all(),
+            'externalIssueCapabilities' => collect(ExternalIssueCapability::values())
+                ->mapWithKeys(fn (string $capability): array => [$capability => [
+                    'label' => __('integrations.capabilities.labels.'.$capability),
+                    'permission' => __('integrations.capabilities.permissions.'.$capability),
+                ]])
+                ->all(),
             'canManageIntegrations' => $agent->isAdmin(),
         ]);
+    }
+
+    /** @return array{label: string, language: string|null} */
+    private function providerParts(string $provider): array
+    {
+        if (in_array($provider, ['github', 'gitlab', 'bitbucket', 'jira'], true)) {
+            return [
+                'label' => ExternalIssueProvider::label($provider),
+                // Product names, not words supplied by this catalogue.
+                'language' => '',
+            ];
+        }
+
+        return [
+            'label' => $provider === 'other'
+                ? __('integrations.providers.other')
+                : __('integrations.providers.external_tracker'),
+            'language' => null,
+        ];
     }
 }

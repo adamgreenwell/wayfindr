@@ -132,5 +132,13 @@ return [
         'expires_in_days' => 'Durata in giorni',
         'abilities' => 'Autorizzazioni',
         'site_ids' => 'Siti',
+
+        // La pagina delle integrazioni. Provider e autorizzazioni arrivano da
+        // controlli fissi; questi nomi coprono i campi compilabili.
+        'provider' => 'Provider',
+        'base_url' => 'URL di base',
+        'credential_token' => 'Token o credenziale',
+        'webhook_secret' => 'Segreto webhook',
+        'capabilities' => 'Funzioni della connessione',
     ],
 ];
