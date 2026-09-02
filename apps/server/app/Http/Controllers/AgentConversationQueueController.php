@@ -202,6 +202,7 @@ class AgentConversationQueueController extends Controller
         }
         $conversationQueueCountSummary = $this->conversationQueueCountSummary(
             $conversationsShownOf,
+            $conversations->count(),
             $matchingConversationCount,
             $conversationFilter,
             $conversationFilters,
@@ -457,24 +458,26 @@ class AgentConversationQueueController extends Controller
      * @param  array<string, string>  $conversationFilters
      * @return array{heading: string, detail: string}
      */
-    private function conversationQueueCountSummary(int $laneCount, int $matchingConversationCount, string $conversationFilter, array $conversationFilters, bool $conversationHasActiveRefinement, int $newActivityConversationCount, int $cobrowseAttentionConversationCount): array
+    private function conversationQueueCountSummary(int $laneCount, int $renderedCount, int $matchingConversationCount, string $conversationFilter, array $conversationFilters, bool $conversationHasActiveRefinement, int $newActivityConversationCount, int $cobrowseAttentionConversationCount): array
     {
-        // The lane's OWN size, not the number of rows rendered. With the row
-        // cap those differ, and a page saying "200 open" above "showing the 200
-        // most recently active of 1,000" contradicts itself -- an agent needs
-        // to know a thousand are open. How many are on screen is the capped
-        // notice's job, and it says so separately.
-        $shownCount = $laneCount;
+        // TWO counts, because the row cap made them different things and this
+        // page says both. `$laneCount` is how many conversations are in the
+        // lane; `$renderedCount` is how many rows are on the screen.
+        //
+        // A sentence takes whichever one it is actually about: "225 open" is a
+        // fact about the desk, "Showing 200" is a fact about the page. Feeding
+        // one number to both produced a page claiming to show 225 rows
+        // immediately above a notice saying it was showing 200 of them.
         $supportLaneNarrowed = ! in_array($conversationFilter, ['all', 'closed'], true)
-            && $shownCount !== $matchingConversationCount;
+            && $laneCount !== $matchingConversationCount;
 
         if ($supportLaneNarrowed) {
             return [
                 // `trans_choice` on the SHOWN count, because that is the number
                 // the sentence's own verb agrees with. The second clause takes
                 // its verb from `:matching`, which carries one.
-                'detail' => trans_choice('conversations.summary.lane_narrowed_detail', $shownCount, [
-                    'shown' => $this->conversationCountLabel($shownCount),
+                'detail' => trans_choice('conversations.summary.lane_narrowed_detail', $renderedCount, [
+                    'shown' => $this->conversationCountLabel($renderedCount),
                     'lane' => $conversationFilters[$conversationFilter],
                     'matching' => $this->conversationCountMatchLabel($matchingConversationCount),
                 ]),
@@ -486,39 +489,41 @@ class AgentConversationQueueController extends Controller
                 // angezeigt". A clause is not a noun phrase, and a catalogue
                 // cannot reorder one that arrives pre-assembled.
                 'heading' => $conversationFilter === 'new_activity'
-                    ? trans_choice('conversations.summary.lane_narrowed_attention_heading', $shownCount, [
-                        'shown' => (string) $shownCount,
+                    ? trans_choice('conversations.summary.lane_narrowed_attention_heading', $laneCount, [
+                        'shown' => (string) $laneCount,
                         'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
                     ])
                     : __('conversations.summary.lane_narrowed_heading', [
-                        'shown' => (string) $shownCount,
+                        // This one literally reads ":shown shown of :matching",
+                        // so it is about the page.
+                        'shown' => (string) $renderedCount,
                         'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
                     ]),
             ];
         }
 
-        $filteredDetail = trans_choice('conversations.summary.filtered_detail', $shownCount, [
-            'shown' => $this->conversationCountLabel($shownCount),
+        $filteredDetail = trans_choice('conversations.summary.filtered_detail', $renderedCount, [
+            'shown' => $this->conversationCountLabel($renderedCount),
         ]);
 
         if ($conversationFilter === 'closed') {
             return [
                 'detail' => $filteredDetail,
-                'heading' => trans_choice('conversations.counts.closed', $shownCount, ['count' => $shownCount]),
+                'heading' => trans_choice('conversations.counts.closed', $laneCount, ['count' => $laneCount]),
             ];
         }
 
         if ($conversationHasActiveRefinement) {
             return [
                 'detail' => $filteredDetail,
-                'heading' => trans_choice('conversations.counts.open_matching', $shownCount, ['count' => $shownCount]),
+                'heading' => trans_choice('conversations.counts.open_matching', $laneCount, ['count' => $laneCount]),
             ];
         }
 
         return [
             'detail' => $filteredDetail,
             'heading' => __('conversations.summary.open_heading', [
-                'open' => (string) $shownCount,
+                'open' => (string) $laneCount,
                 'attention' => trans_choice('conversations.counts.needs_attention', $newActivityConversationCount, ['count' => $newActivityConversationCount]),
                 'cobrowse' => trans_choice('conversations.counts.cobrowse_attention', $cobrowseAttentionConversationCount, ['count' => $cobrowseAttentionConversationCount]),
             ]),

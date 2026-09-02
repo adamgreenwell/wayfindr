@@ -373,4 +373,14 @@ test('the queue summary counts the lane, not the page', function (): void {
 
     expect(str_contains($summary['heading'], ConversationQueueQuery::DISPLAY_LIMIT.' open'))
         ->toBeFalse('the summary reported the capped row count as the lane size');
+
+    // And the DETAIL, which says "Showing ...", reports the page rather than
+    // the lane. The two sentences sit next to each other, so getting one right
+    // by making the other wrong is not a fix: the page would claim to show 225
+    // rows immediately above a notice saying it shows 200 of them.
+    expect(str_contains($summary['detail'], (string) ConversationQueueQuery::DISPLAY_LIMIT))
+        ->toBeTrue('the detail claims to be showing more rows than the page holds');
+
+    expect(str_contains($summary['detail'], (string) $open))
+        ->toBeFalse('the detail reported the lane size as the number of rows shown');
 });
