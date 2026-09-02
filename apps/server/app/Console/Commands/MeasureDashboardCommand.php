@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Session;
 use ReflectionProperty;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 /**
@@ -330,7 +331,20 @@ final class MeasureDashboardCommand extends Command
         // autoloading, container resolution and the view cache, none of which an
         // agent's second page view pays again -- so counting it measures the
         // process rather than the page.
-        $this->send($kernel, $agent, $uri);
+        //
+        // REALISED, not just dispatched. A streamed response has done almost
+        // nothing until its callback runs, so warming it without running that
+        // callback left its cold start -- autoloading the CSV escaper, for one
+        // -- to be paid by the first TIMED run instead. At `--runs=2` that cold
+        // figure went straight into the median. Streamed and ordinary targets
+        // get the same warm-up this way.
+        ob_start();
+
+        try {
+            self::realise($this->send($kernel, $agent, $uri));
+        } finally {
+            ob_end_clean();
+        }
 
         $timings = [];
         $bytes = 0;
@@ -350,15 +364,26 @@ final class MeasureDashboardCommand extends Command
 
             DB::beginTransaction();
 
+            // The buffer is opened BEFORE the clock, because catching the
+            // output is this command's cost. What happens inside it is the
+            // page's: a streamed response has done almost nothing until its
+            // callback runs, and for the report export that callback is where
+            // every row is escaped and written. Timing only the dispatch
+            // published a figure for building a response rather than for
+            // producing one.
+            ob_start();
+
             try {
                 $startedAt = microtime(true);
                 $response = $this->dispatch($kernel, $agent, $uri);
+                $body = self::realise($response);
                 $timings[] = (microtime(true) - $startedAt) * 1000;
             } finally {
+                ob_end_clean();
                 DB::rollBack();
             }
 
-            $bytes = strlen((string) $response->getContent());
+            $bytes = strlen($body);
 
             $status = self::worstStatus($status, $response->getStatusCode());
         }
@@ -680,6 +705,35 @@ final class MeasureDashboardCommand extends Command
         }
     }
 
+    /**
+     * How much the response actually puts on the wire.
+     *
+     * A STREAMED response carries no content to ask for -- `getContent()`
+     * returns false and the report export measured as zero bytes, which is a
+     * published figure that is simply untrue. Streaming it into a buffer is the
+     * only way to weigh it, and it is what the client receives.
+     *
+     * Deliberately not part of the timed run: the buffering is this command's
+     * cost, not the page's, and the byte figure comes from the same separate
+     * request the query count does.
+     */
+    private static function realise(Response $response): string
+    {
+        if (! $response instanceof StreamedResponse) {
+            return (string) $response->getContent();
+        }
+
+        // Streamed into the buffer the caller opened. A `StreamedResponse` has
+        // no content to ask for -- `getContent()` returns false, and the report
+        // export measured as zero bytes and near-zero time until this ran its
+        // callback, which is where the work actually is.
+        $before = (string) ob_get_contents();
+
+        $response->sendContent();
+
+        return substr((string) ob_get_contents(), strlen($before));
+    }
+
     private function purgeSessions(): void
     {
         $handler = Session::getHandler();
@@ -792,6 +846,24 @@ final class MeasureDashboardCommand extends Command
             'Ticket queue (open)' => '/dashboard/tickets',
             'Ticket queue (all)' => '/dashboard/tickets?ticket_status=all',
         ];
+
+        // The report tabs, at both ends of the window range they offer. The
+        // window is the axis that matters: 7 days and 90 days are different
+        // amounts of work over the same desk rather than the same page twice,
+        // and the export is the one report path whose cost is not bounded by
+        // what a screen can show.
+        //
+        // ADMIN ONLY, because `AgentReportController` aborts 403 for anyone
+        // else -- and a 403 fails the whole run, since a page that did not
+        // render is not a measurement. Adding them unconditionally broke
+        // `--email` against an ordinary agent, which was a supported way to
+        // measure before this. An agent who cannot open the reports simply does
+        // not measure them.
+        if ($agent->isAdmin()) {
+            $targets['Reports (7 days)'] = '/dashboard/reports?report_days=7';
+            $targets['Reports (90 days)'] = '/dashboard/reports?report_days=90';
+            $targets['Reports export (90 days)'] = '/dashboard/reports/export?report_days=90';
+        }
 
         if ($conversation !== null) {
             // The one page whose cost should NOT grow with the desk, and the

@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 uses(RefreshDatabase::class);
 
@@ -637,7 +638,11 @@ test('the published baseline names every page the command measures', function ()
 
     $measured = collect(json_decode(Artisan::output(), true)['pages'])->pluck('page');
 
-    expect($measured)->toHaveCount(7);
+    // Hardcoded on purpose. Adding or removing a measured page should be a
+    // deliberate act that updates this number and the document together, not
+    // something that slips through because the assertion counted whatever it
+    // found. It caught the three report targets when they arrived.
+    expect($measured)->toHaveCount(10);
 
     foreach ($measured as $page) {
         // `str_contains` rather than `toContain($page, $message)`: that matcher
@@ -719,6 +724,71 @@ test('it says up front when the memory limit will not survive the desk', functio
     Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail']]);
 
     expect(Artisan::output())->not->toContain('memory_limit is');
+});
+
+test('it weighs a streamed response instead of calling it empty', function (): void {
+    // The report export streams, so `getContent()` returns false and it
+    // measured as zero bytes -- a published figure that is simply untrue, and
+    // the exact shape of thing this whole baseline exists to avoid. It is
+    // streamed into a buffer to be weighed, outside the timed run, because the
+    // buffering is the command's cost rather than the page's.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 40, '--messages' => 3, '--fresh' => true]);
+
+    expect(Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--page' => ['export'],
+        '--json' => true,
+    ]))->toBe(0);
+
+    $measured = collect(json_decode(Artisan::output(), true)['pages']);
+
+    expect($measured)->toHaveCount(1);
+
+    $export = $measured->first();
+
+    expect($export['status'])->toBe(200)
+        ->and($export['bytes'])->toBeGreaterThan(0, 'the streamed export measured as weightless');
+
+    // And it really is streamed, or this test proves nothing about streaming.
+    $agent = User::query()->where('email', 'desk-agent-0@example.test')->firstOrFail();
+    $response = $this->actingAs($agent)->get('/dashboard/reports/export?report_days=90');
+
+    expect($response->baseResponse)->toBeInstanceOf(StreamedResponse::class);
+});
+
+test('an agent who cannot open the reports still measures everything else', function (): void {
+    // `AgentReportController` aborts 403 for anyone who is not an account
+    // admin, and a 403 fails the whole run -- a page that did not render is not
+    // a measurement. Adding the report targets unconditionally broke `--email`
+    // against an ordinary agent, which was a supported way to measure.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 2, '--fresh' => true]);
+
+    $account = Account::query()->where('slug', 'wayfindr-measurement-desk')->firstOrFail();
+    // No site assignment needed: a site with no named support agents is
+    // visible to everyone on the account, which is what the seeder creates.
+    $plain = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    expect($plain->isAdmin())->toBeFalse('the fixture agent is an admin, so this measures nothing');
+
+    expect(Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--email' => $plain->email,
+        '--json' => true,
+    ]))->toBe(0, 'measuring as an ordinary agent failed');
+
+    $pages = collect(json_decode(Artisan::output(), true)['pages']);
+
+    // Everything answered, and no report target was attempted.
+    foreach ($pages as $page) {
+        expect($page['status'])->toBe(200, "{$page['page']} answered {$page['status']}");
+    }
+
+    expect($pages->pluck('page')->filter(fn (string $p): bool => str_contains($p, 'Reports')))
+        ->toBeEmpty('an agent who cannot open the reports was asked to measure them');
+
+    // And the queues were still measured, so this is not passing on an empty set.
+    expect($pages->pluck('page')->filter(fn (string $p): bool => str_contains($p, 'queue')))
+        ->not->toBeEmpty();
 });
 
 test('it measures a conversation an agent would actually open', function (): void {
