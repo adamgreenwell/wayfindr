@@ -671,16 +671,26 @@ test('it says up front when the memory limit will not survive the desk', functio
         'wayfindr:measure-dashboard',
     );
 
-    // The shipped image against the documented fixture: the case in the docs.
-    $shipped = $warn(50_000, 256 * 1024 * 1024);
+    // The shipped image against the documented fixture. The row count here is
+    // the TICKET table, because the conversation queue is capped now and its
+    // caller passes the cap rather than the table -- 12,500 tickets on a
+    // 50,000-conversation desk. The recommendation has to match what
+    // `docs/self-hosting/performance-baseline.md` tells operators to run, or
+    // the command contradicts its own documentation the first time somebody
+    // follows it.
+    $shipped = $warn(12_500, 256 * 1024 * 1024);
 
     expect($shipped)->toContain('memory_limit is 256M')
-        ->and($shipped)->toContain('50,000 rows')
-        ->and($shipped)->toContain('memory_limit=2G')
+        ->and($shipped)->toContain('12,500 rows')
+        ->and($shipped)->toContain('memory_limit=1G')
         // "up to", because the figure counts the table and the filtered lanes
         // render a subset of it. A precise-sounding number would be wrong for
         // them, in the safe direction, which is still wrong.
         ->and($shipped)->toContain('up to');
+
+    // And the rule itself still scales past that, for whatever is uncapped
+    // next: the estimator is not special-cased to today's fixture.
+    expect($warn(50_000, 256 * 1024 * 1024))->toContain('memory_limit=2G');
 
     // Room to spare says nothing, or it is noise on every run.
     expect($warn(50_000, 4 * 1024 * 1024 * 1024))->toBeNull();

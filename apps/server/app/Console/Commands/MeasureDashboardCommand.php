@@ -8,6 +8,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
@@ -556,8 +557,18 @@ final class MeasureDashboardCommand extends Command
         // queue will never render.
         $sites = Site::query()->visibleToAgent($agent)->select('id');
 
+        // The conversation queue is CAPPED, so its cost stops growing with the
+        // desk at `ConversationQueueQuery::DISPLAY_LIMIT` rows -- estimating it
+        // from the table would tell an operator to raise the limit to two
+        // gigabytes for a page that now renders one megabyte, and contradict
+        // the figure this command's own documentation recommends.
+        //
+        // The ticket queue is not capped yet (#847), so it is still the table.
         $rows = max(array_map(fn (string $kind): int => match ($kind) {
-            'conversations' => Conversation::query()->whereIn('site_id', $sites)->count(),
+            'conversations' => min(
+                Conversation::query()->whereIn('site_id', $sites)->count(),
+                ConversationQueueQuery::DISPLAY_LIMIT,
+            ),
             default => Ticket::query()->whereIn('site_id', $sites)->count(),
         }, $kinds));
 
