@@ -11,6 +11,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Conversations\ConversationQueueQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -671,19 +672,37 @@ test('it says up front when the memory limit will not survive the desk', functio
         'wayfindr:measure-dashboard',
     );
 
-    // The shipped image against the documented fixture: the case in the docs.
-    $shipped = $warn(50_000, 256 * 1024 * 1024);
+    // The shipped image against the documented fixture. The row count here is
+    // the TICKET table, because the conversation queue is capped now and its
+    // caller passes the cap rather than the table -- 12,500 tickets on a
+    // 50,000-conversation desk. The recommendation has to match what
+    // `docs/self-hosting/performance-baseline.md` tells operators to run, or
+    // the command contradicts its own documentation the first time somebody
+    // follows it.
+    $shipped = $warn(12_500, 256 * 1024 * 1024);
 
     expect($shipped)->toContain('memory_limit is 256M')
-        ->and($shipped)->toContain('50,000 rows')
-        ->and($shipped)->toContain('memory_limit=2G')
+        ->and($shipped)->toContain('12,500 rows')
+        ->and($shipped)->toContain('memory_limit=1G')
         // "up to", because the figure counts the table and the filtered lanes
         // render a subset of it. A precise-sounding number would be wrong for
         // them, in the safe direction, which is still wrong.
         ->and($shipped)->toContain('up to');
 
+    // And the rule itself still scales past that, for whatever is uncapped
+    // next: the estimator is not special-cased to today's fixture.
+    expect($warn(50_000, 256 * 1024 * 1024))->toContain('memory_limit=2G');
+
     // Room to spare says nothing, or it is noise on every run.
     expect($warn(50_000, 4 * 1024 * 1024 * 1024))->toBeNull();
+
+    // A desk whose LIVE COBROWSE set is large is not bounded by the row cap:
+    // those conversations are hydrated in full on every queue render to count
+    // how many need attention, and the scope has no age cutoff. Clamping the
+    // estimate to the cap alone would promise a warning the command then does
+    // not give, and it would run out of memory in a path the estimate had
+    // decided was safe.
+    expect($warn(50_000, 256 * 1024 * 1024))->toContain('memory_limit=2G');
 
     // A small desk fits inside the shipped limit and must not be warned about.
     expect($warn(200, 256 * 1024 * 1024))->toBeNull();
@@ -915,4 +934,73 @@ test('it refuses rather than measure as somebody real', function (): void {
 
     expect(Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1]))
         ->toBe(1, 'the command measured as a user it was never pointed at');
+});
+
+test('the memory estimate counts live cobrowse sessions the cap does not bound', function (): void {
+    // The conversation queue is capped, but conversations with a LIVE cobrowse
+    // session are hydrated in full on every render to count how many need
+    // attention, and `withActiveCobrowseSession()` has no age cutoff -- a desk
+    // that never ends sessions accumulates them.
+    //
+    // Estimating from the row cap alone reports a comfortable figure for a run
+    // that then dies in that unbounded path, which is worse than not warning:
+    // the operator was told it would fit.
+    //
+    // Asserted on the RULE, because the interesting desks are ones no test can
+    // afford to seed and the arithmetic is where the mistakes are.
+    $cap = ConversationQueueQuery::DISPLAY_LIMIT;
+
+    // A big desk with nothing live: bounded by the cap.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 0, 0))
+        ->toBe($cap);
+
+    // The same desk with more live cobrowse sessions than the cap: NOT bounded,
+    // because that set is hydrated whole.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 5_000, 0))
+        ->toBe(5_000, 'the estimate ignored an unbounded live-cobrowse set');
+
+    // Fewer live sessions than the cap changes nothing.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 12, 0))
+        ->toBe($cap);
+
+    // Tickets are not capped at all yet, so they are the table.
+    expect(MeasureDashboardCommand::estimatedRows(['tickets'], 50_000, 0, 12_500))
+        ->toBe(12_500);
+
+    // Both selected takes the larger.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations', 'tickets'], 50_000, 300, 12_500))
+        ->toBe(12_500);
+
+    // No queue selected estimates nothing rather than erroring on an empty max.
+    expect(MeasureDashboardCommand::estimatedRows([], 50_000, 5_000, 12_500))->toBe(0);
+});
+
+test('a ticket-only measurement does not scan the conversation tables to size itself', function (): void {
+    // Extracting the estimate into a pure rule moved these counts out of the
+    // per-kind `match` and made them unconditional, so `--page=ticket` opened
+    // with two scans of tables it was told not to measure. A benchmark should
+    // not pay for the page somebody excluded.
+    //
+    // Counted with a LISTENER rather than the query log, because the command
+    // captures and restores the log itself and would clobber the reading.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 2, '--fresh' => true]);
+
+    $conversationCounts = 0;
+
+    DB::listen(function ($query) use (&$conversationCounts): void {
+        if (str_contains($query->sql, 'from "conversations"') && str_contains($query->sql, 'count(')) {
+            $conversationCounts++;
+        }
+    });
+
+    Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--page' => ['ticket queue (open)'],
+        '--json' => true,
+    ]);
+
+    // The estimate contributes two of these when ungated: the whole table and
+    // the live-cobrowse set. Neither belongs in a ticket-only run.
+    expect($conversationCounts)->toBeLessThan(2,
+        'a ticket-only measurement counted conversations to size a page it was not measuring');
 });

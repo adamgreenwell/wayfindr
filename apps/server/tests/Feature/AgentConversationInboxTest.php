@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\CobrowseConsentState;
+use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\ExternalIssueSyncStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -8311,4 +8312,70 @@ test('the agent conversation page keeps its own connection alive', function (): 
         $close,
         'the keepalive outlives the socket it belongs to',
     );
+});
+
+test('the attention lane finds an older degraded session behind a page of healthy ones', function (): void {
+    // The row cap must not be applied before the attention filter runs. The
+    // lane's membership is decided in PHP from a transport state computed off
+    // loaded relations, so capping in SQL first would take the 200 most
+    // recently active cobrowse sessions -- all healthy here -- and leave the
+    // lane rendering empty next to a badge insisting something needs
+    // attention.
+    //
+    // Capping AFTER the filter is safe because the SQL set is already narrow:
+    // it is bounded to sessions live right now, not to the whole desk.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    $healthy = ConversationQueueQuery::DISPLAY_LIMIT + 5;
+
+    foreach (range(1, $healthy) as $i) {
+        $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+            'status' => 'open',
+            'last_message_at' => now()->subMinutes(1),
+        ]);
+
+        CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+            'status' => 'granted',
+            'consented_at' => now()->subMinutes(5),
+            'ended_at' => null,
+            'metadata' => ['telemetry' => [
+                'reported_at' => now()->subSeconds(5)->toJSON(),
+                'reconnects' => 0,
+                'dropped_batches' => 0,
+            ]],
+        ]);
+    }
+
+    // One degraded session, OLDER than every healthy one, so any ordering that
+    // caps before filtering will have discarded it.
+    $degraded = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-BURIEDDEGRADED',
+        'subject' => 'Buried degraded cobrowse',
+        'status' => 'open',
+        'last_message_at' => now()->subDays(3),
+    ]);
+
+    CobrowseSession::factory()->for($degraded)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'ended_at' => null,
+        'metadata' => ['telemetry' => [
+            'reported_at' => now()->subSeconds(12)->toJSON(),
+            'reconnects' => 0,
+            'dropped_batches' => 2,
+        ]],
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get('/dashboard/conversations?conversation_filter=cobrowse_attention');
+
+    $response->assertOk()->assertSee('Buried degraded cobrowse');
+
+    // And the total counts what needs attention, not how many sessions are
+    // live -- otherwise the lane claims to be hiding rows it is not.
+    expect($response->viewData('conversationsShownOf'))
+        ->toBe(1, 'the attention lane counted healthy sessions as rows it was hiding');
 });

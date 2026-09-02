@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\LiteralLike;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 /**
  * The one definition of "which conversations are in this queue, in what order".
@@ -25,6 +26,21 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class ConversationQueueQuery
 {
+    /**
+     * How many rows the queue renders at once.
+     *
+     * The queue had no cap at all: every conversation matching the filters was
+     * queried, hydrated and rendered, so a year of a busy desk put 187 MB of
+     * HTML on the wire after twenty-three seconds of server time (#837). A page
+     * nobody can load is not a queue.
+     *
+     * The same shape the live visitor board already uses, and the same number:
+     * rows are capped, the COUNT beside them is not, so a busy lane reads as
+     * "200 of 12,431" rather than as 200. An agent works the top of this list
+     * and narrows it with the filters above it; nobody scrolls to row 12,000.
+     */
+    public const DISPLAY_LIMIT = 200;
+
     /** @var list<string> */
     public const LANES = [
         'new_activity',
@@ -94,9 +110,24 @@ final class ConversationQueueQuery
      */
     public static function ordered(Builder $query): Builder
     {
+        // COALESCE, because a conversation exists before its first message and
+        // may never get one -- and the two drivers disagree about where that
+        // leaves it. PostgreSQL sorts NULLs FIRST on a descending order and
+        // SQLite sorts them last, so on the shipped deployment every
+        // message-less conversation sat above every conversation with a recent
+        // reply. Unbounded that was odd ordering; capped it is a queue that
+        // hides everything anybody has actually said.
+        //
+        // A conversation with no messages was last active when it was opened,
+        // which is what `created_at` says, so ranking by it is the true answer
+        // rather than a workaround for the null.
         return $query
-            ->orderByDesc('last_message_at')
-            ->orderByDesc('created_at');
+            ->orderByDesc(DB::raw('coalesce(last_message_at, created_at)'))
+            ->orderByDesc('created_at')
+            // A deterministic tie-break, so two conversations opened in the
+            // same second do not swap places between requests -- which a
+            // capped queue would show as a row appearing and disappearing.
+            ->orderByDesc('id');
     }
 
     public static function searchPattern(string $search): string

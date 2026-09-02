@@ -118,6 +118,17 @@
                     {{ $conversationQueueCountSummary['detail'] }}
                 </p>
 
+                {{-- Only when the cap actually bit. A queue that fits says
+                     nothing, which is every queue until a desk gets busy. --}}
+                @if ($conversationsShownOf > $conversations->count())
+                    <p class="wf-queue-summary" role="status">
+                        {{ __('conversations.summary.capped_notice', [
+                            'shown' => \App\Support\ReaderNumber::count($conversations->count()),
+                            'total' => \App\Support\ReaderNumber::count($conversationsShownOf),
+                        ]) }}
+                    </p>
+                @endif
+
                 @if ($activeConversationFilters !== [])
                     <div class="filter-summary" aria-label="{{ __('conversations.chips.region_label') }}">
                         <div>

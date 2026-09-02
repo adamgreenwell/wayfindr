@@ -7,10 +7,12 @@ correctness proof on an empty install.
 This page is the first answer to the question a self-hosted `1.0` has to be able
 to answer: *how much can it take?*
 
-**The short version: the conversation and ticket queues do not paginate, and at
-a year of real traffic they stop being usable.** Measuring also turned up an N+1
-on the ticket queue, now fixed — 12,518 queries down to 19. The conversation
-detail page is fine and stays fine, and so do the report tabs. Numbers below.
+**The short version: the queues rendered every matching row, and at a year of
+real traffic that stopped being usable.** The conversation queue is capped now —
+its closed lane went from 187 MB and twenty-three seconds to 1 MB and 161 ms —
+and the ticket queue still is not. Measuring also turned up an N+1 on the ticket
+queue, now fixed: 12,518 queries down to 19. The conversation detail page is fine
+and stays fine, and so do the report tabs. Numbers below.
 
 ## Reproducing this
 
@@ -22,7 +24,7 @@ php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```
 
 ```bash
-php -d memory_limit=2G artisan wayfindr:measure-dashboard --runs=3
+php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
 
 Every figure on this page was taken with `--runs=3`.
@@ -36,22 +38,23 @@ warning it is: this writes tens of thousands of rows.
 They go to an account of the seeder's own (`wayfindr-measurement-desk`), and
 `--fresh` deletes exactly that account and refuses if anything it did not
 create is sitting there. Nothing else is touched. But a real install is still
-being asked to hold a second desk's worth of data and serve 187 MB responses
-while you measure it, so **measure a staging copy if you have one**, and expect
+being asked to hold a second desk's worth of data and serve the ticket queue's
+63 MB responses while you measure it, so **measure a staging copy if you have one**, and expect
 the disk and the load to be real if you do not.
 
 **The memory override is required, not a precaution.** The shipped image sets
 `memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size
-the measurement dies inside the closed queue without ever printing the table. It
-needs somewhere between 1.5 GB and 2 GB: 1536M is fatal, 2G completes. The
-seeding command is unaffected and runs inside 256M, because it writes in chunks.
+the measurement dies without ever printing the table. It needs somewhere between
+512M and 1G: 512M is fatal, 1G completes. The seeding command is unaffected and
+runs inside 256M, because it writes in chunks.
 
-That requirement is worth reading as a finding rather than a footnote. The
-measurement needs eight times the image's limit because the page it measures
-builds a 187 MB response with every matching row hydrated at once — the
-[pagination problem](#neither-queue-paginates) showing up as a memory bill
-before it shows up as a number. Scale the override with the desk: a smaller
-fixture needs proportionally less.
+That requirement is worth reading as a finding rather than a footnote, and it
+names which page is still unbounded. It used to be 2 GB, because the conversation
+queue rendered every matching row and the closed lane built a 187 MB response;
+capping that queue took it to 1 GB. What is left is the **ticket** queue, which
+still hydrates every matching row — the [pagination problem](#the-ticket-queue-still-renders-every-row)
+showing up as a memory bill before it shows up as a number. Scale the override
+with the desk: a smaller fixture needs proportionally less.
 
 **Timings are taken with query logging OFF.** Laravel's query log allocates and
 retains an entry per query, so measuring with it on charges the page for the
@@ -111,64 +114,89 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,153 | 21 | 37.8 MB |
-| Conversation queue (closed) | 23,007 | 15 | 186.7 MB |
-| Conversation queue (search) | 548 | 21 | 3.4 MB |
-| Conversation queue (mine) | 374 | 21 | 2.4 MB |
-| Ticket queue (open) | 2,278 | 18 | 21.0 MB |
-| Ticket queue (all) | 7,071 | 19 | 62.8 MB |
-| Reports (7 days) | 150 | 34 | 140 KB |
-| Reports (90 days) | 607 | 80 | 223 KB |
+| Conversation queue (open) | 303 | 22 | 1.0 MB |
+| Conversation queue (closed) | 161 | 16 | 1.0 MB |
+| Conversation queue (search) | 402 | 22 | 1.0 MB |
+| Conversation queue (mine) | 298 | 22 | 1.0 MB |
+| Ticket queue (open) | 2,206 | 18 | 21.0 MB |
+| Ticket queue (all) | 7,052 | 19 | 62.8 MB |
+| Reports (7 days) | 151 | 34 | 140 KB |
+| Reports (90 days) | 613 | 80 | 223 KB |
 | Reports export (90 days) | 94 | 7 | 2 KB |
 | **Conversation detail** | **13** | **26** | **148 KB** |
 
 All ten, because the command measures ten: a table listing fewer than the
 documented command prints leaves an operator with figures they cannot compare
 against anything. The two filtered lanes are cheap for the reason the open lane
-is — they match fewer rows, and it is the same unpaginated query with a narrower
+is — they match fewer rows, and it is the same capped query with a narrower
 `where`.
 
 ### How it grows
 
-Every queue is linear in the number of rows, because every queue renders all of
-them:
+The capped queue is not, and the uncapped one still is:
 
-| Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Reports (90d) | Detail |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 117 ms | 462 ms | 3.9 MB | 148 ms | 19 | 30 ms / 32 q | 14 ms / 26 q |
-| 5,000 | 494 ms | 2,353 ms | 19.3 MB | 714 ms | 19 | 79 ms / 36 q | 15 ms / 26 q |
-| 25,000 | 2,353 ms | 12,216 ms | 96.3 MB | 3,604 ms | 19 | 350 ms / 57 q | 15 ms / 26 q |
-| 50,000 | 4,153 ms | 23,007 ms | 186.7 MB | 7,071 ms | 19 | 607 ms / 80 q | 13 ms / 26 q |
+| Conversations | Conversations closed (capped) | Tickets all (uncapped) | Reports (90d) | Detail |
+| ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 121 ms / 1.0 MB | 138 ms / 1.4 MB | 26 ms | 12 ms |
+| 5,000 | 126 ms / 1.0 MB | 665 ms / 6.4 MB | 69 ms | 13 ms |
+| 25,000 | 127 ms / 1.0 MB | 3,382 ms / 31.4 MB | 289 ms | 14 ms |
+| 50,000 | 161 ms / 1.0 MB | 7,052 ms / 62.8 MB | 613 ms | 13 ms |
 
-Two columns do not move. The last one is the control and always was: the same
-page, at fifty times the data, costs the same. **Ticket queries** joined it when
-the N+1 was fixed — that column read 268, 1,268, 6,268, 12,518 before, one query
-per ticket, and it is now flat at 19 while the milliseconds beside it still climb
-with the rows the page renders.
+**The first two columns are the argument for capping, side by side.** The
+conversation queue is flat — fifty times the data, the same megabyte, and the
+milliseconds move only because the count query beside it runs over a bigger
+table. The ticket queue is not capped and is linear in both: fifty times the
+rows, fifty times the response.
 
-The reports column grows in both, and mildly: about twenty times the
-milliseconds for fifty times the data, with the query count rising because
-`ResolutionEpisodes::walk()` chunks the subjects it walks by 500 and asks twice
-per chunk.
+The last column is the control and always was: the same page, at fifty times the
+data, costs the same. The reports grow mildly in both time and queries, the
+latter because `ResolutionEpisodes::walk()` chunks the subjects it walks by 500
+and asks twice per chunk.
 
 ## What that means
 
-### Neither queue paginates
+### The conversation queue used to render every row
 
-`AgentConversationQueueController` and `AgentTicketQueueController` — the
-single-action controllers behind `/dashboard/conversations` and
-`/dashboard/tickets` — contain no `paginate()`. Every conversation and every
-ticket matching the current filters is queried, hydrated and rendered into one
-response.
+It had no cap: every conversation matching the filters was queried, hydrated
+and rendered into one response. At 50,000 conversations the closed lane was
+**187 MB of HTML arriving after twenty-three seconds** — a response many proxies
+refuse outright and no browser renders pleasantly.
 
-At a thousand conversations that is invisible. At fifty thousand the closed lane
-is **187 MB of HTML** — a response no browser will render pleasantly and many
-proxies will refuse outright, arriving after twenty-three seconds. The open lane
-is better only because a desk that is keeping up has fewer open rows; it is the
-same query with a narrower `where`.
+Capped at 200 rows in #837, the same number and the same shape the live visitor
+board already used:
 
-Response size is the number to watch here rather than milliseconds. The server
-builds 187 MB in twenty-three seconds; the browser then has to parse it.
+| Conversation queue, 50,000 conversations | Before | After |
+| --- | ---: | ---: |
+| Open | 4,153 ms / 37.8 MB | **303 ms / 1.0 MB** |
+| Closed | 23,007 ms / 186.7 MB | **161 ms / 1.0 MB** |
+| Search | 548 ms / 3.4 MB | **402 ms / 1.0 MB** |
+| Assigned to me | 374 ms / 2.4 MB | **298 ms / 1.0 MB** |
+
+The closed lane is the one to look at: about a hundred and forty times faster
+and a hundred and eighty times smaller.
+
+**The rows are capped and the count is not.** A busy lane reads as "the 200 most
+recently active of 12,431" rather than as 200 — reporting the cap as the total
+is the one number an agent would have trusted. That costs one extra query, and
+only when the cap is actually reached; a lane that fits already knows its own
+size.
+
+This is a cap rather than pagination on purpose. The queue is a workspace an
+agent scans, filters and returns to all day, not a list they page through, and
+nobody reaches row 12,000 by scrolling — they narrow it with the filters above
+it. Choosing the affordance the product had already validated elsewhere seemed
+better than inventing a third pattern for the page agents live in.
+
+### The ticket queue still renders every row
+
+It shares the same defect and does not have the same fix, because it filters
+and sorts **in PHP after the query**: the external-issue and attention states are
+computed from loaded relations. Capping the query would silently show fewer rows
+than the cap whenever a refinement is active, and make any "of N" beside it
+misleading.
+
+Moving those filters into SQL is the real fix and a larger change than a cap.
+Tracked separately rather than bundled in.
 
 ### The ticket queue used to issue one query per ticket
 
@@ -182,7 +210,7 @@ of the difference is the argument for measuring at all:
 
 Both rows are on the fixture as it stood then, which wrote no lifecycle history
 — that is what makes them comparable to each other. The current figure in the
-table above is 19 queries and 7,071 ms, measured on a desk that now has a
+table above is 19 queries and 7,052 ms, measured on a desk that now has a
 history to hydrate; the paragraph after this measures that difference directly
 rather than leaving two numbers to be reconciled by the reader.
 
@@ -214,6 +242,11 @@ the answer inside the run-to-run noise this page already warns about:
 | --- | ---: | ---: |
 | With 33,229 ticket lifecycle events | 6,917 | 19 |
 | With none | 6,699 | 18 |
+
+Both rows are from that sitting, which is what makes them comparable to each
+other and slightly adrift of the 7,052 ms in the table above — that is a
+different run, and the gap between them is the run-to-run variance this page
+opens by warning about.
 
 **About three per cent, and one query.** That is what the eager load costs when
 it has something to load — a long way from the 9,503 ms the N+1 was costing, and

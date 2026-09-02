@@ -76,6 +76,7 @@ return [
         'matching_conversations' => '{1} 1 conversazione corrispondente|[2,*] :count conversazioni corrispondenti',
     ],
     'summary' => [
+        'capped_notice' => 'Vengono mostrate le :shown più attive di recente su :total. Restringa la coda con i filtri qui sopra per vedere le altre.',
         'lane_narrowed_heading' => ':shown visualizzati su :matching',
         'lane_narrowed_attention_heading' => '{1} :shown di :matching necessita di attenzione|[2,*] :shown di :matching necessitano di attenzione',
         'lane_narrowed_detail' => '{1} Visualizzazione di :shown dopo il filtro della corsia di supporto :lane. :matching gli altri filtri di coda.|[2,*] Visualizzazione di :shown dopo il filtro della corsia di supporto :lane. :matching gli altri filtri di coda.',

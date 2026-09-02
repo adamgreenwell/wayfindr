@@ -131,7 +131,7 @@ class AgentConversationQueueController extends Controller
             $conversationSearch,
         );
 
-        $conversations = Conversation::query()
+        $conversationRows = Conversation::query()
             ->with([
                 'assignedAgent',
                 'latestCobrowseSession',
@@ -146,8 +146,25 @@ class AgentConversationQueueController extends Controller
             ->when($conversationSite, fn ($query) => $query->where('site_id', $conversationSite))
             ->when($conversationPresence !== 'all', fn ($query) => $this->applyConversationPresenceFilter($query, $conversationPresence))
             ->when($conversationSearch !== '', fn ($query) => ConversationQueueQuery::applySearch($query, $conversationSearch))
-            ->tap(fn ($query) => ConversationQueueQuery::applyLane($query, $conversationFilter, $agent))
+            ->tap(fn ($query) => ConversationQueueQuery::applyLane($query, $conversationFilter, $agent));
+
+        // The ATTENTION lane decides membership in PHP, from a transport state
+        // computed off loaded relations, so it cannot be capped in SQL: the 200
+        // most recent active cobrowse sessions could all be healthy while an
+        // older one is degraded, and the lane would render empty next to a
+        // badge insisting something needs attention.
+        //
+        // Capping it after the filter is safe because the SQL set is already
+        // narrow -- `withActiveCobrowseSession()` bounds it to sessions that
+        // are live right now, not to the whole desk.
+        $narrowsInPhp = $conversationFilter === 'cobrowse_attention';
+
+        $conversations = (clone $conversationRows)
             ->tap(fn ($query) => ConversationQueueQuery::ordered($query))
+            // Capped, because this rendered every matching row into one
+            // response: 187 MB of HTML on a year of a busy desk, after
+            // twenty-three seconds of server time (#837).
+            ->when(! $narrowsInPhp, fn ($query) => $query->limit(ConversationQueueQuery::DISPLAY_LIMIT))
             ->get();
 
         $cobrowseTransportByConversationId = $conversations
@@ -155,15 +172,37 @@ class AgentConversationQueueController extends Controller
                 $conversation->id => $cobrowseConsentState->queueTransportForConversation($conversation),
             ]);
 
-        if ($conversationFilter === 'cobrowse_attention') {
+        if ($narrowsInPhp) {
             $conversations = $conversations
                 ->filter(fn (Conversation $conversation): bool => $cobrowseConsentState->transportNeedsAttention(
                     $cobrowseTransportByConversationId->get($conversation->id, [])
                 ))
                 ->values();
         }
+
+        // The total is NOT capped, so a busy lane reads as "200 of 12,431"
+        // rather than as 200 -- reporting the cap as the count is the one
+        // number an agent would have trusted.
+        //
+        // Counted AFTER the PHP filter where there is one, or the attention
+        // lane would report how many sessions are live rather than how many
+        // need attention, and show a capped notice for rows it is not hiding.
+        //
+        // For the SQL lanes it is only asked for when the cap was actually
+        // reached: a lane that fits already knows its own size, and this is the
+        // queue's hottest page.
+        $conversationsShownOf = match (true) {
+            $narrowsInPhp => $conversations->count(),
+            $conversations->count() < ConversationQueueQuery::DISPLAY_LIMIT => $conversations->count(),
+            default => (clone $conversationRows)->count(),
+        };
+
+        if ($narrowsInPhp) {
+            $conversations = $conversations->take(ConversationQueueQuery::DISPLAY_LIMIT)->values();
+        }
         $conversationQueueCountSummary = $this->conversationQueueCountSummary(
-            $conversations,
+            $conversationsShownOf,
+            $conversations->count(),
             $matchingConversationCount,
             $conversationFilter,
             $conversationFilters,
@@ -196,6 +235,7 @@ class AgentConversationQueueController extends Controller
             'conversationSearch' => $conversationSearch,
             'conversationSite' => $conversationSite,
             'conversations' => $conversations,
+            'conversationsShownOf' => $conversationsShownOf,
             'newActivityConversationCount' => $newActivityConversationCount,
         ];
     }
@@ -418,19 +458,26 @@ class AgentConversationQueueController extends Controller
      * @param  array<string, string>  $conversationFilters
      * @return array{heading: string, detail: string}
      */
-    private function conversationQueueCountSummary(Collection $conversations, int $matchingConversationCount, string $conversationFilter, array $conversationFilters, bool $conversationHasActiveRefinement, int $newActivityConversationCount, int $cobrowseAttentionConversationCount): array
+    private function conversationQueueCountSummary(int $laneCount, int $renderedCount, int $matchingConversationCount, string $conversationFilter, array $conversationFilters, bool $conversationHasActiveRefinement, int $newActivityConversationCount, int $cobrowseAttentionConversationCount): array
     {
-        $shownCount = $conversations->count();
+        // TWO counts, because the row cap made them different things and this
+        // page says both. `$laneCount` is how many conversations are in the
+        // lane; `$renderedCount` is how many rows are on the screen.
+        //
+        // A sentence takes whichever one it is actually about: "225 open" is a
+        // fact about the desk, "Showing 200" is a fact about the page. Feeding
+        // one number to both produced a page claiming to show 225 rows
+        // immediately above a notice saying it was showing 200 of them.
         $supportLaneNarrowed = ! in_array($conversationFilter, ['all', 'closed'], true)
-            && $shownCount !== $matchingConversationCount;
+            && $laneCount !== $matchingConversationCount;
 
         if ($supportLaneNarrowed) {
             return [
                 // `trans_choice` on the SHOWN count, because that is the number
                 // the sentence's own verb agrees with. The second clause takes
                 // its verb from `:matching`, which carries one.
-                'detail' => trans_choice('conversations.summary.lane_narrowed_detail', $shownCount, [
-                    'shown' => $this->conversationCountLabel($shownCount),
+                'detail' => trans_choice('conversations.summary.lane_narrowed_detail', $renderedCount, [
+                    'shown' => $this->conversationCountLabel($renderedCount),
                     'lane' => $conversationFilters[$conversationFilter],
                     'matching' => $this->conversationCountMatchLabel($matchingConversationCount),
                 ]),
@@ -442,39 +489,41 @@ class AgentConversationQueueController extends Controller
                 // angezeigt". A clause is not a noun phrase, and a catalogue
                 // cannot reorder one that arrives pre-assembled.
                 'heading' => $conversationFilter === 'new_activity'
-                    ? trans_choice('conversations.summary.lane_narrowed_attention_heading', $shownCount, [
-                        'shown' => (string) $shownCount,
+                    ? trans_choice('conversations.summary.lane_narrowed_attention_heading', $laneCount, [
+                        'shown' => (string) $laneCount,
                         'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
                     ])
                     : __('conversations.summary.lane_narrowed_heading', [
-                        'shown' => (string) $shownCount,
+                        // This one literally reads ":shown shown of :matching",
+                        // so it is about the page.
+                        'shown' => (string) $renderedCount,
                         'matching' => trans_choice('conversations.counts.matching_conversations', $matchingConversationCount, ['count' => $matchingConversationCount]),
                     ]),
             ];
         }
 
-        $filteredDetail = trans_choice('conversations.summary.filtered_detail', $shownCount, [
-            'shown' => $this->conversationCountLabel($shownCount),
+        $filteredDetail = trans_choice('conversations.summary.filtered_detail', $renderedCount, [
+            'shown' => $this->conversationCountLabel($renderedCount),
         ]);
 
         if ($conversationFilter === 'closed') {
             return [
                 'detail' => $filteredDetail,
-                'heading' => trans_choice('conversations.counts.closed', $shownCount, ['count' => $shownCount]),
+                'heading' => trans_choice('conversations.counts.closed', $laneCount, ['count' => $laneCount]),
             ];
         }
 
         if ($conversationHasActiveRefinement) {
             return [
                 'detail' => $filteredDetail,
-                'heading' => trans_choice('conversations.counts.open_matching', $shownCount, ['count' => $shownCount]),
+                'heading' => trans_choice('conversations.counts.open_matching', $laneCount, ['count' => $laneCount]),
             ];
         }
 
         return [
             'detail' => $filteredDetail,
             'heading' => __('conversations.summary.open_heading', [
-                'open' => (string) $shownCount,
+                'open' => (string) $laneCount,
                 'attention' => trans_choice('conversations.counts.needs_attention', $newActivityConversationCount, ['count' => $newActivityConversationCount]),
                 'cobrowse' => trans_choice('conversations.counts.cobrowse_attention', $cobrowseAttentionConversationCount, ['count' => $cobrowseAttentionConversationCount]),
             ]),

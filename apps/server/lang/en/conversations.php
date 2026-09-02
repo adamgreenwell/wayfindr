@@ -83,6 +83,7 @@ return [
     ],
 
     'summary' => [
+        'capped_notice' => 'Showing the :shown most recently active of :total. Narrow the queue with the filters above to see the rest.',
         // Every sentence carrying a count is plural-aware as a WHOLE, not just
         // in the number it interpolates. `:shown` already chose between
         // "1 conversation" and "3 conversations", and the verbs around it have
