@@ -132,6 +132,14 @@ final class DashboardLanguage
         // under a different locale from the dashboard that produced it.
         'dashboard.account.audit.index',
 
+        // The account side of operator access. The GET shows requests, active
+        // access and history; all three writes redirect their lifecycle result
+        // back onto that same page, so their flash keys belong to its locale.
+        'dashboard.account.break-glass.index',
+        'dashboard.account.break-glass.approve',
+        'dashboard.account.break-glass.deny',
+        'dashboard.account.break-glass.close',
+
         // The live-visitors board. Most of this page's copy is rendered by its
         // SCRIPT rather than by Blade, which is why it needed no new mechanism
         // and does need the render audit to open it with the board populated.
