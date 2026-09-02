@@ -4,13 +4,21 @@ declare(strict_types=1);
 
 use App\Console\Commands\SeedDeskCommand;
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationRating;
 use App\Models\ConversationReadState;
+use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Reporting\ReportingScope;
+use App\Support\Reporting\ReportingWindow;
+use App\Support\Reporting\SupportReport;
+use App\Support\Reporting\TicketReport;
+use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -530,6 +538,45 @@ test('a ticket is not closed in the future', function (): void {
     expect(Ticket::query()->whereNotNull('closed_at')->count())->toBeGreaterThan(0);
 });
 
+test('a ticket was touched whenever something happened to it', function (): void {
+    // The ticket queue orders by `updated_at`, and every real transition saves
+    // the ticket. Closed tickets were corrected for this in #836; holds were
+    // not, because they had no lifecycle event until this branch added one --
+    // so newly held tickets filed as stale while their own timeline showed
+    // later activity.
+    //
+    // Written against ANY lifecycle event rather than against the two statuses
+    // that have one today, so a third transition added later fails here instead
+    // of repeating this quietly.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 200, '--messages' => 3, '--fresh' => true])
+        ->assertSuccessful();
+
+    $latest = AuditEvent::query()
+        ->where('subject_type', (new Ticket)->getMorphClass())
+        ->whereIn('action', ['ticket.pending', 'ticket.closed', 'ticket.reopened'])
+        ->get()
+        ->groupBy('subject_id')
+        ->map(fn ($events) => $events->max('occurred_at'));
+
+    expect($latest)->not->toBeEmpty();
+
+    foreach ($latest as $ticketId => $lastEventAt) {
+        $ticket = Ticket::query()->findOrFail($ticketId);
+
+        expect($ticket->updated_at->greaterThanOrEqualTo(Carbon::parse($lastEventAt)))
+            ->toBeTrue("ticket {$ticketId} was last touched before the last thing that happened to it");
+    }
+
+    // Both kinds are actually present, or this passes over an empty set.
+    $actions = AuditEvent::query()
+        ->where('subject_type', (new Ticket)->getMorphClass())
+        ->distinct()
+        ->pluck('action');
+
+    expect($actions)->toContain('ticket.pending')
+        ->and($actions)->toContain('ticket.closed');
+});
+
 test('a closed ticket was touched when it was closed', function (): void {
     // The ticket queue orders by `updated_at`, and a real closure goes through
     // an Eloquent `update()` that advances it. Leaving it at the raise time
@@ -546,12 +593,18 @@ test('a closed ticket was touched when it was closed', function (): void {
             ->toBeTrue('a closed ticket was last touched before it was closed');
     }
 
-    // And an OPEN ticket still sits at its raise time, so the fix did not just
-    // push every row's `updated_at` forward and flatten the ordering.
-    $open = Ticket::query()->whereNull('closed_at')->get();
-    expect($open)->not->toBeEmpty();
+    // And a ticket nothing has happened to still sits at its raise time, so the
+    // fix did not just push every row's `updated_at` forward and flatten the
+    // ordering.
+    //
+    // Keyed on STATUS, not on `closed_at` being null. Written the second way it
+    // also caught held tickets, which was true only while holds left no trace:
+    // they are touched at their hold now, correctly, and the assertion was
+    // asking them to report activity they did have.
+    $untouched = Ticket::query()->where('status', 'open')->get();
+    expect($untouched)->not->toBeEmpty();
 
-    foreach ($open as $ticket) {
+    foreach ($untouched as $ticket) {
         expect($ticket->updated_at->equalTo($ticket->created_at))
             ->toBeTrue('an open ticket reports activity it never had');
     }
@@ -590,6 +643,113 @@ test('a reseed writes the same words, not just the same shapes', function (): vo
 
     expect($bodies())->toBe($firstBodies, 'a reseed wrote different message bodies for the same fixture');
     expect($descriptions())->toBe($firstDescriptions, 'a reseed wrote different ticket descriptions');
+});
+
+test('a reseed writes the same lifecycle history', function (): void {
+    // The report figures are computed from these events, so a fixture whose
+    // history changes shape between rebuilds cannot be compared against its own
+    // earlier measurement -- which is the entire point of a baseline.
+    //
+    // The ticket half was keyed on `tickets.id`, and `--fresh` does not reset a
+    // PostgreSQL sequence: the same ticket came back with a different id, so a
+    // different set of tickets got reopen episodes and different agents acted
+    // on them. Keyed on the conversation's support code now, like everything
+    // else here.
+    // The clock is FROZEN across both seeds. Every timestamp here is derived
+    // from `now()`, so two runs seconds apart legitimately differ -- and this
+    // test is about whether the ids churn, not about how long it takes to seed
+    // twice. Without the freeze it passed on SQLite, where both seeds landed in
+    // the same second, and failed on PostgreSQL, where they did not.
+    Carbon::setTestNow(Carbon::parse('2026-09-01 12:00:00', 'UTC'));
+
+    $seed = fn () => $this->artisan('wayfindr:seed-desk', [
+        '--conversations' => 40,
+        '--messages' => 2,
+        '--fresh' => true,
+    ])->assertSuccessful();
+
+    // By SUPPORT CODE, never by id -- comparing ids would fail on correct data
+    // for the very reason this test exists.
+    //
+    // BOTH subject types. Written for conversations alone it passed with the
+    // ticket half still keyed on `tickets.id`, which is the only place the bug
+    // was: an assertion that looks everywhere except where the defect lives is
+    // not a guard.
+    $codeFor = function (AuditEvent $event): string {
+        if ($event->subject_type === (new Ticket)->getMorphClass()) {
+            return (string) Ticket::query()->find($event->subject_id)?->conversation?->support_code;
+        }
+
+        return (string) Conversation::query()->find($event->subject_id)?->support_code;
+    };
+
+    $shape = fn (): array => AuditEvent::query()
+        ->orderBy('subject_id')
+        ->orderBy('occurred_at')
+        ->get()
+        ->map(fn (AuditEvent $e): string => $codeFor($e)
+            .'|'.$e->action.'|'.$e->occurred_at->toIso8601String()
+            .'|'.($e->metadata['actor'] ?? '')
+            .'|actor:'.($e->actor_id === null ? 'none' : 'set'))
+        ->sort()
+        ->values()
+        ->all();
+
+    $seed();
+    $first = $shape();
+
+    expect($first)->not->toBeEmpty();
+
+    $seed();
+
+    expect(AuditEvent::query()->min('id'))
+        ->toBeGreaterThan(count($first), 'the ids did not advance, so a reseed cannot show this');
+
+    expect($shape())->toBe($first, 'a reseed wrote a different lifecycle history');
+
+    Carbon::setTestNow();
+});
+
+test('a reseed writes the same satisfaction answers', function (): void {
+    // The third place a surrogate id was mistaken for a stable key. Ratings
+    // decided which closes were answered, what score they carried and how long
+    // the visitor took, all from `conversations.id` -- which moves on every
+    // `--fresh` against a sequence. The satisfaction figures moved with it.
+    //
+    // Its own test because the lifecycle one could not see this: it compares
+    // `audit_events`, and ratings live in another table. An assertion that
+    // stops at the table it was written for is how the same mistake reached
+    // three passes.
+    Carbon::setTestNow(Carbon::parse('2026-09-01 12:00:00', 'UTC'));
+
+    $seed = fn () => $this->artisan('wayfindr:seed-desk', [
+        '--conversations' => 60,
+        '--messages' => 2,
+        '--fresh' => true,
+    ])->assertSuccessful();
+
+    $shape = fn (): array => ConversationRating::query()
+        ->get()
+        ->map(fn (ConversationRating $r): string => (string) Conversation::query()->find($r->conversation_id)?->support_code
+            .'|'.$r->score
+            .'|'.$r->rated_at->toIso8601String())
+        ->sort()
+        ->values()
+        ->all();
+
+    $seed();
+    $first = $shape();
+
+    expect($first)->not->toBeEmpty();
+
+    $seed();
+
+    expect(ConversationRating::query()->min('id'))
+        ->toBeGreaterThan(count($first), 'the ids did not advance, so a reseed cannot show this');
+
+    expect($shape())->toBe($first, 'a reseed answered a different set of closes');
+
+    Carbon::setTestNow();
 });
 
 test('a visitor was seen no earlier than the last thing they said', function (): void {
@@ -632,6 +792,411 @@ test('a visitor was seen no earlier than the last thing they said', function ():
 
     expect(count($webStates))
         ->toBe(4, 'the web presence spread collapsed: '.implode(', ', $webStates));
+});
+
+test('the reports have something to report', function (): void {
+    // The reason this history exists. Conversations and tickets are inserted at
+    // their final status rather than driven through the application, so none of
+    // the events a real close leaves behind existed -- and the report tabs are
+    // computed from exactly those. Measuring them against the old fixture would
+    // have timed a query over an empty table and called the page fast, which is
+    // worse than not measuring it at all.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 200, '--messages' => 3, '--fresh' => true])
+        ->assertSuccessful();
+
+    $agent = User::query()->where('email', 'desk-agent-0@example.test')->firstOrFail();
+    $scope = ReportingScope::for($agent->account, $agent);
+    $window = ReportingWindow::ofDays(90);
+
+    $support = new SupportReport($scope, $window);
+
+    $resolution = $support->resolution();
+    $satisfaction = $support->satisfaction();
+
+    // Both branches of the reopen split. A fixture where every reopen is an
+    // agent leaves `reopened_by_visitor` reading zero on a page built to show
+    // it, and zero is indistinguishable from broken.
+    expect($resolution['reopened'])->toBeGreaterThan(0)
+        ->and($resolution['reopened_by_visitor'])->toBeGreaterThan(0)
+        ->and($resolution['reopened_by_visitor'])->toBeLessThan($resolution['reopened']);
+
+    // All three scores, and answers that are a SUBSET of closes -- the ratio is
+    // one of the figures the tab exists for, and it means nothing at 100%.
+    expect($satisfaction['good'])->toBeGreaterThan(0)
+        ->and($satisfaction['ok'])->toBeGreaterThan(0)
+        ->and($satisfaction['bad'])->toBeGreaterThan(0)
+        ->and($satisfaction['closed'])->toBeGreaterThan(0)
+        ->and($satisfaction['answered'])->toBeGreaterThan(0)
+        ->and($satisfaction['answered'])->toBeLessThan($satisfaction['closed']);
+
+    // A reopened conversation contributes TWO resolutions, not one long one.
+    // This is what the raw counters cannot see: `ResolutionEpisodes::walk()`
+    // starts every conversation in OPEN and ignores a reopen from OPEN, so
+    // reopens with no earlier close inflated `reopened` above while producing
+    // no second episode at all -- and the assertion on that counter passed
+    // anyway. Episodes must outnumber the conversations that produced them.
+    // Counted in the SAME window the report used, or this compares a 90-day
+    // figure against twelve months of history and fails on correct data.
+    $closedConversations = AuditEvent::query()
+        ->where('action', 'conversation.closed')
+        ->whereBetween('occurred_at', [$window->start, $window->end])
+        ->distinct()
+        ->count('subject_id');
+
+    expect($resolution['summary']->count)
+        ->toBeGreaterThan($closedConversations,
+            'no conversation resolved twice, so the reopens started no episode');
+
+    // The ticket half walks its OWN actions, so seeding the conversation half
+    // gives it nothing.
+    $ticketReport = new TicketReport($scope, $window);
+    $tickets = $ticketReport->resolution();
+
+    expect($tickets['summary']->count)->toBeGreaterThan(0, 'the ticket report resolved nothing');
+
+    // The agent activity table counts replies from `ticket.reply_sent` alone,
+    // which nothing else in the fixture writes. Without them every agent read
+    // zero and the aggregation was measured against an empty result at every
+    // desk size -- the same shape as ratings that carried no comment.
+    $activity = collect($ticketReport->agentActivity());
+
+    expect($activity)->not->toBeEmpty('no agent appears in the ticket activity table');
+
+    expect($activity->sum(fn (array $row): int => (int) ($row['replies'] ?? 0)))
+        ->toBeGreaterThan(0, 'every agent replied to no tickets, so the replies column measures nothing');
+
+    // Spread across more than one agent, or the column is a single row wearing
+    // a table's clothes.
+    //
+    // NOT "every agent has replies", which is what this asked for first. That
+    // was true only while replies were invented per ticket and handed to a
+    // mixed-in agent. They come from real agent messages now, so an agent can
+    // appear in the table on their closes while somebody else wrote the
+    // messages on those conversations -- which is what a real desk looks like.
+    expect($activity->filter(fn (array $row): bool => (int) ($row['replies'] ?? 0) > 0)->count())
+        ->toBeGreaterThan(1, 'ticket replies are credited to a single agent');
+});
+
+test('a rating answers a close that actually happened', function (): void {
+    // `conversation_ratings.episode_event_id` points at the audit event that
+    // closed the episode, and the report counts answers by `episode_closed_at`
+    // rather than by when the answer arrived -- so the two have to agree or the
+    // page reports things like "1 of 0 closes answered".
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 60, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $ratings = ConversationRating::query()->get();
+
+    expect($ratings)->not->toBeEmpty();
+
+    foreach ($ratings as $rating) {
+        $event = AuditEvent::query()->find($rating->episode_event_id);
+
+        expect($event)->not->toBeNull('a rating answers a close that does not exist')
+            ->and($event->action)->toBe('conversation.closed')
+            ->and((int) $event->subject_id)->toBe((int) $rating->conversation_id)
+            // `episode_closed_at` has no datetime cast on the model, so it
+            // arrives as a string and has to be parsed rather than compared.
+            ->and(Carbon::parse($rating->episode_closed_at)->equalTo($event->occurred_at))
+            ->toBeTrue('the rating and the close it answers disagree about when it happened')
+            ->and($rating->rated_at->greaterThanOrEqualTo(Carbon::parse($rating->episode_closed_at)))
+            ->toBeTrue('a visitor answered before the conversation closed');
+    }
+});
+
+test('a lifecycle event never happens before or after it could have', function (): void {
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 80, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $events = AuditEvent::query()->whereIn('action', [
+        'conversation.closed', 'conversation.reopened',
+        'ticket.closed', 'ticket.reopened', 'ticket.pending',
+    ])->get();
+
+    expect($events)->not->toBeEmpty();
+
+    foreach ($events as $event) {
+        expect($event->occurred_at->lessThanOrEqualTo(now()))
+            ->toBeTrue("a {$event->action} is recorded in the future");
+    }
+
+    // Every reopen sits BETWEEN two closes. The one before it is what makes it
+    // a reopen at all -- the walk ignores a reopen from OPEN -- and the one
+    // after it is what closes the episode it began. Asserted as both, because
+    // checking only "a close exists" passed on a fixture where the reopen came
+    // first and no episode was ever started.
+    foreach ($events->where('action', 'conversation.reopened') as $reopen) {
+        $closes = $events->filter(fn (AuditEvent $e): bool => $e->action === 'conversation.closed'
+            && (int) $e->subject_id === (int) $reopen->subject_id);
+
+        expect($closes->filter(fn (AuditEvent $e): bool => $e->occurred_at->lessThanOrEqualTo($reopen->occurred_at)))
+            ->not->toBeEmpty('a conversation was reopened without having been closed first');
+
+        expect($closes->filter(fn (AuditEvent $e): bool => $e->occurred_at->greaterThanOrEqualTo($reopen->occurred_at)))
+            ->not->toBeEmpty('a conversation was reopened and never closed again');
+    }
+});
+
+test('it says when this install will report the desk as partial', function (): void {
+    // Both recording boundaries are INSTALLATION-WIDE and belong to every
+    // account, so this command will not move them: doing so would tell real
+    // accounts' reports to trust unaudited history. On a clean measurement
+    // install they are absent, which means "always trustworthy".
+    //
+    // On an upgraded install they are set and recent, and a desk backdated
+    // twelve months mostly predates them -- the report marks itself partial and
+    // reports resolution durations as unmeasurable. That is the report being
+    // honest, not broken, but it is not what somebody measuring report
+    // performance expects, so it is said out loud rather than left to be
+    // discovered in a figure.
+    OperatorSetting::query()->create([
+        'key' => 'reporting.ticket_lifecycle_recording_began_at',
+        'value' => now()->subDays(3)->toIso8601String(),
+    ]);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1, '--fresh' => true])
+        ->expectsOutputToContain('records lifecycle history only from')
+        ->assertSuccessful();
+
+    // And the boundary is UNTOUCHED. The warning exists because moving it is
+    // the thing this command must not do.
+    expect(OperatorSetting::query()
+        ->where('key', 'reporting.ticket_lifecycle_recording_began_at')
+        ->value('value'))
+        ->not->toBeNull('the seeder moved an installation-wide reporting boundary');
+});
+
+test('it says nothing about a boundary no report can reach', function (): void {
+    // The false positive this warning invited. A boundary six months back sits
+    // inside the twelve months the desk covers, so comparing against the seeded
+    // span warned about it -- but `historyIsPartial()` measures the boundary
+    // against the SELECTED window, and the choices stop at 90 days. Every
+    // available report is complete in that case, and the warning was wrong.
+    //
+    // It gets truer as installs age, which is the worst shape for a warning:
+    // eventually it fires on every run and teaches people to skip the output.
+    OperatorSetting::query()->create([
+        'key' => 'reporting.ticket_lifecycle_recording_began_at',
+        'value' => now()->subMonths(6)->toIso8601String(),
+    ]);
+
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1, '--fresh' => true])
+        ->doesntExpectOutputToContain('records lifecycle history only from')
+        ->assertSuccessful();
+});
+
+test('it says nothing about boundaries a measurement install does not have', function (): void {
+    // The documented case: no history recorded before the desk existed, so
+    // nothing to warn about. A warning on every run is noise that teaches
+    // operators to skip the output.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 1, '--fresh' => true])
+        ->doesntExpectOutputToContain('records lifecycle history only from')
+        ->assertSuccessful();
+});
+
+test('nothing is said to a conversation while it is closed', function (): void {
+    // In the product a message on a closed conversation REOPENS it, so a
+    // fixture with messages arriving during a closed period depicts a state no
+    // install can reach -- and `ResolutionEpisodes` starts the second episode
+    // at the wrong moment because of it.
+    //
+    // Dense enough to REACH the bug. Messages are a minute apart and a close is
+    // four hours out, so at sixty messages the old one-third/two-third window
+    // contained none of them and the broken fixture looked correct -- which is
+    // exactly why this shipped. It needs messages running past the 80-minute
+    // mark, so 200.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 12, '--messages' => 200, '--fresh' => true])
+        ->assertSuccessful();
+
+    $reopens = AuditEvent::query()->where('action', 'conversation.reopened')->get();
+
+    expect($reopens)->not->toBeEmpty();
+
+    foreach ($reopens as $reopen) {
+        $closedAt = AuditEvent::query()
+            ->where('action', 'conversation.closed')
+            ->where('subject_id', $reopen->subject_id)
+            ->where('occurred_at', '<', $reopen->occurred_at)
+            ->max('occurred_at');
+
+        expect($closedAt)->not->toBeNull();
+
+        $during = ConversationMessage::query()
+            ->where('conversation_id', $reopen->subject_id)
+            ->where('created_at', '>', $closedAt)
+            ->where('created_at', '<', $reopen->occurred_at)
+            ->count();
+
+        expect($during)->toBe(0, 'a message arrived while the conversation was closed, which would have reopened it');
+    }
+});
+
+test('whoever wrote the message is who reopened the conversation', function (): void {
+    // The reopen sits on a message, so it was caused by that message -- and
+    // attributing it to anybody else describes history no install can produce.
+    // `reopened_by_visitor` and the actor activity table are both computed from
+    // this, and it was an independent mix that disagreed with the sender about
+    // a quarter of the time.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 120, '--messages' => 5, '--fresh' => true])
+        ->assertSuccessful();
+
+    $reopens = AuditEvent::query()->where('action', 'conversation.reopened')->get();
+
+    expect($reopens)->not->toBeEmpty();
+
+    foreach ($reopens as $reopen) {
+        $message = ConversationMessage::query()
+            ->where('conversation_id', $reopen->subject_id)
+            ->where('created_at', $reopen->occurred_at)
+            ->first();
+
+        expect($message)->not->toBeNull('a reopen happened at a moment no message did');
+
+        expect($message->sender_type)->toBe($reopen->actor_type,
+            'the reopen is credited to a different kind of actor than the message that caused it');
+        expect((int) $message->sender_id)->toBe((int) $reopen->actor_id,
+            'the reopen is credited to a different person than the one who wrote the message');
+
+        // And the metadata the report splits on agrees with both.
+        expect($reopen->metadata['actor'] ?? null)
+            ->toBe($message->sender_type === (new Visitor)->getMorphClass() ? 'visitor' : 'agent');
+    }
+
+    // Both kinds still occur, or taking the actor from the message has
+    // collapsed the split the report exists to show.
+    $actors = $reopens->map(fn (AuditEvent $e): string => (string) ($e->metadata['actor'] ?? ''))->unique();
+
+    expect($actors->sort()->values()->all())->toBe(['agent', 'visitor']);
+});
+
+test('a visitor still reopens something at the smallest message count', function (): void {
+    // The boundary that broke the split, and the one I checked at six messages
+    // and not at two. Counts there are 1-3: a single message skips the branch,
+    // and both 2 and 3 put the middle at index 1 -- always an agent, because
+    // messages alternate starting with the visitor. Every reopen came out
+    // agent-driven and `reopened_by_visitor` read zero.
+    //
+    // The pivot searches outward from the middle for a message sent by the kind
+    // of actor the conversation is meant to be reopened by, so the split holds
+    // wherever there is one to find.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 200, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $actors = AuditEvent::query()
+        ->where('action', 'conversation.reopened')
+        ->get()
+        ->map(fn (AuditEvent $e): string => (string) ($e->metadata['actor'] ?? ''))
+        ->countBy();
+
+    expect($actors->get('visitor', 0))
+        ->toBeGreaterThan(0, 'no visitor reopened anything, so reopened_by_visitor reads zero');
+    expect($actors->get('agent', 0))
+        ->toBeGreaterThan(0, 'no agent reopened anything');
+});
+
+test('nothing is said after the conversation was finally closed', function (): void {
+    // The sibling of the closed-period check: a message after the LAST close
+    // has no reopen to bound it, and in the product it would have reopened the
+    // conversation. `syncLastMessageAt()` already moves `closed_at` to the last
+    // message before the lifecycle pass reads it, so the final close cannot
+    // precede the transcript -- this asserts that rather than leaving it as a
+    // property one pass happens to inherit from another.
+    //
+    // At the dense fixture, because that is where a four-hour close would sit
+    // in the middle of a six-hour transcript.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 10, '--messages' => 300, '--fresh' => true])
+        ->assertSuccessful();
+
+    $finalCloses = AuditEvent::query()
+        ->where('action', 'conversation.closed')
+        ->get()
+        ->groupBy('subject_id')
+        ->map(fn ($events) => $events->max('occurred_at'));
+
+    expect($finalCloses)->not->toBeEmpty();
+
+    foreach ($finalCloses as $conversationId => $closedAt) {
+        $after = ConversationMessage::query()
+            ->where('conversation_id', $conversationId)
+            ->where('created_at', '>', $closedAt)
+            ->count();
+
+        expect($after)->toBe(0, 'a message arrived after the conversation was finally closed, which would have reopened it');
+    }
+});
+
+test('an answer never arrives after the episode it answers was reopened', function (): void {
+    // `ConversationRatingController` rejects a stale episode token, so a rating
+    // timestamped after its episode reopened is a row the product cannot
+    // produce -- and it would give the report comments impossible times.
+    //
+    // The delay was added to the close without looking at what followed it, and
+    // a close and its reopen can be minutes apart.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 80, '--messages' => 4, '--fresh' => true])
+        ->assertSuccessful();
+
+    $ratings = ConversationRating::query()->get();
+
+    expect($ratings)->not->toBeEmpty('no ratings at all, so this asserts nothing');
+
+    foreach ($ratings as $rating) {
+        $reopenedAt = AuditEvent::query()
+            ->where('action', 'conversation.reopened')
+            ->where('subject_id', $rating->conversation_id)
+            ->where('occurred_at', '>', $rating->episode_closed_at)
+            ->min('occurred_at');
+
+        if ($reopenedAt === null) {
+            continue;
+        }
+
+        expect($rating->rated_at->lessThan(Carbon::parse($reopenedAt)))
+            ->toBeTrue('a visitor answered an episode that had already been reopened');
+    }
+});
+
+test('the desk could actually have collected the answers it holds', function (): void {
+    // `SiteRatingPrompt::for()` defaults to disabled and
+    // `ConversationRatingController` rejects every submission to a site that
+    // has not enabled collection -- so a desk with ratings but no prompt gives
+    // the reports figures it could never have gathered, while the widget still
+    // asks nobody.
+    //
+    // Asserted through the prompt rather than the settings column, so it reads
+    // the way the product does.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 60, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $sitesWithRatings = ConversationRating::query()->distinct()->pluck('site_id');
+
+    expect($sitesWithRatings)->not->toBeEmpty('no ratings at all, so this asserts nothing');
+
+    foreach ($sitesWithRatings as $siteId) {
+        $site = Site::query()->findOrFail($siteId);
+
+        expect(SiteRatingPrompt::for($site)->enabled)
+            ->toBeTrue('a site holds ratings it was never configured to collect');
+    }
+});
+
+test('a visitor sometimes says why', function (): void {
+    // `SupportReport::comments()` filters on `whereNotNull`, so a fixture with
+    // every comment null returned an empty list and the report tab's comment
+    // rows were never rendered at any desk size -- the section would have been
+    // measured as free.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 120, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $withComment = ConversationRating::query()->whereNotNull('comment')->count();
+    $total = ConversationRating::query()->count();
+
+    expect($withComment)->toBeGreaterThan(0, 'no rating carries a comment, so the comments section renders nothing')
+        ->and($withComment)->toBeLessThan($total, 'every rating carries a comment, which no real desk produces');
+
+    // Varied, because the report renders these: a fixture of one repeated
+    // string measures a narrower row than a real desk returns.
+    expect(ConversationRating::query()->whereNotNull('comment')->distinct()->count('comment'))
+        ->toBeGreaterThan(1, 'every comment is the same string');
 });
 
 test('--messages holds even for one conversation', function (): void {

@@ -6,12 +6,19 @@ namespace App\Console\Commands;
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\Conversation;
+use App\Models\ConversationRating;
+use App\Models\OperatorSetting;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\ReaderNumber;
+use App\Support\Reporting\ReportingWindow;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -78,6 +85,26 @@ final class SeedDeskCommand extends Command
      * characters and never this prefix.
      */
     private const NAME = 'Measurement Desk';
+
+    /**
+     * What a visitor writes when they answer. Deliberately dull and varied in
+     * length, because the report renders these and a fixture of identical
+     * one-word strings measures a narrower row than a real desk produces.
+     */
+    private const RATING_COMMENTS = [
+        'Sorted quickly, thank you.',
+        'Took a while to get going but the answer was right in the end.',
+        'Still not sure this is fixed.',
+        'Clear explanation, no complaints.',
+        'Had to repeat myself a few times before it was understood.',
+        'Exactly what I needed.',
+    ];
+
+    /**
+     * How many replies a ticket can carry, and so how many of its
+     * conversation's agent messages are worth loading.
+     */
+    private const MAX_TICKET_REPLIES = 3;
 
     private const SITE_KEY_PREFIX = 'site_desk_';
 
@@ -164,6 +191,8 @@ final class SeedDeskCommand extends Command
             $this->syncVisitorLastSeenAt($desk);
             $written['tickets'] = $this->measure('Tickets', fn (): int => $this->seedTickets($desk));
             $written['read states'] = $this->measure('Read states', fn (): int => $this->seedReadStates($desk));
+            $written['lifecycle events'] = $this->measure('Lifecycle events', fn (): int => $this->seedLifecycleHistory($desk));
+            $written['ratings'] = $this->measure('Ratings', fn (): int => $this->seedRatings($desk));
         } catch (Throwable $failure) {
             $this->components->error('Seeding stopped: '.$failure->getMessage());
 
@@ -178,6 +207,8 @@ final class SeedDeskCommand extends Command
         }
 
         $this->components->twoColumnDetail('Window', $months.' months');
+
+        $this->warnAboutRecordingBoundaries($months);
         $this->components->twoColumnDetail('Took', ReaderNumber::decimal(microtime(true) - $startedAt, 1).'s');
 
         $this->newLine();
@@ -248,6 +279,17 @@ final class SeedDeskCommand extends Command
                 [
                     'public_key' => 'site_desk_'.$i.'_'.Str::lower(Str::random(16)),
                     'domain' => 'desk-'.$i.'.example.test',
+                    // Rating collection ON, because the desk carries ratings.
+                    // `SiteRatingPrompt::for()` defaults to disabled, and
+                    // `ConversationRatingController` rejects every submission
+                    // to a site that has not enabled it -- so seeding answers
+                    // without this gave the reports figures the configured desk
+                    // could never have collected, while the widget still did
+                    // not ask anybody.
+                    'settings' => ['rating' => [
+                        'enabled' => true,
+                        'intro' => 'How did that go?',
+                    ]],
                 ],
             );
         }
@@ -903,6 +945,570 @@ final class SeedDeskCommand extends Command
      * @param  array{account: Account, sites: list<Site>, agents: list<User>}  $desk
      * @return list<int>
      */
+    /**
+     * Write the lifecycle history the reports are computed from.
+     *
+     * Conversations and tickets are inserted at their final status rather than
+     * driven through the application, so none of the events a real close leaves
+     * behind existed -- and `SupportReport` and `TicketReport` read exactly
+     * those. Measuring the report tabs against the fixture without this would
+     * time a query over an empty table and call the page fast, which is worse
+     * than not measuring it.
+     *
+     * Shaped like `ConversationLifecycleLog::record()` writes them, including
+     * `metadata.actor`, because the reopen figures split on it.
+     *
+     * @param  array{sites: list<Site>, agents: list<User>}  $desk
+     */
+    private function seedLifecycleHistory(array $desk): int
+    {
+        $siteIds = $this->siteIds($desk);
+        $agentIds = array_map(fn (User $agent): int => $agent->id, $desk['agents']);
+        $accountId = $desk['sites'][0]->account_id;
+        $written = 0;
+
+        // CLOSED conversations, and the reopens that came before some of them.
+        Conversation::query()
+            ->whereIn('site_id', $siteIds)
+            ->where('support_code', 'like', 'WF-DESK-%')
+            ->whereNotNull('closed_at')
+            ->orderBy('id')
+            ->chunkById(self::CHUNK, function ($conversations) use (&$written, $accountId, $agentIds): void {
+                $rows = [];
+
+                // The messages carried by the conversations that will actually
+                // be REOPENED -- a quarter of them, and the mix is deterministic
+                // so it can be asked before the loop rather than inside it. A
+                // close has to sit in a GAP between two messages: in the product
+                // a message on a closed conversation reopens it, so a fixture
+                // with messages arriving while it is supposedly closed depicts a
+                // state no install can reach, and `ResolutionEpisodes` starts
+                // the second episode at the wrong moment because of it.
+                //
+                // Filtered rather than loading every message in the chunk: at
+                // `--conversations=500 --messages=400` that was 200,000 rows in
+                // memory at once, which is the peak `seedMessages()` avoids by
+                // writing in batches. This asks for a quarter of them, and only
+                // the four columns it reads.
+                $reopening = $conversations
+                    ->filter(fn ($row): bool => self::mix($this->seededIndex((string) $row->support_code), 'reopened', 4) === 0)
+                    ->pluck('id');
+
+                $messageTimes = $reopening->isEmpty() ? collect() : DB::table('conversation_messages')
+                    ->whereIn('conversation_id', $reopening)
+                    ->orderBy('conversation_id')
+                    ->orderBy('created_at')
+                    ->get(['conversation_id', 'created_at', 'sender_type', 'sender_id'])
+                    ->groupBy('conversation_id');
+
+                foreach ($conversations as $conversation) {
+                    $n = $this->seededIndex((string) $conversation->support_code);
+                    $closedAt = Carbon::parse($conversation->closed_at);
+
+                    // A quarter were CLOSED, reopened, and closed again. The
+                    // earlier close is the point: `ResolutionEpisodes::walk()`
+                    // starts every conversation in OPEN and ignores a reopen
+                    // from OPEN, so a reopen with nothing before it inflated the
+                    // raw counter without starting a second episode -- and the
+                    // final close was still measured from the original opening.
+                    // The ticket half had this right and the conversation half
+                    // did not.
+                    //
+                    // A third of the reopens are by the VISITOR, because the
+                    // report splits on exactly that, so a fixture where every
+                    // reopen is an agent leaves half the figure unexercised.
+                    if (self::mix($n, 'reopened', 4) === 0) {
+                        $openedAt = Carbon::parse($conversation->created_at);
+                        $messages = ($messageTimes[$conversation->id] ?? collect())->values();
+
+                        // The reopen sits ON a message, and the close just
+                        // before it -- which is exactly how the product gets
+                        // there: somebody writes to a closed conversation and
+                        // that reopens it. Nothing then falls between them.
+                        //
+                        // The middle message, so both episodes carry some of
+                        // the traffic. With too few messages to split, the
+                        // conversation is left with its single close rather
+                        // than inventing a gap that its own messages contradict.
+                        // A pivot whose SENDER is the one this conversation is
+                        // meant to be reopened by, searching outward from the
+                        // middle. Taking the middle message unconditionally
+                        // collapsed the split at `--messages=2`: counts are 1-3
+                        // there, and both 2 and 3 pick index 1, which is always
+                        // an agent because messages alternate from the visitor.
+                        // Every reopen came out agent-driven and
+                        // `reopened_by_visitor` read zero -- the figure this
+                        // history exists to exercise.
+                        $wantVisitor = self::mix($n, 'reopened_by', 3) === 0;
+                        $pivot = self::pivotFor($messages, $wantVisitor);
+
+                        if ($pivot === null) {
+                            $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $closedAt);
+
+                            continue;
+                        }
+
+                        $pivotMessage = $messages[$pivot];
+                        $reopenedAt = Carbon::parse($pivotMessage->created_at);
+                        $previous = Carbon::parse($messages[$pivot - 1]->created_at);
+
+                        // Halfway through the gap, so it is strictly after the
+                        // message before and strictly before the one that
+                        // reopens it.
+                        $gap = max(2, (int) $previous->diffInSeconds($reopenedAt));
+                        $firstCloseAt = $previous->copy()->addSeconds(intdiv($gap, 2));
+
+                        if ($firstCloseAt->greaterThanOrEqualTo($reopenedAt) || $firstCloseAt->lessThanOrEqualTo($openedAt)) {
+                            $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $closedAt);
+
+                            continue;
+                        }
+
+                        // WHOSE message it was. The reopen is caused by that
+                        // message, so attributing it to anyone else describes
+                        // history no install can produce -- and both
+                        // `reopened_by_visitor` and the actor activity table
+                        // are computed from this. It was an independent mix
+                        // before, which disagreed with the sender about a
+                        // quarter of the time.
+                        $byVisitor = $pivotMessage->sender_type === (new Visitor)->getMorphClass();
+
+                        $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $firstCloseAt);
+
+                        $rows[] = [
+                            'account_id' => $accountId,
+                            'site_id' => $conversation->site_id,
+                            'actor_type' => $pivotMessage->sender_type,
+                            'actor_id' => $pivotMessage->sender_id,
+                            'subject_type' => (new Conversation)->getMorphClass(),
+                            'subject_id' => $conversation->id,
+                            'action' => ConversationLifecycleLog::REOPENED,
+                            'metadata' => json_encode([
+                                'previous_status' => 'closed',
+                                'actor' => $byVisitor ? 'visitor' : 'agent',
+                            ]),
+                            'occurred_at' => $reopenedAt,
+                            'created_at' => $reopenedAt,
+                            'updated_at' => $reopenedAt,
+                        ];
+                    }
+
+                    $rows[] = $this->closeRow($conversation, $accountId, $agentIds, $n, $closedAt);
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('audit_events')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        $written += $this->seedTicketLifecycle($desk, $accountId, $agentIds);
+
+        return $written;
+    }
+
+    /**
+     * Ticket lifecycle, which `TicketReport` walks separately.
+     *
+     * Its own actions and its own walk: seeding the conversation half gives the
+     * ticket half nothing. It also reads an operator setting to know how far
+     * back its history can be trusted, so that is written too -- without it the
+     * report measures against a window the data does not cover.
+     *
+     * @param  list<int>  $agentIds
+     */
+    private function seedTicketLifecycle(array $desk, ?int $accountId, array $agentIds): int
+    {
+        $written = 0;
+        $held = [];
+
+        Ticket::query()
+            ->with('conversation:id,support_code')
+            ->whereIn('site_id', $this->siteIds($desk))
+            ->orderBy('id')
+            ->chunkById(self::CHUNK, function ($tickets) use (&$written, &$held, $accountId, $agentIds): void {
+                $rows = [];
+
+                // The AGENT messages on these tickets' conversations. A ticket
+                // reply is not an event on its own: `storeReply()` writes a
+                // conversation message and puts the conversation back to open.
+                // Inventing reply events at arbitrary moments claimed replies
+                // with no transcript behind them, usually after the
+                // conversation had closed and with no later close -- so the
+                // ticket activity figures contradicted the conversation ones.
+                //
+                // Placed ON existing agent messages instead. Nothing new is
+                // written, the timestamps are inside the conversation's life by
+                // construction, and the reply the figure counts is one an agent
+                // actually sent.
+                // At most `self::MAX_TICKET_REPLIES` per conversation, chosen
+                // in SQL rather than by loading everything and taking the first
+                // few: at `--conversations=5000 --messages=400` a 500-ticket
+                // chunk pulled about 100,000 message rows into memory to use
+                // three of them, which is the same peak the conversation pass
+                // was fixed for one round ago.
+                $conversationIds = $tickets->pluck('conversation_id')->filter();
+
+                $ranked = DB::table('conversation_messages')
+                    ->select(['conversation_id', 'created_at', 'sender_id'])
+                    ->selectRaw('row_number() over (partition by conversation_id order by created_at, id) as rn')
+                    ->whereIn('conversation_id', $conversationIds)
+                    ->where('sender_type', (new User)->getMorphClass());
+
+                $agentMessages = $conversationIds->isEmpty() ? collect() : DB::query()
+                    ->fromSub($ranked, 'ranked')
+                    ->where('rn', '<=', self::MAX_TICKET_REPLIES)
+                    ->orderBy('conversation_id')
+                    ->orderBy('rn')
+                    ->get()
+                    ->groupBy('conversation_id');
+
+                foreach ($tickets as $ticket) {
+                    $raisedAt = Carbon::parse($ticket->created_at);
+
+                    // The conversation's SEEDED INDEX, not the ticket's id.
+                    // `--fresh` does not reset a PostgreSQL sequence, so ids
+                    // move on every reseed -- which would change which tickets
+                    // get a reopen episode and which agent acted, and make two
+                    // runs of the same command incomparable. Every other shape
+                    // in this file is keyed the same way for the same reason.
+                    $n = $this->seededIndex((string) $ticket->conversation->support_code);
+                    $actorId = $agentIds[self::mix($n, 'ticket_actor', count($agentIds))];
+
+                    $event = function (string $action, Carbon $at, string $previous) use (&$rows, $accountId, $ticket, $actorId): void {
+                        $rows[] = [
+                            'account_id' => $accountId,
+                            'site_id' => $ticket->site_id,
+                            'actor_type' => (new User)->getMorphClass(),
+                            'actor_id' => $actorId,
+                            'subject_type' => (new Ticket)->getMorphClass(),
+                            'subject_id' => $ticket->id,
+                            'action' => $action,
+                            'metadata' => json_encode(['previous_status' => $previous, 'actor' => 'agent']),
+                            'occurred_at' => $at,
+                            'created_at' => $at,
+                            'updated_at' => $at,
+                        ];
+                    };
+
+                    // Replies, which `TicketReport::agentActivity()` counts on
+                    // their own action. Without them every agent read zero and
+                    // the aggregation measured an empty result at every desk
+                    // size -- the same shape as ratings that carried no comment.
+                    //
+                    // One per agent message, up to three, and credited to the
+                    // agent who sent it rather than to a mixed-in one.
+                    $onConversation = $agentMessages[$ticket->conversation_id] ?? collect();
+                    $take = min($onConversation->count(), self::mix($n, 'ticket_replies', self::MAX_TICKET_REPLIES) + 1);
+
+                    for ($r = 0; $r < $take; $r++) {
+                        $message = $onConversation[$r];
+
+                        $rows[] = [
+                            'account_id' => $accountId,
+                            'site_id' => $ticket->site_id,
+                            'actor_type' => (new User)->getMorphClass(),
+                            'actor_id' => $message->sender_id,
+                            'subject_type' => (new Ticket)->getMorphClass(),
+                            'subject_id' => $ticket->id,
+                            'action' => 'ticket.reply_sent',
+                            'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
+                            'occurred_at' => $message->created_at,
+                            'created_at' => $message->created_at,
+                            'updated_at' => $message->created_at,
+                        ];
+                    }
+
+                    // A held ticket has been put on hold, whatever it did next.
+                    if ($ticket->status === 'pending') {
+                        $heldAt = $raisedAt->copy()->addHours(2)->min(Carbon::now());
+
+                        $event('ticket.pending', $heldAt, 'open');
+
+                        // And the ticket was TOUCHED when it was held. A real
+                        // hold saves the ticket and advances `updated_at`, and
+                        // the ticket queue orders by that column -- so a newly
+                        // held ticket was filed as stale while its own timeline
+                        // showed later activity. The same correction closed
+                        // tickets already carry, for the same reason.
+                        $held[$heldAt->toDateTimeString()][] = (int) $ticket->id;
+                    }
+
+                    if ($ticket->closed_at !== null) {
+                        $closedAt = Carbon::parse($ticket->closed_at);
+
+                        // A fifth were closed, reopened and closed again, so the
+                        // walk sees a ticket contributing more than one
+                        // resolution rather than one long one.
+                        if (self::mix($n, 'ticket_reopened', 5) === 0) {
+                            $firstClose = $raisedAt->copy()->addHours(6)->min($closedAt);
+                            $event('ticket.closed', $firstClose, 'open');
+                            $event('ticket.reopened', $firstClose->copy()->addHours(2)->min($closedAt), 'closed');
+                        }
+
+                        $event('ticket.closed', $closedAt, 'open');
+                    }
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('audit_events')->insert($chunk);
+                    $written += count($chunk);
+                }
+            });
+
+        // Grouped by timestamp so this is one statement per distinct moment
+        // rather than one per ticket.
+        foreach ($held as $at => $ticketIds) {
+            foreach (array_chunk($ticketIds, self::CHUNK) as $chunk) {
+                DB::table('tickets')->whereIn('id', $chunk)->update(['updated_at' => $at]);
+            }
+        }
+
+        // `reporting.ticket_lifecycle_recording_began_at` is deliberately NOT
+        // written. It is installation-wide, so setting it here would move a
+        // reporting fact belonging to every real account on the install --
+        // backwards, on an upgraded install whose genuine boundary is recent,
+        // which would tell those accounts' reports to trust unaudited ticket
+        // history. This command writes inside its own account and nowhere else.
+        //
+        // Nothing is lost by leaving it: a null boundary means the history
+        // always was trustworthy, which is exactly true of a desk whose entire
+        // history this command wrote. Writing it was solving a problem that
+        // does not exist, at the cost of one that does.
+        return $written;
+    }
+
+    /**
+     * Satisfaction answers, which hang off the close they answered about.
+     *
+     * `conversation_ratings.episode_event_id` points at the audit event that
+     * closed the episode, so these can only be written after the lifecycle
+     * history exists -- and the report counts them by `episode_closed_at`
+     * rather than by when the answer arrived, so both have to agree.
+     *
+     * @param  array{sites: list<Site>}  $desk
+     */
+    private function seedRatings(array $desk): int
+    {
+        $written = 0;
+        $scores = ConversationRating::SCORES;
+
+        // The conversation's SUPPORT CODE comes along, because every choice
+        // below keys on it rather than on `subject_id`: `--fresh` does not reset
+        // a PostgreSQL sequence, so ids move between otherwise identical runs
+        // and the satisfaction figures would move with them. Third place in
+        // this file where a surrogate id looked like a stable key.
+        DB::table('audit_events')
+            ->join('conversations', 'conversations.id', '=', 'audit_events.subject_id')
+            ->whereIn('audit_events.site_id', $this->siteIds($desk))
+            ->where('audit_events.action', ConversationLifecycleLog::CLOSED)
+            ->where('audit_events.subject_type', (new Conversation)->getMorphClass())
+            ->orderBy('audit_events.id')
+            ->select([
+                'audit_events.id',
+                'audit_events.site_id',
+                'audit_events.subject_id',
+                'audit_events.occurred_at',
+                'conversations.support_code',
+            ])
+            // When this conversation was next reopened, if it was. A rating
+            // belongs to the episode it answered, and `ConversationRatingController`
+            // rejects a stale episode token -- so an answer arriving after the
+            // reopen is a row the product cannot produce.
+            ->selectSub(
+                DB::table('audit_events as reopens')
+                    ->selectRaw('min(reopens.occurred_at)')
+                    ->whereColumn('reopens.subject_id', 'audit_events.subject_id')
+                    ->where('reopens.subject_type', (new Conversation)->getMorphClass())
+                    ->where('reopens.action', ConversationLifecycleLog::REOPENED)
+                    ->whereColumn('reopens.occurred_at', '>', 'audit_events.occurred_at'),
+                'next_reopen_at'
+            )
+            // The cursor column is QUALIFIED, and aliased back to `id`: joined
+            // to `conversations`, `chunkById`'s own unqualified `id` predicate
+            // is ambiguous and PostgreSQL refuses it.
+            ->chunkById(self::CHUNK, function ($events) use (&$written, $scores): void {
+                $rows = [];
+
+                foreach ($events as $event) {
+                    $n = $this->seededIndex((string) $event->support_code);
+
+                    // Half of closes are answered. A fixture where every close
+                    // has an answer makes the "answered" ratio meaningless, and
+                    // it is one of the figures the tab exists to show.
+                    if (self::mix($n, 'rated', 2) !== 0) {
+                        continue;
+                    }
+
+                    $closedAt = Carbon::parse($event->occurred_at);
+                    $reopenedAt = $event->next_reopen_at !== null
+                        ? Carbon::parse($event->next_reopen_at)
+                        : null;
+
+                    $answeredAt = $closedAt->copy()
+                        ->addMinutes(self::mix($n, 'rated_after', 90) + 1)
+                        ->min(Carbon::now());
+
+                    // An episode reopened before the visitor got round to
+                    // answering is simply left unanswered, rather than clamped
+                    // into a gap that may not exist: with a close and a reopen
+                    // minutes apart there is no honest time to put it.
+                    if ($reopenedAt !== null && $answeredAt->greaterThanOrEqualTo($reopenedAt)) {
+                        continue;
+                    }
+
+                    $rows[] = [
+                        'conversation_id' => $event->subject_id,
+                        'site_id' => $event->site_id,
+                        // Weighted toward good, because a desk where a third of
+                        // answers are "bad" is not a desk anyone recognises.
+                        'score' => $scores[self::mix($n, 'score', 6) < 4 ? 0 : (self::mix($n, 'score2', 2) === 0 ? 1 : 2)],
+                        // A comment on a third of answers, because
+                        // `SupportReport::comments()` filters on
+                        // `whereNotNull` -- with every comment null the section
+                        // returned an empty list and the report tab's comment
+                        // rows were never rendered at any desk size.
+                        'comment' => self::mix($n, 'commented', 3) === 0
+                            ? self::RATING_COMMENTS[self::mix($n, 'comment_text', count(self::RATING_COMMENTS))]
+                            : null,
+                        'rated_at' => $answeredAt,
+                        'episode_closed_at' => $closedAt,
+                        'episode_event_id' => $event->id,
+                        'created_at' => $closedAt,
+                        'updated_at' => $closedAt,
+                    ];
+                }
+
+                foreach (array_chunk($rows, self::CHUNK) as $chunk) {
+                    DB::table('conversation_ratings')->insert($chunk);
+                    $written += count($chunk);
+                }
+            }, 'audit_events.id', 'id');
+
+        return $written;
+    }
+
+    /**
+     * Say when this install's recording boundary will hide the seeded history.
+     *
+     * Both boundaries are INSTALLATION-WIDE and belong to every account, so
+     * this command will not move them -- doing so would tell real accounts'
+     * reports to trust unaudited history. On a clean measurement install they
+     * are absent, which means "always trustworthy" and the desk measures whole.
+     *
+     * On an UPGRADED install they are set and recent, and a desk backdated
+     * twelve months mostly predates them: the resolution durations read
+     * unmeasurable and the report marks itself partial. That is the report
+     * being honest rather than broken, but it is not what somebody measuring
+     * report performance is expecting to see, so it is said out loud.
+     *
+     * Making the desk measurable there would need an account-scoped boundary,
+     * which is a change to the reporting model rather than to a fixture.
+     */
+    private function warnAboutRecordingBoundaries(int $months): void
+    {
+        // Compared against the LONGEST report anyone can select, not against
+        // the twelve months this desk covers. `historyIsPartial()` measures the
+        // boundary against the chosen window, and the choices stop at 90 days
+        // -- so a boundary six months back sits inside the seeded span and
+        // still leaves every available report complete. Warning on the span
+        // would have turned into a permanent false positive as installs age,
+        // which is how a warning teaches people to ignore it.
+        // The window's OWN start, not `now()` minus its length. A 90-day
+        // window covers today plus the preceding 89 and begins at the reader
+        // day's midnight, so subtracting 90 days lands up to a day earlier and
+        // warned about boundaries every available report treats as complete.
+        // Recomputing what the thing you are comparing against already knows is
+        // how the two drift.
+        $longestReport = ReportingWindow::ofDays(max(ReportingWindow::CHOICES))->start;
+
+        $boundaries = OperatorSetting::query()
+            ->whereIn('key', [
+                'reporting.lifecycle_recording_began_at',
+                'reporting.ticket_lifecycle_recording_began_at',
+            ])
+            ->pluck('value', 'key')
+            ->filter(fn ($value): bool => is_string($value) && $value !== '')
+            ->filter(fn (string $value): bool => Carbon::parse($value)->greaterThan($longestReport));
+
+        if ($boundaries->isEmpty()) {
+            return;
+        }
+
+        $this->newLine();
+        $this->components->warn(
+            'This install records lifecycle history only from '
+            .$boundaries->map(fn (string $value): string => Carbon::parse($value)->toDateString())->implode(' and ')
+            .', which is inside the longest report window anyone can select ('.max(ReportingWindow::CHOICES)
+            .' days). The report tabs will mark themselves partial and report resolution durations as '
+            .'unmeasurable for anything older, even though this desk covers '.$months.' months. '
+            .'Those settings belong to every account on this install, so this command will not move them. '
+            .'A measurement install with no history recorded before the desk existed reports it whole.'
+        );
+    }
+
+    /**
+     * One close event, so the two paths through the reopen branch cannot
+     * disagree about what a close looks like.
+     *
+     * @param  list<int>  $agentIds
+     * @return array<string, mixed>
+     */
+    /**
+     * The index of a message to reopen on, preferring one sent by the kind of
+     * actor this conversation is meant to be reopened by.
+     *
+     * Never index 0: the close has to sit in the gap BEFORE the pivot, and
+     * there is no gap before the first message. Falls back to any valid pivot
+     * when the preferred sender has none, and to null when nothing qualifies --
+     * a conversation with too few messages keeps its single close rather than
+     * being given a gap its own transcript contradicts.
+     *
+     * @param  Collection<int, object>  $messages
+     */
+    private static function pivotFor($messages, bool $wantVisitor): ?int
+    {
+        $visitor = (new Visitor)->getMorphClass();
+        $middle = intdiv($messages->count(), 2);
+        $preferred = null;
+        $any = null;
+
+        // Outward from the middle, so both episodes carry some of the traffic
+        // and the choice stays deterministic.
+        for ($step = 0; $step < $messages->count(); $step++) {
+            foreach ([$middle + $step, $middle - $step] as $index) {
+                if ($index < 1 || $index >= $messages->count()) {
+                    continue;
+                }
+
+                $any ??= $index;
+
+                if ($preferred === null && (($messages[$index]->sender_type === $visitor) === $wantVisitor)) {
+                    $preferred = $index;
+                }
+            }
+        }
+
+        return $preferred ?? $any;
+    }
+
+    private function closeRow(object $conversation, ?int $accountId, array $agentIds, int $n, Carbon $at): array
+    {
+        return [
+            'account_id' => $accountId,
+            'site_id' => $conversation->site_id,
+            'actor_type' => (new User)->getMorphClass(),
+            'actor_id' => $agentIds[self::mix($n, 'agent', count($agentIds))],
+            'subject_type' => (new Conversation)->getMorphClass(),
+            'subject_id' => $conversation->id,
+            'action' => ConversationLifecycleLog::CLOSED,
+            'metadata' => json_encode(['previous_status' => 'open', 'actor' => 'agent']),
+            'occurred_at' => $at,
+            'created_at' => $at,
+            'updated_at' => $at,
+        ];
+    }
+
     private function siteIds(array $desk): array
     {
         return array_map(fn (Site $site): int => $site->id, $desk['sites']);
