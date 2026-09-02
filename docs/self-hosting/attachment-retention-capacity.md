@@ -121,7 +121,10 @@ PHP 8.4.1 or newer is required. Docker is required only for the S3-compatible
 run. Report paths must be absolute, outside the repository, new, and have an
 existing parent directory; the harness will not overwrite a report. It resolves
 that parent before enforcing the repository boundary, so `..` components and
-symlinks cannot redirect the report back into the checkout.
+symlinks cannot redirect the report back into the checkout. The command claims
+the destination with an exclusive sidecar reservation for the whole measurement
+and publishes with a no-replace filesystem operation, so overlapping runs cannot
+replace one another's evidence.
 
 The application command underneath the wrapper is:
 

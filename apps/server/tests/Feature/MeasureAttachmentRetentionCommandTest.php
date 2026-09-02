@@ -1,12 +1,54 @@
 <?php
 
 use App\Models\Account;
+use App\Support\Attachments\AttachmentRetentionReportReservation;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+test('a report reservation excludes a concurrent writer and never replaces its output', function (): void {
+    $output = sys_get_temp_dir().'/wayfindr-retention-reservation-'.Str::lower((string) Str::ulid()).'.json';
+    $reservation = AttachmentRetentionReportReservation::claim($output);
+
+    try {
+        expect(file_exists($output))->toBeFalse()
+            ->and(file_exists($output.'.lock'))->toBeTrue()
+            ->and(fn () => AttachmentRetentionReportReservation::claim($output))
+            ->toThrow(RuntimeException::class, 'already reserved');
+
+        $reservation->publish("first report\n");
+
+        expect(file_get_contents($output))->toBe("first report\n");
+    } finally {
+        $reservation->release();
+
+        foreach (glob($output.'*') ?: [] as $path) {
+            unlink($path);
+        }
+    }
+});
+
+test('report publication refuses a destination created after reservation', function (): void {
+    $output = sys_get_temp_dir().'/wayfindr-retention-publication-race-'.Str::lower((string) Str::ulid()).'.json';
+    $reservation = AttachmentRetentionReportReservation::claim($output);
+
+    try {
+        file_put_contents($output, "other writer\n");
+
+        expect(fn () => $reservation->publish("measurement\n"))
+            ->toThrow(RuntimeException::class, 'Refusing to replace')
+            ->and(file_get_contents($output))->toBe("other writer\n");
+    } finally {
+        $reservation->release();
+
+        foreach (glob($output.'*') ?: [] as $path) {
+            unlink($path);
+        }
+    }
+});
 
 test('the attachment retention measurement refuses to clean up without both disposable guards', function (): void {
     $account = Account::query()->create([
@@ -200,7 +242,8 @@ test('the local measurement proves deletion survival and bounded cleanup', funct
             ->and($report['cleanup'])->each->toBeTrue()
             ->and($report['s3_request_attempts'])->toBeNull()
             ->and(Account::query()->where('slug', 'wayfindr-measurement-desk')->exists())->toBeFalse()
-            ->and(Storage::disk('attachments')->allFiles())->toBe([]);
+            ->and(Storage::disk('attachments')->allFiles())->toBe([])
+            ->and(file_exists($output.'.lock'))->toBeFalse();
     } finally {
         putenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE');
         putenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY');

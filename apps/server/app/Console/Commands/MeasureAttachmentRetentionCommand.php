@@ -10,6 +10,7 @@ use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Attachments\AttachmentRetentionReportReservation;
 use App\Support\Attachments\AttachmentRetentionRequestCounter;
 use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
@@ -77,6 +78,8 @@ final class MeasureAttachmentRetentionCommand extends Command
 
     private bool $ownsFixture = false;
 
+    private ?AttachmentRetentionReportReservation $reportReservation = null;
+
     public function handle(): int
     {
         try {
@@ -92,6 +95,8 @@ final class MeasureAttachmentRetentionCommand extends Command
 
                 return self::SUCCESS;
             }
+
+            $this->reportReservation = AttachmentRetentionReportReservation::claim($output);
 
             $gitAtStart = $this->gitState();
             $this->diskName = (string) config('wayfindr.attachments.storage_disk');
@@ -224,6 +229,9 @@ final class MeasureAttachmentRetentionCommand extends Command
             $this->components->error($exception->getMessage());
 
             return self::FAILURE;
+        } finally {
+            $this->reportReservation?->release();
+            $this->reportReservation = null;
         }
     }
 
@@ -242,7 +250,9 @@ final class MeasureAttachmentRetentionCommand extends Command
         $outputDirectory = realpath(dirname($output));
         $this->assert($outputDirectory !== false, '--output parent directory must already exist.');
         $canonicalOutput = $this->normalPath((string) $outputDirectory).DIRECTORY_SEPARATOR.basename($output);
-        $this->assert(! file_exists($canonicalOutput) && ! file_exists($canonicalOutput.'.tmp'), 'Refusing to overwrite an existing report or temporary report.');
+        $this->assert(! file_exists($canonicalOutput) && ! is_link($canonicalOutput), 'Refusing to overwrite an existing report.');
+        $this->assert(! file_exists($canonicalOutput.'.lock') && ! is_link($canonicalOutput.'.lock'), 'The report destination is already reserved by another measurement.');
+        $this->assert(! file_exists($canonicalOutput.'.tmp') && ! is_link($canonicalOutput.'.tmp'), 'Refusing to overwrite an existing temporary report.');
         $repositoryRoot = $this->normalPath((string) realpath(base_path('../..')));
         $this->assert(
             $canonicalOutput !== $repositoryRoot
@@ -817,9 +827,8 @@ final class MeasureAttachmentRetentionCommand extends Command
         $directory = dirname($output);
         $this->assert(is_dir($directory), 'The report directory no longer exists.');
         $json = json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR).PHP_EOL;
-        $temporary = $output.'.tmp';
-        $this->assert(file_put_contents($temporary, $json) !== false, 'Could not write the temporary report.');
-        $this->assert(rename($temporary, $output), 'Could not publish the report atomically.');
+        $this->assert($this->reportReservation !== null, 'The report destination was not reserved.');
+        $this->reportReservation->publish($json);
     }
 
     private function syntheticBytes(int $bytes): string
