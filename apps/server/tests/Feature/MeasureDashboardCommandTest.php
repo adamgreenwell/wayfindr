@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 uses(RefreshDatabase::class);
 
@@ -637,7 +638,11 @@ test('the published baseline names every page the command measures', function ()
 
     $measured = collect(json_decode(Artisan::output(), true)['pages'])->pluck('page');
 
-    expect($measured)->toHaveCount(7);
+    // Hardcoded on purpose. Adding or removing a measured page should be a
+    // deliberate act that updates this number and the document together, not
+    // something that slips through because the assertion counted whatever it
+    // found. It caught the three report targets when they arrived.
+    expect($measured)->toHaveCount(10);
 
     foreach ($measured as $page) {
         // `str_contains` rather than `toContain($page, $message)`: that matcher
@@ -719,6 +724,36 @@ test('it says up front when the memory limit will not survive the desk', functio
     Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1, '--page' => ['detail']]);
 
     expect(Artisan::output())->not->toContain('memory_limit is');
+});
+
+test('it weighs a streamed response instead of calling it empty', function (): void {
+    // The report export streams, so `getContent()` returns false and it
+    // measured as zero bytes -- a published figure that is simply untrue, and
+    // the exact shape of thing this whole baseline exists to avoid. It is
+    // streamed into a buffer to be weighed, outside the timed run, because the
+    // buffering is the command's cost rather than the page's.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 40, '--messages' => 3, '--fresh' => true]);
+
+    expect(Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--page' => ['export'],
+        '--json' => true,
+    ]))->toBe(0);
+
+    $measured = collect(json_decode(Artisan::output(), true)['pages']);
+
+    expect($measured)->toHaveCount(1);
+
+    $export = $measured->first();
+
+    expect($export['status'])->toBe(200)
+        ->and($export['bytes'])->toBeGreaterThan(0, 'the streamed export measured as weightless');
+
+    // And it really is streamed, or this test proves nothing about streaming.
+    $agent = User::query()->where('email', 'desk-agent-0@example.test')->firstOrFail();
+    $response = $this->actingAs($agent)->get('/dashboard/reports/export?report_days=90');
+
+    expect($response->baseResponse)->toBeInstanceOf(StreamedResponse::class);
 });
 
 test('it measures a conversation an agent would actually open', function (): void {

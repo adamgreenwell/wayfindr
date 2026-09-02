@@ -9,8 +9,8 @@ to answer: *how much can it take?*
 
 **The short version: the conversation and ticket queues do not paginate, and at
 a year of real traffic they stop being usable.** Measuring also turned up an N+1
-on the ticket queue, now fixed — 12,518 queries down to 18. The conversation
-detail page is fine and stays fine. Numbers below.
+on the ticket queue, now fixed — 12,518 queries down to 19. The conversation
+detail page is fine and stays fine, and so do the report tabs. Numbers below.
 
 ## Reproducing this
 
@@ -96,7 +96,7 @@ Figures are only comparable against the machine that produced them, so:
 | OS | macOS 27.0 |
 | PHP | 8.5.8 |
 | Database | PostgreSQL 18.4, local |
-| Dataset | 50,000 conversations, 300,000 messages, 12,500 tickets, 50,000 visitors, over 12 months |
+| Dataset | 50,000 conversations, 300,000 messages, 12,500 tickets, 50,000 visitors, 95,604 lifecycle events, 21,082 ratings, over 12 months |
 
 **This is a fast development machine, so read these as a floor.** A modest VPS —
 the thing most self-hosted installs actually run on — will be several times
@@ -113,11 +113,14 @@ At 50,000 conversations:
 | Conversation queue (closed) | 25,108 | 15 | 192.8 MB |
 | Conversation queue (search) | 628 | 21 | 3.5 MB |
 | Conversation queue (mine) | 415 | 21 | 2.5 MB |
-| Ticket queue (open) | 2,320 | 18 | 21.0 MB |
-| Ticket queue (all) | 6,928 | 18 | 62.8 MB |
-| **Conversation detail** | **11** | **26** | **148 KB** |
+| Ticket queue (open) | 2,407 | 18 | 21.0 MB |
+| Ticket queue (all) | 7,379 | 19 | 62.8 MB |
+| Reports (7 days) | 156 | 34 | 140 KB |
+| Reports (90 days) | 659 | 81 | 223 KB |
+| Reports export (90 days) | 97 | 7 | 2 KB |
+| **Conversation detail** | **16** | **26** | **148 KB** |
 
-All seven, because the command measures seven: a table listing fewer than the
+All ten, because the command measures ten: a table listing fewer than the
 documented command prints leaves an operator with figures they cannot compare
 against anything. The two filtered lanes are cheap for the reason the open lane
 is — they match fewer rows, and it is the same unpaginated query with a narrower
@@ -128,18 +131,22 @@ is — they match fewer rows, and it is the same unpaginated query with a narrow
 Every queue is linear in the number of rows, because every queue renders all of
 them:
 
-| Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Detail |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 109 ms | 456 ms | 3.9 MB | 139 ms | 18 | 11 ms / 26 q |
-| 5,000 | 479 ms | 2,258 ms | 19.3 MB | 674 ms | 18 | 12 ms / 26 q |
-| 25,000 | 2,324 ms | 11,811 ms | 96.3 MB | 3,402 ms | 18 | 11 ms / 26 q |
-| 50,000 | 4,598 ms | 25,108 ms | 192.8 MB | 6,928 ms | 18 | 11 ms / 26 q |
+| Conversations | Queue (open) | Queue (closed) | Closed response | Tickets (all) | Ticket queries | Reports (90d) | Detail |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 117 ms | 462 ms | 3.9 MB | 148 ms | 19 | 30 ms / 32 q | 14 ms / 26 q |
+| 5,000 | 494 ms | 2,353 ms | 19.3 MB | 714 ms | 19 | 79 ms / 36 q | 15 ms / 26 q |
+| 25,000 | 2,353 ms | 12,216 ms | 96.3 MB | 3,604 ms | 19 | 350 ms / 57 q | 15 ms / 26 q |
+| 50,000 | 4,839 ms | 25,691 ms | 192.8 MB | 7,379 ms | 19 | 659 ms / 81 q | 16 ms / 26 q |
 
 Two columns do not move. The last one is the control and always was: the same
 page, at fifty times the data, costs the same. **Ticket queries** joined it when
 the N+1 was fixed — that column read 268, 1,268, 6,268, 12,518 before, one query
-per ticket, and it is now flat at 18 while the milliseconds beside it still climb
+per ticket, and it is now flat at 19 while the milliseconds beside it still climb
 with the rows the page renders.
+
+The reports column grows in both, and mildly: twenty-two times the milliseconds
+for fifty times the data, with the query count rising because the rows are
+streamed in chunks.
 
 ## What that means
 
@@ -180,15 +187,67 @@ where "subject_type" = ? and "subject_id" = ? and "action" in (...)
 ```
 
 Two things are worth carrying forward from it. **The 12,499 wasted queries each
-returned nothing**, because this fixture writes no audit events — they cost a
-round trip and an index probe and no hydration, so on an install with real
-lifecycle history the same defect was costing more than the numbers above show.
-And **the fix was one missing condition**: of three helpers reading that
-relation, two asked whether it was already loaded and one did not.
+returned nothing**, because the fixture wrote no audit events at the time — they
+cost a round trip and an index probe and no hydration, so the defect was costing
+a real desk more than those figures showed. And **the fix was one missing
+condition**: of three helpers reading that relation, two asked whether it was
+already loaded and one did not.
+
+That caveat has since been settled by measurement rather than left standing. The
+fixture writes lifecycle history now — 95,604 events at this size — so those
+queries return rows to hydrate. The all-tickets queue moved from 6,928 ms and 18
+queries on the empty fixture to **7,379 ms and 19** with a real history behind
+it: about six per cent, which is what the eager load costs when it has something
+to load, and a long way from the 9,503 ms the N+1 was costing.
 
 What remains is the pagination problem, which the ticket queue shares with the
-conversation queue: 18 queries is the right number, and it still renders every
+conversation queue: 19 queries is the right number, and it still renders every
 matching row into one response.
+
+### The reports hold up
+
+They stream rows and bucket them in PHP, deliberately and for portability
+(`docs/product/reporting.md`), and that decision had never been measured against
+a busy desk. At 50,000 conversations with 95,604 lifecycle events and 21,082
+ratings behind them:
+
+| Window | ms | Queries | Response |
+| --- | ---: | ---: | ---: |
+| 7 days | 156 | 34 | 140 KB |
+| 90 days | 659 | 81 | 223 KB |
+| Export, 90 days | 97 | 7 | 2 KB |
+
+The window matters — 90 days is about four times the work of 7 — but so does the
+desk, and the query count grows with it:
+
+| Conversations | Reports (90 days) |
+| ---: | ---: |
+| 1,000 | 30 ms / 32 q |
+| 5,000 | 79 ms / 36 q |
+| 25,000 | 350 ms / 57 q |
+| 50,000 | 659 ms / 81 q |
+
+Fifty times the data costs about twenty-two times the milliseconds, so it grows
+sub-linearly rather than flatly — the window bounds how much of the desk is in
+scope, and a bigger desk puts more inside the same window. **The queries grow
+because the rows are streamed in chunks**, which is the bucketing decision
+showing up as query count rather than as memory: more rows in the window means
+more chunks to fetch.
+
+That is a fair trade at this size and worth watching rather than fixing: 659 ms
+for the busiest window on a year of a fifty-thousand-conversation desk is not
+where this product's problem is. **The queues are**, and they are on the same
+page as this one.
+
+The export is the cheapest path here and the one whose cost is not bounded by
+what a screen can show — worth re-measuring if the window choices ever grow past
+90 days.
+
+**These figures needed a fixture before they meant anything.** Everything here is
+inserted directly rather than driven through the application, so until #839 the
+reports had no closes, reopens, ticket lifecycle or ratings to read: measuring
+them would have timed queries over empty tables and called the pages fast. What
+is measured above is a desk with a history a real install could have produced.
 
 ### The conversation detail page is fine
 
@@ -210,20 +269,6 @@ Stated because a baseline with silent gaps is worse than one with named ones:
   size against. Producing one needs many real WebSocket clients against a
   running Reverb, which is a different kind of harness from this one. Nothing
   here establishes it.
-- **Reporting.** The report tabs stream rows and bucket them in PHP, deliberately
-  and for portability (`docs/product/reporting.md`), and that decision has never
-  been measured against a busy desk. The seeder produces data spread across
-  twelve months specifically so this can be measured next; it has not been.
-
-  **And the fixture is not ready for it yet.** Everything is inserted directly
-  rather than driven through the application, so what the reports read is not
-  there: `audit_events` holds neither `conversation.closed` nor
-  `conversation.reopened` rows, nor any of the ticket lifecycle actions
-  `TicketReport` walks separately, and `conversation_ratings` has nothing behind
-  the satisfaction figures. Measuring the report tabs against this data would
-  time queries over empty tables and report them as fast. Seeding that history
-  is the first piece of the reporting measurement, not a detail of it — tracked
-  as #839.
 - **Attachments and the retention sweep.** No large object count has been run
   through either.
 - **Cobrowse mutation batches** on a heavy page.

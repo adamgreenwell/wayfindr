@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Session;
 use ReflectionProperty;
 use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 /**
@@ -358,7 +359,7 @@ final class MeasureDashboardCommand extends Command
                 DB::rollBack();
             }
 
-            $bytes = strlen((string) $response->getContent());
+            $bytes = self::bytesOf($response);
 
             $status = self::worstStatus($status, $response->getStatusCode());
         }
@@ -680,6 +681,35 @@ final class MeasureDashboardCommand extends Command
         }
     }
 
+    /**
+     * How much the response actually puts on the wire.
+     *
+     * A STREAMED response carries no content to ask for -- `getContent()`
+     * returns false and the report export measured as zero bytes, which is a
+     * published figure that is simply untrue. Streaming it into a buffer is the
+     * only way to weigh it, and it is what the client receives.
+     *
+     * Deliberately not part of the timed run: the buffering is this command's
+     * cost, not the page's, and the byte figure comes from the same separate
+     * request the query count does.
+     */
+    private static function bytesOf(Response $response): int
+    {
+        if (! $response instanceof StreamedResponse) {
+            return strlen((string) $response->getContent());
+        }
+
+        ob_start();
+
+        try {
+            $response->sendContent();
+
+            return strlen((string) ob_get_contents());
+        } finally {
+            ob_end_clean();
+        }
+    }
+
     private function purgeSessions(): void
     {
         $handler = Session::getHandler();
@@ -791,6 +821,17 @@ final class MeasureDashboardCommand extends Command
             'Conversation queue (mine)' => '/dashboard/conversations?conversation_filter=assigned_to_me',
             'Ticket queue (open)' => '/dashboard/tickets',
             'Ticket queue (all)' => '/dashboard/tickets?ticket_status=all',
+            // The report tabs, at both ends of the window range they offer.
+            // The window is the axis that matters here: every figure on the
+            // page is computed over it, so 7 days and 90 days are different
+            // amounts of work over the same desk rather than the same page
+            // twice.
+            'Reports (7 days)' => '/dashboard/reports?report_days=7',
+            'Reports (90 days)' => '/dashboard/reports?report_days=90',
+            // The export builds the same figures and streams them, so it is
+            // the one report path whose cost is not bounded by what a page can
+            // show.
+            'Reports export (90 days)' => '/dashboard/reports/export?report_days=90',
         ];
 
         if ($conversation !== null) {
