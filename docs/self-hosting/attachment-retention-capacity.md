@@ -4,7 +4,8 @@
 expected expired, failed, and orphaned data from fixtures containing 10,000
 private objects on both local storage and a disposable S3-compatible store. It
 preserved every bound and unexpired upload, kept their stored metadata exact,
-and left them downloadable through the application's authorization path.
+and confirmed a representative from each survivor class remained downloadable
+through the application's authorization check.
 
 This establishes the behaviour and approximate cost of this particular object
 count on the topology below. It is not a universal storage limit. The harness
