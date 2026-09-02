@@ -1120,12 +1120,13 @@ final class SeedDeskCommand extends Command
     private function seedTicketLifecycle(array $desk, ?int $accountId, array $agentIds): int
     {
         $written = 0;
+        $held = [];
 
         Ticket::query()
             ->with('conversation:id,support_code')
             ->whereIn('site_id', $this->siteIds($desk))
             ->orderBy('id')
-            ->chunkById(self::CHUNK, function ($tickets) use (&$written, $accountId, $agentIds): void {
+            ->chunkById(self::CHUNK, function ($tickets) use (&$written, &$held, $accountId, $agentIds): void {
                 $rows = [];
 
                 // The AGENT messages on these tickets' conversations. A ticket
@@ -1220,7 +1221,17 @@ final class SeedDeskCommand extends Command
 
                     // A held ticket has been put on hold, whatever it did next.
                     if ($ticket->status === 'pending') {
-                        $event('ticket.pending', $raisedAt->copy()->addHours(2)->min(Carbon::now()), 'open');
+                        $heldAt = $raisedAt->copy()->addHours(2)->min(Carbon::now());
+
+                        $event('ticket.pending', $heldAt, 'open');
+
+                        // And the ticket was TOUCHED when it was held. A real
+                        // hold saves the ticket and advances `updated_at`, and
+                        // the ticket queue orders by that column -- so a newly
+                        // held ticket was filed as stale while its own timeline
+                        // showed later activity. The same correction closed
+                        // tickets already carry, for the same reason.
+                        $held[$heldAt->toDateTimeString()][] = (int) $ticket->id;
                     }
 
                     if ($ticket->closed_at !== null) {
@@ -1244,6 +1255,14 @@ final class SeedDeskCommand extends Command
                     $written += count($chunk);
                 }
             });
+
+        // Grouped by timestamp so this is one statement per distinct moment
+        // rather than one per ticket.
+        foreach ($held as $at => $ticketIds) {
+            foreach (array_chunk($ticketIds, self::CHUNK) as $chunk) {
+                DB::table('tickets')->whereIn('id', $chunk)->update(['updated_at' => $at]);
+            }
+        }
 
         // `reporting.ticket_lifecycle_recording_began_at` is deliberately NOT
         // written. It is installation-wide, so setting it here would move a

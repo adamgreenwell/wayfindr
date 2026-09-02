@@ -538,6 +538,45 @@ test('a ticket is not closed in the future', function (): void {
     expect(Ticket::query()->whereNotNull('closed_at')->count())->toBeGreaterThan(0);
 });
 
+test('a ticket was touched whenever something happened to it', function (): void {
+    // The ticket queue orders by `updated_at`, and every real transition saves
+    // the ticket. Closed tickets were corrected for this in #836; holds were
+    // not, because they had no lifecycle event until this branch added one --
+    // so newly held tickets filed as stale while their own timeline showed
+    // later activity.
+    //
+    // Written against ANY lifecycle event rather than against the two statuses
+    // that have one today, so a third transition added later fails here instead
+    // of repeating this quietly.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 200, '--messages' => 3, '--fresh' => true])
+        ->assertSuccessful();
+
+    $latest = AuditEvent::query()
+        ->where('subject_type', (new Ticket)->getMorphClass())
+        ->whereIn('action', ['ticket.pending', 'ticket.closed', 'ticket.reopened'])
+        ->get()
+        ->groupBy('subject_id')
+        ->map(fn ($events) => $events->max('occurred_at'));
+
+    expect($latest)->not->toBeEmpty();
+
+    foreach ($latest as $ticketId => $lastEventAt) {
+        $ticket = Ticket::query()->findOrFail($ticketId);
+
+        expect($ticket->updated_at->greaterThanOrEqualTo(Carbon::parse($lastEventAt)))
+            ->toBeTrue("ticket {$ticketId} was last touched before the last thing that happened to it");
+    }
+
+    // Both kinds are actually present, or this passes over an empty set.
+    $actions = AuditEvent::query()
+        ->where('subject_type', (new Ticket)->getMorphClass())
+        ->distinct()
+        ->pluck('action');
+
+    expect($actions)->toContain('ticket.pending')
+        ->and($actions)->toContain('ticket.closed');
+});
+
 test('a closed ticket was touched when it was closed', function (): void {
     // The ticket queue orders by `updated_at`, and a real closure goes through
     // an Eloquent `update()` that advances it. Leaving it at the raise time
@@ -554,12 +593,18 @@ test('a closed ticket was touched when it was closed', function (): void {
             ->toBeTrue('a closed ticket was last touched before it was closed');
     }
 
-    // And an OPEN ticket still sits at its raise time, so the fix did not just
-    // push every row's `updated_at` forward and flatten the ordering.
-    $open = Ticket::query()->whereNull('closed_at')->get();
-    expect($open)->not->toBeEmpty();
+    // And a ticket nothing has happened to still sits at its raise time, so the
+    // fix did not just push every row's `updated_at` forward and flatten the
+    // ordering.
+    //
+    // Keyed on STATUS, not on `closed_at` being null. Written the second way it
+    // also caught held tickets, which was true only while holds left no trace:
+    // they are touched at their hold now, correctly, and the assertion was
+    // asking them to report activity they did have.
+    $untouched = Ticket::query()->where('status', 'open')->get();
+    expect($untouched)->not->toBeEmpty();
 
-    foreach ($open as $ticket) {
+    foreach ($untouched as $ticket) {
         expect($ticket->updated_at->equalTo($ticket->created_at))
             ->toBeTrue('an open ticket reports activity it never had');
     }
