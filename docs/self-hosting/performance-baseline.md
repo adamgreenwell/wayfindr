@@ -36,7 +36,7 @@ warning it is: this writes tens of thousands of rows.
 They go to an account of the seeder's own (`wayfindr-measurement-desk`), and
 `--fresh` deletes exactly that account and refuses if anything it did not
 create is sitting there. Nothing else is touched. But a real install is still
-being asked to hold a second desk's worth of data and serve 193 MB responses
+being asked to hold a second desk's worth of data and serve 187 MB responses
 while you measure it, so **measure a staging copy if you have one**, and expect
 the disk and the load to be real if you do not.
 
@@ -48,7 +48,7 @@ seeding command is unaffected and runs inside 256M, because it writes in chunks.
 
 That requirement is worth reading as a finding rather than a footnote. The
 measurement needs eight times the image's limit because the page it measures
-builds a 193 MB response with every matching row hydrated at once — the
+builds a 187 MB response with every matching row hydrated at once — the
 [pagination problem](#neither-queue-paginates) showing up as a memory bill
 before it shows up as a number. Scale the override with the desk: a smaller
 fixture needs proportionally less.
@@ -69,12 +69,14 @@ fixture does control — every word it writes — is stable across rebuilds, and
 asserted to be. Timings move by several per cent between runs on the same
 machine, and by much more if anything else is using it, so treat them as an
 order of magnitude rather than a benchmark. Nothing here turns on the
-difference between 25.4 and 25.6 seconds.
+difference between 23.0 and 23.2 seconds.
 
-"Much more" is not hypothetical: running the test suite alongside a measurement
-put the 25,000-row open queue at 4,367 ms, nearly double its 2,659 ms on an idle
-machine and higher than the same page at twice the data. If a figure here breaks
-the pattern of the ones around it, suspect the machine before the code.
+"Much more" is not hypothetical. On one occasion, running the test suite
+alongside a measurement put the 25,000-row open queue at 4,367 ms against 2,659
+on an idle machine — higher than the same page at twice the data, which is what
+gave it away. (Both are from that day; the table above is a later run.) If a
+figure here breaks the pattern of the ones around it, suspect the machine before
+the code.
 
 **Measurement cannot change what it measures.** Every request runs inside a
 transaction that is always rolled back. The conversation detail page is not a
@@ -109,16 +111,16 @@ At 50,000 conversations:
 
 | Page | ms (median) | Queries | Response |
 | --- | ---: | ---: | ---: |
-| Conversation queue (open) | 4,598 | 21 | 39.0 MB |
-| Conversation queue (closed) | 25,108 | 15 | 192.8 MB |
-| Conversation queue (search) | 628 | 21 | 3.5 MB |
-| Conversation queue (mine) | 415 | 21 | 2.5 MB |
-| Ticket queue (open) | 2,407 | 18 | 21.0 MB |
-| Ticket queue (all) | 7,379 | 19 | 62.8 MB |
-| Reports (7 days) | 156 | 34 | 140 KB |
-| Reports (90 days) | 659 | 81 | 223 KB |
-| Reports export (90 days) | 97 | 7 | 2 KB |
-| **Conversation detail** | **16** | **26** | **148 KB** |
+| Conversation queue (open) | 4,153 | 21 | 37.8 MB |
+| Conversation queue (closed) | 23,007 | 15 | 186.7 MB |
+| Conversation queue (search) | 548 | 21 | 3.4 MB |
+| Conversation queue (mine) | 374 | 21 | 2.4 MB |
+| Ticket queue (open) | 2,278 | 18 | 21.0 MB |
+| Ticket queue (all) | 7,071 | 19 | 62.8 MB |
+| Reports (7 days) | 150 | 34 | 140 KB |
+| Reports (90 days) | 607 | 80 | 223 KB |
+| Reports export (90 days) | 94 | 7 | 2 KB |
+| **Conversation detail** | **13** | **26** | **148 KB** |
 
 All ten, because the command measures ten: a table listing fewer than the
 documented command prints leaves an operator with figures they cannot compare
@@ -136,7 +138,7 @@ them:
 | 1,000 | 117 ms | 462 ms | 3.9 MB | 148 ms | 19 | 30 ms / 32 q | 14 ms / 26 q |
 | 5,000 | 494 ms | 2,353 ms | 19.3 MB | 714 ms | 19 | 79 ms / 36 q | 15 ms / 26 q |
 | 25,000 | 2,353 ms | 12,216 ms | 96.3 MB | 3,604 ms | 19 | 350 ms / 57 q | 15 ms / 26 q |
-| 50,000 | 4,839 ms | 25,691 ms | 192.8 MB | 7,379 ms | 19 | 659 ms / 81 q | 16 ms / 26 q |
+| 50,000 | 4,153 ms | 23,007 ms | 186.7 MB | 7,071 ms | 19 | 607 ms / 80 q | 13 ms / 26 q |
 
 Two columns do not move. The last one is the control and always was: the same
 page, at fifty times the data, costs the same. **Ticket queries** joined it when
@@ -159,13 +161,13 @@ ticket matching the current filters is queried, hydrated and rendered into one
 response.
 
 At a thousand conversations that is invisible. At fifty thousand the closed lane
-is **193 MB of HTML** — a response no browser will render pleasantly and many
-proxies will refuse outright, arriving after twenty-five seconds. The open lane
+is **187 MB of HTML** — a response no browser will render pleasantly and many
+proxies will refuse outright, arriving after twenty-three seconds. The open lane
 is better only because a desk that is keeping up has fewer open rows; it is the
 same query with a narrower `where`.
 
 Response size is the number to watch here rather than milliseconds. The server
-builds 193 MB in twenty-five seconds; the browser then has to parse it.
+builds 187 MB in twenty-three seconds; the browser then has to parse it.
 
 ### The ticket queue used to issue one query per ticket
 
@@ -179,7 +181,7 @@ of the difference is the argument for measuring at all:
 
 Both rows are on the fixture as it stood then, which wrote no lifecycle history
 — that is what makes them comparable to each other. The current figure in the
-table above is 19 queries and 7,379 ms, measured on a desk that now has a
+table above is 19 queries and 7,071 ms, measured on a desk that now has a
 history to hydrate; the paragraph after this explains that difference rather
 than leaving two numbers to be reconciled by the reader.
 
@@ -202,7 +204,7 @@ already loaded and one did not.
 That caveat has since been settled by measurement rather than left standing. The
 fixture writes lifecycle history now — 95,604 events at this size — so those
 queries return rows to hydrate. The all-tickets queue moved from 6,928 ms and 18
-queries on the empty fixture to **7,379 ms and 19** with a real history behind
+queries on the empty fixture to **7,071 ms and 19** with a real history behind
 it: about six per cent, which is what the eager load costs when it has something
 to load, and a long way from the 9,503 ms the N+1 was costing.
 
@@ -219,9 +221,9 @@ ratings behind them:
 
 | Window | ms | Queries | Response |
 | --- | ---: | ---: | ---: |
-| 7 days | 156 | 34 | 140 KB |
-| 90 days | 659 | 81 | 223 KB |
-| Export, 90 days | 97 | 7 | 2 KB |
+| 7 days | 150 | 34 | 140 KB |
+| 90 days | 607 | 80 | 223 KB |
+| Export, 90 days | 94 | 7 | 2 KB |
 
 The window matters — 90 days is about four times the work of 7 — but so does the
 desk, and the query count grows with it:
@@ -231,7 +233,7 @@ desk, and the query count grows with it:
 | 1,000 | 30 ms / 32 q |
 | 5,000 | 79 ms / 36 q |
 | 25,000 | 350 ms / 57 q |
-| 50,000 | 659 ms / 81 q |
+| 50,000 | 607 ms / 80 q |
 
 Fifty times the data costs about twenty-two times the milliseconds, so it grows
 sub-linearly rather than flatly — the window bounds how much of the desk is in
@@ -240,7 +242,7 @@ because the rows are streamed in chunks**, which is the bucketing decision
 showing up as query count rather than as memory: more rows in the window means
 more chunks to fetch.
 
-That is a fair trade at this size and worth watching rather than fixing: 659 ms
+That is a fair trade at this size and worth watching rather than fixing: 607 ms
 for the busiest window on a year of a fifty-thousand-conversation desk is not
 where this product's problem is. **The queues are**, and they are on the same
 page as this one.
@@ -257,13 +259,15 @@ is measured above is a desk with a history a real install could have produced.
 
 ### The conversation detail page is fine
 
-14-16 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
+13-15 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
 to 50,000. The queries and the response size do not move at all; the
 milliseconds vary by a millisecond or two between runs, which is the noise floor
 on a page this cheap. Earlier revisions of this page reported 11-12 ms for the
 same measurement — the difference is the machine on the day, not the code, and
-it is a fair illustration of how much weight the milliseconds here will carry. Its cost is bounded by one conversation's own messages
-rather than by the desk around it, which is what the other pages are not.
+it is a fair illustration of how much weight the milliseconds here will carry.
+
+Its cost is bounded by one conversation's own messages rather than by the desk
+around it, which is what the other pages are not.
 
 This is worth stating as plainly as the problems: the page an agent spends most
 of their day inside does not degrade, and the guard in

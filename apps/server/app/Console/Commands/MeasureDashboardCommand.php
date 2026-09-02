@@ -351,15 +351,26 @@ final class MeasureDashboardCommand extends Command
 
             DB::beginTransaction();
 
+            // The buffer is opened BEFORE the clock, because catching the
+            // output is this command's cost. What happens inside it is the
+            // page's: a streamed response has done almost nothing until its
+            // callback runs, and for the report export that callback is where
+            // every row is escaped and written. Timing only the dispatch
+            // published a figure for building a response rather than for
+            // producing one.
+            ob_start();
+
             try {
                 $startedAt = microtime(true);
                 $response = $this->dispatch($kernel, $agent, $uri);
+                $body = self::realise($response);
                 $timings[] = (microtime(true) - $startedAt) * 1000;
             } finally {
+                ob_end_clean();
                 DB::rollBack();
             }
 
-            $bytes = self::bytesOf($response);
+            $bytes = strlen($body);
 
             $status = self::worstStatus($status, $response->getStatusCode());
         }
@@ -693,21 +704,21 @@ final class MeasureDashboardCommand extends Command
      * cost, not the page's, and the byte figure comes from the same separate
      * request the query count does.
      */
-    private static function bytesOf(Response $response): int
+    private static function realise(Response $response): string
     {
         if (! $response instanceof StreamedResponse) {
-            return strlen((string) $response->getContent());
+            return (string) $response->getContent();
         }
 
-        ob_start();
+        // Streamed into the buffer the caller opened. A `StreamedResponse` has
+        // no content to ask for -- `getContent()` returns false, and the report
+        // export measured as zero bytes and near-zero time until this ran its
+        // callback, which is where the work actually is.
+        $before = (string) ob_get_contents();
 
-        try {
-            $response->sendContent();
+        $response->sendContent();
 
-            return strlen((string) ob_get_contents());
-        } finally {
-            ob_end_clean();
-        }
+        return substr((string) ob_get_contents(), strlen($before));
     }
 
     private function purgeSessions(): void
