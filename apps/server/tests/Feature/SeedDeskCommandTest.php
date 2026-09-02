@@ -1597,15 +1597,42 @@ test('purge sweeps orphaned agents an earlier desk left behind', function (): vo
     // them instead: sign-in-capable, published password, no account. A machine
     // in that state has no desk for a purge to find, and a purge that stopped
     // at "nothing seeded" would leave in place the one thing it exists to
-    // remove. An address that only LOOKS seeded is not touched -- the same
-    // exact-shape rule the provenance check uses.
-    $orphan = User::factory()->create(['email' => 'desk-agent-4@example.test', 'account_id' => null]);
-    $lookalike = User::factory()->create(['email' => 'desk-agent-owner@example.test', 'account_id' => null]);
+    // remove. The address alone is not enough provenance: the generated name,
+    // role and published password must still agree too.
+    $orphan = User::factory()->create([
+        'name' => 'Desk Agent 5',
+        'email' => 'desk-agent-4@example.test',
+        'account_id' => null,
+    ]);
+    $wrongName = User::factory()->create([
+        'name' => 'A real person',
+        'email' => 'desk-agent-5@example.test',
+        'account_id' => null,
+    ]);
+    $wrongRole = User::factory()->create([
+        'name' => 'Desk Agent 1',
+        'email' => 'desk-agent-0@example.test',
+        'account_id' => null,
+    ]);
+    $wrongPassword = User::factory()->create([
+        'name' => 'Desk Agent 7',
+        'email' => 'desk-agent-6@example.test',
+        'account_id' => null,
+        'password' => 'not-the-published-password',
+    ]);
+    $wrongAddress = User::factory()->create([
+        'name' => 'Desk Agent 8',
+        'email' => 'desk-agent-07@example.test',
+        'account_id' => null,
+    ]);
 
     $this->artisan('wayfindr:seed-desk', ['--purge' => true])
         ->expectsOutputToContain('orphaned')
         ->assertSuccessful();
 
     expect(User::query()->whereKey($orphan->id)->exists())->toBeFalse('an orphaned seeded sign-in survived a purge')
-        ->and(User::query()->whereKey($lookalike->id)->exists())->toBeTrue('an address that only looks seeded was deleted');
+        ->and(User::query()->whereKey($wrongName->id)->exists())->toBeTrue('an address match with a different name was deleted')
+        ->and(User::query()->whereKey($wrongRole->id)->exists())->toBeTrue('an address match with a different role was deleted')
+        ->and(User::query()->whereKey($wrongPassword->id)->exists())->toBeTrue('an address match with a different password was deleted')
+        ->and(User::query()->whereKey($wrongAddress->id)->exists())->toBeTrue('an address the seeder never generates was deleted');
 });

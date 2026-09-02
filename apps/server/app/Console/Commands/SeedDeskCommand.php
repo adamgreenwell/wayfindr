@@ -305,9 +305,10 @@ final class SeedDeskCommand extends Command
      * for a purge to find, and a purge that stopped at "nothing seeded" would
      * leave in place the one thing it exists to remove.
      *
-     * Only the exact seeded shape (`desk-agent-<n>@example.test`), checked in
-     * PHP the way refuseUnlessSeeded() does, and only with no account: a real
-     * person on a real account is never in this set.
+     * Only the complete seeded identity is removed: the exact generated
+     * address and name, the role for that index, the published password, and
+     * no account. An accountless user whose address merely resembles the
+     * fixture is not provenance and is left alone.
      */
     private function removeOrphanedAgents(): int
     {
@@ -315,7 +316,7 @@ final class SeedDeskCommand extends Command
             ->whereNull('account_id')
             ->where('email', 'like', self::AGENT_PREFIX.'%'.self::AGENT_SUFFIX)
             ->get()
-            ->filter(fn (User $user): bool => self::isSeededAgentAddress((string) $user->email));
+            ->filter(self::isOrphanedSeededAgent(...));
 
         foreach ($orphans as $orphan) {
             $orphan->delete();
@@ -372,7 +373,7 @@ final class SeedDeskCommand extends Command
                     // because the queue's assignee filter is only interesting
                     // when several people can hold work.
                     'account_role' => $i === 0 ? AccountRole::Owner : AccountRole::Agent,
-                    'name' => 'Desk Agent '.($i + 1),
+                    'name' => self::agentName($i),
                     'password' => Hash::make('password'),
                 ],
             );
@@ -953,6 +954,33 @@ final class SeedDeskCommand extends Command
     }
 
     /**
+     * The display name this command gives the agent at `$index`.
+     */
+    private static function agentName(int $index): string
+    {
+        return 'Desk Agent '.($index + 1);
+    }
+
+    /**
+     * Whether an accountless user still has the complete identity this command
+     * created, including the known credential a purge exists to remove.
+     */
+    private static function isOrphanedSeededAgent(User $user): bool
+    {
+        $index = self::seededAgentIndex((string) $user->email);
+
+        if ($index === null) {
+            return false;
+        }
+
+        $role = $index === 0 ? AccountRole::Owner : AccountRole::Agent;
+
+        return $user->name === self::agentName($index)
+            && $user->account_role === $role
+            && Hash::check('password', (string) $user->password);
+    }
+
+    /**
      * Whether an address is one this command hands out.
      *
      * Exact, for the same reason the site key is: a LIKE pattern is read by SQL
@@ -960,14 +988,30 @@ final class SeedDeskCommand extends Command
      */
     private static function isSeededAgentAddress(string $email): bool
     {
+        return self::seededAgentIndex($email) !== null;
+    }
+
+    /**
+     * Return the generated agent index encoded by an exact seeded address.
+     */
+    private static function seededAgentIndex(string $email): ?int
+    {
         // The whole shape, including the INDEX. Checking the affixes alone
-        // accepted `desk-agent-owner@example.test`, which this command never
-        // creates -- so a real person on an account at the reserved slug could
-        // be read as one of ours and deleted with it.
-        return preg_match(
-            '/^'.preg_quote(self::AGENT_PREFIX, '/').'\d+'.preg_quote(self::AGENT_SUFFIX, '/').'$/',
+        // accepted `desk-agent-owner@example.test`, and accepting leading
+        // zeroes would accept an address agentAddress() never creates.
+        $matched = preg_match(
+            '/^'.preg_quote(self::AGENT_PREFIX, '/').'(\d+)'.preg_quote(self::AGENT_SUFFIX, '/').'$/',
             $email,
-        ) === 1;
+            $matches,
+        );
+
+        if ($matched !== 1) {
+            return null;
+        }
+
+        $index = (int) $matches[1];
+
+        return self::agentAddress($index) === $email ? $index : null;
     }
 
     /**
