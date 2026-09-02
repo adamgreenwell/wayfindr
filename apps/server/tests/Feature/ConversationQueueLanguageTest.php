@@ -1373,6 +1373,18 @@ test('no English is rendered as German on any extracted surface', function (): v
         'metadata' => [],
     ]);
 
+    // Enough rows for the framework paginator to render. Its copy lives in a
+    // shared vendor view rather than this surface, so a populated first page is
+    // the only way the extracted-route audit can catch it falling back to
+    // English.
+    for ($index = 1; $index <= 26; $index++) {
+        Visitor::factory()->for($world['site'])->create([
+            'anonymous_id' => 'anon-datenpunkt-page-'.$index,
+            'name' => 'Datenpunkt page visitor '.$index,
+            'last_seen_at' => now()->subMinutes($index),
+        ]);
+    }
+
     Ticket::factory()
         ->for($world['account'])
         ->for($world['site'])
@@ -1421,6 +1433,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.api-tokens.index'),
         route('dashboard.sites.live', $world['site']),
         route('dashboard.visitors.index'),
+        route('dashboard.visitors.index', ['page' => 2]),
         route('dashboard.visitors.index', ['search' => 'zzzz']),
         route('dashboard.visitors.show', $profileVisitor),
         route('dashboard.visitors.show', $sparseVisitor),
