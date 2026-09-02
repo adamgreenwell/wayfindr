@@ -113,7 +113,58 @@ final class SeedDeskCommand extends Command
 
     private const AGENT_PREFIX = 'desk-agent-';
 
+    /**
+     * Every table this command writes, and so the only ones it asks the
+     * planner to re-read. Keep in step with the seed methods; the test
+     * `the seeder tells the planner about its own tables and nothing else`
+     * holds the same list.
+     *
+     * @var list<string>
+     */
+    private const ANALYSED_TABLES = [
+        'accounts', 'sites', 'users', 'visitors', 'conversations', 'conversation_messages',
+        'tickets', 'conversation_read_states', 'audit_events', 'conversation_ratings',
+    ];
+
     private const AGENT_SUFFIX = '@example.test';
+
+    /**
+     * Tell the planner what was just written.
+     *
+     * Autovacuum cannot see rows that are still inside an open transaction, so
+     * a desk seeded under `RefreshDatabase` leaves every table with no
+     * statistics at all -- `last_analyze` and `last_autoanalyze` both null and
+     * `reltuples` at 0. With nothing measured, PostgreSQL falls back to
+     * defaults for row counts and selectivity, and here that put nested loops
+     * everywhere -- fine for the small tables it assumed, quadratic against the
+     * rows actually there.
+     *
+     * That is #843: a single count on the conversation queue, over a fixture of
+     * 400 conversations, taking fourteen minutes in CI and over twenty seconds
+     * locally, on a plan built for a database the planner thought was empty.
+     * Nothing was slow. Everything was mis-estimated.
+     *
+     * ANALYZE is allowed inside a transaction and its statistics are visible to
+     * that transaction, which is what makes this work where autovacuum cannot.
+     * A committed desk gets analysed eventually anyway, so this changes nothing
+     * for an operator beyond arriving at a good plan sooner.
+     */
+    private function analyseForThePlanner(): void
+    {
+        // SQLite's ANALYZE writes a table it only consults for some queries and
+        // the driver has no equivalent problem to solve, so this is asked of
+        // PostgreSQL only rather than guessed at generically.
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        // NAMED tables, never a bare ANALYZE. Bare, it walks every table the
+        // role can see and takes a lock on each -- fine on a test database,
+        // and on the populated production database this command can be
+        // pointed at with --force it scans everything unrelated and contends
+        // with maintenance and DDL. The seeder knows exactly what it wrote.
+        DB::statement('analyze '.implode(', ', self::ANALYSED_TABLES));
+    }
 
     public function handle(): int
     {
@@ -174,6 +225,8 @@ final class SeedDeskCommand extends Command
 
             return self::FAILURE;
         }
+
+        $this->analyseForThePlanner();
 
         $this->newLine();
         $this->components->twoColumnDetail('<fg=green;options=bold>Desk</>', self::SLUG);

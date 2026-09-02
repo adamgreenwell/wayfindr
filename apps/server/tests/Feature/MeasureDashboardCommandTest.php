@@ -79,23 +79,30 @@ test('the detail page is the control, and does not grow with the desk', function
             ->all();
     };
 
-    // The row counts stay: the queue carries about 110KB of fixed chrome, so a
-    // ratio of three needs this many rows to clear it -- cutting them to 5
-    // against 200 failed the guard at 2.3x, which is the guard working. What
-    // drops is MESSAGES per conversation, three to one, because the bytes come
-    // from the number of rows rather than what is behind each one.
+    // The row counts matter: the queue carries about 110KB of fixed chrome, so
+    // a ratio of three needs this many rows to clear it -- cutting them to 5
+    // against 200 failed the guard at 2.3x, which is the guard working. The
+    // bytes come from the number of rows rather than what is behind each one.
     //
-    // This was reduced while chasing a PostgreSQL CI job that hung to its
-    // 20-minute timeout: the full suite hung three times out of three with the
-    // heavier fixture and passed with the lighter one, while the file alone and
-    // the suite without it passed either way. The correlation is all that is
-    // established. My first explanation -- a slow query on this page -- was
-    // wrong and is measured at 0.6ms, so do not trust a story about WHY this
-    // size matters until someone has one that survives being checked.
-    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 1, '--fresh' => true]);
+    // MESSAGES was cut to one while chasing a PostgreSQL CI job that hung to
+    // its 20-minute timeout, and is back at three now that #843 has a
+    // mechanism rather than a correlation.
+    //
+    // Nothing here was slow. `RefreshDatabase` holds the seeded rows in an open
+    // transaction, autovacuum cannot see rows that have not committed, and so
+    // the planner had NO statistics at all: it estimated one row per table,
+    // chose nested loops, and ran them against the thousands of rows actually
+    // present. One count on the conversation queue took over twenty seconds
+    // locally and fourteen minutes on a runner. The seeder now ANALYZEs what it
+    // wrote, and this test costs 2.9s at three messages where it did not finish
+    // in ten minutes without it.
+    //
+    // So this number is no longer load-bearing. If the test gets slow again,
+    // check that the ANALYZE still happens before touching the fixture.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 3, '--fresh' => true]);
     $small = $measure();
 
-    Artisan::call('wayfindr:seed-desk', ['--conversations' => 400, '--messages' => 1, '--fresh' => true]);
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 400, '--messages' => 3, '--fresh' => true]);
     $large = $measure();
 
     // The queue grew with the data, so the sizes really are different.

@@ -3,7 +3,36 @@
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
          colors="true"
+         enforceTimeLimit="true"
+         defaultTimeLimit="120"
+         failOnRisky="true"
 >
+    <!--
+        A per-test time limit, so a test that hangs says which test it was.
+
+        Pest prints a file's header only once the file COMPLETES, so a file
+        that never finishes prints nothing at all. The PostgreSQL job in #843
+        ran to its twenty-minute timeout having printed nothing since the
+        PREVIOUS file, and unbuffering does not help for the same reason. This
+        limit is what turned that into a named test.
+
+        At the limit the alarm fires and the test is abandoned as risky. Not
+        instantly: PHP only handles the signal once it has control again, so a
+        test sitting inside a blocking database call is abandoned when that
+        call returns, not while it waits. The value is the same either way,
+        because the test is then named and, with failOnRisky, failed. Risky
+        alone is not failed: on its own it trades a job that dies loudly for a
+        build that passes wrongly, with a test that never reached its
+        assertions. Nothing in the suite is
+        risky today (checked with the fail-on-risky flag before turning this
+        on), so it changes no verdict until a test hangs. PHPUnit needs pcntl
+        to enforce the limit; where pcntl is absent the setting is ignored
+        rather than failing, and both CI PHPs have it.
+
+        120s sits far above anything here (the slowest is a couple of seconds)
+        and far below the job timeout, so it names a hang without flagging a
+        test for being merely slow on a loaded runner.
+    -->
     <testsuites>
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
