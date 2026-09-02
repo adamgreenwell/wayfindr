@@ -98,6 +98,16 @@ class Ticket extends Model
             .' where m.conversation_id = tickets.conversation_id'
             .' order by m.created_at desc, m.id desc limit 1)';
 
+        // Whether the conversation has a message AT ALL, asked separately from
+        // who sent it. `conversation_messages.sender` is a nullable morph, so
+        // the sender of a real message can be null -- and reading the selected
+        // sender as the existence check cannot tell that message apart from no
+        // message. `attentionState()` branches on the message OBJECT and then
+        // on its sender, so a null-sender message is `needs_reply` there while
+        // the collapsed version answered `needs_agent`.
+        $hasMessage = 'exists (select 1 from conversation_messages m2'
+            .' where m2.conversation_id = tickets.conversation_id)';
+
         // Escalated within the last day and not closed, matching
         // `latestRecentEscalationEvent()`, which returns null for a closed
         // ticket before it looks at the clock.
@@ -106,13 +116,18 @@ class Ticket extends Model
             ." and e.action = 'ticket.escalated'"
             .' and e.occurred_at >= ?)';
 
+        // The `pending` branch below deliberately does NOT need $hasMessage.
+        // `attentionState()` reaches it through `?->sender_type !== Visitor`,
+        // which is true for a null-sender message and for no message alike, so
+        // collapsing both to '' is what that rule actually says. The asymmetry
+        // with the `needs_reply` branch is the asymmetry in the PHP.
         $case = "case
             when tickets.status <> 'closed' and {$recentEscalation} then 'escalated'
             when tickets.status = 'closed' then 'resolved'
             when tickets.status = 'pending' and coalesce({$latestSender}, '') <> ? then 'waiting_on_customer'
             when tickets.assignee_id is null then 'needs_owner'
             when {$latestSender} = ? then 'waiting_on_customer'
-            when {$latestSender} is not null then 'needs_reply'
+            when {$hasMessage} then 'needs_reply'
             else 'needs_agent'
         end";
 

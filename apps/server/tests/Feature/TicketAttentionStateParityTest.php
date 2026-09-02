@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -69,6 +72,36 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
             'updated_at' => now()->subHours($updatedHoursAgo),
         ]);
     }
+
+    // A message whose SENDER IS NULL, which is not exotic: it is what the
+    // message factory produces by default. The desk seeder always sets a
+    // sender, so the fixture held 400 conversations and not one of these, and
+    // the parity comparison agreed about a case it never reached.
+    //
+    // It separates two rules that look identical until you have one.
+    // `attentionState()` asks whether a message EXISTS and then who sent it, so
+    // this is `needs_reply`. SQL that reads the selected sender as its own
+    // existence check sees null for both this and a ticket with no messages at
+    // all, and answers `needs_agent`.
+    //
+    // Assigned and open, so the earlier branches cannot decide it first.
+    $assignee = User::query()->firstOrFail();
+
+    $withNullSender = Ticket::factory()->for($account)->for($site)->create([
+        'status' => 'open',
+        'assignee_id' => $assignee->id,
+        'conversation_id' => Conversation::factory()->for($site)->create()->id,
+    ]);
+
+    ConversationMessage::factory()->create([
+        'conversation_id' => $withNullSender->conversation_id,
+        'sender_type' => null,
+        'sender_id' => null,
+        'created_at' => now()->subMinute(),
+    ]);
+
+    expect($withNullSender->fresh()->attentionState())->toBe('needs_reply',
+        'the fixture no longer produces the null-sender case this guard exists for');
 
     $inSql = Ticket::query()
         ->selectAttentionState()
