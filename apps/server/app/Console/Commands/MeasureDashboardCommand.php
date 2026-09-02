@@ -396,14 +396,15 @@ final class MeasureDashboardCommand extends Command
                 $body = self::realise($response);
                 $timings[] = (microtime(true) - $startedAt) * 1000;
                 $peakMemory[] = memory_get_peak_usage(true);
+                $bytes = strlen($body);
+                $status = self::worstStatus($status, $response->getStatusCode());
             } finally {
+                // Do not carry a previous response body into the next run's
+                // reset high-water mark.
+                unset($response, $body);
                 ob_end_clean();
                 DB::rollBack();
             }
-
-            $bytes = strlen($body);
-
-            $status = self::worstStatus($status, $response->getStatusCode());
         }
 
         // Counted separately, once, and not timed. In a `finally`, because an

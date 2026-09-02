@@ -146,9 +146,9 @@ and rolls every request back:
 
 | Server metric | Result |
 | --- | ---: |
-| Laravel render, median of 3 | 34.6 ms |
+| Laravel render, median of 3 | 37.5 ms |
 | Queries | 28 |
-| Response | 318,148 bytes |
+| Response | 318,150 bytes |
 | PHP peak allocated memory | 46,661,632 bytes (44.5 MiB) |
 | Status | 200 |
 

@@ -216,9 +216,11 @@ async function runSample(browser, runNumber) {
     const finalMutation = mutationMetrics.at(-1) || {};
     const successfulBatches = pressureSummary.batch_count || finalMutation.batch_count || 0;
     const retainedBatches = pressureSummary.recent_batches_count || finalMutation.recent_batches_count || 0;
-    const allRequestFailures = [...visitorNetwork.failures, ...agentNetwork.failures];
-    const injectedFailures = allRequestFailures.filter((failure) => failure.injected).length;
-    const naturalFailures = allRequestFailures.filter((failure) => !failure.injected).length;
+    const allTransportFailures = [...visitorNetwork.failures, ...agentNetwork.failures];
+    const failedResponses = [...visitorNetwork.failedResponses, ...agentNetwork.failedResponses];
+    const injectedFailures = allTransportFailures.filter((failure) => failure.injected).length;
+    const naturalFailures = allTransportFailures.filter((failure) => !failure.injected).length
+      + failedResponses.length;
     const mutationRequests = visitorNetwork.records.filter((record) => record.kind === 'mutations');
 
     const allTransportMasked = [
@@ -548,6 +550,7 @@ function observeNetwork(page) {
   const injected = new WeakSet();
   const records = [];
   const failures = [];
+  const failedResponses = [];
 
   page.on('request', (request) => {
     const kind = requestKind(request.url());
@@ -575,6 +578,14 @@ function observeNetwork(page) {
     });
   });
 
+  page.on('response', (response) => {
+    const kind = requestKind(response.url());
+
+    if (kind && (response.status() < 200 || response.status() >= 300)) {
+      failedResponses.push({ kind, status: response.status() });
+    }
+  });
+
   page.on('requestfailed', (request) => {
     const kind = requestKind(request.url());
 
@@ -585,6 +596,7 @@ function observeNetwork(page) {
 
   return {
     failures,
+    failedResponses,
     records,
     starts,
     markInjectedFailure(request) {
