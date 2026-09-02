@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\Site;
 use App\Models\Ticket;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -48,6 +49,26 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     $escalate($open[0], now()->subHours(2)->toDateTimeString());
     $escalate($open[1], now()->subDays(3)->toDateTimeString());
     $escalate($closed, now()->subHour()->toDateTimeString());
+
+    // Tickets whose `updated_at` and `created_at` orders are OPPOSITE, sharing
+    // one attention state. The desk seeder sets the two almost in lockstep, so
+    // without these, dropping the `updated_at` tie-break left the sequence
+    // unchanged and the guard passed over a queue ordered by the wrong column.
+    //
+    // Unassigned and open with no messages, so all three are `needs_owner` and
+    // the state cannot be what separates them.
+    $site = Site::query()->firstOrFail();
+    $account = Account::query()->findOrFail($site->account_id);
+
+    foreach ([[3, 1], [2, 2], [1, 3]] as [$createdDaysAgo, $updatedHoursAgo]) {
+        Ticket::factory()->for($account)->for($site)->create([
+            'status' => 'open',
+            'assignee_id' => null,
+            'conversation_id' => null,
+            'created_at' => now()->subDays($createdDaysAgo),
+            'updated_at' => now()->subHours($updatedHoursAgo),
+        ]);
+    }
 
     $inSql = Ticket::query()
         ->selectAttentionState()
@@ -107,13 +128,35 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
         ->pluck('id')
         ->all();
 
-    // Compared as RANK SEQUENCES rather than id sequences: tickets tied on all
-    // three keys may come back in either order, and that is not a disagreement
-    // about ordering.
-    $rankOf = fn (array $ids): array => collect($ids)
-        ->map(fn (int $id): string => (string) $inSql->get($id))
+    // Compared as SORT-KEY sequences rather than id sequences: tickets tied on
+    // every key may come back in either order, and that is not a disagreement.
+    //
+    // The whole key, not just the state. Comparing states alone tolerated a
+    // reversed or missing `updated_at` tie-break entirely -- every lane would
+    // hold the same tickets in the wrong order and the sequence of states would
+    // be identical, so the guard would pass while the queue reshuffled under
+    // agents who have learned where things sit.
+    $byId = $tickets->keyBy('id');
+
+    $keysOf = fn (array $ids): array => collect($ids)
+        ->map(function (int $id) use ($byId, $inSql): string {
+            $ticket = $byId->get($id);
+
+            return implode('|', [
+                (string) $inSql->get($id),
+                $ticket->updated_at->toDateTimeString(),
+                $ticket->created_at->toDateTimeString(),
+            ]);
+        })
         ->all();
 
-    expect($rankOf($sqlOrder))->toBe($rankOf($phpOrder),
-        'the SQL ordering does not group the queue the way the PHP sort did');
+    expect($keysOf($sqlOrder))->toBe($keysOf($phpOrder),
+        'the SQL ordering does not order the queue the way the PHP sort did');
+
+    // The `created_at` tie-break is NOT mutation-proven, and cannot be: it is
+    // the last key, so removing it leaves tickets tied on everything before it
+    // in an order the database may choose either way -- and the PHP sort would
+    // be equally free. A test comparing the two would fail at random rather
+    // than on the defect. The `updated_at` one above it is proven, in both
+    // directions.
 });
