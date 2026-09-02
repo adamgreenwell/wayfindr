@@ -12,7 +12,8 @@ real traffic that stopped being usable.** The conversation queue is capped now �
 its closed lane went from 187 MB and twenty-three seconds to 1 MB and 161 ms —
 and the ticket queue still is not. Measuring also turned up an N+1 on the ticket
 queue, now fixed: 12,518 queries down to 19. The conversation detail page is fine
-and stays fine, and so do the report tabs. Numbers below.
+and stays fine. The report tabs grow with the desk but sub-linearly, and hold
+up at this size. Numbers below.
 
 ## Reproducing this
 
@@ -37,10 +38,20 @@ warning it is: this writes tens of thousands of rows.
 
 They go to an account of the seeder's own (`wayfindr-measurement-desk`), and
 `--fresh` deletes exactly that account and refuses if anything it did not
-create is sitting there. Nothing else is touched. But a real install is still
-being asked to hold a second desk's worth of data and serve the ticket queue's
-63 MB responses while you measure it, so **measure a staging copy if you have one**, and expect
-the disk and the load to be real if you do not.
+create is sitting there. Nothing else is touched.
+
+**Do not run this on an install serving real traffic.** Not because of the
+load, though a real install is being asked to hold a second desk and serve the
+ticket queue's 63 MB responses while you measure. Because of what the seeder
+leaves behind: an owner account `desk-agent-0@example.test` whose password is
+literally `password`, committed. Only the measurement transaction rolls back.
+The desk stays, login-capable, until somebody removes it — a publicly known
+owner credential on an internet-facing box.
+
+Measure a staging copy, a restored backup, or a throwaway VM. If a desk was
+seeded somewhere it should not have been, `--fresh` deletes exactly that account
+before seeding, so a `--fresh` run on a machine you are about to discard is the
+way to be sure it is gone.
 
 **The memory override is required, not a precaution.** The shipped image sets
 `memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size
