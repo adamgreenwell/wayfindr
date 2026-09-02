@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 #[Fillable([
@@ -77,6 +78,170 @@ class Ticket extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assignee_id');
+    }
+
+    /**
+     * The attention-state CASE, and the bindings it needs.
+     *
+     * One source for both the selected column and the ordering. PostgreSQL will
+     * not accept a select alias inside an expression in `ORDER BY` -- only a
+     * bare reference -- so the ordering has to repeat the expression, and
+     * repeating it by hand is how the two would drift apart.
+     *
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private static function attentionStateSql(): array
+    {
+        // The latest message on the ticket's conversation, matching
+        // `Conversation::latestMessage()` -- which is `ofMany(max)`, not an
+        // `order by ... desc limit 1`.
+        //
+        // The difference is null `created_at`, which the column allows. A MAX
+        // skips nulls, so `ofMany` never returns a null-dated message; a
+        // descending sort puts one FIRST on PostgreSQL and last on SQLite. The
+        // `is not null` is what makes this a MAX rather than a sort, and it has
+        // to be on the existence check too: with every message null-dated,
+        // `latestMessage` is null and the ticket has no latest message at all.
+        $datedMessage = 'from conversation_messages m'
+            .' where m.conversation_id = tickets.conversation_id'
+            .' and m.created_at is not null';
+
+        $latestSender = "(select m.sender_type {$datedMessage}"
+            .' order by m.created_at desc, m.id desc limit 1)';
+
+        // Whether the conversation has a message AT ALL, asked separately from
+        // who sent it. `conversation_messages.sender` is a nullable morph, so
+        // the sender of a real message can be null -- and reading the selected
+        // sender as the existence check cannot tell that message apart from no
+        // message. `attentionState()` branches on the message OBJECT and then
+        // on its sender, so a null-sender message is `needs_reply` there while
+        // the collapsed version answered `needs_agent`.
+        $hasMessage = "exists (select 1 {$datedMessage})";
+
+        // Escalated within the last day and not closed, matching
+        // `latestRecentEscalationEvent()`, which returns null for a closed
+        // ticket before it looks at the clock.
+        $recentEscalation = 'exists (select 1 from audit_events e'
+            .' where e.subject_id = tickets.id and e.subject_type = ?'
+            ." and e.action = 'ticket.escalated'"
+            .' and e.occurred_at >= ?)';
+
+        // The `pending` branch below deliberately does NOT need $hasMessage.
+        // `attentionState()` reaches it through `?->sender_type !== Visitor`,
+        // which is true for a null-sender message and for no message alike, so
+        // collapsing both to '' is what that rule actually says. The asymmetry
+        // with the `needs_reply` branch is the asymmetry in the PHP.
+        $case = "case
+            when tickets.status <> 'closed' and {$recentEscalation} then 'escalated'
+            when tickets.status = 'closed' then 'resolved'
+            when tickets.status = 'pending' and coalesce({$latestSender}, '') <> ? then 'waiting_on_customer'
+            when tickets.assignee_id is null then 'needs_owner'
+            when {$latestSender} = ? then 'waiting_on_customer'
+            when {$hasMessage} then 'needs_reply'
+            else 'needs_agent'
+        end";
+
+        return [$case, [
+            (new self)->getMorphClass(),
+            Carbon::now()->subDay(),
+            (new Visitor)->getMorphClass(),
+            (new User)->getMorphClass(),
+        ]];
+    }
+
+    /**
+     * The dashboard attention state, decided in SQL.
+     *
+     * The same cascade `attentionState()` walks in PHP, plus the escalation the
+     * queue layers on top of it -- expressed so the queue can filter, order and
+     * CAP in the database instead of hydrating every matching ticket to sort
+     * them (#847).
+     *
+     * Two implementations of one rule is a drift waiting to happen, so
+     * `TicketAttentionStateParityTest` asserts they agree ticket by ticket over
+     * a seeded desk. This exists because the PHP one cannot be reached from a
+     * `where`, not because the rule changed.
+     */
+    public function scopeSelectAttentionState(Builder $query, string $as = 'attention_state'): Builder
+    {
+        [$case, $bindings] = self::attentionStateSql();
+
+        // The alias is quoted by the grammar rather than dropped in raw. It is
+        // a developer-supplied string today, but this is a public scope and a
+        // raw interpolation is the shape of every injection that started out
+        // "only ever called with a constant".
+        $alias = $query->getQuery()->getGrammar()->wrap($as);
+
+        return $query->selectRaw("{$case} as {$alias}", $bindings);
+    }
+
+    /**
+     * How many tickets sit in each attention state, in one grouped query.
+     *
+     * The queue's summary needs every state's count to build its filter chips,
+     * so it cannot read them off a list already narrowed to one state. It used
+     * to count them in PHP over the whole hydrated result set, which is part of
+     * why this page cannot be capped (#847).
+     *
+     * @return array<string, int>
+     */
+    public function scopeAttentionStateCounts(Builder $query): array
+    {
+        [$case, $bindings] = self::attentionStateSql();
+
+        return $query
+            ->getQuery()
+            ->selectRaw("{$case} as attention_state, count(*) as aggregate", $bindings)
+            // Grouped by the ALIAS, not by a second copy of the expression:
+            // both drivers resolve it here, and passing the same bindings to
+            // two clauses put them out of step.
+            ->groupBy('attention_state')
+            ->pluck('aggregate', 'attention_state')
+            ->map(fn ($count): int => (int) $count)
+            ->all();
+    }
+
+    /**
+     * Narrow to one attention state, in SQL.
+     *
+     * A `where` rather than a `having` on the selected alias: PostgreSQL will
+     * not resolve a select alias in either `having` or an expression in
+     * `order by`, so the CASE is repeated -- from the one place that builds it,
+     * which is the point of `attentionStateSql()`.
+     */
+    public function scopeWhereAttentionState(Builder $query, string $state): Builder
+    {
+        [$case, $bindings] = self::attentionStateSql();
+
+        return $query->whereRaw("{$case} = ?", [...$bindings, $state]);
+    }
+
+    /**
+     * The queue's ordering, in SQL.
+     *
+     * The ranks are `attentionSortRank()`, plus the 5 the queue gives an
+     * escalated ticket. Built from the same CASE as the state, so the order
+     * cannot disagree with what it is ordering by.
+     */
+    public function scopeOrderByAttention(Builder $query): Builder
+    {
+        [$case, $bindings] = self::attentionStateSql();
+
+        return $query
+            ->orderByRaw(
+                "case {$case}
+                    when 'escalated' then 5
+                    when 'needs_reply' then 10
+                    when 'needs_owner' then 20
+                    when 'needs_agent' then 30
+                    when 'waiting_on_customer' then 70
+                    when 'resolved' then 90
+                    else 50
+                end",
+                $bindings
+            )
+            ->orderByDesc('tickets.updated_at')
+            ->orderByDesc('tickets.created_at');
     }
 
     public function attentionState(): string
@@ -513,12 +678,16 @@ class Ticket extends Model
 
     private function latestConversationMessage(): ?ConversationMessage
     {
+        // One definition, reached two ways. The fallback used to be its own
+        // `latest('created_at')->latest('id')` query, which is NOT what
+        // `latestMessage()` means: that relation is `ofMany(max)`, and a MAX
+        // ignores null `created_at` while an `order by ... desc` sorts it to
+        // the front on PostgreSQL. So a null-dated message was the latest
+        // message on any page that had not eager-loaded the relation, and was
+        // invisible on the queue, which had. Two answers from one method.
         return $this->conversation?->relationLoaded('latestMessage')
             ? $this->conversation->latestMessage
-            : $this->conversation?->messages()
-                ->latest('created_at')
-                ->latest('id')
-                ->first();
+            : $this->conversation?->latestMessage()->first();
     }
 
     private function activityPreviewLabelKey(ConversationMessage $message): string
