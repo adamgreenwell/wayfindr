@@ -974,3 +974,33 @@ test('the memory estimate counts live cobrowse sessions the cap does not bound',
     // No queue selected estimates nothing rather than erroring on an empty max.
     expect(MeasureDashboardCommand::estimatedRows([], 50_000, 5_000, 12_500))->toBe(0);
 });
+
+test('a ticket-only measurement does not scan the conversation tables to size itself', function (): void {
+    // Extracting the estimate into a pure rule moved these counts out of the
+    // per-kind `match` and made them unconditional, so `--page=ticket` opened
+    // with two scans of tables it was told not to measure. A benchmark should
+    // not pay for the page somebody excluded.
+    //
+    // Counted with a LISTENER rather than the query log, because the command
+    // captures and restores the log itself and would clobber the reading.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 2, '--fresh' => true]);
+
+    $conversationCounts = 0;
+
+    DB::listen(function ($query) use (&$conversationCounts): void {
+        if (str_contains($query->sql, 'from "conversations"') && str_contains($query->sql, 'count(')) {
+            $conversationCounts++;
+        }
+    });
+
+    Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--page' => ['ticket queue (open)'],
+        '--json' => true,
+    ]);
+
+    // The estimate contributes two of these when ungated: the whole table and
+    // the live-cobrowse set. Neither belongs in a ticket-only run.
+    expect($conversationCounts)->toBeLessThan(2,
+        'a ticket-only measurement counted conversations to size a page it was not measuring');
+});

@@ -571,17 +571,23 @@ final class MeasureDashboardCommand extends Command
         // clamping the estimate to the row cap alone would let this method
         // promise a warning it does not give: the command would run out of
         // memory in a path the estimate had decided was bounded.
-        $activeCobrowse = Conversation::query()
-            ->whereIn('site_id', $sites)
-            ->where('status', 'open')
-            ->withActiveCobrowseSession()
-            ->count();
+        // Counted only for the kinds actually selected. Extracting the rule
+        // into a pure function moved these out of the per-kind `match` and made
+        // them unconditional, so `--page=ticket` opened with two unrelated
+        // scans of the conversation tables before discarding both -- a
+        // benchmark paying for a page it was told not to measure.
+        $wantsConversations = in_array('conversations', $kinds, true);
+        $wantsTickets = in_array('tickets', $kinds, true);
 
         $rows = self::estimatedRows(
             $kinds,
-            Conversation::query()->whereIn('site_id', $sites)->count(),
-            $activeCobrowse,
-            Ticket::query()->whereIn('site_id', $sites)->count(),
+            $wantsConversations ? Conversation::query()->whereIn('site_id', $sites)->count() : 0,
+            $wantsConversations ? Conversation::query()
+                ->whereIn('site_id', $sites)
+                ->where('status', 'open')
+                ->withActiveCobrowseSession()
+                ->count() : 0,
+            $wantsTickets ? Ticket::query()->whereIn('site_id', $sites)->count() : 0,
         );
 
         $warning = self::memoryWarning(

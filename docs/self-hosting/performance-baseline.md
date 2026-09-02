@@ -210,7 +210,7 @@ of the difference is the argument for measuring at all:
 
 Both rows are on the fixture as it stood then, which wrote no lifecycle history
 — that is what makes them comparable to each other. The current figure in the
-table above is 19 queries and 7,071 ms, measured on a desk that now has a
+table above is 19 queries and 7,052 ms, measured on a desk that now has a
 history to hydrate; the paragraph after this measures that difference directly
 rather than leaving two numbers to be reconciled by the reader.
 
@@ -242,6 +242,11 @@ the answer inside the run-to-run noise this page already warns about:
 | --- | ---: | ---: |
 | With 33,229 ticket lifecycle events | 6,917 | 19 |
 | With none | 6,699 | 18 |
+
+Both rows are from that sitting, which is what makes them comparable to each
+other and slightly adrift of the 7,052 ms in the table above — that is a
+different run, and the gap between them is the run-to-run variance this page
+opens by warning about.
 
 **About three per cent, and one query.** That is what the eager load costs when
 it has something to load — a long way from the 9,503 ms the N+1 was costing, and
