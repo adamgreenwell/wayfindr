@@ -756,35 +756,35 @@ test('the queue claims to be translated, so a screen reader is told the truth', 
         ->assertSee('<span class="wf-crumb-current">Conversations</span>', false);
 });
 
-test('translating a model would put German on pages that are still English', function (): void {
+test('models stay locale neutral while extracted surfaces translate their state', function (): void {
     // The regression this guards is subtle and was real: `attentionLabel()` and
     // `presenceLabel()` live on models, and a model is read by every surface
     // that touches it. A `__()` there put `Antwort nötig` inside the
-    // conversation detail page -- which is not extracted, and correctly
-    // declares `<html lang="en">`. That is exactly the mixed-language problem
-    // the per-surface flag exists to prevent, arriving through the model rather
-    // than through the layout.
+    // conversation detail page before that surface was extracted. That was
+    // exactly the mixed-language problem the per-surface flag exists to
+    // prevent, arriving through the model rather than through the layout.
     //
     // So models answer with STATE and extracted surfaces translate at their own
-    // call site. This asserts the unextracted page stays English for an agent
-    // who reads German, which is the correct answer until it is extracted.
+    // call site. The directory used to be the unextracted contrast in this
+    // test; now that it has been extracted, the model itself is the durable
+    // contrast -- it must stay English in a German process while the page reads
+    // the state and presents German.
     $world = conversationQueueLanguageWorld();
 
-    // The visitors directory, which is still outside `EXTRACTED_ROUTES`. This
-    // used the conversation detail page until that surface was extracted too:
-    // the point is that a model's English survives on a page nobody has
-    // translated, so the page has to be one nobody has translated.
-    $unextracted = conversationQueueLanguageVisibleText(
+    $visitor = Visitor::query()->where('site_id', $world['site']->id)->where('name', 'Acme Datenpunkt Person')->firstOrFail();
+
+    App::setLocale('de');
+    expect($visitor->presenceLabel())->toBe('Active recently');
+
+    $directory = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['de'])
             ->get(route('dashboard.visitors.index'))
             ->assertOk()
             ->getContent()
     );
 
-    // `Visitor::presenceLabel()` answers English from the model, and this page
-    // reads it directly.
-    expect($unextracted)->toContain('Active recently')
-        ->and($unextracted)->not->toContain('Kürzlich aktiv');
+    expect($directory)->toContain('Kürzlich aktiv')
+        ->and($directory)->not->toContain('Active recently');
 
     // And the queue, which IS extracted, still says it in German -- so this is
     // measuring where the translation happens rather than that it stopped.
@@ -793,6 +793,109 @@ test('translating a model would put German on pages that are still English', fun
     );
 
     expect($queue)->toContain('Wartet auf Besucher');
+});
+
+test('visitor surfaces translate their copy and keep account content language neutral', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $visitor = Visitor::query()->where('site_id', $world['site']->id)->where('name', 'Acme Datenpunkt Person')->firstOrFail();
+    $visitor->forceFill([
+        'external_id' => 'datenpunkt-host-id',
+        'metadata' => [
+            'last_page_url' => 'https://acme.example/datenpunkt/preise',
+            'context' => ['Datenpunkt field' => 'Datenpunkt value'],
+        ],
+    ])->save();
+
+    Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($visitor, 'requester')
+        ->create(['category' => null, 'subject' => 'Datenpunkt uncategorized']);
+
+    $xpathFor = function (string $html): DOMXPath {
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+        return new DOMXPath($document);
+    };
+
+    $directoryHtml = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.visitors.index'))->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Besuchende')
+        ->assertDontSee('Search visitors')
+        ->getContent();
+    $directory = $xpathFor($directoryHtml);
+
+    foreach ([
+        'the site filter option' => '//option[normalize-space(text())="Acme Datenpunkt Docs"]',
+        'the visitor name' => '//a[normalize-space(text())="Acme Datenpunkt Person"]',
+        'the site name in the visitor row' => '//span[normalize-space(text())="Acme Datenpunkt Docs"]',
+    ] as $label => $query) {
+        $node = $directory->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class)
+            ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
+            ->and($node->getAttribute('lang'))->toBe('');
+    }
+
+    $emptySearch = $directory->query('//input[@id="search"]')->item(0);
+
+    expect($emptySearch)->not->toBeNull('the empty search field did not render; this guard is checking nothing')
+        ->and($emptySearch)->toBeInstanceOf(DOMElement::class)
+        ->and($emptySearch->hasAttribute('lang'))->toBeFalse('the translated placeholder was reset to an unknown language');
+
+    $searchedDirectory = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.visitors.index', ['search' => 'Datenpunkt Person']))->assertOk()
+        ->getContent());
+    $filledSearch = $searchedDirectory->query('//input[@id="search"]')->item(0);
+
+    expect($filledSearch)->not->toBeNull('the filled search field did not render; this guard is checking nothing')
+        ->and($filledSearch)->toBeInstanceOf(DOMElement::class)
+        ->and($filledSearch->hasAttribute('lang'))->toBeTrue('the agent-entered search term carries no language reset')
+        ->and($filledSearch->getAttribute('lang'))->toBe('');
+
+    $profileHtml = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.visitors.show', $visitor))->assertOk()
+        ->assertSee('Besucherprofil')
+        ->assertSee('Ohne Kategorie')
+        ->assertDontSee('Visitor profile')
+        ->getContent();
+    $profile = $xpathFor($profileHtml);
+
+    foreach ([
+        'the site name in the profile heading' => '//header//span[normalize-space(text())="Acme Datenpunkt Docs"]',
+        'the host visitor id' => '//span[normalize-space(text())="datenpunkt-host-id"]',
+        'the host context field' => '//td[normalize-space(text())="Datenpunkt field"]',
+        'the host context value' => '//td[normalize-space(text())="Datenpunkt value"]',
+        'the ticket subject' => '//a[normalize-space(text())="Datenpunkt uncategorized"]',
+    ] as $label => $query) {
+        $node = $profile->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class)
+            ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
+            ->and($node->getAttribute('lang'))->toBe('');
+    }
+
+    $world['agents']['de']->forceFill(['locale' => 'it'])->save();
+    $italianProfile = conversationQueueLanguageVisibleText(
+        (string) $this->actingAs($world['agents']['de'])
+            ->get(route('dashboard.visitors.show', $visitor))->assertOk()
+            ->getContent()
+    );
+
+    expect($italianProfile)->toContain('3 visualizzate')
+        ->toContain('1 visualizzato')
+        ->not->toContain('3 visualizzati');
+
+    App::setLocale('it');
+
+    expect(trans_choice('visitors.counts.shown_conversations', 1, ['count' => 1]))->toBe('1 visualizzata')
+        ->and(trans_choice('visitors.counts.shown_conversations', 2, ['count' => 2]))->toBe('2 visualizzate')
+        ->and(trans_choice('visitors.counts.shown_tickets', 1, ['count' => 1]))->toBe('1 visualizzato')
+        ->and(trans_choice('visitors.counts.shown_tickets', 2, ['count' => 2]))->toBe('2 visualizzati');
 });
 
 test('the form labels and the untitled fallback are translated', function (): void {
@@ -1289,6 +1392,31 @@ test('no English is rendered as German on any extracted surface', function (): v
     // Tickets, so the ticket queue is audited with rows rather than empty --
     // an empty page passes any completeness check trivially.
     $conversation = Conversation::query()->firstOrFail();
+    $profileVisitor = $conversation->visitor()->firstOrFail();
+    $profileVisitor->forceFill([
+        'external_id' => 'datenpunkt-host-id',
+        'metadata' => [
+            'last_page_url' => 'https://acme.example/datenpunkt/preise',
+            'context' => ['Datenpunkt field' => 'Datenpunkt value'],
+        ],
+    ])->save();
+    $sparseVisitor = Visitor::factory()->for($world['site'])->create([
+        'anonymous_id' => 'anon-datenpunkt-sparse',
+        'external_id' => null,
+        'metadata' => [],
+    ]);
+
+    // Enough rows for the framework paginator to render. Its copy lives in a
+    // shared vendor view rather than this surface, so a populated first page is
+    // the only way the extracted-route audit can catch it falling back to
+    // English.
+    for ($index = 1; $index <= 26; $index++) {
+        Visitor::factory()->for($world['site'])->create([
+            'anonymous_id' => 'anon-datenpunkt-page-'.$index,
+            'name' => 'Datenpunkt page visitor '.$index,
+            'last_seen_at' => now()->subMinutes($index),
+        ]);
+    }
 
     Ticket::factory()
         ->for($world['account'])
@@ -1337,6 +1465,11 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.labels.index'),
         route('dashboard.account.api-tokens.index'),
         route('dashboard.sites.live', $world['site']),
+        route('dashboard.visitors.index'),
+        route('dashboard.visitors.index', ['page' => 2]),
+        route('dashboard.visitors.index', ['search' => 'zzzz']),
+        route('dashboard.visitors.show', $profileVisitor),
+        route('dashboard.visitors.show', $sparseVisitor),
         route('dashboard.account.articles.index'),
         // The DETAIL page explicitly. The prefix match above would let it pass
         // on the index's coverage without ever rendering it -- which the loop's
@@ -2573,6 +2706,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',
+        'visitors.snapshot.tickets = Tickets',
+        'visitors.history.tickets = Tickets',
     ];
 
     expect(array_values(array_diff($identical, $expectedCognates)))->toBe([],

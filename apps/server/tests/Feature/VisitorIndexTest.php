@@ -190,6 +190,32 @@ test('the list counts the conversations a visitor has had', function (): void {
     expect($visitor->conversations()->count())->toBe(3);
 });
 
+test('a translated visitor directory translates its paginator too', function (): void {
+    $w = visitorIndexWorld();
+    $w['agent']->forceFill(['locale' => 'de'])->save();
+
+    foreach (range(1, 26) as $index) {
+        Visitor::factory()->for($w['site'])->create([
+            'anonymous_id' => 'anon-page-'.$index,
+            'name' => 'Visitor '.$index,
+            'last_seen_at' => now()->subMinutes($index),
+        ]);
+    }
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', ['page' => 2]))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('aria-label="Seitennavigation"', false)
+        ->assertSee('Ergebnisse <span class="font-medium">26</span> bis <span class="font-medium">26</span> von <span class="font-medium">26</span>', false)
+        ->assertSee('Zurück')
+        ->assertSee('Weiter')
+        ->assertDontSee('Pagination navigation')
+        ->assertDontSee('Showing')
+        ->assertDontSee('Previous')
+        ->assertDontSee('Next');
+});
+
 test('the rail offers visitors', function (): void {
     $w = visitorIndexWorld();
 

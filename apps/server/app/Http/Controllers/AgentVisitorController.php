@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\Visitor;
+use App\Support\ReaderNumber;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\VisitorContextSanitizer;
 use App\Support\Visitors\VisitorPresence;
@@ -210,8 +211,12 @@ class AgentVisitorController extends Controller
         $activeTickets = $this->activeTicketCandidates($visitor);
 
         return [
-            'active_conversation_label' => $this->countLabel($activeConversations->count(), 'active conversation', 'active conversations'),
-            'active_ticket_label' => $this->countLabel($activeTickets->count(), 'active ticket', 'active tickets'),
+            'active_conversation_label' => trans_choice('visitors.counts.active_conversations', $activeConversations->count(), [
+                'count' => ReaderNumber::count($activeConversations->count()),
+            ]),
+            'active_ticket_label' => trans_choice('visitors.counts.active_tickets', $activeTickets->count(), [
+                'count' => ReaderNumber::count($activeTickets->count()),
+            ]),
             ...$this->supportSnapshotAction($activeConversations, $activeTickets),
         ];
     }
@@ -229,12 +234,12 @@ class AgentVisitorController extends Controller
         if ($conversationNeedingReply) {
             return [
                 'next_action' => [
-                    'body' => 'Visitor replied last. Open the latest support item before scanning older history.',
-                    'cta' => 'Reply to visitor',
+                    'body' => __('visitors.snapshot.reply.body'),
+                    'cta' => __('visitors.snapshot.reply.cta'),
                     'href' => route('dashboard.conversations.show', $conversationNeedingReply->support_code).'#reply-heading',
-                    'title' => 'Reply to visitor',
+                    'title' => __('visitors.snapshot.reply.title'),
                 ],
-                'status_label' => 'Needs reply',
+                'status_label' => __('visitors.snapshot.status.needs_reply'),
                 'tone' => 'attention',
             ];
         }
@@ -246,15 +251,16 @@ class AgentVisitorController extends Controller
 
         if ($ticketNeedingAction) {
             $nextAction = $ticketNeedingAction->nextAction();
+            $nextActionKey = $ticketNeedingAction->nextActionKey();
 
             return [
                 'next_action' => [
-                    'body' => $nextAction['body'],
-                    'cta' => $nextAction['cta'],
+                    'body' => __('tickets.next_action.'.$nextActionKey.'.body'),
+                    'cta' => __('tickets.next_action.'.$nextActionKey.'.cta'),
                     'href' => route('dashboard.tickets.show', $ticketNeedingAction).$nextAction['href'],
-                    'title' => $nextAction['title'],
+                    'title' => __('tickets.next_action.'.$nextActionKey.'.title'),
                 ],
-                'status_label' => $ticketNeedingAction->attentionLabel(),
+                'status_label' => __('tickets.row.'.$ticketNeedingAction->attentionLabelKey()),
                 'tone' => $ticketNeedingAction->attentionState() === 'needs_reply' ? 'attention' : 'manual',
             ];
         }
@@ -266,12 +272,12 @@ class AgentVisitorController extends Controller
 
             return [
                 'next_action' => [
-                    'body' => $nextAction['body'],
-                    'cta' => $nextAction['cta'],
+                    'body' => __('visitors.snapshot.empty_conversation.body'),
+                    'cta' => __('visitors.snapshot.empty_conversation.cta'),
                     'href' => route('dashboard.conversations.show', $emptyConversation->support_code).$nextAction['href'],
-                    'title' => $nextAction['title'],
+                    'title' => __('visitors.snapshot.empty_conversation.title'),
                 ],
-                'status_label' => 'Review context',
+                'status_label' => __('visitors.snapshot.status.review_context'),
                 'tone' => 'manual',
             ];
         }
@@ -281,12 +287,12 @@ class AgentVisitorController extends Controller
         if ($waitingConversation) {
             return [
                 'next_action' => [
-                    'body' => 'No visitor reply is waiting right now. Keep the thread visible and respond when the visitor comes back.',
-                    'cta' => 'Review conversation',
+                    'body' => __('visitors.snapshot.waiting_conversation.body'),
+                    'cta' => __('visitors.snapshot.waiting_conversation.cta'),
                     'href' => route('dashboard.conversations.show', $waitingConversation->support_code),
-                    'title' => 'Waiting on visitor',
+                    'title' => __('visitors.snapshot.waiting_conversation.title'),
                 ],
-                'status_label' => 'Waiting',
+                'status_label' => __('visitors.snapshot.status.waiting'),
                 'tone' => 'ready',
             ];
         }
@@ -296,24 +302,24 @@ class AgentVisitorController extends Controller
         if ($waitingTicket) {
             return [
                 'next_action' => [
-                    'body' => 'No visitor reply is waiting right now. Review the active ticket when follow-up is due.',
-                    'cta' => 'Review ticket',
+                    'body' => __('visitors.snapshot.waiting_ticket.body'),
+                    'cta' => __('visitors.snapshot.waiting_ticket.cta'),
                     'href' => route('dashboard.tickets.show', $waitingTicket),
-                    'title' => 'Ticket in progress',
+                    'title' => __('visitors.snapshot.waiting_ticket.title'),
                 ],
-                'status_label' => 'In progress',
+                'status_label' => __('visitors.snapshot.status.in_progress'),
                 'tone' => 'ready',
             ];
         }
 
         return [
             'next_action' => [
-                'body' => 'No active support work is attached to this visitor.',
+                'body' => __('visitors.snapshot.clear.body'),
                 'cta' => null,
                 'href' => null,
-                'title' => 'No active work',
+                'title' => __('visitors.snapshot.clear.title'),
             ],
-            'status_label' => 'Clear',
+            'status_label' => __('visitors.snapshot.status.clear'),
             'tone' => 'ready',
         ];
     }
@@ -349,11 +355,6 @@ class AgentVisitorController extends Controller
             ->latest('created_at')
             ->latest('id')
             ->get();
-    }
-
-    private function countLabel(int $count, string $singular, string $plural): string
-    {
-        return $count.' '.($count === 1 ? $singular : $plural);
     }
 
     private function latestConversationReference(Visitor $visitor): ?Conversation
