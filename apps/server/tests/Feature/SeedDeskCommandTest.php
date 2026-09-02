@@ -18,6 +18,7 @@ use App\Support\Reporting\ReportingScope;
 use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\SupportReport;
 use App\Support\Reporting\TicketReport;
+use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -1106,6 +1107,30 @@ test('an answer never arrives after the episode it answers was reopened', functi
 
         expect($rating->rated_at->lessThan(Carbon::parse($reopenedAt)))
             ->toBeTrue('a visitor answered an episode that had already been reopened');
+    }
+});
+
+test('the desk could actually have collected the answers it holds', function (): void {
+    // `SiteRatingPrompt::for()` defaults to disabled and
+    // `ConversationRatingController` rejects every submission to a site that
+    // has not enabled collection -- so a desk with ratings but no prompt gives
+    // the reports figures it could never have gathered, while the widget still
+    // asks nobody.
+    //
+    // Asserted through the prompt rather than the settings column, so it reads
+    // the way the product does.
+    $this->artisan('wayfindr:seed-desk', ['--conversations' => 60, '--messages' => 2, '--fresh' => true])
+        ->assertSuccessful();
+
+    $sitesWithRatings = ConversationRating::query()->distinct()->pluck('site_id');
+
+    expect($sitesWithRatings)->not->toBeEmpty('no ratings at all, so this asserts nothing');
+
+    foreach ($sitesWithRatings as $siteId) {
+        $site = Site::query()->findOrFail($siteId);
+
+        expect(SiteRatingPrompt::for($site)->enabled)
+            ->toBeTrue('a site holds ratings it was never configured to collect');
     }
 });
 

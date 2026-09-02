@@ -279,6 +279,17 @@ final class SeedDeskCommand extends Command
                 [
                     'public_key' => 'site_desk_'.$i.'_'.Str::lower(Str::random(16)),
                     'domain' => 'desk-'.$i.'.example.test',
+                    // Rating collection ON, because the desk carries ratings.
+                    // `SiteRatingPrompt::for()` defaults to disabled, and
+                    // `ConversationRatingController` rejects every submission
+                    // to a site that has not enabled it -- so seeding answers
+                    // without this gave the reports figures the configured desk
+                    // could never have collected, while the widget still did
+                    // not ask anybody.
+                    'settings' => ['rating' => [
+                        'enabled' => true,
+                        'intro' => 'How did that go?',
+                    ]],
                 ],
             );
         }
