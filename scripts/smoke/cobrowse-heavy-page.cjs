@@ -211,6 +211,7 @@ async function runSample(browser, runNumber) {
     await waitForPreviewMarker(agentPage, finalMarker);
     const deliveryMs = performance.now() - deliveryStartedAt;
     const workloadMs = performance.now() - workloadStartedAt;
+    await waitForRequestsToSettle(agentNetwork, 'preview');
     const finalPrivacy = await previewPrivacy(agentPage);
     const browserTiming = await measureAgentReload(agentPage, agentNetwork);
     const finalMutation = mutationMetrics.at(-1) || {};
@@ -556,6 +557,7 @@ function observeNetwork(page) {
   const starts = new WeakMap();
   const durations = new WeakMap();
   const injected = new WeakSet();
+  const active = new Set();
   const requests = [];
   const records = [];
   const failures = [];
@@ -567,6 +569,7 @@ function observeNetwork(page) {
 
     if (kind) {
       starts.set(request, performance.now());
+      active.add(request);
       requests.push({
         kind,
         masked_sentinel_absent: !(request.postData() || '').includes(maskedSentinel),
@@ -581,6 +584,7 @@ function observeNetwork(page) {
       return;
     }
 
+    active.delete(request);
     const startedAt = starts.get(request);
     const httpMs = startedAt === undefined ? null : round(performance.now() - startedAt);
     durations.set(request, httpMs);
@@ -617,11 +621,13 @@ function observeNetwork(page) {
     const kind = requestKind(request.url());
 
     if (kind) {
+      active.delete(request);
       failures.push({ kind, injected: injected.has(request) });
     }
   });
 
   return {
+    active,
     failures,
     failedResponses,
     durations,
@@ -633,6 +639,32 @@ function observeNetwork(page) {
       injected.add(request);
     },
   };
+}
+
+async function waitForRequestsToSettle(network, kind) {
+  const deadline = performance.now() + timeoutMs;
+  let idleSince = null;
+
+  while (performance.now() < deadline) {
+    const matching = Array.from(network.active).filter((request) => requestKind(request.url()) === kind);
+
+    if (matching.length === 0) {
+      idleSince = idleSince ?? performance.now();
+
+      // The replay code may schedule one queued fetch in the microtask that
+      // follows the current fetch. Require a quiet window so that successor
+      // can start before the harness navigates away.
+      if (performance.now() - idleSince >= 250) {
+        return;
+      }
+    } else {
+      idleSince = null;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  throw new Error(`Timed out waiting for ${kind} requests to settle.`);
 }
 
 function observeCobrowseRealtime(page) {

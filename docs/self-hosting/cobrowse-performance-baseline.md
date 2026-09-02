@@ -12,7 +12,7 @@ deliberate 322-record burst reported 272 skipped records, sent 50 mutations,
 and followed with a clean snapshot. One deliberately aborted mutation request
 was reported as one dropped batch by the next successful batch. Laravel kept
 20 recent batches after 26 had been accepted, and the agent displayed the
-pressure-wave result in a median 529 ms.
+pressure-wave result in a median 515 ms.
 
 No product defect was found. There were no unplanned request failures or
 uncaught page errors in three runs. The masked sentinel was absent from both
@@ -51,7 +51,7 @@ the authenticated site tester:
   subtree-removal, and masked-text changes;
 - one deliberately aborted mutation request, followed by a synchronous burst
   of 322 records (320 attribute changes plus safe and masked text changes);
-- 26 successful mutation batches, 174 accepted mutations, and about 5.36
+- 26 successful mutation batches, 174 accepted mutations, and about 5.21
   seconds from the first steady change to the pressure-wave preview.
 
 The burst is intentionally above both client boundaries. The 250-record queue
@@ -86,12 +86,12 @@ custom budget.
 
 ### Client collection
 
-The synthetic DOM itself was built in a median 1.6 ms. A normal mutation
+The synthetic DOM itself was built in a median 1.5 ms. A normal mutation
 request was 1,746 bytes at both the median and p95; the pressure batch was the
 largest at 12,826 bytes. All were well below 60,000 bytes.
 
-Across the three runs, mutation HTTP time was 129 ms median, 217 ms p95, and
-261 ms maximum. That includes browser-to-Laravel transport and time waiting
+Across the three runs, mutation HTTP time was 118 ms median, 214 ms p95, and
+248 ms maximum. That includes browser-to-Laravel transport and time waiting
 behind concurrent preview reads on the single-process development server.
 
 Each run reported exactly 272 skipped records and one dropped batch. The drop
@@ -103,19 +103,19 @@ measured workload in every run.
 
 The initial capture contained 3,167 nodes, 19 masks, 59,978 HTML characters,
 and the full 10,000-character text allowance. Its JSON request was 73,029 bytes
-including the envelope and took 36–40 ms across the runs.
+including the envelope and took 33–37 ms across the runs.
 
-The pressure mutation was accepted as HTTP 200 in 56–58 ms. The next clean
+The pressure mutation was accepted as HTTP 200 in 53–64 ms. The next clean
 snapshot carried mutation sequence 27, proving it was the pressure recovery
 rather than the initial capture; its 73,038-byte request was accepted in a
-median 344 ms.
+median 342 ms.
 
 ### Reverb notification
 
 The agent received 30 cobrowse events per run: one telemetry update, one page
 state, two snapshots, and 26 mutation events. Those events caused 28 automatic
 preview reads per run. From creating the pressure burst to seeing its safe
-marker in the agent iframe took 529 ms median and 596 ms p95.
+marker in the agent iframe took 515 ms median and 553 ms p95.
 
 The harness observed four WebSocket connections and three closes per run. They
 were caused by the expected agent navigations: submitting the request, the
@@ -136,20 +136,20 @@ empty-session control from the dashboard baseline.
 
 | Browser metric | Median | p95 |
 | --- | ---: | ---: |
-| HTTP response | 59.6 ms | 64.0 ms |
-| DOM content loaded | 73.8 ms | 77.9 ms |
-| Load complete | 77.4 ms | 81.4 ms |
-| Response body | 316,669 bytes | 318,331 bytes |
-| Chromium JS heap after load | 8.13 MB | 8.13 MB |
+| HTTP response | 74.8 ms | 79.8 ms |
+| DOM content loaded | 91.1 ms | 95.3 ms |
+| Load complete | 94.8 ms | 98.9 ms |
+| Response body | 316,670 bytes | 318,332 bytes |
+| Chromium JS heap after load | 8.14 MB | 8.14 MB |
 
 The separate HTTP-kernel measurement targets the last run's exact support code
 and rolls every request back:
 
 | Server metric | Result |
 | --- | ---: |
-| Laravel render, median of 3 | 37.1 ms |
+| Laravel render, median of 3 | 34.4 ms |
 | Queries | 28 |
-| Response | 318,149 bytes |
+| Response | 318,150 bytes |
 | PHP peak allocated memory | 46,661,632 bytes (44.5 MiB) |
 | Status | 200 |
 
