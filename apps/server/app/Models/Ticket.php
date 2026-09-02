@@ -166,7 +166,13 @@ class Ticket extends Model
     {
         [$case, $bindings] = self::attentionStateSql();
 
-        return $query->selectRaw("{$case} as {$as}", $bindings);
+        // The alias is quoted by the grammar rather than dropped in raw. It is
+        // a developer-supplied string today, but this is a public scope and a
+        // raw interpolation is the shape of every injection that started out
+        // "only ever called with a constant".
+        $alias = $query->getQuery()->getGrammar()->wrap($as);
+
+        return $query->selectRaw("{$case} as {$alias}", $bindings);
     }
 
     /**

@@ -260,3 +260,60 @@ test('the attention chips do not advertise tickets the external filter removes',
     expect($chips['needs_owner'])
         ->toBe(1, 'the needs-owner chip counted a ticket the external filter removes');
 });
+
+test('the attention filter still applies when the external filter is active', function (): void {
+    // With the external refinement active, the attention work moves back to
+    // PHP: counts taken after the external filter, and the attention filter
+    // applied to what is left. That branch had no test at all -- the chip test
+    // above exercises the counts but never asks for an attention state as
+    // well. Two failed exports in different attention states, and a
+    // needs-owner ticket with no export, so each of the three ways this can
+    // go wrong shows a different subject.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    $failedNeedsOwner = Ticket::factory()->for($account)->for($site)->create([
+        'subject' => 'Failed export, nobody owns it',
+        'status' => 'open',
+        'assignee_id' => null,
+    ]);
+
+    $failedNeedsAgent = Ticket::factory()->for($account)->for($site)->create([
+        'subject' => 'Failed export, owned and silent',
+        'status' => 'open',
+        'assignee_id' => $agent->id,
+        'conversation_id' => null,
+    ]);
+
+    foreach ([$failedNeedsOwner, $failedNeedsAgent] as $ticket) {
+        AuditEvent::factory()->for($account)->for($ticket, 'subject')->create([
+            'action' => 'ticket.external_sync_failed',
+            'metadata' => ['provider' => 'github', 'project_key' => 'acme/api'],
+            'occurred_at' => now()->subMinutes(5),
+        ]);
+    }
+
+    Ticket::factory()->for($account)->for($site)->create([
+        'subject' => 'No export, nobody owns it',
+        'status' => 'open',
+        'assignee_id' => null,
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get('/dashboard/tickets?ticket_external=failed&ticket_attention=needs_owner');
+
+    $response->assertOk()
+        ->assertSee('Failed export, nobody owns it')
+        ->assertDontSee('Failed export, owned and silent')
+        ->assertDontSee('No export, nobody owns it');
+
+    // Counted after the external filter and before the attention one: the
+    // other failed ticket's state is still advertised, the no-export ticket's
+    // is not.
+    $chips = collect($response->viewData('ticketQueueSummary'))
+        ->mapWithKeys(fn (array $row): array => [$row['state'] => $row['count']]);
+
+    expect($chips['needs_owner'])->toBe(1, 'the needs-owner chip counted a ticket the external filter removes')
+        ->and($chips['needs_agent'])->toBe(1, 'the needs-agent chip lost the failed ticket the attention filter hides');
+});

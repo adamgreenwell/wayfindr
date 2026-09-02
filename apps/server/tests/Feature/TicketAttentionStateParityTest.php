@@ -65,14 +65,18 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     $site = Site::query()->firstOrFail();
     $account = Account::query()->findOrFail($site->account_id);
 
+    // Every ticket built by hand below, so the guard at the end can ask what
+    // the DESK produced without them.
+    $handBuilt = [];
+
     foreach ([[3, 1], [2, 2], [1, 3]] as [$createdDaysAgo, $updatedHoursAgo]) {
-        Ticket::factory()->for($account)->for($site)->create([
+        $handBuilt[] = Ticket::factory()->for($account)->for($site)->create([
             'status' => 'open',
             'assignee_id' => null,
             'conversation_id' => null,
             'created_at' => now()->subDays($createdDaysAgo),
             'updated_at' => now()->subHours($updatedHoursAgo),
-        ]);
+        ])->id;
     }
 
     // A message whose SENDER IS NULL, which is not exotic: it is what the
@@ -99,6 +103,7 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
         ]);
 
     $withNullSender = $ticketOnItsOwnConversation('open', $assignee->id);
+    $handBuilt[] = $withNullSender->id;
 
     ConversationMessage::factory()->create([
         'conversation_id' => $withNullSender->conversation_id,
@@ -124,6 +129,7 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     // agent message wins and it becomes `waiting_on_customer` -- the wrong
     // lane, from the wrong message.
     $mixedDates = $ticketOnItsOwnConversation('open', $assignee->id);
+    $handBuilt[] = $mixedDates->id;
 
     ConversationMessage::factory()->create([
         'conversation_id' => $mixedDates->conversation_id,
@@ -142,12 +148,53 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     // no latest message at all and lands on `needs_agent` -- not `needs_reply`,
     // which is what an existence check that counts undated rows would say.
     $allUndated = $ticketOnItsOwnConversation('open', $assignee->id);
+    $handBuilt[] = $allUndated->id;
 
     $undate(ConversationMessage::factory()->create([
         'conversation_id' => $allUndated->conversation_id,
         'sender_type' => (new Visitor)->getMorphClass(),
         'sender_id' => Visitor::query()->firstOrFail()->id,
     ]));
+
+    // The PENDING branch, in every direction it can go. The desk seeds pending
+    // tickets, but which side of the branch each lands on depends on who
+    // happened to speak last, and a fixture can produce one side only and
+    // agree about the other without ever reaching it. So all four, by hand:
+    // pending with a visitor last (falls through to needs_reply), with an
+    // agent last, with no message at all, and with a senderless message -- the
+    // last two are the `?->` in the PHP treating both nulls alike, which is
+    // the `coalesce` in the SQL.
+    $pendingAfterVisitor = $ticketOnItsOwnConversation('pending', $assignee->id);
+    $pendingAfterAgent = $ticketOnItsOwnConversation('pending', $assignee->id);
+    $pendingSilent = $ticketOnItsOwnConversation('pending', $assignee->id);
+    $pendingSenderless = $ticketOnItsOwnConversation('pending', $assignee->id);
+    array_push($handBuilt, $pendingAfterVisitor->id, $pendingAfterAgent->id, $pendingSilent->id, $pendingSenderless->id);
+
+    ConversationMessage::factory()->create([
+        'conversation_id' => $pendingAfterVisitor->conversation_id,
+        'sender_type' => (new Visitor)->getMorphClass(),
+        'sender_id' => Visitor::query()->firstOrFail()->id,
+        'created_at' => now()->subMinutes(2),
+    ]);
+
+    ConversationMessage::factory()->create([
+        'conversation_id' => $pendingAfterAgent->conversation_id,
+        'sender_type' => (new User)->getMorphClass(),
+        'sender_id' => $assignee->id,
+        'created_at' => now()->subMinutes(2),
+    ]);
+
+    ConversationMessage::factory()->create([
+        'conversation_id' => $pendingSenderless->conversation_id,
+        'sender_type' => null,
+        'sender_id' => null,
+        'created_at' => now()->subMinutes(2),
+    ]);
+
+    expect($pendingAfterVisitor->fresh()->attentionState())->toBe('needs_reply', 'pending after a visitor should fall through')
+        ->and($pendingAfterAgent->fresh()->attentionState())->toBe('waiting_on_customer')
+        ->and($pendingSilent->fresh()->attentionState())->toBe('waiting_on_customer', 'pending with no message at all')
+        ->and($pendingSenderless->fresh()->attentionState())->toBe('waiting_on_customer', 'pending with a senderless message');
 
     expect($mixedDates->fresh()->attentionState())->toBe('needs_reply',
         'the fixture no longer separates a MAX from a descending sort')
@@ -180,10 +227,14 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
 
     expect($disagreements)->toBe([], implode('; ', array_slice($disagreements, 0, 5)));
 
-    // And the fixture actually exercised more than one state, or agreement is
-    // agreement about nothing.
-    expect($inSql->values()->unique()->count())
-        ->toBeGreaterThan(2, 'the desk produced too few attention states to compare meaningfully');
+    // And the DESK actually exercised more than one state, or agreement is
+    // agreement about nothing. Counted without the hand-built rows: those are
+    // chosen to land in particular states, so they satisfy any such guard on
+    // their own and would hide a seeder that had stopped producing variety.
+    $deskStates = $inSql->except($handBuilt)->values()->unique();
+
+    expect($deskStates->count())
+        ->toBeGreaterThan(2, 'the desk produced too few attention states to compare meaningfully: '.$deskStates->implode(', '));
 
     // And the escalated branch was actually reached, in both directions: the
     // recent one counts, the three-day-old one does not, and the closed ticket
