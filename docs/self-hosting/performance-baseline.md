@@ -29,15 +29,16 @@ php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
 
 On the documented Docker installs `artisan` is inside the `web` container. The
-one-line installer puts the stack in `./wayfindr`, so from the directory it was
-run in:
+one-line installer puts `compose.yml` and `.env` in `./wayfindr`, or wherever
+`--dir` pointed if it was given one. From inside that directory, whichever it
+is:
 
 ```bash
-docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```
 
 ```bash
-docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+docker compose -f compose.yml --env-file .env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
 
 A by-hand Compose install runs from the checkout, with the stack files under
@@ -82,10 +83,11 @@ PHP on the host:
 php artisan wayfindr:seed-desk --purge
 ```
 
-From the directory the one-line installer was run in:
+From inside the one-line installer's directory (`./wayfindr`, or the `--dir`
+it was given):
 
 ```bash
-docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --purge
+docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:seed-desk --purge
 ```
 
 From a by-hand Compose checkout:

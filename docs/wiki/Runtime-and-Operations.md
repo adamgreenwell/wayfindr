@@ -73,20 +73,21 @@ the seeder's slug holds a site or a user the seeder did not create, and it does
 not ask for `--force`: it is the remedy, and a remedy that asks to be told twice
 is one an operator postpones.
 
-The commands depend on where `artisan` is. The one-line installer puts the
-stack in `./wayfindr` (or wherever `--dir` pointed) with `artisan` inside the
-`web` container, so from the directory you ran the installer in:
+The commands depend on where `artisan` is. The one-line installer puts
+`compose.yml` and `.env` in `./wayfindr`, or wherever `--dir` pointed if it was
+given one, with `artisan` inside the `web` container. Run these from inside
+that directory, whichever it is — the same form the installer itself uses:
 
 ```bash
-docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```
 
 ```bash
-docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+docker compose -f compose.yml --env-file .env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
 
 ```bash
-docker compose -f wayfindr/compose.yml --env-file wayfindr/.env exec web php artisan wayfindr:seed-desk --purge
+docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:seed-desk --purge
 ```
 
 A by-hand Compose install runs from the repository checkout, with the stack
