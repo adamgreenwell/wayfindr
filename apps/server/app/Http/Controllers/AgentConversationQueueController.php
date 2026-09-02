@@ -201,7 +201,7 @@ class AgentConversationQueueController extends Controller
             $conversations = $conversations->take(ConversationQueueQuery::DISPLAY_LIMIT)->values();
         }
         $conversationQueueCountSummary = $this->conversationQueueCountSummary(
-            $conversations,
+            $conversationsShownOf,
             $matchingConversationCount,
             $conversationFilter,
             $conversationFilters,
@@ -457,9 +457,14 @@ class AgentConversationQueueController extends Controller
      * @param  array<string, string>  $conversationFilters
      * @return array{heading: string, detail: string}
      */
-    private function conversationQueueCountSummary(Collection $conversations, int $matchingConversationCount, string $conversationFilter, array $conversationFilters, bool $conversationHasActiveRefinement, int $newActivityConversationCount, int $cobrowseAttentionConversationCount): array
+    private function conversationQueueCountSummary(int $laneCount, int $matchingConversationCount, string $conversationFilter, array $conversationFilters, bool $conversationHasActiveRefinement, int $newActivityConversationCount, int $cobrowseAttentionConversationCount): array
     {
-        $shownCount = $conversations->count();
+        // The lane's OWN size, not the number of rows rendered. With the row
+        // cap those differ, and a page saying "200 open" above "showing the 200
+        // most recently active of 1,000" contradicts itself -- an agent needs
+        // to know a thousand are open. How many are on screen is the capped
+        // notice's job, and it says so separately.
+        $shownCount = $laneCount;
         $supportLaneNarrowed = ! in_array($conversationFilter, ['all', 'closed'], true)
             && $shownCount !== $matchingConversationCount;
 

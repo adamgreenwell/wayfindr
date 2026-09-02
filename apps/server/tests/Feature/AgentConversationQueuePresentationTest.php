@@ -340,3 +340,37 @@ test('a conversation with no messages does not bury one that has them', function
     expect($response->viewData('conversations')->first()->id)
         ->toBe($answered->id, 'a conversation nobody has written to outranked one with a reply a minute ago');
 });
+
+test('the queue summary counts the lane, not the page', function (): void {
+    // With the row cap, the number rendered and the number that exist differ.
+    // The primary summary must report the lane -- a page saying "200 open"
+    // above "showing the 200 most recently active of 225" contradicts itself,
+    // and an agent needs to know how many are actually open.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    $open = ConversationQueueQuery::DISPLAY_LIMIT + 25;
+
+    Conversation::factory()
+        ->count($open)
+        ->for($site)
+        ->for(Visitor::factory()->for($site))
+        ->create(['status' => 'open']);
+
+    $response = $this->actingAs($agent)->get('/dashboard/conversations');
+
+    $response->assertOk();
+
+    $summary = $response->viewData('conversationQueueCountSummary');
+
+    // `str_contains` rather than `toContain($needle, $message)`: that matcher is
+    // VARIADIC, so the failure message is read as a second needle and the
+    // assertion demands both. It fails on a correct page, which is how it
+    // caught my attention here for the second time in a day.
+    expect(str_contains($summary['heading'], (string) $open))
+        ->toBeTrue('the summary reported the row cap as the number of open conversations');
+
+    expect(str_contains($summary['heading'], ConversationQueueQuery::DISPLAY_LIMIT.' open'))
+        ->toBeFalse('the summary reported the capped row count as the lane size');
+});
