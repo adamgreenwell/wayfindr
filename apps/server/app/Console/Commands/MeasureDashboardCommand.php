@@ -564,13 +564,25 @@ final class MeasureDashboardCommand extends Command
         // the figure this command's own documentation recommends.
         //
         // The ticket queue is not capped yet (#847), so it is still the table.
-        $rows = max(array_map(fn (string $kind): int => match ($kind) {
-            'conversations' => min(
-                Conversation::query()->whereIn('site_id', $sites)->count(),
-                ConversationQueueQuery::DISPLAY_LIMIT,
-            ),
-            default => Ticket::query()->whereIn('site_id', $sites)->count(),
-        }, $kinds));
+        // Conversations with a LIVE cobrowse session are hydrated in full on
+        // every conversation-queue render, to count how many need attention,
+        // and `withActiveCobrowseSession()` has no age cutoff -- a desk that
+        // never ends sessions accumulates them. That set is not capped, so
+        // clamping the estimate to the row cap alone would let this method
+        // promise a warning it does not give: the command would run out of
+        // memory in a path the estimate had decided was bounded.
+        $activeCobrowse = Conversation::query()
+            ->whereIn('site_id', $sites)
+            ->where('status', 'open')
+            ->withActiveCobrowseSession()
+            ->count();
+
+        $rows = self::estimatedRows(
+            $kinds,
+            Conversation::query()->whereIn('site_id', $sites)->count(),
+            $activeCobrowse,
+            Ticket::query()->whereIn('site_id', $sites)->count(),
+        );
 
         $warning = self::memoryWarning(
             $rows,
@@ -624,6 +636,32 @@ final class MeasureDashboardCommand extends Command
         }
 
         return array_values(array_unique($kinds));
+    }
+
+    /**
+     * How many rows the selected queues will actually hydrate.
+     *
+     * Pure and public, because the cases worth asserting are ones no test can
+     * afford to seed: the interesting one is a desk with tens of thousands of
+     * rows, and the arithmetic is where the mistakes live.
+     *
+     * @param  list<string>  $kinds
+     */
+    public static function estimatedRows(array $kinds, int $conversations, int $activeCobrowse, int $tickets): int
+    {
+        $perKind = array_map(fn (string $kind): int => match ($kind) {
+            // The conversation queue is capped, so its rows stop growing with
+            // the desk -- EXCEPT for conversations with a live cobrowse
+            // session, which are hydrated in full on every render to count how
+            // many need attention, and which `withActiveCobrowseSession()`
+            // never ages out. Taking the cap alone would promise a warning the
+            // command does not give and then die in the path it called safe.
+            'conversations' => max(min($conversations, ConversationQueueQuery::DISPLAY_LIMIT), $activeCobrowse),
+            // Not capped yet (#847), so it is still the table.
+            default => $tickets,
+        }, $kinds);
+
+        return $perKind === [] ? 0 : max($perKind);
     }
 
     /**

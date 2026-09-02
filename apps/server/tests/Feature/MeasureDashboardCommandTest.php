@@ -11,6 +11,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Conversations\ConversationQueueQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -695,6 +696,14 @@ test('it says up front when the memory limit will not survive the desk', functio
     // Room to spare says nothing, or it is noise on every run.
     expect($warn(50_000, 4 * 1024 * 1024 * 1024))->toBeNull();
 
+    // A desk whose LIVE COBROWSE set is large is not bounded by the row cap:
+    // those conversations are hydrated in full on every queue render to count
+    // how many need attention, and the scope has no age cutoff. Clamping the
+    // estimate to the cap alone would promise a warning the command then does
+    // not give, and it would run out of memory in a path the estimate had
+    // decided was safe.
+    expect($warn(50_000, 256 * 1024 * 1024))->toContain('memory_limit=2G');
+
     // A small desk fits inside the shipped limit and must not be warned about.
     expect($warn(200, 256 * 1024 * 1024))->toBeNull();
 
@@ -925,4 +934,43 @@ test('it refuses rather than measure as somebody real', function (): void {
 
     expect(Artisan::call('wayfindr:measure-dashboard', ['--runs' => 1]))
         ->toBe(1, 'the command measured as a user it was never pointed at');
+});
+
+test('the memory estimate counts live cobrowse sessions the cap does not bound', function (): void {
+    // The conversation queue is capped, but conversations with a LIVE cobrowse
+    // session are hydrated in full on every render to count how many need
+    // attention, and `withActiveCobrowseSession()` has no age cutoff -- a desk
+    // that never ends sessions accumulates them.
+    //
+    // Estimating from the row cap alone reports a comfortable figure for a run
+    // that then dies in that unbounded path, which is worse than not warning:
+    // the operator was told it would fit.
+    //
+    // Asserted on the RULE, because the interesting desks are ones no test can
+    // afford to seed and the arithmetic is where the mistakes are.
+    $cap = ConversationQueueQuery::DISPLAY_LIMIT;
+
+    // A big desk with nothing live: bounded by the cap.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 0, 0))
+        ->toBe($cap);
+
+    // The same desk with more live cobrowse sessions than the cap: NOT bounded,
+    // because that set is hydrated whole.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 5_000, 0))
+        ->toBe(5_000, 'the estimate ignored an unbounded live-cobrowse set');
+
+    // Fewer live sessions than the cap changes nothing.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations'], 50_000, 12, 0))
+        ->toBe($cap);
+
+    // Tickets are not capped at all yet, so they are the table.
+    expect(MeasureDashboardCommand::estimatedRows(['tickets'], 50_000, 0, 12_500))
+        ->toBe(12_500);
+
+    // Both selected takes the larger.
+    expect(MeasureDashboardCommand::estimatedRows(['conversations', 'tickets'], 50_000, 300, 12_500))
+        ->toBe(12_500);
+
+    // No queue selected estimates nothing rather than erroring on an empty max.
+    expect(MeasureDashboardCommand::estimatedRows([], 50_000, 5_000, 12_500))->toBe(0);
 });
