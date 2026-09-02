@@ -196,26 +196,54 @@ class AgentTicketQueueController extends Controller
                         $query->orWhere('id', $ticketReferenceId);
                     }
                 });
-            })
-            ->orderByDesc('updated_at')
-            ->orderByDesc('created_at')
+            });
+        // The attention state and the queue's ordering are decided in SQL
+        // now. They were computed per ticket in PHP and then sorted in PHP,
+        // which is why this page cannot be capped: a limit would take an
+        // arbitrary window and sort within it (#847). Moving them into the
+        // query is the prerequisite, and `TicketAttentionStateParityTest`
+        // holds the SQL and the PHP rule in step ticket by ticket.
+
+        // The summary's chips need EVERY state's count, so they are taken
+        // before the attention filter narrows the list to one -- in a single
+        // grouped query rather than by counting a hydrated collection, which is
+        // part of what made this page unbounded.
+        //
+        // From the base query, BEFORE the row selects: cloning a query that
+        // already selects `attention_state` and then selecting it again leaves
+        // PostgreSQL with two columns of that name and an ambiguous `group by`.
+        $ticketAttentionCounts = (clone $ticketResults)->attentionStateCounts();
+
+        $ticketResults = $ticketResults
+            ->select(['tickets.*'])
+            ->selectAttentionState()
+            ->when($ticketAttention !== 'all', fn ($query) => $query->whereAttentionState($ticketAttention))
+            ->orderByAttention()
             ->get();
+
+        // The external-issue state is still decided in PHP. It pairs audit
+        // events against each other -- a creation cancelled by a later removal,
+        // a failure resolved by a later success -- which is not a `where`. That
+        // is what still stands between this page and a row cap, and it is the
+        // remaining half of #847.
         $ticketResults = $ticketResults
             ->filter(fn (Ticket $ticket): bool => $ticketExternalIssue === 'all'
                 || TicketExternalIssueState::forTicket($ticket) === $ticketExternalIssue)
             ->values();
-        $ticketQueueSummary = $this->ticketQueueSummary($ticketResults, $ticketQuery, $ticketAttentionFilters);
-        $tickets = $ticketResults
-            ->filter(fn (Ticket $ticket): bool => $ticketAttention === 'all' || $this->ticketDashboardAttentionState($ticket) === $ticketAttention)
-            ->sortBy(fn (Ticket $ticket): array => [
-                $this->ticketDashboardAttentionSortRank($ticket),
-                -$ticket->updated_at->getTimestamp(),
-                -$ticket->created_at->getTimestamp(),
-            ])
-            ->values();
+        $ticketQueueSummary = $this->ticketQueueSummary($ticketAttentionCounts, $ticketQuery, $ticketAttentionFilters);
+        $tickets = $ticketResults;
+
+        // The rows are already narrowed by attention in SQL, so the "matching"
+        // half of this sentence has to come from the grouped counts rather than
+        // from the list -- they are the same collection now, and comparing it
+        // with itself reports nothing as narrowed.
+        //
+        // Summed BEFORE the external-issue refinement, which still runs in PHP:
+        // the count is what the other filters matched, which is what the
+        // sentence claims.
         $ticketQueueCountSummary = $this->ticketQueueCountSummary(
             $tickets,
-            $ticketResults,
+            array_sum($ticketAttentionCounts),
             $ticketStatusSummary,
             $ticketAttention,
             $ticketAttentionFilters,
@@ -437,9 +465,11 @@ class AgentTicketQueueController extends Controller
      * @param  array<string, string>  $ticketAttentionFilters
      * @return array<int, array{state: string, label: string, count: int, href: string}>
      */
-    private function ticketQueueSummary(Collection $tickets, array $ticketQuery, array $ticketAttentionFilters): array
+    /**
+     * @param  array<string, int>  $counts
+     */
+    private function ticketQueueSummary(array $counts, array $ticketQuery, array $ticketAttentionFilters): array
     {
-        $counts = $tickets->countBy(fn (Ticket $ticket): string => $this->ticketDashboardAttentionState($ticket));
 
         return collect(['escalated', 'needs_reply', 'needs_owner', 'needs_agent', 'waiting_on_customer', 'resolved'])
             ->map(function (string $state) use ($counts, $ticketAttentionFilters, $ticketQuery): array {
@@ -462,14 +492,12 @@ class AgentTicketQueueController extends Controller
 
     /**
      * @param  Collection<int, Ticket>  $tickets
-     * @param  Collection<int, Ticket>  $ticketResults
      * @param  array<string, string>  $ticketAttentionFilters
      * @return array{heading: string, detail: string}
      */
-    private function ticketQueueCountSummary(Collection $tickets, Collection $ticketResults, string $ticketStatusSummary, string $ticketAttention, array $ticketAttentionFilters): array
+    private function ticketQueueCountSummary(Collection $tickets, int $matchingCount, string $ticketStatusSummary, string $ticketAttention, array $ticketAttentionFilters): array
     {
         $shownCount = $tickets->count();
-        $matchingCount = $ticketResults->count();
         $nextStepNarrowed = $ticketAttention !== 'all' && $shownCount !== $matchingCount;
 
         if (! $nextStepNarrowed) {
