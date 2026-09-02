@@ -228,10 +228,10 @@ async function run() {
         sends: client.keepaliveSentAt.filter((sentAt) => sentAt >= holdStartedAt && sentAt <= holdFinishedAt).length,
         acknowledgements: client.keepaliveAcks.filter((acknowledgement) => (
           acknowledgement.sentAt >= holdStartedAt
-          && acknowledgement.receivedAt <= holdFinishedAt
+          && acknowledgement.sentAt <= holdFinishedAt
         )),
-        timeouts: client.keepaliveTimeoutAt.filter((timedOutAt) => (
-          timedOutAt >= holdStartedAt && timedOutAt <= holdFinishedAt
+        timeouts: client.keepaliveTimeouts.filter((timeout) => (
+          timeout.sentAt >= holdStartedAt && timeout.sentAt <= holdFinishedAt
         )).length,
       }));
 
@@ -393,7 +393,7 @@ class CapacityAgent {
     this.keepalivePongs = 0;
     this.keepaliveSentAt = [];
     this.keepaliveAcks = [];
-    this.keepaliveTimeoutAt = [];
+    this.keepaliveTimeouts = [];
     this.serverPings = 0;
     this.activityTimeoutSeconds = null;
   }
@@ -740,7 +740,10 @@ class CapacityAgent {
           }
 
           this.pendingKeepalive = null;
-          this.keepaliveTimeoutAt.push(performance.now());
+          this.keepaliveTimeouts.push({
+            sentAt,
+            timedOutAt: performance.now(),
+          });
           this.websocketErrors += 1;
           pending.settle();
           socket.close(4000, 'Pusher keepalive timed out');
