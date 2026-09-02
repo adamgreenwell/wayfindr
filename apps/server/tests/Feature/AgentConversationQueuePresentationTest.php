@@ -384,3 +384,47 @@ test('the queue summary counts the lane, not the page', function (): void {
     expect(str_contains($summary['detail'], (string) $open))
         ->toBeFalse('the detail reported the lane size as the number of rows shown');
 });
+
+test('the queue switcher does not rebuild the whole lane', function (): void {
+    // Opening a row from the queue carries `from_queue=1`, and the sibling
+    // lookup rebuilt the lane to find the neighbours -- unbounded, so the
+    // queue-to-detail flow hydrated every matching conversation and paid
+    // exactly the cost the row cap exists to remove, on the path agents use
+    // most.
+    //
+    // Asserted on the switcher's own `total`, which is the size of the set it
+    // materialised. Counting QUERIES does not work here and I wrote that
+    // version first: an unbounded lookup runs the same number of statements,
+    // it just brings back more rows, so the count is identical either way.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    Conversation::factory()
+        ->count(ConversationQueueQuery::DISPLAY_LIMIT + 50)
+        ->for($site)
+        ->for($visitor)
+        ->create(['status' => 'open', 'last_message_at' => now()->subMinutes(5)]);
+
+    // The one the agent opens, ranked first so it is inside the window.
+    $opened = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-SWITCHER',
+        'status' => 'open',
+        'last_message_at' => now(),
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get('/dashboard/conversations/'.$opened->support_code.'?from_queue=1');
+
+    $response->assertOk();
+
+    $switcher = $response->viewData('conversationSiblings');
+
+    expect($switcher['total'])->toBe(ConversationQueueQuery::DISPLAY_LIMIT,
+        'the switcher materialised the whole lane rather than the window the queue rendered');
+
+    // The lane really is bigger than the cap, or this proves nothing.
+    expect(Conversation::query()->count())
+        ->toBeGreaterThan(ConversationQueueQuery::DISPLAY_LIMIT);
+});

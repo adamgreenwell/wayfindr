@@ -284,16 +284,34 @@ class AgentConversationController extends Controller
         ConversationQueueQuery::applyLane($query, $lane, $agent);
         ConversationQueueQuery::ordered($query);
 
+        // The cobrowse lane is narrowed AFTER the query in the queue itself,
+        // against live transport state, so it cannot be capped in SQL for the
+        // same reason the queue cannot: the 200 most recent active sessions
+        // could all be healthy while an older one is degraded.
+        $narrowsInPhp = $lane === 'cobrowse_attention';
+
+        // Capped to the SAME window the queue rendered. Without this the
+        // switcher rebuilt the whole lane on every queue-to-detail click --
+        // tens of thousands of rows on a busy desk, which is the cost the cap
+        // exists to remove, paid on the flow agents use most.
+        //
+        // It is also what makes the switcher honest: walking rows the queue
+        // said to narrow for would navigate into a list the agent was never
+        // shown.
+        if (! $narrowsInPhp) {
+            $query->limit(ConversationQueueQuery::DISPLAY_LIMIT);
+        }
+
         $siblings = $query->get(['id', 'support_code', 'subject']);
 
-        // The cobrowse lane is narrowed AFTER the query in the queue itself,
-        // against live transport state. Without the same pass the switcher
-        // lists conversations the queue does not show.
-        if ($lane === 'cobrowse_attention') {
+        // Without the same pass the switcher lists conversations the queue does
+        // not show.
+        if ($narrowsInPhp) {
             $siblings = $siblings
                 ->filter(fn (Conversation $candidate): bool => $cobrowseConsentState->transportNeedsAttention(
                     $cobrowseConsentState->queueTransportForConversation($candidate)
                 ))
+                ->take(ConversationQueueQuery::DISPLAY_LIMIT)
                 ->values();
         }
 
@@ -303,10 +321,14 @@ class AgentConversationController extends Controller
             return $empty;
         }
 
-        // Position and neighbours come from the WHOLE queue; only the rendered
-        // menu is bounded. Capping the query instead made the total wrong, cut
-        // the next link at item 50, and removed the control entirely for
-        // anything ranked below that.
+        // Position and neighbours come from the same window the QUEUE renders,
+        // and only the menu is narrowed further. Capping at the menu size was
+        // tried once and rejected: it made the total wrong, cut the next link
+        // at item 50 and removed the control below that. The cap here is the
+        // queue's own, so every row an agent can reach by clicking is inside
+        // it -- and a stale link to a row below it loses the switcher rather
+        // than being given the wrong neighbours, which is what the guard above
+        // is for.
         $windowStart = max(0, $index - self::SWITCHER_MENU_WINDOW);
 
         return [
