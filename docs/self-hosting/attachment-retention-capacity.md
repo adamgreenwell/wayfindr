@@ -9,9 +9,9 @@ through the application's authorization check.
 
 This establishes the behaviour and approximate cost of this particular object
 count on the topology below. It is not a universal storage limit. The harness
-allows up to 50,000 objects and 256 MiB of synthetic data so an operator can
-measure the same boundary on the storage service and network they will really
-use.
+allows up to 50,000 objects and 256 MiB of synthetic data, but its S3 mode is
+deliberately limited to disposable loopback MinIO. It cannot measure an
+operator's remote object store or network.
 
 ## What ran
 
@@ -118,8 +118,10 @@ scripts/smoke/attachment-retention-capacity.sh s3
 ```
 
 PHP 8.4.1 or newer is required. Docker is required only for the S3-compatible
-run. Report paths must be absolute, outside the repository, and new; the harness
-will not overwrite a report.
+run. Report paths must be absolute, outside the repository, new, and have an
+existing parent directory; the harness will not overwrite a report. It resolves
+that parent before enforcing the repository boundary, so `..` components and
+symlinks cannot redirect the report back into the checkout.
 
 The application command underneath the wrapper is:
 
@@ -180,9 +182,10 @@ prefix, bucket, or object was used.
   application traffic; loopback MinIO is a protocol-compatible control.
 - It does not measure large attachment bodies. The object count is the focus,
   and the total payload is only 9.77 MiB.
-- It does not turn the figures above into an SLO. Repeat the harness on the
-  deployment's actual hardware and a disposable instance of its actual object
-  store before sizing a busy desk.
+- It does not turn the figures above into an SLO. The local mode can be repeated
+  on deployment-like hardware, but the S3 mode intentionally remains a
+  loopback protocol control. Measuring a remote service would require a
+  separate, strongly guarded harness and isolated test credentials.
 
 No retention defect surfaced in either full run, so there was no separate
 defect to file from this measurement.
