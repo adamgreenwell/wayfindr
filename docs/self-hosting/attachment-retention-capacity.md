@@ -99,7 +99,9 @@ need. `local` uses only the temporary filesystem; `s3` also starts the pinned
 MinIO image on a random loopback port and removes its container and bind data on
 exit. Before the destructive `migrate:fresh`, the wrapper boots the application
 with a temporary, nonexistent config-cache path and runs the command's read-only
-disposable-target preflight.
+disposable-target preflight. That preflight resolves the SQLite file itself and
+rejects symbolic or hard links, so a path under the disposable directory cannot
+redirect the migration to a database elsewhere.
 
 ```bash
 WAYFINDR_ATTACHMENT_RETENTION_PHP_BINARY="$(command -v php)" \

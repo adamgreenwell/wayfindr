@@ -2,10 +2,12 @@
 
 use App\Models\Account;
 use App\Support\Attachments\AttachmentRetentionReportReservation;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 uses(RefreshDatabase::class);
 
@@ -184,6 +186,86 @@ test('the preflight resolves a symlinked report parent before enforcing the repo
         if (is_link($linkedParent)) {
             unlink($linkedParent);
         }
+    }
+});
+
+test('the real preflight refuses a disposable SQLite path that links outside its temporary root', function (): void {
+    if (! function_exists('symlink')) {
+        $this->markTestSkipped('This regression requires symbolic-link support.');
+    }
+
+    $suffix = Str::lower((string) Str::ulid());
+    $temporaryRoot = sys_get_temp_dir().'/wayfindr-attachment-retention-'.$suffix;
+    $outsideDatabase = sys_get_temp_dir().'/wayfindr-retention-outside-'.$suffix.'.sqlite';
+    $linkedDatabase = $temporaryRoot.'/database.sqlite';
+    $storage = $temporaryRoot.'/storage';
+    $output = sys_get_temp_dir().'/wayfindr-retention-linked-db-'.$suffix.'.json';
+
+    mkdir($storage.'/app/private/attachments', 0777, true);
+    mkdir($storage.'/framework/cache', 0777, true);
+    mkdir($storage.'/framework/sessions', 0777, true);
+    mkdir($storage.'/framework/views', 0777, true);
+    mkdir($storage.'/logs', 0777, true);
+    $sqlite = new SQLite3($outsideDatabase);
+    $sqlite->exec('CREATE TABLE untouched (id INTEGER PRIMARY KEY, value TEXT)');
+    $sqlite->exec("INSERT INTO untouched (value) VALUES ('control')");
+    $sqlite->close();
+    $before = hash_file('sha256', $outsideDatabase);
+
+    expect(symlink($outsideDatabase, $linkedDatabase))->toBeTrue();
+
+    $process = new Process([
+        PHP_BINARY,
+        base_path('artisan'),
+        'wayfindr:measure-attachment-retention',
+        '--objects=20',
+        '--bytes=64',
+        '--output='.$output,
+        '--confirm-disposable',
+        '--allow-dirty',
+        '--preflight-only',
+    ], base_path(), [
+        'APP_ENV' => 'local',
+        'APP_DEBUG' => 'false',
+        'APP_URL' => 'http://127.0.0.1',
+        'APP_KEY' => 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=',
+        'APP_CONFIG_CACHE' => $temporaryRoot.'/config.php',
+        'DB_CONNECTION' => 'sqlite',
+        'DB_DATABASE' => $linkedDatabase,
+        'LARAVEL_STORAGE_PATH' => $storage,
+        'CACHE_STORE' => 'array',
+        'SESSION_DRIVER' => 'array',
+        'QUEUE_CONNECTION' => 'sync',
+        'BROADCAST_CONNECTION' => 'log',
+        'WAYFINDR_ATTACHMENT_STORAGE_DISK' => 'attachments',
+        'WAYFINDR_ATTACHMENT_S3_BUCKET' => '',
+        'WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS' => '1',
+        'WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE' => 'YES',
+        'WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY' => 'testing hostile SQLite symlink',
+    ]);
+
+    try {
+        $process->run();
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput().$process->getErrorOutput())->toContain('must not be a symbolic link')
+            ->and(hash_file('sha256', $outsideDatabase))->toBe($before)
+            ->and(file_exists($output))->toBeFalse();
+    } finally {
+        foreach (glob($output.'*') ?: [] as $path) {
+            unlink($path);
+        }
+
+        if (is_link($linkedDatabase)) {
+            unlink($linkedDatabase);
+        }
+
+        if (file_exists($outsideDatabase)) {
+            unlink($outsideDatabase);
+        }
+
+        $filesystem = new Filesystem;
+        $filesystem->deleteDirectory($temporaryRoot);
     }
 });
 

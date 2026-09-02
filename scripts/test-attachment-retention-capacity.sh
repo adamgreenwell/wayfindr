@@ -15,6 +15,9 @@ grep -F 'wayfindr-attachment-retention-??????' "$harness" >/dev/null
 grep -F 'minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e' "$harness" >/dev/null
 grep -F 'S3-compatible measurement requires a loopback endpoint.' "$command" >/dev/null
 grep -F 'SQLite must live under the operating-system temporary directory.' "$command" >/dev/null
+grep -F '$databasePath = realpath($database);' "$command" >/dev/null
+grep -F 'must not be a symbolic link' "$command" >/dev/null
+grep -F 'must not be hard-linked' "$command" >/dev/null
 grep -F 'Attachment-retention measurement refuses cached configuration.' "$command" >/dev/null
 grep -F 'Measurement refuses additional configured attachment disks:' "$command" >/dev/null
 grep -F '$outputDirectory = realpath(dirname($output));' "$command" >/dev/null

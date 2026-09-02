@@ -263,12 +263,16 @@ final class MeasureAttachmentRetentionCommand extends Command
 
         if (! app()->environment('testing')) {
             $database = (string) config('database.connections.sqlite.database');
-            $databaseDirectory = realpath(dirname($database));
+            $this->assert(! is_link($database), 'The disposable SQLite database file must not be a symbolic link.');
+            $databasePath = realpath($database);
+            $databaseStatus = @lstat($database);
             $storagePath = realpath(storage_path());
             $temporaryRoot = realpath(sys_get_temp_dir());
 
-            $this->assert($databaseDirectory !== false && $storagePath !== false && $temporaryRoot !== false, 'Temporary database/storage paths must exist.');
-            $isolatedRoot = $this->normalPath((string) $databaseDirectory);
+            $this->assert($databasePath !== false && is_file($databasePath), 'The disposable SQLite database file must already exist.');
+            $this->assert(is_array($databaseStatus) && (int) ($databaseStatus['nlink'] ?? 0) === 1, 'The disposable SQLite database file must not be hard-linked.');
+            $this->assert($storagePath !== false && $temporaryRoot !== false, 'Temporary database/storage paths must exist.');
+            $isolatedRoot = $this->normalPath(dirname((string) $databasePath));
             $this->assert(str_starts_with(basename($isolatedRoot), 'wayfindr-attachment-retention-'), 'SQLite must live in a wayfindr-attachment-retention-* temporary directory.');
             $this->assert(str_starts_with($isolatedRoot, $this->normalPath((string) $temporaryRoot).DIRECTORY_SEPARATOR), 'SQLite must live under the operating-system temporary directory.');
             $this->assert(str_starts_with($this->normalPath((string) $storagePath), $isolatedRoot.DIRECTORY_SEPARATOR), 'LARAVEL_STORAGE_PATH must live beside the disposable SQLite database.');
@@ -303,7 +307,7 @@ final class MeasureAttachmentRetentionCommand extends Command
         );
 
         if (! app()->environment('testing')) {
-            $databaseDirectory = $this->normalPath((string) realpath(dirname((string) config('database.connections.sqlite.database'))));
+            $databaseDirectory = $this->normalPath(dirname((string) realpath((string) config('database.connections.sqlite.database'))));
             $configuredRoot = (string) ($localDisk['root'] ?? '');
             $localRoot = $this->normalPath((string) (realpath($configuredRoot) ?: $configuredRoot));
             $this->assert(str_starts_with($localRoot, $databaseDirectory.DIRECTORY_SEPARATOR), 'Local attachments must live under the same isolated temporary root as SQLite.');
