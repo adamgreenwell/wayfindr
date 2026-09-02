@@ -297,3 +297,46 @@ test('a queue that fits says nothing about being capped', function (): void {
         'total' => '3',
     ]), false);
 });
+
+test('a conversation with no messages does not bury one that has them', function (): void {
+    // PostgreSQL sorts NULLs FIRST on a descending order and SQLite sorts them
+    // last, so ordering by `last_message_at` alone put every message-less
+    // conversation above every conversation with a recent reply on the shipped
+    // deployment. Unbounded that was odd ordering; with the row cap it is a
+    // queue that hides everything anybody has actually said.
+    //
+    // A conversation with no messages was last active when it was opened, so it
+    // ranks by `created_at` -- which is the true answer, not a workaround.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    // Enough message-less conversations to fill the page on their own, all
+    // OLDER than the one with a message.
+    Conversation::factory()
+        ->count(ConversationQueueQuery::DISPLAY_LIMIT + 10)
+        ->for($site)
+        ->for($visitor)
+        ->create([
+            'status' => 'open',
+            'last_message_at' => null,
+            'created_at' => now()->subDays(30),
+        ]);
+
+    $answered = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-HASAREPLY',
+        'subject' => 'Somebody actually said something',
+        'status' => 'open',
+        'created_at' => now()->subDays(30),
+        'last_message_at' => now()->subMinute(),
+    ]);
+
+    $response = $this->actingAs($agent)->get('/dashboard/conversations');
+
+    $response->assertOk()->assertSee('Somebody actually said something');
+
+    // And it is FIRST, because it is the most recently active.
+    expect($response->viewData('conversations')->first()->id)
+        ->toBe($answered->id, 'a conversation nobody has written to outranked one with a reply a minute ago');
+});
