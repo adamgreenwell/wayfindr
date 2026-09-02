@@ -126,6 +126,12 @@ final class DashboardLanguage
         'dashboard.account.api-tokens.store',
         'dashboard.account.api-tokens.destroy',
 
+        // The account audit SCREEN. Its CSV export is intentionally absent:
+        // the download keeps stable English headers and labels, plus a
+        // sortable timestamp, for spreadsheets and scripts that may open it
+        // under a different locale from the dashboard that produced it.
+        'dashboard.account.audit.index',
+
         // The live-visitors board. Most of this page's copy is rendered by its
         // SCRIPT rather than by Blade, which is why it needed no new mechanism
         // and does need the render audit to open it with the board populated.

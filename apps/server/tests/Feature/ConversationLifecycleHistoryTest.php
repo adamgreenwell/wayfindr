@@ -178,17 +178,17 @@ test('the audit log names which conversation, and finds it by support code', fun
     $this->actingAs($w['agent'])
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
-        ->assertSee('Conversation '.$w['conversation']->support_code);
+        ->assertSeeInOrder(['Conversation', $w['conversation']->support_code]);
 
     $this->actingAs($w['agent'])
         ->get(route('dashboard.account.audit.index', ['audit_search' => $w['conversation']->support_code]))
         ->assertOk()
-        ->assertSee('Conversation '.$w['conversation']->support_code);
+        ->assertSeeInOrder(['Conversation', $w['conversation']->support_code]);
 
     $this->actingAs($w['agent'])
         ->get(route('dashboard.account.audit.index', ['audit_search' => 'WF-NOTHINGLIKEIT']))
         ->assertOk()
-        ->assertDontSee('Conversation '.$w['conversation']->support_code);
+        ->assertDontSee($w['conversation']->support_code);
 });
 
 test('the audit log shows the code, never the visitor-authored subject', function (): void {
@@ -205,7 +205,7 @@ test('the audit log shows the code, never the visitor-authored subject', functio
     $this->actingAs($w['agent'])
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
-        ->assertSee('Conversation '.$w['conversation']->support_code)
+        ->assertSeeInOrder(['Conversation', $w['conversation']->support_code])
         ->assertDontSee('4111 1111 1111 1111');
 });
 

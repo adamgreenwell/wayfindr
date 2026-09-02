@@ -325,14 +325,43 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         'revoked_at' => now()->subWeek(),
     ]);
 
+    $agents = [
+        'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt']),
+        'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt']),
+    ];
+    $admins = [
+        'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
+        'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
+    ];
+
+    // Both rows the account-audit screen needs: a populated reference row and
+    // the otherwise easy-to-miss system/account fallbacks. The unknown action
+    // also proves the localized fallback rather than a headline-cased English
+    // identifier reaches the page.
+    AuditEvent::factory()->for($account)->for($site)->create([
+        'actor_type' => $issuer->getMorphClass(),
+        'actor_id' => $issuer->id,
+        'subject_type' => $site->getMorphClass(),
+        'subject_id' => $site->id,
+        'action' => 'site_access.updated',
+        'metadata' => [],
+        'occurred_at' => now()->subMinute(),
+    ]);
+    AuditEvent::factory()->for($account)->create([
+        'actor_type' => null,
+        'actor_id' => null,
+        'subject_type' => null,
+        'subject_id' => null,
+        'action' => 'datenpunkt.future_action',
+        'metadata' => [],
+        'occurred_at' => now(),
+    ]);
+
     return [
         'account' => $account,
         'site' => $site,
         'article' => $article,
-        'agents' => [
-            'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt']),
-            'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt']),
-        ],
+        'agents' => $agents,
 
         // A second pair with the admin role, for account-management surfaces
         // that 403 without it -- a guard that cannot load a page cannot check
@@ -340,10 +369,7 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         // role is rendered: making everyone an admin removes `Agent` from the
         // screen, and the cognate list has a guard that notices when one of its
         // entries stops appearing.
-        'admins' => [
-            'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
-            'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
-        ],
+        'admins' => $admins,
     ];
 }
 
@@ -1281,6 +1307,7 @@ function conversationQueueLanguageCognates(): array
     return [
         'Name' => 'the same word in both languages',
         'Agent' => 'the same word in both languages',
+        'System' => 'the same word in both languages',
         'Cobrowse' => "the product's own name for the feature, not translated",
         'Wayfindr' => 'the product name, which is not copy',
         'Tickets' => 'the same word in both languages',
@@ -1464,6 +1491,13 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.reply-templates.index'),
         route('dashboard.account.labels.index'),
         route('dashboard.account.api-tokens.index'),
+        route('dashboard.account.audit.index'),
+        route('dashboard.account.audit.index', [
+            'audit_action' => 'site_access.updated',
+            'audit_search' => 'Datenpunkt',
+            'audit_site' => $world['site']->id,
+        ]),
+        route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
         route('dashboard.sites.live', $world['site']),
         route('dashboard.visitors.index'),
         route('dashboard.visitors.index', ['page' => 2]),
@@ -1706,6 +1740,11 @@ test('every cognate on the list still appears, so the list cannot rot', function
         // this guard would read as a cognate that has stopped appearing.
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.account.api-tokens.index'))->getContent()
+        ),
+        // The audit page's system actor is another genuine German/English
+        // cognate, and its fixture deliberately renders that fallback row.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.account.audit.index'))->getContent()
         ),
     ), 'text');
 
@@ -2703,6 +2742,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'ticket_labels.list.column_slug = Slug',
         'api_tokens.list.column_name = Name',
         'api_tokens.list.column_token = Token',
+        'account_audit.references.system = System',
+        'account_audit.references.cobrowse = Cobrowse',
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',
@@ -3732,13 +3773,27 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.tickets.index', ['ticket_search' => 'zzzz']),
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
+        route('dashboard.account.audit.index'),
+        route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
+
+    $catalogues = collect(glob(lang_path('en/*.php')) ?: [])
+        ->map(fn (string $path): string => basename($path, '.php'))
+        ->push('validation')
+        ->unique()
+        ->values();
 
     foreach (['de', 'en'] as $locale) {
         foreach ($states as $url) {
-            $text = conversationQueueLanguageVisibleText(
-                (string) $this->actingAs($world['agents'][$locale])->get($url)->assertOk()->getContent()
-            );
+            $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
+            $html = (string) $this->actingAs($world[$admin ? 'admins' : 'agents'][$locale])
+                ->get($url)
+                ->assertOk()
+                ->getContent();
+            $text = collect(conversationQueueLanguageAnnouncements($html))
+                ->filter(fn (array $announcement): bool => $announcement['language'] === $locale)
+                ->pluck('text')
+                ->implode(' ');
 
             // A KEY, not merely a catalogue name followed by a dot: an English
             // sentence ending "...for your profile." contains `profile.` and is
@@ -3747,8 +3802,8 @@ test('no raw catalogue key ever reaches the page', function (): void {
             // Every catalogue, not the ones that existed when this was written:
             // two mutations survived because `tickets` was missing from here,
             // so a raw `tickets.row.…` key rendered unnoticed.
-            foreach (['conversations', 'presence', 'support', 'profile', 'validation', 'tickets', 'nav'] as $catalogue) {
-                $pattern = '/\b'.$catalogue.'\.[a-z][a-z_]*(\.[a-zA-Z_]+)*/';
+            foreach ($catalogues as $catalogue) {
+                $pattern = '/\b'.preg_quote($catalogue, '/').'\.[a-z][a-z_]*(\.[a-zA-Z_]+)*/';
 
                 // A PHPUnit assertion rather than `expect()->not->toContain()`,
                 // which is variadic: passing a message there asserts the text

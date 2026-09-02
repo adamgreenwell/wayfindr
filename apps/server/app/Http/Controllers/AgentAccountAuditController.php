@@ -17,6 +17,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Lang;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AgentAccountAuditController extends Controller
@@ -31,7 +32,8 @@ class AgentAccountAuditController extends Controller
         $availableActions = $this->availableActions($baseQuery);
         [$auditAction, $auditSearch, $auditSiteId] = $this->filters($request, $availableActions, $visibleSiteIds);
         $auditQuery = $this->auditQueryParams($auditAction, $auditSearch, $auditSiteId);
-        $auditEvents = $this->auditItems($baseQuery, $auditAction, $auditSearch, $auditSiteId, 50);
+        $auditEvents = $this->auditEvents($baseQuery, $auditAction, $auditSearch, $auditSiteId, 50)
+            ->map(fn (AuditEvent $event): array => $this->auditItem($event));
 
         return view('agent.account.audit', [
             'account' => $account,
@@ -53,7 +55,7 @@ class AgentAccountAuditController extends Controller
         $visibleSiteIds = $this->siteIds($this->visibleSites($account, $agent));
         $baseQuery = $this->baseAuditQuery($account, $visibleSiteIds);
         [$auditAction, $auditSearch, $auditSiteId] = $this->filters($request, $this->availableActions($baseQuery), $visibleSiteIds);
-        $auditEvents = $this->auditItems($baseQuery, $auditAction, $auditSearch, $auditSiteId, 500);
+        $auditEvents = $this->auditEvents($baseQuery, $auditAction, $auditSearch, $auditSiteId, 500);
 
         return response()->streamDownload(function () use ($auditEvents): void {
             $stream = fopen('php://output', 'w');
@@ -129,7 +131,7 @@ class AgentAccountAuditController extends Controller
 
     /**
      * @param  Builder<AuditEvent>  $baseQuery
-     * @return array<string, string>
+     * @return array<string, array{label: string, language: string|null}>
      */
     private function availableActions(Builder $baseQuery): array
     {
@@ -139,12 +141,18 @@ class AgentAccountAuditController extends Controller
             ->orderBy('action')
             ->pluck('action')
             ->filter(fn ($action): bool => is_string($action) && $action !== '')
-            ->mapWithKeys(fn (string $action): array => [$action => $this->auditLabel($action)])
+            ->mapWithKeys(function (string $action): array {
+                $key = $this->auditActionKey($action);
+
+                return [$action => Lang::has($key)
+                    ? ['label' => __($key), 'language' => null]
+                    : ['label' => $action, 'language' => '']];
+            })
             ->all();
     }
 
     /**
-     * @param  array<string, string>  $availableActions
+     * @param  array<string, array{label: string, language: string|null}>  $availableActions
      * @param  array<int, int>  $visibleSiteIds
      * @return array{0: string, 1: string, 2: int|null}
      */
@@ -171,49 +179,62 @@ class AgentAccountAuditController extends Controller
 
     /**
      * @param  Builder<AuditEvent>  $baseQuery
-     * @return Collection<int, array{occurred_at: string, action: string, label: string, actor: string, subject: string, site: string}>
+     * @return Collection<int, AuditEvent>
      */
-    private function auditItems(Builder $baseQuery, string $auditAction, string $auditSearch, ?int $auditSiteId, int $limit): Collection
+    private function auditEvents(Builder $baseQuery, string $auditAction, string $auditSearch, ?int $auditSiteId, int $limit): Collection
     {
         return $this->applyAuditFilters(clone $baseQuery, $auditAction, $auditSearch, $auditSiteId)
             ->latest('occurred_at')
             ->latest('id')
             ->limit($limit)
-            ->get()
-            ->map(fn (AuditEvent $event): array => [
-                // Deliberately a sortable `Y-m-d H:i:s` and NOT `ReaderClock::dateTime()`.
-                // One array feeds two consumers: the audit table and the CSV
-                // export below it. A localized shape would reach the export,
-                // where the reader's spreadsheet reparses it under its own
-                // conventions -- and an `08/24/2026` cell is read as the wrong
-                // day by half the world. Splitting the screen from the export
-                // has to come first; the zone conversion is already correct.
-                'occurred_at' => $event->occurred_at === null
-                    ? ''
-                    : ReaderClock::moment($event->occurred_at)->toDateTimeString(),
-                'action' => $event->action,
-                'label' => $this->auditLabel($event->action),
-                'actor' => $this->auditActor($event),
-                'subject' => $this->auditSubject($event),
-                'site' => $event->site?->name ?? 'Account',
-            ]);
+            ->get();
     }
 
     /**
-     * @param  array{occurred_at: string, action: string, label: string, actor: string, subject: string, site: string}  $event
+     * The dashboard presentation is deliberately separate from the CSV row.
+     * A screen follows the reader's locale; an export keeps stable headers and
+     * a sortable timestamp for whichever spreadsheet or script opens it next.
+     *
+     * @return array{
+     *     occurred_at: string,
+     *     action: string,
+     *     label: string,
+     *     actor: array{prefix: string|null, value: string|null},
+     *     subject: array{prefix: string|null, value: string|null},
+     *     site: array{prefix: string|null, value: string|null}
+     * }
+     */
+    private function auditItem(AuditEvent $event): array
+    {
+        return [
+            'occurred_at' => $event->occurred_at === null ? '' : ReaderClock::dateTime($event->occurred_at),
+            'action' => $event->action,
+            'label' => $this->translatedAuditLabel($event->action),
+            'actor' => $this->auditActorParts($event),
+            'subject' => $this->auditSubjectParts($event),
+            'site' => $event->site
+                ? ['prefix' => null, 'value' => $event->site->name]
+                : ['prefix' => __('account_audit.references.account'), 'value' => null],
+        ];
+    }
+
+    /**
      * @return array<int, string>
      */
-    private function auditCsvRow(array $event): array
+    private function auditCsvRow(AuditEvent $event): array
     {
-        // Listed rather than passed straight through: the column order is the
-        // header's order, not whatever order the keys happen to be built in.
+        // Stable English reference labels and a sortable timestamp on purpose:
+        // the file may be read under a different locale from the dashboard that
+        // downloaded it, or keyed by a script rather than read by a person.
         return SpreadsheetSafeCsv::row([
-            $event['occurred_at'],
-            $event['action'],
-            $event['label'],
-            $event['actor'],
-            $event['subject'],
-            $event['site'],
+            $event->occurred_at === null
+                ? ''
+                : ReaderClock::moment($event->occurred_at)->toDateTimeString(),
+            $event->action,
+            $this->auditLabel($event->action),
+            $this->auditActor($event),
+            $this->auditSubject($event),
+            $event->site?->name ?? 'Account',
         ]);
     }
 
@@ -306,6 +327,142 @@ class AgentAccountAuditController extends Controller
             'break_glass.expired' => 'Operator access expired',
             default => str($action)->replace(['.', '_'], ' ')->headline()->toString(),
         };
+    }
+
+    private function translatedAuditLabel(string $action): string
+    {
+        $key = $this->auditActionKey($action);
+
+        return Lang::has($key) ? __($key) : __('account_audit.actions.other');
+    }
+
+    private function auditActionKey(string $action): string
+    {
+        return 'account_audit.actions.'.str_replace(['.', '-'], '_', $action);
+    }
+
+    /** @return array{prefix: string|null, value: string|null} */
+    private function auditActorParts(AuditEvent $event): array
+    {
+        if ($event->actor instanceof User) {
+            return ['prefix' => null, 'value' => $event->actor->name];
+        }
+
+        if ($event->actor instanceof Visitor) {
+            return [
+                'prefix' => __('account_audit.references.visitor'),
+                'value' => $this->visitorLabel($event->actor),
+            ];
+        }
+
+        return ['prefix' => __('account_audit.references.system'), 'value' => null];
+    }
+
+    /** @return array{prefix: string|null, value: string|null} */
+    private function auditSubjectParts(AuditEvent $event): array
+    {
+        if ($event->subject instanceof BreakGlassGrant) {
+            return $this->breakGlassReferenceParts($event);
+        }
+
+        if ($event->subject instanceof User || $event->subject instanceof Site) {
+            return ['prefix' => null, 'value' => $event->subject->name];
+        }
+
+        if ($event->subject instanceof ApiToken) {
+            return [
+                'prefix' => __('account_audit.references.api_token'),
+                'value' => $event->subject->name.' ('.$event->subject->displayHint().')',
+            ];
+        }
+
+        if ($event->subject instanceof Conversation) {
+            return [
+                'prefix' => __('account_audit.references.conversation'),
+                'value' => $event->subject->support_code,
+            ];
+        }
+
+        if ($event->subject instanceof CobrowseSession) {
+            $event->subject->loadMissing('conversation');
+
+            return [
+                'prefix' => __('account_audit.references.cobrowse'),
+                'value' => $event->subject->conversation?->support_code ?? '#'.$event->subject->id,
+            ];
+        }
+
+        return ['prefix' => __('account_audit.references.account'), 'value' => null];
+    }
+
+    /** @return array{prefix: string|null, value: string|null} */
+    private function breakGlassReferenceParts(AuditEvent $event): array
+    {
+        $resourceType = data_get($event->metadata, 'resource_type');
+
+        if (is_string($resourceType) && $resourceType !== '') {
+            return $this->typedBreakGlassReferenceParts(
+                $resourceType,
+                data_get($event->metadata, 'resource_label'),
+                data_get($event->metadata, 'resource_id'),
+            );
+        }
+
+        $scopeType = data_get($event->metadata, 'scope_type');
+        $scopeType = is_string($scopeType) && $scopeType !== ''
+            ? $scopeType
+            : $event->subject->scope_type;
+
+        return $this->typedBreakGlassReferenceParts(
+            $scopeType,
+            data_get($event->metadata, 'scope_label') ?? $event->subject->scopeLabel(),
+        );
+    }
+
+    /** @return array{prefix: string|null, value: string|null} */
+    private function typedBreakGlassReferenceParts(string $type, mixed $label, mixed $fallbackId = null): array
+    {
+        if ($type === BreakGlassGrant::SCOPE_ACCOUNT) {
+            return ['prefix' => __('account_audit.references.operator_access_account'), 'value' => null];
+        }
+
+        [$sourcePrefix, $translationSuffix] = match ($type) {
+            BreakGlassGrant::SCOPE_CONVERSATION => ['Conversation', 'conversation'],
+            BreakGlassGrant::SCOPE_SITE => ['Site', 'site'],
+            'ticket' => ['Ticket', 'ticket'],
+            default => [null, null],
+        };
+
+        if ($sourcePrefix === null || $translationSuffix === null) {
+            return [
+                'prefix' => __('account_audit.references.operator_access'),
+                'value' => is_string($label) && $label !== '' ? $label : null,
+            ];
+        }
+
+        $value = is_string($label) ? $label : '';
+
+        if (str_starts_with($value, $sourcePrefix.' ')) {
+            $value = substr($value, strlen($sourcePrefix) + 1);
+        }
+
+        if ($value === '(deleted)' || $value === '(out of scope)') {
+            $state = $value === '(deleted)' ? 'deleted' : 'out_of_scope';
+
+            return [
+                'prefix' => __('account_audit.references.operator_access_'.$translationSuffix.'_'.$state),
+                'value' => null,
+            ];
+        }
+
+        if ($value === '' && (is_int($fallbackId) || is_string($fallbackId))) {
+            $value = '#'.$fallbackId;
+        }
+
+        return [
+            'prefix' => __('account_audit.references.operator_access_'.$translationSuffix),
+            'value' => $value !== '' ? $value : null,
+        ];
     }
 
     private function auditActor(AuditEvent $event): string

@@ -438,14 +438,14 @@ test('an audit record names which token it concerns, and can be searched for it'
     $this->actingAs($w['admin'])
         ->get(route('dashboard.account.audit.index'))
         ->assertOk()
-        ->assertSee('API token Reporting sync')
-        ->assertSee('API token Billing export');
+        ->assertSeeInOrder(['API token', 'Reporting sync'])
+        ->assertSeeInOrder(['API token', 'Billing export']);
 
     $this->actingAs($w['admin'])
         ->get(route('dashboard.account.audit.index', ['audit_search' => 'Billing export']))
         ->assertOk()
-        ->assertSee('API token Billing export')
-        ->assertDontSee('API token Reporting sync');
+        ->assertSeeInOrder(['API token', 'Billing export'])
+        ->assertDontSee('Reporting sync');
 });
 
 test('the plaintext token is never written to the session store', function (): void {

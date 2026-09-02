@@ -1,55 +1,55 @@
-<x-layouts.app title="Account Audit" :agent="$agent" :account="$account">
-            <x-page-header title="Account audit" subtitle="Search account-level activity without exposing raw event metadata." :back-href="route('dashboard.account.show')" back-label="Back to account">
+<x-layouts.app :title="__('account_audit.document_title')" :agent="$agent" :account="$account">
+            <x-page-header :title="__('account_audit.title')" :subtitle="__('account_audit.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('account_audit.back')">
                 <x-slot:actions>
-                    <span class="lede">{{ $auditEvents->count() }} shown</span>
-                    <a class="button secondary" href="{{ route('dashboard.account.audit.export', $auditQuery) }}">Export CSV</a>
+                    <span class="lede">{{ trans_choice('account_audit.shown', $auditEvents->count(), ['count' => \App\Support\ReaderNumber::count($auditEvents->count())]) }}</span>
+                    <a class="button secondary" href="{{ route('dashboard.account.audit.export', $auditQuery) }}">{{ __('account_audit.export_csv') }}</a>
                 </x-slot:actions>
             </x-page-header>
 
             <section class="section" aria-labelledby="audit-responsibility-heading">
                 <div class="section-header">
-                    <h2 id="audit-responsibility-heading">Export boundary</h2>
-                    <span class="lede">Metadata stays private</span>
+                    <h2 id="audit-responsibility-heading">{{ __('account_audit.boundary.heading') }}</h2>
+                    <span class="lede">{{ __('account_audit.boundary.private') }}</span>
                 </div>
                 <div class="notice-copy">
-                    <p>Audit exports include time, action, actor, subject, and site. Raw metadata is intentionally omitted so temporary passwords, tokens, and other sensitive values do not wander into spreadsheets.</p>
-                    <p>Site-backed activity is limited to sites visible to your current support scope.</p>
+                    <p>{{ __('account_audit.boundary.fields') }}</p>
+                    <p>{{ __('account_audit.boundary.scope') }}</p>
                 </div>
             </section>
 
             <section class="section" aria-labelledby="audit-filters-heading">
                 <div class="section-header">
-                    <h2 id="audit-filters-heading">Filters</h2>
-                    <span class="lede">{{ $auditAction || $auditSearch || $auditSiteId ? 'Filtered' : 'All visible activity' }}</span>
+                    <h2 id="audit-filters-heading">{{ __('account_audit.filters.heading') }}</h2>
+                    <span class="lede">{{ $auditAction || $auditSearch || $auditSiteId ? __('account_audit.filters.filtered') : __('account_audit.filters.all') }}</span>
                 </div>
                 <form class="section-form" method="GET" action="{{ route('dashboard.account.audit.index') }}">
                     <div class="meta-grid">
                         <div class="meta-item">
-                            <label class="meta-label" for="audit_action">Action</label>
+                            <label class="meta-label" for="audit_action">{{ __('account_audit.filters.action') }}</label>
                             <select id="audit_action" name="audit_action">
-                                <option value="">Any action</option>
-                                @foreach ($auditActions as $actionValue => $actionLabel)
-                                    <option value="{{ $actionValue }}" @selected($auditAction === $actionValue)>{{ $actionLabel }}</option>
+                                <option value="">{{ __('account_audit.filters.any_action') }}</option>
+                                @foreach ($auditActions as $actionValue => $actionOption)
+                                    <option value="{{ $actionValue }}" @if ($actionOption['language'] !== null) lang="{{ $actionOption['language'] }}" @endif @selected($auditAction === $actionValue)>{{ $actionOption['label'] }}</option>
                                 @endforeach
                             </select>
                         </div>
                         <div class="meta-item">
-                            <label class="meta-label" for="audit_site">Site</label>
+                            <label class="meta-label" for="audit_site">{{ __('account_audit.filters.site') }}</label>
                             <select id="audit_site" name="audit_site">
-                                <option value="">Any visible site</option>
+                                <option value="">{{ __('account_audit.filters.any_site') }}</option>
                                 @foreach ($auditSites as $site)
-                                    <option value="{{ $site->id }}" @selected($auditSiteId === $site->id)>{{ $site->name }}</option>
+                                    <option value="{{ $site->id }}" lang="" @selected($auditSiteId === $site->id)>{{ $site->name }}</option>
                                 @endforeach
                             </select>
                         </div>
                         <div class="meta-item">
-                            <label class="meta-label" for="audit_search">Search</label>
-                            <input id="audit_search" name="audit_search" type="search" value="{{ $auditSearch }}" placeholder="Actor, subject, site, action">
+                            <label class="meta-label" for="audit_search">{{ __('account_audit.filters.search') }}</label>
+                            <input id="audit_search" name="audit_search" type="search" value="{{ $auditSearch }}" @if ($auditSearch !== '') lang="" @endif placeholder="{{ __('account_audit.filters.search_placeholder') }}">
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Audit log</span>
-                            <button class="button" type="submit">Apply filters</button>
-                            <a class="button secondary" href="{{ route('dashboard.account.audit.index') }}">Clear filters</a>
+                            <span class="meta-label">{{ __('account_audit.filters.log') }}</span>
+                            <button class="button" type="submit">{{ __('account_audit.filters.apply') }}</button>
+                            <a class="button secondary" href="{{ route('dashboard.account.audit.index') }}">{{ __('account_audit.filters.clear') }}</a>
                         </div>
                     </div>
                 </form>
@@ -57,22 +57,22 @@
 
             <section class="section" aria-labelledby="audit-events-heading">
                 <div class="section-header">
-                    <h2 id="audit-events-heading">Events</h2>
-                    <span class="lede">{{ $auditEvents->count() }} shown</span>
+                    <h2 id="audit-events-heading">{{ __('account_audit.events.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('account_audit.shown', $auditEvents->count(), ['count' => \App\Support\ReaderNumber::count($auditEvents->count())]) }}</span>
                 </div>
 
                 @if ($auditEvents->isEmpty())
-                    <p class="empty">No audit events match those filters.</p>
+                    <p class="empty">{{ __('account_audit.events.empty') }}</p>
                 @else
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th scope="col">When</th>
-                                    <th scope="col">Action</th>
-                                    <th scope="col">Actor</th>
-                                    <th scope="col">Subject</th>
-                                    <th scope="col">Site</th>
+                                    <th scope="col">{{ __('account_audit.events.when') }}</th>
+                                    <th scope="col">{{ __('account_audit.events.action') }}</th>
+                                    <th scope="col">{{ __('account_audit.events.actor') }}</th>
+                                    <th scope="col">{{ __('account_audit.events.subject') }}</th>
+                                    <th scope="col">{{ __('account_audit.events.site') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -81,11 +81,32 @@
                                         <td>{{ $event['occurred_at'] }}</td>
                                         <td>
                                             <strong>{{ $event['label'] }}</strong>
-                                            <span class="lede">{{ $event['action'] }}</span>
+                                            <span class="lede" lang="">{{ $event['action'] }}</span>
                                         </td>
-                                        <td>{{ $event['actor'] }}</td>
-                                        <td>{{ $event['subject'] }}</td>
-                                        <td>{{ $event['site'] }}</td>
+                                        <td>
+                                            @if ($event['actor']['prefix'])
+                                                {{ $event['actor']['prefix'] }}
+                                            @endif
+                                            @if ($event['actor']['value'])
+                                                <span lang="">{{ $event['actor']['value'] }}</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if ($event['subject']['prefix'])
+                                                {{ $event['subject']['prefix'] }}
+                                            @endif
+                                            @if ($event['subject']['value'])
+                                                <span lang="">{{ $event['subject']['value'] }}</span>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if ($event['site']['prefix'])
+                                                {{ $event['site']['prefix'] }}
+                                            @endif
+                                            @if ($event['site']['value'])
+                                                <span lang="">{{ $event['site']['value'] }}</span>
+                                            @endif
+                                        </td>
                                     </tr>
                                 @endforeach
                             </tbody>
