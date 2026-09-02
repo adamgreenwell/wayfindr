@@ -12,12 +12,13 @@ real traffic that stopped being usable.** The conversation queue is capped now �
 its closed lane went from 187 MB and twenty-three seconds to 1 MB and 161 ms —
 and the ticket queue still is not. Measuring also turned up an N+1 on the ticket
 queue, now fixed: 12,518 queries down to 19. The conversation detail page is fine
-and stays fine, and so do the report tabs. Numbers below.
+and stays fine. The report tabs grow with the desk but sub-linearly, and hold
+up at this size. Numbers below.
 
 ## Reproducing this
 
 Two commands. Both are shipped, so an operator can run them against their own
-hardware rather than trusting these figures:
+hardware rather than trusting these figures. With PHP on the host:
 
 ```bash
 php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
@@ -26,6 +27,32 @@ php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
 ```bash
 php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
 ```
+
+On the documented Docker installs `artisan` is inside the `web` container. The
+one-line installer puts `compose.yml` and `.env` in `./wayfindr`, or wherever
+`--dir` pointed if it was given one. From inside that directory, whichever it
+is:
+
+```bash
+docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+```
+
+```bash
+docker compose -f compose.yml --env-file .env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+```
+
+A by-hand Compose install runs from the checkout, with the stack files under
+`docker/self-hosting`, exactly as it was brought up:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php artisan wayfindr:seed-desk --conversations=50000 --months=12 --fresh --force
+```
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php -d memory_limit=1G artisan wayfindr:measure-dashboard --runs=3
+```
+
+In every form the override goes after `php`, not after `artisan`.
 
 Every figure on this page was taken with `--runs=3`.
 
@@ -37,10 +64,44 @@ warning it is: this writes tens of thousands of rows.
 
 They go to an account of the seeder's own (`wayfindr-measurement-desk`), and
 `--fresh` deletes exactly that account and refuses if anything it did not
-create is sitting there. Nothing else is touched. But a real install is still
-being asked to hold a second desk's worth of data and serve the ticket queue's
-63 MB responses while you measure it, so **measure a staging copy if you have one**, and expect
-the disk and the load to be real if you do not.
+create is sitting there. Nothing else is touched.
+
+**Do not run this on an install serving real traffic.** Not because of the
+load, though a real install is being asked to hold a second desk and serve the
+ticket queue's 63 MB responses while you measure. Because of what the seeder
+leaves behind: an owner account `desk-agent-0@example.test` whose password is
+literally `password`, committed. Only the measurement transaction rolls back.
+The desk stays, login-capable, until somebody removes it — a publicly known
+owner credential on an internet-facing box.
+
+Measure a staging copy, a restored backup, or a throwaway VM. If a desk was
+seeded somewhere it should not have been, `--purge` removes it — the account,
+everything under it, and the `desk-agent-` sign-ins — and writes nothing. With
+PHP on the host:
+
+```bash
+php artisan wayfindr:seed-desk --purge
+```
+
+From inside the one-line installer's directory (`./wayfindr`, or the `--dir`
+it was given):
+
+```bash
+docker compose -f compose.yml --env-file .env exec web php artisan wayfindr:seed-desk --purge
+```
+
+From a by-hand Compose checkout:
+
+```bash
+docker compose -f docker/self-hosting/compose.yml --env-file docker/self-hosting/.env exec web php artisan wayfindr:seed-desk --purge
+```
+
+`--fresh` is not that: it deletes and then seeds again, so it replaces the
+credential rather than removing it. `--purge` also sweeps up seeded sign-ins an
+older `--fresh` left behind without an account. It refuses if the account at
+the seeder's slug holds a site or a user the seeder did not create, and does
+not ask for `--force` — it is the remedy, and a remedy that asks to be told
+twice is one an operator postpones.
 
 **The memory override is required, not a precaution.** The shipped image sets
 `memory_limit = 256M` (`docker/self-hosting/php.ini`), and at this fixture size
@@ -88,7 +149,9 @@ operator benchmarking their own install with `--email` would clear a real
 agent's state while taking the numbers.
 
 The seeder writes to its own account (`wayfindr-measurement-desk`) and `--fresh`
-deletes exactly that account, so it is safe to run beside real data. It refuses
+deletes exactly that account, so nothing else in the database is touched. That
+is a property of the delete, not permission to run it beside real data — the
+account it leaves behind is the problem, as the warning above says. It refuses
 to run in production without `--force`.
 
 ## The hardware these numbers came from
@@ -269,6 +332,11 @@ ratings behind them:
 | 7 days | 150 | 34 | 140 KB |
 | 90 days | 607 | 80 | 223 KB |
 | Export, 90 days | 94 | 7 | 2 KB |
+
+A separate run from the table at the top of the page, which has 151 and 613 ms
+for the same two windows. That spread — a millisecond on one, six on the other,
+under one percent — is what three-run timings on this machine look like, and
+the query counts and sizes agree exactly.
 
 The window matters — 90 days is about four times the work of 7 — but so does the
 desk, and the query count grows with it:
