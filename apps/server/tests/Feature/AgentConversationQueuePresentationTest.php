@@ -11,6 +11,8 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\ReaderNumber;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -229,4 +231,69 @@ test('a conversation opened outside a queue offers no neighbours', function (): 
         ->get('/dashboard/conversations/WF-DIRECT1')
         ->assertOk()
         ->assertDontSee('aria-label="Move through the conversation queue"', false);
+});
+
+test('the queue renders at most one page of rows and says how many there are', function (): void {
+    // The queue rendered EVERY matching row: 187 MB of HTML after twenty-three
+    // seconds on a year of a busy desk (#837). A page nobody can load is not a
+    // queue.
+    //
+    // The cap is on the rows only. The count beside them is not capped, because
+    // reporting the cap as the total is the one number an agent would have
+    // trusted -- the same shape the live visitor board already uses.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    $over = ConversationQueueQuery::DISPLAY_LIMIT + 25;
+
+    Conversation::factory()
+        ->count($over)
+        ->for($site)
+        ->for(Visitor::factory()->for($site))
+        ->create(['status' => 'open']);
+
+    $response = $this->actingAs($agent)->get('/dashboard/conversations');
+
+    $response->assertOk();
+
+    $rendered = $response->viewData('conversations');
+
+    expect($rendered)->toHaveCount(ConversationQueueQuery::DISPLAY_LIMIT,
+        'the queue rendered more rows than it caps at');
+
+    // And it reports the real total, not the cap.
+    expect($response->viewData('conversationsShownOf'))->toBe($over,
+        'the queue reported its cap as the number of conversations that exist');
+
+    // Through the reader-aware formatter, because a grouped number is not the
+    // same string in every locale -- and a test asserting `number_format()`
+    // would pass while the page rendered something else for a German reader.
+    $response->assertSee(ReaderNumber::count(ConversationQueueQuery::DISPLAY_LIMIT), false);
+    $response->assertSee(ReaderNumber::count($over), false);
+});
+
+test('a queue that fits says nothing about being capped', function (): void {
+    // The notice is for a desk that has outgrown one page, which is not every
+    // desk. A banner on every queue is noise that teaches agents to skip it.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+
+    Conversation::factory()
+        ->count(3)
+        ->for($site)
+        ->for(Visitor::factory()->for($site))
+        ->create(['status' => 'open']);
+
+    $response = $this->actingAs($agent)->get('/dashboard/conversations');
+
+    $response->assertOk();
+
+    expect($response->viewData('conversationsShownOf'))->toBe(3);
+
+    $response->assertDontSee(__('conversations.summary.capped_notice', [
+        'shown' => '3',
+        'total' => '3',
+    ]), false);
 });

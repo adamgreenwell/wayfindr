@@ -25,6 +25,21 @@ use Illuminate\Database\Eloquent\Builder;
  */
 final class ConversationQueueQuery
 {
+    /**
+     * How many rows the queue renders at once.
+     *
+     * The queue had no cap at all: every conversation matching the filters was
+     * queried, hydrated and rendered, so a year of a busy desk put 187 MB of
+     * HTML on the wire after twenty-three seconds of server time (#837). A page
+     * nobody can load is not a queue.
+     *
+     * The same shape the live visitor board already uses, and the same number:
+     * rows are capped, the COUNT beside them is not, so a busy lane reads as
+     * "200 of 12,431" rather than as 200. An agent works the top of this list
+     * and narrows it with the filters above it; nobody scrolls to row 12,000.
+     */
+    public const DISPLAY_LIMIT = 200;
+
     /** @var list<string> */
     public const LANES = [
         'new_activity',

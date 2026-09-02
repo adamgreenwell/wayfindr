@@ -131,7 +131,7 @@ class AgentConversationQueueController extends Controller
             $conversationSearch,
         );
 
-        $conversations = Conversation::query()
+        $conversationRows = Conversation::query()
             ->with([
                 'assignedAgent',
                 'latestCobrowseSession',
@@ -146,9 +146,25 @@ class AgentConversationQueueController extends Controller
             ->when($conversationSite, fn ($query) => $query->where('site_id', $conversationSite))
             ->when($conversationPresence !== 'all', fn ($query) => $this->applyConversationPresenceFilter($query, $conversationPresence))
             ->when($conversationSearch !== '', fn ($query) => ConversationQueueQuery::applySearch($query, $conversationSearch))
-            ->tap(fn ($query) => ConversationQueueQuery::applyLane($query, $conversationFilter, $agent))
+            ->tap(fn ($query) => ConversationQueueQuery::applyLane($query, $conversationFilter, $agent));
+
+        // Capped, because this rendered every matching row into one response:
+        // 187 MB of HTML on a year of a busy desk, after twenty-three seconds
+        // of server time (#837).
+        $conversations = (clone $conversationRows)
             ->tap(fn ($query) => ConversationQueueQuery::ordered($query))
+            ->limit(ConversationQueueQuery::DISPLAY_LIMIT)
             ->get();
+
+        // And the total is NOT capped, so a busy lane reads as "200 of 12,431"
+        // rather than as 200 -- reporting the cap as the count is the one
+        // number an agent would have trusted.
+        //
+        // Only asked for when the cap was actually reached: a lane that fits
+        // already knows its own size, and this is the queue's hottest page.
+        $conversationsShownOf = $conversations->count() < ConversationQueueQuery::DISPLAY_LIMIT
+            ? $conversations->count()
+            : (clone $conversationRows)->count();
 
         $cobrowseTransportByConversationId = $conversations
             ->mapWithKeys(fn (Conversation $conversation): array => [
@@ -196,6 +212,7 @@ class AgentConversationQueueController extends Controller
             'conversationSearch' => $conversationSearch,
             'conversationSite' => $conversationSite,
             'conversations' => $conversations,
+            'conversationsShownOf' => $conversationsShownOf,
             'newActivityConversationCount' => $newActivityConversationCount,
         ];
     }

@@ -81,6 +81,7 @@ return [
     ],
 
     'summary' => [
+        'capped_notice' => 'Angezeigt werden die :shown zuletzt aktiven von :total. Grenzen Sie die Warteschlange mit den Filtern oben ein, um die übrigen zu sehen.',
         // The halves differ here, which is the point: German inflects both the
         // auxiliary (wird/werden) and the relative-clause verb
         // (entspricht/entsprechen) for number, so a sentence built around a
