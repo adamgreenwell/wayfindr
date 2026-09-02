@@ -828,7 +828,6 @@ test('visitor surfaces translate their copy and keep account content language ne
     $directory = $xpathFor($directoryHtml);
 
     foreach ([
-        'the search term field' => '//input[@id="search"]',
         'the site filter option' => '//option[normalize-space(text())="Acme Datenpunkt Docs"]',
         'the visitor name' => '//a[normalize-space(text())="Acme Datenpunkt Person"]',
         'the site name in the visitor row' => '//span[normalize-space(text())="Acme Datenpunkt Docs"]',
@@ -840,6 +839,22 @@ test('visitor surfaces translate their copy and keep account content language ne
             ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
             ->and($node->getAttribute('lang'))->toBe('');
     }
+
+    $emptySearch = $directory->query('//input[@id="search"]')->item(0);
+
+    expect($emptySearch)->not->toBeNull('the empty search field did not render; this guard is checking nothing')
+        ->and($emptySearch)->toBeInstanceOf(DOMElement::class)
+        ->and($emptySearch->hasAttribute('lang'))->toBeFalse('the translated placeholder was reset to an unknown language');
+
+    $searchedDirectory = $xpathFor((string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.visitors.index', ['search' => 'Datenpunkt Person']))->assertOk()
+        ->getContent());
+    $filledSearch = $searchedDirectory->query('//input[@id="search"]')->item(0);
+
+    expect($filledSearch)->not->toBeNull('the filled search field did not render; this guard is checking nothing')
+        ->and($filledSearch)->toBeInstanceOf(DOMElement::class)
+        ->and($filledSearch->hasAttribute('lang'))->toBeTrue('the agent-entered search term carries no language reset')
+        ->and($filledSearch->getAttribute('lang'))->toBe('');
 
     $profileHtml = (string) $this->actingAs($world['agents']['de'])
         ->get(route('dashboard.visitors.show', $visitor))->assertOk()

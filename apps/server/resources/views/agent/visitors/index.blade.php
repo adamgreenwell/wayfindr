@@ -21,7 +21,7 @@
             <div class="meta-grid">
                 <div class="field">
                     <label for="search">{{ __('visitors.filters.search') }}</label>
-                    <input id="search" name="search" type="search" value="{{ $search }}" lang="" placeholder="{{ __('visitors.filters.placeholder') }}">
+                    <input id="search" name="search" type="search" value="{{ $search }}" @if ($search !== '') lang="" @endif placeholder="{{ __('visitors.filters.placeholder') }}">
                 </div>
 
                 <div class="field">
