@@ -8,6 +8,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
@@ -523,10 +524,9 @@ final class MeasureDashboardCommand extends Command
     /**
      * Say up front when the memory limit will not survive the run.
      *
-     * Normal queue rows are capped now, but the conversation queue still
-     * hydrates every live cobrowse session to count the ones needing transport
-     * attention. A very busy recent-session set can therefore outgrow the
-     * shipped 256M limit even though the visible rows themselves are bounded.
+     * Normal queue rows are capped, and cobrowse attention candidates are read
+     * in bounded chunks. Keep this check tied to what can coexist in memory so
+     * future queue work cannot quietly outgrow the shipped 256M limit.
      *
      * A WARNING, never a refusal. The estimate below is a straight line fitted
      * to one measured point, which is enough to be useful and not enough to
@@ -561,12 +561,9 @@ final class MeasureDashboardCommand extends Command
         // raise the limit to gigabytes for a page that now renders a bounded
         // response, contradicting the command's own measurement.
         //
-        // Conversations with a LIVE cobrowse session are hydrated in full on
-        // every conversation-queue render, to count how many need attention,
-        // inside the configured idle window. That recent set is not capped, so
-        // clamping the estimate to the row cap alone would let this method
-        // promise a warning it does not give: the command would run out of
-        // memory in a path the estimate had decided was bounded.
+        // Cobrowse attention is evaluated in chunks while the matching display
+        // page is retained. Count only as far as that peak can grow: the query
+        // needs no knowledge of rows beyond the chunk-plus-display ceiling.
         // Counted only for the kinds actually selected. Extracting the rule
         // into a pure function moved these out of the per-kind `match` and made
         // them unconditional, so `--page=ticket` opened with two unrelated
@@ -585,6 +582,8 @@ final class MeasureDashboardCommand extends Command
                 ->whereIn('site_id', $sites)
                 ->where('status', 'open')
                 ->withActiveCobrowseSession()
+                ->limit(ConversationQueueQuery::DISPLAY_LIMIT + CobrowseAttentionFinder::CHUNK_SIZE)
+                ->pluck('id')
                 ->count() : 0,
             $wantsTickets ? Ticket::QUEUE_DISPLAY_LIMIT : 0,
         );
@@ -655,14 +654,14 @@ final class MeasureDashboardCommand extends Command
     public static function estimatedRows(array $kinds, int $conversations, int $activeCobrowse, int $tickets): int
     {
         $perKind = array_map(fn (string $kind): int => match ($kind) {
-            // The conversation queue is capped, so its rows stop growing with
-            // the desk -- EXCEPT for conversations with a live cobrowse
-            // session, which are hydrated in full on every render to count how
-            // many need attention. The active scope now ages abandoned rows
-            // out, but a busy recent set can still exceed the cap. Taking the
-            // cap alone would promise a warning the command does not give and
-            // then die in the path it called safe.
-            'conversations' => max(min($conversations, ConversationQueueQuery::DISPLAY_LIMIT), $activeCobrowse),
+            // The rendered page retains at most DISPLAY_LIMIT matches while
+            // the finder evaluates one CHUNK_SIZE page. Once both are full,
+            // later candidates replace the chunk rather than increasing peak
+            // model hydration.
+            'conversations' => max(
+                min($conversations, ConversationQueueQuery::DISPLAY_LIMIT),
+                min($activeCobrowse, ConversationQueueQuery::DISPLAY_LIMIT + CobrowseAttentionFinder::CHUNK_SIZE),
+            ),
             'tickets' => min($tickets, Ticket::QUEUE_DISPLAY_LIMIT),
             default => 0,
         }, $kinds);

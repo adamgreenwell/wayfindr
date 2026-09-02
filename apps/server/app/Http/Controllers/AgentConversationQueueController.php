@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\CobrowseConsentState;
+use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationQueueQuery;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -14,7 +15,7 @@ use Illuminate\Support\Collection;
 
 class AgentConversationQueueController extends Controller
 {
-    public function __invoke(Request $request, CobrowseConsentState $cobrowseConsentState): View
+    public function __invoke(Request $request, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder): View
     {
         $agent = $request->user();
 
@@ -30,7 +31,7 @@ class AgentConversationQueueController extends Controller
             'account' => $account,
             'agent' => $agent,
             'sites' => $sites,
-            ...$this->conversationQueueData($agent, $sites, $request, $cobrowseConsentState),
+            ...$this->conversationQueueData($agent, $sites, $request, $cobrowseConsentState, $cobrowseAttentionFinder),
         ]);
     }
 
@@ -55,7 +56,7 @@ class AgentConversationQueueController extends Controller
      *     newActivityConversationCount: int
      * }
      */
-    private function conversationQueueData(User $agent, Collection $sites, Request $request, CobrowseConsentState $cobrowseConsentState): array
+    private function conversationQueueData(User $agent, Collection $sites, Request $request, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder): array
     {
         // Keyed by the query-string value, which is the contract with the URL
         // and must not move when the label does.
@@ -106,15 +107,10 @@ class AgentConversationQueueController extends Controller
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
             ->withNewActivityFor($agent)
             ->count();
-        $cobrowseAttentionConversationCount = Conversation::query()
-            ->with('latestCobrowseSession')
+        $cobrowseAttentionConversationCount = $cobrowseAttentionFinder->count(Conversation::query()
             ->where('status', 'open')
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
-            ->withActiveCobrowseSession()
-            ->get()
-            ->map(fn (Conversation $conversation): array => $cobrowseConsentState->queueTransportForConversation($conversation))
-            ->filter(fn (array $transport): bool => $cobrowseConsentState->transportNeedsAttention($transport))
-            ->count();
+            ->withActiveCobrowseSession());
         $conversationQueueSummary = $this->conversationQueueSummary(
             $agent,
             $conversationFilter,
@@ -159,46 +155,39 @@ class AgentConversationQueueController extends Controller
         // activity inside the configured idle window, not to the whole desk.
         $narrowsInPhp = $conversationFilter === 'cobrowse_attention';
 
-        $conversations = (clone $conversationRows)
-            ->tap(fn ($query) => ConversationQueueQuery::ordered($query))
-            // Capped, because this rendered every matching row into one
-            // response: 187 MB of HTML on a year of a busy desk, after
-            // twenty-three seconds of server time (#837).
-            ->when(! $narrowsInPhp, fn ($query) => $query->limit(ConversationQueueQuery::DISPLAY_LIMIT))
-            ->get();
-
-        $cobrowseTransportByConversationId = $conversations
-            ->mapWithKeys(fn (Conversation $conversation): array => [
-                $conversation->id => $cobrowseConsentState->queueTransportForConversation($conversation),
-            ]);
-
         if ($narrowsInPhp) {
-            $conversations = $conversations
-                ->filter(fn (Conversation $conversation): bool => $cobrowseConsentState->transportNeedsAttention(
-                    $cobrowseTransportByConversationId->get($conversation->id, [])
-                ))
-                ->values();
-        }
+            // Transport state is a PHP decision, but its candidates are read a
+            // page at a time. Keep the exact total while retaining only the
+            // rows the queue can render, so a burst of genuinely live sessions
+            // cannot become one giant Eloquent collection.
+            $attentionPage = $cobrowseAttentionFinder->page(
+                (clone $conversationRows)->tap(fn ($query) => ConversationQueueQuery::ordered($query)),
+                ConversationQueueQuery::DISPLAY_LIMIT,
+            );
+            $conversations = $attentionPage['conversations'];
+            $cobrowseTransportByConversationId = $attentionPage['transportByConversationId'];
+            $conversationsShownOf = $attentionPage['count'];
+        } else {
+            $conversations = (clone $conversationRows)
+                ->tap(fn ($query) => ConversationQueueQuery::ordered($query))
+                // Capped, because this rendered every matching row into one
+                // response: 187 MB of HTML on a year of a busy desk, after
+                // twenty-three seconds of server time (#837).
+                ->limit(ConversationQueueQuery::DISPLAY_LIMIT)
+                ->get();
 
-        // The total is NOT capped, so a busy lane reads as "200 of 12,431"
-        // rather than as 200 -- reporting the cap as the count is the one
-        // number an agent would have trusted.
-        //
-        // Counted AFTER the PHP filter where there is one, or the attention
-        // lane would report how many sessions are live rather than how many
-        // need attention, and show a capped notice for rows it is not hiding.
-        //
-        // For the SQL lanes it is only asked for when the cap was actually
-        // reached: a lane that fits already knows its own size, and this is the
-        // queue's hottest page.
-        $conversationsShownOf = match (true) {
-            $narrowsInPhp => $conversations->count(),
-            $conversations->count() < ConversationQueueQuery::DISPLAY_LIMIT => $conversations->count(),
-            default => (clone $conversationRows)->count(),
-        };
+            $cobrowseTransportByConversationId = $conversations
+                ->mapWithKeys(fn (Conversation $conversation): array => [
+                    $conversation->id => $cobrowseConsentState->queueTransportForConversation($conversation),
+                ]);
 
-        if ($narrowsInPhp) {
-            $conversations = $conversations->take(ConversationQueueQuery::DISPLAY_LIMIT)->values();
+            // The total is NOT capped, so a busy lane reads as "200 of 12,431"
+            // rather than as 200 -- reporting the cap as the count is the one
+            // number an agent would have trusted. Only ask for it when the cap
+            // was reached; a lane that fits already knows its own size.
+            $conversationsShownOf = $conversations->count() < ConversationQueueQuery::DISPLAY_LIMIT
+                ? $conversations->count()
+                : (clone $conversationRows)->count();
         }
         $conversationQueueCountSummary = $this->conversationQueueCountSummary(
             $conversationsShownOf,

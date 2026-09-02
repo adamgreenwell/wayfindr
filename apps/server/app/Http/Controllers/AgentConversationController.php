@@ -14,6 +14,7 @@ use App\Support\Attachments\AttachmentRejected;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
+use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\DashboardLanguage;
@@ -41,7 +42,7 @@ class AgentConversationController extends Controller
     /** How many conversations either side of the current one the menu lists. */
     private const SWITCHER_MENU_WINDOW = 25;
 
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail): View
     {
         $agent = $request->user();
 
@@ -56,7 +57,7 @@ class AgentConversationController extends Controller
         // queue" branch below then swallows that as if it were intended,
         // hiding the switcher entirely from the one lane an agent most often
         // works through.
-        $conversationSiblings = $this->conversationSiblings($agent, $conversation, $conversationReturnQuery, $cobrowseConsentState);
+        $conversationSiblings = $this->conversationSiblings($agent, $conversation, $conversationReturnQuery, $cobrowseAttentionFinder);
 
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);
@@ -257,7 +258,7 @@ class AgentConversationController extends Controller
         User $agent,
         Conversation $conversation,
         array $returnQuery,
-        CobrowseConsentState $cobrowseConsentState,
+        CobrowseAttentionFinder $cobrowseAttentionFinder,
     ): array {
         $empty = ['items' => collect(), 'previous' => null, 'next' => null, 'position' => null, 'total' => 0];
 
@@ -298,21 +299,14 @@ class AgentConversationController extends Controller
         // It is also what makes the switcher honest: walking rows the queue
         // said to narrow for would navigate into a list the agent was never
         // shown.
-        if (! $narrowsInPhp) {
-            $query->limit(ConversationQueueQuery::DISPLAY_LIMIT);
-        }
-
-        $siblings = $query->get(['id', 'support_code', 'subject']);
-
-        // Without the same pass the switcher lists conversations the queue does
-        // not show.
         if ($narrowsInPhp) {
-            $siblings = $siblings
-                ->filter(fn (Conversation $candidate): bool => $cobrowseConsentState->transportNeedsAttention(
-                    $cobrowseConsentState->queueTransportForConversation($candidate)
-                ))
-                ->take(ConversationQueueQuery::DISPLAY_LIMIT)
-                ->values();
+            $siblings = $cobrowseAttentionFinder->take(
+                $query->select(['id', 'support_code', 'subject']),
+                ConversationQueueQuery::DISPLAY_LIMIT,
+            );
+        } else {
+            $query->limit(ConversationQueueQuery::DISPLAY_LIMIT);
+            $siblings = $query->get(['id', 'support_code', 'subject']);
         }
 
         $index = $siblings->search(fn (Conversation $candidate): bool => $candidate->id === $conversation->id);

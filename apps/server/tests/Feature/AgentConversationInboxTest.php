@@ -16,7 +16,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\CobrowseConsentState;
-use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\ExternalIssueSyncStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -8346,14 +8346,14 @@ test('the attention lane finds an older degraded session behind a page of health
     // lane rendering empty next to a badge insisting something needs
     // attention.
     //
-    // Capping AFTER the filter is safe because the SQL set is already narrow:
-    // it is bounded to sessions live right now, not to the whole desk.
+    // Reading candidates in chunks and retaining rows AFTER the filter is safe:
+    // peak hydration stays bounded without hiding attention behind healthy rows.
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
     $site = Site::factory()->for($account)->create();
     $visitor = Visitor::factory()->for($site)->create();
 
-    $healthy = ConversationQueueQuery::DISPLAY_LIMIT + 5;
+    $healthy = CobrowseAttentionFinder::CHUNK_SIZE + 5;
 
     foreach (range(1, $healthy) as $i) {
         $conversation = Conversation::factory()->for($site)->for($visitor)->create([
@@ -8373,8 +8373,26 @@ test('the attention lane finds an older degraded session behind a page of health
         ]);
     }
 
-    // One degraded session, OLDER than every healthy one, so any ordering that
-    // caps before filtering will have discarded it.
+    $newerDegraded = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-NEWERDEGRADED',
+        'subject' => 'Newer degraded cobrowse',
+        'status' => 'open',
+        'last_message_at' => now()->subDays(2),
+    ]);
+
+    CobrowseSession::factory()->for($newerDegraded)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinutes(5),
+        'ended_at' => null,
+        'metadata' => ['telemetry' => [
+            'reported_at' => now()->subSeconds(12)->toJSON(),
+            'reconnects' => 0,
+            'dropped_batches' => 2,
+        ]],
+    ]);
+
+    // Both degraded sessions are OLDER than every healthy one, so an SQL cap
+    // before transport evaluation would discard them.
     $degraded = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-BURIEDDEGRADED',
         'subject' => 'Buried degraded cobrowse',
@@ -8393,13 +8411,37 @@ test('the attention lane finds an older degraded session behind a page of health
         ]],
     ]);
 
+    $candidateQueries = [];
+    DB::listen(function ($query) use (&$candidateQueries): void {
+        if (str_contains($query->sql, 'from "conversations"')
+            && str_contains($query->sql, 'cobrowse_sessions')
+            && str_contains($query->sql, ' offset ')) {
+            $candidateQueries[] = $query->sql;
+        }
+    });
+
     $response = $this->actingAs($agent)
         ->get('/dashboard/conversations?conversation_filter=cobrowse_attention');
 
-    $response->assertOk()->assertSee('Buried degraded cobrowse');
+    $response->assertOk()
+        ->assertSee('Newer degraded cobrowse')
+        ->assertSee('Buried degraded cobrowse');
 
     // And the total counts what needs attention, not how many sessions are
     // live -- otherwise the lane claims to be hiding rows it is not.
     expect($response->viewData('conversationsShownOf'))
-        ->toBe(1, 'the attention lane counted healthy sessions as rows it was hiding');
+        ->toBe(2, 'the attention lane counted healthy sessions as rows it was hiding');
+
+    expect(collect($candidateQueries)->contains(
+        fn (string $query): bool => preg_match('/offset\s+200\b/i', $query) === 1
+    ))->toBeTrue('the attention candidates were loaded as one unbounded query');
+
+    // The detail-page switcher runs the same post-filtered lane. It must also
+    // scan past the healthy first chunk without rebuilding one giant model set.
+    $this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-NEWERDEGRADED?from_queue=1&conversation_filter=cobrowse_attention')
+        ->assertOk()
+        ->assertSee('1 of 2')
+        ->assertSee('Newer degraded cobrowse')
+        ->assertSee('Buried degraded cobrowse');
 });
