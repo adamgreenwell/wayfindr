@@ -56,6 +56,7 @@ common_environment=(
     APP_DEBUG=false
     APP_URL=http://127.0.0.1
     APP_KEY=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    APP_CONFIG_CACHE="$temporary_dir/config.php"
     DB_CONNECTION=sqlite
     DB_DATABASE="$database"
     LARAVEL_STORAGE_PATH="$storage"
@@ -125,15 +126,6 @@ artisan() {
         "$php_binary" "$server_dir/artisan" "$@"
 }
 
-artisan migrate:fresh --force
-artisan wayfindr:seed-desk \
-    --conversations=1 \
-    --months=1 \
-    --agents=1 \
-    --sites=1 \
-    --messages=1 \
-    --fresh
-
 measurement_options=(
     --objects="$objects"
     --bytes="$object_bytes"
@@ -144,6 +136,20 @@ measurement_options=(
 if [[ "${WAYFINDR_ATTACHMENT_RETENTION_ALLOW_DIRTY:-0}" == "1" ]]; then
     measurement_options+=(--allow-dirty)
 fi
+
+# This boots the application with the exact environment above and validates
+# the database plus every disk the real sweep could reach. It must run before
+# migrate:fresh: that command is intentionally destructive to its selected DB.
+artisan wayfindr:measure-attachment-retention "${measurement_options[@]}" --preflight-only
+
+artisan migrate:fresh --force
+artisan wayfindr:seed-desk \
+    --conversations=1 \
+    --months=1 \
+    --agents=1 \
+    --sites=1 \
+    --messages=1 \
+    --fresh
 
 artisan wayfindr:measure-attachment-retention "${measurement_options[@]}"
 

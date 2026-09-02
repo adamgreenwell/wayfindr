@@ -43,6 +43,7 @@ final class MeasureAttachmentRetentionCommand extends Command
         {--output= : Absolute path for the JSON report}
         {--confirm-disposable : Confirm the database and storage are throwaway}
         {--allow-dirty : Permit a development-only report from a dirty worktree}
+        {--preflight-only : Validate the disposable targets without writing anything}
         {--skip-scheduler-probe : Testing only; do not execute the scheduled event}';
 
     protected $description = 'Measure attachment cleanup against an isolated large-object-count fixture.';
@@ -86,6 +87,12 @@ final class MeasureAttachmentRetentionCommand extends Command
 
             $this->guardDisposableTarget($objects, $this->bytesPerObject, $output, $allowDirty);
 
+            if ($this->option('preflight-only')) {
+                $this->components->info('Attachment-retention disposable-target preflight passed.');
+
+                return self::SUCCESS;
+            }
+
             $gitAtStart = $this->gitState();
             $this->diskName = (string) config('wayfindr.attachments.storage_disk');
             /** @var FilesystemAdapter $disk */
@@ -99,6 +106,10 @@ final class MeasureAttachmentRetentionCommand extends Command
             $this->fixtureChecksum = hash('sha256', $this->fixtureBytes);
 
             $desk = $this->measurementDesk();
+            $this->assert(
+                ConversationMessageAttachment::query()->doesntExist(),
+                'The disposable database must not contain pre-existing attachment rows.',
+            );
             $this->ownsFixture = true;
             $runId = 'wayfindr-attachment-retention-'.Str::lower((string) Str::ulid());
             $this->createControls($runId);
@@ -223,6 +234,7 @@ final class MeasureAttachmentRetentionCommand extends Command
             'Set WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE=YES and pass --confirm-disposable only for an isolated throwaway run.',
         );
         $this->assert(! app()->isProduction(), 'Attachment-retention measurement is refused in production.');
+        $this->assert(! app()->configurationIsCached(), 'Attachment-retention measurement refuses cached configuration.');
         $this->assert($objects >= 10 && $objects <= 50_000 && $objects % 10 === 0, '--objects must be a multiple of 10 from 10 through 50,000.');
         $this->assert($bytes >= 1 && $bytes <= 1_048_576, '--bytes must be between 1 byte and 1 MiB.');
         $this->assert($objects * $bytes <= 268_435_456, 'The synthetic fixture is capped at 256 MiB.');
@@ -251,6 +263,37 @@ final class MeasureAttachmentRetentionCommand extends Command
         $this->assert(in_array($diskName, ['attachments', 'attachments-s3'], true), 'Measurement only supports the product attachment disks: attachments or attachments-s3.');
         $this->assert(trim((string) getenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY')) !== '', 'Describe the disposable storage topology with WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY.');
 
+        $configuredAttachmentDisks = collect(config('filesystems.disks', []))
+            ->filter(fn ($disk, string $name): bool => str_starts_with($name, 'attachments'))
+            ->filter(function ($disk): bool {
+                $driver = is_array($disk) ? ($disk['driver'] ?? 'local') : 'local';
+
+                return $driver !== 's3' || filled(is_array($disk) ? ($disk['bucket'] ?? null) : null);
+            })
+            ->keys()
+            ->all();
+        $allowedAttachmentDisks = $diskName === 'attachments-s3'
+            ? ['attachments', 'attachments-s3']
+            : ['attachments'];
+        $unexpectedAttachmentDisks = array_values(array_diff($configuredAttachmentDisks, $allowedAttachmentDisks));
+        $this->assert(
+            $unexpectedAttachmentDisks === [],
+            'Measurement refuses additional configured attachment disks: '.implode(', ', $unexpectedAttachmentDisks).'.',
+        );
+
+        $localDisk = config('filesystems.disks.attachments');
+        $this->assert(
+            is_array($localDisk) && ($localDisk['driver'] ?? null) === 'local',
+            'The attachments disk must be the isolated local driver during measurement.',
+        );
+
+        if (! app()->environment('testing')) {
+            $databaseDirectory = $this->normalPath((string) realpath(dirname((string) config('database.connections.sqlite.database'))));
+            $configuredRoot = (string) ($localDisk['root'] ?? '');
+            $localRoot = $this->normalPath((string) (realpath($configuredRoot) ?: $configuredRoot));
+            $this->assert(str_starts_with($localRoot, $databaseDirectory.DIRECTORY_SEPARATOR), 'Local attachments must live under the same isolated temporary root as SQLite.');
+        }
+
         if ($diskName === 'attachments-s3') {
             $endpoint = parse_url((string) config('filesystems.disks.attachments-s3.endpoint'));
             $host = strtolower((string) ($endpoint['host'] ?? ''));
@@ -272,11 +315,7 @@ final class MeasureAttachmentRetentionCommand extends Command
             $this->assert($bucket === self::S3_BUCKET, 'S3-compatible measurement requires the dedicated wayfindr-attachment-retention bucket.');
             $this->assert(str_starts_with($root, 'runs/wayfindr-attachment-retention-') && ! str_contains($root, '..'), 'S3-compatible measurement requires a unique runs/wayfindr-attachment-retention-* root.');
             $this->assert((int) config('wayfindr.attachments.orphan_grace_hours') === 0, 'The disposable S3 run requires orphan_grace_hours=0 because S3 object timestamps cannot be backdated.');
-        } elseif (! app()->environment('testing')) {
-            $databaseDirectory = $this->normalPath((string) realpath(dirname((string) config('database.connections.sqlite.database'))));
-            $configuredRoot = (string) config('filesystems.disks.attachments.root');
-            $localRoot = $this->normalPath((string) (realpath($configuredRoot) ?: $configuredRoot));
-            $this->assert(str_starts_with($localRoot, $databaseDirectory.DIRECTORY_SEPARATOR), 'Local attachments must live under the same isolated temporary root as SQLite.');
+        } else {
             $this->assert((int) config('wayfindr.attachments.orphan_grace_hours') >= 1, 'The local run requires at least a one-hour orphan grace window.');
         }
 

@@ -29,6 +29,76 @@ test('the attachment retention measurement refuses to clean up without both disp
         ->and(file_exists($output))->toBeFalse();
 });
 
+test('the preflight validates the disposable targets without changing the database', function (): void {
+    $account = Account::query()->create([
+        'name' => 'Preflight Control',
+        'slug' => 'preflight-control',
+    ]);
+    $output = sys_get_temp_dir().'/wayfindr-retention-preflight-'.Str::lower((string) Str::ulid()).'.json';
+
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    config()->set('wayfindr.attachments.orphan_grace_hours', 1);
+    config()->set('filesystems.disks.attachments-s3.bucket', null);
+    putenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE=YES');
+    putenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY=testing preflight');
+
+    try {
+        $this->artisan('wayfindr:measure-attachment-retention', [
+            '--objects' => 20,
+            '--bytes' => 64,
+            '--output' => $output,
+            '--confirm-disposable' => true,
+            '--allow-dirty' => true,
+            '--preflight-only' => true,
+        ])->expectsOutputToContain('disposable-target preflight passed')
+            ->assertSuccessful();
+
+        expect(Account::query()->whereKey($account->id)->exists())->toBeTrue()
+            ->and(file_exists($output))->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE');
+        putenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY');
+    }
+});
+
+test('the local preflight refuses another configured attachment disk', function (): void {
+    $account = Account::query()->create([
+        'name' => 'Remote Disk Control',
+        'slug' => 'remote-disk-control',
+    ]);
+    $output = sys_get_temp_dir().'/wayfindr-retention-remote-refusal-'.Str::lower((string) Str::ulid()).'.json';
+
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    config()->set('wayfindr.attachments.orphan_grace_hours', 1);
+    config()->set('filesystems.disks.attachments-s3', [
+        'driver' => 's3',
+        'bucket' => 'operator-bucket',
+        'endpoint' => 'https://object-store.example.test',
+        'key' => 'operator-key',
+        'secret' => 'operator-secret',
+    ]);
+    putenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE=YES');
+    putenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY=testing refusal');
+
+    try {
+        $this->artisan('wayfindr:measure-attachment-retention', [
+            '--objects' => 20,
+            '--bytes' => 64,
+            '--output' => $output,
+            '--confirm-disposable' => true,
+            '--allow-dirty' => true,
+            '--preflight-only' => true,
+        ])->expectsOutputToContain('refuses additional configured attachment disks: attachments-s3')
+            ->assertFailed();
+
+        expect(Account::query()->whereKey($account->id)->exists())->toBeTrue()
+            ->and(file_exists($output))->toBeFalse();
+    } finally {
+        putenv('WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE');
+        putenv('WAYFINDR_ATTACHMENT_RETENTION_STORAGE_TOPOLOGY');
+    }
+});
+
 test('the local measurement proves deletion survival and bounded cleanup', function (): void {
     if (DB::connection()->getDriverName() !== 'sqlite') {
         $this->markTestSkipped('The measurement command deliberately requires an isolated SQLite database.');

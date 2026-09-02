@@ -97,7 +97,9 @@ Run from the repository root. The wrapper creates a temporary SQLite database,
 temporary storage, and the one-conversation desk fixture the attachment models
 need. `local` uses only the temporary filesystem; `s3` also starts the pinned
 MinIO image on a random loopback port and removes its container and bind data on
-exit.
+exit. Before the destructive `migrate:fresh`, the wrapper boots the application
+with a temporary, nonexistent config-cache path and runs the command's read-only
+disposable-target preflight.
 
 ```bash
 WAYFINDR_ATTACHMENT_RETENTION_PHP_BINARY="$(command -v php)" \
@@ -153,11 +155,13 @@ The measurement command refuses to run unless all of these are true:
 
 - `WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE` is exactly `YES` and
   `--confirm-disposable` is present;
-- the application is not in production;
+- the application is not in production or booted from cached configuration;
 - the database is SQLite inside the operating-system temporary directory;
 - local storage is inside the temporary `LARAVEL_STORAGE_PATH`, or the S3
   endpoint is loopback with the harness's exact dedicated bucket and synthetic
   credentials;
+- no additional configured `attachments*` disk could be discovered by the real
+  sweep;
 - the S3 run root is a unique `runs/wayfindr-attachment-retention-*` prefix;
 - the requested fixture is 10–50,000 objects and no more than 256 MiB;
 - the output is a new absolute path outside the repository; and
