@@ -189,8 +189,6 @@ async function run() {
       const disconnectsBefore = sum(clients, (client) => client.disconnects);
       const reconnectsBefore = sum(clients, (client) => client.reconnectAttempts);
       const reconnectSuccessesBefore = sum(clients, (client) => client.reconnectSuccesses);
-      const keepalivesBefore = sum(clients, (client) => client.keepalivesSent);
-      const pongsBefore = sum(clients, (client) => client.keepalivePongs);
       const serverPingsBefore = sum(clients, (client) => client.serverPings);
       const websocketErrorsBefore = sum(clients, (client) => client.websocketErrors);
       const holdStartedAt = performance.now();
@@ -212,12 +210,23 @@ async function run() {
         await delay(remainingMs);
       }
 
+      const holdFinishedAt = performance.now();
       await monitor.sample();
+      const perClientKeepalives = clients.map((client) => ({
+        sends: client.keepaliveSentAt.filter((sentAt) => sentAt >= holdStartedAt && sentAt <= holdFinishedAt).length,
+        acknowledgements: client.keepaliveAcks.filter((acknowledgement) => (
+          acknowledgement.sentAt >= holdStartedAt
+          && acknowledgement.receivedAt <= holdFinishedAt
+        )),
+        timeouts: client.keepaliveTimeoutAt.filter((timedOutAt) => (
+          timedOutAt >= holdStartedAt && timedOutAt <= holdFinishedAt
+        )).length,
+      }));
 
       hold = {
         agents: highestStable,
         requested_seconds: holdSeconds,
-        actual_seconds: round((performance.now() - holdStartedAt) / 1000),
+        actual_seconds: round((holdFinishedAt - holdStartedAt) / 1000),
         broadcasts: deliveries.length,
         expected_deliveries: deliveries.reduce((total, delivery) => total + delivery.expected, 0),
         delivered: deliveries.reduce((total, delivery) => total + delivery.delivered, 0),
@@ -231,8 +240,14 @@ async function run() {
         disconnects: sum(clients, (client) => client.disconnects) - disconnectsBefore,
         reconnect_attempts: sum(clients, (client) => client.reconnectAttempts) - reconnectsBefore,
         reconnect_successes: sum(clients, (client) => client.reconnectSuccesses) - reconnectSuccessesBefore,
-        keepalives_sent: sum(clients, (client) => client.keepalivesSent) - keepalivesBefore,
-        keepalive_pongs: sum(clients, (client) => client.keepalivePongs) - pongsBefore,
+        keepalives_sent: sum(perClientKeepalives, (client) => client.sends),
+        keepalive_pongs: sum(perClientKeepalives, (client) => client.acknowledgements.length),
+        keepalive_timeouts: sum(perClientKeepalives, (client) => client.timeouts),
+        clients_sending_keepalives: perClientKeepalives.filter((client) => client.sends > 0).length,
+        clients_receiving_keepalive_pongs: perClientKeepalives
+          .filter((client) => client.acknowledgements.length > 0).length,
+        keepalive_pong_ms: distribution(perClientKeepalives
+          .flatMap((client) => client.acknowledgements.map((acknowledgement) => acknowledgement.latencyMs))),
         server_pings: sum(clients, (client) => client.serverPings) - serverPingsBefore,
         websocket_errors: sum(clients, (client) => client.websocketErrors) - websocketErrorsBefore,
         subscribed_at_end: clients.filter((client) => client.subscribed).length,
@@ -287,7 +302,12 @@ async function run() {
       hold_had_no_disconnects: Boolean(hold && hold.disconnects === 0),
       hold_had_no_reconnects: Boolean(hold && hold.reconnect_attempts === 0),
       hold_had_no_websocket_errors: Boolean(hold && hold.websocket_errors === 0),
-      application_keepalives_exercised: Boolean(hold && hold.keepalives_sent > 0 && hold.keepalive_pongs > 0),
+      application_keepalives_exercised: Boolean(
+        hold
+        && hold.keepalive_timeouts === 0
+        && hold.clients_sending_keepalives === hold.agents
+        && hold.clients_receiving_keepalive_pongs === hold.agents,
+      ),
       no_websocket_errors: sum(attemptedClients, (client) => client.websocketErrors) === 0,
       no_resource_sampling_errors: monitor.errors.length === 0,
     },
@@ -299,16 +319,16 @@ async function run() {
 
   assert(report.result.highest_stable_agents > 0, 'No ramp stage completed successfully.');
   assert(report.verification.no_resource_sampling_errors, 'One or more Reverb resource samples failed.');
+  assert(report.verification.hold_kept_every_client_subscribed, 'Not every client remained subscribed through the hold.');
+  assert(report.verification.hold_delivered_every_event, 'The hold missed one or more expected deliveries.');
+  assert(report.verification.hold_had_no_disconnects, 'One or more clients disconnected during the hold.');
+  assert(report.verification.hold_had_no_reconnects, 'One or more clients reconnected during the hold.');
+  assert(report.verification.hold_had_no_websocket_errors, 'One or more clients reported a WebSocket error during the hold.');
+  assert(report.verification.no_websocket_errors, 'One or more clients reported a WebSocket error during the measurement.');
 
   if (!allowShortHold) {
     assert(report.verification.qualifying_keepalive_hold, 'Hold did not run for at least 70 seconds.');
-    assert(report.verification.hold_kept_every_client_subscribed, 'Not every client remained subscribed through the hold.');
-    assert(report.verification.hold_delivered_every_event, 'The hold missed one or more expected deliveries.');
-    assert(report.verification.hold_had_no_disconnects, 'One or more clients disconnected during the hold.');
-    assert(report.verification.hold_had_no_reconnects, 'One or more clients reconnected during the hold.');
-    assert(report.verification.hold_had_no_websocket_errors, 'One or more clients reported a WebSocket error during the hold.');
     assert(report.verification.application_keepalives_exercised, 'The hold did not exercise Pusher application keepalives.');
-    assert(report.verification.no_websocket_errors, 'One or more clients reported a WebSocket error during the measurement.');
   }
 }
 
@@ -344,6 +364,7 @@ class CapacityAgent {
     this.closing = false;
     this.hasSubscribed = false;
     this.keepaliveTimer = null;
+    this.pendingKeepalive = null;
     this.reconnectTimer = null;
     this.waiters = new Set();
     this.disconnects = 0;
@@ -352,6 +373,9 @@ class CapacityAgent {
     this.websocketErrors = 0;
     this.keepalivesSent = 0;
     this.keepalivePongs = 0;
+    this.keepaliveSentAt = [];
+    this.keepaliveAcks = [];
+    this.keepaliveTimeoutAt = [];
     this.serverPings = 0;
     this.activityTimeoutSeconds = null;
   }
@@ -490,7 +514,17 @@ class CapacityAgent {
         }
 
         if (envelope.event === 'pusher:pong') {
-          this.keepalivePongs += 1;
+          if (this.pendingKeepalive && this.pendingKeepalive.socket === socket) {
+            const receivedAt = performance.now();
+            clearTimeout(this.pendingKeepalive.timer);
+            this.keepalivePongs += 1;
+            this.keepaliveAcks.push({
+              sentAt: this.pendingKeepalive.sentAt,
+              receivedAt,
+              latencyMs: round(receivedAt - this.pendingKeepalive.sentAt),
+            });
+            this.pendingKeepalive = null;
+          }
 
           return;
         }
@@ -654,8 +688,39 @@ class CapacityAgent {
         return;
       }
 
-      this.socket.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+      if (this.pendingKeepalive) {
+        return;
+      }
+
+      const socket = this.socket;
+      const sentAt = performance.now();
+
+      try {
+        socket.send(JSON.stringify({ event: 'pusher:ping', data: {} }));
+      } catch (error) {
+        this.websocketErrors += 1;
+        socket.close();
+
+        return;
+      }
+
       this.keepalivesSent += 1;
+      this.keepaliveSentAt.push(sentAt);
+      const pending = {
+        socket,
+        sentAt,
+        timer: setTimeout(() => {
+          if (this.pendingKeepalive !== pending) {
+            return;
+          }
+
+          this.pendingKeepalive = null;
+          this.keepaliveTimeoutAt.push(performance.now());
+          this.websocketErrors += 1;
+          socket.close(4000, 'Pusher keepalive timed out');
+        }, timeoutMs),
+      };
+      this.pendingKeepalive = pending;
     }, seconds * 1000);
   }
 
@@ -663,6 +728,11 @@ class CapacityAgent {
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = null;
+    }
+
+    if (this.pendingKeepalive) {
+      clearTimeout(this.pendingKeepalive.timer);
+      this.pendingKeepalive = null;
     }
   }
 
