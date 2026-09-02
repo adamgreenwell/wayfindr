@@ -30,6 +30,10 @@ test('the attachment retention measurement refuses to clean up without both disp
 });
 
 test('the preflight validates the disposable targets without changing the database', function (): void {
+    if (DB::connection()->getDriverName() !== 'sqlite') {
+        $this->markTestSkipped('The measurement preflight deliberately requires an isolated SQLite database.');
+    }
+
     $account = Account::query()->create([
         'name' => 'Preflight Control',
         'slug' => 'preflight-control',
@@ -62,6 +66,10 @@ test('the preflight validates the disposable targets without changing the databa
 });
 
 test('the local preflight refuses another configured attachment disk', function (): void {
+    if (DB::connection()->getDriverName() !== 'sqlite') {
+        $this->markTestSkipped('The measurement preflight deliberately requires an isolated SQLite database.');
+    }
+
     $account = Account::query()->create([
         'name' => 'Remote Disk Control',
         'slug' => 'remote-disk-control',
