@@ -177,6 +177,12 @@ of the difference is the argument for measuring at all:
 | Before | 12,518 | 9,503 |
 | After | **18** | **6,928** |
 
+Both rows are on the fixture as it stood then, which wrote no lifecycle history
+— that is what makes them comparable to each other. The current figure in the
+table above is 19 queries and 7,379 ms, measured on a desk that now has a
+history to hydrate; the paragraph after this explains that difference rather
+than leaving two numbers to be reconciled by the reader.
+
 The queue eagerly loaded each ticket's lifecycle events and then threw that work
 away: the helper reading them went to the relation rather than to what had
 already been loaded, so every ticket paid for its own query.
@@ -251,10 +257,12 @@ is measured above is a desk with a history a real install could have produced.
 
 ### The conversation detail page is fine
 
-11-12 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
+14-16 ms, 26 queries and 148 KB at *every* size measured, from 20 conversations
 to 50,000. The queries and the response size do not move at all; the
 milliseconds vary by a millisecond or two between runs, which is the noise floor
-on a page this cheap. Its cost is bounded by one conversation's own messages
+on a page this cheap. Earlier revisions of this page reported 11-12 ms for the
+same measurement — the difference is the machine on the day, not the code, and
+it is a fair illustration of how much weight the milliseconds here will carry. Its cost is bounded by one conversation's own messages
 rather than by the desk around it, which is what the other pages are not.
 
 This is worth stating as plainly as the problems: the page an agent spends most

@@ -756,6 +756,41 @@ test('it weighs a streamed response instead of calling it empty', function (): v
     expect($response->baseResponse)->toBeInstanceOf(StreamedResponse::class);
 });
 
+test('an agent who cannot open the reports still measures everything else', function (): void {
+    // `AgentReportController` aborts 403 for anyone who is not an account
+    // admin, and a 403 fails the whole run -- a page that did not render is not
+    // a measurement. Adding the report targets unconditionally broke `--email`
+    // against an ordinary agent, which was a supported way to measure.
+    Artisan::call('wayfindr:seed-desk', ['--conversations' => 20, '--messages' => 2, '--fresh' => true]);
+
+    $account = Account::query()->where('slug', 'wayfindr-measurement-desk')->firstOrFail();
+    // No site assignment needed: a site with no named support agents is
+    // visible to everyone on the account, which is what the seeder creates.
+    $plain = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    expect($plain->isAdmin())->toBeFalse('the fixture agent is an admin, so this measures nothing');
+
+    expect(Artisan::call('wayfindr:measure-dashboard', [
+        '--runs' => 1,
+        '--email' => $plain->email,
+        '--json' => true,
+    ]))->toBe(0, 'measuring as an ordinary agent failed');
+
+    $pages = collect(json_decode(Artisan::output(), true)['pages']);
+
+    // Everything answered, and no report target was attempted.
+    foreach ($pages as $page) {
+        expect($page['status'])->toBe(200, "{$page['page']} answered {$page['status']}");
+    }
+
+    expect($pages->pluck('page')->filter(fn (string $p): bool => str_contains($p, 'Reports')))
+        ->toBeEmpty('an agent who cannot open the reports was asked to measure them');
+
+    // And the queues were still measured, so this is not passing on an empty set.
+    expect($pages->pluck('page')->filter(fn (string $p): bool => str_contains($p, 'queue')))
+        ->not->toBeEmpty();
+});
+
 test('it measures a conversation an agent would actually open', function (): void {
     // Ordering by id descending picked the OLDEST, because the seeder writes
     // newest-first -- and with the default fixture that last row also carries

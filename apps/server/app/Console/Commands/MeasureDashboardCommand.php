@@ -821,18 +821,25 @@ final class MeasureDashboardCommand extends Command
             'Conversation queue (mine)' => '/dashboard/conversations?conversation_filter=assigned_to_me',
             'Ticket queue (open)' => '/dashboard/tickets',
             'Ticket queue (all)' => '/dashboard/tickets?ticket_status=all',
-            // The report tabs, at both ends of the window range they offer.
-            // The window is the axis that matters here: every figure on the
-            // page is computed over it, so 7 days and 90 days are different
-            // amounts of work over the same desk rather than the same page
-            // twice.
-            'Reports (7 days)' => '/dashboard/reports?report_days=7',
-            'Reports (90 days)' => '/dashboard/reports?report_days=90',
-            // The export builds the same figures and streams them, so it is
-            // the one report path whose cost is not bounded by what a page can
-            // show.
-            'Reports export (90 days)' => '/dashboard/reports/export?report_days=90',
         ];
+
+        // The report tabs, at both ends of the window range they offer. The
+        // window is the axis that matters: 7 days and 90 days are different
+        // amounts of work over the same desk rather than the same page twice,
+        // and the export is the one report path whose cost is not bounded by
+        // what a screen can show.
+        //
+        // ADMIN ONLY, because `AgentReportController` aborts 403 for anyone
+        // else -- and a 403 fails the whole run, since a page that did not
+        // render is not a measurement. Adding them unconditionally broke
+        // `--email` against an ordinary agent, which was a supported way to
+        // measure before this. An agent who cannot open the reports simply does
+        // not measure them.
+        if ($agent->isAdmin()) {
+            $targets['Reports (7 days)'] = '/dashboard/reports?report_days=7';
+            $targets['Reports (90 days)'] = '/dashboard/reports?report_days=90';
+            $targets['Reports export (90 days)'] = '/dashboard/reports/export?report_days=90';
+        }
 
         if ($conversation !== null) {
             // The one page whose cost should NOT grow with the desk, and the
