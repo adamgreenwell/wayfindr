@@ -53,6 +53,7 @@ async function run() {
   try {
     for (const target of steps) {
       monitor.setContext(`ramp-${target}`, clients.length);
+      await monitor.sample();
       const resourceStart = monitor.samples.length;
       const previousStable = highestStable;
       const disconnectsBefore = sum(attemptedClients, (client) => client.disconnects);
@@ -186,6 +187,7 @@ async function run() {
 
     if (highestStable > 0) {
       monitor.setContext(`hold-${highestStable}`, clients.length);
+      await monitor.sample();
       const resourceStart = monitor.samples.length;
       const disconnectsBefore = sum(clients, (client) => client.disconnects);
       const reconnectsBefore = sum(clients, (client) => client.reconnectAttempts);
@@ -278,8 +280,18 @@ async function run() {
     await monitor.stop();
   }
 
+  const workingTreeCleanAtEnd = workingTreeStatus() === '';
+
+  assert(
+    allowDirty || workingTreeCleanAtEnd,
+    'Capacity harness refuses to publish a report because the worktree became dirty during the measurement; discard the run and repeat from a clean revision.',
+  );
+
+  runtime.working_tree_clean_at_end = workingTreeCleanAtEnd;
+  runtime.working_tree_clean = runtime.working_tree_clean_at_start && workingTreeCleanAtEnd;
+
   const report = {
-    schema_version: 2,
+    schema_version: 3,
     measured_at: new Date().toISOString(),
     environment: {
       ...runtime,
@@ -902,6 +914,19 @@ class ProcessMonitor {
     this.stopping = false;
     this.errors = [];
     this.startedAt = performance.now();
+    this.previousSnapshot = null;
+    this.sampleChain = Promise.resolve();
+    this.clockTicksPerSecond = process.platform === 'linux'
+      ? Number(command('getconf', ['CLK_TCK'], repoRoot))
+      : null;
+    this.pageSize = process.platform === 'linux'
+      ? Number(command('getconf', ['PAGESIZE'], repoRoot))
+      : null;
+
+    if (process.platform === 'linux') {
+      assert(Number.isFinite(this.clockTicksPerSecond) && this.clockTicksPerSecond > 0, 'Could not determine Linux clock ticks per second.');
+      assert(Number.isFinite(this.pageSize) && this.pageSize > 0, 'Could not determine Linux memory page size.');
+    }
   }
 
   async start() {
@@ -925,24 +950,60 @@ class ProcessMonitor {
   }
 
   setContext(phase, activeClients) {
+    if (this.phase !== phase) {
+      // The next sample is a phase baseline. Discard the interval that crossed
+      // the boundary so one ramp's CPU cannot leak into another ramp or hold.
+      this.previousSnapshot = null;
+    }
+
     this.phase = phase;
     this.activeClients = activeClients;
   }
 
-  async sample() {
+  sample() {
     const context = { phase: this.phase, active_clients: this.activeClients };
-    const output = await execFilePromise('ps', ['-p', String(this.pid), '-o', '%cpu=', '-o', 'rss=']);
-    const [cpu, rssKb] = output.trim().split(/\s+/).map(Number);
+    const next = this.sampleChain
+      .catch(() => {})
+      .then(() => this.capture(context));
+    this.sampleChain = next;
 
-    if (!Number.isFinite(cpu) || !Number.isFinite(rssKb)) {
+    return next;
+  }
+
+  async capture(context) {
+    const snapshot = await processResourceSnapshot(
+      this.pid,
+      this.clockTicksPerSecond,
+      this.pageSize,
+    );
+    const sampledAt = performance.now();
+    const previous = this.previousSnapshot;
+    const intervalSeconds = previous
+      ? (sampledAt - previous.sampledAt) / 1000
+      : null;
+    const cpuSeconds = previous
+      ? snapshot.cpuTimeSeconds - previous.cpuTimeSeconds
+      : null;
+    const cpuPercent = intervalSeconds > 0 && cpuSeconds >= 0
+      ? (cpuSeconds / intervalSeconds) * 100
+      : null;
+
+    if (!Number.isFinite(snapshot.cpuTimeSeconds) || !Number.isFinite(snapshot.rssBytes)) {
       throw new Error('Could not parse the Reverb process resource sample.');
     }
 
+    this.previousSnapshot = {
+      ...snapshot,
+      sampledAt,
+    };
+
     this.samples.push({
-      seconds: round((performance.now() - this.startedAt) / 1000),
+      seconds: round((sampledAt - this.startedAt) / 1000),
       ...context,
-      reverb_cpu_percent: round(cpu),
-      reverb_rss_bytes: Math.round(rssKb * 1024),
+      cpu_interval_seconds: round(intervalSeconds),
+      reverb_cpu_time_seconds: round(snapshot.cpuTimeSeconds),
+      reverb_cpu_percent: round(cpuPercent),
+      reverb_rss_bytes: Math.round(snapshot.rssBytes),
       client_rss_bytes: process.memoryUsage().rss,
       system_load_1m: round(os.loadavg()[0]),
     });
@@ -997,7 +1058,7 @@ function runtimeEnvironment() {
 
   return {
     revision: command('git', ['rev-parse', 'HEAD'], repoRoot),
-    working_tree_clean: workingTreeStatus() === '',
+    working_tree_clean_at_start: workingTreeStatus() === '',
     machine: os.cpus()[0]?.model || 'unknown',
     logical_cpus: os.cpus().length,
     memory_bytes: os.totalmem(),
@@ -1013,6 +1074,42 @@ function runtimeEnvironment() {
     websocket_origin: reverbUrl.origin,
     ...metadata,
   };
+}
+
+async function processResourceSnapshot(pid, clockTicksPerSecond, pageSize) {
+  if (process.platform === 'linux') {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8').trim();
+    const commandEnd = stat.lastIndexOf(')');
+    assert(commandEnd > 0, 'Could not parse Linux process stat.');
+    const fields = stat.slice(commandEnd + 2).split(/\s+/);
+    const userTicks = Number(fields[11]);
+    const systemTicks = Number(fields[12]);
+    const residentPages = Number(fs.readFileSync(`/proc/${pid}/statm`, 'utf8').trim().split(/\s+/)[1]);
+
+    return {
+      cpuTimeSeconds: (userTicks + systemTicks) / clockTicksPerSecond,
+      rssBytes: residentPages * pageSize,
+    };
+  }
+
+  const output = await execFilePromise('ps', ['-p', String(pid), '-o', 'time=', '-o', 'rss=']);
+  const [cpuTime, rssKb] = output.trim().split(/\s+/);
+
+  return {
+    cpuTimeSeconds: parseProcessCpuTime(cpuTime),
+    rssBytes: Number(rssKb) * 1024,
+  };
+}
+
+function parseProcessCpuTime(value) {
+  const [dayPart, timePart] = value.includes('-') ? value.split('-', 2) : ['0', value];
+  const parts = timePart.split(':').map(Number);
+  assert(parts.length >= 2 && parts.length <= 3 && parts.every(Number.isFinite), 'Could not parse process CPU time.');
+  const seconds = parts.pop();
+  const minutes = parts.pop();
+  const hours = parts.pop() || 0;
+
+  return (Number(dayPart) * 24 * 60 * 60) + (hours * 60 * 60) + (minutes * 60) + seconds;
 }
 
 function resourceSummary(samples) {

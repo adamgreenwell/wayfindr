@@ -25,6 +25,15 @@ common_environment=(
 
 node --check "$harness"
 
+if grep -F -- "'-o', '%cpu='" "$harness" >/dev/null; then
+    echo "Capacity harness still reads lifetime-averaged ps %CPU." >&2
+    exit 1
+fi
+
+grep -F 'cpuTimeSeconds - previous.cpuTimeSeconds' "$harness" >/dev/null
+grep -F 'working_tree_clean_at_end' "$harness" >/dev/null
+grep -F 'worktree became dirty during the measurement' "$harness" >/dev/null
+
 if env "${common_environment[@]}" \
     WAYFINDR_BASE_URL=https://support.example.com \
     node "$harness" >"$output" 2>&1; then
