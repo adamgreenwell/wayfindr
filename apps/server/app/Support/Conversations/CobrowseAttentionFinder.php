@@ -6,8 +6,8 @@ namespace App\Support\Conversations;
 
 use App\Models\Conversation;
 use App\Support\CobrowseConsentState;
+use App\Support\Database\StableReadTransaction;
 use Closure;
-use Illuminate\Database\Connection;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
@@ -157,24 +157,6 @@ final class CobrowseAttentionFinder
      */
     private function withinStableSnapshot(Builder $query, Closure $read): mixed
     {
-        $connection = $query->getConnection();
-
-        if ($connection->transactionLevel() > 0) {
-            return $read();
-        }
-
-        return $connection->transaction(function () use ($connection, $read): mixed {
-            $this->useStableReadIsolation($connection);
-
-            return $read();
-        });
-    }
-
-    private function useStableReadIsolation(Connection $connection): void
-    {
-        if ($connection->getDriverName() === 'pgsql') {
-            // PostgreSQL accepts this after BEGIN and before the first query.
-            $connection->statement('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-        }
+        return StableReadTransaction::run($query->getConnection(), $read);
     }
 }

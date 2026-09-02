@@ -10,6 +10,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\Database\StableReadTransaction;
 use App\Support\ReaderNumber;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Http\Kernel;
@@ -188,7 +189,12 @@ final class MeasureDashboardCommand extends Command
         // already holds, per-request meant a savepoint per request, and
         // PostgreSQL degrades once a transaction accumulates many
         // subtransactions.
-        DB::beginTransaction();
+        //
+        // It is also the root read snapshot for multi-query queue collectors.
+        // Choose REPEATABLE READ here, before this transaction's first query;
+        // a collector cannot change PostgreSQL isolation after it arrives
+        // inside an already-running transaction.
+        StableReadTransaction::begin(DB::connection());
 
         try {
             return $this->measureAll($kernel, $agent);
