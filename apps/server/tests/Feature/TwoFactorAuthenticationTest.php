@@ -6,6 +6,7 @@ use App\Http\Controllers\AgentProfileTwoFactorController;
 use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
+use App\Http\Middleware\SerializeAgentBroadcastAuthorization;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
@@ -275,7 +276,8 @@ test('broadcast authorization validates the current password and two-factor poli
         ->toContain('auth')
         ->toContain('auth.session')
         ->toContain(EnsureAgentIsActive::class)
-        ->toContain(EnsureTwoFactorPolicy::class);
+        ->toContain(EnsureTwoFactorPolicy::class)
+        ->toContain(SerializeAgentBroadcastAuthorization::class);
 
     $agent = User::factory()->for(Account::factory())->create([
         'email' => 'agent@example.com',

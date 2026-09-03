@@ -20,6 +20,7 @@ use App\Console\Commands\UpgradeGuardCommand;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
+use App\Http\Middleware\SerializeAgentBroadcastAuthorization;
 use App\Http\Middleware\SetDashboardLocale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -46,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth.session',
             EnsureAgentIsActive::class,
             EnsureTwoFactorPolicy::class,
+            SerializeAgentBroadcastAuthorization::class,
         ],
     ])
     ->withCommands([
