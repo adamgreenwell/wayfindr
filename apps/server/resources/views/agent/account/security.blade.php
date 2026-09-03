@@ -44,4 +44,48 @@
             <button class="button" type="submit">{{ __('two_factor.policy.save') }}</button>
         </form>
     </section>
+
+    <section class="section" aria-labelledby="oidc-heading">
+        <div class="section-header">
+            <h2 id="oidc-heading">{{ __('oidc.settings.heading') }}</h2>
+            <span class="lede">{{ $oidcConnection?->is_enabled ? __('oidc.settings.enabled') : __('oidc.settings.disabled') }}</span>
+        </div>
+        <div class="notice-copy">
+            <p>{{ __('oidc.settings.help') }}</p>
+            @if ($oidcConnection)
+                <p>{{ __('oidc.settings.callback_help') }}</p>
+                <p><code lang="">{{ route('oidc.callback', ['connectionPublicId' => $oidcConnection->public_id]) }}</code></p>
+            @endif
+        </div>
+        <form class="section-form" method="POST" action="{{ route('dashboard.account.security.oidc.update') }}">
+            @csrf
+            @method('PUT')
+            <div class="field">
+                <label for="oidc_name">{{ __('oidc.settings.name') }}</label>
+                <input id="oidc_name" name="name" type="text" maxlength="100" value="{{ old('name', $oidcConnection?->name) }}" lang="" required>
+                @error('name')<p class="field-error">{{ $message }}</p>@enderror
+            </div>
+            <div class="field">
+                <label for="issuer_url">{{ __('oidc.settings.issuer_url') }}</label>
+                <input id="issuer_url" name="issuer_url" type="url" maxlength="2048" value="{{ old('issuer_url', $oidcConnection?->issuer_url) }}" placeholder="https://id.example.com" lang="" required>
+                @error('issuer_url')<p class="field-error">{{ $message }}</p>@enderror
+            </div>
+            <div class="field">
+                <label for="client_id">{{ __('oidc.settings.client_id') }}</label>
+                <input id="client_id" name="client_id" type="text" maxlength="255" value="{{ old('client_id', $oidcConnection?->client_id) }}" autocomplete="off" lang="" required>
+                @error('client_id')<p class="field-error">{{ $message }}</p>@enderror
+            </div>
+            <div class="field">
+                <label for="client_secret">{{ __('oidc.settings.client_secret') }}</label>
+                <input id="client_secret" name="client_secret" type="password" maxlength="4096" autocomplete="new-password" @required(! $oidcConnection)>
+                <p class="field-help">{{ $oidcConnection ? __('oidc.settings.secret_keep_help') : __('oidc.settings.secret_help') }}</p>
+                @error('client_secret')<p class="field-error">{{ $message }}</p>@enderror
+            </div>
+            <label class="check-row" for="is_enabled">
+                <input id="is_enabled" name="is_enabled" type="checkbox" value="1" @checked(old('is_enabled', $oidcConnection?->is_enabled))>
+                <span>{{ __('oidc.settings.enable_checkbox') }}</span>
+            </label>
+            <button class="button" type="submit">{{ __('oidc.settings.save') }}</button>
+        </form>
+    </section>
 </x-layouts.app>

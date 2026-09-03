@@ -84,6 +84,50 @@ final class OutboundWebhookDestination
      */
     public function inspect(string $url): array
     {
+        ['url' => $url, 'host' => $host, 'port' => $port] = $this->validHttpsUrl($url);
+        $ips = ($this->resolver)($host);
+
+        if ($ips === []) {
+            throw new InvalidArgumentException('The webhook destination did not resolve.');
+        }
+
+        foreach ($ips as $ip) {
+            if (! self::isPublicIp($ip)) {
+                throw new InvalidArgumentException('The webhook destination did not resolve only to public addresses.');
+            }
+        }
+
+        sort($ips, SORT_STRING);
+        $curl = [CURLOPT_NOPROXY => '*'];
+
+        // IP literals already name their destination. Hostnames are pinned to
+        // every verified answer while retaining their hostname for TLS SNI
+        // and certificate verification. libcurl can then fall back across a
+        // healthy A/AAAA set without performing another, rebindable lookup.
+        if (filter_var($host, FILTER_VALIDATE_IP) === false) {
+            $resolvedIps = array_map(
+                static fn (string $ip): string => str_contains($ip, ':') ? '['.$ip.']' : $ip,
+                $ips,
+            );
+            $curl[CURLOPT_RESOLVE] = [$host.':'.$port.':'.implode(',', $resolvedIps)];
+        }
+
+        return compact('url', 'host', 'port', 'ips', 'curl');
+    }
+
+    /**
+     * Validate the URL boundary without requiring the destination to be
+     * reachable. Disabled integrations need this narrower check so an
+     * administrator can use their kill switch during a DNS or routing outage.
+     */
+    public function assertValidHttpsUrl(string $url): void
+    {
+        $this->validHttpsUrl($url);
+    }
+
+    /** @return array{url: string, host: string, port: int} */
+    private function validHttpsUrl(string $url): array
+    {
         $url = trim($url);
         $parts = parse_url($url);
 
@@ -129,34 +173,8 @@ final class OutboundWebhookDestination
         }
 
         $port = (int) ($parts['port'] ?? 443);
-        $ips = ($this->resolver)($host);
 
-        if ($ips === []) {
-            throw new InvalidArgumentException('The webhook destination did not resolve.');
-        }
-
-        foreach ($ips as $ip) {
-            if (! self::isPublicIp($ip)) {
-                throw new InvalidArgumentException('The webhook destination did not resolve only to public addresses.');
-            }
-        }
-
-        sort($ips, SORT_STRING);
-        $curl = [CURLOPT_NOPROXY => '*'];
-
-        // IP literals already name their destination. Hostnames are pinned to
-        // every verified answer while retaining their hostname for TLS SNI
-        // and certificate verification. libcurl can then fall back across a
-        // healthy A/AAAA set without performing another, rebindable lookup.
-        if (filter_var($host, FILTER_VALIDATE_IP) === false) {
-            $resolvedIps = array_map(
-                static fn (string $ip): string => str_contains($ip, ':') ? '['.$ip.']' : $ip,
-                $ips,
-            );
-            $curl[CURLOPT_RESOLVE] = [$host.':'.$port.':'.implode(',', $resolvedIps)];
-        }
-
-        return compact('url', 'host', 'port', 'ips', 'curl');
+        return compact('url', 'host', 'port');
     }
 
     public function isAllowed(string $url): bool

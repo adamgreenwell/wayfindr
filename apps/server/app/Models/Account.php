@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable(['name', 'slug', 'requires_two_factor'])]
 class Account extends Model
@@ -85,5 +86,10 @@ class Account extends Model
     public function auditEvents(): HasMany
     {
         return $this->hasMany(AuditEvent::class);
+    }
+
+    public function oidcConnection(): HasOne
+    {
+        return $this->hasOne(OidcConnection::class);
     }
 }

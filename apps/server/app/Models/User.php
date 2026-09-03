@@ -103,6 +103,11 @@ class User extends Authenticatable
         return $this->belongsTo(Account::class);
     }
 
+    public function oidcIdentities(): HasMany
+    {
+        return $this->hasMany(OidcIdentity::class);
+    }
+
     public function hasAccountRole(AccountRole $role): bool
     {
         return $this->account_role === $role;

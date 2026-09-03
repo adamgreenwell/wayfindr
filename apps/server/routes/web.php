@@ -8,6 +8,7 @@ use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
 use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
+use App\Http\Controllers\AgentAccountOidcConnectionController;
 use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAlertController;
@@ -31,6 +32,7 @@ use App\Http\Controllers\AgentTicketExternalLinkController;
 use App\Http\Controllers\AgentTicketLabelController;
 use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
+use App\Http\Controllers\Auth\OidcSessionController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\Auth\TwoFactorChallengeController;
@@ -63,6 +65,13 @@ Route::post('/setup', [FirstRunSetupController::class, 'store'])->name('setup.st
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])->name('login');
     Route::post('/login', [SessionController::class, 'store'])->name('login.store');
+    Route::post('/sso', [OidcSessionController::class, 'redirect'])
+        ->middleware('throttle:oidc-redirect')
+        ->name('oidc.redirect');
+    Route::get('/sso/callback/{connectionPublicId}', [OidcSessionController::class, 'callback'])
+        ->whereUuid('connectionPublicId')
+        ->middleware('throttle:oidc-callback')
+        ->name('oidc.callback');
     Route::get('/two-factor-challenge', [TwoFactorChallengeController::class, 'create'])
         ->name('two-factor.challenge');
     Route::post('/two-factor-challenge', [TwoFactorChallengeController::class, 'store'])
@@ -111,6 +120,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.account.security.show');
     Route::put('/dashboard/account/security', [AgentAccountSecurityController::class, 'update'])
         ->name('dashboard.account.security.update');
+    Route::put('/dashboard/account/security/oidc', [AgentAccountOidcConnectionController::class, 'update'])
+        ->name('dashboard.account.security.oidc.update');
     Route::get('/dashboard/account/integrations', [AgentAccountIntegrationsController::class, 'show'])
         ->name('dashboard.account.integrations');
     Route::get('/dashboard/account/api-tokens', [AgentAccountApiTokenController::class, 'index'])

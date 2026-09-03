@@ -8,6 +8,8 @@ use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\OidcConnection;
+use App\Models\OidcIdentity;
 use App\Models\OutboundWebhookEndpoint;
 use App\Models\Site;
 use App\Models\User;
@@ -283,6 +285,11 @@ class AgentAccountAuditController extends Controller
                         ->orWhereHasMorph('subject', [ApiToken::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('last_four', $searchPattern))
+                        ->orWhereHasMorph('subject', [OidcConnection::class], fn (Builder $query) => $query
+                            ->whereLike('name', $searchPattern))
+                        ->orWhereHasMorph('subject', [OidcIdentity::class], fn (Builder $query) => $query
+                            ->whereHas('connection', fn (Builder $query) => $query->whereLike('name', $searchPattern)))
+                        ->orWhereLike('metadata->oidc_provider_name', $searchPattern)
                         ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
                             ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)))
                         // Break-glass subjects surface their reference-safe
@@ -321,6 +328,9 @@ class AgentAccountAuditController extends Controller
             'outbound_webhook.created' => 'Outbound webhook created',
             'outbound_webhook.disabled' => 'Outbound webhook disabled',
             'outbound_webhook.delivery_retried' => 'Outbound webhook delivery retried',
+            'account.oidc_connection_updated' => 'Single sign-on settings updated',
+            'agent.oidc_identity_linked' => 'Single sign-on identity linked',
+            'agent.oidc_signed_in' => 'Signed in with single sign-on',
             // Without these the default arm headline-cases the raw action
             // and the account reads "Break Glass Resource Viewed" in its
             // own audit log -- the most user-facing place the old term had.
@@ -394,6 +404,20 @@ class AgentAccountAuditController extends Controller
             return [
                 'prefix' => __('account_audit.references.outbound_webhook'),
                 'value' => $event->subject->name.' ('.$event->subject->secretHint().')',
+            ];
+        }
+
+        if ($event->subject instanceof OidcConnection) {
+            return [
+                'prefix' => __('account_audit.references.oidc_connection'),
+                'value' => $event->subject->name,
+            ];
+        }
+
+        if ($this->isOidcIdentitySubject($event)) {
+            return [
+                'prefix' => __('account_audit.references.oidc_identity'),
+                'value' => $this->oidcProviderName($event),
             ];
         }
 
@@ -533,6 +557,16 @@ class AgentAccountAuditController extends Controller
             return 'API token '.$event->subject->name.' ('.$event->subject->displayHint().')';
         }
 
+        if ($event->subject instanceof OidcConnection) {
+            return 'Single sign-on provider '.$event->subject->name;
+        }
+
+        if ($this->isOidcIdentitySubject($event)) {
+            $providerName = $this->oidcProviderName($event);
+
+            return 'Single sign-on identity'.($providerName !== null ? ' ('.$providerName.')' : '');
+        }
+
         if ($event->subject instanceof Conversation) {
             // The support code, not the subject line: a subject is visitor-
             // authored text and this page is exported. The code is a reference
@@ -548,6 +582,26 @@ class AgentAccountAuditController extends Controller
         }
 
         return 'Account';
+    }
+
+    private function isOidcIdentitySubject(AuditEvent $event): bool
+    {
+        return $event->subject instanceof OidcIdentity
+            || $event->subject_type === (new OidcIdentity)->getMorphClass();
+    }
+
+    private function oidcProviderName(AuditEvent $event): ?string
+    {
+        if ($event->subject instanceof OidcIdentity) {
+            $event->subject->loadMissing('connection');
+        }
+
+        $name = $event->subject instanceof OidcIdentity
+            ? $event->subject->connection?->name
+            : null;
+        $name ??= data_get($event->metadata, 'oidc_provider_name');
+
+        return is_string($name) && trim($name) !== '' ? $name : null;
     }
 
     private function visitorLabel(Visitor $visitor): string
