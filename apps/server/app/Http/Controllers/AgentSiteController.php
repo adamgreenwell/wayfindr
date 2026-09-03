@@ -157,19 +157,31 @@ class AgentSiteController extends Controller
             ],
         );
 
-        $site = $account->sites()->create([
-            'name' => trim($validated['name']),
-            'domain' => $this->normalizeDomain($validated['domain'] ?? null),
-            // Assigned rather than defaulted, so a desk's sites stay tellable
-            // apart on sight from the moment the second one is created.
-            'color' => Site::nextColorForAccount((int) $account->id),
-            'public_key' => $this->publicKey(),
-            'settings' => [
-                'mask_selectors' => [],
-            ],
-        ]);
+        $site = DB::transaction(function () use ($account, $request, $validated): Site {
+            $this->siteManagerCoverage->lockAccount((int) $account->id);
+            $actor = User::query()
+                ->whereKey($request->user()->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
+            abort_unless($actor?->canCreateAccountSite(), 403);
 
-        $site->supportAgents()->syncWithoutDetaching($request->user()->id);
+            $site = $account->sites()->create([
+                'name' => trim($validated['name']),
+                'domain' => $this->normalizeDomain($validated['domain'] ?? null),
+                // Assigned rather than defaulted, so a desk's sites stay tellable
+                // apart on sight from the moment the second one is created.
+                'color' => Site::nextColorForAccount((int) $account->id),
+                'public_key' => $this->publicKey(),
+                'settings' => [
+                    'mask_selectors' => [],
+                ],
+            ]);
+
+            $site->supportAgents()->syncWithoutDetaching($actor->id);
+
+            return $site;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)

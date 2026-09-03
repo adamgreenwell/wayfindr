@@ -406,6 +406,57 @@ test('custom permissions open only their matching account and site capabilities'
         ->and($agent->can('update', $site))->toBeFalse();
 });
 
+test('custom site creators must also be able to manage site access', function (): void {
+    $account = Account::factory()->create();
+    $siteEditorRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageSites->value],
+    ]);
+    $siteCreatorRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ManageSites->value,
+            AccountPermission::ManageSiteAccess->value,
+        ],
+    ]);
+    $siteEditor = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $siteEditorRole->id,
+    ]);
+
+    $this->actingAs($siteEditor)
+        ->get(route('dashboard.sites.create'))
+        ->assertForbidden();
+    $this->actingAs($siteEditor)
+        ->post(route('dashboard.sites.store'), ['name' => 'Stranded site'])
+        ->assertForbidden();
+
+    $siteCreator = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $siteCreatorRole->id,
+    ]);
+
+    $this->actingAs($siteCreator)
+        ->get(route('dashboard.sites.create'))
+        ->assertOk();
+    $this->actingAs($siteCreator)
+        ->post(route('dashboard.sites.store'), ['name' => 'Managed site'])
+        ->assertRedirect();
+
+    $site = Site::query()->where('name', 'Managed site')->firstOrFail();
+
+    expect($site->supportAgents()->whereKey($siteCreator->id)->exists())->toBeTrue()
+        ->and($siteCreator->can('manageAccess', $site))->toBeTrue();
+
+    // The request model is intentionally stale: the account lock must make
+    // the database role authoritative before creating another site.
+    User::query()->whereKey($siteCreator->id)->update(['custom_role_id' => $siteEditorRole->id]);
+
+    $this->actingAs($siteCreator)
+        ->post(route('dashboard.sites.store'), ['name' => 'Stale creator site'])
+        ->assertForbidden();
+
+    expect(Site::query()->where('name', 'Stale creator site')->exists())->toBeFalse();
+});
+
 test('custom support roles do not receive alerts or dashboard data they cannot open', function (): void {
     $account = Account::factory()->create();
     $site = Site::factory()->for($account)->create();

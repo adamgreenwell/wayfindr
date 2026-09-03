@@ -160,14 +160,16 @@ class User extends Authenticatable
 
     /**
      * Site creation predates account permissions and remains available to the
-     * three built-in roles. Custom roles must opt into site management.
+     * three built-in roles. Custom roles must be able to manage both the site
+     * and its initial explicit access assignment.
      */
     public function canCreateAccountSite(): bool
     {
         return ! $this->isDeactivated()
             && $this->account_id !== null
             && ($this->custom_role_id === null
-                || $this->hasAccountPermission(AccountPermission::ManageSites));
+                || ($this->hasAccountPermission(AccountPermission::ManageSites)
+                    && $this->hasAccountPermission(AccountPermission::ManageSiteAccess)));
     }
 
     public function roleAssignmentKey(): string
