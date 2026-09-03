@@ -100,6 +100,9 @@ class AgentAccountController extends Controller
             'agentSupportScopes' => $agentSupportScopes,
             'activeAgentCount' => $agents->reject->isDeactivated()->count(),
             'canCreateAgents' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'newAgentRoleLabel' => $agent->custom_role_id !== null
+                ? ($agent->customRole?->name ?? __('profile.roles.agent'))
+                : __('profile.roles.agent'),
             'canViewExternalIssueReadiness' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
             'canViewAlertDelivery' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
             'canManageAgentAccess' => $agent->hasAccountPermission(AccountPermission::ManageAgents),

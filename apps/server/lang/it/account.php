@@ -129,7 +129,7 @@ return [
         ],
     ],
     'create' => [
-        'heading' => 'Aggiungi agente', 'lede' => 'I nuovi agenti iniziano con il ruolo Agente', 'name' => 'Nome', 'email' => 'Email',
+        'heading' => 'Aggiungi agente', 'lede' => 'I nuovi agenti iniziano con il ruolo :role', 'name' => 'Nome', 'email' => 'Email',
         'welcome' => 'Invia per email il messaggio di benvenuto e la password temporanea',
         'password_help' => 'Verrà generata una password temporanea. L’accesso ai siti segue l’attuale accesso predefinito dell’account finché non limita gli agenti su ciascun sito.',
         'email_help' => 'Usi l’opzione email dopo aver configurato la posta in uscita. Come alternativa, la password viene comunque mostrata qui una sola volta.',

@@ -50,6 +50,10 @@ class AgentAccountApiTokenController extends Controller
             // The picker offers servable sites only: restricting a NEW token
             // to an archived site is not a thing anyone means to do.
             'sites' => $account->sites()->visibleToAgent($agent)->orderBy('name')->get(),
+            // The public API groups several support actions behind each coarse
+            // token ability. Only offer an ability when this issuer holds
+            // every dashboard permission represented by that bundle.
+            'grantableAbilities' => $this->grantableAbilities($agent),
             // What this admin may be shown of each token's reach. A token can
             // legitimately reach sites its viewer cannot, and naming those
             // would leak exactly what site access hides.
@@ -90,6 +94,20 @@ class AgentAccountApiTokenController extends Controller
             'abilities.*' => [Rule::in(ApiToken::ABILITIES)],
         ]);
 
+        $abilities = array_values($validated['abilities'] ?? []);
+
+        // Managing integrations authorizes the credential lifecycle, not the
+        // support work the credential performs. A forged request must not turn
+        // that settings permission into transcript, visitor, or ticket access.
+        abort_unless(
+            collect($abilities)->every(fn (string $ability): bool => in_array(
+                $ability,
+                $this->grantableAbilities($agent),
+                true,
+            )),
+            403,
+        );
+
         $generated = ApiToken::generate();
 
         $token = $account->apiTokens()->create([
@@ -100,7 +118,7 @@ class AgentAccountApiTokenController extends Controller
             // Deny by default. A token created with no abilities ticked can
             // authenticate and read nothing, which is a safe thing to have
             // made by accident.
-            'abilities' => array_values($validated['abilities'] ?? []),
+            'abilities' => $abilities,
             'expires_at' => isset($validated['expires_in_days'])
                 ? now()->addDays((int) $validated['expires_in_days'])
                 : null,
@@ -182,6 +200,35 @@ class AgentAccountApiTokenController extends Controller
             ->with('status', $askedForSpecificSites
                 ? 'api_tokens.flash.created'
                 : 'api_tokens.flash.created_limited');
+    }
+
+    /** @return list<string> */
+    private function grantableAbilities(User $agent): array
+    {
+        return collect(ApiToken::ABILITIES)
+            ->filter(fn (string $ability): bool => collect($this->permissionsForAbility($ability))
+                ->every(fn (AccountPermission $permission): bool => $agent->hasAccountPermission($permission)))
+            ->values()
+            ->all();
+    }
+
+    /** @return list<AccountPermission> */
+    private function permissionsForAbility(string $ability): array
+    {
+        return match ($ability) {
+            ApiToken::ABILITY_READ => [
+                AccountPermission::ViewConversations,
+                AccountPermission::ManageTickets,
+            ],
+            ApiToken::ABILITY_WRITE => [
+                AccountPermission::ViewConversations,
+                AccountPermission::ReplyToConversations,
+                AccountPermission::ManageConversations,
+                AccountPermission::ManageTickets,
+                AccountPermission::AssignTickets,
+            ],
+            default => [],
+        };
     }
 
     /**

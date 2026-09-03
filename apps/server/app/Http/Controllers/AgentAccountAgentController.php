@@ -42,6 +42,10 @@ class AgentAccountAgentController extends Controller
         $agent = User::query()->create([
             'account_id' => $actor->account_id,
             'account_role' => AccountRole::Agent,
+            // A custom-role manager can grow their team without minting a
+            // login that outranks them. Built-in owners/admins keep the legacy
+            // Agent default; custom-role issuers reproduce their own boundary.
+            'custom_role_id' => $actor->custom_role_id,
             'name' => trim($validated['name']),
             'email' => $validated['email'],
             'password' => Hash::make($password),
@@ -72,6 +76,8 @@ class AgentAccountAgentController extends Controller
             'action' => 'agent.created',
             'metadata' => [
                 'role' => AccountRole::Agent->value,
+                'custom_role_id' => $agent->custom_role_id,
+                'custom_role_name' => $agent->customRole?->name,
                 'welcome_email_requested' => $welcomeEmailRequested,
                 'welcome_email_sent' => $welcomeEmailSent,
             ],

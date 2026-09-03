@@ -155,7 +155,7 @@ return [
     ],
     'create' => [
         'heading' => 'Agent hinzufügen',
-        'lede' => 'Neue Agenten beginnen mit der Rolle Agent',
+        'lede' => 'Neue Agenten beginnen mit der Rolle :role',
         'name' => 'Name',
         'email' => 'E-Mail',
         'welcome' => 'Willkommensnachricht und temporäres Passwort per E-Mail senden',

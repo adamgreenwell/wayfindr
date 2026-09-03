@@ -102,6 +102,7 @@ return [
         'ability_read' => 'Unterhaltungen, Nachrichten, Tickets und Besuchende lesen',
         'ability_write' => 'Unterhaltungen eröffnen, Nachrichten senden sowie Tickets erstellen oder ihren Status ändern',
         'abilities_help' => 'Jede Berechtigung steht für sich. Schreiben gewährt kein Lesen, und Lesen gewährt niemals Schreiben.',
+        'abilities_limited' => 'Berechtigungen, die Ihre Rolle nicht ausführen darf, sind nicht verfügbar.',
         'expires_label' => 'Läuft ab nach',
         'expires_help' => 'Tage. Bleibt das Feld leer, läuft das Token nie ab — dann ist es niemandes Aufgabe mehr, es zu bemerken.',
         'sites_label' => 'Auf Websites begrenzen',

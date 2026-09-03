@@ -197,7 +197,7 @@ return [
 
     'create' => [
         'heading' => 'Add agent',
-        'lede' => 'New agents start with the Agent role',
+        'lede' => 'New agents start with the :role role',
         'name' => 'Name',
         'email' => 'Email',
         'welcome' => 'Email the welcome message and temporary password',

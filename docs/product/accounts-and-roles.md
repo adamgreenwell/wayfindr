@@ -14,7 +14,7 @@ An agent is a Laravel user attached to one account. Agents can sign in, view the
 
 The RBAC implementation keeps the lockout-safe Owner/Admin/Agent defaults on `users.account_role`. A user may instead reference one account-owned custom role. A dedicated membership model can replace this when multi-account users become a real product need.
 
-Owners and admins can create new agents from the account overview. New dashboard-created agents start with the `agent` role and receive a generated temporary password that is shown once. When outbound mail is configured, the creator can also send the agent a welcome email with the sign-in URL and temporary password; the one-time password display remains the fallback. Agents can use the profile screen to update their display name, replace a temporary password after sign-in, and choose whether alerts should cover all supported sites, only assigned work, or quiet mode.
+Owners, admins, and custom roles with `manage_agents` can create new agents from the account overview. Agents created by a built-in owner or admin start with the built-in `agent` role; agents created by a custom-role manager inherit that manager's custom role so the new login cannot outrank its issuer. Each receives a generated temporary password that is shown once. When outbound mail is configured, the creator can also send the agent a welcome email with the sign-in URL and temporary password; the one-time password display remains the fallback. Agents can use the profile screen to update their display name, replace a temporary password after sign-in, and choose whether alerts should cover all supported sites, only assigned work, or quiet mode.
 
 Agents can be deactivated without deleting their historical messages, tickets, assignments, or audit records. Deactivated agents cannot log in, and existing dashboard sessions are signed out before protected routes continue. Owners can deactivate or reactivate another same-account user. Admins can deactivate or reactivate non-owner agents, but cannot manage owner or admin access.
 
@@ -62,7 +62,7 @@ See [Platform Operator Boundary](platform-operator-boundary.md) for the product 
 - RBAC should be implemented through Laravel policies and gates instead of scattered controller conditionals.
 - Role checks should build on explicit account membership and site access, not replace them.
 - Platform operator authority should stay separate from account roles and must not bypass site access in account support workflows.
-- New agents should start as `agent`; `UserPolicy` keeps dashboard agent creation limited to active owners and admins.
+- New agents created by built-in owners and admins start as `agent`. A custom-role holder with `manage_agents` creates teammates in that same custom role, keeping the generated login within the issuer's authority; `UserPolicy` rejects everybody without `manage_agents`.
 - Built-in and custom role changes remain owner-only, with same-account boundaries in `UserPolicy`, plus self-change denial, last-owner protection, and audit events behind the dashboard role controls.
 - Agent password changes are self-service from the profile screen and should be audited without exposing password material.
 - Agent deactivation should preserve history, block sign-in, clear stale dashboard sessions, deny self-deactivation, stay inside the account through `UserPolicy`, and create audit events for deactivation/reactivation.

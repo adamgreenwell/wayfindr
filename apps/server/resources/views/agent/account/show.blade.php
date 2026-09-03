@@ -462,7 +462,7 @@
                 <section class="section" aria-labelledby="add-agent-heading">
                     <div class="section-header">
                         <h2 id="add-agent-heading">{{ __('account.create.heading') }}</h2>
-                        <span class="lede">{{ __('account.create.lede') }}</span>
+                        <span class="lede">{{ __('account.create.lede', ['role' => $newAgentRoleLabel]) }}</span>
                     </div>
                     <form class="section-form" method="POST" action="{{ route('dashboard.account.agents.store') }}">
                         @csrf

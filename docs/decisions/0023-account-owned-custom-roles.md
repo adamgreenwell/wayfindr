@@ -30,6 +30,11 @@ grant ownership, role administration, platform-operator authority, or a site
 purge. Owners create, edit, assign, and delete custom roles, and may not delete
 one while it is assigned.
 
+A custom role with `manage_agents` may create teammates, but those accounts are
+created in the issuer's same custom role. The credential handoff therefore
+cannot be used to mint a built-in Agent login with broader support or site
+creation authority.
+
 ### Permissions answer what; site access still answers where
 
 Custom roles store a deny-by-default list of known permission identifiers.
@@ -54,6 +59,10 @@ therefore affects its users immediately; no permission snapshot is copied onto
 the user. Role creation, changes, deletion, and user assignments are audited
 with reference-safe names and permission identifiers. Audit history does not
 depend on the role row continuing to exist.
+
+`manage_integrations` governs API-token lifecycle, not the support data a token
+can use. The coarse `read` and `write` token abilities are available only when
+the issuer holds every support permission bundled into the chosen ability.
 
 ## Consequences
 

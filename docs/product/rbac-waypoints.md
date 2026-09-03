@@ -59,6 +59,13 @@ These are the account permissions Wayfindr models explicitly:
 
 Custom roles may contain any of these except `manage_roles`. Replying to, managing, or requesting cobrowse on a conversation requires `view_conversations`; assigning tickets requires `manage_tickets`.
 
+`manage_agents` lets a custom-role holder create teammates only in that same
+custom role; it does not mint a broader built-in Agent. `manage_integrations`
+lets a role manage API credentials, but each token ability is also capped by
+the issuer's support permissions: `read` requires both `view_conversations` and
+`manage_tickets`, while `write` requires the conversation view, reply, and
+management permissions plus ticket management and assignment.
+
 ## Site Access Boundary
 
 Site access remains separate from RBAC. It already controls which agents can support which sites, and it should continue to protect:
@@ -177,7 +184,7 @@ Every RBAC implementation slice should include tests for:
 5. Tighten site privacy settings behind owner/admin authority plus site access. Site privacy settings now follow this rule.
 6. Add role management UI only after policies exist. The account overview exposes owner-only built-in and custom role management backed by `UserPolicy` for account-boundary checks plus action-level self-change denial, last-owner protection, deny-by-default validation, and audit events.
 7. Add audit events for role and site-access changes. Site-access updates and role changes now create audit events.
-8. Add agent creation from the account overview. Owners and admins can create default `agent` users with one-time generated passwords while email invitations remain a later setup/readiness feature. `UserPolicy` now owns the create-agent authority check.
+8. Add agent creation from the account overview. Owners and admins can create default `agent` users with one-time generated passwords. Custom-role holders with `manage_agents` create teammates in their own role rather than a more powerful built-in role. `UserPolicy` owns the create-agent authority check.
 9. Add agent self-service profile basics. Agents can update their display name, change their password, and choose their alert preference from the dashboard profile screen, with password changes recorded as audit events.
 10. Add agent deactivation. Owners can suspend or restore another same-account user. Admins can suspend or restore non-owner agents. Deactivated users cannot sign in or continue using existing dashboard sessions, and historical records remain attached to the deactivated user. `UserPolicy` now owns the same-account and role-boundary checks for deactivation and reactivation while the action still protects the last active owner.
 11. Keep site access assignment active-only. The site settings picker and update validation now exclude deactivated same-account agents so suspended users cannot be reintroduced as support agents or counted as the required site manager.

@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Mail\AgentWelcomeMessage;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CustomRole;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -165,6 +167,42 @@ test('agents cannot create account agents', function (): void {
 
     expect(User::query()->where('email', 'bea@example.test')->exists())->toBeFalse()
         ->and(AuditEvent::query()->where('action', 'agent.created')->exists())->toBeFalse();
+});
+
+test('a custom agent manager creates teammates inside their own role boundary', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'name' => 'Team coordinator',
+        'name_key' => 'team coordinator',
+        'permissions' => [AccountPermission::ManageAgents->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee('New agents start with the Team coordinator role');
+
+    $response = $this->actingAs($manager)
+        ->post(route('dashboard.account.agents.store'), [
+            'name' => 'Bounded teammate',
+            'email' => 'bounded@example.test',
+        ])
+        ->assertRedirect(route('dashboard.account.show'));
+
+    $created = User::query()->where('email', 'bounded@example.test')->firstOrFail();
+    $audit = AuditEvent::query()->where('action', 'agent.created')->sole();
+
+    expect($response->getSession()->get('created_agent_password'))->toBeString()
+        ->and($created->custom_role_id)->toBe($role->id)
+        ->and($created->hasAccountPermission(AccountPermission::ManageAgents))->toBeTrue()
+        ->and($created->hasAccountPermission(AccountPermission::ViewConversations))->toBeFalse()
+        ->and($created->canCreateAccountSite())->toBeFalse()
+        ->and($audit->metadata['custom_role_id'])->toBe($role->id)
+        ->and($audit->metadata['custom_role_name'])->toBe('Team coordinator');
 });
 
 test('account agent creation rejects duplicate emails without updating an existing user', function (): void {

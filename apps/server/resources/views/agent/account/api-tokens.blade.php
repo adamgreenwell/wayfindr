@@ -202,14 +202,20 @@
                 <div class="field">
                     <label for="api_token_abilities">{{ __('api_tokens.create.abilities_label') }}</label>
                     <label for="api_token_read">
-                        <input type="checkbox" id="api_token_read" name="abilities[]" value="read" checked>
+                        <input type="checkbox" id="api_token_read" name="abilities[]" value="read"
+                            @checked(in_array(\App\Models\ApiToken::ABILITY_READ, $grantableAbilities, true))
+                            @disabled(! in_array(\App\Models\ApiToken::ABILITY_READ, $grantableAbilities, true))>
                         {{ __('api_tokens.create.ability_read') }}
                     </label>
                     <label for="api_token_write">
-                        <input type="checkbox" id="api_token_write" name="abilities[]" value="write">
+                        <input type="checkbox" id="api_token_write" name="abilities[]" value="write"
+                            @disabled(! in_array(\App\Models\ApiToken::ABILITY_WRITE, $grantableAbilities, true))>
                         {{ __('api_tokens.create.ability_write') }}
                     </label>
                     <p class="field-help">{{ __('api_tokens.create.abilities_help') }}</p>
+                    @if (count($grantableAbilities) < count(\App\Models\ApiToken::ABILITIES))
+                        <p class="field-help">{{ __('api_tokens.create.abilities_limited') }}</p>
+                    @endif
                 </div>
 
                 <div class="field">
