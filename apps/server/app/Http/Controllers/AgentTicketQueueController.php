@@ -34,6 +34,7 @@ class AgentTicketQueueController extends Controller
         return view('agent.tickets.index', [
             'account' => $account,
             'agent' => $agent,
+            'canViewTicketConversations' => $agent->hasAccountPermission(AccountPermission::ViewConversations),
             'sites' => $sites,
             ...$this->ticketQueueData($agent, $account, $sites, $request),
         ]);
@@ -45,6 +46,7 @@ class AgentTicketQueueController extends Controller
      */
     private function ticketQueueData(User $agent, Account $account, Collection $sites, Request $request): array
     {
+        $canViewTicketConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
         // Keyed by the query-string value, which is the contract with the
         // URL and must not move when the label does.
         $ticketFilters = $this->translatedOptions('tickets.filters.assignee', ['all', 'assigned_to_me', 'unassigned']);
@@ -179,20 +181,23 @@ class AgentTicketQueueController extends Controller
             ->when($ticketLabel !== 'all', fn ($query) => $query->whereHas('labels', fn ($query) => $query
                 ->where('account_id', $account->id)
                 ->where('slug', $ticketLabel)))
-            ->when($ticketSearch !== '', function ($query) use ($ticketSearch): void {
+            ->when($ticketSearch !== '', function ($query) use ($ticketSearch, $canViewTicketConversations): void {
                 $searchPattern = '%'.$ticketSearch.'%';
                 $ticketReferenceId = $this->ticketReferenceId($ticketSearch);
 
-                $query->where(function ($query) use ($searchPattern, $ticketReferenceId): void {
+                $query->where(function ($query) use ($searchPattern, $ticketReferenceId, $canViewTicketConversations): void {
                     $query
                         ->whereLike('subject', $searchPattern)
                         ->orWhereLike('description', $searchPattern)
-                        ->orWhereHas('conversation', fn ($query) => $query->whereLike('support_code', $searchPattern))
                         ->orWhereHas('requester', fn ($query) => $query
                             ->whereLike('external_id', $searchPattern)
                             ->orWhereLike('anonymous_id', $searchPattern)
                             ->orWhereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern));
+
+                    if ($canViewTicketConversations) {
+                        $query->orWhereHas('conversation', fn ($query) => $query->whereLike('support_code', $searchPattern));
+                    }
 
                     if ($ticketReferenceId) {
                         $query->orWhere('id', $ticketReferenceId);

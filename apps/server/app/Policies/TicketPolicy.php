@@ -27,7 +27,9 @@ class TicketPolicy
     public function reply(User $user, Ticket $ticket): bool
     {
         return $this->view($user, $ticket)
-            && $ticket->conversation_id !== null;
+            && $ticket->conversation_id !== null
+            && $user->hasAccountPermission(AccountPermission::ViewConversations)
+            && $user->hasAccountPermission(AccountPermission::ReplyToConversations);
     }
 
     public function update(User $user, Ticket $ticket): bool

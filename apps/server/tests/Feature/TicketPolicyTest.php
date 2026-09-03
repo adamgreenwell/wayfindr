@@ -1,10 +1,15 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\Conversation;
+use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Gate;
 
@@ -68,4 +73,66 @@ test('ticket policy denies deactivated agents even when stale site assignments r
         ->and(Gate::forUser($deactivatedAgent)->allows('reply', $ticket))->toBeFalse()
         ->and(Gate::forUser($deactivatedAgent)->allows('update', $ticket))->toBeFalse()
         ->and(Gate::forUser($deactivatedAgent)->allows('assign', $ticket))->toBeFalse();
+});
+
+test('ticket managers cannot read or reply to linked conversations without conversation permissions', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageTickets->value],
+    ]);
+    $ticketManager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach($ticketManager);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-PRIVATE-CONVERSATION',
+        'subject' => 'Private conversation subject',
+    ]);
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Private conversation transcript',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->create(['subject' => 'Visible ticket subject']);
+
+    expect(Gate::forUser($ticketManager)->allows('view', $ticket))->toBeTrue()
+        ->and(Gate::forUser($ticketManager)->allows('reply', $ticket))->toBeFalse();
+
+    $this->actingAs($ticketManager)
+        ->get(route('dashboard.tickets.index'))
+        ->assertOk()
+        ->assertSee('Visible ticket subject')
+        ->assertDontSee('WF-PRIVATE-CONVERSATION')
+        ->assertDontSee('Private conversation transcript');
+
+    $this->actingAs($ticketManager)
+        ->get(route('dashboard.tickets.index', ['ticket_search' => 'WF-PRIVATE-CONVERSATION']))
+        ->assertOk()
+        ->assertDontSee('Visible ticket subject');
+
+    $this->actingAs($ticketManager)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->assertSee('Visible ticket subject')
+        ->assertDontSee('WF-PRIVATE-CONVERSATION')
+        ->assertDontSee('Private conversation subject')
+        ->assertDontSee('Private conversation transcript')
+        ->assertDontSee(route('dashboard.conversations.show', $conversation->support_code), false)
+        ->assertDontSee(route('dashboard.tickets.replies.store', $ticket), false);
+
+    $this->actingAs($ticketManager)
+        ->post(route('dashboard.tickets.replies.store', $ticket), [
+            'message' => 'Unauthorized reply',
+        ])
+        ->assertNotFound();
+
+    expect($conversation->messages()->where('body', 'Unauthorized reply')->exists())->toBeFalse();
 });

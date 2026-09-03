@@ -175,7 +175,9 @@
                             <thead>
                                 <tr>
                                     <th scope="col">{{ __('tickets.columns.subject') }}</th>
-                                    <th scope="col">{{ __('tickets.columns.latest_activity') }}</th>
+                                    @if ($canViewTicketConversations)
+                                        <th scope="col">{{ __('tickets.columns.latest_activity') }}</th>
+                                    @endif
                                     <th scope="col">{{ __('tickets.columns.site') }}</th>
                                     <th scope="col">{{ __('tickets.columns.status') }}</th>
                                     <th scope="col">{{ __('tickets.columns.category') }}</th>
@@ -191,15 +193,21 @@
                                 @foreach ($tickets as $ticket)
                                     @php
                                         $ticketTiming = $ticket->queueTimingContext();
-                                        $activityPreview = $ticket->queueActivityPreview();
+                                        $activityPreview = $canViewTicketConversations
+                                            ? $ticket->queueActivityPreview()
+                                            : null;
 
                                         // The model hands out keys and timestamps; this surface
                                         // turns them into words, because it is the only place that
                                         // knows whose language to use. See Ticket::attentionLabelKey().
-                                        $previewBody = $activityPreview['body_key']
-                                            ? __('tickets.row.'.$activityPreview['body_key'])
-                                            : $activityPreview['body'];
-                                        $previewLabel = __('tickets.row.'.$activityPreview['label_key']);
+                                        $previewBody = $activityPreview
+                                            ? ($activityPreview['body_key']
+                                                ? __('tickets.row.'.$activityPreview['body_key'])
+                                                : $activityPreview['body'])
+                                            : null;
+                                        $previewLabel = $activityPreview
+                                            ? __('tickets.row.'.$activityPreview['label_key'])
+                                            : null;
                                         $waitLabel = $ticketTiming['wait_since']
                                             ? __('tickets.row.'.$ticketTiming['wait_key'], [
                                                 'elapsed' => $ticketTiming['wait_key'] === 'closed'
@@ -221,37 +229,41 @@
                                             <a href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}">
                                                 {{ $ticket->subject }}
                                             </a>
-                                            <span class="wf-queue-preview">
-                                                @if ($ticket->conversation)
-                                                    <x-support-code-reference
-                                                        :code="$ticket->conversation->support_code"
-                                                        :href="route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code])"
-                                                    />
-                                                @else
-                                                    {{ __('tickets.row.not_linked') }}
-                                                @endif
-                                            </span>
-                                        </td>
-                                        <td class="ticket-activity-preview">
-                                            <span class="wf-queue-cobrowse">{{ $previewLabel }}</span>
-                                            <span class="wf-queue-preview" title="{{ $previewBody }}">
-                                                {{ $previewBody }}@if ($activityPreview['occurred_at']) &middot; {{ $activityPreview['occurred_at']->diffForHumans() }}@endif
-                                            </span>
-                                            @if ($activityPreview['reply_visibility'])
+                                            @if ($canViewTicketConversations)
                                                 <span class="wf-queue-preview">
-                                                    {{ __('tickets.row.reply_visibility') }}
-                                                    @php
-                                                        $cue = $activityPreview['reply_visibility']['cue'] ?? null;
-                                                    @endphp
-                                                    <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $cue ? __('tickets.read_state.'.$cue['key']) : __('tickets.row.no_linked_conversation') }}</span>
-                                                    {{ $cue
-                                                        ? ($cue['seen_at']
-                                                            ? __('tickets.read_state.detail_seen', ['elapsed' => $cue['seen_at']->diffForHumans()])
-                                                            : __('tickets.read_state.'.$cue['detail_key']))
-                                                        : __('tickets.row.reply_visibility_none') }}
+                                                    @if ($ticket->conversation)
+                                                        <x-support-code-reference
+                                                            :code="$ticket->conversation->support_code"
+                                                            :href="route('dashboard.support-code.lookup', ['support_code' => $ticket->conversation->support_code])"
+                                                        />
+                                                    @else
+                                                        {{ __('tickets.row.not_linked') }}
+                                                    @endif
                                                 </span>
                                             @endif
                                         </td>
+                                        @if ($canViewTicketConversations)
+                                            <td class="ticket-activity-preview">
+                                                <span class="wf-queue-cobrowse">{{ $previewLabel }}</span>
+                                                <span class="wf-queue-preview" title="{{ $previewBody }}">
+                                                    {{ $previewBody }}@if ($activityPreview['occurred_at']) &middot; {{ $activityPreview['occurred_at']->diffForHumans() }}@endif
+                                                </span>
+                                                @if ($activityPreview['reply_visibility'])
+                                                    <span class="wf-queue-preview">
+                                                        {{ __('tickets.row.reply_visibility') }}
+                                                        @php
+                                                            $cue = $activityPreview['reply_visibility']['cue'] ?? null;
+                                                        @endphp
+                                                        <span class="wf-queue-mark" @if ($activityPreview['reply_visibility']['tone'] !== 'manual') data-tone="attention" @endif>{{ $cue ? __('tickets.read_state.'.$cue['key']) : __('tickets.row.no_linked_conversation') }}</span>
+                                                        {{ $cue
+                                                            ? ($cue['seen_at']
+                                                                ? __('tickets.read_state.detail_seen', ['elapsed' => $cue['seen_at']->diffForHumans()])
+                                                                : __('tickets.read_state.'.$cue['detail_key']))
+                                                            : __('tickets.row.reply_visibility_none') }}
+                                                    </span>
+                                                @endif
+                                            </td>
+                                        @endif
                                         <td>
                                             <span class="wf-queue-site">
                                                 <span class="wf-site-dot" style="background: var({{ $ticket->site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>

@@ -56,6 +56,8 @@ class AgentTicketController extends Controller
 
         $this->authorizeTicketAbility($agent, 'view', $ticket);
         $this->markTicketAssignmentNotificationsRead($agent, $ticket);
+        $canViewLinkedConversation = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canReplyToLinkedConversation = Gate::forUser($agent)->allows('reply', $ticket);
         $ticket->loadMissing('site');
         $ticket->load([
             'assignee',
@@ -79,7 +81,7 @@ class AgentTicketController extends Controller
         $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
         $ticketDetailReturnQuery = $this->ticketDetailReturnQuery($request);
         $ticketTimelineFilter = $this->ticketTimelineFilter($request);
-        $fullTicketTimeline = $this->ticketTimeline($ticket);
+        $fullTicketTimeline = $this->ticketTimeline($ticket, $canViewLinkedConversation);
         $ticketTimeline = $this->filteredTicketTimeline($fullTicketTimeline, $ticketTimelineFilter);
 
         return view('agent.tickets.show', [
@@ -87,6 +89,8 @@ class AgentTicketController extends Controller
             'accountAgents' => $this->supportAgentsForSite($ticket->site),
             'agent' => $agent,
             'canAssignTickets' => Gate::forUser($agent)->allows('assign', $ticket),
+            'canReplyToLinkedConversation' => $canReplyToLinkedConversation,
+            'canViewLinkedConversation' => $canViewLinkedConversation,
             'canPostNoteToExternalIssue' => $this->commentableExternalLinks($ticket)->isNotEmpty(),
             'externalIssueProviders' => collect(ExternalIssueProvider::options())
                 ->map(fn (string $_label, string $provider): string => $this->ticketExternalIssueProviderLabel($provider))
@@ -98,7 +102,9 @@ class AgentTicketController extends Controller
             'jiraIssueProjects' => $this->jiraIssueProjectsForTicket($ticket),
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
             'noteTemplates' => $this->noteTemplates(),
-            'replyTemplates' => $replyTemplateOptions->forAgent($agent),
+            'replyTemplates' => $canReplyToLinkedConversation
+                ? $replyTemplateOptions->forAgent($agent)
+                : collect(),
             'ticketDetailReturnQuery' => $ticketDetailReturnQuery,
             'ticketReturnLink' => $this->ticketReturnLink($ticketReturnQuery),
             'ticketReturnQuery' => $ticketReturnQuery,
@@ -115,10 +121,14 @@ class AgentTicketController extends Controller
             'ticketExternalIssueHandoffReadiness' => $this->ticketExternalIssueHandoffReadiness($ticket),
             'ticketExternalIssueHealth' => $this->ticketExternalIssueHealth($ticket),
             'visitorContext' => $this->visitorContext($ticket, $visitorContextSanitizer),
-            'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
-            'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
-            'linkedConversationMessages' => $this->linkedConversationMessages($ticket),
-            'linkedConversationSupportCode' => $ticket->conversation?->support_code,
+            'priorVisitorConversations' => $canViewLinkedConversation
+                ? $this->priorVisitorConversations($ticket)
+                : collect(),
+            'priorVisitorTickets' => $this->priorVisitorTickets($ticket, $canViewLinkedConversation),
+            'linkedConversationMessages' => $this->linkedConversationMessages($ticket, $canViewLinkedConversation),
+            'linkedConversationSupportCode' => $canViewLinkedConversation
+                ? $ticket->conversation?->support_code
+                : null,
             'ticketTimelineEmptyDescription' => $this->ticketTimelineEmptyDescription($ticketTimelineFilter),
             'ticketTimelineEmptyMessage' => $this->ticketTimelineEmptyMessage($ticketTimelineFilter),
             'ticketTimelineFilter' => $ticketTimelineFilter,
@@ -1065,9 +1075,9 @@ class AgentTicketController extends Controller
             ->markAsRead();
     }
 
-    private function linkedConversationMessages(Ticket $ticket): Collection
+    private function linkedConversationMessages(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
-        if (! $ticket->conversation) {
+        if (! $canViewLinkedConversation || ! $ticket->conversation) {
             return collect();
         }
 
@@ -1081,9 +1091,9 @@ class AgentTicketController extends Controller
             ->values();
     }
 
-    private function ticketTimeline(Ticket $ticket): Collection
+    private function ticketTimeline(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
-        $conversationMessages = $ticket->conversation
+        $conversationMessages = $canViewLinkedConversation && $ticket->conversation
             ? $ticket->conversation->messages()->with('sender')->get()
             : collect();
 
@@ -1618,14 +1628,20 @@ class AgentTicketController extends Controller
     /**
      * @return Collection<int, Ticket>
      */
-    private function priorVisitorTickets(Ticket $ticket): Collection
+    private function priorVisitorTickets(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
         if (! $ticket->requester_id) {
             return collect();
         }
 
+        $relations = ['assignee'];
+
+        if ($canViewLinkedConversation) {
+            $relations[] = 'conversation';
+        }
+
         return Ticket::query()
-            ->with(['assignee', 'conversation'])
+            ->with($relations)
             ->where('account_id', $ticket->account_id)
             ->where('site_id', $ticket->site_id)
             ->where('requester_id', $ticket->requester_id)
