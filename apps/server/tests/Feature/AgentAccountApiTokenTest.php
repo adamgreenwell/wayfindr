@@ -234,6 +234,41 @@ test('a custom integration manager may issue a read token when they hold every b
     expect(ApiToken::query()->sole()->abilities)->toBe([ApiToken::ABILITY_READ]);
 });
 
+test('token issuance reauthorizes custom role abilities under the account lock', function (): void {
+    $account = Account::factory()->create();
+    $issuerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ManageIntegrations->value,
+            AccountPermission::ViewConversations->value,
+            AccountPermission::ManageTickets->value,
+        ],
+    ]);
+    $settingsRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageIntegrations->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $issuerRole->id,
+    ]);
+    Site::factory()->for($account)->create();
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk();
+
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $settingsRole->id]);
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Stale privilege bridge',
+            'abilities' => [ApiToken::ABILITY_READ],
+        ])
+        ->assertForbidden();
+
+    expect(ApiToken::query()->count())->toBe(0)
+        ->and(AuditEvent::query()->where('action', 'api_token.created')->exists())->toBeFalse();
+});
+
 test('an admin cannot revoke another account token, and is not told it exists', function (): void {
     $w = tokenAdmin();
     $theirs = ApiToken::factory()->create();

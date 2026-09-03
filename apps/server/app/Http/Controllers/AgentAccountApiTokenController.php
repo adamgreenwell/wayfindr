@@ -8,6 +8,8 @@ use App\Models\AuditEvent;
 use App\Models\OutboundWebhookDelivery;
 use App\Models\User;
 use App\Support\DatabaseKey;
+use App\Support\Sites\SiteManagerCoverage;
+use App\Support\Webhooks\OutboundWebhookPermissions;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +28,8 @@ use Illuminate\View\View;
  */
 class AgentAccountApiTokenController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function index(Request $request): View
     {
         $agent = $request->user();
@@ -54,6 +58,7 @@ class AgentAccountApiTokenController extends Controller
             // token ability. Only offer an ability when this issuer holds
             // every dashboard permission represented by that bundle.
             'grantableAbilities' => $this->grantableAbilities($agent),
+            'grantableWebhookEvents' => OutboundWebhookPermissions::grantableEvents($agent),
             // What this admin may be shown of each token's reach. A token can
             // legitimately reach sites its viewer cannot, and naming those
             // would leak exactly what site access hides.
@@ -71,6 +76,7 @@ class AgentAccountApiTokenController extends Controller
                 ->with(['endpoint', 'site'])
                 ->whereHas('endpoint', fn ($query) => $query->where('account_id', $account->id))
                 ->whereIn('site_id', $visibleSiteIds)
+                ->whereIn('event', OutboundWebhookPermissions::grantableEvents($agent))
                 ->orderByDesc('created_at')
                 ->limit(50)
                 ->get(),
@@ -95,89 +101,66 @@ class AgentAccountApiTokenController extends Controller
         ]);
 
         $abilities = array_values($validated['abilities'] ?? []);
-
-        // Managing integrations authorizes the credential lifecycle, not the
-        // support work the credential performs. A forged request must not turn
-        // that settings permission into transcript, visitor, or ticket access.
-        abort_unless(
-            collect($abilities)->every(fn (string $ability): bool => in_array(
-                $ability,
-                $this->grantableAbilities($agent),
-                true,
-            )),
-            403,
-        );
-
-        $generated = ApiToken::generate();
-
-        $token = $account->apiTokens()->create([
-            'created_by_id' => $agent->id,
-            'name' => $validated['name'],
-            'token_hash' => $generated['hash'],
-            'last_four' => $generated['last_four'],
-            // Deny by default. A token created with no abilities ticked can
-            // authenticate and read nothing, which is a safe thing to have
-            // made by accident.
-            'abilities' => $abilities,
-            'expires_at' => isset($validated['expires_in_days'])
-                ? now()->addDays((int) $validated['expires_in_days'])
-                : null,
-        ]);
-
-        // **A token can never reach more than the person issuing it.**
-        //
-        // Site access restricts an admin as well as an agent -- `rbac-waypoints`
-        // is explicit that no role bypasses it because a controller checked
-        // only `account_id`, and "owner and admin may eventually need elevated
-        // views across all sites, but that must be explicit". Issuing a token
-        // is not that explicit decision.
-        //
-        // Without this an admin who cannot see every site could issue an
-        // unrestricted token and read, through the API, exactly the
-        // conversations the dashboard hides from them.
-        // INCLUDING archived, on both sides. `visibleToAgent()` filters to
-        // servable sites, so an account with one archived site made every
-        // admin look site-limited -- pinning tokens to servable sites only and
-        // costing them the archived history that ADR 0018 says a read surface
-        // keeps.
-        $visibleSiteIds = $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id');
         $requested = $validated['site_ids'] ?? [];
         $askedForSpecificSites = $request->has('site_ids');
+        $generated = ApiToken::generate();
 
-        // ALWAYS pinned to a list, never left open-ended.
-        //
-        // The previous version left a token unrestricted when its issuer
-        // happened to see every site that existed at the time. That is not the
-        // same as account-wide authority, and there is no such thing here: site
-        // visibility is per site, so a site created later and assigned to its
-        // creator is invisible to everybody else -- and an unrestricted token
-        // would have read it anyway, outliving the ceiling it was issued under.
-        //
-        // The cost is that a new site does not join existing tokens, which is
-        // the right way round: a credential quietly widening as the account
-        // grows is worse than one that has to be reissued deliberately.
-        $siteIds = $askedForSpecificSites
-            // Intersected, so a site id typed into the form cannot reach
-            // anything the issuer could not. An empty result means the token
-            // reaches NOTHING -- asking for less must never hand back more.
-            ? $visibleSiteIds->intersect($requested)->values()
-            : $visibleSiteIds->values();
+        DB::transaction(function () use ($account, $abilities, $generated, $validated, $requested, $askedForSpecificSites, $agent): void {
+            $this->siteManagerCoverage->lockAccount((int) $account->id);
+            $lockedAgent = User::query()
+                ->whereKey($agent->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
 
-        $restricted = true;
+            abort_unless($lockedAgent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
-        $token->sites()->sync($siteIds);
+            // Managing integrations authorizes the credential lifecycle, not
+            // the support work the credential performs. Recheck every bundle
+            // against the freshly loaded actor while the role is locked.
+            abort_unless(
+                collect($abilities)->every(fn (string $ability): bool => in_array(
+                    $ability,
+                    $this->grantableAbilities($lockedAgent),
+                    true,
+                )),
+                403,
+            );
 
-        // Recorded on the token, not inferred from the rows just synced. If
-        // every one of those sites is later purged this token reaches nothing,
-        // which is what the operator asked for.
-        $token->forceFill(['restricts_sites' => $restricted])->save();
+            $token = $account->apiTokens()->create([
+                'created_by_id' => $lockedAgent->id,
+                'name' => $validated['name'],
+                'token_hash' => $generated['hash'],
+                'last_four' => $generated['last_four'],
+                // Deny by default. A token created with no abilities ticked can
+                // authenticate and read nothing, which is a safe thing to have
+                // made by accident.
+                'abilities' => $abilities,
+                'expires_at' => isset($validated['expires_in_days'])
+                    ? now()->addDays((int) $validated['expires_in_days'])
+                    : null,
+            ]);
 
-        $this->audit($agent, $token, 'api_token.created', [
-            'name' => $token->name,
-            'abilities' => $token->abilities,
-            'expires_at' => $token->expires_at?->toJSON(),
-            'restricted_site_ids' => $siteIds->all(),
-        ]);
+            // A token is always pinned to the freshly authorized issuer's
+            // current site ceiling, including archived sites. It never widens
+            // automatically when the account later adds another site.
+            $visibleSiteIds = $account->sites()
+                ->visibleToAgentIncludingArchived($lockedAgent)
+                ->pluck('id');
+            $siteIds = $askedForSpecificSites
+                ? $visibleSiteIds->intersect($requested)->values()
+                : $visibleSiteIds->values();
+
+            $token->sites()->sync($siteIds);
+            $token->forceFill(['restricts_sites' => true])->save();
+
+            $this->audit($lockedAgent, $token, 'api_token.created', [
+                'name' => $token->name,
+                'abilities' => $token->abilities,
+                'expires_at' => $token->expires_at?->toJSON(),
+                'restricted_site_ids' => $siteIds->all(),
+            ]);
+        });
 
         return redirect()
             ->route('dashboard.account.api-tokens.index')

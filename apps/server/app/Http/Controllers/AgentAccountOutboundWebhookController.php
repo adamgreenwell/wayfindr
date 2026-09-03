@@ -10,7 +10,9 @@ use App\Models\OutboundWebhookEndpoint;
 use App\Models\User;
 use App\Rules\PublicWebhookUrl;
 use App\Support\DatabaseKey;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Webhooks\OutboundWebhookDestination;
+use App\Support\Webhooks\OutboundWebhookPermissions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -22,6 +24,8 @@ use Throwable;
 /** Admin lifecycle controls for account outbound-webhook endpoints (ADR 0020). */
 class AgentAccountOutboundWebhookController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function store(Request $request, OutboundWebhookDestination $destination): RedirectResponse
     {
         $agent = $request->user();
@@ -39,15 +43,33 @@ class AgentAccountOutboundWebhookController extends Controller
         ])['webhook'];
 
         $generated = OutboundWebhookEndpoint::generateSecret();
-        $visibleSiteIds = $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id');
         $askedForSpecificSites = $request->has('webhook.site_ids');
-        $siteIds = $askedForSpecificSites
-            ? $visibleSiteIds->intersect($validated['site_ids'] ?? [])->values()
-            : $visibleSiteIds->values();
 
-        $endpoint = DB::transaction(function () use ($account, $agent, $validated, $generated, $siteIds): OutboundWebhookEndpoint {
+        $endpoint = DB::transaction(function () use ($account, $agent, $validated, $generated, $askedForSpecificSites): OutboundWebhookEndpoint {
+            $this->siteManagerCoverage->lockAccount((int) $account->id);
+            $lockedAgent = User::query()
+                ->whereKey($agent->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($lockedAgent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
+            abort_unless(
+                collect($validated['events'])->every(
+                    fn (string $event): bool => OutboundWebhookPermissions::allows($lockedAgent, $event),
+                ),
+                403,
+            );
+
+            $visibleSiteIds = $account->sites()
+                ->visibleToAgentIncludingArchived($lockedAgent)
+                ->pluck('id');
+            $siteIds = $askedForSpecificSites
+                ? $visibleSiteIds->intersect($validated['site_ids'] ?? [])->values()
+                : $visibleSiteIds->values();
+
             $endpoint = $account->outboundWebhookEndpoints()->create([
-                'created_by_id' => $agent->id,
+                'created_by_id' => $lockedAgent->id,
                 'name' => $validated['name'],
                 'url' => trim($validated['url']),
                 'secret' => $generated['plain'],
@@ -59,7 +81,7 @@ class AgentAccountOutboundWebhookController extends Controller
             ]);
 
             $endpoint->sites()->sync($siteIds);
-            $this->audit($agent, $endpoint, 'outbound_webhook.created', [
+            $this->audit($lockedAgent, $endpoint, 'outbound_webhook.created', [
                 'name' => $endpoint->name,
                 'events' => $endpoint->events,
                 'restricted_site_ids' => $siteIds->all(),
@@ -146,19 +168,45 @@ class AgentAccountOutboundWebhookController extends Controller
             && $account->sites()
                 ->visibleToAgentIncludingArchived($agent)
                 ->whereKey($delivery->site_id)
-                ->exists(),
+                ->exists()
+            && OutboundWebhookPermissions::allows($agent, $delivery->event),
             404,
         );
 
-        $retryId = DB::transaction(function () use ($agent, $delivery): ?int {
+        $retryId = DB::transaction(function () use ($account, $agent, $delivery): ?int {
+            $this->siteManagerCoverage->lockAccount((int) $account->id);
+            $lockedAgent = User::query()
+                ->whereKey($agent->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($lockedAgent?->hasAccountPermission(AccountPermission::ManageIntegrations), 404);
+
             $locked = OutboundWebhookDelivery::query()->with('endpoint')->whereKey($delivery->id)->lockForUpdate()->first();
 
             if (
                 $locked === null
-                || $locked->failed_at === null
+                || $locked->site_id === null
+                || $locked->endpoint === null
+                || (int) $locked->endpoint->account_id !== (int) $account->id
+            ) {
+                return null;
+            }
+
+            abort_unless(
+                OutboundWebhookPermissions::allows($lockedAgent, $locked->event)
+                && $account->sites()
+                    ->visibleToAgentIncludingArchived($lockedAgent)
+                    ->whereKey($locked->site_id)
+                    ->exists(),
+                404,
+            );
+
+            if (
+                $locked->failed_at === null
                 || $locked->delivered_at !== null
                 || $locked->cancelled_at !== null
-                || $locked->endpoint === null
                 || ! $locked->endpoint->isEnabled()
             ) {
                 return null;
@@ -166,7 +214,7 @@ class AgentAccountOutboundWebhookController extends Controller
 
             $locked->forceFill(['failed_at' => null])->save();
 
-            $this->audit($agent, $locked->endpoint, 'outbound_webhook.delivery_retried', [
+            $this->audit($lockedAgent, $locked->endpoint, 'outbound_webhook.delivery_retried', [
                 'delivery_id' => $locked->public_id,
                 'event' => $locked->event,
                 'sequence' => $locked->sequence,

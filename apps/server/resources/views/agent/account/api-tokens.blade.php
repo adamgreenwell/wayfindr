@@ -342,11 +342,11 @@
 
             <div class="field">
                 <label for="webhook_events">{{ __('outbound_webhooks.create.events_label') }}</label>
-                @foreach (\App\Models\OutboundWebhookEndpoint::EVENTS as $event)
+                @foreach ($grantableWebhookEvents as $event)
                     <label for="webhook_event_{{ str_replace('.', '_', $event) }}">
                         <input type="checkbox" id="webhook_event_{{ str_replace('.', '_', $event) }}"
                             name="webhook[events][]" value="{{ $event }}"
-                            @checked(in_array($event, old('webhook.events', \App\Models\OutboundWebhookEndpoint::EVENTS), true))>
+                            @checked(in_array($event, old('webhook.events', $grantableWebhookEvents), true))>
                         {{ __('outbound_webhooks.events.'.str_replace('.', '_', $event)) }}
                     </label>
                 @endforeach
