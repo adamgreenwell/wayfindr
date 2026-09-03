@@ -111,9 +111,10 @@ class AgentTicketController extends Controller
             'ticketLabelOptions' => $agent->account->ticketLabels()
                 ->orderBy('name')
                 ->get(),
-            'ticketActivity' => $this->visibleTicketActivity($ticket),
+            'ticketActivity' => $this->visibleTicketActivity($ticket, $canViewLinkedConversation),
             'ticketCategories' => TicketCategory::options(),
             'ticketCategoryGuidance' => TicketCategory::options(),
+            'ticketDescription' => $this->ticketDescriptionForViewer($ticket, $canViewLinkedConversation),
             'ticketPriorities' => TicketPriority::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'ticket' => $ticket,
@@ -873,7 +874,7 @@ class AgentTicketController extends Controller
     /**
      * @return Collection<int, array{label: string, label_feedback: array<string, mixed>|null, subject_change: array{old: string, new: string}|null, label_change: array{action: string, name: string}|null, actor: string, actor_is_authored: bool, body: string|null, occurred_at: CarbonInterface|null}>
      */
-    private function visibleTicketActivity(Ticket $ticket): Collection
+    private function visibleTicketActivity(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
         return $ticket->auditEvents()
             ->with('actor')
@@ -883,7 +884,7 @@ class AgentTicketController extends Controller
             ->get()
             ->map(fn (AuditEvent $activity): array => [
                 'label' => $this->ticketActivityLabel($activity),
-                'label_feedback' => $this->ticketActivityLabelFeedback($activity),
+                'label_feedback' => $this->ticketActivityLabelFeedback($activity, $canViewLinkedConversation),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
@@ -1131,7 +1132,7 @@ class AgentTicketController extends Controller
             ->map(fn ($activity): array => [
                 'type' => in_array($activity->action, ['ticket.note_added', 'ticket.external_comment_received'], true) ? 'internal-note' : 'ticket-activity',
                 'label' => $this->ticketActivityLabel($activity),
-                'label_feedback' => $this->ticketActivityLabelFeedback($activity),
+                'label_feedback' => $this->ticketActivityLabelFeedback($activity, $canViewLinkedConversation),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
@@ -1756,13 +1757,14 @@ class AgentTicketController extends Controller
      *
      * @return array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}|null
      */
-    private function ticketActivityLabelFeedback(object $activity): ?array
+    private function ticketActivityLabelFeedback(object $activity, bool $canViewLinkedConversation): ?array
     {
         $providerValue = data_get($activity->metadata, 'provider');
         $provider = is_string($providerValue) ? $providerValue : null;
         $reference = data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id');
 
-        if ($activity->action === 'ticket.created'
+        if ($canViewLinkedConversation
+            && $activity->action === 'ticket.created'
             && data_get($activity->metadata, 'source') === 'conversation'
             && filled(data_get($activity->metadata, 'support_code'))) {
             return $this->translatedFeedback(
@@ -1844,6 +1846,16 @@ class AgentTicketController extends Controller
         }
 
         return null;
+    }
+
+    private function ticketDescriptionForViewer(Ticket $ticket, bool $canViewLinkedConversation): ?string
+    {
+        if (! $canViewLinkedConversation
+            && data_get($ticket->metadata, 'description_source') === 'conversation_transcript') {
+            return null;
+        }
+
+        return $ticket->description;
     }
 
     /**

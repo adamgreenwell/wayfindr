@@ -995,7 +995,7 @@
 
                     <div class="field">
                         <label for="description">{{ __('ticket_detail.details.description') }}</label>
-                        <textarea id="description" name="description" rows="6" lang="">{{ old('description', $ticket->description) }}</textarea>
+                        <textarea id="description" name="description" rows="6" lang="">{{ old('description', $ticketDescription) }}</textarea>
                         @error('description')
                             <p class="field-error">{{ $message }}</p>
                         @enderror

@@ -101,7 +101,27 @@ test('ticket managers cannot read or reply to linked conversations without conve
         ->for($site)
         ->for($conversation)
         ->for($visitor, 'requester')
-        ->create(['subject' => 'Visible ticket subject']);
+        ->create([
+            'subject' => 'Visible ticket subject',
+            'description' => 'Copied private conversation transcript',
+            'metadata' => [
+                'source' => 'conversation',
+                'description_source' => 'conversation_transcript',
+                'support_code' => 'WF-PRIVATE-CONVERSATION',
+            ],
+        ]);
+    $ticket->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => User::class,
+        'actor_id' => $ticketManager->id,
+        'action' => 'ticket.created',
+        'metadata' => [
+            'source' => 'conversation',
+            'support_code' => 'WF-PRIVATE-CONVERSATION',
+        ],
+        'occurred_at' => now(),
+    ]);
 
     expect(Gate::forUser($ticketManager)->allows('view', $ticket))->toBeTrue()
         ->and(Gate::forUser($ticketManager)->allows('reply', $ticket))->toBeFalse();
@@ -125,6 +145,8 @@ test('ticket managers cannot read or reply to linked conversations without conve
         ->assertDontSee('WF-PRIVATE-CONVERSATION')
         ->assertDontSee('Private conversation subject')
         ->assertDontSee('Private conversation transcript')
+        ->assertDontSee('Copied private conversation transcript')
+        ->assertDontSee('Ticket created from conversation')
         ->assertDontSee(route('dashboard.conversations.show', $conversation->support_code), false)
         ->assertDontSee(route('dashboard.tickets.replies.store', $ticket), false);
 
