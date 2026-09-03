@@ -237,6 +237,34 @@ test('a password change revokes a newly issued authenticated session', function 
     $this->assertGuest();
 });
 
+test('a password change revokes a newly issued operator session', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'email' => 'operator@example.com',
+        'password' => Hash::make('old-password'),
+        'platform_role' => PlatformRole::Operator,
+    ]);
+    $credential = giveAgentTwoFactor($operator);
+
+    $this->post(route('login.store'), [
+        'email' => 'operator@example.com',
+        'password' => 'old-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    $this->post(route('two-factor.challenge.store'), [
+        'one_time_code' => app(Google2FA::class)->getCurrentOtp($credential['secret']),
+    ])->assertRedirect(route('dashboard'));
+
+    DB::table('users')->where('id', $operator->id)->update([
+        'password' => Hash::make('new-password'),
+    ]);
+    Auth::forgetGuards();
+
+    $this->get(route('operator.dashboard'))
+        ->assertRedirect(route('login'));
+
+    $this->assertGuest();
+});
+
 test('recovery codes can be replaced with both proofs and two factor can be disabled', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'password' => Hash::make('password'),

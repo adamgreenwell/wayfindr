@@ -328,7 +328,7 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/logout', [SessionController::class, 'destroy'])->name('logout');
 });
 
-Route::middleware(['auth', EnsureAgentIsActive::class, EnsureTwoFactorPolicy::class, EnsurePlatformOperator::class])
+Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwoFactorPolicy::class, EnsurePlatformOperator::class])
     ->prefix('operator')
     ->name('operator.')
     ->group(function (): void {
