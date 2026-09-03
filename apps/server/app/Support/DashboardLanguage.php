@@ -124,6 +124,10 @@ final class DashboardLanguage
         'dashboard.alerts.read',
         'dashboard.alerts.read-all',
 
+        // The reports page follows the reader; its CSV export deliberately
+        // keeps stable English headers and machine-readable numeric cells.
+        'dashboard.reports.index',
+
         // The ticket workspace and endpoints owned exclusively by it. The
         // assignee and lifecycle writes are deliberately absent: those are
         // also submitted from the conversation's linked-ticket panel, so the
