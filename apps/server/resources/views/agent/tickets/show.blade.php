@@ -27,6 +27,9 @@
                     ?? $ticket->requester?->name
                     ?? $ticket->requester?->anonymous_id
                     ?? __('ticket_detail.common.not_linked');
+                $requesterReferenceIsAuthored = $ticket->requester?->email !== null
+                    || $ticket->requester?->name !== null
+                    || $ticket->requester?->anonymous_id !== null;
                 $hasVisitorContext = $visitorContext['has_visitor']
                     || $visitorContext['last_page_url']
                     || $visitorContext['started_page_url']
@@ -46,7 +49,7 @@
                 <div class="meta-grid">
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.common.owner') }}</span>
-                        <span class="meta-value">{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
+                        <span class="meta-value" @if ($ticket->assignee?->name !== null) lang="" @endif>{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.common.priority') }}</span>
@@ -108,7 +111,12 @@
                             <span class="meta-value">{{ __('tickets.lifecycle.'.$ticketLifecycleNote['label_key']) }}</span>
                             <span class="lede" lang="">{{ $ticketLifecycleNote['body'] }}</span>
                             <span class="table-note">
-                                {{ $ticketLifecycleNote['actor_key'] ? __('tickets.row.'.$ticketLifecycleNote['actor_key']) : $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}
+                                @if ($ticketLifecycleNote['actor_key'])
+                                    {{ __('tickets.row.'.$ticketLifecycleNote['actor_key']) }}
+                                @else
+                                    <span lang="">{{ $ticketLifecycleNote['actor'] }}</span>
+                                @endif
+                                - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}
                             </span>
                         </div>
                     @endif
@@ -133,6 +141,21 @@
                         ?? data_get($latestTicketEscalation->metadata, 'new_assignee_name')
                         ?? $ticket->assignee?->name
                         ?? __('ticket_detail.common.unassigned');
+                    $escalationActorIsAuthored = $latestTicketEscalation->actor?->name !== null;
+                    $escalationTargetIsAuthored = data_get($latestTicketEscalation->metadata, 'target_agent_name') !== null
+                        || data_get($latestTicketEscalation->metadata, 'new_assignee_name') !== null
+                        || $ticket->assignee?->name !== null;
+                    $escalationFeedback = [
+                        'key' => 'ticket_detail.work.escalated',
+                        'parameters' => array_filter([
+                            'actor' => $escalationActorIsAuthored ? $escalationActor : null,
+                            'target' => $escalationTargetIsAuthored ? $escalationTarget : null,
+                        ], fn ($value) => $value !== null),
+                        'localized_parameters' => array_filter([
+                            'actor' => $escalationActorIsAuthored ? null : $escalationActor,
+                            'target' => $escalationTargetIsAuthored ? null : $escalationTarget,
+                        ], fn ($value) => $value !== null),
+                    ];
                     $escalationReason = data_get($latestTicketEscalation->metadata, 'reason');
                 @endphp
                 <section class="section" aria-labelledby="ticket-escalation-heading">
@@ -142,7 +165,7 @@
                     </div>
 
                     <div class="notice-copy">
-                        <p><strong>{{ __('ticket_detail.work.escalated', ['actor' => $escalationActor, 'target' => $escalationTarget]) }}</strong></p>
+                        <p><strong><x-translated-feedback :feedback="$escalationFeedback" /></strong></p>
                         @if ($escalationReason)
                             <p lang="">{{ $escalationReason }}</p>
                         @endif
@@ -153,7 +176,7 @@
             <section class="section" aria-labelledby="ticket-actions-heading">
                 <div class="section-header">
                     <h2 id="ticket-actions-heading">{{ __('ticket_detail.actions.heading') }}</h2>
-                    <span class="lede">{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
+                    <span class="lede" @if ($ticket->assignee?->name !== null) lang="" @endif>{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
                 </div>
 
                 @php
@@ -170,7 +193,7 @@
                         <select id="assignee_id" name="assignee_id">
                             <option value="">{{ __('ticket_detail.common.unassigned') }}</option>
                             @foreach ($accountAgents as $accountAgent)
-                                <option value="{{ $accountAgent->id }}" @selected((int) $ticket->assignee_id === $accountAgent->id)>
+                                <option lang="" value="{{ $accountAgent->id }}" @selected((int) $ticket->assignee_id === $accountAgent->id)>
                                     {{ $accountAgent->name }}
                                 </option>
                             @endforeach
@@ -198,7 +221,7 @@
                                 <select id="target_agent_id" name="target_agent_id">
                                     <option value="">{{ __('ticket_detail.actions.choose_agent') }}</option>
                                     @foreach ($escalationAgents as $escalationAgent)
-                                        <option value="{{ $escalationAgent->id }}" @selected((int) old('target_agent_id') === $escalationAgent->id)>
+                                        <option lang="" value="{{ $escalationAgent->id }}" @selected((int) old('target_agent_id') === $escalationAgent->id)>
                                             {{ $escalationAgent->name }}
                                         </option>
                                     @endforeach
@@ -277,7 +300,7 @@
                     @forelse ($ticket->auditEvents as $note)
                         <article class="message-card agent-message">
                             <div class="message-meta">
-                                <strong>{{ $note->actor?->name ?? __('ticket_detail.common.unknown_agent') }}</strong>
+                                <strong @if ($note->actor?->name !== null) lang="" @endif>{{ $note->actor?->name ?? __('ticket_detail.common.unknown_agent') }}</strong>
                                 <span>{{ $note->occurred_at->diffForHumans() }}</span>
                             </div>
                             <p lang="">{{ data_get($note->metadata, 'body') }}</p>
@@ -828,7 +851,7 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.common.requester') }}</span>
-                        <span class="meta-value" lang="">{{ $requesterReference }}</span>
+                        <span class="meta-value" @if ($requesterReferenceIsAuthored) lang="" @endif>{{ $requesterReference }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.details.latest_page') }}</span>
@@ -1047,7 +1070,11 @@
                                         <div class="timeline-meta">
                                             <span lang="">{{ $priorConversation->support_code }}</span>
                                             <span>{{ __('tickets.statuses.'.$priorConversation->status) }}</span>
-                                            <span>{{ __('ticket_detail.visitor_context.owner', ['owner' => $priorConversation->assignedAgent?->name ?? __('ticket_detail.common.unassigned')]) }}</span>
+                                            <span><x-translated-feedback :feedback="[
+                                                'key' => 'ticket_detail.visitor_context.owner',
+                                                'parameters' => $priorConversation->assignedAgent?->name !== null ? ['owner' => $priorConversation->assignedAgent->name] : [],
+                                                'localized_parameters' => $priorConversation->assignedAgent?->name === null ? ['owner' => __('ticket_detail.common.unassigned')] : [],
+                                            ]" /></span>
                                             <span>{{ __('ticket_detail.visitor_context.last_activity', ['elapsed' => $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans()]) }}</span>
                                         </div>
                                     </div>
@@ -1063,10 +1090,14 @@
                                         <div class="timeline-meta">
                                             <span>{{ __('ticket_detail.reference', ['id' => $priorTicket->id]) }}</span>
                                             <span>{{ __('tickets.statuses.'.$priorTicket->status) }}</span>
-                                            <span>{{ __('ticket_detail.visitor_context.owner', ['owner' => $priorTicket->assignee?->name ?? __('ticket_detail.common.unassigned')]) }}</span>
+                                            <span><x-translated-feedback :feedback="[
+                                                'key' => 'ticket_detail.visitor_context.owner',
+                                                'parameters' => $priorTicket->assignee?->name !== null ? ['owner' => $priorTicket->assignee->name] : [],
+                                                'localized_parameters' => $priorTicket->assignee?->name === null ? ['owner' => __('ticket_detail.common.unassigned')] : [],
+                                            ]" /></span>
                                             @if ($priorTicket->conversation)
                                                 <a class="text-link" href="{{ route('dashboard.conversations.show', $priorTicket->conversation->support_code) }}">
-                                                    {{ $priorTicket->conversation->support_code }}
+                                                    <span lang="">{{ $priorTicket->conversation->support_code }}</span>
                                                 </a>
                                             @else
                                                 <span>{{ __('ticket_detail.common.not_linked') }}</span>

@@ -37,6 +37,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\File;
 
 uses(RefreshDatabase::class);
@@ -3670,6 +3671,23 @@ test('latest external attempt identifiers keep their own language boundaries', f
     expect($matched)->toBe(1, 'the latest-attempt sentence lost an identifier language boundary');
 });
 
+test('translated authored values cannot expand one another as placeholders', function (): void {
+    $html = Blade::render('<x-translated-feedback :feedback="$feedback" />', [
+        'feedback' => [
+            'key' => 'ticket_detail.activity.external_link_added_detail',
+            'parameters' => [
+                'provider' => 'Brand :reference',
+                'reference' => ':provider & raw',
+            ],
+            'localized_parameters' => [],
+        ],
+    ]);
+
+    expect($html)->toContain('<span lang="">Brand :reference</span>')
+        ->and($html)->toContain('<span lang="">:provider &amp; raw</span>')
+        ->and($html)->not->toContain('Brand <span');
+});
+
 test('authored ticket activity values keep their own language boundaries', function (): void {
     $world = conversationQueueLanguageWorld();
     $conversation = Conversation::query()->firstOrFail();
@@ -3722,11 +3740,23 @@ test('authored ticket activity values keep their own language boundaries', funct
         'Old &amp; Owner' => 2,
         'New &amp; Owner' => 2,
         'First &amp; Owner' => 2,
-        'Next &amp; Owner' => 2,
+        // The current escalation also appears once in the prominent work
+        // summary above the two activity lists.
+        'Next &amp; Owner' => 3,
     ] as $authoredValue => $expectedOccurrences) {
         expect(substr_count($html, '<span lang="">'.$authoredValue.'</span>'))
             ->toBe($expectedOccurrences, "{$authoredValue} is not bounded everywhere it renders");
     }
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $escalationValues = (new DOMXPath($document))->query(
+        '//section[@aria-labelledby="ticket-escalation-heading"]//p/strong/span[@lang=""]'
+    );
+
+    expect($escalationValues)->toHaveCount(2)
+        ->and($escalationValues->item(0)?->textContent)->toBe('Ada Datenpunkt')
+        ->and($escalationValues->item(1)?->textContent)->toBe('Next & Owner');
 });
 
 test('a reply template says what language its body is in', function (): void {
