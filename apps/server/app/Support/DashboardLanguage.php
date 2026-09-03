@@ -140,6 +140,14 @@ final class DashboardLanguage
         'dashboard.account.break-glass.deny',
         'dashboard.account.break-glass.close',
 
+        // The account integrations page and the two writes that belong only
+        // to it. Connection creation is shared with the still-English site
+        // page, so its locale follows the referring page instead of living in
+        // this route list.
+        'dashboard.account.integrations',
+        'dashboard.external-issue-provider-connections.webhook-secret.update',
+        'dashboard.external-issue-provider-connections.capabilities.update',
+
         // The live-visitors board. Most of this page's copy is rendered by its
         // SCRIPT rather than by Blade, which is why it needed no new mechanism
         // and does need the render audit to open it with the board populated.

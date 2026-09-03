@@ -42,7 +42,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'is_enabled' => true,
         ]);
 
-        return $this->redirectAfterUpdate($account, $validated['site_id'] ?? null, 'Provider connection saved.', $validated['return_to'] ?? null);
+        return $this->redirectAfterUpdate($account, $validated['site_id'] ?? null, $validated['return_to'] ?? null);
     }
 
     /**
@@ -84,7 +84,9 @@ class AgentExternalIssueProviderConnectionController extends Controller
 
         return redirect()
             ->route('dashboard.account.integrations')
-            ->with('status', $secret === '' ? 'Inbound webhook secret cleared.' : 'Inbound webhook secret saved.');
+            ->with('status', $secret === ''
+                ? 'integrations.flash.secret_cleared'
+                : 'integrations.flash.secret_saved');
     }
 
     public function updateCapabilities(Request $request, ExternalIssueProviderConnection $connection): RedirectResponse
@@ -107,26 +109,28 @@ class AgentExternalIssueProviderConnectionController extends Controller
 
         return redirect()
             ->route('dashboard.account.integrations')
-            ->with('status', 'Provider capabilities updated.');
+            ->with('status', 'integrations.flash.capabilities_updated');
     }
 
-    private function redirectAfterUpdate(Account $account, mixed $siteId, string $status, ?string $returnTo = null): RedirectResponse
+    private function redirectAfterUpdate(Account $account, mixed $siteId, ?string $returnTo = null): RedirectResponse
     {
         if ($returnTo === 'integrations') {
             return redirect()
                 ->route('dashboard.account.integrations')
-                ->with('status', $status);
+                ->with('status', 'integrations.flash.connection_saved');
         }
 
         if (is_numeric($siteId) && $account->sites()->whereKey((int) $siteId)->exists()) {
             return redirect()
                 ->route('dashboard.sites.show', (int) $siteId)
-                ->with('status', $status);
+                // The site page is not extracted yet, so its flash remains
+                // English until that surface can translate the key itself.
+                ->with('status', 'Provider connection saved.');
         }
 
         return redirect()
             ->route('dashboard')
-            ->with('status', $status);
+            ->with('status', 'Provider connection saved.');
     }
 
     /**

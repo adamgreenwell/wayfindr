@@ -113,6 +113,10 @@ return [
             'Admin',
             'Bug',
             'Payload',
+            // Established in the ticket catalogues and used as the visible
+            // integration-field label; `fornitore` would introduce a second
+            // term for the same external service on adjacent surfaces.
+            'Provider',
             'Viewport',
             // The URL-safe identifier; Italian technical writing borrows it.
             'Slug',

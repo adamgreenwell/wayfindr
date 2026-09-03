@@ -14,6 +14,7 @@ use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
+use App\Models\ExternalIssueProviderConnection;
 use App\Models\ReplyTemplate;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -102,6 +103,60 @@ function conversationQueueLanguageTicketStates(array $world, Conversation $conve
             'sync_status' => ExternalIssueSyncStatus::FAILED,
             'last_synced_at' => now(),
         ]);
+}
+
+/**
+ * Provider rows for every conditional section on the integrations page.
+ *
+ * @param  array{account: Account, site: Site}  $world
+ */
+function conversationQueueLanguageIntegrationStates(array $world): void
+{
+    if ($world['account']->externalIssueProviderConnections()->exists()) {
+        return;
+    }
+
+    $github = ExternalIssueProviderConnection::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt GitHub connection',
+        'provider' => 'github',
+        'base_url' => 'https://datenpunkt.example/github',
+        'credentials' => ['token' => 'datenpunkt-token'],
+    ]);
+
+    ExternalIssueProviderConnection::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt GitLab connection',
+        'provider' => 'gitlab',
+        'credentials' => ['token' => 'datenpunkt-token', 'webhook_secret' => 'datenpunkt-secret'],
+    ]);
+
+    ExternalIssueProviderConnection::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt Jira connection',
+        'provider' => 'jira',
+        'credentials' => ['token' => 'datenpunkt-token', 'webhook_secret' => 'datenpunkt-secret'],
+        'settings' => [
+            'inbound_webhook' => [
+                'verified' => true,
+                'event' => 'datenpunkt_event',
+                'status_code' => 202,
+            ],
+        ],
+        'last_checked_at' => now()->subMinutes(3),
+    ]);
+
+    ExternalIssueProviderConnection::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt disabled connection',
+        'provider' => 'other',
+        'is_enabled' => false,
+    ]);
+
+    $world['site']->externalIssueProjects()->create([
+        'account_id' => $world['account']->id,
+        'external_issue_provider_connection_id' => $github->id,
+        'project_key' => 'datenpunkt/project',
+        'project_name' => 'Datenpunkt project',
+        'web_url' => 'https://datenpunkt.example/project',
+        'settings' => [],
+    ]);
 }
 
 /**
@@ -1501,6 +1556,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt bare', 'description' => null]);
 
     conversationQueueLanguageTicketStates($world, $conversation);
+    conversationQueueLanguageIntegrationStates($world);
 
     $states = [
         route('dashboard.profile.show'),
@@ -1527,6 +1583,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.api-tokens.index'),
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),
+        route('dashboard.account.integrations'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -1993,6 +2050,7 @@ test('every extracted page translates its document title', function (): void {
         route('dashboard.tickets.index'),
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.account.break-glass.index'),
+        route('dashboard.account.integrations'),
     ];
 
     foreach ($urls as $url) {
@@ -3715,6 +3773,7 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
     $conversation = Conversation::query()->firstOrFail();
 
     conversationQueueLanguageTicketStates($world, $conversation);
+    conversationQueueLanguageIntegrationStates($world);
 
     $placeholders = [];
 
@@ -3746,6 +3805,7 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('dashboard.tickets.index'),
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.account.break-glass.index'),
+        route('dashboard.account.integrations'),
     ];
 
     foreach (['de', 'en'] as $locale) {
@@ -3803,6 +3863,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt bare', 'description' => null]);
 
     conversationQueueLanguageTicketStates($world, $conversation);
+    conversationQueueLanguageIntegrationStates($world);
 
     $states = [
         route('dashboard.profile.show'),
@@ -3818,6 +3879,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),
+        route('dashboard.account.integrations'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
 
