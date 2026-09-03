@@ -496,7 +496,7 @@ function conversationQueueLanguageReaderForUrl(array $world, string $url, string
         return $world['operators'][$locale];
     }
 
-    if (str_starts_with($path, '/dashboard/account')) {
+    if (str_starts_with($path, '/dashboard/account') || str_starts_with($path, '/dashboard/reports')) {
         return $world['admins'][$locale];
     }
 
@@ -1439,6 +1439,7 @@ function conversationQueueLanguageCognates(): array
         'Status' => 'the same word in both languages',
         'Normal' => 'the same word in both languages, as a priority',
         'Live' => 'the same word in both languages, as a transport state',
+        'Median' => 'the same statistical term in both languages',
         'URL' => 'the same word in both languages',
         'Token' => 'the same word in both languages -- German writes DAS Token and hyphenates the compound, so the bare column header is identical while the page title is not',
         'Label' => 'a loanword German uses as-is',
@@ -1616,6 +1617,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.alerts.index', ['alert_filter' => 'unread', 'alert_kind' => 'conversation']),
         route('dashboard.alerts.index', ['alert_kind' => 'ticket']),
         route('dashboard.alerts.index', ['alert_search' => 'zzzz']),
+        route('dashboard.reports.index'),
         route('dashboard.conversations.index'),
         route('dashboard.conversations.index', ['conversation_filter' => 'closed']),
         route('dashboard.conversations.index', ['conversation_filter' => 'assigned_to_me']),
@@ -1906,6 +1908,10 @@ test('every cognate on the list still appears, so the list cannot rot', function
         // cognate, and its fixture deliberately renders that fallback row.
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.account.audit.index'))->getContent()
+        ),
+        // The reports page supplies the shared statistical term `Median`.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.reports.index'))->getContent()
         ),
         // The scanner label is a German/English loanword, and this is the
         // first extracted surface that renders it as Wayfindr copy.
@@ -2959,6 +2965,9 @@ test('every catalogue file answers the same set of keys', function (): void {
         'nav.items.tickets = Tickets',
         'profile.roles.agent = Agent',
         'profile.details.name = Name',
+        'reports.tabs.tickets = Tickets',
+        'reports.metrics.median = Median',
+        'reports.tables.agent = Agent',
         'tickets.document_title = Tickets',
         'tickets.columns.status = Status',
         'tickets.columns.labels = Labels',

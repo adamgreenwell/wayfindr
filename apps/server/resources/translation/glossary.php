@@ -67,6 +67,7 @@ return [
             'Cobrowse',
             'Name',
             'Live',
+            'Median',
 
             // Words German genuinely shares, several of them the same
             // loanwords the render guard already excuses on its own list.
@@ -116,6 +117,8 @@ return [
             'Admin',
             'Bug',
             'Payload',
+            'Report',
+            'Volume',
             // The established Italian UI term for an authentication secret;
             // translating it as `parola d’ordine` would be less familiar.
             'Password',

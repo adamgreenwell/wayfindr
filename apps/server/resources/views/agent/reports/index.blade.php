@@ -1,51 +1,60 @@
 @php
     $reportTabs = [
-        ['id' => 'volume', 'label' => 'Volume'],
-        ['id' => 'speed', 'label' => 'Speed'],
-        ['id' => 'tickets', 'label' => 'Tickets'],
-        ['id' => 'agents', 'label' => 'Agents'],
+        ['id' => 'volume', 'label' => __('reports.tabs.volume')],
+        ['id' => 'speed', 'label' => __('reports.tabs.speed')],
+        ['id' => 'tickets', 'label' => __('reports.tabs.tickets')],
+        ['id' => 'agents', 'label' => __('reports.tabs.agents')],
         // Its own tab, not a row under Speed. Every other tab answers how fast
         // the desk moved; this one answers whether that helped, and a desk can
         // improve all of the others while getting worse at this.
-        ['id' => 'satisfaction', 'label' => 'Satisfaction'],
+        ['id' => 'satisfaction', 'label' => __('reports.tabs.satisfaction')],
     ];
+    $activeSites = $sites->reject->isArchived();
+    $archivedSites = $sites->filter->isArchived();
 @endphp
 
-<x-layouts.app title="Reports" :agent="$agent" :account="$account">
-    <x-page-header title="Reports" subtitle="How much support came in, how fast it was answered, and who answered it.">
+<x-layouts.app :title="__('reports.document_title')" :agent="$agent" :account="$account">
+    <x-page-header :title="__('reports.title')" :subtitle="__('reports.subtitle')">
         <x-slot:actions>
-            <span class="lede">{{ $window->label() }}</span>
+            <span class="lede">{{ trans_choice('reports.range.last_days', $window->days, ['count' => \App\Support\ReaderNumber::count($window->days)]) }}</span>
         </x-slot:actions>
     </x-page-header>
 
     <section class="section" aria-labelledby="report-filters-heading">
         <div class="section-header">
-            <h2 id="report-filters-heading">Range</h2>
-            <span class="lede">{{ $siteId ? 'One site' : 'All visible sites' }}</span>
+            <h2 id="report-filters-heading">{{ __('reports.range.heading') }}</h2>
+            <span class="lede">{{ $siteId ? __('reports.range.one_site') : __('reports.range.all_sites') }}</span>
         </div>
         <form class="section-form" method="GET" action="{{ route('dashboard.reports.index') }}">
             <div class="meta-grid">
                 <div class="meta-item">
-                    <label class="meta-label" for="report_days">Period</label>
+                    <label class="meta-label" for="report_days">{{ __('reports.range.period') }}</label>
                     <select id="report_days" name="report_days">
                         @foreach ($windowChoices as $choice)
-                            <option value="{{ $choice }}" @selected($window->days === $choice)>Last {{ $choice }} days</option>
+                            <option value="{{ $choice }}" @selected($window->days === $choice)>{{ trans_choice('reports.range.last_days', $choice, ['count' => \App\Support\ReaderNumber::count($choice)]) }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div class="meta-item">
-                    <label class="meta-label" for="report_site">Site</label>
+                    <label class="meta-label" for="report_site">{{ __('reports.range.site') }}</label>
                     <select id="report_site" name="report_site">
-                        <option value="">All visible sites</option>
-                        @foreach ($sites as $site)
-                            <option value="{{ $site->id }}" @selected($siteId === $site->id)>{{ $site->name }}@if ($site->isArchived()) (archived) @endif</option>
+                        <option value="">{{ __('reports.range.all_sites') }}</option>
+                        @foreach ($activeSites as $site)
+                            <option lang="" value="{{ $site->id }}" @selected($siteId === $site->id)>{{ $site->name }}</option>
                         @endforeach
+                        @if ($archivedSites->isNotEmpty())
+                            <optgroup label="{{ __('reports.range.archived_sites') }}">
+                                @foreach ($archivedSites as $site)
+                                    <option lang="" value="{{ $site->id }}" @selected($siteId === $site->id)>{{ $site->name }}</option>
+                                @endforeach
+                            </optgroup>
+                        @endif
                     </select>
                 </div>
                 <div class="meta-item">
-                    <span class="meta-label">Report</span>
-                    <button class="button" type="submit">Apply</button>
-                    <a class="button secondary" href="{{ route('dashboard.reports.index') }}">Reset</a>
+                    <span class="meta-label">{{ __('reports.range.report') }}</span>
+                    <button class="button" type="submit">{{ __('reports.range.apply') }}</button>
+                    <a class="button secondary" href="{{ route('dashboard.reports.index') }}">{{ __('reports.range.reset') }}</a>
                 </div>
             </div>
         </form>
@@ -54,44 +63,54 @@
     @if ($historyIsPartial)
         <section class="section" aria-labelledby="report-history-heading">
             <div class="section-header">
-                <h2 id="report-history-heading">What these numbers can reach</h2>
-                <span class="lede">Not all of it is the same age</span>
+                <h2 id="report-history-heading">{{ __('reports.history.heading') }}</h2>
+                <span class="lede">{{ __('reports.history.lede') }}</span>
             </div>
             <div class="notice-copy">
-                <p><strong>Conversations opened</strong> and <strong>first response times</strong> are recoverable from the whole history of this install.</p>
+                <p><strong>{{ __('reports.history.opened') }}</strong> {{ __('reports.history.opened_detail') }} <strong>{{ __('reports.history.first_response') }}</strong> {{ __('reports.history.first_response_detail') }}</p>
                 @if ($historyBeganAt)
-                    <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records, which this install began keeping on {{ \App\Support\ReaderClock::date($historyBeganAt) }}. Anything before that is unrecorded rather than absent &mdash; conversations were closed, but nothing was keeping the sequence, and it cannot be reconstructed after the fact.</p>
+                    <p><strong>{{ __('reports.history.lifecycle') }}</strong> {{ __('reports.history.lifecycle_with_date', ['date' => \App\Support\ReaderClock::date($historyBeganAt)]) }}</p>
                 @else
-                    <p><strong>Closes, resolution times and reopens</strong> are read from lifecycle records, and this install has not stamped when it started keeping them. Run outstanding migrations; until then these figures cover only what happens to be on record.</p>
+                    <p><strong>{{ __('reports.history.lifecycle') }}</strong> {{ __('reports.history.lifecycle_without_date') }}</p>
                 @endif
-                <p>Purging a site removes its history along with everything else, so a total can legitimately fall.</p>
+                <p>{{ __('reports.history.purge') }}</p>
             </div>
         </section>
     @endif
 
-    <x-tabs id="support-report" label="Report sections" :tabs="$reportTabs">
+    <x-tabs id="support-report" :label="__('reports.tabs.region')" :tabs="$reportTabs">
         <x-tab-panel id="volume" :active="true">
             <section class="section" aria-labelledby="report-volume-heading">
                 <div class="section-header">
-                    <h2 id="report-volume-heading">Conversation volume</h2>
+                    <h2 id="report-volume-heading">{{ __('reports.conversations.volume.heading') }}</h2>
                     <span class="lede">
-                        {{ $volume['opened_total'] }} opened
-                        &middot; {{ $volume['closed_total'] }} closed
-                        &middot; {{ $volume['open_now'] }} open now
+                        {{ trans_choice('reports.counts.opened', $volume['opened_total'], ['count' => \App\Support\ReaderNumber::count($volume['opened_total'])]) }}
+                        &middot; {{ trans_choice('reports.counts.closed', $volume['closed_total'], ['count' => \App\Support\ReaderNumber::count($volume['closed_total'])]) }}
+                        &middot; {{ trans_choice('reports.counts.open_now', $volume['open_now'], ['count' => \App\Support\ReaderNumber::count($volume['open_now'])]) }}
                     </span>
                 </div>
 
                 @if ($chart['max'] === 0)
-                    <p class="empty">No conversations were opened or closed in this period.</p>
+                    <p class="empty">{{ __('reports.conversations.volume.empty') }}</p>
                 @else
                     <div class="chart-scroll">
                         <div
                             class="chart"
                             role="img"
-                            aria-label="Conversations per day. {{ $volume['opened_total'] }} opened and {{ $volume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->endsOn()->toFormattedDayDateString() }}. The busiest day had {{ $chart['max'] }}."
+                            aria-label="{{ __('reports.conversations.volume.chart_aria', [
+                                'opened' => \App\Support\ReaderNumber::count($volume['opened_total']),
+                                'closed' => \App\Support\ReaderNumber::count($volume['closed_total']),
+                                'days' => \App\Support\ReaderNumber::count($window->days),
+                                'date' => \App\Support\ReaderClock::date($window->endsOn()),
+                                'busiest' => \App\Support\ReaderNumber::count($chart['max']),
+                            ]) }}"
                         >
                             @foreach ($chart['days'] as $day)
-                                <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} opened, {{ $day['closed'] }} closed">
+                                <div class="chart__day" title="{{ __('reports.conversations.volume.day_title', [
+                                    'date' => $day['label'],
+                                    'opened' => \App\Support\ReaderNumber::count($day['opened']),
+                                    'closed' => \App\Support\ReaderNumber::count($day['closed']),
+                                ]) }}">
                                     <div class="chart__bars">
                                         {{-- A day with nothing on it gets no bar at all. The minimum
                                              height that keeps a single conversation visible would
@@ -104,112 +123,107 @@
                         </div>
                     </div>
                     <p class="chart-legend">
-                        <span class="chart-key chart-key--opened"></span> Opened
-                        <span class="chart-key chart-key--closed"></span> Closed
-                        <span class="lede">Tallest day: {{ $chart['max'] }}</span>
+                        <span class="chart-key chart-key--opened"></span> {{ __('reports.counts.opened_label') }}
+                        <span class="chart-key chart-key--closed"></span> {{ __('reports.counts.closed_label') }}
+                        <span class="lede">{{ __('reports.charts.tallest_day', ['count' => \App\Support\ReaderNumber::count($chart['max'])]) }}</span>
                     </p>
                     <p class="lede">
-                        <a href="{{ route('dashboard.reports.export', $reportQuery + ['report_export' => 'daily']) }}">Export the daily series as CSV</a>
+                        <a href="{{ route('dashboard.reports.export', $reportQuery + ['report_export' => 'daily']) }}">{{ __('reports.conversations.volume.export') }}</a>
                     </p>
                 @endif
             </section>
 
             <section class="section" aria-labelledby="report-queue-heading">
                 <div class="section-header">
-                    <h2 id="report-queue-heading">Waiting right now</h2>
-                    <span class="lede">A live count, not a trend</span>
+                    <h2 id="report-queue-heading">{{ __('reports.conversations.queue.heading') }}</h2>
+                    <span class="lede">{{ __('reports.conversations.queue.lede') }}</span>
                 </div>
                 @if ($queueHealth['needs_reply'] === 0)
-                    <p class="empty">Nothing is waiting on a reply.</p>
+                    <p class="empty">{{ __('reports.conversations.queue.empty') }}</p>
                 @else
-                    <p>
-                        <strong>{{ $queueHealth['needs_reply'] }}</strong>
-                        {{ $queueHealth['needs_reply'] === 1 ? 'conversation is' : 'conversations are' }} waiting on the desk,
-                        the oldest for {{ \App\Support\Reporting\DurationSummary::humanize($queueHealth['oldest_wait_seconds']) }}.
-                    </p>
+                    <p>{!! trans_choice('reports.conversations.queue.waiting', $queueHealth['needs_reply'], [
+                        'count' => '<strong>'.e(\App\Support\ReaderNumber::count($queueHealth['needs_reply'])).'</strong>',
+                        'duration' => e($durationLabels['queue_oldest']),
+                    ]) !!}</p>
                 @endif
-                <p class="lede">For reference, unattended alerts fire once a conversation has waited {{ $queueHealth['threshold_minutes'] }} minutes without anyone looking at it. This count is every conversation waiting, whatever its age.</p>
+                <p class="lede">{{ trans_choice('reports.conversations.queue.threshold', $queueHealth['threshold_minutes'], ['count' => \App\Support\ReaderNumber::count($queueHealth['threshold_minutes'])]) }}</p>
             </section>
         </x-tab-panel>
 
         <x-tab-panel id="speed">
             <section class="section" aria-labelledby="report-response-heading">
                 <div class="section-header">
-                    <h2 id="report-response-heading">First response</h2>
-                    <span class="lede">{{ $firstResponse['summary']->count }} measured</span>
+                    <h2 id="report-response-heading">{{ __('reports.conversations.response.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('reports.counts.measured', $firstResponse['summary']->count, ['count' => \App\Support\ReaderNumber::count($firstResponse['summary']->count)]) }}</span>
                 </div>
                 @if ($firstResponse['summary']->isEmpty())
-                    <p class="empty">No conversation opened in this period has had a first reply yet.</p>
+                    <p class="empty">{{ __('reports.conversations.response.empty') }}</p>
                 @else
                     <div class="table-wrap">
                         <table>
                             <tbody>
                                 <tr>
-                                    <th scope="row">Median</th>
-                                    <td>{{ $firstResponse['summary']->medianLabel() }}</td>
-                                    <td class="lede">Half of visitors waited less than this.</td>
+                                    <th scope="row">{{ __('reports.metrics.median') }}</th>
+                                    <td>{{ $durationLabels['first_response_median'] }}</td>
+                                    <td class="lede">{{ __('reports.conversations.response.median_detail') }}</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">90th percentile</th>
-                                    <td>{{ $firstResponse['summary']->p90Label() }}</td>
-                                    <td class="lede">The unlucky tenth waited at least this long.</td>
+                                    <th scope="row">{{ __('reports.metrics.p90') }}</th>
+                                    <td>{{ $durationLabels['first_response_p90'] }}</td>
+                                    <td class="lede">{{ __('reports.conversations.response.p90_detail') }}</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 @endif
                 @if ($firstResponse['awaiting'] > 0)
-                    <p class="lede">{{ $firstResponse['awaiting'] }} {{ $firstResponse['awaiting'] === 1 ? 'conversation' : 'conversations' }} opened in this period {{ $firstResponse['awaiting'] === 1 ? 'has' : 'have' }} had no reply at all, so {{ $firstResponse['awaiting'] === 1 ? 'it is' : 'they are' }} counted here rather than folded into the figures above.</p>
+                    <p class="lede">{{ trans_choice('reports.conversations.response.awaiting', $firstResponse['awaiting'], ['count' => \App\Support\ReaderNumber::count($firstResponse['awaiting'])]) }}</p>
                 @endif
             </section>
 
             <section class="section" aria-labelledby="report-resolution-heading">
                 <div class="section-header">
-                    <h2 id="report-resolution-heading">Resolution</h2>
-                    <span class="lede">{{ $resolution['summary']->count }} {{ $resolution['summary']->count === 1 ? 'close' : 'closes' }} measured</span>
+                    <h2 id="report-resolution-heading">{{ __('reports.conversations.resolution.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('reports.counts.closes_measured', $resolution['summary']->count, ['count' => \App\Support\ReaderNumber::count($resolution['summary']->count)]) }}</span>
                 </div>
                 @if ($resolution['summary']->isEmpty() && $resolution['unmeasurable'] > 0)
                     {{-- An upgraded install whose closes are all older than the
                          recording boundary lands here. Saying "nothing was
                          closed" would be false, and would hide the explanation
                          in exactly the case that needs it most. --}}
-                    <p class="empty">
-                        {{ $resolution['unmeasurable'] }} {{ $resolution['unmeasurable'] === 1 ? 'conversation was' : 'conversations were' }} closed in this period, but
-                        {{ $resolution['unmeasurable'] === 1 ? 'it' : 'they' }} opened before this install started recording reopens, so how long the work took cannot be established.
-                        Resolution times will appear as conversations opened since then are closed.
-                    </p>
+                    <p class="empty">{{ trans_choice('reports.conversations.resolution.unmeasurable_empty', $resolution['unmeasurable'], ['count' => \App\Support\ReaderNumber::count($resolution['unmeasurable'])]) }}</p>
                 @elseif ($resolution['summary']->isEmpty())
-                    <p class="empty">No conversation was closed in this period.</p>
+                    <p class="empty">{{ __('reports.conversations.resolution.empty') }}</p>
                 @else
                     <div class="table-wrap">
                         <table>
                             <tbody>
                                 <tr>
-                                    <th scope="row">Median</th>
-                                    <td>{{ $resolution['summary']->medianLabel() }}</td>
-                                    <td class="lede">From opening, or from the reopen that started the stretch of work.</td>
+                                    <th scope="row">{{ __('reports.metrics.median') }}</th>
+                                    <td>{{ $durationLabels['resolution_median'] }}</td>
+                                    <td class="lede">{{ __('reports.conversations.resolution.median_detail') }}</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">90th percentile</th>
-                                    <td>{{ $resolution['summary']->p90Label() }}</td>
-                                    <td class="lede">The slowest tenth took at least this long.</td>
+                                    <th scope="row">{{ __('reports.metrics.p90') }}</th>
+                                    <td>{{ $durationLabels['resolution_p90'] }}</td>
+                                    <td class="lede">{{ __('reports.metrics.slowest_tenth') }}</td>
                                 </tr>
                                 @if ($resolution['unmeasurable'] > 0)
                                     <tr>
-                                        <th scope="row">Counted but not measured</th>
-                                        <td>{{ $resolution['unmeasurable'] }}</td>
-                                        <td class="lede">Closed before this install started recording reopens, so how long the work took cannot be established. Counted as closes above; left out of the two figures here rather than inflating them.</td>
+                                        <th scope="row">{{ __('reports.metrics.unmeasured') }}</th>
+                                        <td>{{ \App\Support\ReaderNumber::count($resolution['unmeasurable']) }}</td>
+                                        <td class="lede">{{ __('reports.conversations.resolution.unmeasured_detail') }}</td>
                                     </tr>
                                 @endif
                                 <tr>
-                                    <th scope="row">Reopened</th>
-                                    <td>{{ $resolution['reopened'] }}</td>
-                                    <td class="lede">A resolution that did not hold.</td>
+                                    <th scope="row">{{ __('reports.metrics.reopened') }}</th>
+                                    <td>{{ \App\Support\ReaderNumber::count($resolution['reopened']) }}</td>
+                                    <td class="lede">{{ __('reports.metrics.reopened_detail') }}</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">Reopened by a visitor</th>
-                                    <td>{{ $resolution['reopened_by_visitor'] }}</td>
-                                    <td class="lede">The visitor came back rather than an agent reopening it &mdash; the clearest signal the answer did not land.</td>
+                                    <th scope="row">{{ __('reports.conversations.resolution.reopened_by_visitor') }}</th>
+                                    <td>{{ \App\Support\ReaderNumber::count($resolution['reopened_by_visitor']) }}</td>
+                                    <td class="lede">{{ __('reports.conversations.resolution.reopened_by_visitor_detail') }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -222,11 +236,11 @@
             <section class="section" aria-labelledby="report-ticket-volume-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="report-ticket-volume-heading">Ticket volume</h2>
+                        <h2 id="report-ticket-volume-heading">{{ __('reports.tickets.volume.heading') }}</h2>
                         <p class="lede">
-                            {{ $ticketVolume['opened_total'] }} created ·
-                            {{ $ticketVolume['closed_total'] }} closed ·
-                            {{ $ticketVolume['open_now'] }} open now
+                            {{ trans_choice('reports.counts.tickets_created', $ticketVolume['opened_total'], ['count' => \App\Support\ReaderNumber::count($ticketVolume['opened_total'])]) }} ·
+                            {{ trans_choice('reports.counts.tickets_closed', $ticketVolume['closed_total'], ['count' => \App\Support\ReaderNumber::count($ticketVolume['closed_total'])]) }} ·
+                            {{ trans_choice('reports.counts.tickets_open_now', $ticketVolume['open_now'], ['count' => \App\Support\ReaderNumber::count($ticketVolume['open_now'])]) }}
                         </p>
                     </div>
                 </div>
@@ -239,14 +253,9 @@
                                  back past the boundary. Saying it plainly here
                                  put two answers to the same question on one
                                  tab. --}}
-                            <p>
-                                No ticket was created in this period, and no close is on record for it. This
-                                install began recording ticket closes on
-                                {{ \App\Support\ReaderClock::date($ticketHistoryBeganAt) }}, and the range selected
-                                reaches back before that &mdash; tickets closed earlier left no trace to count.
-                            </p>
+                            <p>{{ __('reports.tickets.volume.empty_before_history', ['date' => \App\Support\ReaderClock::date($ticketHistoryBeganAt)]) }}</p>
                         @else
-                            <p>No ticket was created or closed in this period.</p>
+                            <p>{{ __('reports.tickets.volume.empty') }}</p>
                         @endif
                     </div>
                 @else
@@ -260,10 +269,20 @@
                         <div
                             class="chart"
                             role="img"
-                            aria-label="Tickets per day. {{ $ticketVolume['opened_total'] }} created and {{ $ticketVolume['closed_total'] }} closed over the {{ $window->days }} days ending {{ $window->endsOn()->toFormattedDayDateString() }}. The busiest day had {{ $ticketChart['max'] }}."
+                            aria-label="{{ __('reports.tickets.volume.chart_aria', [
+                                'created' => \App\Support\ReaderNumber::count($ticketVolume['opened_total']),
+                                'closed' => \App\Support\ReaderNumber::count($ticketVolume['closed_total']),
+                                'days' => \App\Support\ReaderNumber::count($window->days),
+                                'date' => \App\Support\ReaderClock::date($window->endsOn()),
+                                'busiest' => \App\Support\ReaderNumber::count($ticketChart['max']),
+                            ]) }}"
                         >
                             @foreach ($ticketChart['days'] as $day)
-                                <div class="chart__day" title="{{ $day['label'] }}: {{ $day['opened'] }} created, {{ $day['closed'] }} closed">
+                                <div class="chart__day" title="{{ __('reports.tickets.volume.day_title', [
+                                    'date' => $day['label'],
+                                    'created' => \App\Support\ReaderNumber::count($day['opened']),
+                                    'closed' => \App\Support\ReaderNumber::count($day['closed']),
+                                ]) }}">
                                     <div class="chart__bars">
                                         <div class="chart__bar chart__bar--opened @if ($day['opened'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['opened'] / $ticketChart['max']) * 100, 2) }}%"></div>
                                         <div class="chart__bar chart__bar--closed @if ($day['closed'] === 0) chart__bar--none @endif" style="height: {{ $ticketChart['max'] === 0 ? 0 : round(($day['closed'] / $ticketChart['max']) * 100, 2) }}%"></div>
@@ -273,9 +292,9 @@
                         </div>
                         </div>
                     <p class="chart-legend">
-                        <span class="chart-key chart-key--opened"></span> Created
-                        <span class="chart-key chart-key--closed"></span> Closed
-                        <span class="lede">Tallest day: {{ $ticketChart['max'] }}</span>
+                        <span class="chart-key chart-key--opened"></span> {{ __('reports.counts.created_label') }}
+                        <span class="chart-key chart-key--closed"></span> {{ __('reports.counts.tickets_closed_label') }}
+                        <span class="lede">{{ __('reports.charts.tallest_day', ['count' => \App\Support\ReaderNumber::count($ticketChart['max'])]) }}</span>
                     </p>
                 @endif
             </section>
@@ -283,10 +302,9 @@
             <section class="section" aria-labelledby="report-ticket-resolution-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="report-ticket-resolution-heading">Ticket resolution</h2>
+                        <h2 id="report-ticket-resolution-heading">{{ __('reports.tickets.resolution.heading') }}</h2>
                         <p class="lede">
-                            {{ $ticketResolution['summary']->count }}
-                            {{ $ticketResolution['summary']->count === 1 ? 'close' : 'closes' }} measured
+                            {{ trans_choice('reports.counts.closes_measured', $ticketResolution['summary']->count, ['count' => \App\Support\ReaderNumber::count($ticketResolution['summary']->count)]) }}
                         </p>
                     </div>
                 </div>
@@ -296,16 +314,9 @@
                          whose ticket closes all predate the boundary lands here,
                          and "nothing was closed" would be false. --}}
                     <div class="notice-copy">
-                        <p>
-                            {{ $ticketResolution['unmeasurable'] }} {{ $ticketResolution['unmeasurable'] === 1 ? 'ticket was' : 'tickets were' }} closed in this period, but
-                            {{ $ticketResolution['unmeasurable'] === 1 ? 'it' : 'they' }} opened before this install started recording ticket reopens, so how long the work took cannot be established.
-                            Resolution times will appear as tickets opened since then are closed.
-                        </p>
+                        <p>{{ trans_choice('reports.tickets.resolution.unmeasurable_empty', $ticketResolution['unmeasurable'], ['count' => \App\Support\ReaderNumber::count($ticketResolution['unmeasurable'])]) }}</p>
                         @if ($ticketResolution['reopened'] > 0)
-                            <p>
-                                {{ $ticketResolution['reopened'] }} {{ $ticketResolution['reopened'] === 1 ? 'ticket was' : 'tickets were' }} reopened in this period &mdash;
-                                {{ $ticketResolution['reopened'] === 1 ? 'a resolution' : 'resolutions' }} that did not hold. That is countable even where the durations are not.
-                            </p>
+                            <p>{{ trans_choice('reports.tickets.resolution.reopened_unmeasurable', $ticketResolution['reopened'], ['count' => \App\Support\ReaderNumber::count($ticketResolution['reopened'])]) }}</p>
                         @endif
                     </div>
                 @elseif ($ticketResolution['summary']->count === 0)
@@ -320,9 +331,9 @@
                             <table>
                                 <tbody>
                                     <tr>
-                                        <th scope="row">Reopened</th>
-                                        <td>{{ $ticketResolution['reopened'] }}</td>
-                                        <td class="lede">A resolution that did not hold. Nothing closed in this period, so there is no resolution time to report alongside it.</td>
+                                        <th scope="row">{{ __('reports.metrics.reopened') }}</th>
+                                        <td>{{ \App\Support\ReaderNumber::count($ticketResolution['reopened']) }}</td>
+                                        <td class="lede">{{ __('reports.tickets.resolution.reopened_without_close') }}</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -335,14 +346,9 @@
                                  "nothing was closed" is a claim this install
                                  cannot make: closes before it are unknowable,
                                  not absent. --}}
-                            <p>
-                                No ticket close is on record in this period. This install began recording ticket
-                                closes on {{ \App\Support\ReaderClock::date($ticketHistoryBeganAt) }}, and the range
-                                selected reaches back before that &mdash; tickets closed earlier left no trace to
-                                count, so this is not the same as nothing having happened.
-                            </p>
+                            <p>{{ __('reports.tickets.resolution.empty_before_history', ['date' => \App\Support\ReaderClock::date($ticketHistoryBeganAt)]) }}</p>
                         @else
-                            <p>No ticket was closed in this period.</p>
+                            <p>{{ __('reports.tickets.resolution.empty') }}</p>
                         @endif
                     </div>
                 @else
@@ -350,26 +356,26 @@
                         <table>
                             <tbody>
                                 <tr>
-                                    <th scope="row">Median</th>
-                                    <td>{{ $ticketResolution['summary']->medianLabel() }}</td>
-                                    <td class="lede">Half of tickets were resolved faster than this.</td>
+                                    <th scope="row">{{ __('reports.metrics.median') }}</th>
+                                    <td>{{ $durationLabels['ticket_resolution_median'] }}</td>
+                                    <td class="lede">{{ __('reports.tickets.resolution.median_detail') }}</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">90th percentile</th>
-                                    <td>{{ $ticketResolution['summary']->p90Label() }}</td>
-                                    <td class="lede">The slowest tenth took at least this long.</td>
+                                    <th scope="row">{{ __('reports.metrics.p90') }}</th>
+                                    <td>{{ $durationLabels['ticket_resolution_p90'] }}</td>
+                                    <td class="lede">{{ __('reports.metrics.slowest_tenth') }}</td>
                                 </tr>
                                 @if ($ticketResolution['unmeasurable'] > 0)
                                     <tr>
-                                        <th scope="row">Counted but not measured</th>
-                                        <td>{{ $ticketResolution['unmeasurable'] }}</td>
-                                        <td class="lede">Opened before this install started recording ticket reopens, so how long the work took cannot be established. Left out of the two figures above rather than inflating them.</td>
+                                        <th scope="row">{{ __('reports.metrics.unmeasured') }}</th>
+                                        <td>{{ \App\Support\ReaderNumber::count($ticketResolution['unmeasurable']) }}</td>
+                                        <td class="lede">{{ __('reports.tickets.resolution.unmeasured_detail') }}</td>
                                     </tr>
                                 @endif
                                 <tr>
-                                    <th scope="row">Reopened</th>
-                                    <td>{{ $ticketResolution['reopened'] }}</td>
-                                    <td class="lede">A resolution that did not hold. Each reopen starts a new episode, so a ticket closed three times contributes three resolutions rather than one long one.</td>
+                                    <th scope="row">{{ __('reports.metrics.reopened') }}</th>
+                                    <td>{{ \App\Support\ReaderNumber::count($ticketResolution['reopened']) }}</td>
+                                    <td class="lede">{{ __('reports.tickets.resolution.reopened_detail') }}</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -379,17 +385,11 @@
 
                 @if ($ticketHistoryBeganAt)
                     <div class="notice-copy">
-                        <p>
+                        <p>{{ __('reports.tickets.resolution.history', ['date' => \App\Support\ReaderClock::date($ticketHistoryBeganAt)]) }}</p>
                             {{-- States this install's own date and nothing about how it compares to the
-                                 conversation one. On an install upgraded from before ticket auditing
                                  existed the migration stamps today, which can be the same day as the
                                  conversation boundary -- so "long before" would be false exactly where a
                                  reader most needs the figure to be trustworthy. --}}
-                            This install began recording ticket closes and reopens on
-                            {{ \App\Support\ReaderClock::date($ticketHistoryBeganAt) }}. A ticket opened before
-                            then may have been closed and reopened while nothing was writing it down, so it
-                            is counted as a close and left out of the times here.
-                        </p>
                     </div>
                 @endif
             </section>
@@ -397,30 +397,30 @@
             <section class="section" aria-labelledby="report-ticket-agents-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="report-ticket-agents-heading">Who carried the ticket work</h2>
+                        <h2 id="report-ticket-agents-heading">{{ __('reports.tickets.agents.heading') }}</h2>
                     </div>
                 </div>
 
                 @if ($ticketAgentActivity === [])
                     <div class="notice-copy">
-                        <p>No ticket replies or closes in this period.</p>
+                        <p>{{ __('reports.tickets.agents.empty') }}</p>
                     </div>
                 @else
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th scope="col">Agent</th>
-                                    <th scope="col">Replies sent</th>
-                                    <th scope="col">Tickets closed</th>
+                                    <th scope="col">{{ __('reports.tables.agent') }}</th>
+                                    <th scope="col">{{ __('reports.tables.replies') }}</th>
+                                    <th scope="col">{{ __('reports.tables.tickets_closed') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($ticketAgentActivity as $row)
                                     <tr>
-                                        <td>{{ $row['name'] }}</td>
-                                        <td>{{ $row['replies'] }}</td>
-                                        <td>{{ $row['closes'] }}</td>
+                                        <td @if ($row['agent']) lang="" @endif>{{ $row['agent'] ? $row['name'] : __('reports.agents.removed') }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['replies']) }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['closes']) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
@@ -433,40 +433,43 @@
         <x-tab-panel id="agents">
             <section class="section" aria-labelledby="report-agents-heading">
                 <div class="section-header">
-                    <h2 id="report-agents-heading">Who carried the work</h2>
-                    <span class="lede">{{ count($agentActivity) }} {{ count($agentActivity) === 1 ? 'agent' : 'agents' }}</span>
+                    <h2 id="report-agents-heading">{{ __('reports.agents.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('reports.counts.agents', count($agentActivity), ['count' => \App\Support\ReaderNumber::count(count($agentActivity))]) }}</span>
                 </div>
                 @if ($agentActivity === [])
-                    <p class="empty">No agent replied to or closed a conversation in this period.</p>
+                    <p class="empty">{{ __('reports.agents.empty') }}</p>
                 @else
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th scope="col">Agent</th>
-                                    <th scope="col">Replies sent</th>
-                                    <th scope="col">Conversations closed</th>
+                                    <th scope="col">{{ __('reports.tables.agent') }}</th>
+                                    <th scope="col">{{ __('reports.tables.replies') }}</th>
+                                    <th scope="col">{{ __('reports.tables.conversations_closed') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($agentActivity as $row)
                                     <tr>
                                         <td>
-                                            {{ $row['name'] }}
+                                            @if ($row['agent'])
+                                                <span lang="">{{ $row['name'] }}</span>
+                                            @else
+                                                {{ __('reports.agents.removed') }}
+                                            @endif
                                             @if ($row['agent']?->isDeactivated())
-                                                <span class="lede">Deactivated</span>
+                                                <span class="lede">{{ __('reports.agents.deactivated') }}</span>
                                             @endif
                                         </td>
-                                        <td>{{ $row['replies'] }}</td>
-                                        <td>{{ $row['closes'] }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['replies']) }}</td>
+                                        <td>{{ \App\Support\ReaderNumber::count($row['closes']) }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
                         </table>
                     </div>
-                    <p class="lede">
-                        Deactivated agents stay listed: they did the work, and a total that changes when someone leaves is not a total.
-                        <a href="{{ route('dashboard.reports.export', $reportQuery + ['report_export' => 'agents']) }}">Export as CSV</a>
+                    <p class="lede">{{ __('reports.agents.deactivated_detail') }}
+                        <a href="{{ route('dashboard.reports.export', $reportQuery + ['report_export' => 'agents']) }}">{{ __('reports.agents.export') }}</a>
                     </p>
                 @endif
             </section>
@@ -475,8 +478,11 @@
         <x-tab-panel id="satisfaction">
             <section class="section" aria-labelledby="report-satisfaction-heading">
                 <div class="section-header">
-                    <h2 id="report-satisfaction-heading">Whether it helped</h2>
-                    <span class="lede">{{ $satisfaction['answered'] }} of {{ $satisfaction['closed'] }} {{ $satisfaction['closed'] === 1 ? 'close' : 'closes' }} answered</span>
+                    <h2 id="report-satisfaction-heading">{{ __('reports.satisfaction.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('reports.satisfaction.summary', $satisfaction['closed'], [
+                        'answered' => \App\Support\ReaderNumber::count($satisfaction['answered']),
+                        'closed' => \App\Support\ReaderNumber::count($satisfaction['closed']),
+                    ]) }}</span>
                 </div>
                 @if ($satisfaction['answered'] === 0)
                     {{-- Never a zero or a dash where a percentage goes. Nobody
@@ -484,11 +490,11 @@
                          and a 0% here would be read as the second. --}}
                     <p class="empty">
                         @if ($satisfaction['closed'] === 0)
-                            No conversation was closed in this period, so nobody was asked.
+                            {{ __('reports.satisfaction.no_closes') }}
                         @else
-                            Nobody answered in this period. That is not a bad score &mdash; it is no score, and the
-                            two must not be read as the same thing. If your sites are not asking, turn the prompt
-                            on under <strong>Asking how it went</strong> in a site's settings.
+                            {{ __('reports.satisfaction.no_answers_before') }}
+                            <strong>{{ __('reports.satisfaction.setting') }}</strong>
+                            {{ __('reports.satisfaction.no_answers_after') }}
                         @endif
                     </p>
                 @else
@@ -496,65 +502,62 @@
                         <table>
                             <tbody>
                                 <tr>
-                                    <th scope="row">Good</th>
-                                    <td>{{ $satisfaction['good'] }}</td>
-                                    <td class="lede">{{ $satisfaction['positive'] }}% of the people who answered.</td>
+                                    <th scope="row">{{ __('reports.satisfaction.good') }}</th>
+                                    <td>{{ \App\Support\ReaderNumber::count($satisfaction['good']) }}</td>
+                                    <td class="lede">{{ __('reports.satisfaction.good_detail', ['percentage' => $satisfactionPositiveLabel]) }}</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">Ok</th>
-                                    <td>{{ $satisfaction['ok'] }}</td>
-                                    <td class="lede">Helped, but not a story anybody will tell.</td>
+                                    <th scope="row">{{ __('reports.satisfaction.ok') }}</th>
+                                    <td>{{ \App\Support\ReaderNumber::count($satisfaction['ok']) }}</td>
+                                    <td class="lede">{{ __('reports.satisfaction.ok_detail') }}</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">Bad</th>
-                                    <td>{{ $satisfaction['bad'] }}</td>
-                                    <td class="lede">The answer this whole tab exists to surface.</td>
+                                    <th scope="row">{{ __('reports.satisfaction.bad') }}</th>
+                                    <td>{{ \App\Support\ReaderNumber::count($satisfaction['bad']) }}</td>
+                                    <td class="lede">{{ __('reports.satisfaction.bad_detail') }}</td>
                                 </tr>
                                 <tr>
-                                    <th scope="row">Answered</th>
-                                    <td>{{ $satisfaction['answered'] }}</td>
-                                    <td class="lede">Out of {{ $satisfaction['closed'] }} {{ $satisfaction['closed'] === 1 ? 'close' : 'closes' }}. Every figure above is a share of this number, never of the closes &mdash; people who said nothing are not counted as satisfied.</td>
+                                    <th scope="row">{{ __('reports.satisfaction.answered') }}</th>
+                                    <td>{{ \App\Support\ReaderNumber::count($satisfaction['answered']) }}</td>
+                                    <td class="lede">{{ trans_choice('reports.satisfaction.answered_detail', $satisfaction['closed'], ['count' => \App\Support\ReaderNumber::count($satisfaction['closed'])]) }}</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                     @if ($satisfaction['answered'] < 10)
-                        <p class="lede">
-                            Few enough answers that one more would move the percentage noticeably. Read it as a
-                            direction rather than a measurement.
-                        </p>
+                        <p class="lede">{{ __('reports.satisfaction.small_sample') }}</p>
                     @endif
                 @endif
             </section>
 
             <section class="section" aria-labelledby="report-comments-heading">
                 <div class="section-header">
-                    <h2 id="report-comments-heading">What people said</h2>
-                    <span class="lede">{{ count($ratingComments) }} {{ count($ratingComments) === 1 ? 'comment' : 'comments' }}</span>
+                    <h2 id="report-comments-heading">{{ __('reports.comments.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('reports.counts.comments', count($ratingComments), ['count' => \App\Support\ReaderNumber::count(count($ratingComments))]) }}</span>
                 </div>
 
                 @if ($ratingComments === [])
-                    <p class="empty">Nobody left a comment in this period. The comment box is optional, and most people skip it &mdash; a score with no words is still an answer.</p>
+                    <p class="empty">{{ __('reports.comments.empty') }}</p>
                 @else
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th scope="col">Score</th>
-                                    <th scope="col">What they said</th>
-                                    <th scope="col">Conversation</th>
-                                    <th scope="col">When</th>
+                                    <th scope="col">{{ __('reports.comments.score') }}</th>
+                                    <th scope="col">{{ __('reports.comments.said') }}</th>
+                                    <th scope="col">{{ __('reports.comments.conversation') }}</th>
+                                    <th scope="col">{{ __('reports.comments.when') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($ratingComments as $comment)
                                     <tr>
-                                        <td>{{ ucfirst($comment['score']) }}</td>
+                                        <td>{{ __('reports.satisfaction.'.$comment['score']) }}</td>
                                         {{-- Visitor-authored, so escaped like any other visitor text and
                                              never used as a link label. --}}
-                                        <td>{{ $comment['comment'] }}</td>
+                                        <td lang="">{{ $comment['comment'] }}</td>
                                         <td>
-                                            <a href="{{ route('dashboard.conversations.show', $comment['support_code']) }}">{{ $comment['support_code'] }}</a>
+                                            <a lang="" href="{{ route('dashboard.conversations.show', $comment['support_code']) }}">{{ $comment['support_code'] }}</a>
                                         </td>
                                         <td>{{ $comment['rated_at']->diffForHumans() }}</td>
                                     </tr>
@@ -562,7 +565,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <p class="lede">The most recent {{ count($ratingComments) }}. A score tells you something went wrong; this is the only place that says what.</p>
+                    <p class="lede">{{ trans_choice('reports.comments.latest', count($ratingComments), ['count' => \App\Support\ReaderNumber::count(count($ratingComments))]) }}</p>
                 @endif
             </section>
         </x-tab-panel>

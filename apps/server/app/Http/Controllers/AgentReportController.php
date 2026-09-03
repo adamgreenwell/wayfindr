@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Account;
 use App\Models\User;
+use App\Support\ReaderNumber;
 use App\Support\Reporting\ReportingScope;
 use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\SupportReport;
@@ -37,6 +38,9 @@ class AgentReportController extends Controller
         $volume = $report->volume();
         $firstResponse = $report->firstResponse();
         $resolution = $report->resolution();
+        $satisfaction = $report->satisfaction();
+        $queueHealth = $report->queueHealth();
+        $ticketResolution = $tickets->resolution();
 
         return view('agent.reports.index', [
             'agent' => $agent,
@@ -49,10 +53,11 @@ class AgentReportController extends Controller
             'chart' => $this->chart($volume, $window),
             'firstResponse' => $firstResponse,
             'resolution' => $resolution,
-            'satisfaction' => $report->satisfaction(),
+            'satisfaction' => $satisfaction,
+            'satisfactionPositiveLabel' => $this->readablePercentage($satisfaction['positive']),
             'ratingComments' => $report->comments(),
             'agentActivity' => $report->agentActivity(),
-            'queueHealth' => $report->queueHealth(),
+            'queueHealth' => $queueHealth,
             'historyBeganAt' => $report->historyBeganAt(),
             'historyIsPartial' => $report->historyIsPartial(),
             'reportQuery' => $this->reportQueryParams($window, $scope->requestedSiteId),
@@ -62,9 +67,18 @@ class AgentReportController extends Controller
             // one above them.
             'ticketVolume' => $ticketVolume = $tickets->volume(),
             'ticketChart' => $this->chart($ticketVolume, $window),
-            'ticketResolution' => $tickets->resolution(),
+            'ticketResolution' => $ticketResolution,
             'ticketHistoryBeganAt' => $tickets->historyBeganAt(),
             'ticketAgentActivity' => $tickets->agentActivity(),
+            'durationLabels' => [
+                'queue_oldest' => $this->readableDuration($queueHealth['oldest_wait_seconds']),
+                'first_response_median' => $this->readableDuration($firstResponse['summary']->median),
+                'first_response_p90' => $this->readableDuration($firstResponse['summary']->p90),
+                'resolution_median' => $this->readableDuration($resolution['summary']->median),
+                'resolution_p90' => $this->readableDuration($resolution['summary']->p90),
+                'ticket_resolution_median' => $this->readableDuration($ticketResolution['summary']->median),
+                'ticket_resolution_p90' => $this->readableDuration($ticketResolution['summary']->p90),
+            ],
         ]);
     }
 
@@ -140,7 +154,7 @@ class AgentReportController extends Controller
 
             $days[] = [
                 'key' => $key,
-                'label' => $day->format('j M'),
+                'label' => $day->locale(app()->getLocale())->isoFormat('D MMM'),
                 'opened' => $volume['opened'][$key] ?? 0,
                 'closed' => $volume['closed'][$key] ?? 0,
             ];
@@ -153,6 +167,62 @@ class AgentReportController extends Controller
         }
 
         return ['max' => $max, 'days' => $days];
+    }
+
+    private function readableDuration(?int $seconds): string
+    {
+        if ($seconds === null) {
+            return '--';
+        }
+
+        if ($seconds < 60) {
+            return trans_choice('reports.duration.seconds', $seconds, ['count' => ReaderNumber::count($seconds)]);
+        }
+
+        if ($seconds < 3600) {
+            $minutes = intdiv($seconds, 60);
+            $remainder = $seconds % 60;
+            $parts = [trans_choice('reports.duration.minutes', $minutes, ['count' => ReaderNumber::count($minutes)])];
+
+            if ($remainder > 0) {
+                $parts[] = trans_choice('reports.duration.seconds', $remainder, ['count' => ReaderNumber::count($remainder)]);
+            }
+
+            return implode(' ', $parts);
+        }
+
+        if ($seconds < 86400) {
+            $hours = intdiv($seconds, 3600);
+            $minutes = intdiv($seconds % 3600, 60);
+            $parts = [trans_choice('reports.duration.hours', $hours, ['count' => ReaderNumber::count($hours)])];
+
+            if ($minutes > 0) {
+                $parts[] = trans_choice('reports.duration.minutes', $minutes, ['count' => ReaderNumber::count($minutes)]);
+            }
+
+            return implode(' ', $parts);
+        }
+
+        $days = intdiv($seconds, 86400);
+        $hours = intdiv($seconds % 86400, 3600);
+        $parts = [trans_choice('reports.duration.days', $days, ['count' => ReaderNumber::count($days)])];
+
+        if ($hours > 0) {
+            $parts[] = trans_choice('reports.duration.hours', $hours, ['count' => ReaderNumber::count($hours)]);
+        }
+
+        return implode(' ', $parts);
+    }
+
+    private function readablePercentage(?float $percentage): string
+    {
+        if ($percentage === null) {
+            return '--';
+        }
+
+        $precision = floor($percentage) === $percentage ? 0 : 1;
+
+        return ReaderNumber::percentage($percentage, $precision);
     }
 
     /**
