@@ -551,15 +551,22 @@
                                     <th scope="col">{{ __('account.agents.columns.manage_access') }}</th>
                                 @endif
                                 <th scope="col">{{ __('account.agents.columns.scope') }}</th>
-                                <th scope="col">{{ __('account.agents.columns.workload') }}</th>
+                                @if ($canViewConversations || $canManageTickets)
+                                    <th scope="col">{{ __('account.agents.columns.workload') }}</th>
+                                @endif
                             </tr>
                         </thead>
                         <tbody>
                             @foreach ($agents as $accountAgent)
                                 @php
-                                    $visibleOpenConversationCount = (int) $accountAgent->visible_open_conversations_count;
-                                    $visibleOpenTicketCount = (int) $accountAgent->visible_open_tickets_count;
-                                    $hasVisibleOpenWork = $visibleOpenConversationCount > 0 || $visibleOpenTicketCount > 0;
+                                    $visibleOpenConversationCount = $canViewConversations
+                                        ? (int) $accountAgent->visible_open_conversations_count
+                                        : 0;
+                                    $visibleOpenTicketCount = $canManageTickets
+                                        ? (int) $accountAgent->visible_open_tickets_count
+                                        : 0;
+                                    $hasVisibleOpenWork = ($canViewConversations && $visibleOpenConversationCount > 0)
+                                        || ($canManageTickets && $visibleOpenTicketCount > 0);
                                     $canManageThisAgentAccess = $canManageAgentAccess
                                         && ! $accountAgent->is($agent)
                                         && ($agent->isOwner()
@@ -668,18 +675,20 @@
                                             <a class="table-note text-link" href="#site-access-matrix">{{ __('account.agents.review_access') }}</a>
                                         @endif
                                     </td>
-                                    <td>
-                                        @if ($hasVisibleOpenWork)
-                                            @if ($visibleOpenConversationCount > 0)
-                                                <strong>{{ trans_choice('account.agents.open_conversations', $visibleOpenConversationCount, ['count' => \App\Support\ReaderNumber::count($visibleOpenConversationCount)]) }}</strong>
+                                    @if ($canViewConversations || $canManageTickets)
+                                        <td>
+                                            @if ($hasVisibleOpenWork)
+                                                @if ($canViewConversations && $visibleOpenConversationCount > 0)
+                                                    <strong>{{ trans_choice('account.agents.open_conversations', $visibleOpenConversationCount, ['count' => \App\Support\ReaderNumber::count($visibleOpenConversationCount)]) }}</strong>
+                                                @endif
+                                                @if ($canManageTickets && $visibleOpenTicketCount > 0)
+                                                    <span class="lede">{{ trans_choice('account.agents.open_tickets', $visibleOpenTicketCount, ['count' => \App\Support\ReaderNumber::count($visibleOpenTicketCount)]) }}</span>
+                                                @endif
+                                            @else
+                                                <span class="lede">{{ __('account.agents.no_work') }}</span>
                                             @endif
-                                            @if ($visibleOpenTicketCount > 0)
-                                                <span class="lede">{{ trans_choice('account.agents.open_tickets', $visibleOpenTicketCount, ['count' => \App\Support\ReaderNumber::count($visibleOpenTicketCount)]) }}</span>
-                                            @endif
-                                        @else
-                                            <span class="lede">{{ __('account.agents.no_work') }}</span>
-                                        @endif
-                                    </td>
+                                        </td>
+                                    @endif
                                 </tr>
                             @endforeach
                         </tbody>

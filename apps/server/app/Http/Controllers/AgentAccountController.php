@@ -37,18 +37,30 @@ class AgentAccountController extends Controller
             ->pluck('sites.id')
             ->map(fn (int|string $siteId): int => (int) $siteId)
             ->all();
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $workloadCounts = [];
 
-        $agents = $account->agents()
-            ->with('customRole')
-            ->withCount([
-                'assignedConversations as visible_open_conversations_count' => fn ($query) => $query
-                    ->where('status', 'open')
-                    ->whereIn('site_id', $visibleSiteIds),
-                'assignedTickets as visible_open_tickets_count' => fn ($query) => $query
-                    ->where('account_id', $account->id)
-                    ->where('status', 'open')
-                    ->whereIn('site_id', $visibleSiteIds),
-            ])
+        if ($canViewConversations) {
+            $workloadCounts['assignedConversations as visible_open_conversations_count'] = fn ($query) => $query
+                ->where('status', 'open')
+                ->whereIn('site_id', $visibleSiteIds);
+        }
+
+        if ($canManageTickets) {
+            $workloadCounts['assignedTickets as visible_open_tickets_count'] = fn ($query) => $query
+                ->where('account_id', $account->id)
+                ->where('status', 'open')
+                ->whereIn('site_id', $visibleSiteIds);
+        }
+
+        $agentsQuery = $account->agents()->with('customRole');
+
+        if ($workloadCounts !== []) {
+            $agentsQuery->withCount($workloadCounts);
+        }
+
+        $agents = $agentsQuery
             ->orderByRaw(
                 'case account_role when ? then 0 when ? then 1 else 2 end',
                 [AccountRole::Owner->value, AccountRole::Admin->value],
@@ -111,6 +123,8 @@ class AgentAccountController extends Controller
             'canManageOperatorAccess' => $agent->hasAccountPermission(AccountPermission::ManageOperatorAccess),
             'canManageRoles' => $agent->hasAccountPermission(AccountPermission::ManageRoles),
             'canManageSecurity' => $agent->hasAccountPermission(AccountPermission::ManageSecurity),
+            'canManageTickets' => $canManageTickets,
+            'canViewConversations' => $canViewConversations,
             'canViewSites' => $agent->hasAnyAccountPermission(
                 AccountPermission::ManageSites,
                 AccountPermission::ManageSiteAccess,

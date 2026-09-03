@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
@@ -335,6 +337,37 @@ test('agent roster summarizes visible assigned workload without leaking restrict
             'No assigned open work',
         ])
         ->assertDontSee('Restricted Store');
+});
+
+test('account roster hides support workloads from settings only custom roles', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $privacyManager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $teammate = User::factory()->for($account)->create(['name' => 'Private workload owner']);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach([$privacyManager->id, $teammate->id]);
+    $visitor = Visitor::factory()->for($site)->create();
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $teammate->id,
+        'status' => 'open',
+    ]);
+    Ticket::factory()->for($account)->for($site)->create([
+        'assignee_id' => $teammate->id,
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($privacyManager)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee('Private workload owner')
+        ->assertDontSee('Workload')
+        ->assertDontSee('1 open conversation')
+        ->assertDontSee('1 open ticket');
 });
 
 test('account overview shows agent alert digest delivery status without raw provider errors', function (): void {
