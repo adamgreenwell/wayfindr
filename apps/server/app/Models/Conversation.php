@@ -364,13 +364,29 @@ class Conversation extends Model
             ];
         }
 
+        if ($latestMessage->sender_type === Visitor::class) {
+            return [
+                'body' => 'Visitor replied last. Send a clear response or create a ticket when the request needs durable follow-up.',
+                'cta' => 'Jump to reply',
+                'href' => '#reply-heading',
+                'title' => 'Reply to visitor',
+            ];
+        }
+
+        if ($latestMessage->sender_type === ApiToken::class) {
+            return [
+                'body' => 'An integration update is visible, but a human reply is still needed before this conversation can wait on the visitor.',
+                'cta' => 'Jump to reply',
+                'href' => '#reply-heading',
+                'title' => 'Reply to visitor',
+            ];
+        }
+
         return [
-            'body' => $latestMessage->sender_type === Visitor::class
-                ? 'Visitor replied last. Send a clear response or create a ticket when the request needs durable follow-up.'
-                : 'An integration update is visible, but a human reply is still needed before this conversation can wait on the visitor.',
-            'cta' => 'Jump to reply',
-            'href' => '#reply-heading',
-            'title' => 'Reply to visitor',
+            'body' => 'New conversation activity needs human review before the conversation can wait on anyone.',
+            'cta' => 'Review messages',
+            'href' => '#messages-heading',
+            'title' => 'Review new activity',
         ];
     }
 

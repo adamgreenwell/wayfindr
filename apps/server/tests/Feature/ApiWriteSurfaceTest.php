@@ -565,7 +565,12 @@ test('integration activity preserves the human reply boundary and visitor wait c
 
         expect($answered->attentionState())->toBe('needs_reply')
             ->and($answered->queueTimingContext()['wait_since']->equalTo($senderlessAt))->toBeTrue()
-            ->and(Conversation::query()->whereKey($answered->id)->needsHumanReply()->exists())->toBeTrue();
+            ->and(Conversation::query()->whereKey($answered->id)->needsHumanReply()->exists())->toBeTrue()
+            ->and($answered->nextAction())->toMatchArray([
+                'body' => 'New conversation activity needs human review before the conversation can wait on anyone.',
+                'cta' => 'Review messages',
+                'title' => 'Review new activity',
+            ]);
     } finally {
         CarbonImmutable::setTestNow();
     }
