@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Support\Auth\PendingTwoFactorChallenge;
 use App\Support\Auth\TwoFactorAuthentication;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\RedirectResponse;
@@ -14,6 +15,8 @@ use Illuminate\Validation\ValidationException;
 final class AgentProfileTwoFactorController extends Controller
 {
     public const ENROLMENT_SESSION_KEY = 'two_factor.enrolment_secret';
+
+    public const ENROLMENT_CREDENTIAL_SESSION_KEY = 'two_factor.enrolment_credential';
 
     public const RECOVERY_CODES_SESSION_KEY = 'two_factor.recovery_codes';
 
@@ -33,6 +36,10 @@ final class AgentProfileTwoFactorController extends Controller
             self::ENROLMENT_SESSION_KEY,
             Crypt::encryptString($twoFactor->generateSecret()),
         );
+        $request->session()->put(
+            self::ENROLMENT_CREDENTIAL_SESSION_KEY,
+            PendingTwoFactorChallenge::credentialFingerprint($request->user()),
+        );
 
         return redirect()
             ->route('dashboard.profile.show')
@@ -45,14 +52,20 @@ final class AgentProfileTwoFactorController extends Controller
             'one_time_code' => ['required', 'string', 'regex:/^\d{6}$/'],
         ]);
         $secret = $this->pendingSecret($request);
+        $credentialFingerprint = $request->session()->get(self::ENROLMENT_CREDENTIAL_SESSION_KEY);
 
-        if (! $secret) {
+        if (! $secret || ! is_string($credentialFingerprint)) {
             throw ValidationException::withMessages([
                 'one_time_code' => __('two_factor.profile.enrolment_expired'),
             ])->errorBag('twoFactorConfirm');
         }
 
-        $recoveryCodes = $twoFactor->confirm($request->user(), $secret, $validated['one_time_code']);
+        $recoveryCodes = $twoFactor->confirm(
+            $request->user(),
+            $secret,
+            $validated['one_time_code'],
+            $credentialFingerprint,
+        );
 
         if (! $recoveryCodes) {
             throw ValidationException::withMessages([
@@ -60,7 +73,10 @@ final class AgentProfileTwoFactorController extends Controller
             ])->errorBag('twoFactorConfirm');
         }
 
-        $request->session()->forget(self::ENROLMENT_SESSION_KEY);
+        $request->session()->forget([
+            self::ENROLMENT_SESSION_KEY,
+            self::ENROLMENT_CREDENTIAL_SESSION_KEY,
+        ]);
         $request->session()->flash(
             self::RECOVERY_CODES_SESSION_KEY,
             Crypt::encryptString(json_encode($recoveryCodes, JSON_THROW_ON_ERROR)),
@@ -73,7 +89,10 @@ final class AgentProfileTwoFactorController extends Controller
 
     public function cancel(Request $request): RedirectResponse
     {
-        $request->session()->forget(self::ENROLMENT_SESSION_KEY);
+        $request->session()->forget([
+            self::ENROLMENT_SESSION_KEY,
+            self::ENROLMENT_CREDENTIAL_SESSION_KEY,
+        ]);
 
         return redirect()
             ->route('dashboard.profile.show')
@@ -90,6 +109,7 @@ final class AgentProfileTwoFactorController extends Controller
         $recoveryCodes = $twoFactor->regenerateRecoveryCodes(
             $request->user(),
             $validated['one_time_code'],
+            PendingTwoFactorChallenge::credentialFingerprint($request->user()),
         );
 
         if (! $recoveryCodes) {
@@ -121,7 +141,11 @@ final class AgentProfileTwoFactorController extends Controller
             'one_time_code' => ['required', 'string', 'max:32'],
         ]);
 
-        if (! $twoFactor->disable($request->user(), $validated['one_time_code'])) {
+        if (! $twoFactor->disable(
+            $request->user(),
+            $validated['one_time_code'],
+            PendingTwoFactorChallenge::credentialFingerprint($request->user()),
+        )) {
             $request->user()->refresh()->load('account');
 
             if ($request->user()->account?->requires_two_factor) {
@@ -151,7 +175,10 @@ final class AgentProfileTwoFactorController extends Controller
         try {
             return Crypt::decryptString($encrypted);
         } catch (DecryptException) {
-            $request->session()->forget(self::ENROLMENT_SESSION_KEY);
+            $request->session()->forget([
+                self::ENROLMENT_SESSION_KEY,
+                self::ENROLMENT_CREDENTIAL_SESSION_KEY,
+            ]);
 
             return null;
         }

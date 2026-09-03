@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Auth\PendingTwoFactorChallenge;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,14 +43,19 @@ final class AgentAccountSecurityController extends Controller
             'requires_two_factor' => ['nullable', 'boolean'],
         ]);
         $required = $request->boolean('requires_two_factor');
+        $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
 
-        DB::transaction(function () use ($agent, $required): void {
+        DB::transaction(function () use ($agent, $required, $credentialFingerprint): void {
             $lockedAgent = User::query()->lockForUpdate()->findOrFail($agent->id);
 
             abort_unless(
                 ! $lockedAgent->isDeactivated()
                 && $lockedAgent->isAdmin()
-                && (int) $lockedAgent->account_id === (int) $agent->account_id,
+                && (int) $lockedAgent->account_id === (int) $agent->account_id
+                && hash_equals(
+                    $credentialFingerprint,
+                    PendingTwoFactorChallenge::credentialFingerprint($lockedAgent),
+                ),
                 403,
             );
 

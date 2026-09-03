@@ -50,7 +50,8 @@ test('an agent enrols from their profile and sees recovery codes once', function
             'current_password' => 'correct-password',
         ])
         ->assertRedirect(route('dashboard.profile.show'))
-        ->assertSessionHas(AgentProfileTwoFactorController::ENROLMENT_SESSION_KEY);
+        ->assertSessionHas(AgentProfileTwoFactorController::ENROLMENT_SESSION_KEY)
+        ->assertSessionHas(AgentProfileTwoFactorController::ENROLMENT_CREDENTIAL_SESSION_KEY);
 
     $encryptedSecret = session(AgentProfileTwoFactorController::ENROLMENT_SESSION_KEY);
     $secret = Crypt::decryptString($encryptedSecret);
@@ -72,6 +73,7 @@ test('an agent enrols from their profile and sees recovery codes once', function
         ])
         ->assertRedirect(route('dashboard.profile.show'))
         ->assertSessionMissing(AgentProfileTwoFactorController::ENROLMENT_SESSION_KEY)
+        ->assertSessionMissing(AgentProfileTwoFactorController::ENROLMENT_CREDENTIAL_SESSION_KEY)
         ->assertSessionHas(AgentProfileTwoFactorController::RECOVERY_CODES_SESSION_KEY);
 
     $encryptedCodes = session(AgentProfileTwoFactorController::RECOVERY_CODES_SESSION_KEY);
@@ -97,6 +99,7 @@ test('an invalid enrolment code is not flashed to the session', function (): voi
             AgentProfileTwoFactorController::ENROLMENT_SESSION_KEY => Crypt::encryptString(
                 app(TwoFactorAuthentication::class)->generateSecret(),
             ),
+            AgentProfileTwoFactorController::ENROLMENT_CREDENTIAL_SESSION_KEY => PendingTwoFactorChallenge::credentialFingerprint($agent),
         ])
         ->from(route('dashboard.profile.show'))
         ->put(route('dashboard.profile.two-factor.confirm'), [
@@ -379,6 +382,22 @@ test('a stale admin session cannot change the account security policy', function
     $this->actingAs($admin);
     DB::table('users')->where('id', $admin->id)->update([
         'account_role' => AccountRole::Agent->value,
+    ]);
+
+    $this->put(route('dashboard.account.security.update'), ['requires_two_factor' => '1'])
+        ->assertForbidden();
+
+    expect($account->fresh()->requires_two_factor)->toBeFalse();
+});
+
+test('a stale password credential cannot change the account security policy', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    giveAgentTwoFactor($admin);
+
+    $this->actingAs($admin);
+    DB::table('users')->where('id', $admin->id)->update([
+        'password' => Hash::make('replacement-password'),
     ]);
 
     $this->put(route('dashboard.account.security.update'), ['requires_two_factor' => '1'])

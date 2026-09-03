@@ -3,6 +3,7 @@
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Auth\PendingTwoFactorChallenge;
 use App\Support\Auth\TwoFactorAuthentication;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +36,12 @@ test('an agent can enrol a locally generated TOTP credential', function (): void
     $secret = $twoFactor->generateSecret();
     $code = app(Google2FA::class)->getCurrentOtp($secret);
 
-    $recoveryCodes = $twoFactor->confirm($agent, $secret, $code);
+    $recoveryCodes = $twoFactor->confirm(
+        $agent,
+        $secret,
+        $code,
+        PendingTwoFactorChallenge::credentialFingerprint($agent),
+    );
 
     expect($secret)->toHaveLength(32)
         ->and($recoveryCodes)->toHaveCount(TwoFactorAuthentication::RECOVERY_CODE_COUNT)
@@ -60,8 +66,30 @@ test('TOTP timesteps cannot be replayed', function (): void {
     $secret = $twoFactor->generateSecret();
     $code = app(Google2FA::class)->getCurrentOtp($secret);
 
-    expect($twoFactor->confirm($agent, $secret, $code))->not->toBeNull()
+    expect($twoFactor->confirm(
+        $agent,
+        $secret,
+        $code,
+        PendingTwoFactorChallenge::credentialFingerprint($agent),
+    ))->not->toBeNull()
         ->and($twoFactor->verify($agent, $code))->toBeFalse();
+});
+
+test('enrolment confirmation is revoked by a password change', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $twoFactor = app(TwoFactorAuthentication::class);
+    $secret = $twoFactor->generateSecret();
+    $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
+
+    $agent->forceFill(['password' => Hash::make('replacement-password')])->save();
+
+    expect($twoFactor->confirm(
+        $agent,
+        $secret,
+        app(Google2FA::class)->getCurrentOtp($secret),
+        $credentialFingerprint,
+    ))->toBeNull()
+        ->and($agent->fresh()->hasTwoFactorAuthentication())->toBeFalse();
 });
 
 test('an adjacent-window TOTP stores its exact timestep and cannot be replayed', function (): void {
@@ -92,7 +120,12 @@ test('a recovery code is consumed exactly once', function (): void {
     $agent = User::factory()->for(Account::factory())->create();
     $twoFactor = app(TwoFactorAuthentication::class);
     $secret = $twoFactor->generateSecret();
-    $codes = $twoFactor->confirm($agent, $secret, app(Google2FA::class)->getCurrentOtp($secret));
+    $codes = $twoFactor->confirm(
+        $agent,
+        $secret,
+        app(Google2FA::class)->getCurrentOtp($secret),
+        PendingTwoFactorChallenge::credentialFingerprint($agent),
+    );
 
     expect($twoFactor->verify($agent, strtolower($codes[0])))->toBeTrue()
         ->and($agent->two_factor_recovery_codes)->toHaveCount(TwoFactorAuthentication::RECOVERY_CODE_COUNT - 1)
@@ -104,20 +137,54 @@ test('recovery codes can be replaced and two factor can be disabled', function (
     $agent = User::factory()->for(Account::factory())->create();
     $twoFactor = app(TwoFactorAuthentication::class);
     $secret = $twoFactor->generateSecret();
-    $oldCodes = $twoFactor->confirm($agent, $secret, app(Google2FA::class)->getCurrentOtp($secret));
+    $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
+    $oldCodes = $twoFactor->confirm(
+        $agent,
+        $secret,
+        app(Google2FA::class)->getCurrentOtp($secret),
+        $credentialFingerprint,
+    );
 
-    $newCodes = $twoFactor->regenerateRecoveryCodes($agent, $oldCodes[0]);
+    $newCodes = $twoFactor->regenerateRecoveryCodes($agent, $oldCodes[0], $credentialFingerprint);
 
     expect($newCodes)->toHaveCount(TwoFactorAuthentication::RECOVERY_CODE_COUNT)
         ->and($newCodes)->not->toBe($oldCodes)
         ->and($twoFactor->verify($agent, $oldCodes[0]))->toBeFalse();
 
-    $twoFactor->disable($agent, $newCodes[0]);
+    $twoFactor->disable($agent, $newCodes[0], $credentialFingerprint);
 
     expect($agent->hasTwoFactorAuthentication())->toBeFalse()
         ->and($agent->two_factor_recovery_codes)->toBeNull()
         ->and(AuditEvent::query()->where('action', 'agent.two_factor_recovery_codes_regenerated')->count())->toBe(1)
         ->and(AuditEvent::query()->where('action', 'agent.two_factor_disabled')->count())->toBe(1);
+});
+
+test('a password change revokes recovery-code rotation and two-factor disablement', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $twoFactor = app(TwoFactorAuthentication::class);
+    $secret = $twoFactor->generateSecret();
+    $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
+    $recoveryCodes = $twoFactor->confirm(
+        $agent,
+        $secret,
+        app(Google2FA::class)->getCurrentOtp($secret),
+        $credentialFingerprint,
+    );
+
+    $agent->forceFill(['password' => Hash::make('replacement-password')])->save();
+
+    expect($twoFactor->regenerateRecoveryCodes(
+        $agent,
+        $recoveryCodes[0],
+        $credentialFingerprint,
+    ))->toBeNull()
+        ->and($twoFactor->disable(
+            $agent,
+            $recoveryCodes[0],
+            $credentialFingerprint,
+        ))->toBeFalse()
+        ->and($agent->fresh()->hasTwoFactorAuthentication())->toBeTrue()
+        ->and($agent->two_factor_recovery_codes)->toHaveCount(TwoFactorAuthentication::RECOVERY_CODE_COUNT);
 });
 
 test('the QR code is rendered locally as a PNG data URI', function (): void {

@@ -50,11 +50,15 @@ final class TwoFactorAuthentication
         User $user,
         #[\SensitiveParameter] string $secret,
         #[\SensitiveParameter] string $code,
+        #[\SensitiveParameter] string $credentialFingerprint,
     ): ?array {
-        return DB::transaction(function () use ($user, $secret, $code): ?array {
+        return DB::transaction(function () use ($user, $secret, $code, $credentialFingerprint): ?array {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
 
-            if ($locked->hasTwoFactorAuthentication()) {
+            if (! hash_equals(
+                $credentialFingerprint,
+                PendingTwoFactorChallenge::credentialFingerprint($locked),
+            ) || $locked->hasTwoFactorAuthentication()) {
                 return null;
             }
 
@@ -133,11 +137,15 @@ final class TwoFactorAuthentication
     public function regenerateRecoveryCodes(
         User $user,
         #[\SensitiveParameter] string $proof,
+        #[\SensitiveParameter] string $credentialFingerprint,
     ): ?array {
-        return DB::transaction(function () use ($user, $proof): ?array {
+        return DB::transaction(function () use ($user, $proof, $credentialFingerprint): ?array {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
 
-            if (! $this->verifyLocked($locked, $proof)) {
+            if (! hash_equals(
+                $credentialFingerprint,
+                PendingTwoFactorChallenge::credentialFingerprint($locked),
+            ) || ! $this->verifyLocked($locked, $proof)) {
                 return null;
             }
 
@@ -156,13 +164,24 @@ final class TwoFactorAuthentication
         });
     }
 
-    public function disable(User $user, #[\SensitiveParameter] string $proof): bool
-    {
-        return DB::transaction(function () use ($user, $proof): bool {
+    public function disable(
+        User $user,
+        #[\SensitiveParameter] string $proof,
+        #[\SensitiveParameter] string $credentialFingerprint,
+    ): bool {
+        return DB::transaction(function () use ($user, $proof, $credentialFingerprint): bool {
             // User first, then account: the policy writer takes the same order.
             // This keeps a concurrent policy enable from racing a disable
             // without serialising every account member's sign-in on one row.
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
+
+            if (! hash_equals(
+                $credentialFingerprint,
+                PendingTwoFactorChallenge::credentialFingerprint($locked),
+            )) {
+                return false;
+            }
+
             $account = Account::query()->lockForUpdate()->findOrFail($locked->account_id);
 
             if ($account->requires_two_factor) {
