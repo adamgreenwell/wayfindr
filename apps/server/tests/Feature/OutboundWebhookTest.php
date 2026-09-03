@@ -345,6 +345,8 @@ test('destination checks reject internal and mixed DNS answers and pin a public 
     expect((new OutboundWebhookDestination(fn (): array => ['127.0.0.1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
         ->and((new OutboundWebhookDestination(fn (): array => ['::1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
         ->and((new OutboundWebhookDestination(fn (): array => ['fec0::1234']))->isAllowed('https://hooks.example.test'))->toBeFalse()
+        ->and((new OutboundWebhookDestination(fn (): array => ['100:0:0:1::1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
+        ->and((new OutboundWebhookDestination(fn (): array => ['4000::1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
         ->and((new OutboundWebhookDestination(fn (): array => ['100.64.0.1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
         ->and((new OutboundWebhookDestination(fn (): array => ['192.0.2.1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
         ->and((new OutboundWebhookDestination(fn (): array => ['2001:db8::1']))->isAllowed('https://hooks.example.test'))->toBeFalse()

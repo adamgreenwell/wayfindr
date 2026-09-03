@@ -105,6 +105,8 @@ resolve, and **every** address in its answer set must be public. This is checked
 when an endpoint is saved and again before every attempt. Explicit special-use
 coverage includes deprecated-but-routable ranges such as IPv6 site-local
 `fec0::/10`, not only the ranges PHP's public-address flags happen to reject.
+IPv6 destinations must also fall inside IANA's currently allocated global
+unicast `2000::/3`; reserved space fails closed until it is publicly allocated.
 
 The delivery check pins cURL to the complete verified address set while
 retaining the hostname for TLS SNI and certificate validation. cURL may fall

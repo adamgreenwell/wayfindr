@@ -165,6 +165,18 @@ final class OutboundWebhookDestination
 
     private static function isPublicIp(string $ip): bool
     {
+        // PHP's NO_RES_RANGE accepts large currently-reserved IPv6 blocks,
+        // including 4000::/3 and the historical site-local range. IANA's
+        // presently allocated global-unicast space is 2000::/3; fail closed
+        // outside it so a locally routed reserved prefix cannot become an SSRF
+        // tunnel. A future IANA expansion should be an explicit code change.
+        if (
+            filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+            && ! self::cidrContains($ip, '2000::', 3)
+        ) {
+            return false;
+        }
+
         if (filter_var(
             $ip,
             FILTER_VALIDATE_IP,
