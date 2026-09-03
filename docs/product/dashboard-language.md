@@ -1,14 +1,14 @@
 # The language the dashboard speaks
 
 Status: **in progress.** The plumbing is shipped, and
-`DashboardLanguage::EXTRACTED_ROUTES` names **51 routes — 20 of them pages** a
+`DashboardLanguage::EXTRACTED_ROUTES` names **54 routes — 21 of them pages** a
 reader can open, the rest the write and partial endpoints those pages call. The
 extracted surfaces are the app shell, the agent profile, the conversation queue
 and detail, the ticket queue, reply templates, ticket labels, articles, API
 tokens, the account audit, account-side operator access, account integrations,
 the account overview and team roster, the live-visitors board, the visitor
 directory and profile, and the operator's language-and-region, attachment-
-scanning, and mail settings pages.
+scanning, mail, and attachment-storage settings pages.
 
 That list is the one the guards read, and counting it is the only honest way to
 answer how far this has got: counting *views* that call `__()` overstates it,

@@ -68,7 +68,9 @@ class OperatorStorageSettingsController extends Controller
             'secretIsSet' => $settings->effectiveSecretStatus('storage.s3_secret') === 'set',
             'secretUnreadable' => $settings->secretStatus('storage.s3_secret') === 'unreadable',
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
-            'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
+            'backLabel' => $from === 'onboarding'
+                ? __('operator.shell.back_to_setup')
+                : __('operator.shell.back_to_console'),
             'returnTo' => $from,
         ]);
     }
@@ -126,7 +128,7 @@ class OperatorStorageSettingsController extends Controller
             if ($clearCreds && ($keyProvided || $secretProvided)) {
                 return redirect()
                     ->route('operator.settings.storage.edit', $this->returnParams($request))
-                    ->withErrors(['s3_access_key' => 'Either clear the stored keys to use a role, or enter new static keys — not both. Uncheck the role option to set static keys.'])
+                    ->withErrors(['s3_access_key' => __('operator.storage.validation.clear_or_static')])
                     ->withInput($request->except(['s3_access_key', 's3_secret_key']));
             }
 
@@ -139,7 +141,7 @@ class OperatorStorageSettingsController extends Controller
             if (! $clearCreds && $keyProvided !== $secretProvided) {
                 return redirect()
                     ->route('operator.settings.storage.edit', $this->returnParams($request))
-                    ->withErrors(['s3_access_key' => 'Enter both the access key and secret together, or leave both blank to keep the saved pair.'])
+                    ->withErrors(['s3_access_key' => __('operator.storage.validation.paired_keys')])
                     ->withInput($request->except(['s3_access_key', 's3_secret_key']));
             }
         }
@@ -185,8 +187,8 @@ class OperatorStorageSettingsController extends Controller
                 if ($this->s3LocationChanged($validated) && ($s3IsActive || ($s3HasRows && ! $migrated))) {
                     throw ValidationException::withMessages([
                         'bucket' => $s3IsActive
-                            ? 'Changing the S3 bucket, endpoint, or region is not allowed while S3 is the active storage disk — an in-flight upload would be stranded. Switch storage to the local disk first, then change the S3 connection.'
-                            : 'This disk already holds attachments, so changing the bucket, endpoint, or region would strand them at the old location. Move the existing objects to the new location, then re-submit with "I have migrated existing attachments" checked.',
+                            ? __('operator.storage.validation.active_location')
+                            : __('operator.storage.validation.existing_location'),
                     ]);
                 }
             }
@@ -238,7 +240,7 @@ class OperatorStorageSettingsController extends Controller
 
         return redirect()
             ->route('operator.settings.storage.edit', $this->returnParams($request))
-            ->with('status', 'Storage settings saved. Run a connection test to confirm uploads can be stored.');
+            ->with('status', 'operator.storage.flash.saved');
     }
 
     public function test(Request $request): RedirectResponse
@@ -252,28 +254,43 @@ class OperatorStorageSettingsController extends Controller
         } catch (Throwable $exception) {
             return redirect()
                 ->route('operator.settings.storage.edit', $returnParams)
-                ->with('error', 'Storage is misconfigured: '.$exception->getMessage());
+                ->with('error', [
+                    'key' => 'operator.storage.flash.misconfigured',
+                    'parameters' => ['message' => $exception->getMessage()],
+                ]);
         }
 
         $failure = $this->probeDisk($diskName);
 
         if ($failure !== null) {
+            $failure['parameters'] = [
+                ...($failure['parameters'] ?? []),
+                'disk' => $diskName,
+            ];
+
             return redirect()
                 ->route('operator.settings.storage.edit', $returnParams)
-                ->with('error', 'Storage test failed on the ['.$diskName.'] disk: '.$failure);
+                ->with('error', $failure);
         }
 
         return redirect()
             ->route('operator.settings.storage.edit', $returnParams)
-            ->with('status', 'Storage test passed: the ['.$diskName.'] disk accepted a write, read, list, and delete.');
+            ->with('status', [
+                'key' => 'operator.storage.flash.passed',
+                'parameters' => ['disk' => $diskName],
+            ]);
     }
 
     /**
      * The write / read / list / delete round-trip that uploads AND the retention
      * sweep rely on. A dotfile-prefixed probe keeps the orphan sweep from ever
-     * racing it. Returns a failure message, or null on success.
+     * racing it. Returns a catalogue key plus runtime parameters, or null on
+     * success. Known failure prose stays translated; only exception details are
+     * passed as language-neutral runtime data.
+     *
+     * @return array{key: string, parameters?: array<string, string>}|null
      */
-    private function probeDisk(string $diskName): ?string
+    private function probeDisk(string $diskName): ?array
     {
         $dir = '.wayfindr-storage-test-'.Str::random(12);
         $probeKey = $dir.'/.probe';
@@ -289,22 +306,25 @@ class OperatorStorageSettingsController extends Controller
             $needsCleanup = $wrote;
 
             if (! $wrote || $disk->get($probeKey) !== 'ok') {
-                return 'a write/read round-trip failed.';
+                return ['key' => 'operator.storage.flash.write_read_failed'];
             }
 
             if (! in_array($probeKey, $disk->files($dir), true)) {
-                return 'writes work but a listing probe did not return the object — the retention sweep needs list access.';
+                return ['key' => 'operator.storage.flash.list_failed'];
             }
 
             if ($disk->delete($probeKey) === false || $disk->exists($probeKey)) {
-                return 'writes work but the probe could not be deleted — the retention sweep and upload cleanup need delete access.';
+                return ['key' => 'operator.storage.flash.delete_failed'];
             }
 
             $needsCleanup = false; // deleted cleanly
 
             return null;
         } catch (Throwable $exception) {
-            return $exception->getMessage();
+            return [
+                'key' => 'operator.storage.flash.test_failed',
+                'parameters' => ['message' => $exception->getMessage()],
+            ];
         } finally {
             // If an intermediate step (read/list) threw or returned early after a
             // successful write, best-effort remove the probe object — it is

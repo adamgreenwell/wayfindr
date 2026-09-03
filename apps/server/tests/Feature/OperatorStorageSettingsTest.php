@@ -16,11 +16,12 @@ use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
-function storageOperator(): User
+function storageOperator(?string $locale = null): User
 {
     return User::factory()->for(Account::factory())->create([
         'platform_role' => 'operator',
         'account_role' => AccountRole::Owner,
+        'locale' => $locale,
     ]);
 }
 
@@ -45,6 +46,193 @@ test('the operator sees the storage settings form', function (): void {
         ->assertSee('Test the connection')
         ->assertSee('Back to operator console');
 });
+
+test('the storage settings page follows the operator language', function (string $locale, array $copy): void {
+    $settings = storageSettings();
+    $settings->set('storage.disk', 'attachments-datenpunkt');
+    $settings->set('storage.s3_bucket', 'datenpunkt-bucket');
+    $settings->set('storage.s3_region', 'datenpunkt-region');
+    $settings->set('storage.s3_endpoint', 'https://storage.datenpunkt.test');
+    $settings->set('storage.s3_key', 'never-render-datenpunkt-key');
+    $settings->set('storage.s3_secret', 'never-render-datenpunkt-secret');
+
+    $response = $this->actingAs(storageOperator($locale))
+        ->get(route('operator.settings.storage.edit'));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($copy['title'])
+        ->assertSee($copy['heading'])
+        ->assertSee($copy['local'])
+        ->assertSee($copy['placeholder'])
+        ->assertSee($copy['external'])
+        ->assertSee($copy['save'])
+        ->assertSee($copy['test'])
+        ->assertDontSee('Choose where uploaded files are stored')
+        ->assertDontSee('Local disk (this server)')
+        ->assertDontSee('Save storage settings')
+        ->assertDontSee('never-render-datenpunkt-key')
+        ->assertDontSee('never-render-datenpunkt-secret');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        '//select[@id="disk"]/option[@value="attachments-datenpunkt"]' => 'attachments-datenpunkt',
+        '//input[@id="bucket"]' => null,
+        '//input[@id="region"]' => null,
+        '//input[@id="endpoint"]' => null,
+        '//code[normalize-space(.)="attachments-datenpunkt"]' => 'attachments-datenpunkt',
+        '//span[normalize-space(.)="AWS S3"]' => 'AWS S3',
+        '//span[normalize-space(.)="Cloudflare R2"]' => 'Cloudflare R2',
+        '//span[normalize-space(.)="DigitalOcean Spaces"]' => 'DigitalOcean Spaces',
+        '//span[normalize-space(.)="MinIO"]' => 'MinIO',
+    ] as $query => $text) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->toBeInstanceOf(DOMElement::class, "missing {$query}")
+            ->and($node->hasAttribute('lang'))->toBeTrue("missing language boundary on {$query}")
+            ->and($node->getAttribute('lang'))->toBe('');
+
+        if ($text !== null) {
+            expect(trim($node->textContent))->toBe($text);
+        }
+    }
+
+    foreach (['s3_access_key', 's3_secret_key'] as $id) {
+        $password = $xpath->query('//input[@id="'.$id.'"]')->item(0);
+
+        expect($password)->toBeInstanceOf(DOMElement::class, "missing #{$id}")
+            ->and($password->hasAttribute('lang'))->toBeFalse("the translated placeholder on #{$id} must inherit the page language");
+    }
+})->with([
+    'German' => ['de', [
+        'title' => 'Speicher für Anhänge',
+        'heading' => 'Speicherort für neue Uploads',
+        'local' => 'Lokaler Datenträger (dieser Server)',
+        'placeholder' => 'ein Schlüssel ist konfiguriert',
+        'external' => 'Das aktuelle Speicherziel ist über die Umgebung konfiguriert:',
+        'save' => 'Speichereinstellungen speichern',
+        'test' => 'Speichertest ausführen',
+    ]],
+    'Italian' => ['it', [
+        'title' => 'Archiviazione degli allegati',
+        'heading' => 'Destinazione dei nuovi caricamenti',
+        'local' => 'Disco locale (questo server)',
+        'placeholder' => 'è configurata una chiave',
+        'external' => 'Il disco attuale è configurato nell’ambiente:',
+        'save' => 'Salva le impostazioni di archiviazione',
+        'test' => 'Esegui il test di archiviazione',
+    ]],
+]);
+
+test('storage validation and save feedback answer in the operator language', function (string $locale, array $copy): void {
+    $operator = storageOperator($locale);
+    $settings = storageSettings();
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.storage.edit'))
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => '',
+            'region' => '',
+            'endpoint' => 'not-a-url',
+            'acl' => 'public-read',
+        ])
+        ->assertRedirect(route('operator.settings.storage.edit'))
+        ->assertSessionHasErrors(['bucket', 'region', 'endpoint', 'acl']);
+
+    expect((string) session('errors')->first('bucket'))->toBe($copy['bucket'])
+        ->and((string) session('errors')->first('region'))->toBe($copy['region'])
+        ->and((string) session('errors')->first('endpoint'))->toBe($copy['endpoint'])
+        ->and((string) session('errors')->first('acl'))->toBe($copy['acl']);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'datenpunkt-bucket',
+            'region' => 'datenpunkt-region',
+            'acl' => 'private',
+            's3_access_key' => 'one-half',
+        ])
+        ->assertSessionHasErrors('s3_access_key');
+
+    expect((string) session('errors')->first('s3_access_key'))->toBe($copy['paired']);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'datenpunkt-bucket',
+            'region' => 'datenpunkt-region',
+            'acl' => 'private',
+            's3_no_keys' => '1',
+            's3_access_key' => 'new-key',
+            's3_secret_key' => 'new-secret',
+        ])
+        ->assertSessionHasErrors('s3_access_key');
+
+    expect((string) session('errors')->first('s3_access_key'))->toBe($copy['clear']);
+
+    $settings->set('storage.disk', 'attachments-s3');
+    $settings->set('storage.s3_bucket', 'current-bucket');
+    $settings->set('storage.s3_region', 'current-region');
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'new-bucket',
+            'region' => 'current-region',
+            'acl' => 'private',
+        ])
+        ->assertSessionHasErrors('bucket');
+
+    expect((string) session('errors')->first('bucket'))->toBe($copy['active']);
+
+    $settings->set('storage.disk', 'attachments');
+    ConversationMessageAttachment::factory()->create(['storage_disk' => 'attachments-s3']);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.storage.update'), [
+            'disk' => 'attachments-s3',
+            'bucket' => 'new-bucket',
+            'region' => 'current-region',
+            'acl' => 'private',
+        ])
+        ->assertSessionHasErrors('bucket');
+
+    expect((string) session('errors')->first('bucket'))->toBe($copy['existing']);
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.storage.update'), ['disk' => 'attachments'])
+        ->assertOk()
+        ->assertSee($copy['saved'])
+        ->assertDontSee('Storage settings saved. Run a connection test to confirm uploads can be stored.');
+})->with([
+    'German' => ['de', [
+        'bucket' => 'Bucket-Name muss ausgefüllt werden.',
+        'region' => 'Bucket-Region muss ausgefüllt werden.',
+        'endpoint' => 'Endpunkt-URL muss eine gültige URL sein.',
+        'acl' => 'Der gewählte Wert für Objekt-ACL ist ungültig.',
+        'paired' => 'Geben Sie Zugriffsschlüssel und Geheimnis gemeinsam ein oder lassen Sie beide Felder leer, um das gespeicherte Paar zu behalten.',
+        'clear' => 'Löschen Sie entweder die gespeicherten Schlüssel, um eine Rolle zu verwenden, oder geben Sie neue statische Schlüssel ein — nicht beides. Deaktivieren Sie die Rollenoption, um statische Schlüssel festzulegen.',
+        'active' => 'Bucket, Endpunkt oder Region von S3 dürfen nicht geändert werden, solange S3 das aktive Speicherziel ist — ein laufender Upload könnte sonst verloren gehen. Wechseln Sie zuerst zum lokalen Speicher und ändern Sie anschließend die S3-Verbindung.',
+        'existing' => 'Dieses Speicherziel enthält bereits Anhänge. Eine Änderung von Bucket, Endpunkt oder Region würde diese am alten Speicherort zurücklassen. Verschieben Sie die bestehenden Objekte an den neuen Speicherort und senden Sie das Formular anschließend mit ausgewählter Bestätigung für migrierte Anhänge erneut ab.',
+        'saved' => 'Speichereinstellungen gespeichert.',
+    ]],
+    'Italian' => ['it', [
+        'bucket' => 'Il campo Nome del bucket è obbligatorio.',
+        'region' => 'Il campo Area geografica del bucket è obbligatorio.',
+        'endpoint' => 'Il campo URL dell’endpoint deve contenere un URL valido.',
+        'acl' => 'Il valore selezionato per ACL dell’oggetto non è valido.',
+        'paired' => 'Inserisca insieme la chiave di accesso e il segreto oppure lasci entrambi i campi vuoti per mantenere la coppia salvata.',
+        'clear' => 'Cancellare le chiavi salvate per usare un ruolo oppure inserire nuove chiavi statiche, ma non entrambe le cose. Deselezioni l’opzione del ruolo per impostare chiavi statiche.',
+        'active' => 'Non è possibile cambiare il bucket, l’endpoint o l’area geografica S3 mentre S3 è il disco di archiviazione attivo: un caricamento in corso potrebbe essere perso. Passi prima al disco locale, quindi modifichi la connessione S3.',
+        'existing' => 'Questo disco contiene già allegati. Cambiare bucket, endpoint o area geografica li lascerebbe nella vecchia posizione. Sposti gli oggetti esistenti nella nuova posizione e invii di nuovo il modulo con la conferma della migrazione selezionata.',
+        'saved' => 'Impostazioni di archiviazione salvate.',
+    ]],
+]);
 
 test('saving S3 storage settings stores them as live overrides, with a real boolean flag', function (): void {
     $settings = storageSettings();
@@ -167,6 +355,44 @@ test('the storage test reports a disk-construction failure instead of 500ing', f
         ->post(route('operator.settings.storage.test'))
         ->assertRedirect(route('operator.settings.storage.edit'))
         ->assertSessionHas('error');
+});
+
+test('storage connection feedback follows the operator language and isolates runtime details', function (): void {
+    $operator = storageOperator('de');
+    Storage::fake('attachments');
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.storage.test'))
+        ->assertOk()
+        ->assertSee('Speichertest bestanden')
+        ->assertSee('<span lang="">attachments</span>', false)
+        ->assertDontSee('Storage test passed');
+
+    config()->set('wayfindr.attachments.storage_disk', 'public-datenpunkt');
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.storage.test'))
+        ->assertOk()
+        ->assertSee('Der Speicher ist falsch konfiguriert')
+        ->assertSee('<span lang="">Attachment storage requires', false)
+        ->assertSee('public-datenpunkt')
+        ->assertDontSee('Storage is misconfigured');
+});
+
+test('a known storage probe failure is translated instead of treated as runtime prose', function (): void {
+    $disk = Mockery::mock();
+    $disk->shouldReceive('put')->once()->andReturn(false);
+    Storage::shouldReceive('disk')->once()->with('attachments')->andReturn($disk);
+
+    $this->actingAs(storageOperator('de'))
+        ->followingRedirects()
+        ->post(route('operator.settings.storage.test'))
+        ->assertOk()
+        ->assertSee('Der Schreib-Lese-Rundlauf ist fehlgeschlagen.')
+        ->assertSee('<span lang="">attachments</span>', false)
+        ->assertDontSee('a write/read round-trip failed');
 });
 
 test('S3 can be configured without static credentials (default provider chain)', function (): void {
