@@ -4,12 +4,15 @@ use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
 use App\Http\Controllers\AgentProfileTwoFactorController;
 use App\Http\Controllers\Auth\TwoFactorChallengeController;
+use App\Http\Middleware\EnsureAgentIsActive;
+use App\Http\Middleware\EnsureTwoFactorPolicy;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\Auth\PendingTwoFactorChallenge;
 use App\Support\Auth\TwoFactorAuthentication;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -261,6 +264,43 @@ test('a password change revokes a newly issued operator session', function (): v
 
     $this->get(route('operator.dashboard'))
         ->assertRedirect(route('login'));
+
+    $this->assertGuest();
+});
+
+test('broadcast authorization validates the current password and two-factor policy', function (): void {
+    $route = app('router')->getRoutes()->match(Request::create('/broadcasting/auth', 'POST'));
+
+    expect($route->gatherMiddleware())
+        ->toContain('auth')
+        ->toContain('auth.session')
+        ->toContain(EnsureAgentIsActive::class)
+        ->toContain(EnsureTwoFactorPolicy::class);
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => 'agent@example.com',
+        'password' => Hash::make('old-password'),
+    ]);
+    $credential = giveAgentTwoFactor($agent);
+
+    $this->post(route('login.store'), [
+        'email' => 'agent@example.com',
+        'password' => 'old-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    $this->post(route('two-factor.challenge.store'), [
+        'one_time_code' => app(Google2FA::class)->getCurrentOtp($credential['secret']),
+    ])->assertRedirect(route('dashboard'));
+
+    DB::table('users')->where('id', $agent->id)->update([
+        'password' => Hash::make('new-password'),
+    ]);
+    Auth::forgetGuards();
+
+    $this->post('/broadcasting/auth', [
+        'socket_id' => '1234.5678',
+        'channel_name' => 'private-conversations.WF-RESET',
+    ])->assertRedirect(route('login'));
 
     $this->assertGuest();
 });

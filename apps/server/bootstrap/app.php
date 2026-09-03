@@ -17,6 +17,8 @@ use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use App\Console\Commands\TranslateCatalogueCommand;
 use App\Console\Commands\UpgradeGuardCommand;
+use App\Http\Middleware\EnsureAgentIsActive;
+use App\Http\Middleware\EnsureTwoFactorPolicy;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
 use App\Http\Middleware\SetDashboardLocale;
 use Illuminate\Foundation\Application;
@@ -35,9 +37,17 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
-        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
+    ->withBroadcasting(__DIR__.'/../routes/channels.php', [
+        'middleware' => [
+            'web',
+            'auth',
+            'auth.session',
+            EnsureAgentIsActive::class,
+            EnsureTwoFactorPolicy::class,
+        ],
+    ])
     ->withCommands([
         AlertDigestPreviewCommand::class,
         BackupCommand::class,
