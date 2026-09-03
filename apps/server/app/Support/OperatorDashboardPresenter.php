@@ -289,10 +289,27 @@ final class OperatorDashboardPresenter
             ];
         }
 
-        $value = __("operator.dashboard.retention.items.{$key}.value");
+        $defaultDescription = match ($key) {
+            'application_records' => 'Conversations, messages, tickets, visitors, cobrowse metadata, and audit records stay in the application database until an operator removes or prunes them.',
+            'logs_backups' => 'Server logs, snapshots, database dumps, and storage backups follow host and provider retention policies outside Wayfindr.',
+            'cobrowse_content' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance (counts, timestamps, hashes, and audit events).',
+            'automatic_deletion' => 'Beyond cobrowse page content, deletion, export, and retention controls remain future work; explain that before real support traffic.',
+        };
+        $actualValue = (string) ($item['value'] ?? '');
+        $value = $key === 'cobrowse_content'
+            ? self::raw($actualValue)
+            : self::configuredCopy(
+                $actualValue,
+                match ($key) {
+                    'application_records' => 'Manual lifecycle',
+                    'logs_backups' => 'Infrastructure lifecycle',
+                    'automatic_deletion' => 'Cobrowse content only',
+                },
+                "operator.dashboard.retention.items.{$key}.value",
+            );
 
         if ($key === 'cobrowse_content'
-            && preg_match('/Auto-pruned (\d+) hours? after a session ends/', (string) ($item['value'] ?? ''), $matches) === 1) {
+            && preg_match('/Auto-pruned (\d+) hours? after a session ends/', $actualValue, $matches) === 1) {
             $hours = (int) $matches[1];
             $value = trans_choice(
                 'operator.dashboard.retention.items.cobrowse_content.value',
@@ -303,7 +320,11 @@ final class OperatorDashboardPresenter
 
         return [
             ...$item,
-            'description' => self::feedback("operator.dashboard.retention.items.{$key}.description"),
+            'description' => self::configuredCopy(
+                (string) ($item['description'] ?? ''),
+                $defaultDescription,
+                "operator.dashboard.retention.items.{$key}.description",
+            ),
             'label' => __("operator.dashboard.retention.items.{$key}.label"),
             'value' => $value,
         ];

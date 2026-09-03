@@ -101,6 +101,8 @@ test('operator dashboard localizes its interface while isolating runtime values'
         'mail.mailers.smtp.port' => 587,
         'mail.from.address' => 'support@example.test',
         'queue.default' => 'database',
+        'wayfindr.retention.items.0.value' => '30 days after the pilot closes',
+        'wayfindr.retention.items.0.description' => 'The operator removes pilot records after the agreed review window.',
     ]);
 
     $operator = User::factory()->for(Account::factory())->create([
@@ -121,6 +123,8 @@ test('operator dashboard localizes its interface while isolating runtime values'
             ->assertSee('<html lang="'.$locale.'"', false)
             ->assertSee($expected['title'])
             ->assertSee($expected['overview'])
+            ->assertSee('<span lang="">30 days after the pilot closes</span>', false)
+            ->assertSee('<span lang="">The operator removes pilot records after the agreed review window.</span>', false)
             ->assertDontSee('Operator focus')
             ->getContent();
 
