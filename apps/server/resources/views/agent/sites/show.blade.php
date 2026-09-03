@@ -486,7 +486,7 @@
                                                 <label for="support_agent_{{ $accountAgent->id }}" lang="">{{ $accountAgent->name }}</label>
                                             </td>
                                             <td lang="">{{ $accountAgent->email }}</td>
-                                            <td>{{ __('site_settings.common.roles.'.($accountAgent->account_role?->value ?? 'agent')) }}</td>
+                                            <td @if ($accountAgent->customRole) lang="" @endif>{{ $accountAgent->customRole?->name ?? __('site_settings.common.roles.'.($accountAgent->account_role?->value ?? 'agent')) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -524,7 +524,7 @@
                                         <tr>
                                             <td lang="">{{ $supportAgent->name }}</td>
                                             <td lang="">{{ $supportAgent->email }}</td>
-                                            <td>{{ __('site_settings.common.roles.'.($supportAgent->account_role?->value ?? 'agent')) }}</td>
+                                            <td @if ($supportAgent->customRole) lang="" @endif>{{ $supportAgent->customRole?->name ?? __('site_settings.common.roles.'.($supportAgent->account_role?->value ?? 'agent')) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>

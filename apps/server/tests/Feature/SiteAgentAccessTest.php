@@ -934,6 +934,32 @@ test('plain agents can see site access context but cannot manage it', function (
         ->toBe([$agent->id, $teammate->id]);
 });
 
+test('site access rosters display custom role names', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create([
+        'name' => 'Escalation captain',
+        'permissions' => [AccountPermission::ManageKnowledge->value],
+    ]);
+    $customAgent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $plainAgent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach([$owner->id, $customAgent->id, $plainAgent->id]);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Escalation captain');
+
+    $this->actingAs($plainAgent)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Escalation captain');
+});
+
 test('site detail summarizes support load for the selected site only', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([

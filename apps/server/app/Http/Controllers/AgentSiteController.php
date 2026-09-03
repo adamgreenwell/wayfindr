@@ -204,6 +204,7 @@ class AgentSiteController extends Controller
             ->first());
         $account = $agent->account()->firstOrFail();
         $accountAgents = $account->agents()
+            ->with('customRole')
             ->whereNull('deactivated_at')
             ->orderBy('name')
             ->orderBy('email')
