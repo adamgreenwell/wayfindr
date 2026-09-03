@@ -51,7 +51,6 @@ return [
     'capabilities' => [
         'heading' => 'Verbindungsfunktionen',
         'help' => 'Wählen Sie aus, was Agenten über diese gespeicherte Verbindung senden dürfen. Signierte eingehende Webhooks werden getrennt über das gemeinsame Geheimnis authentifiziert.',
-        'aria' => 'Verbindungsfunktionen für :connection',
         'update' => 'Funktionen aktualisieren',
         'labels' => [
             'create_issue' => 'Issues erstellen',
@@ -75,7 +74,7 @@ return [
         'missing_title' => 'Eingehender Abgleich nicht eingerichtet.',
         'missing_body' => 'Legen Sie für diese Verbindung ein Webhook-Geheimnis fest und richten Sie den Anbieter auf die folgende URL aus, um den Issue-Status zurückzusynchronisieren.',
         'generated_url' => 'Erzeugte Webhook-URL',
-        'settings_aria' => 'Einstellungen für eingehende Webhooks für :connection',
+        'settings_aria' => 'Einstellungen für eingehende Webhooks',
         'provider_destination_title' => 'Ziel beim Anbieter:',
         'provider_destination_body' => 'Fügen Sie die erzeugte URL in die Webhook-Einstellungen dieser Verbindung ein.',
         'github_title' => 'GitHub-Einstellungen:',

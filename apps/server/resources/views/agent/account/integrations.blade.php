@@ -83,7 +83,7 @@
 
                     <div class="management-link">
                         <span>
-                            <strong lang="">{{ $connection->name }}</strong>
+                            <strong id="connection_{{ $connection->id }}_name" lang="">{{ $connection->name }}</strong>
                             <span class="lede">
                                 {!! $providerHtml($provider) !!}
                                 @if ($connection->base_url)
@@ -101,12 +101,12 @@
 
                     @if ($canManageIntegrations)
                         <div class="notice-copy notice-copy-bordered">
-                            <p><strong>{{ __('integrations.capabilities.heading') }}</strong></p>
+                            <p><strong id="connection_{{ $connection->id }}_capabilities_heading">{{ __('integrations.capabilities.heading') }}</strong></p>
                             <p class="lede">{{ __('integrations.capabilities.help') }}</p>
                             <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.capabilities.update', $connection) }}">
                                 @csrf
                                 @method('PUT')
-                                <div class="notice-list" aria-label="{{ __('integrations.capabilities.aria', ['connection' => $connection->name]) }}">
+                                <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_capabilities_heading connection_{{ $connection->id }}_name">
                                     @foreach ($externalIssueCapabilities as $value => $capability)
                                         <label class="check-row" for="connection_{{ $connection->id }}_capability_{{ $value }}">
                                             <input
@@ -150,7 +150,8 @@
                             @if ($canManageIntegrations)
                                 <p class="lede"><strong>{{ __('integrations.webhook.generated_url') }}</strong></p>
                                 <p class="lede"><code lang="">{{ $connection->inboundWebhookUrl() }}</code></p>
-                                <div class="notice-list" aria-label="{{ __('integrations.webhook.settings_aria', ['connection' => $connection->name]) }}">
+                                <span id="connection_{{ $connection->id }}_webhook_settings_label" class="sr-only">{{ __('integrations.webhook.settings_aria') }}</span>
+                                <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_webhook_settings_label connection_{{ $connection->id }}_name">
                                     <p><strong>{{ __('integrations.webhook.provider_destination_title') }}</strong> {{ __('integrations.webhook.provider_destination_body') }}</p>
                                     @switch($connection->provider)
                                         @case('github')

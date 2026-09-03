@@ -227,8 +227,6 @@ test('the integrations page follows the reader language across provider states',
         ->assertSee('Anbieter-Verbindungen')
         ->assertSee('5 Verbindungen')
         ->assertSee('Verbindungsfunktionen')
-        ->assertSee('aria-label="Verbindungsfunktionen für Datenpunkt GitHub"', false)
-        ->assertSee('aria-label="Einstellungen für eingehende Webhooks für Datenpunkt GitHub"', false)
         ->assertSee('Anbieter kann Issues erstellen')
         ->assertSee('Eingehender Abgleich nicht eingerichtet.')
         ->assertSee('Eingehender Abgleich eingerichtet, nicht bestätigt.')
@@ -255,8 +253,6 @@ test('the integrations page follows the reader language across provider states',
         ->assertSee('Connessioni provider')
         ->assertSee('5 connessioni')
         ->assertSee('Funzioni della connessione')
-        ->assertSee('aria-label="Funzioni della connessione Datenpunkt GitHub"', false)
-        ->assertSee('aria-label="Impostazioni del webhook in ingresso per Datenpunkt GitHub"', false)
         ->assertSee('Il provider può creare segnalazioni')
         ->assertSee('Sincronizzazione in ingresso non configurata.')
         ->assertSee('Sincronizzazione in ingresso configurata, non verificata.')
@@ -289,6 +285,23 @@ test('the integrations page follows the reader language across provider states',
         expect($xpath->query('//option[@lang="" and normalize-space(.)="'.$provider.'"]')?->length)
             ->toBe(1, "{$provider} is not marked as a provider-owned name");
     }
+
+    $connectionNameId = 'connection_'.$github->id.'_name';
+    $capabilitiesHeadingId = 'connection_'.$github->id.'_capabilities_heading';
+    $webhookSettingsLabelId = 'connection_'.$github->id.'_webhook_settings_label';
+    $connectionName = $xpath->query('//*[@id="'.$connectionNameId.'"]')->item(0);
+    $capabilitiesHeading = $xpath->query('//*[@id="'.$capabilitiesHeadingId.'"]')->item(0);
+    $webhookSettingsLabel = $xpath->query('//*[@id="'.$webhookSettingsLabelId.'"]')->item(0);
+
+    expect($connectionName)->toBeInstanceOf(DOMElement::class)
+        ->and($connectionName->hasAttribute('lang'))->toBeTrue()
+        ->and($connectionName->getAttribute('lang'))->toBe('')
+        ->and($capabilitiesHeading)->toBeInstanceOf(DOMElement::class)
+        ->and($capabilitiesHeading->textContent)->toBe('Verbindungsfunktionen')
+        ->and($webhookSettingsLabel)->toBeInstanceOf(DOMElement::class)
+        ->and($webhookSettingsLabel->textContent)->toBe('Einstellungen für eingehende Webhooks')
+        ->and($xpath->query('//*[@aria-labelledby="'.$capabilitiesHeadingId.' '.$connectionNameId.'"]')->length)->toBe(1)
+        ->and($xpath->query('//*[@aria-labelledby="'.$webhookSettingsLabelId.' '.$connectionNameId.'"]')->length)->toBe(1);
 });
 
 test('integration writes answer in the language of the page they return to', function (): void {
