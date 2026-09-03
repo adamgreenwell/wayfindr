@@ -118,6 +118,46 @@ test('empty integration states and the read-only role are localized', function (
     }
 });
 
+test('the connection name field resets language only for user-authored data', function (): void {
+    $fixture = integrationsAccount();
+    $fixture['admin']->forceFill(['locale' => 'de'])->save();
+
+    $inputFor = function (string $html): DOMElement {
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+        $input = (new DOMXPath($document))->query('//input[@id="provider_connection_name"]')->item(0);
+
+        expect($input)->toBeInstanceOf(DOMElement::class);
+
+        return $input;
+    };
+
+    $empty = $inputFor((string) $this->actingAs($fixture['admin']->fresh())
+        ->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->getContent());
+
+    expect($empty->getAttribute('placeholder'))->toBe('GitHub Technik')
+        ->and($empty->hasAttribute('lang'))->toBeFalse('the translated placeholder was reset to an unknown language');
+
+    $this->from(route('dashboard.account.integrations'))
+        ->post(route('dashboard.external-issue-provider-connections.store'), [
+            'return_to' => 'integrations',
+            'provider' => 'github',
+            'name' => 'Datenpunkt connection',
+            'base_url' => 'not-a-url',
+        ])
+        ->assertSessionHasErrors('base_url');
+
+    $filled = $inputFor((string) $this->get(route('dashboard.account.integrations'))
+        ->assertOk()
+        ->getContent());
+
+    expect($filled->getAttribute('value'))->toBe('Datenpunkt connection')
+        ->and($filled->hasAttribute('lang'))->toBeTrue('the user-authored connection name carries no language reset')
+        ->and($filled->getAttribute('lang'))->toBe('');
+});
+
 test('the integrations page follows the reader language across provider states', function (): void {
     $account = Account::factory()->create(['name' => 'Datenpunkt Account']);
     $german = User::factory()->for($account)->create([

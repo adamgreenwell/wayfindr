@@ -222,7 +222,7 @@
 
                 <div class="field">
                     <label for="provider_connection_name">{{ __('integrations.create.name') }}</label>
-                    <input id="provider_connection_name" name="name" type="text" lang="" value="{{ old('name') }}" placeholder="{{ __('integrations.create.name_placeholder') }}">
+                    <input id="provider_connection_name" name="name" type="text" value="{{ old('name') }}" @if (filled(old('name'))) lang="" @endif placeholder="{{ __('integrations.create.name_placeholder') }}">
                     @error('name')
                         <p class="field-error">{{ $message }}</p>
                     @enderror
