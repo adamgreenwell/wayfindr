@@ -1571,9 +1571,13 @@ class AgentSiteController extends Controller
 
         DB::transaction(function () use ($request, $site, $afterAgentIds): void {
             $this->siteManagerCoverage->lockAccount((int) $site->account_id);
-            $request->user()->unsetRelation('customRole');
-            $this->authorizeSiteAbility($request, 'view', $site, 404);
-            $this->authorizeSiteAbility($request, 'manageAccess', $site);
+            $actor = User::query()
+                ->whereKey($request->user()->id)
+                ->where('account_id', $site->account_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            abort_unless(Gate::forUser($actor)->allows('view', $site), 404);
+            abort_unless(Gate::forUser($actor)->allows('manageAccess', $site), 403);
 
             $currentAccountAgentIds = $site->account()
                 ->firstOrFail()
@@ -1600,7 +1604,7 @@ class AgentSiteController extends Controller
             $site->supportAgents()->sync($afterAgentIds);
 
             if ($beforeAgentIds !== $afterAgentIds) {
-                $this->recordSiteAccessChange($site, $request->user(), $beforeAgentIds, $afterAgentIds);
+                $this->recordSiteAccessChange($site, $actor, $beforeAgentIds, $afterAgentIds);
             }
         });
 

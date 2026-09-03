@@ -849,6 +849,38 @@ test('account admins can manage support agents assigned to a site', function ():
         ]);
 });
 
+test('site access updates reauthorize a stale custom manager after acquiring the account lock', function (): void {
+    $account = Account::factory()->create();
+    $managerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageSiteAccess->value],
+    ]);
+    $readerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $managerRole->id,
+    ]);
+    $replacement = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach([$owner->id, $manager->id]);
+
+    $this->actingAs($manager);
+
+    // Keep the authenticated model stale to represent an owner changing the
+    // role while this request waits for the shared account lock.
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $readerRole->id]);
+
+    $this->put(route('dashboard.sites.support-agents.update', $site), [
+        'support_agent_ids' => [$owner->id, $replacement->id],
+    ])->assertForbidden();
+
+    expect($site->fresh()->supportAgents()->pluck('users.id')->sort()->values()->all())
+        ->toBe(collect([$owner->id, $manager->id])->sort()->values()->all())
+        ->and(AuditEvent::query()->where('action', 'site_access.updated')->exists())->toBeFalse();
+});
+
 test('plain agents can see site access context but cannot manage it', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
