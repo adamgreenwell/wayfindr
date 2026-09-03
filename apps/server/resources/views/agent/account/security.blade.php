@@ -54,7 +54,7 @@
             <p>{{ __('oidc.settings.help') }}</p>
             @if ($oidcConnection)
                 <p>{{ __('oidc.settings.callback_help') }}</p>
-                <p><code>{{ route('oidc.callback', ['connectionPublicId' => $oidcConnection->public_id]) }}</code></p>
+                <p><code lang="">{{ route('oidc.callback', ['connectionPublicId' => $oidcConnection->public_id]) }}</code></p>
             @endif
         </div>
         <form class="section-form" method="POST" action="{{ route('dashboard.account.security.oidc.update') }}">
@@ -62,17 +62,17 @@
             @method('PUT')
             <div class="field">
                 <label for="oidc_name">{{ __('oidc.settings.name') }}</label>
-                <input id="oidc_name" name="name" type="text" maxlength="100" value="{{ old('name', $oidcConnection?->name) }}" required>
+                <input id="oidc_name" name="name" type="text" maxlength="100" value="{{ old('name', $oidcConnection?->name) }}" lang="" required>
                 @error('name')<p class="field-error">{{ $message }}</p>@enderror
             </div>
             <div class="field">
                 <label for="issuer_url">{{ __('oidc.settings.issuer_url') }}</label>
-                <input id="issuer_url" name="issuer_url" type="url" maxlength="2048" value="{{ old('issuer_url', $oidcConnection?->issuer_url) }}" placeholder="https://id.example.com" required>
+                <input id="issuer_url" name="issuer_url" type="url" maxlength="2048" value="{{ old('issuer_url', $oidcConnection?->issuer_url) }}" placeholder="https://id.example.com" lang="" required>
                 @error('issuer_url')<p class="field-error">{{ $message }}</p>@enderror
             </div>
             <div class="field">
                 <label for="client_id">{{ __('oidc.settings.client_id') }}</label>
-                <input id="client_id" name="client_id" type="text" maxlength="255" value="{{ old('client_id', $oidcConnection?->client_id) }}" autocomplete="off" required>
+                <input id="client_id" name="client_id" type="text" maxlength="255" value="{{ old('client_id', $oidcConnection?->client_id) }}" autocomplete="off" lang="" required>
                 @error('client_id')<p class="field-error">{{ $message }}</p>@enderror
             </div>
             <div class="field">
