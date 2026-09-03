@@ -88,6 +88,7 @@ return [
             'Normal',
             'System',
             'Scanner',
+            'Transport',
             ':count ms',
             'Status: :value',
             'Label: :value',

@@ -317,7 +317,7 @@ test('operator pages outside the extracted slice remain wholly English', functio
     ]);
 
     $this->actingAs($operator)
-        ->get(route('operator.settings.mail.edit'))
+        ->get(route('operator.settings.storage.edit'))
         ->assertOk()
         ->assertSee('<html lang="en">', false)
         ->assertSee('aria-label="Operator sections"', false)

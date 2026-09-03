@@ -84,6 +84,9 @@ final class DashboardLanguage
         'operator.settings.scanning.edit',
         'operator.settings.scanning.update',
         'operator.settings.scanning.test',
+        'operator.settings.mail.edit',
+        'operator.settings.mail.update',
+        'operator.settings.mail.test',
 
         'dashboard.profile.show',
         'dashboard.profile.update',
