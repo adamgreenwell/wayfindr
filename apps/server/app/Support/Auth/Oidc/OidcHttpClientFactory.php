@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Auth\Oidc;
 
 use App\Support\Webhooks\OutboundWebhookDestination;
+use Closure;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use Psr\Http\Message\RequestInterface;
@@ -18,11 +19,14 @@ use Psr\Http\Message\RequestInterface;
  */
 final readonly class OidcHttpClientFactory
 {
-    public function __construct(private OutboundWebhookDestination $destination) {}
+    public function __construct(
+        private OutboundWebhookDestination $destination,
+        private ?Closure $baseHandler = null,
+    ) {}
 
     public function make(?callable $handler = null): Client
     {
-        $stack = HandlerStack::create($handler);
+        $stack = HandlerStack::create($handler ?? $this->baseHandler);
         $stack->push(function (callable $handler): callable {
             return function (RequestInterface $request, array $options) use ($handler) {
                 $inspected = $this->destination->inspect((string) $request->getUri());

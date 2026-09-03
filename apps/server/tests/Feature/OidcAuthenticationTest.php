@@ -16,15 +16,19 @@ use App\Support\Auth\Oidc\OidcHttpClientFactory;
 use App\Support\Auth\Oidc\OidcUser;
 use App\Support\Auth\TwoFactorAuthentication;
 use App\Support\Webhooks\OutboundWebhookDestination;
+use Firebase\JWT\JWT;
 use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PragmaRX\Google2FA\Google2FA;
+use Psr\Http\Message\RequestInterface;
 
 uses(RefreshDatabase::class);
 
@@ -96,6 +100,11 @@ function giveOidcAgentTwoFactor(User $user): array
         'secret' => $secret,
         'code' => app(Google2FA::class)->getCurrentOtp($secret),
     ];
+}
+
+function oidcBase64Url(string $value): string
+{
+    return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 }
 
 test('an account administrator configures one encrypted OIDC connection', function (): void {
@@ -199,6 +208,105 @@ test('the OIDC HTTP client rejects private endpoints and pins every public reque
         ->and($options['proxy'])->toBe('')
         ->and($options['curl'][CURLOPT_RESOLVE])->toBe(['id.example.com:443:8.8.8.8'])
         ->and($options['curl'][CURLOPT_PROTOCOLS])->toBe(CURLPROTO_HTTPS);
+});
+
+test('the production client completes a state nonce PKCE and signed ID token flow', function (): void {
+    Cache::flush();
+    $account = Account::factory()->create(['slug' => 'production-flow']);
+    $user = User::factory()->for($account)->create(['email' => 'agent@example.com']);
+    $connection = OidcConnection::factory()->for($account)->create([
+        'issuer_url' => 'https://id.example.com',
+        'client_id' => 'production-client',
+        'client_secret' => 'production-secret',
+    ]);
+    $key = openssl_pkey_new([
+        'private_key_bits' => 2048,
+        'private_key_type' => OPENSSL_KEYTYPE_RSA,
+    ]);
+    expect($key)->not->toBeFalse();
+    openssl_pkey_export($key, $privateKey);
+    $details = openssl_pkey_get_details($key);
+    expect($details)->toBeArray();
+    $jwk = [
+        'kty' => 'RSA',
+        'use' => 'sig',
+        'alg' => 'RS256',
+        'kid' => 'test-key',
+        'n' => oidcBase64Url($details['rsa']['n']),
+        'e' => oidcBase64Url($details['rsa']['e']),
+    ];
+    $requests = [];
+    $idToken = null;
+    $handler = function (RequestInterface $request, array $options) use (&$requests, &$idToken, $jwk) {
+        $requests[] = ['request' => $request, 'options' => $options];
+
+        $body = match ($request->getUri()->getPath()) {
+            '/.well-known/openid-configuration' => json_encode([
+                'issuer' => 'https://id.example.com',
+                'authorization_endpoint' => 'https://id.example.com/authorize',
+                'token_endpoint' => 'https://id.example.com/token',
+                'userinfo_endpoint' => 'https://id.example.com/userinfo',
+                'jwks_uri' => 'https://id.example.com/jwks',
+                'id_token_signing_alg_values_supported' => ['RS256'],
+                'token_endpoint_auth_methods_supported' => ['client_secret_post'],
+            ], JSON_THROW_ON_ERROR),
+            '/token' => json_encode([
+                'id_token' => $idToken,
+                'token_type' => 'Bearer',
+                'expires_in' => 300,
+            ], JSON_THROW_ON_ERROR),
+            '/jwks' => json_encode(['keys' => [$jwk]], JSON_THROW_ON_ERROR),
+            default => throw new RuntimeException('Unexpected OIDC test request.'),
+        };
+
+        return Create::promiseFor(new PsrResponse(200, ['Content-Type' => 'application/json'], $body));
+    };
+    app()->instance(OidcHttpClientFactory::class, new OidcHttpClientFactory(
+        new OutboundWebhookDestination(fn (): array => ['8.8.8.8']),
+        $handler(...),
+    ));
+
+    $start = $this->post(route('oidc.redirect'), ['account_slug' => 'production-flow']);
+    $start->assertRedirectContains('https://id.example.com/authorize?');
+    $location = $start->headers->get('Location');
+    expect($location)->toContain('code_challenge=')
+        ->and($location)->toContain('nonce=')
+        ->and($location)->toContain('state=');
+    $state = session('state');
+    $nonce = session('openidconnect_nonce');
+    $idToken = JWT::encode([
+        'iss' => 'https://id.example.com',
+        'aud' => 'production-client',
+        'sub' => 'production-subject',
+        'email' => 'agent@example.com',
+        'email_verified' => true,
+        'nonce' => $nonce,
+        'iat' => now()->timestamp,
+        'exp' => now()->addMinutes(5)->timestamp,
+    ], $privateKey, 'RS256', 'test-key');
+
+    $this->get(route('oidc.callback', [
+        'connectionPublicId' => $connection->public_id,
+        'state' => $state,
+        'code' => 'authorization-code',
+    ]))->assertRedirect(route('dashboard'));
+
+    $this->assertAuthenticatedAs($user);
+    expect(OidcIdentity::query()->where([
+        'oidc_connection_id' => $connection->id,
+        'user_id' => $user->id,
+        'subject' => 'production-subject',
+    ])->exists())->toBeTrue();
+
+    $tokenRequest = collect($requests)->first(
+        fn (array $entry): bool => $entry['request']->getUri()->getPath() === '/token'
+    );
+    parse_str((string) $tokenRequest['request']->getBody(), $tokenFields);
+    expect($tokenFields['code'])->toBe('authorization-code')
+        ->and($tokenFields['code_verifier'])->toBeString()->not->toBe('')
+        ->and(collect($requests)->pluck('request')->map(
+            fn (RequestInterface $request): string => $request->getUri()->getPath()
+        )->all())->toBe(['/.well-known/openid-configuration', '/token', '/jwks']);
 });
 
 test('OIDC start keeps protocol state in the session and unknown accounts fail generically', function (): void {
