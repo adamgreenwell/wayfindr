@@ -14,11 +14,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-function scanningOperator(): User
+function scanningOperator(?string $locale = null): User
 {
     return User::factory()->for(Account::factory())->create([
         'platform_role' => 'operator',
         'account_role' => AccountRole::Owner,
+        'locale' => $locale,
     ]);
 }
 
@@ -43,6 +44,97 @@ test('the operator sees the scanning settings form', function (): void {
         ->assertSee('Test reachability')
         ->assertSee('Back to operator console');
 });
+
+test('the scanning page follows the operator language', function (string $locale, array $copy): void {
+    $settings = scanningSettings();
+    $settings->set('scanning.driver', 'sophos-datenpunkt');
+    $settings->set('scanning.socket', 'unix:///datenpunkt/clamd.sock');
+
+    $response = $this->actingAs(scanningOperator($locale))
+        ->get(route('operator.settings.scanning.edit'));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($copy['title'])
+        ->assertSee($copy['heading'])
+        ->assertSee($copy['none'])
+        ->assertSee($copy['external'])
+        ->assertSee($copy['save'])
+        ->assertSee($copy['test'])
+        ->assertDontSee('Scan uploaded files for malware before they are stored.')
+        ->assertDontSee('None (accept with defense-in-depth)')
+        ->assertDontSee('Save scanning settings');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        '//select[@id="driver"]/option[@value="sophos-datenpunkt"]' => 'sophos-datenpunkt',
+        '//select[@id="driver"]/option[@value="clamav"]' => 'ClamAV',
+        '//input[@id="socket"]' => null,
+        '//code[normalize-space(.)="sophos-datenpunkt"]' => 'sophos-datenpunkt',
+        '//code[normalize-space(.)="tcp://host:port"]' => 'tcp://host:port',
+        '//code[normalize-space(.)="unix:///var/run/clamav/clamd.ctl"]' => 'unix:///var/run/clamav/clamd.ctl',
+    ] as $query => $text) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->toBeInstanceOf(DOMElement::class, "missing {$query}")
+            ->and($node->hasAttribute('lang'))->toBeTrue("missing language boundary on {$query}")
+            ->and($node->getAttribute('lang'))->toBe('');
+
+        if ($text !== null) {
+            expect(trim($node->textContent))->toBe($text);
+        }
+    }
+})->with([
+    'German' => ['de', [
+        'title' => 'Prüfung von Anhängen',
+        'heading' => 'Schadsoftware-Scanner',
+        'none' => 'Ohne Scanner (mit mehrschichtigem Schutz akzeptieren)',
+        'external' => 'Der aktuelle Scanner ist über die Umgebung konfiguriert:',
+        'save' => 'Einstellungen für die Dateiprüfung speichern',
+        'test' => 'Erreichbarkeit testen',
+    ]],
+    'Italian' => ['it', [
+        'title' => 'Scansione degli allegati',
+        'heading' => 'Scanner antimalware',
+        'none' => 'Nessuno (accetta con protezione a più livelli)',
+        'external' => 'Lo scanner attuale è configurato nell’ambiente:',
+        'save' => 'Salva le impostazioni di scansione',
+        'test' => 'Verifica della raggiungibilità',
+    ]],
+]);
+
+test('scanning validation and save feedback answer in the operator language', function (string $locale, string $error, string $saved): void {
+    $operator = scanningOperator($locale);
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.scanning.edit'))
+        ->post(route('operator.settings.scanning.update'), ['driver' => 'clamav'])
+        ->assertRedirect(route('operator.settings.scanning.edit'))
+        ->assertSessionHasErrors('socket');
+
+    expect((string) session('errors')->first('socket'))->toBe($error);
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.scanning.update'), ['driver' => ''])
+        ->assertOk()
+        ->assertSee($saved)
+        ->assertDontSee('Scanning settings saved. Run a reachability test to confirm the scanner responds.');
+})->with([
+    'German' => [
+        'de',
+        'ClamAV-Socket muss ausgefüllt werden, wenn Scanner den Wert clamav hat.',
+        'Einstellungen für die Dateiprüfung gespeichert.',
+    ],
+    'Italian' => [
+        'it',
+        'Il campo Socket ClamAV è obbligatorio quando Scanner vale clamav.',
+        'Impostazioni di scansione salvate.',
+    ],
+]);
 
 test('saving ClamAV settings stores them, with fail_closed as a real boolean', function (): void {
     $settings = scanningSettings();
@@ -161,6 +253,52 @@ test('the scanner test reports an unreachable scanner', function (): void {
     $this->actingAs(scanningOperator())
         ->post(route('operator.settings.scanning.test'))
         ->assertSessionHas('error');
+});
+
+test('scanner test outcomes are localized and keep runtime data language-neutral', function (): void {
+    $operator = scanningOperator('de');
+
+    config()->set('wayfindr.attachments.scanner.driver', '');
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.scanning.test'))
+        ->assertOk()
+        ->assertSee('Es ist kein Scanner konfiguriert')
+        ->assertDontSee('No scanner is configured');
+
+    config()->set('wayfindr.attachments.scanner.driver', 'clamav');
+    config()->set('wayfindr.attachments.scanner.clamav.socket', 'tcp://datenpunkt:3310');
+    $this->mock(AttachmentScanner::class, fn ($mock) => $mock
+        ->shouldReceive('isAvailable')
+        ->twice()
+        ->andReturn(true, false));
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.scanning.test'))
+        ->assertOk()
+        ->assertSee('Scanner erreichbar')
+        ->assertSee('<span lang="">clamav</span>', false)
+        ->assertDontSee('Scanner reachable');
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.scanning.test'))
+        ->assertOk()
+        ->assertSee('nicht erreichbar')
+        ->assertSee('<span lang="">tcp://datenpunkt:3310</span>', false)
+        ->assertDontSee('scanner is configured but unreachable');
+
+    app()->bind(AttachmentScanner::class, fn () => throw new RuntimeException('Datenpunkt <failure>'));
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.scanning.test'))
+        ->assertOk()
+        ->assertSee('Der Scanner ist falsch konfiguriert')
+        ->assertSee('<span lang="">Datenpunkt &lt;failure&gt;</span>', false)
+        ->assertDontSee('Scanner is misconfigured');
 });
 
 test('arriving from onboarding keeps the back link and save on the checklist', function (): void {

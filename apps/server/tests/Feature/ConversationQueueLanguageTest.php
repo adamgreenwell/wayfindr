@@ -1433,6 +1433,7 @@ function conversationQueueLanguageCognates(): array
         'Token' => 'the same word in both languages -- German writes DAS Token and hyphenates the compound, so the bare column header is identical while the page title is not',
         'Label' => 'a loanword German uses as-is',
         'Labels' => 'a loanword German uses as-is',
+        'Scanner' => 'a loanword German uses as-is',
         'English' => 'an autonym -- the language selector names each language in its own language',
         'Deutsch' => 'an autonym -- see above',
         'Italiano' => 'an autonym -- see above',
@@ -1611,6 +1612,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
+        route('operator.settings.scanning.edit'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -1860,6 +1862,11 @@ test('every cognate on the list still appears, so the list cannot rot', function
         conversationQueueLanguageAnnouncements(
             (string) $this->actingAs($world['admins']['de'])->get(route('dashboard.account.audit.index'))->getContent()
         ),
+        // The scanner label is a German/English loanword, and this is the
+        // first extracted surface that renders it as Wayfindr copy.
+        conversationQueueLanguageAnnouncements(
+            (string) $this->actingAs($world['operators']['de'])->get(route('operator.settings.scanning.edit'))->getContent()
+        ),
     ), 'text');
 
     foreach (array_keys(conversationQueueLanguageCognates()) as $cognate) {
@@ -2074,6 +2081,7 @@ test('every extracted page translates its document title', function (): void {
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
+        route('operator.settings.scanning.edit'),
     ];
 
     foreach ($urls as $url) {
@@ -2867,6 +2875,7 @@ test('every catalogue file answers the same set of keys', function (): void {
         'account.create.name = Name',
         'account.agents.columns.agent = Agent',
         'account.agents.columns.status = Status',
+        'operator.scanning.driver = Scanner',
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',
@@ -3835,6 +3844,7 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
+        route('operator.settings.scanning.edit'),
     ];
 
     foreach (['de', 'en'] as $locale) {
@@ -3910,6 +3920,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
+        route('operator.settings.scanning.edit'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
 
