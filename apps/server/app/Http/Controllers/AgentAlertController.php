@@ -200,9 +200,18 @@ class AgentAlertController extends Controller
     {
         $notificationData = $notification->data;
         $ticketId = data_get($notificationData, 'ticket_id');
+        $notificationKind = data_get($notificationData, 'kind');
+        $storedSubject = data_get($notificationData, 'subject');
+        $localizedSubjectFallback = match (true) {
+            $notificationKind === 'conversation_needs_reply'
+                && (! filled($storedSubject) || $storedSubject === 'Untitled conversation') => __('alerts.card.untitled_conversation'),
+            $notificationKind === 'ticket_assigned' && ! filled($storedSubject) => __('alerts.card.untitled_ticket'),
+            default => null,
+        };
 
         return collect([
-            data_get($notificationData, 'subject'),
+            $storedSubject,
+            $localizedSubjectFallback,
             data_get($notificationData, 'support_code'),
             $ticketId ? 'Ticket #'.$ticketId : null,
             $ticketId,

@@ -1161,6 +1161,34 @@ test('localized alert cards keep authored values in an unknown language boundary
         ->and($html)->toContain('Priorität Hoch');
 });
 
+test('agents can search for the translated untitled-conversation fallback', function (string $locale, string $fallback): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['locale' => $locale]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-fallback-search']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-FALLBACK-SEARCH',
+        'subject' => null,
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'The subject fallback should be searchable.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index', ['alert_search' => $fallback]))
+        ->assertOk()
+        ->assertSee($fallback)
+        ->assertSee('WF-FALLBACK-SEARCH');
+})->with([
+    'German' => ['de', 'Unterhaltung ohne Titel'],
+    'Italian' => ['it', 'Conversazione senza titolo'],
+]);
+
 test('alert center gives agents a clearer empty unread state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
