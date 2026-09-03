@@ -85,7 +85,21 @@ class BreakGlassGrants
     public function approve(BreakGlassGrant $grant, User $approver): BreakGlassGrant
     {
         return DB::transaction(function () use ($grant, $approver): BreakGlassGrant {
-            $locked = BreakGlassGrant::query()->whereKey($grant->getKey())->lockForUpdate()->firstOrFail();
+            $accountId = (int) $grant->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+
+            $lockedApprover = User::query()
+                ->whereKey($approver->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($lockedApprover instanceof User, 403);
+
+            $locked = BreakGlassGrant::query()
+                ->whereKey($grant->getKey())
+                ->where('account_id', $accountId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
             abort_unless(
                 $locked->status === BreakGlassGrant::STATUS_REQUESTED,
@@ -93,7 +107,7 @@ class BreakGlassGrants
                 __('operator_break_glass.errors.not_awaiting_approval'),
             );
 
-            $selfApproval = (int) $approver->id === (int) $locked->requester_id;
+            $selfApproval = (int) $lockedApprover->id === (int) $locked->requester_id;
 
             if ($selfApproval) {
                 // Self-approval exists for the single-human install where the
@@ -101,9 +115,9 @@ class BreakGlassGrants
                 // admin standing on the account has no consent to give — even
                 // (especially) when the account has no active approver left.
                 abort_unless(
-                    (int) $approver->account_id === (int) $locked->account_id
-                        && ! $approver->isDeactivated()
-                        && $approver->hasAccountPermission(AccountPermission::ManageOperatorAccess),
+                    (int) $lockedApprover->account_id === (int) $locked->account_id
+                        && ! $lockedApprover->isDeactivated()
+                        && $lockedApprover->hasAccountPermission(AccountPermission::ManageOperatorAccess),
                     403,
                     __('operator_break_glass.errors.self_approval_requires_standing'),
                 );
@@ -114,20 +128,20 @@ class BreakGlassGrants
                     __('operator_break_glass.errors.account_decides'),
                 );
             } else {
-                abort_unless($this->isEligibleApprover($locked, $approver), 403);
+                abort_unless($this->isEligibleApprover($locked, $lockedApprover), 403);
             }
 
             $approvedAt = now();
 
             $locked->forceFill([
                 'status' => BreakGlassGrant::STATUS_ACTIVE,
-                'approver_id' => $approver->id,
+                'approver_id' => $lockedApprover->id,
                 'self_approved' => $selfApproval,
                 'approved_at' => $approvedAt,
                 'expires_at' => $approvedAt->copy()->addMinutes($locked->requested_minutes),
             ])->save();
 
-            $this->audit($locked, $approver, $selfApproval ? 'break_glass.self_approved' : 'break_glass.approved');
+            $this->audit($locked, $lockedApprover, $selfApproval ? 'break_glass.self_approved' : 'break_glass.approved');
 
             return $locked;
         });
