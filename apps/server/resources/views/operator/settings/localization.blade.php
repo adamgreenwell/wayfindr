@@ -1,19 +1,19 @@
-<x-layouts.operator title="Language and region">
+<x-layouts.operator :title="__('operator.localization.document_title')">
 
     <x-page-header
         :back-href="$backUrl ?? null"
-        :back-label="$backLabel ?? 'Back'"
-        title="Language and region"
-        subtitle="What the dashboard reads in for anyone who has not chosen for themselves. Changes apply immediately, no restart." />
+        :back-label="$backLabel ?? __('operator.shell.back')"
+        :title="__('operator.localization.title')"
+        :subtitle="__('operator.localization.subtitle')" />
 
     @if (session('status'))
-        <p class="status-message">{{ session('status') }}</p>
+        <p class="status-message">{{ __(session('status')) }}</p>
     @endif
 
     <section class="section" aria-labelledby="localization-config-heading">
         <div class="section-header">
-            <h2 id="localization-config-heading">Install defaults</h2>
-            <span class="lede">These are defaults, not rules. An agent who picks their own language or timezone on their profile keeps it — this answers for everyone else, which on a new install is everyone.</span>
+            <h2 id="localization-config-heading">{{ __('operator.localization.heading') }}</h2>
+            <span class="lede">{{ __('operator.localization.lede') }}</span>
         </div>
 
         <form class="section-form" method="POST" action="{{ route('operator.settings.localization.update') }}">
@@ -23,32 +23,32 @@
             @endif
 
             <div class="field">
-                <label for="language">Language</label>
+                <label for="language">{{ __('operator.localization.language') }}</label>
                 <select id="language" name="language">
                     @foreach ($languageChoices as $code => $label)
-                        <option value="{{ $code }}" @selected(old('language', $language) === $code)>{{ $label }}</option>
+                        <option lang="{{ $code }}" value="{{ $code }}" @selected(old('language', $language) === $code)>{{ $label }}</option>
                     @endforeach
                 </select>
                 @error('language')<p class="field-error">{{ $message }}</p>@enderror
-                <p class="field-help">Applies to the agent dashboard. What a visitor sees in the widget is chosen from their own browser and is not affected by this.</p>
+                <p class="field-help">{{ __('operator.localization.language_help') }}</p>
             </div>
 
             <div class="field">
-                <label for="timezone">Timezone</label>
+                <label for="timezone">{{ __('operator.localization.timezone') }}</label>
                 <select id="timezone" name="timezone">
                     @foreach ($timezoneChoices as $region => $identifiers)
-                        <optgroup label="{{ $region }}">
+                        <optgroup lang="" label="{{ $region }}">
                             @foreach ($identifiers as $identifier)
-                                <option value="{{ $identifier }}" @selected(old('timezone', $timezone) === $identifier)>{{ $identifier }}</option>
+                                <option lang="" value="{{ $identifier }}" @selected(old('timezone', $timezone) === $identifier)>{{ $identifier }}</option>
                             @endforeach
                         </optgroup>
                     @endforeach
                 </select>
                 @error('timezone')<p class="field-error">{{ $message }}</p>@enderror
-                <p class="field-help">Times and report days are shown on this clock. Records are always stored in UTC, so changing this re-reads existing history rather than rewriting it.</p>
+                <p class="field-help">{{ __('operator.localization.timezone_help') }}</p>
             </div>
 
-            <button class="button" type="submit">Save language and region</button>
+            <button class="button" type="submit">{{ __('operator.localization.save') }}</button>
         </form>
     </section>
 

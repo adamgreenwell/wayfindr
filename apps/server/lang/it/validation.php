@@ -113,9 +113,11 @@ return [
         'current_password' => 'Password attuale',
         'email' => 'Indirizzo email',
         'locale' => 'Lingua',
+        'language' => 'Lingua',
         'name' => 'Nome',
         'password' => 'Password',
         'password_confirmation' => 'Conferma della password',
+        'timezone' => 'Fuso orario',
 
         // The articles page. `body` was already here for the reply composer;
         // `title` was not, so an over-long article title produced a correct

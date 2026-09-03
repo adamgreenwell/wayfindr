@@ -2835,8 +2835,8 @@
                     </div>
 
                     <a class="wf-identity" href="{{ route('dashboard.profile.show') }}">
-                        <span class="wf-identity-name">{{ $agent->name }}</span>
-                        <span class="wf-identity-sub">{{ $account->name }}</span>
+                        <span class="wf-identity-name" lang="">{{ $agent->name }}</span>
+                        <span class="wf-identity-sub" lang="">{{ $account->name }}</span>
                     </a>
 
                     <form class="wf-signout" method="POST" action="{{ route('logout') }}">
@@ -2849,7 +2849,7 @@
             <div class="wf-main">
                 <header class="wf-topbar">
                     <nav class="wf-crumbs" aria-label="{{ __('nav.regions.breadcrumb') }}">
-                        <a href="{{ route('dashboard') }}">{{ $account->name }}</a>
+                        <a href="{{ route('dashboard') }}" lang="">{{ $account->name }}</a>
                         <x-icon name="chevron-right" :size="13" />
                         @if ($crumb)
                             <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
