@@ -112,8 +112,16 @@ test('operator dashboard localizes its interface while isolating runtime values'
     ]);
 
     foreach ([
-        'de' => ['title' => 'Betreiberkonsole', 'overview' => 'Betreiberschwerpunkt'],
-        'it' => ['title' => 'Console del gestore', 'overview' => 'Priorità del gestore'],
+        'de' => [
+            'title' => 'Betreiberkonsole',
+            'overview' => 'Betreiberschwerpunkt',
+            'support_loop_signal' => 'Aktuelles Signal für Live-Aktualisierungen: Der echte Supportablauf besteht aus Besuchernachricht, Agentenantwort und Live-Aktualisierung ohne manuelles Neuladen. Dieser Test kann dennoch mit manuellem Neuladen als ausdrücklich benanntem Rückfall bestehen.',
+        ],
+        'it' => [
+            'title' => 'Console del gestore',
+            'overview' => 'Priorità del gestore',
+            'support_loop_signal' => 'Segnale attuale per gli aggiornamenti in tempo reale: Il vero ciclo di supporto comprende un messaggio del visitatore, una risposta dell’agente e aggiornamenti in tempo reale senza ricaricamento manuale. Questa prova può comunque riuscire ricorrendo esplicitamente al ricaricamento manuale.',
+        ],
     ] as $locale => $expected) {
         $operator->forceFill(['locale' => $locale])->save();
 
@@ -123,6 +131,7 @@ test('operator dashboard localizes its interface while isolating runtime values'
             ->assertSee('<html lang="'.$locale.'"', false)
             ->assertSee($expected['title'])
             ->assertSee($expected['overview'])
+            ->assertSeeText($expected['support_loop_signal'])
             ->assertSee('<span lang="">30 days after the pilot closes</span>', false)
             ->assertSee('<span lang="">The operator removes pilot records after the agreed review window.</span>', false)
             ->assertDontSee('Operator focus')

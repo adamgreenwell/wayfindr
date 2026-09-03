@@ -663,7 +663,8 @@ return [
                     'summary' => 'Esegua il ciclo di supporto automatizzato.',
                     'attention_summary' => 'Corregga i controlli dell’applicazione e dell’ambiente non riusciti prima di eseguire il ciclo di supporto automatizzato.',
                     'manual_summary' => 'Esegua il ciclo di supporto automatizzato dal caricamento del widget alla creazione del ticket. Se il tempo reale non è pronto, è accettabile dichiarare il ricorso al ricaricamento manuale.',
-                    'detail' => 'Un’esecuzione deve provare il messaggio del visitatore, la risposta dell’agente, la ricerca del codice di supporto, la creazione del ticket e l’attuale ripiego degli aggiornamenti in tempo reale.',
+                    'detail' => 'Un’esecuzione deve provare il messaggio del visitatore, la risposta dell’agente, la ricerca del codice di supporto e la creazione del ticket.',
+                    'detail_with_signal' => 'Segnale attuale per gli aggiornamenti in tempo reale: :signal. Questa prova può comunque riuscire ricorrendo esplicitamente al ricaricamento manuale.',
                     'action' => 'Esegua scripts/smoke/support-loop.sh con URL dell’applicazione di prova, URL della pagina host, chiave pubblica del sito e credenziali di un agente dimostrativo eliminabile.',
                 ],
                 'ticket_workflow' => [

@@ -656,7 +656,8 @@ return [
                     'summary' => 'Führen Sie den skriptgesteuerten Supportablauf aus.',
                     'attention_summary' => 'Beheben Sie fehlerhafte Anwendungs- und Laufzeitprüfungen, bevor Sie den skriptgesteuerten Supportablauf ausführen.',
                     'manual_summary' => 'Führen Sie den skriptgesteuerten Supportablauf vom Laden des Widgets bis zur Ticketerstellung aus. Falls Echtzeit nicht bereit ist, ist ein benannter Rückfall auf manuelles Neuladen zulässig.',
-                    'detail' => 'Ein Lauf muss Besuchernachricht, Agentenantwort, Supportcode-Suche, Ticketerstellung und den aktuellen Rückfall für Live-Aktualisierungen nachweisen.',
+                    'detail' => 'Ein Lauf muss Besuchernachricht, Agentenantwort, Supportcode-Suche und Ticketerstellung nachweisen.',
+                    'detail_with_signal' => 'Aktuelles Signal für Live-Aktualisierungen: :signal. Dieser Test kann dennoch mit manuellem Neuladen als ausdrücklich benanntem Rückfall bestehen.',
                     'action' => 'Führen Sie scripts/smoke/support-loop.sh mit Staging-Anwendungs-URL, Hostseiten-URL, öffentlichem Websiteschlüssel und Zugangsdaten eines entbehrlichen Vorführagenten aus.',
                 ],
                 'ticket_workflow' => [

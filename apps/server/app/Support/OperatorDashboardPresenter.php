@@ -184,6 +184,17 @@ final class OperatorDashboardPresenter
                     $summary = $checks['public_url']['summary'];
                 } elseif ($key === 'support_loop_smoke') {
                     $summary = self::feedback($base.'.'.(($item['status'] ?? null) === 'attention' ? 'attention' : 'manual').'_summary');
+                    $detail = match ($item['translation']['detail_variant'] ?? null) {
+                        'default' => self::feedback($base.'.detail'),
+                        'with_signal' => self::feedback($base.'.detail_with_signal', localized: [
+                            'signal' => rtrim(__('operator.dashboard.smoke.steps.widget_smoke.summary'), '.'),
+                        ]),
+                        default => self::configuredCopy(
+                            (string) ($item['detail'] ?? ''),
+                            'One run must prove visitor message, agent reply, support-code lookup, and ticket creation.',
+                            $base.'.detail',
+                        ),
+                    };
                 } elseif ($key === 'ticket_workflow') {
                     $summary = self::feedback($base.'.'.(($item['status'] ?? null) === 'attention' ? 'attention' : 'manual').'_summary');
                 } elseif ($key === 'alerts_email') {

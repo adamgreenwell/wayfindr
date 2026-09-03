@@ -1231,6 +1231,7 @@ class OperatorReadiness
                 action: 'Run scripts/smoke/support-loop.sh with the staging app URL, host page URL, site public key, and disposable demo agent credentials.',
                 commands: [$supportLoopCommand],
                 docsUrl: 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/product/mvp-demo-rehearsal.md#full-support-loop-smoke',
+                translation: ['detail_variant' => $widgetSmoke ? 'with_signal' : 'default'],
             ),
             $this->dogfoodGate(
                 key: 'ticket_workflow',
@@ -1308,7 +1309,8 @@ class OperatorReadiness
 
     /**
      * @param  array<int, string>  $commands
-     * @return array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string}
+     * @param  array<string, string>  $translation
+     * @return array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string, translation: array<string, string>}
      */
     private function dogfoodGate(
         string $key,
@@ -1319,6 +1321,7 @@ class OperatorReadiness
         string $action,
         array $commands = [],
         ?string $docsUrl = null,
+        array $translation = [],
     ): array {
         return [
             'action' => $action,
@@ -1334,6 +1337,7 @@ class OperatorReadiness
                 default => 'Needs attention',
             },
             'summary' => $summary,
+            'translation' => $translation,
         ];
     }
 

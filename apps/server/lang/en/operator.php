@@ -656,7 +656,8 @@ return [
                     'summary' => 'Run the scripted support loop.',
                     'attention_summary' => 'Fix the failing app and runtime checks before running the scripted support loop.',
                     'manual_summary' => 'Run the scripted support loop from widget load through ticket creation. A manual-refresh fallback is acceptable if realtime is not ready.',
-                    'detail' => 'One run must prove visitor message, agent reply, support-code lookup, ticket creation, and the current live-update fallback.',
+                    'detail' => 'One run must prove visitor message, agent reply, support-code lookup, and ticket creation.',
+                    'detail_with_signal' => 'Current live-update signal: :signal. This can still pass with a manual refresh as a stated fallback.',
                     'action' => 'Run scripts/smoke/support-loop.sh with the staging app URL, host-page URL, site public key, and disposable demo-agent credentials.',
                 ],
                 'ticket_workflow' => [
