@@ -560,11 +560,14 @@ test('populated site settings speak Italian while visitor and provider copy stay
         ->assertSee('Quando il supporto è aperto')
         ->assertSee('Lingua parlata dal widget')
         ->assertSee('Chiedere com’è andata')
+        ->assertSee('Responsabilità dei dati')
+        ->assertSee('Promemoria per il gestore')
         ->assertSee('Cosa chiedere prima di iniziare una conversazione')
         ->assertSee('Presenza in tempo reale dei visitatori')
         ->assertSee('Selettori da mascherare')
         ->assertSee('Ritira questo sito')
         ->assertDontSee('Support readiness')
+        ->assertDontSee('Operator reminder')
         ->assertDontSee('Widget appearance')
         ->getContent();
 
@@ -592,6 +595,40 @@ test('populated site settings speak Italian while visitor and provider copy stay
             ->and($node)->toBeInstanceOf(DOMElement::class)
             ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
             ->and($node->getAttribute('lang'))->toBe('');
+    }
+});
+
+test('site settings preserve deployment-specific data responsibility copy', function (): void {
+    $agent = languageAgent('de');
+    $site = Site::factory()->for($agent->account)->create();
+    config(['wayfindr.data_responsibility' => [
+        'label' => 'Datenpunkt policy owner',
+        'message' => 'Datenpunkt deployment-specific privacy notice.',
+        'guidance' => 'Datenpunkt deployment-specific retention guidance.',
+    ]]);
+
+    $html = (string) $this->actingAs($agent)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Datenpunkt policy owner')
+        ->assertSee('Datenpunkt deployment-specific privacy notice.')
+        ->assertSee('Datenpunkt deployment-specific retention guidance.')
+        ->assertDontSee('Hinweis für Operatoren')
+        ->assertDontSee('Das Speichern von Daten, die Besuchende bereitstellen')
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        'label' => 'Datenpunkt policy owner',
+        'message' => 'Datenpunkt deployment-specific privacy notice.',
+        'guidance' => 'Datenpunkt deployment-specific retention guidance.',
+    ] as $name => $copy) {
+        $node = $xpath->query('//section[@aria-labelledby="data-responsibility-heading"]//span[@lang="" and normalize-space(text())="'.$copy.'"]')->item(0);
+
+        expect($node)->not->toBeNull("configured data responsibility {$name} was not preserved as unknown-language copy");
     }
 });
 

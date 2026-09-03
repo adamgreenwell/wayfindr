@@ -183,6 +183,7 @@ class AgentSiteController extends Controller
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'canUpdateSite' => Gate::forUser($agent)->allows('update', $site),
+            'dataResponsibility' => $this->localizedDataResponsibility(),
             'appearance' => WidgetAppearance::for($site),
             'availability' => SiteAvailability::for($site),
             'availabilitySettings' => is_array($site->settings['availability'] ?? null)
@@ -396,6 +397,33 @@ class AgentSiteController extends Controller
         return $site->externalIssueProjects
             ->filter(fn (SiteExternalIssueProject $project): bool => $project->supportsIssueCreationHandoff())
             ->count();
+    }
+
+    /**
+     * Translate Wayfindr's shipped defaults while preserving any
+     * deployment-specific privacy or legal wording verbatim.
+     *
+     * @return array<string, array{key: string}|array{raw: string}>
+     */
+    private function localizedDataResponsibility(): array
+    {
+        $configured = config('wayfindr.data_responsibility');
+        $configured = is_array($configured) ? $configured : [];
+        $defaults = [
+            'label' => 'Operator reminder',
+            'message' => 'Retaining visitor-supplied data may create privacy, security, and legal obligations.',
+            'guidance' => 'Keep only what you need, set a retention period you can justify, and make sure your privacy notice matches how this Wayfindr installation is used.',
+        ];
+        $localized = [];
+
+        foreach ($defaults as $name => $default) {
+            $actual = (string) ($configured[$name] ?? $default);
+            $localized[$name] = $actual === $default
+                ? ['key' => "account.data_responsibility.{$name}"]
+                : ['raw' => $actual];
+        }
+
+        return $localized;
     }
 
     /** @return array{label: string, language: string|null} */

@@ -755,12 +755,12 @@
             <section class="section" aria-labelledby="data-responsibility-heading">
                 <div class="section-header">
                     <h2 id="data-responsibility-heading">{{ __('account.data_responsibility.heading') }}</h2>
-                    <span class="lede">{{ __('account.data_responsibility.label') }}</span>
+                    <span class="lede"><x-translated-feedback :feedback="$dataResponsibility['label']" /></span>
                 </div>
 
                 <div class="notice-copy">
-                    <p>{{ __('account.data_responsibility.message') }}</p>
-                    <p>{{ __('account.data_responsibility.guidance') }}</p>
+                    <p><x-translated-feedback :feedback="$dataResponsibility['message']" /></p>
+                    <p><x-translated-feedback :feedback="$dataResponsibility['guidance']" /></p>
                 </div>
             </section>
 
