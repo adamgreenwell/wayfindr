@@ -65,8 +65,11 @@
                     ->all();
                 $siteMapSections = [
                     ['label' => __('site_settings.map.sections.readiness'), 'href' => '#site-support-readiness-heading'],
-                    ['label' => __('site_settings.map.sections.external_readiness'), 'href' => '#site-external-issue-readiness-heading'],
                 ];
+
+                if ($canManageTickets) {
+                    $siteMapSections[] = ['label' => __('site_settings.map.sections.external_readiness'), 'href' => '#site-external-issue-readiness-heading'];
+                }
 
                 if ($canViewSupportWork) {
                     array_splice($siteMapSections, 1, 0, [[
@@ -167,7 +170,8 @@
                 </section>
             @endif
 
-            <section class="section" aria-labelledby="site-external-issue-readiness-heading">
+            @if ($canManageTickets)
+                <section class="section" aria-labelledby="site-external-issue-readiness-heading">
                 <div class="section-header">
                     <div>
                         <h2 id="site-external-issue-readiness-heading">{{ __('site_settings.external.heading') }}</h2>
@@ -218,7 +222,8 @@
                         @endforeach
                     </div>
                 @endif
-            </section>
+                </section>
+            @endif
 
             @if ($installHealth['needs_attention'])
                 <section class="section" aria-labelledby="setup-attention-heading">
@@ -656,7 +661,8 @@
                     </div>
                 @endif
 
-                <div id="external-issue-health" aria-labelledby="external-issue-health-heading">
+                @if ($canManageTickets)
+                    <div id="external-issue-health" aria-labelledby="external-issue-health-heading">
                     <div class="section-header">
                         <h2 id="external-issue-health-heading">{{ __('site_settings.external.health_heading') }}</h2>
                         <span class="readiness-status" data-status="{{ $externalIssueHealth['tone'] }}">{{ $externalIssueHealth['label'] }}</span>
@@ -694,7 +700,8 @@
                             @endforeach
                         </div>
                     @endif
-                </div>
+                    </div>
+                @endif
 
                 <div class="section-header">
                     <strong>{{ __('site_settings.external.routing.connections') }}</strong>

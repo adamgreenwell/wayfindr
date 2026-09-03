@@ -224,7 +224,7 @@ class AgentSiteController extends Controller
         $supportAgentIds = $this->eligibleSupportAgentIds($site);
         $maskSelectors = $this->maskSelectors($site);
         $maskTerms = $this->maskTerms($site);
-        $externalIssueHealth = $this->externalIssueHealth($site);
+        $externalIssueHealth = $canManageTickets ? $this->externalIssueHealth($site) : null;
         $installHealth = $this->localizedSiteInstallHealth($site->latestVisitor);
         $installHostDiagnostic = $this->localizedSiteInstallHostDiagnostic($site->latestVisitor, $site->domain);
 
@@ -233,6 +233,7 @@ class AgentSiteController extends Controller
             'accountAgents' => $accountAgents,
             'agent' => $agent,
             'canViewSiteActivity' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
+            'canManageTickets' => $canManageTickets,
             'canViewSupportWork' => $canViewSupportWork,
             'canManageIntegrations' => Gate::forUser($agent)->allows('manageIntegrations', $site),
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
@@ -409,16 +410,15 @@ class AgentSiteController extends Controller
     /**
      * @param  array<int, int>  $supportAgentIds
      * @param  array<int, string>  $maskSelectors
-     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int, value: string}>, recent_failures: Collection<int, array{body_feedback: array<string, mixed>, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
+     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int, value: string}>, recent_failures: Collection<int, array{body_feedback: array<string, mixed>, status: string|null, occurred_at: Carbon|null}>}|null  $externalIssueHealth
      * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string, action: string}>
      */
-    private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, array $externalIssueHealth): Collection
+    private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, ?array $externalIssueHealth): Collection
     {
         $installHealth = $this->localizedSiteInstallHealth($site->latestVisitor);
         $explicitSupport = $site->hasExplicitSupportAgents();
-        $handoffProjectCount = $this->externalIssueHandoffProjectCount($site);
 
-        return collect([
+        $items = collect([
             [
                 'label' => __('site_settings.readiness.items.install.label'),
                 'value' => $installHealth['label'],
@@ -453,7 +453,11 @@ class AgentSiteController extends Controller
                 'href' => route('dashboard.sites.show', $site).'#privacy-settings-heading',
                 'action' => __('site_settings.readiness.items.privacy.action'),
             ],
-            [
+        ]);
+
+        if ($externalIssueHealth !== null) {
+            $handoffProjectCount = $this->externalIssueHandoffProjectCount($site);
+            $items->push([
                 'label' => __('site_settings.readiness.items.external.label'),
                 'value' => $handoffProjectCount > 0
                     ? trans_choice('site_settings.readiness.items.external.mapped', $handoffProjectCount, ['count' => ReaderNumber::count($handoffProjectCount)])
@@ -464,8 +468,10 @@ class AgentSiteController extends Controller
                     : __('site_settings.readiness.items.external.none_detail'),
                 'href' => route('dashboard.sites.show', $site).'#external-issue-routing-heading',
                 'action' => __('site_settings.readiness.items.external.action'),
-            ],
-        ]);
+            ]);
+        }
+
+        return $items;
     }
 
     private function externalIssueHandoffProjectCount(Site $site): int

@@ -16,6 +16,7 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
@@ -189,7 +190,14 @@ test('settings only site viewers do not receive visitor URLs or support workload
         'metadata' => ['last_page_url' => 'https://private.example.test/customer-record/secret'],
     ]);
     Conversation::factory()->for($site)->for($visitor)->create(['status' => 'open']);
-    Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+    $ticket = Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+    AuditEvent::factory()->for($account)->for($site)->for($ticket, 'subject')->create([
+        'action' => 'ticket.external_sync_failed',
+        'metadata' => [
+            'provider' => 'github',
+            'project_key' => 'private/ticket-project',
+        ],
+    ]);
 
     $this->actingAs($privacyManager)
         ->get(route('dashboard.sites.index'))
@@ -202,15 +210,30 @@ test('settings only site viewers do not receive visitor URLs or support workload
         ->assertDontSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
         ->assertDontSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false);
 
-    $this->actingAs($privacyManager)
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $siteResponse = $this->actingAs($privacyManager)
         ->get(route('dashboard.sites.show', $site))
         ->assertOk()
         ->assertSee('Privacy')
         ->assertDontSee('https://private.example.test/customer-record/secret')
         ->assertDontSee('1 open conversation')
         ->assertDontSee('1 open ticket')
+        ->assertDontSee('External issue readiness')
+        ->assertDontSee('External issue health')
+        ->assertDontSee('private/ticket-project')
         ->assertDontSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
         ->assertDontSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false);
+
+    $queryEvidence = collect(DB::getQueryLog())
+        ->map(fn (array $query): string => $query['query'].' '.json_encode($query['bindings'], JSON_THROW_ON_ERROR))
+        ->implode("\n");
+    DB::disableQueryLog();
+
+    expect($siteResponse->isOk())->toBeTrue()
+        ->and($queryEvidence)->not->toContain('ticket_external_links')
+        ->and($queryEvidence)->not->toContain('ticket.external_sync_failed');
 });
 
 test('site index summarizes visible workload without exposing restricted sites', function (): void {
