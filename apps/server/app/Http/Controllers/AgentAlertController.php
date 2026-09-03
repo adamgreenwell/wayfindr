@@ -208,18 +208,38 @@ class AgentAlertController extends Controller
             $notificationKind === 'ticket_assigned' && ! filled($storedSubject) => __('alerts.card.untitled_ticket'),
             default => null,
         };
+        $siteName = data_get($notificationData, 'site_name');
+        $localizedSite = __('alerts.card.on_site', [
+            'site' => filled($siteName) ? $siteName : __('alerts.card.unknown_site'),
+        ]);
+        $localizedTicketReference = $ticketId
+            ? __('alerts.card.ticket_reference', ['id' => $ticketId])
+            : null;
+        $priority = $notificationKind === 'ticket_assigned'
+            ? (string) data_get($notificationData, 'priority', 'normal')
+            : null;
+        $priorityKey = 'tickets.priorities.'.$priority;
+        $localizedPriorityLabel = $priority !== null ? __($priorityKey) : null;
+        $localizedPriority = $priority !== null
+            ? __('alerts.card.priority', [
+                'priority' => $localizedPriorityLabel === $priorityKey ? $priority : $localizedPriorityLabel,
+            ])
+            : null;
 
         return collect([
             $storedSubject,
             $localizedSubjectFallback,
             data_get($notificationData, 'support_code'),
             $ticketId ? 'Ticket #'.$ticketId : null,
+            $localizedTicketReference,
             $ticketId,
-            data_get($notificationData, 'site_name'),
+            $siteName,
+            $localizedSite,
             data_get($notificationData, 'message_preview'),
             data_get($notificationData, 'assigned_by_name'),
             data_get($notificationData, 'visitor_anonymous_id'),
-            data_get($notificationData, 'priority'),
+            $priority,
+            $localizedPriority,
         ])
             ->filter(fn ($value): bool => is_scalar($value) && trim((string) $value) !== '')
             ->map(fn ($value): string => trim((string) $value))

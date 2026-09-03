@@ -1189,6 +1189,41 @@ test('agents can search for the translated untitled-conversation fallback', func
     'Italian' => ['it', 'Conversazione senza titolo'],
 ]);
 
+test('agents can search for translated ticket-card values', function (string $locale): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['locale' => $locale]);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create(['subject' => 'Localized search ticket', 'priority' => 'high']);
+
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+    $notification = $agent->notifications()->firstOrFail();
+    $notificationData = $notification->data;
+    $notificationData['site_name'] = null;
+    $notification->forceFill(['data' => $notificationData])->save();
+
+    app()->setLocale($locale);
+    $searches = [
+        __('alerts.card.ticket_reference', ['id' => $ticket->id]),
+        __('alerts.card.priority', ['priority' => __('tickets.priorities.high')]),
+        __('alerts.card.on_site', ['site' => __('alerts.card.unknown_site')]),
+    ];
+
+    foreach ($searches as $search) {
+        $this->actingAs($agent)
+            ->get(route('dashboard.alerts.index', ['alert_search' => $search]))
+            ->assertOk()
+            ->assertSee('Localized search ticket');
+    }
+})->with([
+    'German' => ['de'],
+    'Italian' => ['it'],
+]);
+
 test('alert center gives agents a clearer empty unread state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
