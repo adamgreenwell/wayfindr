@@ -10,7 +10,7 @@ class QueueConversationReplyDeliveriesCommand extends Command
 {
     protected $signature = 'wayfindr:queue-conversation-reply-deliveries';
 
-    protected $description = 'Queue durable conversation email replies that are awaiting delivery.';
+    protected $description = 'Queue durable conversation email replies awaiting mail transport acceptance.';
 
     public function handle(): int
     {

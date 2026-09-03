@@ -247,6 +247,12 @@ backoff, and the scheduler recovers a row when the process exits or Redis is
 unavailable before the first handoff. Reusing the key for any different request
 returns `409`.
 
+Email relay is explicitly **at least once**, not exactly once. The outbox records
+when the configured mail transport returns successfully. If that transport
+accepts a message and the worker exits before the acceptance stamp commits, a
+retry can send another copy. Every attempt reuses the stored `Message-ID` for
+threading, but generic SMTP does not promise deduplication from that header.
+
 Receipts store only the resource type and id, not a second copy of a transcript
 or ticket response. They are pruned hourly after the retry window. Writes for
 one token briefly serialize on that token's row so every supported database has

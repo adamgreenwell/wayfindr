@@ -7,7 +7,9 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationReplyDelivery;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Sends a support-side reply on to a visitor who arrived by email.
@@ -44,7 +46,7 @@ final class ConversationReplyMailer
                     return null;
                 }
 
-                if ($existing->delivered_at !== null) {
+                if ($existing->accepted_at !== null) {
                     return null;
                 }
 
@@ -91,7 +93,18 @@ final class ConversationReplyMailer
         // The outbox commits first. If Redis is unavailable or this process
         // exits here, the scheduler (or an idempotent API replay) finds the
         // pending row and dispatches this same unique job later.
-        SendConversationReplyDelivery::dispatchPending($delivery->id);
+        try {
+            SendConversationReplyDelivery::dispatchPending($delivery->id);
+        } catch (Throwable $exception) {
+            // The committed outbox row is the acceptance boundary for every
+            // caller, including the human-agent form. Surfacing a 500 here
+            // invites a resubmit and therefore a second real reply. The
+            // scheduler will retry this same row on its next pass.
+            Log::error('Conversation reply stored, but its immediate queue handoff failed.', [
+                'conversation_reply_delivery_id' => $delivery->id,
+                'exception' => $exception->getMessage(),
+            ]);
+        }
 
         return true;
     }

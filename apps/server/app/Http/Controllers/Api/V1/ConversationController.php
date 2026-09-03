@@ -266,7 +266,7 @@ class ConversationController extends Controller
         // Unlike the realtime announcement, email delivery is durable work.
         // A replay must retry it when the first process exited after the write
         // committed or a queue push failed. The mailer locks the message and
-        // no-ops once delivery completes, so successful sends remain single.
+        // no-ops once the mail transport has accepted the message.
         try {
             $replyMailer->send($message);
         } catch (Throwable $exception) {

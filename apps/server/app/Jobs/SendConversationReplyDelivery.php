@@ -78,7 +78,7 @@ class SendConversationReplyDelivery implements ShouldBeUnique, ShouldQueue
                     ->lockForUpdate()
                     ->first();
 
-                if ($delivery === null || $delivery->delivered_at !== null) {
+                if ($delivery === null || $delivery->accepted_at !== null) {
                     return;
                 }
 
@@ -103,7 +103,10 @@ class SendConversationReplyDelivery implements ShouldBeUnique, ShouldQueue
                 ));
 
                 $delivery->forceFill([
-                    'delivered_at' => now(),
+                    // This is transport acceptance, not proof that a mailbox
+                    // received exactly one copy. Generic SMTP has no atomic
+                    // commit with this database transaction.
+                    'accepted_at' => now(),
                     'failed_at' => null,
                 ])->save();
             });
@@ -123,7 +126,7 @@ class SendConversationReplyDelivery implements ShouldBeUnique, ShouldQueue
     {
         ConversationReplyDelivery::query()
             ->whereKey($this->deliveryId)
-            ->whereNull('delivered_at')
+            ->whereNull('accepted_at')
             ->update(['failed_at' => now()]);
     }
 }

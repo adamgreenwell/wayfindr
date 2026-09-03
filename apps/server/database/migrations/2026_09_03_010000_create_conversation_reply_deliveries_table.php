@@ -16,11 +16,11 @@ return new class extends Migration
             $table->string('in_reply_to')->nullable();
             $table->unsignedInteger('attempts')->default(0);
             $table->timestamp('last_attempted_at')->nullable();
-            $table->timestamp('delivered_at')->nullable();
+            $table->timestamp('accepted_at')->nullable();
             $table->timestamp('failed_at')->nullable();
             $table->timestamps();
 
-            $table->index(['delivered_at', 'failed_at'], 'conversation_reply_deliveries_pending_index');
+            $table->index(['accepted_at', 'failed_at'], 'conversation_reply_deliveries_pending_index');
         });
     }
 

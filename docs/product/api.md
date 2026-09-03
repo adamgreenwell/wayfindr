@@ -130,6 +130,12 @@ with backoff, and the scheduler recovers rows whose Redis handoff never
 completed. Reusing a key for different input or another path returns `409`.
 Only a SHA-256 hash of the key is stored, and expired receipts are pruned hourly.
 
+The email relay is **at least once**. The outbox records mail-transport
+acceptance, not exactly-once mailbox delivery. If the transport accepts a
+message and the worker exits before that acceptance is committed, a retry can
+send a duplicate. Retries reuse the same `Message-ID` to preserve threading,
+but generic SMTP does not guarantee deduplication.
+
 ### Who authored an API message
 
 The API token did. Wayfindr stores that token as the message sender and shows

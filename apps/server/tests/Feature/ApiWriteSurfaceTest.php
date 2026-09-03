@@ -295,7 +295,7 @@ test('an API message is integration-authored, reopens the conversation, and broa
     Event::assertDispatchedTimes(ConversationMessageCreated::class, 1);
 });
 
-test('an API reply to an email conversation is delivered exactly once', function (): void {
+test('an API reply records mail transport acceptance and a replay does not resend it', function (): void {
     Mail::fake();
     Event::fake([ConversationMessageCreated::class]);
     $world = apiWriteWorld();
@@ -327,7 +327,7 @@ test('an API reply to an email conversation is delivered exactly once', function
 
     Mail::assertSentCount(1);
     expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull()
-        ->and(ConversationReplyDelivery::query()->sole()->delivered_at)->not->toBeNull();
+        ->and(ConversationReplyDelivery::query()->sole()->accepted_at)->not->toBeNull();
 });
 
 test('an idempotent replay retries an email reply whose first delivery attempt failed', function (): void {
@@ -353,7 +353,7 @@ test('an idempotent replay retries an email reply whose first delivery attempt f
     )->assertCreated()->assertHeader('Idempotent-Replayed', 'false');
 
     expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull()
-        ->and(ConversationReplyDelivery::query()->sole()->delivered_at)->toBeNull()
+        ->and(ConversationReplyDelivery::query()->sole()->accepted_at)->toBeNull()
         ->and(ConversationReplyDelivery::query()->sole()->failed_at)->not->toBeNull();
 
     Mail::clearResolvedInstance('mail.manager');
@@ -367,7 +367,7 @@ test('an idempotent replay retries an email reply whose first delivery attempt f
     )->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
 
     Mail::assertSent(ConversationReplyMessage::class, 1);
-    expect(ConversationReplyDelivery::query()->sole()->delivered_at)->not->toBeNull()
+    expect(ConversationReplyDelivery::query()->sole()->accepted_at)->not->toBeNull()
         ->and(ConversationReplyDelivery::query()->sole()->failed_at)->toBeNull();
 
     $this->postJson(
@@ -406,7 +406,7 @@ test('the scheduler recovers an API reply when the Redis handoff fails', functio
 
     $delivery = ConversationReplyDelivery::query()->sole();
 
-    expect($delivery->delivered_at)->toBeNull()
+    expect($delivery->accepted_at)->toBeNull()
         ->and($delivery->failed_at)->toBeNull();
 
     Queue::fake();
