@@ -135,14 +135,14 @@ class Ticket extends Model
             .' and e.occurred_at >= ?)';
 
         // The `pending` branch below deliberately does NOT need $hasMessage.
-        // `attentionState()` reaches it through `?->sender_type !== Visitor`,
-        // which is true for a null-sender message and for no message alike, so
-        // collapsing both to '' is what that rule actually says. The asymmetry
-        // with the `needs_reply` branch is the asymmetry in the PHP.
+        // `attentionState()` treats a null-sender message and no message alike,
+        // so collapsing both to '' is what that rule actually says. A visitor
+        // or integration message falls through: neither can stand in for the
+        // human reply that would make the ticket wait on the customer.
         $case = "case
             when tickets.status <> 'closed' and {$recentEscalation} then 'escalated'
             when tickets.status = 'closed' then 'resolved'
-            when tickets.status = 'pending' and coalesce({$latestSender}, '') <> ? then 'waiting_on_customer'
+            when tickets.status = 'pending' and coalesce({$latestSender}, '') not in (?, ?) then 'waiting_on_customer'
             when tickets.assignee_id is null then 'needs_owner'
             when {$latestSender} = ? then 'waiting_on_customer'
             when {$hasMessage} then 'needs_reply'
@@ -153,6 +153,7 @@ class Ticket extends Model
             (new self)->getMorphClass(),
             Carbon::now()->subDay(),
             (new Visitor)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
             (new User)->getMorphClass(),
         ]];
     }
@@ -264,7 +265,8 @@ class Ticket extends Model
 
         $latestMessage = $this->latestConversationMessage();
 
-        if ($this->status === 'pending' && $latestMessage?->sender_type !== Visitor::class) {
+        if ($this->status === 'pending'
+            && ! in_array($latestMessage?->sender_type, [Visitor::class, ApiToken::class], true)) {
             return 'waiting_on_customer';
         }
 

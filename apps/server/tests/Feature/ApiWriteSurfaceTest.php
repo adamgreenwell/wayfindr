@@ -359,6 +359,13 @@ test('an API message does not impersonate a human response in reporting', functi
         'support_code' => 'WF-NOHUMAN',
         'created_at' => now()->subMinutes(10),
     ]);
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($world['visitor'], 'requester')
+        ->for($world['agent'], 'assignee')
+        ->create(['status' => 'pending']);
 
     $this->postJson('/api/v1/conversations/WF-NOHUMAN/messages', [
         'body' => 'Automated acknowledgement.',
@@ -371,7 +378,9 @@ test('an API message does not impersonate a human response in reporting', functi
 
     expect($report->firstResponse()['summary']->count)->toBe(0)
         ->and($report->firstResponse()['awaiting'])->toBe(1)
-        ->and($conversation->fresh()->attentionState())->toBe('needs_reply');
+        ->and($conversation->fresh()->attentionState())->toBe('needs_reply')
+        ->and($ticket->fresh()->attentionState())->toBe('needs_reply')
+        ->and(Ticket::query()->whereKey($ticket->id)->whereAttentionState('needs_reply')->exists())->toBeTrue();
 });
 
 test('messages cannot be posted to archived or unreachable conversations', function (): void {

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Models\Account;
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -161,19 +162,28 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     // happened to speak last, and a fixture can produce one side only and
     // agree about the other without ever reaching it. So all four, by hand:
     // pending with a visitor last (falls through to needs_reply), with an
-    // agent last, with no message at all, and with a senderless message -- the
-    // last two are the `?->` in the PHP treating both nulls alike, which is
-    // the `coalesce` in the SQL.
+    // integration last (also needs a human reply), with an agent last, with no
+    // message at all, and with a senderless message -- the last two are the
+    // `?->` in the PHP treating both nulls alike, which is the `coalesce` in
+    // the SQL.
     $pendingAfterVisitor = $ticketOnItsOwnConversation('pending', $assignee->id);
+    $pendingAfterIntegration = $ticketOnItsOwnConversation('pending', $assignee->id);
     $pendingAfterAgent = $ticketOnItsOwnConversation('pending', $assignee->id);
     $pendingSilent = $ticketOnItsOwnConversation('pending', $assignee->id);
     $pendingSenderless = $ticketOnItsOwnConversation('pending', $assignee->id);
-    array_push($handBuilt, $pendingAfterVisitor->id, $pendingAfterAgent->id, $pendingSilent->id, $pendingSenderless->id);
+    array_push($handBuilt, $pendingAfterVisitor->id, $pendingAfterIntegration->id, $pendingAfterAgent->id, $pendingSilent->id, $pendingSenderless->id);
 
     ConversationMessage::factory()->create([
         'conversation_id' => $pendingAfterVisitor->conversation_id,
         'sender_type' => (new Visitor)->getMorphClass(),
         'sender_id' => Visitor::query()->firstOrFail()->id,
+        'created_at' => now()->subMinutes(2),
+    ]);
+
+    ConversationMessage::factory()->create([
+        'conversation_id' => $pendingAfterIntegration->conversation_id,
+        'sender_type' => ApiToken::class,
+        'sender_id' => ApiToken::factory()->for($account)->create()->id,
         'created_at' => now()->subMinutes(2),
     ]);
 
@@ -192,6 +202,7 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     ]);
 
     expect($pendingAfterVisitor->fresh()->attentionState())->toBe('needs_reply', 'pending after a visitor should fall through')
+        ->and($pendingAfterIntegration->fresh()->attentionState())->toBe('needs_reply', 'pending after an integration still needs a human reply')
         ->and($pendingAfterAgent->fresh()->attentionState())->toBe('waiting_on_customer')
         ->and($pendingSilent->fresh()->attentionState())->toBe('waiting_on_customer', 'pending with no message at all')
         ->and($pendingSenderless->fresh()->attentionState())->toBe('waiting_on_customer', 'pending with a senderless message');
