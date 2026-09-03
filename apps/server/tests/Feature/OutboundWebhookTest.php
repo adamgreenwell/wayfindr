@@ -18,6 +18,7 @@ use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\Psr7\Response as PsrResponse;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schedule;
@@ -208,6 +209,92 @@ test('delivery signs the exact thin body and records subscriber acceptance', fun
         ->and($delivery->response_body)->toBe('accepted')
         ->and($delivery->delivered_at)->not->toBeNull()
         ->and($delivery->getRawOriginal('response_body'))->not->toContain('accepted');
+});
+
+test('delivery holds its lifecycle transaction through the subscriber request', function (): void {
+    $levels = [];
+    $baseline = DB::transactionLevel();
+
+    Http::fake(function () use (&$levels) {
+        $levels[] = DB::transactionLevel();
+
+        return Http::response('', 202);
+    });
+
+    $destination = allowWebhookDns();
+    $world = outboundWebhookWorld();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create();
+    $delivery = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+    ]);
+
+    (new DeliverOutboundWebhook($delivery->id))->handle($destination);
+
+    expect($levels)->toBe([$baseline + 1])
+        ->and($delivery->fresh()->delivered_at)->not->toBeNull();
+});
+
+test('a disable that wins after the worker pointer read prevents the request', function (): void {
+    Http::fake();
+    $destination = allowWebhookDns();
+    $world = outboundWebhookWorld();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create();
+    $delivery = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+    ]);
+    $disabled = false;
+    $baseline = DB::transactionLevel();
+
+    OutboundWebhookDelivery::retrieved(function (OutboundWebhookDelivery $observed) use (&$disabled, $baseline, $delivery, $endpoint): void {
+        if ($disabled || (int) $observed->id !== (int) $delivery->id || DB::transactionLevel() !== $baseline) {
+            return;
+        }
+
+        $disabled = true;
+        OutboundWebhookEndpoint::query()->whereKey($endpoint->id)->update(['disabled_at' => now()]);
+    });
+
+    (new DeliverOutboundWebhook($delivery->id))->handle($destination);
+
+    Http::assertNothingSent();
+    expect($delivery->fresh()->cancelled_at)->not->toBeNull()
+        ->and($delivery->fresh()->attempts)->toBe(0);
+});
+
+test('a purge that wins after the worker pointer read prevents the request', function (): void {
+    Http::fake();
+    $destination = allowWebhookDns();
+    $world = outboundWebhookWorld();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create();
+    $delivery = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+    ]);
+    $purged = false;
+    $baseline = DB::transactionLevel();
+
+    OutboundWebhookDelivery::retrieved(function (OutboundWebhookDelivery $observed) use (&$purged, $baseline, $delivery, $world): void {
+        if ($purged || (int) $observed->id !== (int) $delivery->id || DB::transactionLevel() !== $baseline) {
+            return;
+        }
+
+        $purged = true;
+        app(SitePurge::class)->purge($world['site'], $world['admin']);
+    });
+
+    (new DeliverOutboundWebhook($delivery->id))->handle($destination);
+
+    Http::assertNothingSent();
+    expect(OutboundWebhookDelivery::query()->whereKey($delivery->id)->exists())->toBeFalse();
+});
+
+test('delivery locks endpoint site and row in the shared lifecycle order', function (): void {
+    // SQLite compiles SELECT FOR UPDATE away, so the two stale-pointer tests
+    // prove the recheck and this invariant guard protects the synchronization
+    // that PostgreSQL supplies in production and in the PostgreSQL CI lane.
+    $source = file_get_contents(dirname(__DIR__, 2).'/app/Jobs/DeliverOutboundWebhook.php');
+
+    expect($source)->not->toBeFalse()
+        ->and(substr_count((string) $source, '->lockForUpdate()'))->toBeGreaterThanOrEqual(3);
 });
 
 test('subscriber failure is retryable and worker exhaustion becomes visible', function (): void {

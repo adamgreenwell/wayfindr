@@ -72,6 +72,14 @@ consume unbounded worker memory or disk. An administrator may explicitly retry
 a terminal failure. Disabling an endpoint cancels pending rows and prevents new
 ones while retaining its history.
 
+An attempt rechecks the endpoint, site and delivery under database row locks,
+then holds those lifecycle locks until the HTTP request finishes. Endpoint
+disable and site purge therefore have a precise boundary: if either mutation
+commits first, the worker sends nothing; if a request has already started, the
+mutation waits for it to finish before returning. A completed disable or purge
+can never be followed by a request that was authorized from stale in-memory
+state.
+
 ### Signing covers the exact bytes sent
 
 Each POST carries:

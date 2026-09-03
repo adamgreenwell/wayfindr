@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\OutboundWebhookDelivery;
+use App\Models\OutboundWebhookEndpoint;
+use App\Models\Site;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use GuzzleHttp\Psr7\FnStream;
 use GuzzleHttp\Psr7\Utils;
@@ -14,6 +16,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
@@ -64,107 +67,163 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
 
     public function handle(OutboundWebhookDestination $destination): void
     {
-        $delivery = OutboundWebhookDelivery::query()->with('endpoint')->find($this->deliveryId);
+        // This first read is only a pointer to the lifecycle rows we must lock.
+        // It is deliberately not authority to send: an endpoint disable or site
+        // purge may commit immediately after it, and everything below re-reads
+        // the decision while holding the same rows those actions mutate.
+        $pointer = OutboundWebhookDelivery::query()
+            ->select(['id', 'outbound_webhook_endpoint_id', 'site_id'])
+            ->find($this->deliveryId);
 
-        if (
-            $delivery === null
-            || $delivery->delivered_at !== null
-            || $delivery->failed_at !== null
-            || $delivery->cancelled_at !== null
-        ) {
+        if ($pointer === null) {
             return;
         }
-
-        if ($delivery->endpoint === null || ! $delivery->endpoint->isEnabled()) {
-            $delivery->forceFill(['cancelled_at' => now()])->save();
-
-            return;
-        }
-
-        $delivery->forceFill([
-            'attempts' => $delivery->attempts + 1,
-            'last_attempted_at' => now(),
-            'response_status' => null,
-            'response_body' => null,
-            'last_error' => null,
-        ])->save();
-
-        $failureRecorded = false;
 
         try {
-            // Resolve for every attempt, then pin the verified answer for the
-            // request. This is both configuration drift handling and the DNS
-            // rebinding boundary.
-            $inspected = $destination->inspect($delivery->endpoint->url);
-            $body = json_encode(
-                $delivery->payload,
-                JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
-            );
-            $signature = 'sha256='.hash_hmac('sha256', $body, $delivery->endpoint->secret);
-            $responseBodyBuffer = Utils::streamFor('');
-            $responseSink = FnStream::decorate($responseBodyBuffer, [
-                // cURL requires the callback to report the whole chunk as
-                // consumed. Retain only the diagnostic prefix and discard the
-                // rest during transfer so a subscriber cannot fill worker
-                // memory or disk before the later display cap runs.
-                'write' => static function (string $chunk) use ($responseBodyBuffer): int {
-                    $remaining = self::MAX_RESPONSE_BODY_BYTES - ($responseBodyBuffer->getSize() ?? 0);
+            $shouldRetry = DB::transaction(function () use ($pointer, $destination): bool {
+                // One lock order everywhere: endpoint, site, delivery. Holding
+                // the lifecycle rows through the POST gives disable/purge a
+                // precise contract: they either win before this recheck and no
+                // request starts, or wait for this already-started request to
+                // finish before they return.
+                $endpoint = OutboundWebhookEndpoint::query()
+                    ->whereKey($pointer->outbound_webhook_endpoint_id)
+                    ->lockForUpdate()
+                    ->first();
 
-                    if ($remaining > 0) {
-                        $responseBodyBuffer->write(substr($chunk, 0, $remaining));
+                if ($endpoint === null) {
+                    return false;
+                }
+
+                if (! $endpoint->isEnabled()) {
+                    OutboundWebhookDelivery::query()
+                        ->whereKey($pointer->id)
+                        ->whereNull('delivered_at')
+                        ->whereNull('failed_at')
+                        ->whereNull('cancelled_at')
+                        ->update(['cancelled_at' => now()]);
+
+                    return false;
+                }
+
+                $site = Site::query()
+                    ->whereKey($pointer->site_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($site === null) {
+                    return false;
+                }
+
+                $delivery = OutboundWebhookDelivery::query()
+                    ->whereKey($pointer->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (
+                    $delivery === null
+                    || (int) $delivery->outbound_webhook_endpoint_id !== (int) $endpoint->id
+                    || (int) $delivery->site_id !== (int) $site->id
+                    || $delivery->delivered_at !== null
+                    || $delivery->failed_at !== null
+                    || $delivery->cancelled_at !== null
+                ) {
+                    return false;
+                }
+
+                $delivery->forceFill([
+                    'attempts' => $delivery->attempts + 1,
+                    'last_attempted_at' => now(),
+                    'response_status' => null,
+                    'response_body' => null,
+                    'last_error' => null,
+                ])->save();
+
+                try {
+                    // Resolve for every attempt, then pin the verified answer
+                    // for the request. This is both configuration drift
+                    // handling and the DNS rebinding boundary.
+                    $inspected = $destination->inspect($endpoint->url);
+                    $body = json_encode(
+                        $delivery->payload,
+                        JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
+                    );
+                    $signature = 'sha256='.hash_hmac('sha256', $body, $endpoint->secret);
+                    $responseBodyBuffer = Utils::streamFor('');
+                    $responseSink = FnStream::decorate($responseBodyBuffer, [
+                        // cURL requires the callback to report the whole chunk
+                        // as consumed. Retain only the diagnostic prefix and
+                        // discard the rest during transfer so a subscriber
+                        // cannot fill worker memory or disk.
+                        'write' => static function (string $chunk) use ($responseBodyBuffer): int {
+                            $remaining = self::MAX_RESPONSE_BODY_BYTES - ($responseBodyBuffer->getSize() ?? 0);
+
+                            if ($remaining > 0) {
+                                $responseBodyBuffer->write(substr($chunk, 0, $remaining));
+                            }
+
+                            return strlen($chunk);
+                        },
+                    ]);
+
+                    $response = Http::withOptions([
+                        'allow_redirects' => false,
+                        // A host-level proxy must not get a fresh opportunity
+                        // to resolve this name after the public-address check.
+                        'proxy' => '',
+                        'curl' => $inspected['curl'],
+                        'sink' => $responseSink,
+                    ])
+                        ->connectTimeout(5)
+                        ->timeout(15)
+                        ->withHeaders([
+                            'User-Agent' => 'Wayfindr-Webhooks/1.0',
+                            'X-Wayfindr-Event' => $delivery->event,
+                            'X-Wayfindr-Delivery' => $delivery->public_id,
+                            'X-Wayfindr-Signature' => $signature,
+                        ])
+                        ->withBody($body, 'application/json')
+                        ->post($inspected['url']);
+
+                    $responseBodyBuffer->rewind();
+                    $responseBody = self::boundedResponseBody($responseBodyBuffer->getContents());
+
+                    if (! $response->successful()) {
+                        $delivery->forceFill([
+                            'response_status' => $response->status(),
+                            'response_body' => $responseBody,
+                            'last_error' => 'http_status',
+                        ])->save();
+
+                        return true;
                     }
 
-                    return strlen($chunk);
-                },
-            ]);
+                    $delivery->forceFill([
+                        // This is HTTP acceptance, not exactly-once
+                        // processing. If the worker exits after POST but before
+                        // this save, the stable delivery id and sequence let
+                        // the subscriber de-duplicate.
+                        'response_status' => $response->status(),
+                        'response_body' => $responseBody,
+                        'last_error' => null,
+                        'delivered_at' => now(),
+                        'failed_at' => null,
+                    ])->save();
 
-            $response = Http::withOptions([
-                'allow_redirects' => false,
-                // A host-level proxy must not get a fresh opportunity to
-                // resolve this name after the public-address check above.
-                'proxy' => '',
-                'curl' => $inspected['curl'],
-                'sink' => $responseSink,
-            ])
-                ->connectTimeout(5)
-                ->timeout(15)
-                ->withHeaders([
-                    'User-Agent' => 'Wayfindr-Webhooks/1.0',
-                    'X-Wayfindr-Event' => $delivery->event,
-                    'X-Wayfindr-Delivery' => $delivery->public_id,
-                    'X-Wayfindr-Signature' => $signature,
-                ])
-                ->withBody($body, 'application/json')
-                ->post($inspected['url']);
+                    return false;
+                } catch (Throwable) {
+                    $delivery->forceFill(['last_error' => 'connection'])->save();
 
-            $responseBodyBuffer->rewind();
-            $responseBody = self::boundedResponseBody($responseBodyBuffer->getContents());
-
-            if (! $response->successful()) {
-                $delivery->forceFill([
-                    'response_status' => $response->status(),
-                    'response_body' => $responseBody,
-                    'last_error' => 'http_status',
-                ])->save();
-                $failureRecorded = true;
-
-                throw new RuntimeException('The outbound webhook subscriber did not accept the delivery.');
-            }
-
-            $delivery->forceFill([
-                // This is HTTP acceptance, not exactly-once processing. If the
-                // worker exits after POST but before this save, the stable
-                // delivery id and sequence let the subscriber de-duplicate.
-                'response_status' => $response->status(),
-                'response_body' => $responseBody,
-                'last_error' => null,
-                'delivered_at' => now(),
-                'failed_at' => null,
-            ])->save();
+                    return true;
+                }
+            });
         } catch (Throwable) {
-            if (! $failureRecorded) {
-                $delivery->forceFill(['last_error' => 'connection'])->save();
-            }
+            // Database/crypto failures also retry, but their details do not
+            // belong in queue output or a subscriber-visible record.
+            throw new RuntimeException('Outbound webhook delivery failed.');
+        }
+
+        if ($shouldRetry) {
 
             // No subscriber response body, destination or transport exception
             // is copied into the queue error. The operator has the bounded log
