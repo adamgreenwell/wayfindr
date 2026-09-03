@@ -8,7 +8,7 @@
     <section class="section" aria-labelledby="two-factor-readiness-heading">
         <div class="section-header">
             <h2 id="two-factor-readiness-heading">{{ __('two_factor.policy.readiness_heading') }}</h2>
-            <span class="lede">{{ __('two_factor.policy.active_count', ['count' => $activeAgentCount]) }}</span>
+            <span class="lede">{{ trans_choice('two_factor.policy.active_count', $activeAgentCount, ['count' => \App\Support\ReaderNumber::count($activeAgentCount)]) }}</span>
         </div>
         <div class="meta-grid">
             <div class="meta-item">

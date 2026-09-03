@@ -43,7 +43,7 @@ return [
         'heading' => 'Kontosicherheit',
         'subtitle' => 'Lege den Anmeldestandard für alle aktiven Agenten fest.',
         'readiness_heading' => 'Zwei-Faktor-Bereitschaft',
-        'active_count' => ':count aktive Agenten',
+        'active_count' => '{1} :count aktiver Agent|[2,*] :count aktive Agenten',
         'enabled_label' => 'Eingerichtet',
         'missing_label' => 'Einrichtung noch erforderlich',
         'setting_heading' => 'Kontovorgabe',

@@ -43,7 +43,7 @@ return [
         'heading' => 'Sicurezza dell’account',
         'subtitle' => 'Livello minimo di accesso per tutti gli agenti attivi.',
         'readiness_heading' => 'Preparazione per i due fattori',
-        'active_count' => ':count agenti attivi',
+        'active_count' => '{1} :count agente attivo|[2,*] :count agenti attivi',
         'enabled_label' => 'Configurati',
         'missing_label' => 'Configurazione ancora necessaria',
         'setting_heading' => 'Requisito dell’account',

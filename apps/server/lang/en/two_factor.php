@@ -43,7 +43,7 @@ return [
         'heading' => 'Account security',
         'subtitle' => 'Set the sign-in baseline for every active agent.',
         'readiness_heading' => 'Two-factor readiness',
-        'active_count' => ':count active agents',
+        'active_count' => '{1} :count active agent|[2,*] :count active agents',
         'enabled_label' => 'Enrolled',
         'missing_label' => 'Still need enrollment',
         'setting_heading' => 'Account requirement',

@@ -216,6 +216,12 @@ test('only an enrolled admin can require two factor for an account', function ()
     giveAgentTwoFactor($admin);
 
     $this->actingAs($admin->fresh())
+        ->get(route('dashboard.account.security.show'))
+        ->assertOk()
+        ->assertSee('1 active agent')
+        ->assertDontSee('1 active agents');
+
+    $this->actingAs($admin->fresh())
         ->put(route('dashboard.account.security.update'), ['requires_two_factor' => '1'])
         ->assertRedirect(route('dashboard.account.security.show'));
 
