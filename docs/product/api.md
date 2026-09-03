@@ -129,6 +129,9 @@ pending durable outbox delivery. The outbox job is unique per message, retries
 with backoff, and the scheduler recovers rows whose Redis handoff never
 completed. Reusing a key for different input or another path returns `409`.
 Only a SHA-256 hash of the key is stored, and expired receipts are pruned hourly.
+After five failed worker attempts, the row cools for 60 minutes and then enters
+a new automatic retry cycle; terminal worker exhaustion does not discard the
+accepted reply or require an API replay.
 
 The email relay is **at least once**. The outbox records mail-transport
 acceptance, not exactly-once mailbox delivery. If the transport accepts a

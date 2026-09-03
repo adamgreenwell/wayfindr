@@ -247,6 +247,12 @@ backoff, and the scheduler recovers a row when the process exits or Redis is
 unavailable before the first handoff. Reusing the key for any different request
 returns `409`.
 
+Five failed worker attempts stamp the latest failed cycle, then the row cools
+for 60 minutes before the scheduler starts another retry cycle. The failure
+stamp is not a permanent tombstone: this automatic recovery applies equally to
+API and human-agent replies, including the latter's lack of an idempotent API
+replay.
+
 Email relay is explicitly **at least once**, not exactly once. The outbox records
 when the configured mail transport returns successfully. If that transport
 accepts a message and the worker exits before the acceptance stamp commits, a

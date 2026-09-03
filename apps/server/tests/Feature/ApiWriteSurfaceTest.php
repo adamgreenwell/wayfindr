@@ -423,6 +423,39 @@ test('the scheduler recovers an API reply when the Redis handoff fails', functio
     ))->toBeTrue();
 });
 
+test('the scheduler automatically retries terminal mail failures after a controlled cooldown', function (): void {
+    Queue::fake();
+    $world = apiWriteWorld();
+    $conversation = Conversation::factory()->for($world['site'])->for($world['visitor'])->create();
+    [$cooledMessage, $recentMessage] = ConversationMessage::factory()
+        ->count(2)
+        ->for($conversation)
+        ->create();
+    $cooled = $cooledMessage->replyDelivery()->create([
+        'recipient' => 'cooled@example.test',
+        'message_id' => '<cooled@example.test>',
+        'failed_at' => now()->subMinutes(ConversationReplyDelivery::FAILED_RETRY_AFTER_MINUTES + 1),
+    ]);
+    $recent = $recentMessage->replyDelivery()->create([
+        'recipient' => 'recent@example.test',
+        'message_id' => '<recent@example.test>',
+        'failed_at' => now()->subMinutes(ConversationReplyDelivery::FAILED_RETRY_AFTER_MINUTES - 1),
+    ]);
+
+    $this->artisan('wayfindr:queue-conversation-reply-deliveries')
+        ->expectsOutput('Queued 1 pending conversation reply delivery.')
+        ->assertSuccessful();
+
+    Queue::assertPushed(
+        SendConversationReplyDelivery::class,
+        fn ($job): bool => $job->uniqueId() === (string) $cooled->id,
+    );
+    Queue::assertNotPushed(
+        SendConversationReplyDelivery::class,
+        fn ($job): bool => $job->uniqueId() === (string) $recent->id,
+    );
+});
+
 test('an integration message can bound a visitor read receipt without becoming human work', function (): void {
     Event::fake([ConversationMessageCreated::class, ConversationReadReceiptUpdated::class]);
     $world = apiWriteWorld();

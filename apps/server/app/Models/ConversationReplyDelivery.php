@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class ConversationReplyDelivery extends Model
 {
+    public const FAILED_RETRY_AFTER_MINUTES = 60;
+
     protected function casts(): array
     {
         return [
@@ -43,6 +45,15 @@ class ConversationReplyDelivery extends Model
      */
     public function scopeAwaitingDispatch(Builder $query): Builder
     {
-        return $query->whereNull('accepted_at')->whereNull('failed_at');
+        return $query
+            ->whereNull('accepted_at')
+            ->where(function (Builder $query): void {
+                $query->whereNull('failed_at')
+                    // A terminal queue failure is a cooling-off marker, not a
+                    // tombstone. Human-agent replies have no API replay to
+                    // revive them, so the scheduler starts a fresh retry cycle
+                    // after this bounded pause.
+                    ->orWhere('failed_at', '<=', now()->subMinutes(self::FAILED_RETRY_AFTER_MINUTES));
+            });
     }
 }
