@@ -121,8 +121,8 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   in live updates as well as the first render. Values that something reads back
   are deliberately left alone: chart bar widths, data attributes, CSV cells,
   and anything on a broadcast.
-- **A visitor directory**, and a read-only public API with a decided isolation
-  model (ADR 0018).
+- **A visitor directory**, and a public API with a decided isolation model,
+  scoped reads, and a narrow write surface (ADR 0018).
 - **Live visitor presence** ([#747](https://github.com/adamgreenwell/wayfindr/issues/747)):
   who is on the site right now, on what page, for how long, and whether the desk
   has ever heard from them. It updates over the Reverb connection the agent

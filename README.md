@@ -161,7 +161,7 @@ gaps, first-class localization, and hardening. Everything below already ships.
   complete;
 - an agent-selectable dashboard language, on the surfaces translated so far;
 - a visitor directory, and agent-initiated password recovery;
-- a read-only public API with a decided isolation model;
+- a public API with a decided isolation model, scoped reads, and a narrow write surface;
 - visitor profiles, support-code lookup, and safe cross-record context;
 - alert preferences, dashboard alerts, queued email notifications, welcome
   emails, and mail smoke testing;

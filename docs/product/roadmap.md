@@ -51,8 +51,8 @@ The product has moved past a spine. It now includes:
   The widget and the dashboard also carry different language sets on purpose
   rather than by omission: Italian is agent-facing, and adding it to the widget
   is a separate catalogue for a separate audience.
-- A visitor directory, agent-initiated password recovery, and a read-only public
-  API with a decided isolation model.
+- A visitor directory, agent-initiated password recovery, and a public API with
+  a decided isolation model, scoped reads, and a narrow write surface.
 - Visitor presence collection (ADR 0019) — heartbeat, disclosure, decline, and
   the product's first automatic retention window: thirty days by default, and at
   most, with operators free to shorten it. The maximum belongs to the product
