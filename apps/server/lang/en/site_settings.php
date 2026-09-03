@@ -39,6 +39,7 @@ return [
         'access_saved' => 'Site access saved.',
         'project_mapped' => 'External issue project mapped.',
         'project_removed' => 'External issue project removed.',
+        'connection_saved' => 'Provider connection saved.',
     ],
 
     'validation' => [
@@ -148,15 +149,15 @@ return [
         ],
         'metrics' => [
             'mapped' => ['label' => 'Mapped projects', 'count' => '{1} :count mapped project|[2,*] :count mapped projects'],
-            'handoff' => ['label' => 'Handoff ready', 'count' => ':count handoff ready'],
-            'disabled' => ['label' => 'Disabled mappings', 'count' => ':count disabled'],
-            'failed' => ['label' => 'Sync failed', 'count' => ':count sync failed', 'action' => 'Review failed tickets'],
-            'pending' => ['label' => 'Sync pending', 'count' => ':count sync pending', 'action' => 'Review pending tickets'],
+            'handoff' => ['label' => 'Handoff ready', 'count' => '{1} :count handoff ready|[2,*] :count handoffs ready'],
+            'disabled' => ['label' => 'Disabled mappings', 'count' => '{1} :count disabled|[2,*] :count disabled'],
+            'failed' => ['label' => 'Sync failed', 'count' => '{1} :count sync failed|[2,*] :count syncs failed', 'action' => 'Review failed tickets'],
+            'pending' => ['label' => 'Sync pending', 'count' => '{1} :count sync pending|[2,*] :count syncs pending', 'action' => 'Review pending tickets'],
         ],
         'status_counts' => [
-            'linked' => ['label' => 'Linked', 'count' => ':count linked'],
-            'sync_pending' => ['label' => 'Sync pending', 'count' => ':count sync pending'],
-            'sync_failed' => ['label' => 'Sync failed', 'count' => ':count sync failed'],
+            'linked' => ['label' => 'Linked', 'count' => '{1} :count linked|[2,*] :count linked'],
+            'sync_pending' => ['label' => 'Sync pending', 'count' => '{1} :count sync pending|[2,*] :count syncs pending'],
+            'sync_failed' => ['label' => 'Sync failed', 'count' => '{1} :count sync failed|[2,*] :count syncs failed'],
         ],
         'failures' => [
             'empty' => 'No recent external sync failures for this site.',

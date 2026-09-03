@@ -38,7 +38,7 @@ test('account admins can create encrypted external issue provider connections', 
             'capabilities' => ['create_issue', 'add_comment'],
         ])
         ->assertRedirect("/dashboard/sites/{$site->id}")
-        ->assertSessionHas('status', 'Provider connection saved.');
+        ->assertSessionHas('status', 'site_settings.flash.connection_saved');
 
     $connection = ExternalIssueProviderConnection::query()->firstOrFail();
 
@@ -276,7 +276,7 @@ test('site external issue health is scoped to the current account and site', fun
         ->assertOk()
         ->assertSee('External issue health')
         ->assertSee('1 linked')
-        ->assertSee('0 sync failed')
+        ->assertSee('0 syncs failed')
         ->assertSee('No recent external sync failures for this site.')
         ->assertDontSee('other/private')
         ->assertDontSee('Status 401');

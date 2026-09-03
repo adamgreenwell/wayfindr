@@ -323,12 +323,12 @@ class AgentSiteController extends Controller
     /**
      * @param  array<int, int>  $supportAgentIds
      * @param  array<int, string>  $maskSelectors
-     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int}>, recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
+     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int, value: string}>, recent_failures: Collection<int, array{body_feedback: array<string, mixed>, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
      * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string}>
      */
     private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, array $externalIssueHealth): Collection
     {
-        $installHealth = SiteInstallHealth::fromVisitor($site->latestVisitor);
+        $installHealth = $this->localizedSiteInstallHealth($site->latestVisitor);
         $explicitSupport = $site->hasExplicitSupportAgents();
         $handoffProjectCount = $this->externalIssueHandoffProjectCount($site);
 
@@ -457,9 +457,11 @@ class AgentSiteController extends Controller
             ])
             ->map(fn (array $item): array => [
                 ...$item,
-                'value' => __("site_settings.external.status_counts.{$item['key']}.count", [
-                    'count' => ReaderNumber::count($item['count']),
-                ]),
+                'value' => trans_choice(
+                    "site_settings.external.status_counts.{$item['key']}.count",
+                    $item['count'],
+                    ['count' => ReaderNumber::count($item['count'])],
+                ),
             ])
             ->values();
 
@@ -484,17 +486,17 @@ class AgentSiteController extends Controller
                 ],
                 [
                     'label' => __('site_settings.external.metrics.handoff.label'),
-                    'value' => __('site_settings.external.metrics.handoff.count', ['count' => ReaderNumber::count($handoffProjectCount)]),
+                    'value' => trans_choice('site_settings.external.metrics.handoff.count', $handoffProjectCount, ['count' => ReaderNumber::count($handoffProjectCount)]),
                     'tone' => $handoffProjectCount > 0 ? 'ready' : 'manual',
                 ],
                 [
                     'label' => __('site_settings.external.metrics.disabled.label'),
-                    'value' => __('site_settings.external.metrics.disabled.count', ['count' => ReaderNumber::count($disabledProjectCount)]),
+                    'value' => trans_choice('site_settings.external.metrics.disabled.count', $disabledProjectCount, ['count' => ReaderNumber::count($disabledProjectCount)]),
                     'tone' => $disabledProjectCount > 0 ? 'attention' : 'ready',
                 ],
                 [
                     'label' => __('site_settings.external.metrics.failed.label'),
-                    'value' => __('site_settings.external.metrics.failed.count', ['count' => ReaderNumber::count($failedCount)]),
+                    'value' => trans_choice('site_settings.external.metrics.failed.count', $failedCount, ['count' => ReaderNumber::count($failedCount)]),
                     'tone' => $failedCount > 0 ? 'attention' : 'ready',
                     'href' => $failedQueueCount > 0
                         ? route('dashboard.tickets.index', [
@@ -507,7 +509,7 @@ class AgentSiteController extends Controller
                 ],
                 [
                     'label' => __('site_settings.external.metrics.pending.label'),
-                    'value' => __('site_settings.external.metrics.pending.count', ['count' => ReaderNumber::count($pendingCount)]),
+                    'value' => trans_choice('site_settings.external.metrics.pending.count', $pendingCount, ['count' => ReaderNumber::count($pendingCount)]),
                     'tone' => $pendingCount > 0 ? 'manual' : 'ready',
                     'href' => $pendingQueueCount > 0
                         ? route('dashboard.tickets.index', [

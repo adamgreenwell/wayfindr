@@ -365,6 +365,22 @@ test('integration writes answer in the language of the page they return to', fun
         ->toContain('Webhook-Geheimnis')
         ->not->toContain('webhook secret');
 
+    $this->actingAs($admin)
+        ->from(route('dashboard.sites.show', $fixture['site']))
+        ->post(route('dashboard.external-issue-provider-connections.store'), [
+            'site_id' => $fixture['site']->id,
+            'provider' => 'gitlab',
+            'name' => 'Datenpunkt site connection',
+            'capabilities' => ['create_issue'],
+        ])
+        ->assertRedirect(route('dashboard.sites.show', $fixture['site']))
+        ->assertSessionHas('status', 'site_settings.flash.connection_saved');
+
+    $this->get(route('dashboard.sites.show', $fixture['site']))
+        ->assertOk()
+        ->assertSee('Anbieter-Verbindung gespeichert.')
+        ->assertDontSee('Provider connection saved.');
+
     $admin->forceFill(['locale' => 'it'])->save();
     $admin = $admin->fresh();
 

@@ -39,6 +39,7 @@ return [
         'access_saved' => 'Accesso al sito salvato.',
         'project_mapped' => 'Progetto di segnalazioni esterne associato.',
         'project_removed' => 'Associazione del progetto di segnalazioni esterne rimossa.',
+        'connection_saved' => 'Connessione provider salvata.',
     ],
 
     'validation' => [
@@ -148,15 +149,15 @@ return [
         ],
         'metrics' => [
             'mapped' => ['label' => 'Progetti associati', 'count' => '{1} :count progetto associato|[2,*] :count progetti associati'],
-            'handoff' => ['label' => 'Passaggio pronto', 'count' => ':count passaggi pronti'],
-            'disabled' => ['label' => 'Associazioni disabilitate', 'count' => ':count disabilitate'],
-            'failed' => ['label' => 'Sincronizzazione non riuscita', 'count' => ':count sincronizzazioni non riuscite', 'action' => 'Controlla ticket non riusciti'],
-            'pending' => ['label' => 'Sincronizzazione in attesa', 'count' => ':count sincronizzazioni in attesa', 'action' => 'Controlla ticket in attesa'],
+            'handoff' => ['label' => 'Passaggio pronto', 'count' => '{1} :count passaggio pronto|[2,*] :count passaggi pronti'],
+            'disabled' => ['label' => 'Associazioni disabilitate', 'count' => '{1} :count associazione disabilitata|[2,*] :count associazioni disabilitate'],
+            'failed' => ['label' => 'Sincronizzazione non riuscita', 'count' => '{1} :count sincronizzazione non riuscita|[2,*] :count sincronizzazioni non riuscite', 'action' => 'Controlla ticket non riusciti'],
+            'pending' => ['label' => 'Sincronizzazione in attesa', 'count' => '{1} :count sincronizzazione in attesa|[2,*] :count sincronizzazioni in attesa', 'action' => 'Controlla ticket in attesa'],
         ],
         'status_counts' => [
-            'linked' => ['label' => 'Collegati', 'count' => ':count collegati'],
-            'sync_pending' => ['label' => 'Sincronizzazione in attesa', 'count' => ':count sincronizzazioni in attesa'],
-            'sync_failed' => ['label' => 'Sincronizzazione non riuscita', 'count' => ':count sincronizzazioni non riuscite'],
+            'linked' => ['label' => 'Collegati', 'count' => '{1} :count collegato|[2,*] :count collegati'],
+            'sync_pending' => ['label' => 'Sincronizzazione in attesa', 'count' => '{1} :count sincronizzazione in attesa|[2,*] :count sincronizzazioni in attesa'],
+            'sync_failed' => ['label' => 'Sincronizzazione non riuscita', 'count' => '{1} :count sincronizzazione non riuscita|[2,*] :count sincronizzazioni non riuscite'],
         ],
         'failures' => [
             'empty' => 'Nessun errore recente di sincronizzazione esterna per questo sito.',

@@ -39,6 +39,7 @@ return [
         'access_saved' => 'Website-Zugriff gespeichert.',
         'project_mapped' => 'Externes Issue-Projekt zugeordnet.',
         'project_removed' => 'Zuordnung des externen Issue-Projekts entfernt.',
+        'connection_saved' => 'Anbieter-Verbindung gespeichert.',
     ],
 
     'validation' => [
@@ -148,15 +149,15 @@ return [
         ],
         'metrics' => [
             'mapped' => ['label' => 'Zugeordnete Projekte', 'count' => '{1} :count zugeordnetes Projekt|[2,*] :count zugeordnete Projekte'],
-            'handoff' => ['label' => 'Übergabe bereit', 'count' => ':count Übergaben bereit'],
-            'disabled' => ['label' => 'Deaktivierte Zuordnungen', 'count' => ':count deaktiviert'],
-            'failed' => ['label' => 'Abgleich fehlgeschlagen', 'count' => ':count Abgleiche fehlgeschlagen', 'action' => 'Fehlgeschlagene Tickets prüfen'],
-            'pending' => ['label' => 'Abgleich ausstehend', 'count' => ':count Abgleiche ausstehend', 'action' => 'Wartende Tickets prüfen'],
+            'handoff' => ['label' => 'Übergabe bereit', 'count' => '{1} :count Übergabe bereit|[2,*] :count Übergaben bereit'],
+            'disabled' => ['label' => 'Deaktivierte Zuordnungen', 'count' => '{1} :count deaktivierte Zuordnung|[2,*] :count deaktivierte Zuordnungen'],
+            'failed' => ['label' => 'Abgleich fehlgeschlagen', 'count' => '{1} :count Abgleich fehlgeschlagen|[2,*] :count Abgleiche fehlgeschlagen', 'action' => 'Fehlgeschlagene Tickets prüfen'],
+            'pending' => ['label' => 'Abgleich ausstehend', 'count' => '{1} :count Abgleich ausstehend|[2,*] :count Abgleiche ausstehend', 'action' => 'Wartende Tickets prüfen'],
         ],
         'status_counts' => [
-            'linked' => ['label' => 'Verknüpft', 'count' => ':count verknüpft'],
-            'sync_pending' => ['label' => 'Abgleich ausstehend', 'count' => ':count Abgleiche ausstehend'],
-            'sync_failed' => ['label' => 'Abgleich fehlgeschlagen', 'count' => ':count Abgleiche fehlgeschlagen'],
+            'linked' => ['label' => 'Verknüpft', 'count' => '{1} :count Verknüpfung|[2,*] :count Verknüpfungen'],
+            'sync_pending' => ['label' => 'Abgleich ausstehend', 'count' => '{1} :count Abgleich ausstehend|[2,*] :count Abgleiche ausstehend'],
+            'sync_failed' => ['label' => 'Abgleich fehlgeschlagen', 'count' => '{1} :count Abgleich fehlgeschlagen|[2,*] :count Abgleiche fehlgeschlagen'],
         ],
         'failures' => [
             'empty' => 'Keine kürzlichen Fehler beim externen Abgleich für diese Website.',

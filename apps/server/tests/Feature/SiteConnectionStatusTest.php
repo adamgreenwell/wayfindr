@@ -390,6 +390,58 @@ test('site settings show external issue readiness for a mapped site', function (
         ->assertDontSee('raw provider exception should stay hidden');
 });
 
+test('site settings use singular external issue metrics in Italian', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'it',
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $readyConnection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'provider' => 'github',
+            'capabilities' => ['create_issue' => true],
+        ]);
+    $disabledConnection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'provider' => 'gitlab',
+            'is_enabled' => false,
+            'capabilities' => ['create_issue' => true],
+        ]);
+
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($readyConnection, 'providerConnection')
+        ->create();
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($disabledConnection, 'providerConnection')
+        ->create();
+
+    foreach ([ExternalIssueSyncStatus::LINKED, ExternalIssueSyncStatus::PENDING, ExternalIssueSyncStatus::FAILED] as $status) {
+        TicketExternalLink::factory()
+            ->for($account)
+            ->for($site)
+            ->create(['sync_status' => $status]);
+    }
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('1 passaggio pronto')
+        ->assertSee('1 associazione disabilitata')
+        ->assertSee('1 sincronizzazione non riuscita')
+        ->assertSee('1 sincronizzazione in attesa')
+        ->assertSee('1 collegato')
+        ->assertDontSee('1 passaggi pronti')
+        ->assertDontSee('1 associazioni disabilitate')
+        ->assertDontSee('1 sincronizzazioni');
+});
+
 test('site external issue routing labels project handoff states', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
@@ -511,7 +563,7 @@ test('site settings treat provider only external issue setup as not configured',
         ->assertSee('Not configured')
         ->assertSee('Map a project before this site can send tickets outside Wayfindr.')
         ->assertSee('0 mapped projects')
-        ->assertSee('0 handoff ready')
+        ->assertSee('0 handoffs ready')
         ->assertSee('0 disabled');
 });
 
@@ -550,7 +602,7 @@ test('site settings flag disabled external issue mappings', function (): void {
         ->assertSee('Needs attention')
         ->assertSee('Enable or replace disabled provider mappings before ticket handoff depends on them.')
         ->assertSee('1 mapped project')
-        ->assertSee('0 handoff ready')
+        ->assertSee('0 handoffs ready')
         ->assertSee('1 disabled')
         ->assertSee('Dormant GitLab')
         ->assertSee('internal/helpdesk');
@@ -599,7 +651,7 @@ test('site external issue readiness counts audit failures beyond the displayed t
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertSee('External issue readiness')
-        ->assertSee('5 sync failed')
+        ->assertSee('5 syncs failed')
         ->assertSee('Last external sync failure')
         ->assertSee('Earlier external sync failure')
         ->assertSee('adamgreenwell/wayfindr-1')

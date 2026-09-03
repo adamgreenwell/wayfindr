@@ -478,9 +478,11 @@ test('site settings follow the agent language without claiming the site identity
         ->assertOk()
         ->assertSee('<html lang="de"', false)
         ->assertSee('Website-Einstellungen')
+        ->assertSee('Nicht installiert')
         ->assertSee('Abmelden')
         ->assertSee('Support-Bereitschaft')
         ->assertDontSee('Site Settings')
+        ->assertDontSee('Not installed')
         ->getContent();
 
     $document = new DOMDocument;
