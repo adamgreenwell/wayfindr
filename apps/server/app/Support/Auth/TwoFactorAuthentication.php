@@ -58,7 +58,7 @@ final class TwoFactorAuthentication
             if (! hash_equals(
                 $credentialFingerprint,
                 PendingTwoFactorChallenge::credentialFingerprint($locked),
-            ) || $locked->hasTwoFactorAuthentication()) {
+            ) || $locked->isDeactivated() || $locked->hasTwoFactorAuthentication()) {
                 return null;
             }
 
@@ -117,7 +117,7 @@ final class TwoFactorAuthentication
             if (! hash_equals(
                 $credentialFingerprint,
                 PendingTwoFactorChallenge::credentialFingerprint($locked),
-            )) {
+            ) || $locked->isDeactivated()) {
                 return null;
             }
 
@@ -145,7 +145,7 @@ final class TwoFactorAuthentication
             if (! hash_equals(
                 $credentialFingerprint,
                 PendingTwoFactorChallenge::credentialFingerprint($locked),
-            ) || ! $this->verifyLocked($locked, $proof)) {
+            ) || $locked->isDeactivated() || ! $this->verifyLocked($locked, $proof)) {
                 return null;
             }
 
@@ -178,7 +178,7 @@ final class TwoFactorAuthentication
             if (! hash_equals(
                 $credentialFingerprint,
                 PendingTwoFactorChallenge::credentialFingerprint($locked),
-            )) {
+            ) || $locked->isDeactivated()) {
                 return false;
             }
 

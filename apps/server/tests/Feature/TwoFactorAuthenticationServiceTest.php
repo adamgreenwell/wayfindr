@@ -187,6 +187,38 @@ test('a password change revokes recovery-code rotation and two-factor disablemen
         ->and($agent->two_factor_recovery_codes)->toHaveCount(TwoFactorAuthentication::RECOVERY_CODE_COUNT);
 });
 
+test('deactivation revokes locked two-factor verification and mutations', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $twoFactor = app(TwoFactorAuthentication::class);
+    $secret = $twoFactor->generateSecret();
+    $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
+    $recoveryCodes = $twoFactor->confirm(
+        $agent,
+        $secret,
+        app(Google2FA::class)->getCurrentOtp($secret),
+        $credentialFingerprint,
+    );
+
+    $agent->forceFill(['deactivated_at' => now()])->save();
+
+    expect($twoFactor->verifyChallenge(
+        $agent,
+        $recoveryCodes[0],
+        $credentialFingerprint,
+    ))->toBeNull()
+        ->and($twoFactor->regenerateRecoveryCodes(
+            $agent,
+            $recoveryCodes[0],
+            $credentialFingerprint,
+        ))->toBeNull()
+        ->and($twoFactor->disable(
+            $agent,
+            $recoveryCodes[0],
+            $credentialFingerprint,
+        ))->toBeFalse()
+        ->and($agent->fresh()->hasTwoFactorAuthentication())->toBeTrue();
+});
+
 test('the QR code is rendered locally as a PNG data URI', function (): void {
     $agent = User::factory()->for(Account::factory()->state(['name' => 'Acme Support']))->create([
         'email' => 'agent@example.com',
