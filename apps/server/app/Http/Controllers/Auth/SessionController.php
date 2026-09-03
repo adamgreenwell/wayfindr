@@ -49,6 +49,15 @@ class SessionController extends Controller
         $agent = $request->user();
         $request->session()->regenerate();
 
+        // Seed Laravel's authenticated-session credential version before the
+        // second-factor pause. If a reset lands after challenge verification
+        // but before this response persists its login, auth.session rejects
+        // the new session on its first protected request.
+        $request->session()->put(
+            'password_hash_'.Auth::getDefaultDriver(),
+            Auth::guard('web')->hashPasswordForCookie((string) $agent?->getAuthPassword()),
+        );
+
         if ($agent?->hasTwoFactorAuthentication()) {
             $request->session()->put(TwoFactorChallengeController::SESSION_KEY, [
                 'user_id' => $agent->getKey(),

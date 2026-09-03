@@ -11,6 +11,23 @@ use PragmaRX\Google2FA\Google2FA;
 
 uses(RefreshDatabase::class);
 
+test('exception traces globally omit sensitive arguments', function (): void {
+    expect(ini_get('zend.exception_ignore_args'))->toBe('1');
+
+    $throw = static function (#[SensitiveParameter] string $secret): void {
+        throw new RuntimeException('Expected test exception.');
+    };
+
+    try {
+        $throw('must-not-appear-in-a-trace');
+    } catch (RuntimeException $exception) {
+        expect($exception->getTraceAsString())->not->toContain('must-not-appear-in-a-trace')
+            ->and(collect($exception->getTrace())->contains(
+                fn (array $frame): bool => array_key_exists('args', $frame),
+            ))->toBeFalse();
+    }
+});
+
 test('an agent can enrol a locally generated TOTP credential', function (): void {
     $agent = User::factory()->for(Account::factory())->create();
     $twoFactor = app(TwoFactorAuthentication::class);

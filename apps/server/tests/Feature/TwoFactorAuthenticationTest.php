@@ -210,6 +210,33 @@ test('changing a password revokes an unfinished two-factor challenge', function 
     $this->assertGuest();
 });
 
+test('a password change revokes a newly issued authenticated session', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => 'agent@example.com',
+        'password' => Hash::make('old-password'),
+    ]);
+    $credential = giveAgentTwoFactor($agent);
+
+    $this->post(route('login.store'), [
+        'email' => 'agent@example.com',
+        'password' => 'old-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    $this->post(route('two-factor.challenge.store'), [
+        'one_time_code' => app(Google2FA::class)->getCurrentOtp($credential['secret']),
+    ])->assertRedirect(route('dashboard'));
+
+    DB::table('users')->where('id', $agent->id)->update([
+        'password' => Hash::make('new-password'),
+    ]);
+    Auth::forgetGuards();
+
+    $this->get(route('dashboard'))
+        ->assertRedirect(route('login'));
+
+    $this->assertGuest();
+});
+
 test('recovery codes can be replaced with both proofs and two factor can be disabled', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'password' => Hash::make('password'),

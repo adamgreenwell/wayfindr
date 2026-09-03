@@ -24,6 +24,12 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 
+// Secret-bearing values pass through framework and dependency call frames
+// that Wayfindr cannot annotate. Omitting arguments from every exception trace
+// keeps passwords, TOTP secrets, recovery codes, and provider credentials out
+// of local debug pages and remote exception reporters alike.
+ini_set('zend.exception_ignore_args', '1');
+
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',

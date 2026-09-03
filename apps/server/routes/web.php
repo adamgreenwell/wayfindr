@@ -78,7 +78,7 @@ Route::middleware('guest')->group(function () {
         ->name('password.update');
 });
 
-Route::middleware(['auth', EnsureAgentIsActive::class, EnsureTwoFactorPolicy::class])->group(function () {
+Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwoFactorPolicy::class])->group(function () {
     Route::get('/dashboard', AgentDashboardController::class)->name('dashboard');
     Route::get('/dashboard/support-code', AgentSupportCodeLookupController::class)
         ->name('dashboard.support-code.lookup');
