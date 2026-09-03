@@ -41,11 +41,12 @@ beforeEach(function (): void {
     config()->set('wayfindr.backup.restore_drain_seconds', 0);
 });
 
-function backupOperator(): User
+function backupOperator(?string $locale = null): User
 {
     return User::factory()->for(Account::factory())->create([
         'platform_role' => 'operator',
         'account_role' => AccountRole::Owner,
+        'locale' => $locale,
     ]);
 }
 
@@ -71,6 +72,203 @@ test('the operator sees the backup settings form', function (): void {
         ->assertSee('Test the offsite connection')
         ->assertSee('Back to operator console');
 });
+
+test('the backup settings page follows the operator language', function (string $locale, array $copy): void {
+    $settings = backupSettings();
+    $settings->set('backup.disk', 'backups-datenpunkt');
+    $settings->set('backup.retention_days', '17');
+    $settings->set('backup.prefix', 'datenpunkt-prefix');
+    $settings->set('backup.s3_bucket', 'datenpunkt-bucket');
+    $settings->set('backup.s3_region', 'datenpunkt-region');
+    $settings->set('backup.s3_endpoint', 'https://storage.datenpunkt.test');
+    $settings->set('backup.s3_root', 'datenpunkt-root');
+    $settings->set('backup.s3_key', 'never-render-datenpunkt-key');
+    $settings->set('backup.s3_secret', 'never-render-datenpunkt-secret');
+
+    BackupRun::query()->create([
+        'status' => BackupRun::STATUS_SUCCEEDED,
+        'size_bytes' => 2_097_152,
+        'offsite_disk' => 'backups-datenpunkt',
+        'offsite_key' => 'datenpunkt/archive.tar.gz',
+        'message' => 'Backup Datenpunkt runtime',
+        'started_at' => now(),
+    ]);
+    RunRestoreJob::putStatus(
+        'succeeded',
+        'Restore Datenpunkt <runtime>',
+        'datenpunkt-archive.tar.gz',
+        triggeredByName: 'Operator Datenpunkt',
+    );
+
+    $response = $this->actingAs(backupOperator($locale))
+        ->get(route('operator.settings.backups.edit'));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($copy['title'])
+        ->assertSee($copy['run'])
+        ->assertSee($copy['local'])
+        ->assertSee($copy['placeholder'])
+        ->assertSee($copy['external'])
+        ->assertSee($copy['save'])
+        ->assertSee($copy['test'])
+        ->assertSee($copy['latest'])
+        ->assertSee($copy['restore'])
+        ->assertDontSee('Configure where backups are mirrored')
+        ->assertDontSee('Local only (no offsite copy)')
+        ->assertDontSee('Save backup settings')
+        ->assertDontSee('Last restore: succeeded')
+        ->assertDontSee('never-render-datenpunkt-key')
+        ->assertDontSee('never-render-datenpunkt-secret');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        '//select[@id="disk"]/option[@value="backups-datenpunkt"]' => 'backups-datenpunkt',
+        '//input[@id="retention_days"]' => null,
+        '//input[@id="prefix"]' => null,
+        '//input[@id="bucket"]' => null,
+        '//input[@id="region"]' => null,
+        '//input[@id="endpoint"]' => null,
+        '//input[@id="root"]' => null,
+        '//code[normalize-space(.)="backups-datenpunkt"]' => 'backups-datenpunkt',
+        '//span[normalize-space(.)="AWS S3"]' => 'AWS S3',
+        '//span[normalize-space(.)="Cloudflare R2"]' => 'Cloudflare R2',
+        '//span[normalize-space(.)="DigitalOcean Spaces"]' => 'DigitalOcean Spaces',
+        '//span[normalize-space(.)="MinIO"]' => 'MinIO',
+        '//span[normalize-space(.)="backups-datenpunkt"]' => 'backups-datenpunkt',
+        '//p[normalize-space(.)="Backup Datenpunkt runtime"]' => 'Backup Datenpunkt runtime',
+        '//p[normalize-space(.)="Restore Datenpunkt <runtime>"]' => 'Restore Datenpunkt <runtime>',
+        '//span[normalize-space(.)="datenpunkt-archive.tar.gz"]' => 'datenpunkt-archive.tar.gz',
+        '//span[normalize-space(.)="Operator Datenpunkt"]' => 'Operator Datenpunkt',
+    ] as $query => $text) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->toBeInstanceOf(DOMElement::class, "missing {$query}")
+            ->and($node->hasAttribute('lang'))->toBeTrue("missing language boundary on {$query}")
+            ->and($node->getAttribute('lang'))->toBe('');
+
+        if ($text !== null) {
+            expect(trim($node->textContent))->toBe($text);
+        }
+    }
+
+    foreach (['s3_access_key', 's3_secret_key'] as $id) {
+        $password = $xpath->query('//input[@id="'.$id.'"]')->item(0);
+
+        expect($password)->toBeInstanceOf(DOMElement::class, "missing #{$id}")
+            ->and($password->hasAttribute('lang'))->toBeFalse("the translated placeholder on #{$id} must inherit the page language");
+    }
+})->with([
+    'German' => ['de', [
+        'title' => 'Sicherungen',
+        'run' => 'Sicherung jetzt starten',
+        'local' => 'Nur lokal (keine externe Kopie)',
+        'placeholder' => 'ein Schlüssel ist konfiguriert',
+        'external' => 'Die aktuelle Spiegelung ist über die Umgebung konfiguriert:',
+        'save' => 'Sicherungseinstellungen speichern',
+        'test' => 'Externen Speichertest ausführen',
+        'latest' => 'Letzter Durchlauf',
+        'restore' => 'Letzte Wiederherstellung: erfolgreich',
+    ]],
+    'Italian' => ['it', [
+        'title' => 'Copie di sicurezza',
+        'run' => 'Avvio immediato di una copia',
+        'local' => 'Solo locale (nessuna replica esterna)',
+        'placeholder' => 'è configurata una chiave',
+        'external' => 'La replica attuale è configurata nell’ambiente:',
+        'save' => 'Salva le impostazioni delle copie',
+        'test' => 'Esegui il test esterno',
+        'latest' => 'Ultima esecuzione',
+        'restore' => 'Ultimo ripristino: riuscito',
+    ]],
+]);
+
+test('backup validation and save feedback answer in the operator language', function (string $locale, array $copy): void {
+    $operator = backupOperator($locale);
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.backups.edit'))
+        ->post(route('operator.settings.backups.update'), [
+            'disk' => 'backups',
+            'retention_days' => 'many',
+            'bucket' => '',
+            'region' => '',
+            'acl' => 'public-read',
+        ])
+        ->assertRedirect(route('operator.settings.backups.edit'))
+        ->assertSessionHasErrors(['retention_days', 'bucket', 'region', 'acl']);
+
+    expect((string) session('errors')->first('retention_days'))->toBe($copy['retention'])
+        ->and((string) session('errors')->first('bucket'))->toBe($copy['bucket'])
+        ->and((string) session('errors')->first('region'))->toBe($copy['region'])
+        ->and((string) session('errors')->first('acl'))->toBe($copy['acl']);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.backups.update'), [
+            'disk' => '',
+            'prefix' => 'tenant/../other',
+        ])
+        ->assertSessionHasErrors('prefix');
+
+    expect((string) session('errors')->first('prefix'))->toBe($copy['prefix']);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.backups.update'), [
+            'disk' => 'backups',
+            'bucket' => 'datenpunkt-bucket',
+            'region' => 'datenpunkt-region',
+            'acl' => 'private',
+            's3_access_key' => 'one-half',
+        ])
+        ->assertSessionHasErrors('s3_access_key');
+
+    expect((string) session('errors')->first('s3_access_key'))->toBe($copy['paired']);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.backups.update'), [
+            'disk' => 'backups',
+            'bucket' => 'datenpunkt-bucket',
+            'region' => 'datenpunkt-region',
+            'acl' => 'private',
+            's3_no_keys' => '1',
+            's3_access_key' => 'new-key',
+            's3_secret_key' => 'new-secret',
+        ])
+        ->assertSessionHasErrors('s3_access_key');
+
+    expect((string) session('errors')->first('s3_access_key'))->toBe($copy['clear']);
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.backups.update'), ['disk' => '', 'retention_days' => '7'])
+        ->assertOk()
+        ->assertSee($copy['saved'])
+        ->assertDontSee('Backup settings saved.');
+})->with([
+    'German' => ['de', [
+        'retention' => 'Aufbewahrungsdauer muss eine ganze Zahl sein.',
+        'bucket' => 'Bucket-Name muss ausgefüllt werden.',
+        'region' => 'Bucket-Region muss ausgefüllt werden.',
+        'acl' => 'Der gewählte Wert für Objekt-ACL ist ungültig.',
+        'prefix' => 'Das Präfix darf keine „..“-Pfadsegmente enthalten.',
+        'paired' => 'Geben Sie Zugriffsschlüssel und Geheimnis gemeinsam ein oder lassen Sie beide Felder leer, um das gespeicherte Paar zu behalten.',
+        'clear' => 'Löschen Sie entweder die gespeicherten Schlüssel, um eine Rolle zu verwenden, oder geben Sie neue statische Schlüssel ein — nicht beides.',
+        'saved' => 'Sicherungseinstellungen gespeichert.',
+    ]],
+    'Italian' => ['it', [
+        'retention' => 'Il campo Periodo di conservazione deve essere un numero intero.',
+        'bucket' => 'Il campo Nome del bucket è obbligatorio.',
+        'region' => 'Il campo Area geografica del bucket è obbligatorio.',
+        'acl' => 'Il valore selezionato per ACL dell’oggetto non è valido.',
+        'prefix' => 'Il prefisso non deve contenere segmenti di percorso “..”.',
+        'paired' => 'Inserisca insieme la chiave di accesso e il segreto oppure lasci entrambi i campi vuoti per mantenere la coppia salvata.',
+        'clear' => 'Cancellare le chiavi salvate per usare un ruolo oppure inserire nuove chiavi statiche, ma non entrambe le cose.',
+        'saved' => 'Impostazioni delle copie di sicurezza salvate.',
+    ]],
+]);
 
 test('saving offsite backup settings stores them, with int and bool casts applied', function (): void {
     $settings = backupSettings();
@@ -367,14 +565,64 @@ test('the offsite test reports when no offsite disk is configured', function ():
         ->assertSessionHas('error');
 });
 
+test('backup action feedback follows the operator language and isolates disk names', function (): void {
+    $operator = backupOperator('de');
+
+    config()->set('wayfindr.backup.disk', '');
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.backups.test'))
+        ->assertOk()
+        ->assertSee('Es ist kein externes Speicherziel konfiguriert')
+        ->assertDontSee('No offsite disk is configured');
+
+    config()->set('wayfindr.backup.disk', 'backups-datenpunkt');
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.backups.test'))
+        ->assertOk()
+        ->assertSee('ist nicht konfiguriert')
+        ->assertSee('<span lang="">backups-datenpunkt</span>', false)
+        ->assertDontSee('The backup disk');
+
+    Bus::fake();
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.backups.run'))
+        ->assertOk()
+        ->assertSee('Sicherung in die Warteschlange gestellt')
+        ->assertDontSee('Backup queued.');
+});
+
 test('the offsite test passes on a working disk', function (): void {
     config()->set('wayfindr.backup.disk', 'backups');
     Storage::fake('backups');
 
-    $this->actingAs(backupOperator())
+    $this->actingAs(backupOperator('de'))
+        ->followingRedirects()
         ->post(route('operator.settings.backups.test'))
-        ->assertRedirect(route('operator.settings.backups.edit'))
-        ->assertSessionHas('status');
+        ->assertOk()
+        ->assertSee('Externer Speichertest bestanden')
+        ->assertSee('<span lang="">backups</span>', false)
+        ->assertDontSee('Offsite backup test passed');
+});
+
+test('a known offsite probe failure is translated instead of treated as runtime prose', function (): void {
+    config()->set('wayfindr.backup.disk', 'backups');
+    $disk = Mockery::mock();
+    $disk->shouldReceive('put')->once()->andReturn(false);
+    Storage::shouldReceive('disk')->once()->with('backups')->andReturn($disk);
+
+    $this->actingAs(backupOperator('de'))
+        ->followingRedirects()
+        ->post(route('operator.settings.backups.test'))
+        ->assertOk()
+        ->assertSee('Der Schreib-Lese-Rundlauf ist fehlgeschlagen.')
+        ->assertSee('<span lang="">backups</span>', false)
+        ->assertDontSee('a write/read round-trip failed');
 });
 
 test('backup_runs data is excluded from the dump so no phantom running run rides in', function (): void {
@@ -570,15 +818,85 @@ test('the backup history lists runs newest-first with trigger, size, offsite, an
         ->assertSee('Scheduled')                    // null-trigger label
         ->assertSee($operator->name)                // operator-triggered run
         ->assertSee('pg_dump not found on PATH')    // failure detail
-        ->assertSee('Uploaded to [backups]')        // offsite label
+        ->assertSee('Uploaded to')                  // offsite label
+        ->assertSee('backups')
         ->assertSee('2.0 MB');                      // size formatting
 
     // Newest first: the newer failed run (its detail) renders before the older
     // succeeded run (its offsite label).
     $body = $response->getContent();
     expect(strpos($body, 'pg_dump not found on PATH'))
-        ->toBeLessThan(strpos($body, 'Uploaded to [backups]'));
+        ->toBeLessThan(strpos($body, 'Uploaded to'));
 });
+
+test('the backup history follows the operator language while recorded data stays neutral', function (string $locale, array $copy): void {
+    $operator = backupOperator($locale);
+
+    BackupRun::query()->create([
+        'status' => BackupRun::STATUS_SUCCEEDED,
+        'size_bytes' => 2_097_152,
+        'offsite_disk' => 'backups-datenpunkt',
+        'offsite_key' => 'datenpunkt/archive.tar.gz',
+        'started_at' => now()->subHour(),
+    ]);
+
+    BackupRun::query()->create([
+        'status' => BackupRun::STATUS_FAILED,
+        'message' => 'pg_dump Datenpunkt',
+        'triggered_by_id' => $operator->id,
+        'started_at' => now(),
+    ]);
+
+    $response = $this->actingAs($operator)
+        ->get(route('operator.settings.backups.history'));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($copy['title'])
+        ->assertSee($copy['success'])
+        ->assertSee($copy['failed'])
+        ->assertSee($copy['scheduled'])
+        ->assertSee($copy['triggered'])
+        ->assertDontSee('Every recorded backup run')
+        ->assertDontSee('Uploaded to [')
+        ->assertDontSee('Local only');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        '//tbody//span[normalize-space(.)="pg_dump Datenpunkt"]' => 'pg_dump Datenpunkt',
+        '//tbody//span[normalize-space(.)="'.$operator->name.'"]' => $operator->name,
+        '//tbody//span[normalize-space(.)="backups-datenpunkt"]' => 'backups-datenpunkt',
+    ] as $query => $text) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->toBeInstanceOf(DOMElement::class, "missing {$query}")
+            ->and($node->hasAttribute('lang'))->toBeTrue("missing language boundary on {$query}")
+            ->and($node->getAttribute('lang'))->toBe('')
+            ->and(trim($node->textContent))->toBe($text);
+    }
+
+    $size = $xpath->query('//tbody//td[@lang="" and contains(normalize-space(.), "MB")]')->item(0);
+
+    expect($size)->toBeInstanceOf(DOMElement::class);
+})->with([
+    'German' => ['de', [
+        'title' => 'Sicherungsverlauf',
+        'success' => 'Erfolgreich',
+        'failed' => 'Fehlgeschlagen',
+        'scheduled' => 'Geplant',
+        'triggered' => 'Ausgelöst von',
+    ]],
+    'Italian' => ['it', [
+        'title' => 'Cronologia delle copie di sicurezza',
+        'success' => 'Riuscita',
+        'failed' => 'Non riuscita',
+        'scheduled' => 'Pianificata',
+        'triggered' => 'Avviata da',
+    ]],
+]);
 
 test('the backup history shows an empty state when there are no runs', function (): void {
     $this->actingAs(backupOperator())

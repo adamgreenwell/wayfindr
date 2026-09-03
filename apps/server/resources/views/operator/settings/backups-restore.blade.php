@@ -8,7 +8,7 @@
         subtitle="Replace this install's data with a backup archive. This cannot be undone." />
 
     @if (session('error'))
-        <p class="status-message">{{ session('error') }}</p>
+        <p class="status-message"><x-operator-feedback :feedback="session('error')" /></p>
     @endif
 
     @include('operator.settings.partials.restore-status', ['status' => $status])

@@ -123,6 +123,9 @@ return [
         's3_no_keys' => 'Löschen gespeicherter Zugangsschlüssel',
         's3_confirm_migrated' => 'Bestätigung der Speichermigration',
         'use_path_style' => 'Pfadbasierte Adressierung',
+        'retention_days' => 'Aufbewahrungsdauer',
+        'prefix' => 'Sicherungspräfix',
+        'root' => 'Schlüsselpräfix',
 
         // The articles page. `body` was already here for the reply composer;
         // `title` was not, so an over-long article title produced a correct

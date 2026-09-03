@@ -1616,6 +1616,8 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('operator.settings.scanning.edit'),
         route('operator.settings.mail.edit'),
         route('operator.settings.storage.edit'),
+        route('operator.settings.backups.edit'),
+        route('operator.settings.backups.history'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -2091,6 +2093,8 @@ test('every extracted page translates its document title', function (): void {
         route('operator.settings.scanning.edit'),
         route('operator.settings.mail.edit'),
         route('operator.settings.storage.edit'),
+        route('operator.settings.backups.edit'),
+        route('operator.settings.backups.history'),
     ];
 
     foreach ($urls as $url) {
@@ -2886,6 +2890,7 @@ test('every catalogue file answers the same set of keys', function (): void {
         'account.agents.columns.status = Status',
         'operator.scanning.driver = Scanner',
         'operator.mail.transport = Transport',
+        'operator.backups.history.status = Status',
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',
@@ -3857,6 +3862,8 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('operator.settings.scanning.edit'),
         route('operator.settings.mail.edit'),
         route('operator.settings.storage.edit'),
+        route('operator.settings.backups.edit'),
+        route('operator.settings.backups.history'),
     ];
 
     foreach (['de', 'en'] as $locale) {
@@ -3935,6 +3942,8 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('operator.settings.scanning.edit'),
         route('operator.settings.mail.edit'),
         route('operator.settings.storage.edit'),
+        route('operator.settings.backups.edit'),
+        route('operator.settings.backups.history'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
 
