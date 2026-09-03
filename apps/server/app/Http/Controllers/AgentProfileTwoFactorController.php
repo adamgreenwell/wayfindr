@@ -61,7 +61,7 @@ final class AgentProfileTwoFactorController extends Controller
         }
 
         $request->session()->forget(self::ENROLMENT_SESSION_KEY);
-        $request->session()->put(
+        $request->session()->flash(
             self::RECOVERY_CODES_SESSION_KEY,
             Crypt::encryptString(json_encode($recoveryCodes, JSON_THROW_ON_ERROR)),
         );
@@ -87,14 +87,18 @@ final class AgentProfileTwoFactorController extends Controller
             'one_time_code' => ['required', 'string', 'max:32'],
         ]);
 
-        if (! $twoFactor->verify($request->user(), $validated['one_time_code'])) {
+        $recoveryCodes = $twoFactor->regenerateRecoveryCodes(
+            $request->user(),
+            $validated['one_time_code'],
+        );
+
+        if (! $recoveryCodes) {
             throw ValidationException::withMessages([
                 'one_time_code' => __('two_factor.profile.invalid_code'),
             ])->errorBag('twoFactorRecovery');
         }
 
-        $recoveryCodes = $twoFactor->regenerateRecoveryCodes($request->user());
-        $request->session()->put(
+        $request->session()->flash(
             self::RECOVERY_CODES_SESSION_KEY,
             Crypt::encryptString(json_encode($recoveryCodes, JSON_THROW_ON_ERROR)),
         );
@@ -117,15 +121,17 @@ final class AgentProfileTwoFactorController extends Controller
             'one_time_code' => ['required', 'string', 'max:32'],
         ]);
 
-        if (! $twoFactor->verify($request->user(), $validated['one_time_code'])) {
+        if (! $twoFactor->disable($request->user(), $validated['one_time_code'])) {
+            $request->user()->refresh()->load('account');
+
+            if ($request->user()->account?->requires_two_factor) {
+                throw ValidationException::withMessages([
+                    'current_password' => __('two_factor.profile.required_cannot_disable'),
+                ])->errorBag('twoFactorDisable');
+            }
+
             throw ValidationException::withMessages([
                 'one_time_code' => __('two_factor.profile.invalid_code'),
-            ])->errorBag('twoFactorDisable');
-        }
-
-        if (! $twoFactor->disable($request->user())) {
-            throw ValidationException::withMessages([
-                'current_password' => __('two_factor.profile.required_cannot_disable'),
             ])->errorBag('twoFactorDisable');
         }
 

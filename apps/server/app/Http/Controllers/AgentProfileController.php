@@ -12,9 +12,9 @@ use App\Support\OperatorReadiness;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Encryption\DecryptException;
-use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -22,7 +22,7 @@ use Illuminate\Validation\Rules\Password;
 
 class AgentProfileController extends Controller
 {
-    public function show(Request $request, OperatorReadiness $readiness, TwoFactorAuthentication $twoFactor): View
+    public function show(Request $request, OperatorReadiness $readiness, TwoFactorAuthentication $twoFactor): Response
     {
         $agent = $request->user();
 
@@ -33,7 +33,7 @@ class AgentProfileController extends Controller
             ->firstWhere('key', 'mail_transport');
         $pendingSecret = $this->pendingTwoFactorSecret($request);
 
-        return view('agent.profile.show', [
+        return response()->view('agent.profile.show', [
             'agent' => $agent,
             'account' => $account,
             'roleLabels' => [
@@ -51,7 +51,7 @@ class AgentProfileController extends Controller
             'twoFactorPendingSecret' => $pendingSecret,
             'twoFactorQrCode' => $pendingSecret ? $twoFactor->qrCodeDataUri($agent, $pendingSecret) : null,
             'twoFactorRecoveryCodes' => $this->pullRecoveryCodes($request),
-        ]);
+        ])->header('Cache-Control', 'no-store, private');
     }
 
     /** @return list<string> */

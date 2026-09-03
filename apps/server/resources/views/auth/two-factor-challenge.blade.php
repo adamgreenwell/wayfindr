@@ -12,7 +12,6 @@
                     <input
                         id="one_time_code"
                         name="one_time_code"
-                        inputmode="numeric"
                         autocomplete="one-time-code"
                         required
                         autofocus

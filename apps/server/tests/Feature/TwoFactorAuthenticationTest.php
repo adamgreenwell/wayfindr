@@ -7,10 +7,12 @@ use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Auth\PendingTwoFactorChallenge;
 use App\Support\Auth\TwoFactorAuthentication;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use PragmaRX\Google2FA\Google2FA;
 
@@ -54,6 +56,7 @@ test('an agent enrols from their profile and sees recovery codes once', function
     $this->actingAs($agent)
         ->get(route('dashboard.profile.show'))
         ->assertOk()
+        ->assertHeader('Cache-Control', 'no-store, private')
         ->assertSee('data:image/png;base64,', false)
         ->assertSee($secret);
 
@@ -122,6 +125,10 @@ test('a two-factor agent stays signed out until the challenge succeeds', functio
     $this->assertGuest();
     expect($agent->fresh()->remember_token)->toBe('existing-remember-token');
 
+    $this->get(route('two-factor.challenge'))
+        ->assertOk()
+        ->assertDontSee('inputmode="numeric"', false);
+
     $this->post(route('two-factor.challenge.store'), [
         'one_time_code' => app(Google2FA::class)->getCurrentOtp($credential['secret']),
     ])
@@ -140,6 +147,7 @@ test('a two-factor challenge expires and rechecks deactivation', function (): vo
             'user_id' => $agent->id,
             'started_at' => now()->timestamp - TwoFactorChallengeController::LIFETIME_SECONDS - 1,
             'remember' => false,
+            'credential_fingerprint' => PendingTwoFactorChallenge::credentialFingerprint($agent),
         ],
     ])->get(route('two-factor.challenge'))
         ->assertRedirect(route('login'));
@@ -151,6 +159,7 @@ test('a two-factor challenge expires and rechecks deactivation', function (): vo
             'user_id' => $agent->id,
             'started_at' => now()->timestamp,
             'remember' => false,
+            'credential_fingerprint' => PendingTwoFactorChallenge::credentialFingerprint($agent),
         ],
     ])->get(route('two-factor.challenge'))
         ->assertRedirect(route('login'))
@@ -164,6 +173,7 @@ test('two-factor challenge guesses are rate limited', function (): void {
         'user_id' => $agent->id,
         'started_at' => now()->timestamp,
         'remember' => false,
+        'credential_fingerprint' => PendingTwoFactorChallenge::credentialFingerprint($agent),
     ];
 
     foreach (range(1, 5) as $attempt) {
@@ -175,6 +185,29 @@ test('two-factor challenge guesses are rate limited', function (): void {
     $this->withSession([TwoFactorChallengeController::SESSION_KEY => $pending])
         ->post(route('two-factor.challenge.store'), ['one_time_code' => '000000'])
         ->assertTooManyRequests();
+});
+
+test('changing a password revokes an unfinished two-factor challenge', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => 'agent@example.com',
+        'password' => Hash::make('old-password'),
+    ]);
+    $credential = giveAgentTwoFactor($agent);
+
+    $this->post(route('login.store'), [
+        'email' => 'agent@example.com',
+        'password' => 'old-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    $agent->forceFill(['password' => Hash::make('new-password')])->save();
+
+    $this->post(route('two-factor.challenge.store'), [
+        'one_time_code' => app(Google2FA::class)->getCurrentOtp($credential['secret']),
+    ])
+        ->assertRedirect(route('login'))
+        ->assertSessionMissing(TwoFactorChallengeController::SESSION_KEY);
+
+    $this->assertGuest();
 });
 
 test('recovery codes can be replaced with both proofs and two factor can be disabled', function (): void {
@@ -240,6 +273,21 @@ test('a plain agent cannot manage the account security policy', function (): voi
     $this->actingAs($agent)
         ->put(route('dashboard.account.security.update'), ['requires_two_factor' => '1'])
         ->assertForbidden();
+});
+
+test('a stale admin session cannot change the account security policy', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($admin);
+    DB::table('users')->where('id', $admin->id)->update([
+        'account_role' => AccountRole::Agent->value,
+    ]);
+
+    $this->put(route('dashboard.account.security.update'), ['requires_two_factor' => '1'])
+        ->assertForbidden();
+
+    expect($account->fresh()->requires_two_factor)->toBeFalse();
 });
 
 test('the account requirement fences unenrolled sessions including operator pages', function (): void {

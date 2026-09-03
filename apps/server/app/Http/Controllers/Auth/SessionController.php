@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\Auth\PendingTwoFactorChallenge;
 use App\Support\FirstRunState;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -53,6 +54,7 @@ class SessionController extends Controller
                 'user_id' => $agent->getKey(),
                 'remember' => $request->boolean('remember'),
                 'started_at' => now()->timestamp,
+                'credential_fingerprint' => PendingTwoFactorChallenge::credentialFingerprint($agent),
             ]);
 
             // Clear only this provisional session. A normal logout rotates the

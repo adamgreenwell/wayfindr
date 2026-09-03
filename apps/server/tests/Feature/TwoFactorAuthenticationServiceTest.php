@@ -21,6 +21,7 @@ test('an agent can enrol a locally generated TOTP credential', function (): void
 
     expect($secret)->toHaveLength(32)
         ->and($recoveryCodes)->toHaveCount(TwoFactorAuthentication::RECOVERY_CODE_COUNT)
+        ->and($recoveryCodes[0])->toMatch('/^[A-F0-9]{4}(?:-[A-F0-9]{4}){3}$/')
         ->and($agent->hasTwoFactorAuthentication())->toBeTrue()
         ->and($agent->two_factor_last_used_timestep)->toBeInt();
 
@@ -45,6 +46,30 @@ test('TOTP timesteps cannot be replayed', function (): void {
         ->and($twoFactor->verify($agent, $code))->toBeFalse();
 });
 
+test('an adjacent-window TOTP stores its exact timestep and cannot be replayed', function (): void {
+    $google = app(Google2FA::class);
+    $secret = app(TwoFactorAuthentication::class)->generateSecret();
+    $serverTimestep = $google->getTimestamp();
+    $futureCode = $google->oathTotp($secret, $serverTimestep + 1);
+
+    $matchedTimestep = $google->verifyKeyNewer(
+        $secret,
+        $futureCode,
+        $serverTimestep,
+        1,
+        $serverTimestep,
+    );
+
+    expect($matchedTimestep)->toBe($serverTimestep + 1)
+        ->and($google->verifyKeyNewer(
+            $secret,
+            $futureCode,
+            $matchedTimestep,
+            1,
+            $serverTimestep + 1,
+        ))->toBeFalse();
+});
+
 test('a recovery code is consumed exactly once', function (): void {
     $agent = User::factory()->for(Account::factory())->create();
     $twoFactor = app(TwoFactorAuthentication::class);
@@ -63,13 +88,13 @@ test('recovery codes can be replaced and two factor can be disabled', function (
     $secret = $twoFactor->generateSecret();
     $oldCodes = $twoFactor->confirm($agent, $secret, app(Google2FA::class)->getCurrentOtp($secret));
 
-    $newCodes = $twoFactor->regenerateRecoveryCodes($agent);
+    $newCodes = $twoFactor->regenerateRecoveryCodes($agent, $oldCodes[0]);
 
     expect($newCodes)->toHaveCount(TwoFactorAuthentication::RECOVERY_CODE_COUNT)
         ->and($newCodes)->not->toBe($oldCodes)
         ->and($twoFactor->verify($agent, $oldCodes[0]))->toBeFalse();
 
-    $twoFactor->disable($agent);
+    $twoFactor->disable($agent, $newCodes[0]);
 
     expect($agent->hasTwoFactorAuthentication())->toBeFalse()
         ->and($agent->two_factor_recovery_codes)->toBeNull()

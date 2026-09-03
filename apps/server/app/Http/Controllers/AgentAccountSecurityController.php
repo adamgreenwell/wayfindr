@@ -45,6 +45,14 @@ final class AgentAccountSecurityController extends Controller
 
         DB::transaction(function () use ($agent, $required): void {
             $lockedAgent = User::query()->lockForUpdate()->findOrFail($agent->id);
+
+            abort_unless(
+                ! $lockedAgent->isDeactivated()
+                && $lockedAgent->isAdmin()
+                && (int) $lockedAgent->account_id === (int) $agent->account_id,
+                403,
+            );
+
             $account = Account::query()->lockForUpdate()->findOrFail($lockedAgent->account_id);
 
             if ($required && ! $lockedAgent->hasTwoFactorAuthentication()) {

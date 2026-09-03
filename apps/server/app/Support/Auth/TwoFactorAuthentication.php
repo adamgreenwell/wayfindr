@@ -55,9 +55,9 @@ final class TwoFactorAuthentication
                 return null;
             }
 
-            $timestep = $this->totp->verifyKeyNewer($secret, $code, 0, 1);
+            $matchedTimestep = $this->totp->verifyKeyNewer($secret, $code, 0, 1);
 
-            if (! is_int($timestep)) {
+            if (! is_int($matchedTimestep)) {
                 return null;
             }
 
@@ -70,7 +70,9 @@ final class TwoFactorAuthentication
                     $recoveryCodes,
                 ),
                 'two_factor_confirmed_at' => now(),
-                'two_factor_last_used_timestep' => $timestep,
+                // google2fa returns the exact matching timestep, including
+                // when the accepted code is in the adjacent clock window.
+                'two_factor_last_used_timestep' => $matchedTimestep,
             ])->save();
 
             $this->audit($locked, 'agent.two_factor_enabled');
@@ -84,67 +86,27 @@ final class TwoFactorAuthentication
     {
         return DB::transaction(function () use ($user, $code): bool {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
+            $verified = $this->verifyLocked($locked, $code);
 
-            if (! $locked->hasTwoFactorAuthentication()) {
-                return false;
-            }
-
-            $normalisedCode = $this->normaliseRecoveryCode($code);
-
-            if (preg_match('/^\d{6}$/', $normalisedCode) === 1) {
-                $timestep = $this->totp->verifyKeyNewer(
-                    $locked->two_factor_secret,
-                    $normalisedCode,
-                    $locked->two_factor_last_used_timestep ?? 0,
-                    1,
-                );
-
-                if (! is_int($timestep)) {
-                    return false;
-                }
-
-                $locked->forceFill(['two_factor_last_used_timestep' => $timestep])->save();
+            if ($verified) {
                 $user->refresh();
-
-                return true;
             }
 
-            $recoveryCodes = $locked->two_factor_recovery_codes ?? [];
-
-            $matchingIndex = null;
-
-            // Always check the complete, fixed-size set so the response time
-            // does not reveal which recovery-code slot matched.
-            foreach ($recoveryCodes as $index => $hash) {
-                if (is_string($hash) && Hash::check($normalisedCode, $hash)) {
-                    $matchingIndex ??= $index;
-                }
-            }
-
-            if ($matchingIndex !== null) {
-                unset($recoveryCodes[$matchingIndex]);
-                $locked->forceFill([
-                    'two_factor_recovery_codes' => array_values($recoveryCodes),
-                ])->save();
-
-                $this->audit($locked, 'agent.two_factor_recovery_code_used');
-                $user->refresh();
-
-                return true;
-            }
-
-            return false;
+            return $verified;
         });
     }
 
     /**
-     * @return list<string>
+     * @return list<string>|null
      */
-    public function regenerateRecoveryCodes(User $user): array
+    public function regenerateRecoveryCodes(User $user, string $proof): ?array
     {
-        return DB::transaction(function () use ($user): array {
+        return DB::transaction(function () use ($user, $proof): ?array {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
-            abort_unless($locked->hasTwoFactorAuthentication(), 409);
+
+            if (! $this->verifyLocked($locked, $proof)) {
+                return null;
+            }
 
             $recoveryCodes = $this->generateRecoveryCodes();
             $locked->forceFill([
@@ -161,9 +123,9 @@ final class TwoFactorAuthentication
         });
     }
 
-    public function disable(User $user): bool
+    public function disable(User $user, string $proof): bool
     {
-        return DB::transaction(function () use ($user): bool {
+        return DB::transaction(function () use ($user, $proof): bool {
             // User first, then account: the policy writer takes the same order.
             // This keeps a concurrent policy enable from racing a disable
             // without serialising every account member's sign-in on one row.
@@ -174,7 +136,7 @@ final class TwoFactorAuthentication
                 return false;
             }
 
-            if (! $locked->hasTwoFactorAuthentication()) {
+            if (! $this->verifyLocked($locked, $proof)) {
                 return false;
             }
 
@@ -198,9 +160,61 @@ final class TwoFactorAuthentication
     private function generateRecoveryCodes(): array
     {
         return array_map(
-            fn (): string => implode('-', str_split(strtoupper(bin2hex(random_bytes(5))), 5)),
+            fn (): string => implode('-', str_split(strtoupper(bin2hex(random_bytes(8))), 4)),
             range(1, self::RECOVERY_CODE_COUNT),
         );
+    }
+
+    private function verifyLocked(User $locked, string $code): bool
+    {
+        if (! $locked->hasTwoFactorAuthentication()) {
+            return false;
+        }
+
+        $normalisedCode = $this->normaliseRecoveryCode($code);
+
+        if (preg_match('/^\d{6}$/', $normalisedCode) === 1) {
+            $matchedTimestep = $this->totp->verifyKeyNewer(
+                $locked->two_factor_secret,
+                $normalisedCode,
+                $locked->two_factor_last_used_timestep ?? 0,
+                1,
+            );
+
+            if (! is_int($matchedTimestep)) {
+                return false;
+            }
+
+            // Persist the precise accepted timestep returned by google2fa so
+            // an adjacent-window code cannot be replayed as the clock catches up.
+            $locked->forceFill(['two_factor_last_used_timestep' => $matchedTimestep])->save();
+
+            return true;
+        }
+
+        $recoveryCodes = $locked->two_factor_recovery_codes ?? [];
+        $matchingIndex = null;
+
+        // Always check every remaining hash so the response time does not
+        // reveal which recovery-code slot matched.
+        foreach ($recoveryCodes as $index => $hash) {
+            if (is_string($hash) && Hash::check($normalisedCode, $hash)) {
+                $matchingIndex ??= $index;
+            }
+        }
+
+        if ($matchingIndex === null) {
+            return false;
+        }
+
+        unset($recoveryCodes[$matchingIndex]);
+        $locked->forceFill([
+            'two_factor_recovery_codes' => array_values($recoveryCodes),
+        ])->save();
+
+        $this->audit($locked, 'agent.two_factor_recovery_code_used');
+
+        return true;
     }
 
     private function normaliseRecoveryCode(string $code): string
