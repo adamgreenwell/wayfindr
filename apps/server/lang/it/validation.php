@@ -36,6 +36,7 @@ return [
     'confirmed' => 'La conferma del campo :attribute non corrisponde.',
     'current_password' => 'La password non è corretta.',
     'date' => 'Il campo :attribute deve contenere una data valida.',
+    'date_format' => 'Il campo :attribute deve rispettare il formato :format.',
     'email' => 'Il campo :attribute deve contenere un indirizzo email valido.',
     'exists' => 'Il valore selezionato per :attribute non esiste.',
     'file' => 'Il campo :attribute deve contenere un file.',
@@ -73,7 +74,14 @@ return [
         'uncompromised' => 'Il campo :attribute è comparso in una violazione di dati. Ne scelga un altro.',
     ],
 
-    'custom' => [],
+    'custom' => [
+        'availability_from.*' => [
+            'date_format' => 'Il campo Orario di apertura deve rispettare il formato :format.',
+        ],
+        'availability_to.*' => [
+            'date_format' => 'Il campo Orario di chiusura deve rispettare il formato :format.',
+        ],
+    ],
 
     /*
      * Field names as an agent sees them on the form, not as the database

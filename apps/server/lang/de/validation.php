@@ -28,6 +28,7 @@ return [
     'confirmed' => 'Die Bestätigung für :attribute stimmt nicht überein.',
     'current_password' => 'Das Passwort ist nicht korrekt.',
     'date' => ':attribute muss ein gültiges Datum sein.',
+    'date_format' => ':attribute muss dem Format :format entsprechen.',
     'email' => ':attribute muss eine gültige E-Mail-Adresse sein.',
     'exists' => 'Der gewählte Wert für :attribute existiert nicht.',
     'file' => ':attribute muss eine Datei sein.',
@@ -65,7 +66,14 @@ return [
         'uncompromised' => ':attribute ist in einem Datenleck aufgetaucht. Bitte wählen Sie ein anderes.',
     ],
 
-    'custom' => [],
+    'custom' => [
+        'availability_from.*' => [
+            'date_format' => 'Öffnungszeit muss dem Format :format entsprechen.',
+        ],
+        'availability_to.*' => [
+            'date_format' => 'Schließzeit muss dem Format :format entsprechen.',
+        ],
+    ],
 
     /*
      * Field names as an agent sees them on the form, not as the database

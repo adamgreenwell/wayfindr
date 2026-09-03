@@ -979,11 +979,17 @@
                                                 <input type="time" name="availability_from[{{ $day }}]"
                                                     aria-label="{{ __('site_settings.hours.day_from', ['day' => __('site_settings.hours.days.'.$day)]) }}"
                                                     value="{{ old('availability_from.'.$day, $availabilityWeekdays[$day]['from']) }}">
+                                                @error('availability_from.'.$day)
+                                                    <p class="field-error">{{ $message }}</p>
+                                                @enderror
                                             </td>
                                             <td>
                                                 <input type="time" name="availability_to[{{ $day }}]"
                                                     aria-label="{{ __('site_settings.hours.day_to', ['day' => __('site_settings.hours.days.'.$day)]) }}"
                                                     value="{{ old('availability_to.'.$day, $availabilityWeekdays[$day]['to']) }}">
+                                                @error('availability_to.'.$day)
+                                                    <p class="field-error">{{ $message }}</p>
+                                                @enderror
                                             </td>
                                         </tr>
                                     @endforeach

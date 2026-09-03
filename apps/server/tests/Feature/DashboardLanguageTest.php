@@ -626,6 +626,20 @@ test('site settings validation and dynamic feedback follow the German agent', fu
         ->assertSee('Zeitzone der Supportzeiten muss ausgefüllt werden.')
         ->assertDontSee('The availability timezone field is required.');
 
+    $this->actingAs($owner)
+        ->from(route('dashboard.sites.show', $site))
+        ->followingRedirects()
+        ->put(route('dashboard.sites.availability.update', $site), [
+            'availability_enabled' => '1',
+            'availability_timezone' => 'UTC',
+            'availability_open' => ['mon' => '1'],
+            'availability_from' => ['mon' => 'not-a-time'],
+            'availability_to' => ['mon' => '17:00'],
+        ])
+        ->assertOk()
+        ->assertSee('Öffnungszeit muss dem Format H:i entsprechen.')
+        ->assertDontSee('does not match the format H:i.');
+
     Visitor::factory()->for($site)->count(2)->create(['presence_only' => true]);
 
     $this->actingAs($owner)
