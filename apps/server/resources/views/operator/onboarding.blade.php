@@ -1,27 +1,34 @@
-<x-layouts.operator title="Set up Wayfindr">
+<x-layouts.operator :title="__('operator.onboarding.document_title')">
 
     <x-page-header
         :back-href="$backUrl ?? null"
-        :back-label="$backLabel ?? 'Back'"
-        title="Set up your installation"
-        subtitle="A guided walk to a runnable Wayfindr — configure the essentials in the browser, mail first." />
+        :back-label="$backLabel ?? __('operator.shell.back')"
+        :title="__('operator.onboarding.title')"
+        :subtitle="__('operator.onboarding.subtitle')" />
 
     @if (session('status'))
-        <p class="status-message">{{ session('status') }}</p>
+        <p class="status-message"><x-operator-feedback :feedback="session('status')" /></p>
     @endif
 
     @if (session('error'))
-        <p class="status-message">{{ session('error') }}</p>
+        <p class="status-message"><x-operator-feedback :feedback="session('error')" /></p>
     @endif
 
     <section class="section" aria-labelledby="onboarding-progress-heading">
         <div class="section-header">
             <div>
-                <h2 id="onboarding-progress-heading">Essential steps</h2>
-                <p class="lede">{{ $readyCount }} of {{ $totalCount }} ready. Work top to bottom.</p>
+                <h2 id="onboarding-progress-heading">{{ __('operator.onboarding.essential_steps') }}</h2>
+                <p class="lede">{{ __('operator.onboarding.progress', [
+                    'ready' => \App\Support\ReaderNumber::count($readyCount),
+                    'total' => \App\Support\ReaderNumber::count($totalCount),
+                ]) }}</p>
             </div>
             <span class="readiness-status" data-status="{{ $readyCount === $totalCount ? 'ready' : 'attention' }}">
-                {{ $readyCount === $totalCount ? 'All essentials ready' : ($totalCount - $readyCount).' to go' }}
+                {{ $readyCount === $totalCount
+                    ? __('operator.onboarding.all_ready')
+                    : trans_choice('operator.onboarding.to_go', $totalCount - $readyCount, [
+                        'count' => \App\Support\ReaderNumber::count($totalCount - $readyCount),
+                    ]) }}
             </span>
         </div>
 
@@ -29,10 +36,12 @@
             <article class="readiness-check" data-status="manual">
                 <div class="readiness-check-main">
                     <div>
-                        <h3>Connect your first site</h3>
-                        <p>Install the widget on <strong>{{ $site->name }}</strong> to start receiving support conversations.</p>
+                        <h3>{{ __('operator.onboarding.connect_site') }}</h3>
+                        <p>{!! __('operator.onboarding.connect_site_body', [
+                            'site' => '<strong lang="">'.e($site->name).'</strong>',
+                        ]) !!}</p>
                     </div>
-                    <a class="button" href="{{ route('dashboard.sites.show', $site) }}#install-snippet">Get the install snippet</a>
+                    <a class="button" href="{{ route('dashboard.sites.show', $site) }}#install-snippet">{{ __('operator.onboarding.install_snippet') }}</a>
                 </div>
             </article>
         @endif
@@ -40,8 +49,10 @@
 
     <section class="section" aria-labelledby="onboarding-steps-heading">
         <div class="section-header">
-            <h2 id="onboarding-steps-heading">Configure the essentials</h2>
-            <span class="lede">{{ $totalCount }} steps</span>
+            <h2 id="onboarding-steps-heading">{{ __('operator.onboarding.configure_essentials') }}</h2>
+            <span class="lede">{{ trans_choice('operator.onboarding.steps', $totalCount, [
+                'count' => \App\Support\ReaderNumber::count($totalCount),
+            ]) }}</span>
         </div>
 
         <div class="readiness-list">
@@ -51,15 +62,15 @@
                     <div class="readiness-check-main">
                         <div>
                             <h3>{{ $check['label'] }}</h3>
-                            <p>{{ $check['summary'] }}</p>
+                            <p><x-operator-feedback :feedback="$check['summary']" /></p>
                         </div>
                         <span class="readiness-status" data-status="{{ $check['status'] }}">
                             {{ $check['status_label'] }}
                         </span>
                     </div>
 
-                    <p class="lede">{{ $check['detail'] }}</p>
-                    <p class="readiness-action">{{ $check['action'] }}</p>
+                    <p class="lede"><x-operator-feedback :feedback="$check['detail']" /></p>
+                    <p class="readiness-action"><x-operator-feedback :feedback="$check['action']" /></p>
 
                     @if ($step['configure_url'] && $step['configure_label'])
                         <p>
@@ -70,17 +81,15 @@
                     @endif
 
                     <x-operator-readiness-commands :commands="$check['commands'] ?? []" />
-                    <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$check" return-to="onboarding" />
+                    <x-operator-readiness-confirmation-form :action="$confirmationRoute" id-prefix="operator-onboarding" :item="$check" return-to="onboarding" />
                 </article>
             @endforeach
         </div>
 
         <div class="notice-copy">
-            <p>
-                This is the short path to a running install. The operator console has the
-                <a class="text-link" href="{{ route('operator.dashboard') }}">full instance diagnostic</a>
-                — every check, setup step, and confirmation.
-            </p>
+            <p>{!! __('operator.onboarding.full_diagnostic', [
+                'link' => '<a class="text-link" href="'.e(route('operator.dashboard')).'">'.e(__('operator.onboarding.full_diagnostic_link')).'</a>',
+            ]) !!}</p>
         </div>
     </section>
 </x-layouts.operator>

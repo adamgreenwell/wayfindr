@@ -19,6 +19,147 @@ return [
         ],
     ],
 
+    'onboarding' => [
+        'document_title' => 'Wayfindr einrichten',
+        'title' => 'Ihre Installation einrichten',
+        'subtitle' => 'Ein geführter Weg zu einer betriebsbereiten Wayfindr-Installation — konfigurieren Sie die Grundlagen im Browser, beginnend mit E-Mail.',
+        'setup_complete' => 'Wayfindr ist bereit. Schließen Sie die Einrichtung Ihrer Installation unten ab — verbinden Sie zuerst Ihre erste Website.',
+        'essential_steps' => 'Grundlegende Schritte',
+        'progress' => ':ready von :total bereit. Arbeiten Sie von oben nach unten.',
+        'all_ready' => 'Alle grundlegenden Schritte bereit',
+        'to_go' => '{1} Noch :count Schritt|[2,*] Noch :count Schritte',
+        'connect_site' => 'Erste Website verbinden',
+        'connect_site_body' => 'Installieren Sie das Widget auf :site, um Supportunterhaltungen zu empfangen.',
+        'install_snippet' => 'Installationscode abrufen',
+        'configure_essentials' => 'Grundlagen konfigurieren',
+        'steps' => '{1} :count Schritt|[2,*] :count Schritte',
+        'full_diagnostic' => 'Dies ist der kurze Weg zu einer betriebsbereiten Installation. Die Betreiberkonsole enthält die :link — jede Prüfung, jeden Einrichtungsschritt und jede Bestätigung.',
+        'full_diagnostic_link' => 'vollständige Installationsdiagnose',
+        'actions' => [
+            'configure_mail' => 'E-Mail konfigurieren',
+            'manage_mail' => 'E-Mail-Einstellungen verwalten',
+            'configure_language' => 'Sprache und Region festlegen',
+            'manage_language' => 'Sprache und Region verwalten',
+        ],
+    ],
+
+    'readiness' => [
+        'status' => [
+            'ready' => 'Bereit',
+            'confirm_this' => 'Bestätigung erforderlich',
+            'needs_attention' => 'Eingriff erforderlich',
+            'due_again' => 'Erneut fällig',
+        ],
+        'commands' => [
+            'group' => 'Empfohlene Befehle',
+            'copy' => 'Befehl kopieren',
+            'copy_named' => 'Befehl :command kopieren',
+            'copied' => 'Kopiert',
+        ],
+        'confirmation' => [
+            'optional_note' => 'Optionale Notiz',
+            'note_for' => 'Bestätigungsnotiz für :label',
+            'refresh' => 'Bestätigung aktualisieren',
+            'mark' => 'Als bestätigt markieren',
+            'saved' => 'Bereitschaftsbestätigung gespeichert.',
+            'summary_fresh' => 'Bestätigung abgeschlossen: :label.',
+            'summary_stale' => 'Bestätigung muss aktualisiert werden: :label.',
+            'detail' => 'Bestätigt von :name.',
+            'detail_with_age' => 'Bestätigt von :name :age.',
+            'detail_with_note' => 'Bestätigt von :name. Nachweisnotiz aufgezeichnet.',
+            'detail_with_age_with_note' => 'Bestätigt von :name :age. Nachweisnotiz aufgezeichnet.',
+            'unknown_operator' => 'Unbekannter Betreiber',
+            'action' => 'Aktualisieren Sie diese Bestätigung, wenn sich Prozessverwaltung, Zeitplan, Sicherungsrichtlinie oder Wiederherstellungsnachweis ändern.',
+        ],
+        'checks' => [
+            'mail_transport' => [
+                'label' => 'E-Mail-Versand',
+                'local_unset' => [
+                    'summary' => ':setting ist nicht festgelegt.',
+                    'detail' => 'Lokale Versandarten stellen Passwortzurücksetzungen, Supporthinweise und Betreiberbenachrichtigungen nicht außerhalb der Anwendung zu.',
+                    'action' => 'Konfigurieren Sie einen echten ausgehenden E-Mail-Versand, bevor Sie sich auf E-Mail-Benachrichtigungen verlassen.',
+                ],
+                'local_driver' => [
+                    'summary' => ':setting ist :mailer.',
+                    'detail' => 'Lokale Versandarten stellen Passwortzurücksetzungen, Supporthinweise und Betreiberbenachrichtigungen nicht außerhalb der Anwendung zu.',
+                    'action' => 'Konfigurieren Sie einen echten ausgehenden E-Mail-Versand, bevor Sie sich auf E-Mail-Benachrichtigungen verlassen.',
+                ],
+                'local_host' => [
+                    'summary' => 'SMTP verweist weiterhin auf einen lokalen E-Mail-Host.',
+                    'detail' => ':host_setting ist :host_value und :port_setting ist :port_value. Dies weist normalerweise auf ein lokales Entwicklungsziel hin.',
+                    'action' => 'Legen Sie :host_setting, :port_setting und :sender_setting für einen echten ausgehenden E-Mail-Anbieter fest, bevor Sie sich auf E-Mail-Benachrichtigungen verlassen.',
+                ],
+                'unsupported_scheme' => [
+                    'summary' => 'SMTP verwendet einen nicht unterstützten Wert für :setting.',
+                    'detail' => ':setting ist :scheme, der SMTP-Transport unterstützt jedoch smtp, smtps oder kein ausdrücklich festgelegtes Schema.',
+                    'action' => 'Verwenden Sie das zum Anbieter und Port passende SMTP-Schema.',
+                ],
+                'sender_missing' => [
+                    'summary' => ':setting fehlt.',
+                    'detail' => 'Ausgehende Support-E-Mails benötigen eine Absenderadresse, die Agenten und Besucher erkennen können.',
+                    'action' => 'Legen Sie :setting auf eine überwachte Absenderadresse fest, bevor Sie sich auf E-Mail-Benachrichtigungen verlassen.',
+                ],
+                'sender_placeholder' => [
+                    'summary' => ':setting sieht weiterhin wie ein Platzhalter aus.',
+                    'detail' => 'Standardmäßige Absenderadressen erschweren die Vertrauenswürdigkeit und die Kontrolle der Zustellung von Support-E-Mails.',
+                    'action' => 'Legen Sie :setting auf eine überwachte Absenderadresse fest, bevor Sie sich auf E-Mail-Benachrichtigungen verlassen.',
+                ],
+                'ready' => [
+                    'summary' => 'Die ausgehende Versandart ist :mailer.',
+                    'detail' => 'Wayfindr verfügt über einen konfigurierten ausgehenden E-Mail-Versand.',
+                    'action' => 'Führen Sie nach der Bereitstellung :command aus und bestätigen Sie den Eingang in einem echten Postfach. Halten Sie :scheme_setting passend zu Anbieter und Port.',
+                ],
+            ],
+            'public_url' => [
+                'label' => 'Öffentliche URL',
+                'insecure' => [
+                    'summary' => ':setting ist lokal oder nicht sicher.',
+                    'detail' => 'Besucher, Agenten, Cookies, Rückrufe und Widget-Codes benötigen die tatsächliche öffentliche HTTPS-URL.',
+                    'action' => 'Legen Sie :setting auf die öffentliche HTTPS-URL fest, die Besucher und Agenten verwenden.',
+                ],
+                'ready' => [
+                    'summary' => ':setting ist :url.',
+                    'detail' => 'Wayfindr kann öffentliche Links und Widget-Codes aus der Produktions-URL erzeugen.',
+                    'action' => 'Halten Sie :setting stabil und ändern Sie den Wert beim Domainwechsel bewusst.',
+                ],
+            ],
+            'background_workers' => [
+                'label' => 'Hintergrundprozesse bestätigen',
+                'synchronous' => [
+                    'summary' => ':setting ist :connection.',
+                    'detail' => 'Synchrone Warteschlangen werden direkt ausgeführt und verarbeiten keine eingereihten Aufträge wie Benachrichtigungsübersichten. Daher kann noch kein Hintergrundprozess bestätigt werden.',
+                    'action' => 'Verwenden Sie eine dauerhafte Warteschlangenverbindung, führen Sie :queue_command unter einer Prozessverwaltung aus und bestätigen Sie den Betrieb anschließend hier.',
+                ],
+                'manual' => [
+                    'summary' => 'Bestätigen Sie, dass ein Warteschlangenprozess und der Zeitplaner ausgeführt werden.',
+                    'detail' => 'Eine asynchrone Warteschlangenkonfiguration beweist nicht, dass ein Prozess ausgeführt wird. Eingereihte Benachrichtigungen und der minütliche Zeitplan benötigen eine Prozessverwaltung außerhalb des Anfragezyklus.',
+                    'action' => 'Verwalten Sie :queue_command mit der Prozessverwaltung des Hosts, prüfen Sie Fehler mit :failed_command und stellen Sie sicher, dass :schedule_command einmal pro Minute ausgeführt wird.',
+                ],
+            ],
+            'backups_restore' => [
+                'label' => 'Sicherung und Wiederherstellung',
+                'manual' => [
+                    'summary' => 'Bestätigen Sie Datenbank- und Speichersicherungen außerhalb von Wayfindr.',
+                    'detail' => 'Wayfindr kann Host-Snapshots, Datenbankexporte, Aufbewahrung im Objektspeicher oder Wiederherstellungsübungen nicht innerhalb einer Anfrage nachweisen.',
+                    'action' => 'Bestätigen Sie vor echtem Supportverkehr, dass Datenbank- und Speichersicherungen geplant, aufbewahrt, überwacht und wiederherstellbar sind.',
+                ],
+            ],
+            'language_and_region' => [
+                'label' => 'Sprache und Region',
+                'unconfirmed' => [
+                    'summary' => 'Das Dashboard wird auf :language und mit der Zeitzone :timezone angezeigt. Diese Auswahl wurde noch nicht bestätigt.',
+                    'detail' => 'Dies sind die Standardwerte für alle Agenten ohne eigene Auswahl, also bei einer neuen Installation für alle. Eine falsche Uhr wirkt nicht wie ein Fehler: Berichte umfassen einen Tag, der Stunden vor dem Tag der lesenden Person endete, und niemand meldet dies.',
+                    'action' => 'Bestätigen Sie die Sprache und Zeitzone dieser Installation.',
+                ],
+                'ready' => [
+                    'summary' => 'Das Dashboard wird auf :language und mit der Zeitzone :timezone angezeigt.',
+                    'detail' => 'Agenten können auf ihrem Profil weiterhin eine andere Sprache oder Zeitzone wählen.',
+                    'action' => 'Ändern Sie diese Werte, wenn sich Arbeitszeiten oder Arbeitsregion ändern; persönliche Auswahlen der Agenten bleiben bestehen.',
+                ],
+            ],
+        ],
+    ],
+
     'localization' => [
         'document_title' => 'Sprache und Region',
         'title' => 'Sprache und Region',

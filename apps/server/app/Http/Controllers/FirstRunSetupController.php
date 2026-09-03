@@ -125,7 +125,7 @@ class FirstRunSetupController extends Controller
         // green, mail first, and keeps "connect your first site" one click away.
         return redirect()
             ->route('operator.onboarding')
-            ->with('status', 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.');
+            ->with('status', 'operator.onboarding.setup_complete');
     }
 
     private function redirectAfterSetup(Request $request): RedirectResponse

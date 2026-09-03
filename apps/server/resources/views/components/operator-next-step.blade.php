@@ -27,6 +27,6 @@
         @endif
         <p class="readiness-action">{{ $nextStep['action'] }}</p>
         <x-operator-readiness-commands :commands="$nextStep['commands'] ?? []" />
-        <x-operator-readiness-confirmation-form :action="$confirmationRoute" :item="$nextStep" />
+        <x-operator-readiness-confirmation-form :action="$confirmationRoute" id-prefix="operator-next-step" :item="$nextStep" />
     </article>
 </section>

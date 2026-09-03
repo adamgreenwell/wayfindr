@@ -103,6 +103,28 @@ test('only the first panel is visible on arrival', function (): void {
     }
 });
 
+test('confirmation labels target unique inputs across every rendered tab', function (): void {
+    $html = operatorConsoleHtml($this);
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+    $inputs = $xpath->query('//input[@name="note"]');
+    $ids = [];
+
+    expect($inputs->length)->toBeGreaterThan(1);
+
+    foreach ($inputs as $input) {
+        expect($input)->toBeInstanceOf(DOMElement::class);
+        $id = $input->getAttribute('id');
+        $ids[] = $id;
+
+        expect($id)->not->toBe('')
+            ->and($xpath->query('//label[@for="'.$id.'"]')->length)->toBe(1);
+    }
+
+    expect(array_unique($ids))->toHaveCount(count($ids));
+});
+
 test('tabs badge problems and stay silent about pending work', function (): void {
     // The scheduler check is permanently 'manual' and several go-live gates
     // wait on a person. Badging those would put a number on two tabs forever

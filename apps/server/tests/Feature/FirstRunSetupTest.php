@@ -60,7 +60,7 @@ test('first run setup creates the owner account site and session', function (): 
 
     $response
         ->assertRedirect(route('operator.onboarding'))
-        ->assertSessionHas('status', 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.');
+        ->assertSessionHas('status', 'operator.onboarding.setup_complete');
 
     expect($account->name)->toBe('Acme Support')
         ->and($account->slug)->toBe('acme-support')
@@ -107,7 +107,7 @@ test('first run setup claims incomplete bootstrap records without creating dupli
 
     $response
         ->assertRedirect(route('operator.onboarding'))
-        ->assertSessionHas('status', 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.');
+        ->assertSessionHas('status', 'operator.onboarding.setup_complete');
 
     expect(Account::query()->count())->toBe(1)
         ->and(Site::query()->count())->toBe(1)
@@ -120,6 +120,37 @@ test('first run setup claims incomplete bootstrap records without creating dupli
         ->and($agent->platform_role)->toBe(PlatformRole::Operator)
         ->and($site->supportAgents()->whereKey($agent->id)->exists())->toBeTrue();
 });
+
+test('first run completion follows the installation language on onboarding', function (
+    string $locale,
+    string $expected,
+): void {
+    config()->set('wayfindr.dashboard_locale', $locale);
+
+    $this->followingRedirects()
+        ->post('/setup', [
+            'account_name' => 'Acme Support',
+            'agent_name' => 'Ada Agent',
+            'agent_email' => 'ada@example.com',
+            'password' => 'correct-horse-battery-staple',
+            'password_confirmation' => 'correct-horse-battery-staple',
+            'site_name' => 'Acme Docs',
+            'site_domain' => 'docs.example.test',
+        ])
+        ->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($expected)
+        ->assertDontSee('Wayfindr is ready. Finish setting up your installation below');
+})->with([
+    'German' => [
+        'de',
+        'Wayfindr ist bereit. Schließen Sie die Einrichtung Ihrer Installation unten ab — verbinden Sie zuerst Ihre erste Website.',
+    ],
+    'Italian' => [
+        'it',
+        'Wayfindr è pronto. Completi la configurazione dell’installazione qui sotto, iniziando dal collegamento del primo sito.',
+    ],
+]);
 
 test('first run setup rechecks setup state inside the recovery transaction', function (): void {
     $account = Account::factory()->create([

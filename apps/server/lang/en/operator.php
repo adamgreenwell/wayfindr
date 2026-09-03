@@ -19,6 +19,147 @@ return [
         ],
     ],
 
+    'onboarding' => [
+        'document_title' => 'Set up Wayfindr',
+        'title' => 'Set up your installation',
+        'subtitle' => 'A guided walk to a runnable Wayfindr — configure the essentials in the browser, mail first.',
+        'setup_complete' => 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.',
+        'essential_steps' => 'Essential steps',
+        'progress' => ':ready of :total ready. Work top to bottom.',
+        'all_ready' => 'All essentials ready',
+        'to_go' => '{1} :count to go|[2,*] :count to go',
+        'connect_site' => 'Connect your first site',
+        'connect_site_body' => 'Install the widget on :site to start receiving support conversations.',
+        'install_snippet' => 'Get the install snippet',
+        'configure_essentials' => 'Configure the essentials',
+        'steps' => '{1} :count step|[2,*] :count steps',
+        'full_diagnostic' => 'This is the short path to a running install. The operator console has the :link — every check, setup step, and confirmation.',
+        'full_diagnostic_link' => 'full instance diagnostic',
+        'actions' => [
+            'configure_mail' => 'Configure mail',
+            'manage_mail' => 'Manage mail settings',
+            'configure_language' => 'Set language and region',
+            'manage_language' => 'Manage language and region',
+        ],
+    ],
+
+    'readiness' => [
+        'status' => [
+            'ready' => 'Ready',
+            'confirm_this' => 'Confirm this',
+            'needs_attention' => 'Needs attention',
+            'due_again' => 'Due again',
+        ],
+        'commands' => [
+            'group' => 'Recommended commands',
+            'copy' => 'Copy command',
+            'copy_named' => 'Copy command :command',
+            'copied' => 'Copied',
+        ],
+        'confirmation' => [
+            'optional_note' => 'Optional note',
+            'note_for' => 'Confirmation note for :label',
+            'refresh' => 'Refresh confirmation',
+            'mark' => 'Mark confirmed',
+            'saved' => 'Readiness confirmation saved.',
+            'summary_fresh' => 'Confirmation complete: :label.',
+            'summary_stale' => 'Confirmation needs refreshing: :label.',
+            'detail' => 'Confirmed by :name.',
+            'detail_with_age' => 'Confirmed by :name :age.',
+            'detail_with_note' => 'Confirmed by :name. Evidence note recorded.',
+            'detail_with_age_with_note' => 'Confirmed by :name :age. Evidence note recorded.',
+            'unknown_operator' => 'Unknown operator',
+            'action' => 'Refresh this confirmation if the process manager, schedule, backup policy, or restore proof changes.',
+        ],
+        'checks' => [
+            'mail_transport' => [
+                'label' => 'Mail transport',
+                'local_unset' => [
+                    'summary' => ':setting is not set.',
+                    'detail' => 'Local-only mailers do not deliver password resets, support alerts, or operator notices outside the app.',
+                    'action' => 'Configure a real outbound mail transport before relying on email alerts.',
+                ],
+                'local_driver' => [
+                    'summary' => ':setting is :mailer.',
+                    'detail' => 'Local-only mailers do not deliver password resets, support alerts, or operator notices outside the app.',
+                    'action' => 'Configure a real outbound mail transport before relying on email alerts.',
+                ],
+                'local_host' => [
+                    'summary' => 'SMTP still points to a local mail host.',
+                    'detail' => ':host_setting is :host_value and :port_setting is :port_value, which usually means mail is still aimed at a local development sink.',
+                    'action' => 'Set :host_setting, :port_setting, and :sender_setting for a real outbound mail provider before relying on email alerts.',
+                ],
+                'unsupported_scheme' => [
+                    'summary' => 'SMTP has an unsupported :setting value.',
+                    'detail' => ':setting is :scheme, but the SMTP transport supports smtp, smtps, or no explicit scheme.',
+                    'action' => 'Use the appropriate SMTP scheme for the provider and port.',
+                ],
+                'sender_missing' => [
+                    'summary' => ':setting is missing.',
+                    'detail' => 'Outbound support email needs a sender address agents and visitors can recognize.',
+                    'action' => 'Set :setting to a monitored sender before relying on email alerts.',
+                ],
+                'sender_placeholder' => [
+                    'summary' => ':setting still looks like a placeholder.',
+                    'detail' => 'Default sender addresses make outbound support mail harder to trust and easier to lose in delivery checks.',
+                    'action' => 'Set :setting to a monitored sender before relying on email alerts.',
+                ],
+                'ready' => [
+                    'summary' => 'The outbound mailer is :mailer.',
+                    'detail' => 'Wayfindr has an outbound mail transport configured.',
+                    'action' => 'After deploying, run :command and confirm that the message reaches a real inbox. Keep :scheme_setting appropriate for the provider and port.',
+                ],
+            ],
+            'public_url' => [
+                'label' => 'Public URL',
+                'insecure' => [
+                    'summary' => ':setting is local or not secure.',
+                    'detail' => 'Visitors, agents, cookies, callbacks, and widget snippets need the real public HTTPS URL.',
+                    'action' => 'Set :setting to the public HTTPS URL visitors and agents will use.',
+                ],
+                'ready' => [
+                    'summary' => ':setting is :url.',
+                    'detail' => 'Wayfindr can generate public links and widget snippets from the production URL.',
+                    'action' => 'Keep :setting stable and update it intentionally when changing domains.',
+                ],
+            ],
+            'background_workers' => [
+                'label' => 'Confirm background workers',
+                'synchronous' => [
+                    'summary' => ':setting is :connection.',
+                    'detail' => 'Synchronous queues run inline and never process queued jobs such as alert digests, so there is no background worker to confirm yet.',
+                    'action' => 'Use a durable queue connection, run :queue_command under a process manager, then confirm it here.',
+                ],
+                'manual' => [
+                    'summary' => 'Confirm that a queue worker and the scheduler are both running.',
+                    'detail' => 'An asynchronous queue configuration does not prove that its worker is running. Queued alerts and the once-a-minute scheduler both need process-manager coverage outside the request lifecycle.',
+                    'action' => 'Manage :queue_command with the host’s process manager, inspect failures with :failed_command, and verify that :schedule_command runs once per minute.',
+                ],
+            ],
+            'backups_restore' => [
+                'label' => 'Backups and restore',
+                'manual' => [
+                    'summary' => 'Confirm database and storage backups outside Wayfindr.',
+                    'detail' => 'Wayfindr cannot prove host snapshots, database dumps, object-storage retention, or restore drills from inside a request.',
+                    'action' => 'Confirm that database and storage backups are scheduled, retained, monitored, and restorable before real support traffic arrives.',
+                ],
+            ],
+            'language_and_region' => [
+                'label' => 'Language and region',
+                'unconfirmed' => [
+                    'summary' => 'The dashboard reads in :language, on :timezone. Nobody has confirmed that this is right.',
+                    'detail' => 'These are the defaults for every agent who has not chosen their own, which on a new install is everyone. A wrong clock does not look like a fault: reports cover a day that ended hours before the reader’s did, and nobody thinks to report it.',
+                    'action' => 'Confirm the language and timezone this install should read in.',
+                ],
+                'ready' => [
+                    'summary' => 'The dashboard reads in :language, on :timezone.',
+                    'detail' => 'Agents who prefer another language or clock can still choose their own on their profile.',
+                    'action' => 'Change it whenever the desk moves; agents keep any choice they made for themselves.',
+                ],
+            ],
+        ],
+    ],
+
     'localization' => [
         'document_title' => 'Language and region',
         'title' => 'Language and region',

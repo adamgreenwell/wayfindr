@@ -79,6 +79,7 @@ final class DashboardLanguage
         // install language is chosen. The operator shell uses the same
         // catalogue but stays English on every operator route not yet listed,
         // preserving the one-language-per-document boundary during rollout.
+        'operator.onboarding',
         'operator.settings.localization.edit',
         'operator.settings.localization.update',
         'operator.settings.scanning.edit',

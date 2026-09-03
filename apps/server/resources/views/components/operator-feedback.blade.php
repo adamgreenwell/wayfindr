@@ -9,6 +9,9 @@
     $feedbackParameters = collect(is_array($feedback) ? ($feedback['parameters'] ?? []) : [])
         ->mapWithKeys(fn ($value, $key) => [$key => '<span lang="">'.e((string) $value).'</span>'])
         ->all();
+    $localizedParameters = collect(is_array($feedback) ? ($feedback['localized_parameters'] ?? []) : [])
+        ->mapWithKeys(fn ($value, $key) => [$key => e((string) $value)])
+        ->all();
 @endphp
 
-{!! __($feedbackKey, $feedbackParameters) !!}
+{!! __($feedbackKey, [...$feedbackParameters, ...$localizedParameters]) !!}

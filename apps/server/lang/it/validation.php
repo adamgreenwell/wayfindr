@@ -147,6 +147,8 @@ return [
         'confirm_name' => 'Nome dell’istanza',
         'acknowledge' => 'Conferma della perdita dei dati',
         'workers_stopped' => 'Conferma dell’arresto delle scritture',
+        'key' => 'Passaggio di preparazione',
+        'note' => 'Nota di conferma',
 
         // The articles page. `body` was already here for the reply composer;
         // `title` was not, so an over-long article title produced a correct
