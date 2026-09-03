@@ -201,9 +201,10 @@ test('ticket detail shows failed external issue health without raw provider deta
         ->assertSeeInOrder([
             'External issue health',
             'Needs attention',
-            'GitHub could not sync adamgreenwell/wayfindr.',
+            'GitHub could not sync',
             'Provider details withheld',
         ])
+        ->assertSeeText('GitHub could not sync adamgreenwell/wayfindr.')
         ->assertDontSee('ghp_secret_value');
 });
 
@@ -232,9 +233,10 @@ test('ticket detail includes outbound issue creation failures in external issue 
         ->assertSeeInOrder([
             'External issue health',
             'Needs attention',
-            'GitHub could not sync adamgreenwell/wayfindr.',
+            'GitHub could not sync',
             'Provider details withheld',
         ])
+        ->assertSeeText('GitHub could not sync adamgreenwell/wayfindr.')
         ->assertDontSee('ghp_secret_value');
 });
 
@@ -437,7 +439,7 @@ test('ticket detail offers retry for retryable outbound issue creation failures'
     $this->actingAs($agent)
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
-        ->assertSee('GitHub could not sync adamgreenwell/wayfindr.')
+        ->assertSeeText('GitHub could not sync adamgreenwell/wayfindr.')
         ->assertSee('Provider details withheld')
         ->assertSee('Retry GitHub issue')
         ->assertSee('Retry uses the current site project mapping and the conservative export payload.')
@@ -487,7 +489,7 @@ test('ticket detail offers retry for retryable gitlab issue creation failures', 
     $this->actingAs($agent)
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
-        ->assertSee('GitLab could not sync acme/docs.')
+        ->assertSeeText('GitLab could not sync acme/docs.')
         ->assertSee('Retry GitLab issue')
         ->assertSee(route('dashboard.tickets.external-issues.gitlab.store', $ticket), false)
         ->assertSee('value="'.$project->id.'"', false)
@@ -535,7 +537,7 @@ test('ticket detail hides retry when the failed external issue project is no lon
     $this->actingAs($agent)
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
-        ->assertSee('GitHub could not sync adamgreenwell/wayfindr.')
+        ->assertSeeText('GitHub could not sync adamgreenwell/wayfindr.')
         ->assertSee('Retry unavailable')
         ->assertSee('Check the site external issue settings before retrying.')
         ->assertDontSee('Retry GitHub issue')
@@ -587,7 +589,7 @@ test('ticket detail hides retry when the failed external issue project belongs t
     $this->actingAs($agent)
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
-        ->assertSee('GitHub could not sync adamgreenwell/wayfindr.')
+        ->assertSeeText('GitHub could not sync adamgreenwell/wayfindr.')
         ->assertSee('Retry unavailable')
         ->assertDontSee('Retry GitHub issue')
         ->assertDontSee('other/account')
@@ -666,7 +668,7 @@ test('ticket detail hides retry when a later external issue creation succeeded f
         ->assertSee('Healthy')
         ->assertSee('1 linked')
         ->assertSee('External issue links are not reporting failures for this ticket.')
-        ->assertDontSee('GitHub could not sync adamgreenwell/wayfindr.')
+        ->assertDontSeeText('GitHub could not sync adamgreenwell/wayfindr.')
         ->assertDontSee('Retry GitHub issue')
         ->assertDontSee('ghp_secret_value');
 });

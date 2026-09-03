@@ -3552,6 +3552,58 @@ test('authored label names keep their own language boundary in ticket activity',
         ->and(substr_count($html, 'Label entfernt:'))->toBe(2);
 });
 
+test('the ticket browser title stays in the dashboard language', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'Checkout & billing']);
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('<title>Ticket-Nr. '.$ticket->id.'</title>')
+        ->and($html)->not->toContain('<title lang=""')
+        // The authored subject still owns the visible heading boundary.
+        ->and($html)->toContain('<h1 lang="">Checkout &amp; billing</h1>');
+});
+
+test('external failure project keys keep their own language boundary', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'External issue']);
+
+    TicketExternalLink::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($ticket)
+        ->create([
+            'provider' => 'github',
+            'project_key' => 'Billing & Rückgabe',
+            'sync_status' => ExternalIssueSyncStatus::FAILED,
+            'last_synced_at' => now(),
+        ]);
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('<span lang="">Billing &amp; Rückgabe</span>')
+        ->and($html)->toContain('GitHub konnte')
+        ->and($html)->toContain('nicht synchronisieren.');
+});
+
 test('a reply template says what language its body is in', function (): void {
     // The body is what the VISITOR receives, not chrome. A built-in is English
     // and says so. A managed one is written by the account in whatever language

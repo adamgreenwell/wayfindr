@@ -9,7 +9,7 @@
  * catalogue owns only the chrome wrapped around them.
  */
 return [
-    'document_title' => 'Ticket - :subject',
+    'document_title' => 'Ticket #:id',
     'reference' => 'Ticket #:id',
 
     'tabs' => [

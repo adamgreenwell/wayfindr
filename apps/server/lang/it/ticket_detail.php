@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'document_title' => 'Gestisci ticket - :subject',
+    'document_title' => 'Ticket n. :id',
     'reference' => 'Ticket n. :id',
 
     'tabs' => [

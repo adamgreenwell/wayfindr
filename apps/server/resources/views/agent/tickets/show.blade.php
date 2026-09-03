@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('ticket_detail.document_title', ['subject' => $ticket->subject])" title-lang="" :agent="$agent" :account="$account">
+<x-layouts.app :title="__('ticket_detail.document_title', ['id' => $ticket->id])" :agent="$agent" :account="$account">
             <x-page-header :title="$ticket->subject" title-lang="" :back-href="$ticketReturnLink['href']" :back-label="$ticketReturnLink['label']">
                 <p class="lede">
                     {{ __('ticket_detail.reference', ['id' => $ticket->id]) }}
@@ -567,10 +567,16 @@
                     @else
                         <div class="timeline-list">
                             @foreach ($ticketExternalIssueHealth['failures'] as $failure)
+                                @php
+                                    // The sentence is dashboard chrome; the
+                                    // project key belongs to the account and
+                                    // may be written in any language.
+                                    $failureProject = '<span lang="">'.e($failure['project_key']).'</span>';
+                                @endphp
                                 <article class="timeline-item internal-note">
                                     <div class="timeline-content">
                                         <strong>{{ $loop->first ? __('ticket_detail.external.last_failure') : __('ticket_detail.external.earlier_failure') }}</strong>
-                                        <p class="message-body">{{ __('ticket_detail.external.sync_failed', ['provider' => $failure['provider'], 'project' => $failure['project_key']]) }}</p>
+                                        <p class="message-body">{!! __('ticket_detail.external.sync_failed', ['provider' => e($failure['provider']), 'project' => $failureProject]) !!}</p>
                                         <div class="timeline-meta">
                                             @if ($failure['occurred_at'])
                                                 <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
