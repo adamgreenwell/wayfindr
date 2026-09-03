@@ -297,6 +297,7 @@ class BreakGlassGrants
             ->where('account_id', $grant->account_id)
             ->whereNull('deactivated_at')
             ->when($grant->requester_id !== null, fn ($query) => $query->whereKeyNot($grant->requester_id))
+            ->with('customRole')
             ->get()
             ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageOperatorAccess))
             ->values();

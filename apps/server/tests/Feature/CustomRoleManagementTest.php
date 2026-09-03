@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -158,6 +159,35 @@ test('owners can assign custom roles and permission changes take effect immediat
         'new_role' => 'custom:'.$role->id,
         'new_role_name' => 'Conversation reader',
     ]);
+});
+
+test('custom role permissions reuse one loaded role lookup', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewConversations->value],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+
+    $agent->unsetRelation('customRole');
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    try {
+        expect($agent->hasAccountPermission(AccountPermission::ViewConversations))->toBeTrue()
+            ->and($agent->hasAccountPermission(AccountPermission::ManageTickets))->toBeFalse()
+            ->and($agent->hasAccountPermission(AccountPermission::ViewConversations))->toBeTrue();
+
+        $roleQueries = collect(DB::getQueryLog())
+            ->filter(fn (array $query): bool => str_contains($query['query'], 'custom_roles'));
+    } finally {
+        DB::disableQueryLog();
+    }
+
+    expect($agent->relationLoaded('customRole'))->toBeTrue()
+        ->and($roleQueries)->toHaveCount(1);
 });
 
 test('a custom role cannot cross account boundaries or be deleted while assigned', function (): void {

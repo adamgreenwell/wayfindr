@@ -144,9 +144,8 @@ class User extends Authenticatable
             return $this->account_role?->hasPermission($permission) === true;
         }
 
-        $role = $this->relationLoaded('customRole')
-            ? $this->customRole
-            : $this->customRole()->first();
+        $this->loadMissing('customRole');
+        $role = $this->customRole;
 
         return $role instanceof CustomRole
             && (int) $role->account_id === (int) $this->account_id
