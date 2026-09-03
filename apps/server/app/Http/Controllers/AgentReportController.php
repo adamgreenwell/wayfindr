@@ -38,6 +38,7 @@ class AgentReportController extends Controller
         $volume = $report->volume();
         $firstResponse = $report->firstResponse();
         $resolution = $report->resolution();
+        $satisfaction = $report->satisfaction();
         $queueHealth = $report->queueHealth();
         $ticketResolution = $tickets->resolution();
 
@@ -52,7 +53,8 @@ class AgentReportController extends Controller
             'chart' => $this->chart($volume, $window),
             'firstResponse' => $firstResponse,
             'resolution' => $resolution,
-            'satisfaction' => $report->satisfaction(),
+            'satisfaction' => $satisfaction,
+            'satisfactionPositiveLabel' => $this->readablePercentage($satisfaction['positive']),
             'ratingComments' => $report->comments(),
             'agentActivity' => $report->agentActivity(),
             'queueHealth' => $queueHealth,
@@ -210,6 +212,17 @@ class AgentReportController extends Controller
         }
 
         return implode(' ', $parts);
+    }
+
+    private function readablePercentage(?float $percentage): string
+    {
+        if ($percentage === null) {
+            return '--';
+        }
+
+        $precision = floor($percentage) === $percentage ? 0 : 1;
+
+        return ReaderNumber::percentage($percentage, $precision);
     }
 
     /**
