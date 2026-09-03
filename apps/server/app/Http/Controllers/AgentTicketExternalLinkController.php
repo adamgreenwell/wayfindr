@@ -53,7 +53,7 @@ class AgentTicketExternalLinkController extends Controller
 
         return redirect()
             ->back(302, [], route('dashboard'))
-            ->with('status', 'External link added.');
+            ->with('status', 'ticket_detail.flash.external_link_added');
     }
 
     public function destroy(Request $request, Ticket $ticket, TicketExternalLink $externalLink): RedirectResponse
@@ -79,7 +79,7 @@ class AgentTicketExternalLinkController extends Controller
 
         return redirect()
             ->back(302, [], route('dashboard'))
-            ->with('status', 'External link removed.');
+            ->with('status', 'ticket_detail.flash.external_link_removed');
     }
 
     private function authorizeTicketUpdate(User $agent, Ticket $ticket): void

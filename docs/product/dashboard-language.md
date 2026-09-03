@@ -1,10 +1,10 @@
 # The language the dashboard speaks
 
 Status: **in progress.** The plumbing is shipped, and
-`DashboardLanguage::EXTRACTED_ROUTES` names **70 routes — 30 of them pages** a
+`DashboardLanguage::EXTRACTED_ROUTES` names **82 routes — 31 of them pages** a
 reader can open, the rest the write and partial endpoints those pages call. The
 extracted surfaces are the app shell, the agent profile, the conversation queue
-and detail, the ticket queue, reply templates, ticket labels, articles, API
+and detail, the ticket queue and detail workspace, reply templates, ticket labels, articles, API
 tokens, the account audit, account-side operator access, account integrations,
 the account overview and team roster, the live-visitors board, the visitor
 directory and profile, and the operator's dashboard, guided setup, break-glass
@@ -303,9 +303,8 @@ with no findings under it.
 A page that renders `__(session('status'))` makes every controller that can
 redirect to it one of *its* surfaces. `AgentTicketController` flashes from the
 ticket page and from the conversation page — `redirect()->back()` decides — so
-its twelve status strings are keys now, and the ticket page translates them too.
-That page is not extracted, so `__()` answers in the install default there:
-English, correctly, and without a second code path.
+its status strings are keys now, and each page translates them for its own
+reader. Both destinations are extracted now, without needing a second code path.
 
 The general rule: **any view that renders a flash should call `__()` on it.**
 `__()` returns a non-key string unchanged, so it costs nothing on surfaces that
@@ -363,10 +362,10 @@ install, which is every install today.
 Listing a write route beside its own page works only while the endpoint serves
 one surface. A linked-ticket action serves two: the same
 `AgentTicketController::close()` is submitted from the ticket page and from the
-conversation panel, and its **validation runs before the redirect**. Listing it
-would answer in German on the English ticket page; not listing it put English
-errors on the German conversation panel. Neither is a locale the endpoint can
-have.
+conversation panel, and its **validation runs before the redirect**. A route-name
+allowlist alone cannot tell which page owns that response. The locale therefore
+comes from the actual render-back destination; both current destinations are
+extracted and a future unextracted caller would remain in the install default.
 
 So for an unsafe request the locale is resolved from the route the response will
 render on. Same-origin only, and reads are excluded because a GET renders
@@ -611,7 +610,7 @@ Match the shape of a key, not the catalogue name: an English sentence ending
 A model gains a key and **keeps** its English label, because the surfaces that
 have not been extracted still read the label. Setting `actor` to null and
 supplying only `actor_key` blanked the lifecycle actor on the ticket detail page
-— a page the change did not touch and no test in that PR opened.
+— at the time, a page the change did not touch and no test in that PR opened.
 
 The corollary is what belongs in a key at all: a real actor *name* is **data**,
 returned as itself with no key; only the `Visitor` and `System` fallbacks are

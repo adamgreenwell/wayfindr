@@ -1,7 +1,7 @@
 @props(['priorities'])
 
-{{-- See the note on the category guide: shared with an unextracted route, and
-     correct there because that route's locale is the install default. --}}
+{{-- See the note on the category guide: this shared request-bound view may
+     translate, while a shared model may not. --}}
 <div class="notice-list" aria-label="{{ __('tickets.guidance.priority_aria') }}">
     @foreach ($priorities as $value => $priority)
         <p>

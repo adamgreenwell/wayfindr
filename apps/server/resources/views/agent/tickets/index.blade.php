@@ -306,7 +306,7 @@
                                             <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['detail'] }}">{{ $ticketExternalIssueState['detail'] }}</span>
                                             @if ($ticketExternalIssueState['attempt'])
                                                 <span class="wf-queue-preview" title="{{ $ticketExternalIssueState['attempt']['body'] }}">
-                                                    {{ __('tickets.row.latest_attempt') }} {{ $ticketExternalIssueState['attempt']['label'] }}: {{ $ticketExternalIssueState['attempt']['body'] }}
+                                                    {{ __('tickets.row.latest_attempt') }} <x-translated-feedback :feedback="$ticketExternalIssueState['attempt']['label_feedback']" />: <x-translated-feedback :feedback="$ticketExternalIssueState['attempt']['body_feedback']" />
                                                 </span>
                                                 @if ($ticketExternalIssueState['attempt']['occurred_at'])
                                                     <span class="wf-queue-preview">{{ $ticketExternalIssueState['attempt']['occurred_at']->diffForHumans() }}</span>

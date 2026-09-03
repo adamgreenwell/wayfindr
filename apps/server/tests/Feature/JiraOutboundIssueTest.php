@@ -123,7 +123,7 @@ test('agent can create a conservative Jira issue from a mapped ticket', function
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Jira issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.jira_created');
 
     Http::assertSent(function (HttpClientRequest $request) use ($ticket): bool {
         $payload = $request->data();
@@ -191,7 +191,7 @@ test('a colon-free credential targets Server/Data Center: bearer auth, REST v2, 
         ->post("/dashboard/tickets/{$fixture['ticket']->id}/external-issues/jira", [
             'site_external_issue_project_id' => $fixture['project']->id,
         ])
-        ->assertSessionHas('status', 'Jira issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.jira_created');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         $description = data_get($request->data(), 'fields.description');
@@ -237,6 +237,25 @@ test('a missing Jira base URL fails with guidance and records the sync failure',
     expect(
         $fixture['ticket']->auditEvents()->where('action', 'ticket.external_sync_failed')->count()
     )->toBe(1);
+});
+
+test('a missing Jira credential preserves the required credential formats', function (): void {
+    $fixture = jiraOutboundIssueFixture([
+        'credentials' => ['token' => null],
+    ]);
+
+    Http::fake();
+
+    $this->actingAs($fixture['agent'])
+        ->from("/dashboard/tickets/{$fixture['ticket']->id}")
+        ->post("/dashboard/tickets/{$fixture['ticket']->id}/external-issues/jira", [
+            'site_external_issue_project_id' => $fixture['project']->id,
+        ])
+        ->assertSessionHasErrors([
+            'external_issue' => 'Jira credential is missing. Use email:api-token for Jira Cloud, or a personal access token for Jira Server/Data Center.',
+        ]);
+
+    Http::assertNothingSent();
 });
 
 test('a Jira API rejection surfaces failure guidance without leaking the raw error', function (): void {

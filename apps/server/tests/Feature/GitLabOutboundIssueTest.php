@@ -44,7 +44,7 @@ test('agent can create a conservative GitLab issue from a mapped ticket', functi
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'GitLab issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.gitlab_created');
 
     Http::assertSent(function (HttpClientRequest $request) use ($ticket): bool {
         $payload = $request->data();
@@ -105,7 +105,7 @@ test('agent can create a conservative GitLab issue from a mapped ticket', functi
     $this->actingAs($agent)
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
-        ->assertSee('GitLab issue created')
+        ->assertSeeText('GitLab issue created')
         ->assertSee('https://gitlab.com/adamgreenwell/wayfindr/-/issues/42');
 });
 
@@ -135,7 +135,7 @@ test('GitLab issue creation supports self-managed host base URLs', function (): 
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'GitLab issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.gitlab_created');
 
     Http::assertSent(fn (HttpClientRequest $request): bool => (string) $request->url() === 'https://gitlab.example.test/api/v4/projects/support%2Fplatform/issues');
 
@@ -212,7 +212,7 @@ test('GitLab issue exports omit conversation generated ticket descriptions', fun
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'GitLab issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.gitlab_created');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         $description = (string) data_get($request->data(), 'description');

@@ -30,6 +30,18 @@
                 }
             }
 
+            if (templateTarget) {
+                templateTarget.addEventListener('input', function () {
+                    // A template owns the language only until the agent edits
+                    // it. This listener belongs to the template target rather
+                    // than the reply form: the ticket's internal-note helper
+                    // uses the same picker without being a reply composer.
+                    if (templateTarget.getAttribute('lang') !== '') {
+                        templateTarget.setAttribute('lang', '');
+                    }
+                });
+            }
+
             templatePicker.addEventListener('change', function () {
                 var body = templatePicker.selectedOptions[0]?.dataset.body || '';
                 var selectedTemplate = templatePicker.value || '';
@@ -172,18 +184,6 @@
 
             if (body) {
                 body.addEventListener('input', function () {
-                    // The draft belongs to the agent the moment they touch it,
-                    // whatever a template put there a second ago. Without this,
-                    // picking an English helper and rewriting it in German left
-                    // the textarea still claiming English, and a screen reader
-                    // read the agent's own German with English pronunciation.
-                    //
-                    // Empty is HTML's "unknown", which is the honest answer for
-                    // something a person just typed.
-                    if (body.getAttribute('lang') !== '') {
-                        body.setAttribute('lang', '');
-                    }
-
                     reportTyping(body.value.trim() !== '');
                 });
             }

@@ -3,6 +3,7 @@
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\DashboardLanguage;
@@ -38,9 +39,17 @@ function italianDashboardWorld(): array
         'status' => 'open',
     ]);
 
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->create(['subject' => 'Datenpunkt ticket']);
+
     return [
         'account' => $account,
         'conversation' => $conversation,
+        'ticket' => $ticket,
         'it' => User::factory()->for($account)->create(['locale' => 'it', 'name' => 'Ada Datenpunkt']),
         'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt']),
     ];
@@ -66,6 +75,7 @@ test('every extracted surface renders in Italian and says so', function (): void
         route('dashboard.profile.show'),
         route('dashboard.conversations.index'),
         route('dashboard.tickets.index'),
+        route('dashboard.tickets.show', $world['ticket']),
         route('dashboard.conversations.show', $world['conversation']->support_code),
     ];
 
