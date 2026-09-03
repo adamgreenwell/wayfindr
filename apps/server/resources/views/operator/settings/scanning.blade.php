@@ -8,14 +8,7 @@
 
     @foreach (['status', 'error'] as $feedbackType)
         @if ($feedback = session($feedbackType))
-            @php
-                $feedbackKey = is_array($feedback) ? ($feedback['key'] ?? '') : $feedback;
-                $feedbackParameters = collect(is_array($feedback) ? ($feedback['parameters'] ?? []) : [])
-                    ->mapWithKeys(fn ($value, $key) => [$key => '<span lang="">'.e((string) $value).'</span>'])
-                    ->all();
-            @endphp
-
-            <p class="status-message">{!! __($feedbackKey, $feedbackParameters) !!}</p>
+            <p class="status-message"><x-operator-feedback :feedback="$feedback" /></p>
         @endif
     @endforeach
 

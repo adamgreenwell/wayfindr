@@ -39,7 +39,9 @@ class OperatorMailSettingsController extends Controller
             'operator' => $request->user(),
             'mailer' => $mailer,
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
-            'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
+            'backLabel' => $from === 'onboarding'
+                ? __('operator.shell.back_to_setup')
+                : __('operator.shell.back_to_console'),
             'returnTo' => $from,
             // A transport configured outside this form's editable subset (ses,
             // postmark, sendmail, …) is offered as a preserved option so saving
@@ -128,7 +130,7 @@ class OperatorMailSettingsController extends Controller
 
         return redirect()
             ->route('operator.settings.mail.edit', $this->returnParams($request))
-            ->with('status', 'Mail settings saved. Send a test email to confirm delivery.');
+            ->with('status', 'operator.mail.flash.saved');
     }
 
     public function test(Request $request): RedirectResponse
@@ -145,9 +147,16 @@ class OperatorMailSettingsController extends Controller
         // leave the server. A send would "succeed" without delivering, so don't
         // report a false delivery; guide the operator to configure SMTP.
         if ($assessment === 'non_delivering') {
+            $feedback = $mailer === ''
+                ? 'operator.mail.flash.non_delivering_unset'
+                : [
+                    'key' => 'operator.mail.flash.non_delivering',
+                    'parameters' => ['transport' => $mailer],
+                ];
+
             return redirect()
                 ->route('operator.settings.mail.edit', $returnParams)
-                ->with('error', 'Mail transport is still "'.($mailer === '' ? 'not set' : $mailer).'" — a test message would not be delivered. Choose SMTP above and save, then test.');
+                ->with('error', $feedback);
         }
 
         // Uses the current config — the operator's saved overrides are already
@@ -157,15 +166,30 @@ class OperatorMailSettingsController extends Controller
         } catch (Throwable $exception) {
             return redirect()
                 ->route('operator.settings.mail.edit', $returnParams)
-                ->with('error', 'Test email failed via ['.$mailer.']: '.$exception->getMessage());
+                ->with('error', [
+                    'key' => 'operator.mail.flash.failed',
+                    'parameters' => [
+                        'transport' => $mailer,
+                        'message' => $exception->getMessage(),
+                    ],
+                ]);
         }
 
         // A failover/roundrobin chain that includes a local sink may have silently
         // fallen back to it if the real transport was down — say so rather than
         // promising delivery.
         $message = $assessment === 'may_fall_back'
-            ? 'Test message sent via the ['.$mailer.'] chain. If the primary transport was unavailable it may have fallen back to a local log instead of delivering — confirm it actually arrived in the inbox.'
-            : 'Test email sent to '.$validated['to'].' via ['.$mailer.']. Check the inbox.';
+            ? [
+                'key' => 'operator.mail.flash.may_fall_back',
+                'parameters' => ['transport' => $mailer],
+            ]
+            : [
+                'key' => 'operator.mail.flash.sent',
+                'parameters' => [
+                    'recipient' => $validated['to'],
+                    'transport' => $mailer,
+                ],
+            ];
 
         return redirect()
             ->route('operator.settings.mail.edit', $returnParams)
