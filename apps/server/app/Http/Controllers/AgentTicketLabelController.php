@@ -18,16 +18,22 @@ class AgentTicketLabelController extends Controller
         abort_unless($agent?->hasAccountPermission(AccountPermission::ManageKnowledge), 403);
 
         $account = $agent->account()->firstOrFail();
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $ticketLabels = $account->ticketLabels();
+
+        if ($canManageTickets) {
+            $ticketLabels->withCount([
+                'tickets',
+                'tickets as visible_tickets_count' => fn ($query) => $query
+                    ->whereHas('site', fn ($query) => $query->visibleToAgent($agent)),
+            ]);
+        }
 
         return view('agent.ticket-labels.index', [
             'account' => $account,
             'agent' => $agent,
-            'ticketLabels' => $account->ticketLabels()
-                ->withCount([
-                    'tickets',
-                    'tickets as visible_tickets_count' => fn ($query) => $query
-                        ->whereHas('site', fn ($query) => $query->visibleToAgent($agent)),
-                ])
+            'canManageTickets' => $canManageTickets,
+            'ticketLabels' => $ticketLabels
                 ->orderBy('name')
                 ->get(),
         ]);

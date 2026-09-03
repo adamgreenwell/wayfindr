@@ -53,29 +53,35 @@
                                 <tr>
                                     <th scope="col">{{ __('ticket_labels.list.column_label') }}</th>
                                     <th scope="col">{{ __('ticket_labels.list.column_slug') }}</th>
-                                    <th scope="col">{{ __('ticket_labels.list.column_usage') }}</th>
+                                    @if ($canManageTickets)
+                                        <th scope="col">{{ __('ticket_labels.list.column_usage') }}</th>
+                                    @endif
                                     <th scope="col">{{ __('ticket_labels.list.column_manage') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach ($ticketLabels as $ticketLabel)
-                                    @php
-                                        $labelTicketsUrl = route('dashboard.tickets.index', [
-                                            'ticket_status' => 'all',
-                                            'ticket_label' => $ticketLabel->slug,
-                                        ]);
-                                    @endphp
+                                    @if ($canManageTickets)
+                                        @php
+                                            $labelTicketsUrl = route('dashboard.tickets.index', [
+                                                'ticket_status' => 'all',
+                                                'ticket_label' => $ticketLabel->slug,
+                                            ]);
+                                        @endphp
+                                    @endif
                                     <tr>
                                         <td><strong>{{ $ticketLabel->name }}</strong></td>
                                         <td><code>{{ $ticketLabel->slug }}</code></td>
-                                        <td>
-                                            {{ trans_choice('ticket_labels.usage.tickets', $ticketLabel->tickets_count, ['count' => \App\Support\ReaderNumber::count($ticketLabel->tickets_count)]) }}
-                                            @if ($ticketLabel->visible_tickets_count > 0)
-                                                <a class="text-link" href="{{ $labelTicketsUrl }}">{{ trans_choice('ticket_labels.usage.view_visible', $ticketLabel->visible_tickets_count, ['count' => \App\Support\ReaderNumber::count($ticketLabel->visible_tickets_count)]) }}</a>
-                                            @else
-                                                <span class="lede">{{ __('ticket_labels.usage.none_visible') }}</span>
-                                            @endif
-                                        </td>
+                                        @if ($canManageTickets)
+                                            <td>
+                                                {{ trans_choice('ticket_labels.usage.tickets', $ticketLabel->tickets_count, ['count' => \App\Support\ReaderNumber::count($ticketLabel->tickets_count)]) }}
+                                                @if ($ticketLabel->visible_tickets_count > 0)
+                                                    <a class="text-link" href="{{ $labelTicketsUrl }}">{{ trans_choice('ticket_labels.usage.view_visible', $ticketLabel->visible_tickets_count, ['count' => \App\Support\ReaderNumber::count($ticketLabel->visible_tickets_count)]) }}</a>
+                                                @else
+                                                    <span class="lede">{{ __('ticket_labels.usage.none_visible') }}</span>
+                                                @endif
+                                            </td>
+                                        @endif
                                         <td>
                                             <form class="compact-form" method="POST" action="{{ route('dashboard.account.labels.update', $ticketLabel) }}">
                                                 @csrf
@@ -84,7 +90,7 @@
                                                 <input id="ticket-label-{{ $ticketLabel->id }}" name="label_name" value="{{ old('label_name', $ticketLabel->name) }}" maxlength="64" required>
                                                 <button class="button secondary" type="submit">{{ __('ticket_labels.manage.save') }}</button>
                                             </form>
-                                            @if ($ticketLabel->tickets_count > 0)
+                                            @if ($canManageTickets && $ticketLabel->tickets_count > 0)
                                                 <span class="lede">{{ trans_choice('ticket_labels.manage.in_use', $ticketLabel->tickets_count, ['count' => \App\Support\ReaderNumber::count($ticketLabel->tickets_count)]) }}</span>
                                             @else
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.labels.destroy', $ticketLabel) }}">
