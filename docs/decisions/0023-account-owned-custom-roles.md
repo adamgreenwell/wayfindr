@@ -50,8 +50,10 @@ an account without an owner or silently rewrite its baseline roles.
 
 One pre-RBAC onboarding behavior remains outside that map: a user on any of the
 three built-in roles may create a new site and is attached to it immediately.
-A custom role must hold `manage_sites` to create one. Editing, archiving, or
-restoring an existing site always requires `manage_sites`.
+A custom role must hold both `manage_sites` and `manage_site_access` to create
+one, because the creator becomes the site's first explicit support assignment.
+Editing, archiving, or restoring an existing site always requires
+`manage_sites`.
 
 ### Changes are immediate and auditable
 
