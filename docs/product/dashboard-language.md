@@ -1,14 +1,15 @@
 # The language the dashboard speaks
 
 Status: **in progress.** The plumbing is shipped, and
-`DashboardLanguage::EXTRACTED_ROUTES` names **86 routes — 33 of them pages** a
+`DashboardLanguage::EXTRACTED_ROUTES` names **89 routes — 35 of them pages** a
 reader can open, the rest the write and partial endpoints those pages call. The
 extracted surfaces are the app shell, the agent profile, the conversation queue
 and detail, the ticket queue and detail workspace, reply templates, ticket labels, articles, API
 tokens, the account audit, account-side operator access, account integrations,
-the account overview and team roster, the live-visitors board, the visitor
-directory and profile, and the operator's dashboard, guided setup, break-glass
-request and read-only viewers, language-and-region, scanning, mail,
+the account overview and team roster, the sites directory and new-site form,
+the live-visitors board, the visitor directory and profile, and the operator's
+dashboard, guided setup, break-glass request and read-only viewers,
+language-and-region, scanning, mail,
 attachment-storage, backup-configuration, backup-history, and backup-restore
 pages.
 

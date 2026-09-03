@@ -476,21 +476,153 @@ test('an unextracted page is English all the way down, not only at the root', fu
     // `lang="en"` is simply true rather than a claim a second mechanism has to
     // keep honest.
     $agent = languageAgent('de');
+    $site = Site::factory()->for($agent->account)->create([
+        'name' => 'Datenpunkt Docs',
+        'domain' => 'datenpunkt.example',
+    ]);
 
-    $sites = $this->actingAs($agent)->get(route('dashboard.sites.index'))->assertOk();
+    $settings = $this->actingAs($agent)->get(route('dashboard.sites.show', $site))->assertOk();
 
-    $sites->assertSee('<html lang="en"', false)
-        ->assertSee('Site operations snapshot')
+    $settings->assertSee('<html lang="en"', false)
+        ->assertSee('Site Settings')
         ->assertSee('Sign out')
         ->assertDontSee('Abmelden');
 
     // The same agent, on the surface that HAS been extracted, still reads
     // German -- so this measures scoping rather than a translation that broke.
     $this->actingAs($agent)
-        ->get(route('dashboard.profile.show'))
+        ->get(route('dashboard.sites.index'))
         ->assertOk()
-        ->assertSee('Alle Website-Benachrichtigungen, die ich betreuen kann')
-        ->assertDontSee('All site alerts I can support');
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Überblick zum Websitebetrieb')
+        ->assertDontSee('Site operations snapshot');
+});
+
+test('the sites directory and new-site form follow the agent language without claiming authored data', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
+    $german = User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt']);
+    $italian = User::factory()->for($account)->create(['locale' => 'it', 'name' => 'Bea Datenpunkt']);
+    $teammates = User::factory()->for($account)->count(2)->sequence(
+        ['name' => 'Cia Datenpunkt'],
+        ['name' => 'Dia Datenpunkt'],
+    )->create();
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Datenpunkt Hilfe',
+        'domain' => 'hilfe.example',
+    ]);
+    $site->supportAgents()->attach([$german->id, $italian->id, ...$teammates->modelKeys()]);
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-datenpunkt-site',
+        'last_seen_at' => now()->subMinutes(5),
+        'metadata' => ['last_page_url' => 'https://hilfe.example/datenpunkt'],
+    ]);
+
+    $germanHtml = (string) $this->actingAs($german)
+        ->get(route('dashboard.sites.index', [
+            'site_search' => 'Datenpunkt',
+            'site_install' => 'live',
+        ]))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Überblick zum Websitebetrieb')
+        ->assertSee('Gesehen vor 5 Minuten')
+        ->assertSee('4 zugewiesen')
+        ->assertDontSee('Site operations snapshot')
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$germanHtml);
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        'site name' => '//a[normalize-space(text())="Datenpunkt Hilfe"]',
+        'domain' => '//span[normalize-space(text())="hilfe.example"]',
+        'last page URL' => '//span[normalize-space(text())="https://hilfe.example/datenpunkt"]',
+        'assigned agent name' => '//span[normalize-space(text())="Ada Datenpunkt"]',
+        'search value' => '//input[@id="site_search"]',
+        'search filter chip value' => '//span[contains(@class, "filter-chip")]//span[normalize-space(text())="Datenpunkt"]',
+    ] as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class)
+            ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
+            ->and($node->getAttribute('lang'))->toBe('');
+    }
+
+    $createHtml = (string) $this->actingAs($german)
+        ->get(route('dashboard.sites.create'))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Website hinzufügen')
+        ->assertSee('Websitename')
+        ->assertDontSee('Site details')
+        ->getContent();
+    $createDocument = new DOMDocument;
+    @$createDocument->loadHTML('<?xml encoding="utf-8"?>'.$createHtml);
+    $createXpath = new DOMXPath($createDocument);
+    $accountName = $createXpath->query('//header[contains(@class, "page-header")]//span[normalize-space(text())="Acme Datenpunkt"]')->item(0);
+
+    expect($accountName)->not->toBeNull('the account name did not render in the form subtitle')
+        ->and($accountName)->toBeInstanceOf(DOMElement::class)
+        ->and($accountName->getAttribute('lang'))->toBe('');
+
+    $this->actingAs($italian)
+        ->get(route('dashboard.sites.index'))
+        ->assertOk()
+        ->assertSee('<html lang="it"', false)
+        ->assertSee('Quadro operativo dei siti')
+        ->assertSee('Visto 5 minuti fa')
+        ->assertDontSee('Site operations snapshot');
+
+    $this->actingAs($italian)
+        ->get(route('dashboard.sites.create'))
+        ->assertOk()
+        ->assertSee('<html lang="it"', false)
+        ->assertSee('Dettagli del sito')
+        ->assertSee('Dominio')
+        ->assertDontSee('Site details');
+});
+
+test('site creation validation follows the form language and its success resolves after the redirect', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
+    $agent = User::factory()->for($account)->create(['locale' => 'de']);
+
+    $validationHtml = (string) $this->actingAs($agent)
+        ->followingRedirects()
+        ->from(route('dashboard.sites.create'))
+        ->post(route('dashboard.sites.store'), [
+            'name' => '',
+            'domain' => 'https://datenpunkt.example/path',
+        ])
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Websitename muss ausgefüllt werden.')
+        ->getContent();
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$validationHtml);
+    $domain = (new DOMXPath($document))->query('//input[@id="domain"]')->item(0);
+
+    expect($domain)->not->toBeNull('the old domain value did not render after validation')
+        ->and($domain)->toBeInstanceOf(DOMElement::class)
+        ->and($domain->getAttribute('value'))->toBe('https://datenpunkt.example/path')
+        ->and($domain->getAttribute('lang'))->toBe('');
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.sites.store'), [
+            'name' => 'Datenpunkt Docs',
+            'domain' => 'datenpunkt.example',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'sites.flash.created');
+
+    $site = Site::query()->where('name', 'Datenpunkt Docs')->firstOrFail();
+
+    $this->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('<html lang="en"', false)
+        ->assertSee('Site created. Copy the install snippet to finish connecting it.')
+        ->assertDontSee('Website erstellt.');
 });
 
 test('the alert center renders its relative times in the agent language', function (): void {
