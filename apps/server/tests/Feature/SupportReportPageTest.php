@@ -133,6 +133,17 @@ test('a localized report keeps authored values language neutral and formats read
         'episode_closed_at' => now(),
     ]);
 
+    $anotherBad = Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+        'status' => 'open',
+        'created_at' => CarbonImmutable::now()->subHour(),
+    ]);
+    app(ConversationLifecycleLog::class)->closed($anotherBad->fresh(), $world['agent'], 'open');
+    $anotherBad->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
+    ConversationRating::factory()->for($anotherBad)->for($world['site'])->create([
+        'score' => 'bad',
+        'episode_closed_at' => now(),
+    ]);
+
     Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
         'status' => 'open',
         'created_at' => CarbonImmutable::now()->subHours(2)->subMinutes(15),
@@ -143,7 +154,7 @@ test('a localized report keeps authored values language neutral and formats read
         ->assertOk()
         ->assertSee('<html lang="de"', false)
         ->assertSee('2 Stunden 15 Minuten')
-        ->assertSee('50'."\u{00A0}".'%')
+        ->assertSee('33,3'."\u{00A0}".'%')
         ->assertSee(CarbonImmutable::now()->subDay()->locale('de')->isoFormat('D MMM'))
         ->getContent();
 

@@ -504,7 +504,7 @@
                                 <tr>
                                     <th scope="row">{{ __('reports.satisfaction.good') }}</th>
                                     <td>{{ \App\Support\ReaderNumber::count($satisfaction['good']) }}</td>
-                                    <td class="lede">{{ __('reports.satisfaction.good_detail', ['percentage' => \App\Support\ReaderNumber::percentage($satisfaction['positive'])]) }}</td>
+                                    <td class="lede">{{ __('reports.satisfaction.good_detail', ['percentage' => \App\Support\ReaderNumber::percentage($satisfaction['positive'], 1)]) }}</td>
                                 </tr>
                                 <tr>
                                     <th scope="row">{{ __('reports.satisfaction.ok') }}</th>
