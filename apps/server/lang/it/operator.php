@@ -26,6 +26,146 @@ return [
         ],
     ],
 
+    'onboarding' => [
+        'document_title' => 'Configurazione di Wayfindr',
+        'title' => 'Configurazione dell’installazione',
+        'subtitle' => 'Un percorso guidato verso un’installazione Wayfindr operativa: prima la posta, poi le altre impostazioni essenziali nel browser.',
+        'essential_steps' => 'Passaggi essenziali',
+        'progress' => ':ready di :total pronti. Proceda dall’alto verso il basso.',
+        'all_ready' => 'Tutti i passaggi essenziali sono pronti',
+        'to_go' => '{1} :count passaggio restante|[2,*] :count passaggi restanti',
+        'connect_site' => 'Collegamento del primo sito',
+        'connect_site_body' => 'Installi il widget su :site per iniziare a ricevere conversazioni di supporto.',
+        'install_snippet' => 'Ottieni il codice di installazione',
+        'configure_essentials' => 'Configurazione degli elementi essenziali',
+        'steps' => '{1} :count passaggio|[2,*] :count passaggi',
+        'full_diagnostic' => 'Percorso breve verso un’installazione operativa. La :link nella console del gestore riunisce ogni controllo, passaggio di configurazione e attestazione.',
+        'full_diagnostic_link' => 'diagnostica completa dell’installazione',
+        'actions' => [
+            'configure_mail' => 'Configura la posta',
+            'manage_mail' => 'Gestisci le impostazioni della posta',
+            'configure_language' => 'Imposta lingua e area geografica',
+            'manage_language' => 'Gestisci lingua e area geografica',
+        ],
+    ],
+
+    'readiness' => [
+        'status' => [
+            'ready' => 'Pronto',
+            'confirm_this' => 'Da confermare',
+            'needs_attention' => 'Richiede attenzione',
+            'due_again' => 'Nuova conferma richiesta',
+        ],
+        'commands' => [
+            'group' => 'Comandi consigliati',
+            'copy' => 'Copia comando',
+            'copy_named' => 'Copia il comando :command',
+            'copied' => 'Copiato',
+        ],
+        'confirmation' => [
+            'optional_note' => 'Nota facoltativa',
+            'note_for' => 'Nota di conferma per :label',
+            'refresh' => 'Aggiorna la conferma',
+            'mark' => 'Segna come confermato',
+            'saved' => 'Salvataggio della verifica di preparazione completato.',
+            'summary_fresh' => 'Passaggio confermato: :label.',
+            'summary_stale' => 'La conferma deve essere aggiornata: :label.',
+            'detail' => 'Confermato da :name.',
+            'detail_with_age' => 'Confermato da :name :age.',
+            'detail_with_note' => 'Confermato da :name. Nota di prova registrata.',
+            'detail_with_age_with_note' => 'Confermato da :name :age. Nota di prova registrata.',
+            'unknown_operator' => 'Gestore sconosciuto',
+            'action' => 'Aggiorni questa conferma in caso di modifiche alla gestione dei processi, alla pianificazione, alla politica delle copie o alla prova di ripristino.',
+        ],
+        'checks' => [
+            'mail_transport' => [
+                'label' => 'Trasporto della posta',
+                'local_unset' => [
+                    'summary' => ':setting non è impostato.',
+                    'detail' => 'I trasporti solo locali non consegnano all’esterno dell’applicazione i messaggi di reimpostazione della password, gli avvisi di supporto o le notifiche del gestore.',
+                    'action' => 'Configuri un vero trasporto di posta in uscita prima di fare affidamento sugli avvisi email.',
+                ],
+                'local_driver' => [
+                    'summary' => ':setting è :mailer.',
+                    'detail' => 'I trasporti solo locali non consegnano all’esterno dell’applicazione i messaggi di reimpostazione della password, gli avvisi di supporto o le notifiche del gestore.',
+                    'action' => 'Configuri un vero trasporto di posta in uscita prima di fare affidamento sugli avvisi email.',
+                ],
+                'local_host' => [
+                    'summary' => 'SMTP punta ancora a un host di posta locale.',
+                    'detail' => ':host_setting è :host_value e :port_setting è :port_value; in genere ciò indica che la posta punta ancora a un servizio di sviluppo locale.',
+                    'action' => 'Imposti :host_setting, :port_setting e :sender_setting per un vero provider di posta in uscita prima di fare affidamento sugli avvisi email.',
+                ],
+                'unsupported_scheme' => [
+                    'summary' => 'SMTP usa un valore di :setting non supportato.',
+                    'detail' => ':setting è :scheme, ma il trasporto SMTP supporta smtp, smtps oppure nessuno schema esplicito.',
+                    'action' => 'Usi lo schema SMTP adatto al provider e alla porta.',
+                ],
+                'sender_missing' => [
+                    'summary' => ':setting non è impostato.',
+                    'detail' => 'La posta di supporto in uscita richiede un indirizzo mittente riconoscibile da agenti e visitatori.',
+                    'action' => 'Imposti :setting su un mittente monitorato prima di fare affidamento sugli avvisi email.',
+                ],
+                'sender_placeholder' => [
+                    'summary' => ':setting sembra ancora un segnaposto.',
+                    'detail' => 'Gli indirizzi mittente predefiniti rendono la posta di supporto meno affidabile e più difficile da verificare durante i test di consegna.',
+                    'action' => 'Imposti :setting su un mittente monitorato prima di fare affidamento sugli avvisi email.',
+                ],
+                'ready' => [
+                    'summary' => 'Il trasporto in uscita è :mailer.',
+                    'detail' => 'Wayfindr dispone di un trasporto di posta in uscita configurato.',
+                    'action' => 'Dopo la distribuzione esegua :command e confermi che il messaggio raggiunga una casella reale. Mantenga :scheme_setting adatto al provider e alla porta.',
+                ],
+            ],
+            'public_url' => [
+                'label' => 'URL pubblico',
+                'insecure' => [
+                    'summary' => ':setting è locale o non sicuro.',
+                    'detail' => 'Visitatori, agenti, cookie, richiamate e codici del widget richiedono il vero URL HTTPS pubblico.',
+                    'action' => 'Imposti :setting sull’URL HTTPS pubblico usato da visitatori e agenti.',
+                ],
+                'ready' => [
+                    'summary' => ':setting è :url.',
+                    'detail' => 'Wayfindr può generare link pubblici e codici del widget dall’URL di produzione.',
+                    'action' => 'Mantenga stabile :setting e lo aggiorni intenzionalmente quando cambia dominio.',
+                ],
+            ],
+            'background_workers' => [
+                'label' => 'Conferma dei processi in background',
+                'synchronous' => [
+                    'summary' => ':setting è :connection.',
+                    'detail' => 'Le code sincrone vengono eseguite direttamente e non elaborano attività accodate come i riepiloghi degli avvisi; pertanto non esiste ancora un processo in background da confermare.',
+                    'action' => 'Usi una connessione di coda durevole, esegua :queue_command con un gestore dei processi, quindi ne confermi qui il funzionamento.',
+                ],
+                'manual' => [
+                    'summary' => 'Confermi che un processo della coda e l’utilità di pianificazione siano entrambi in esecuzione.',
+                    'detail' => 'Una coda asincrona configurata non prova che il relativo processo sia in esecuzione. Gli avvisi accodati e la pianificazione ogni minuto richiedono entrambi una gestione dei processi esterna al ciclo delle richieste.',
+                    'action' => 'Gestisca :queue_command con il gestore dei processi dell’host, controlli gli errori con :failed_command e verifichi che :schedule_command venga eseguito una volta al minuto.',
+                ],
+            ],
+            'backups_restore' => [
+                'label' => 'Copie di sicurezza e ripristino',
+                'manual' => [
+                    'summary' => 'Confermi le copie del database e dell’archiviazione esterne a Wayfindr.',
+                    'detail' => 'Wayfindr non può provare dall’interno di una richiesta le istantanee dell’host, le esportazioni del database, la conservazione nell’archiviazione a oggetti o le prove di ripristino.',
+                    'action' => 'Prima del traffico di supporto reale confermi che le copie del database e dell’archiviazione siano pianificate, conservate, monitorate e ripristinabili.',
+                ],
+            ],
+            'language_and_region' => [
+                'label' => 'Lingua e area geografica',
+                'unconfirmed' => [
+                    'summary' => 'La dashboard usa :language e il fuso orario :timezone. Nessuno ha ancora confermato questa scelta.',
+                    'detail' => 'Questi sono i valori predefiniti per ogni agente senza una scelta personale, ossia tutti in una nuova installazione. Un orologio errato non sembra un guasto: i resoconti coprono una giornata terminata ore prima di quella del lettore e nessuno pensa di segnalarlo.',
+                    'action' => 'Confermi la lingua e il fuso orario usati da questa installazione.',
+                ],
+                'ready' => [
+                    'summary' => 'La dashboard usa :language e il fuso orario :timezone.',
+                    'detail' => 'Gli agenti possono comunque scegliere una lingua o un fuso orario diversi nel proprio profilo.',
+                    'action' => 'Aggiorni questi valori quando il gruppo di supporto si sposta; le scelte personali degli agenti restano invariate.',
+                ],
+            ],
+        ],
+    ],
+
     'localization' => [
         'document_title' => 'Lingua e area geografica',
         'title' => 'Lingua e area geografica',

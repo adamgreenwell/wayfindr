@@ -130,6 +130,8 @@ return [
         'confirm_name' => 'Instanzname',
         'acknowledge' => 'Bestätigung des Datenverlusts',
         'workers_stopped' => 'Bestätigung angehaltener Schreibvorgänge',
+        'key' => 'Bereitschaftsschritt',
+        'note' => 'Bestätigungsnotiz',
 
         // The articles page. `body` was already here for the reply composer;
         // `title` was not, so an over-long article title produced a correct

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Site;
 use App\Support\OperatorReadiness;
+use App\Support\OperatorReadinessPresenter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 
@@ -27,24 +28,24 @@ class OperatorOnboardingController extends Controller
     private const CONFIGURE_ACTIONS = [
         'mail_transport' => [
             'route' => 'operator.settings.mail.edit',
-            'label' => 'Configure mail',
-            'configured' => 'Manage mail settings',
+            'label' => 'operator.onboarding.actions.configure_mail',
+            'configured' => 'operator.onboarding.actions.manage_mail',
         ],
         'language_and_region' => [
             'route' => 'operator.settings.localization.edit',
-            'label' => 'Set language and region',
-            'configured' => 'Manage language and region',
+            'label' => 'operator.onboarding.actions.configure_language',
+            'configured' => 'operator.onboarding.actions.manage_language',
         ],
     ];
 
     public function __invoke(Request $request, OperatorReadiness $readiness): View
     {
         // Compute ONLY the checklist's items (mail, public URL, background
-        // workers, backups) — not the full diagnostic suite — so the focused
-        // page never runs or blocks on unrelated probes like the S3 attachment
-        // disk or the ClamAV scanner.
+        // workers, backups, language and region) — not the full diagnostic
+        // suite — so the focused page never runs or blocks on unrelated probes
+        // like the S3 attachment disk or the ClamAV scanner.
         $steps = collect($readiness->onboardingChecklist())
-            ->map(fn (array $item): array => $this->step($item))
+            ->map(fn (array $item): array => $this->step(OperatorReadinessPresenter::localize($item)))
             ->values();
 
         $readyCount = $steps->filter(fn (array $step): bool => $step['check']['status'] === 'ready')->count();
@@ -84,7 +85,7 @@ class OperatorOnboardingController extends Controller
             'configure_url' => $configure !== null ? route($configure['route'], ['from' => 'onboarding']) : null,
             // Frame the button as "Configure" while a step needs attention and
             // "Manage" once it is green.
-            'configure_label' => $configure !== null ? ($isReady ? $configure['configured'] : $configure['label']) : null,
+            'configure_label' => $configure !== null ? __($isReady ? $configure['configured'] : $configure['label']) : null,
         ];
     }
 

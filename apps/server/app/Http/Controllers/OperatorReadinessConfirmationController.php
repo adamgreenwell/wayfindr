@@ -64,6 +64,6 @@ class OperatorReadinessConfirmationController extends Controller
         ]);
 
         return redirect($redirectTo)
-            ->with('status', 'Readiness confirmation saved.');
+            ->with('status', 'operator.readiness.confirmation.saved');
     }
 }

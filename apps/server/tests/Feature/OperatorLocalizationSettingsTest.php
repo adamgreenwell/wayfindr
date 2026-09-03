@@ -349,7 +349,7 @@ test('first-run setup asks for the language and region, and stops once answered'
         ->get(route('operator.onboarding'))
         ->assertOk()
         ->assertSee('Language and region')
-        ->assertSee('Nobody has confirmed that is right.')
+        ->assertSeeText('Nobody has confirmed that this is right.')
         ->assertSee('Set language and region')
         // The step's Configure button must carry the origin, or saving returns
         // the operator to the console instead of back to the checklist.
@@ -366,8 +366,9 @@ test('first-run setup asks for the language and region, and stops once answered'
     $this->actingAs($operator)
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertSee('The dashboard reads in Deutsch, on Europe/Berlin.')
-        ->assertDontSee('Nobody has confirmed that is right.')
+        ->assertSee('<html lang="en">', escape: false)
+        ->assertSeeText('The dashboard reads in Deutsch, on Europe/Berlin.')
+        ->assertDontSeeText('Nobody has confirmed')
         ->assertSee('Manage language and region');
 });
 
@@ -379,7 +380,7 @@ test('answering only one half does not count as confirmed', function (): void {
     $this->actingAs(localizationOperator())
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertSee('Nobody has confirmed that is right.');
+        ->assertSeeText('Nobody has confirmed that this is right.');
 });
 
 /**
@@ -397,7 +398,7 @@ test('a stored setting that no longer resolves is not a confirmation', function 
     $this->actingAs(localizationOperator())
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertDontSee('Nobody has confirmed that is right.');
+        ->assertDontSeeText('Nobody has confirmed that this is right.');
 
     // The zone is retired by a tzdata update; the row is untouched.
     $settings->set('localization.timezone', 'Europe/Atlantis');
@@ -405,9 +406,9 @@ test('a stored setting that no longer resolves is not a confirmation', function 
     $this->actingAs(localizationOperator())
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertSee('Nobody has confirmed that is right.')
+        ->assertSeeText('Nobody has confirmed that this is right.')
         // And it says what the reader will actually get, not what is stored.
-        ->assertSee('on UTC.');
+        ->assertSeeText('on UTC.');
 });
 
 /**
@@ -490,15 +491,15 @@ test('the setup checklist still renders when the settings store is unreachable',
     $this->actingAs($operator)
         ->get(route('operator.onboarding'))
         ->assertOk()
-        ->assertSee('Language and region')
+        ->assertSee('Sprache und Region')
         // Unreachable is not "ready": what was chosen is unknown, and the env
         // fallback is what the dashboard is serving meanwhile.
-        ->assertSee('Nobody has confirmed that is right.')
+        ->assertSeeText('Diese Auswahl wurde noch nicht bestätigt.')
         // And it names the clock the dashboard is ACTUALLY on. Reporting the
         // hardcoded defaults would be a second wrong answer during the outage.
         ->assertSee('Deutsch')
         ->assertSee('Europe/Berlin')
-        ->assertDontSee('on UTC.');
+        ->assertDontSeeText('mit der Zeitzone UTC angezeigt.');
 });
 
 /**

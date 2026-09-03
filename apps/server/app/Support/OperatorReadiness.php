@@ -226,10 +226,11 @@ class OperatorReadiness
 
         $language ??= DashboardLanguage::FALLBACK;
         $timezone ??= DashboardTimezone::FALLBACK;
-        $summary = sprintf('The dashboard reads in %s, on %s.', DashboardLanguage::SUPPORTED[$language] ?? $language, $timezone);
+        $languageName = DashboardLanguage::SUPPORTED[$language] ?? $language;
+        $summary = sprintf('The dashboard reads in %s, on %s.', $languageName, $timezone);
 
         if (! $chosen) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'language_and_region',
                 label: 'Language and region',
                 status: 'attention',
@@ -237,17 +238,23 @@ class OperatorReadiness
                 detail: 'These are the defaults for every agent who has not chosen their own, which on a new install is all of them. A wrong clock does not look like a fault: reports cover a day that ended hours before the reader\'s did, and nobody thinks to report it.',
                 action: 'Confirm the language and timezone this install should read in.',
                 statusLabel: 'Confirm this'
-            );
+            ), 'unconfirmed', [
+                'language' => $languageName,
+                'timezone' => $timezone,
+            ]);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'language_and_region',
             label: 'Language and region',
             status: 'ready',
             summary: $summary,
             detail: 'Agents who prefer another language or clock can still choose their own on their profile.',
             action: 'Change it whenever the desk moves; agents keep any choice they made for themselves.'
-        );
+        ), 'ready', [
+            'language' => $languageName,
+            'timezone' => $timezone,
+        ]);
     }
 
     /**
@@ -261,24 +268,27 @@ class OperatorReadiness
         $scheme = strtolower((string) ($parts['scheme'] ?? ''));
 
         if ($url === '' || $host === '' || $scheme !== 'https' || $this->isLocalHost($host)) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'public_url',
                 label: 'Public URL',
                 status: 'attention',
                 summary: 'APP_URL is local or not secure.',
                 detail: 'Visitors, agents, cookies, callbacks, and widget snippets need the real public HTTPS URL.',
                 action: 'Set APP_URL to the public HTTPS URL visitors and agents will use.'
-            );
+            ), 'insecure', ['setting' => 'APP_URL']);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'public_url',
             label: 'Public URL',
             status: 'ready',
             summary: sprintf('APP_URL is %s.', $url),
             detail: 'Wayfindr can generate public links and widget snippets from the production URL.',
             action: 'Keep APP_URL stable and update it intentionally when changing domains.'
-        );
+        ), 'ready', [
+            'setting' => 'APP_URL',
+            'url' => $url,
+        ]);
     }
 
     /**
@@ -472,33 +482,45 @@ class OperatorReadiness
         $mailer = strtolower((string) config('mail.default', 'log'));
 
         if (in_array($mailer, ['', 'array', 'log'], true)) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'mail_transport',
                 label: 'Mail transport',
                 status: 'attention',
                 summary: sprintf('MAIL_MAILER is %s.', $mailer === '' ? 'not set' : $mailer),
                 detail: 'Local-only mailers do not deliver password resets, support alerts, or operator notices outside the app.',
                 action: 'Configure smtp, ses, postmark, resend, or another real outbound mail transport before relying on email alerts.'
-            );
+            ), $mailer === '' ? 'local_unset' : 'local_driver', array_filter([
+                'setting' => 'MAIL_MAILER',
+                'mailer' => $mailer !== '' ? $mailer : null,
+            ], fn (mixed $value): bool => $value !== null));
         }
 
         if ($mailer === 'smtp' && $this->isLocalMailHost((string) config('mail.mailers.smtp.host'))) {
-            return $this->check(
+            $host = (string) config('mail.mailers.smtp.host', 'not set');
+            $port = (string) config('mail.mailers.smtp.port', 'not set');
+
+            return $this->withTranslation($this->check(
                 key: 'mail_transport',
                 label: 'Mail transport',
                 status: 'attention',
                 summary: 'SMTP is still pointed at a local mail host.',
                 detail: sprintf(
                     'MAIL_HOST is %s and MAIL_PORT is %s, which usually means mail is still aimed at a local development sink.',
-                    (string) config('mail.mailers.smtp.host', 'not set'),
-                    (string) config('mail.mailers.smtp.port', 'not set')
+                    $host,
+                    $port
                 ),
                 action: 'Set MAIL_HOST, MAIL_PORT, and MAIL_FROM_ADDRESS to a real outbound mail provider before relying on email alerts.'
-            );
+            ), 'local_host', [
+                'host_value' => $host,
+                'host_setting' => 'MAIL_HOST',
+                'port_value' => $port,
+                'port_setting' => 'MAIL_PORT',
+                'sender_setting' => 'MAIL_FROM_ADDRESS',
+            ]);
         }
 
         if ($mailer === 'smtp' && $this->hasUnsupportedSmtpScheme(config('mail.mailers.smtp.scheme'))) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'mail_transport',
                 label: 'Mail transport',
                 status: 'attention',
@@ -508,32 +530,35 @@ class OperatorReadiness
                     (string) config('mail.mailers.smtp.scheme')
                 ),
                 action: 'Unset MAIL_SCHEME for port 587 STARTTLS SMTP, or set it to smtps when using port 465.'
-            );
+            ), 'unsupported_scheme', [
+                'scheme' => (string) config('mail.mailers.smtp.scheme'),
+                'setting' => 'MAIL_SCHEME',
+            ]);
         }
 
         if (! $this->hasValue(config('mail.from.address'))) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'mail_transport',
                 label: 'Mail transport',
                 status: 'attention',
                 summary: 'MAIL_FROM_ADDRESS is missing.',
                 detail: 'Outbound support email needs a sender address agents and visitors can recognize.',
                 action: 'Set MAIL_FROM_ADDRESS to a monitored sender before relying on email alerts.'
-            );
+            ), 'sender_missing', ['setting' => 'MAIL_FROM_ADDRESS']);
         }
 
         if ($this->isPlaceholderMailFrom((string) config('mail.from.address'))) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'mail_transport',
                 label: 'Mail transport',
                 status: 'attention',
                 summary: 'MAIL_FROM_ADDRESS still looks like a placeholder.',
                 detail: 'Default sender addresses make outbound support mail harder to trust and easier to lose in delivery checks.',
                 action: 'Set MAIL_FROM_ADDRESS to a monitored sender before relying on email alerts.'
-            );
+            ), 'sender_placeholder', ['setting' => 'MAIL_FROM_ADDRESS']);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'mail_transport',
             label: 'Mail transport',
             status: 'ready',
@@ -541,7 +566,11 @@ class OperatorReadiness
             detail: 'Wayfindr has an outbound mail transport configured.',
             action: 'Run php artisan wayfindr:mail-test --to=you@example.com from apps/server after deploy. For STARTTLS ports such as 587 or 2587, leave MAIL_SCHEME unset; use smtps only for port 465.',
             commands: ['php artisan wayfindr:mail-test --to=you@example.com']
-        );
+        ), 'ready', [
+            'command' => 'php artisan wayfindr:mail-test --to=you@example.com',
+            'mailer' => $mailer,
+            'scheme_setting' => 'MAIL_SCHEME',
+        ]);
     }
 
     /**
@@ -908,23 +937,23 @@ class OperatorReadiness
      */
     private function backupsRestore(): array
     {
-        return $this->manualCheck(
+        return $this->withTranslation($this->manualCheck(
             key: 'backups_restore',
             label: 'Backups and restore',
             summary: 'Confirm database and storage backups outside Wayfindr.',
             detail: 'Wayfindr cannot prove host snapshots, database dumps, object storage retention, or restore drills from inside a request.',
             action: 'Confirm database and storage backups are scheduled, retained, monitored, and restorable before real support traffic arrives.'
-        );
+        ), 'manual');
     }
 
     /**
      * The readiness items the guided onboarding checklist shows, in guided order
-     * — mail, public URL, background workers, backups. Computes ONLY these, so
-     * the focused checklist (including the first post-/setup landing and every
-     * refresh) never runs unrelated diagnostics like the S3 attachment-disk
-     * write/read/list/delete probe or the ClamAV reachability check, which the
-     * full summary() suite performs and which can block on external-service
-     * timeouts.
+     * — mail, public URL, background workers, backups, language and region.
+     * Computes ONLY these, so the focused checklist (including the first
+     * post-/setup landing and every refresh) never runs unrelated diagnostics
+     * like the S3 attachment-disk write/read/list/delete probe or the ClamAV
+     * reachability check, which the full summary() suite performs and which can
+     * block on external-service timeouts.
      *
      * @return list<array<string, mixed>>
      */
@@ -949,7 +978,7 @@ class OperatorReadiness
      * run. It uses its own 'background_workers' confirmation key, kept distinct
      * from the 'scheduler' check so scheduler-only proof cannot mark it ready.
      *
-     * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, confirmed_by_known: bool, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
     public function backgroundWorkersStep(): array
     {
@@ -960,7 +989,7 @@ class OperatorReadiness
         // A synchronous/null queue does not run background jobs at all — fix the
         // driver before there is anything to attest to.
         if (in_array($connection, ['null', 'sync'], true)) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'background_workers',
                 label: 'Confirm background workers',
                 status: 'attention',
@@ -968,10 +997,14 @@ class OperatorReadiness
                 detail: 'Synchronous queues run inline and never process queued jobs like alert digests, so there is no background worker to confirm yet.',
                 action: 'Set QUEUE_CONNECTION to database or redis and run php artisan queue:work under Forge, Supervisor, systemd, or your process manager, then confirm here.',
                 commands: ['php artisan queue:work', 'php artisan schedule:list'],
-            );
+            ), 'synchronous', [
+                'connection' => $connection,
+                'queue_command' => 'php artisan queue:work',
+                'setting' => 'QUEUE_CONNECTION',
+            ]);
         }
 
-        return $this->manualCheck(
+        return $this->withTranslation($this->manualCheck(
             key: 'background_workers',
             label: 'Confirm background workers',
             summary: 'Confirm a queue worker and the scheduler are both running.',
@@ -983,7 +1016,11 @@ class OperatorReadiness
                 '* * * * * cd /path/to/apps/server && php artisan schedule:run',
                 'php artisan schedule:list',
             ],
-        );
+        ), 'manual', [
+            'failed_command' => 'php artisan queue:failed',
+            'queue_command' => 'php artisan queue:work',
+            'schedule_command' => '* * * * * php artisan schedule:run',
+        ]);
     }
 
     /**
@@ -1336,7 +1373,7 @@ class OperatorReadiness
 
     /**
      * @param  array<int, string>  $commands
-     * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     * @return array{action: string, commands: array<int, string>, confirmation: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, confirmed_by_known: bool, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmation_key: string, confirmable: bool, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
      */
     private function manualCheck(string $key, string $label, string $summary, string $detail, string $action, array $commands = []): array
     {
@@ -1375,7 +1412,7 @@ class OperatorReadiness
     }
 
     /**
-     * @param  array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}  $confirmationPayload
+     * @param  array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, confirmed_by_known: bool, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}  $confirmationPayload
      */
     private function confirmationDetail(OperatorReadinessConfirmation $confirmation, array $confirmationPayload): string
     {
@@ -1389,7 +1426,7 @@ class OperatorReadiness
     }
 
     /**
-     * @return array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}
+     * @return array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, confirmed_by_known: bool, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}
      */
     private function confirmationPayload(OperatorReadinessConfirmation $confirmation): array
     {
@@ -1400,6 +1437,7 @@ class OperatorReadiness
             'age_label' => $this->confirmationAgeLabel($confirmedAt),
             'confirmed_at' => $confirmedAt?->toIso8601String(),
             'confirmed_by' => $confirmation->confirmedBy?->name ?? 'Unknown operator',
+            'confirmed_by_known' => $confirmation->confirmedBy !== null,
             'freshness_status' => $this->isConfirmationStale($confirmation) ? 'stale' : 'fresh',
             'key' => $confirmation->key,
             'note_present' => trim((string) $confirmation->note) !== '',
@@ -1408,7 +1446,7 @@ class OperatorReadiness
     }
 
     /**
-     * @param  array<int, array{confirmation?: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmable?: bool, key: string, label: string}>  $checks
+     * @param  array<int, array{confirmation?: array{age_label: string|null, confirmed_at: string|null, confirmed_by: string, confirmed_by_known: bool, freshness_status: string, key: string, note_present: bool, stale_after_days: int|null}|null, confirmable?: bool, key: string, label: string}>  $checks
      * @return array{fresh_count: int, items: array<int, array{key: string, label: string, note_status: string, status: string, status_label: string, summary: string}>, missing_count: int, stale_count: int}
      */
     private function proofCoverage(array $checks): array
@@ -1565,6 +1603,27 @@ class OperatorReadiness
             },
             'summary' => $summary,
         ];
+    }
+
+    /**
+     * Attach stable presentation metadata without turning request-neutral
+     * readiness state into translated or HTML-bearing data. Extracted surfaces
+     * consume this through OperatorReadinessPresenter; CLI callers and the
+     * still-English console continue to receive the existing plain-English
+     * fields until their own extraction slice.
+     *
+     * @param  array<string, mixed>  $check
+     * @param  array<string, string>  $parameters
+     * @return array<string, mixed>
+     */
+    private function withTranslation(array $check, string $variant, array $parameters = []): array
+    {
+        $check['translation'] = [
+            'parameters' => $parameters,
+            'variant' => $variant,
+        ];
+
+        return $check;
     }
 
     /**
