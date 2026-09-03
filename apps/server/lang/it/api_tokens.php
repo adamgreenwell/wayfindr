@@ -28,13 +28,13 @@
  */
 
 return [
-    'title' => 'Token API',
-    'subtitle' => 'Accesso programmatico ai dati di supporto di questo account, per integrazioni sviluppate da lei o da altri.',
+    'title' => 'API e webhook',
+    'subtitle' => 'Accesso API con ambito limitato e consegna firmata degli eventi per le integrazioni di questo account.',
     'back' => 'Torna all’account',
 
     // Italian DOES inflect it, and this was `:count attivi` flat -- which read
     // `1 attivi` for an admin with one usable token.
-    'active' => '{1} :count attivo|[2,*] :count attivi',
+    'active' => '{1} :count token attivo|[2,*] :count token attivi',
 
     'flash' => [
         'created' => 'Token API creato. Lo copi ora — non potrà essere mostrato di nuovo.',

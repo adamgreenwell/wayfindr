@@ -152,7 +152,7 @@ return [
             'replies' => ['label' => 'Reply templates', 'detail' => 'Saved replies agents can insert into conversations.'],
             'labels' => ['label' => 'Ticket labels', 'detail' => 'Shared labels for organizing and filtering tickets.'],
             'audit' => ['label' => 'Audit log', 'detail' => 'Search account activity and export safe audit records.'],
-            'tokens' => ['label' => 'API tokens', 'detail' => 'Programmatic read access to this account, for integrations you or somebody else builds.'],
+            'tokens' => ['label' => 'API and webhooks', 'detail' => 'Scoped read and write access plus signed event delivery for integrations.'],
             'operator_access' => ['label' => 'Operator access', 'detail' => 'Requests from platform operators to see this account\'s support data.'],
         ],
     ],

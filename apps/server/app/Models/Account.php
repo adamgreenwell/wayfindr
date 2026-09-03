@@ -57,6 +57,14 @@ class Account extends Model
         return $this->hasMany(ApiToken::class);
     }
 
+    /**
+     * Destinations this account deliberately sends thin events to (ADR 0020).
+     */
+    public function outboundWebhookEndpoints(): HasMany
+    {
+        return $this->hasMany(OutboundWebhookEndpoint::class);
+    }
+
     public function externalIssueProviderConnections(): HasMany
     {
         return $this->hasMany(ExternalIssueProviderConnection::class);

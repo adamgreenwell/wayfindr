@@ -209,7 +209,7 @@ test('the account hub links to API tokens, so the page is reachable', function (
         ->get(route('dashboard.account.show'))
         ->assertOk()
         ->assertSee(route('dashboard.account.api-tokens.index'), false)
-        ->assertSee('API tokens');
+        ->assertSee('API and webhooks');
 });
 
 test('a restricted token whose only site is purged reaches nothing', function (): void {
@@ -810,8 +810,8 @@ test('the active count agrees with the number in Italian', function (): void {
     $html = (string) $this->actingAs($admin)
         ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
 
-    expect($html)->toContain('1 attivo');
-    $this->assertStringNotContainsString('1 attivi', $html,
+    expect($html)->toContain('1 token attivo');
+    $this->assertStringNotContainsString('1 token attivi', $html,
         'the active count did not agree with the number');
 });
 

@@ -123,7 +123,7 @@ return [
             'replies' => ['label' => 'Antworthilfen', 'detail' => 'Gespeicherte Antworten, die Agenten in Unterhaltungen einfügen können.'],
             'labels' => ['label' => 'Ticket-Labels', 'detail' => 'Gemeinsame Labels zum Ordnen und Filtern von Tickets.'],
             'audit' => ['label' => 'Audit-Protokoll', 'detail' => 'Kontoaktivität durchsuchen und sichere Audit-Datensätze exportieren.'],
-            'tokens' => ['label' => 'API-Token', 'detail' => 'Programmatischer Lesezugriff auf dieses Konto für selbst oder von anderen erstellte Integrationen.'],
+            'tokens' => ['label' => 'API und Webhooks', 'detail' => 'Begrenzter Lese- und Schreibzugriff sowie signierte Ereigniszustellung für Integrationen.'],
             'operator_access' => ['label' => 'Operator-Zugriff', 'detail' => 'Anfragen von Plattform-Operatoren, die Support-Daten dieses Kontos einzusehen.'],
         ],
     ],

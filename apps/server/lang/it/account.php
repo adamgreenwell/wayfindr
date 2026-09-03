@@ -104,7 +104,7 @@ return [
             'replies' => ['label' => 'Assistenti di risposta', 'detail' => 'Risposte salvate che gli agenti possono inserire nelle conversazioni.'],
             'labels' => ['label' => 'Etichette dei ticket', 'detail' => 'Etichette condivise per organizzare e filtrare i ticket.'],
             'audit' => ['label' => 'Registro di audit', 'detail' => 'Cerchi nell’attività dell’account ed esporti record di audit sicuri.'],
-            'tokens' => ['label' => 'Token API', 'detail' => 'Accesso programmatico in lettura a questo account per integrazioni create da lei o da altri.'],
+            'tokens' => ['label' => 'API e webhook', 'detail' => 'Accesso limitato in lettura e scrittura, più consegna firmata degli eventi per le integrazioni.'],
             'operator_access' => ['label' => 'Accesso degli operatori', 'detail' => 'Richieste degli operatori della piattaforma per vedere i dati di supporto di questo account.'],
         ],
     ],
