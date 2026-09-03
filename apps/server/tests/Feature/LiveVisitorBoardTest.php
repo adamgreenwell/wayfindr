@@ -1,10 +1,12 @@
 <?php
 
 use App\Broadcasting\SitePresenceChannel;
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\VisitorPresenceUpdated;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -148,6 +150,46 @@ test('an agent can open the board for their own site', function (): void {
         ->assertOk()
         ->assertSee('On the site now')
         ->assertSee('https://shop.test/pricing');
+});
+
+test('a settings-only custom role cannot read or subscribe to the live board', function (): void {
+    $f = boardFixture();
+    $role = CustomRole::factory()->for($f['account'])->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $agent = User::factory()->for($f['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $f['site']->supportAgents()->attach($agent);
+    presentVisitor($f['site'], 'anon-private', [
+        'name' => 'Private visitor',
+        'email' => 'private@example.test',
+        'presence_only' => false,
+    ]);
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.show', $f['site']))
+        ->assertOk()
+        ->assertDontSee(route('dashboard.sites.live', $f['site']), false);
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertNotFound()
+        ->assertDontSee('Private visitor')
+        ->assertDontSee('private@example.test');
+
+    expect((new SitePresenceChannel)->join($agent, $f['site']->id))->toBeFalse();
+
+    $role->forceFill(['permissions' => [AccountPermission::ViewConversations->value]])->save();
+    $agent = $agent->fresh();
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('Private visitor');
+
+    expect((new SitePresenceChannel)->join($agent, $f['site']->id))->toBeTrue();
 });
 
 test('a site that does not watch says so instead of showing an empty board', function (): void {

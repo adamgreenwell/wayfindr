@@ -1244,14 +1244,11 @@
                     </div>
                 @endif
 
-                {{-- Outside the permission branch above, because the board and
-                     this link answer to different permissions. Changing the
-                     SETTING is an owner-and-admin decision; using the board is
-                     open to any agent who can view the site, which is what the
-                     route and the broadcast channel both authorise. Keeping the
-                     only link inside the admin half left the agents it was
-                     built for with no way to reach it. --}}
-                @if ($presenceEnabled)
+                {{-- Outside the privacy-settings branch because operating the
+                     live board and changing its collection settings answer to
+                     different permissions. The link follows the same support
+                     permission as the route and broadcast channel. --}}
+                @if ($presenceEnabled && $canViewLiveBoard)
                     <p class="field-help">
                         {!! __('site_settings.presence.board_help', ['board' => '<a href="'.e(route('dashboard.sites.live', $site)).'">'.e(__('site_settings.presence.board')).'</a>']) !!}
                     </p>

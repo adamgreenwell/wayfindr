@@ -190,6 +190,46 @@ test('a custom role cannot cross account boundaries or be deleted while assigned
     expect($assignedRole->fresh())->not->toBeNull();
 });
 
+test('site management permission cannot be removed from a sites only assigned manager', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create([
+        'name' => 'Site manager',
+        'name_key' => 'site manager',
+        'permissions' => [AccountPermission::ManageSiteAccess->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Managed docs']);
+    $site->supportAgents()->attach($manager);
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.account.roles.index'))
+        ->put(route('dashboard.account.roles.update', $role), [
+            'name' => 'Site reader',
+            'permissions' => [],
+        ])
+        ->assertRedirect(route('dashboard.account.roles.index'))
+        ->assertSessionHasErrors('permissions');
+
+    expect($role->fresh()->name)->toBe('Site manager')
+        ->and($role->fresh()->hasPermission(AccountPermission::ManageSiteAccess))->toBeTrue();
+
+    $site->supportAgents()->attach($owner);
+
+    $this->actingAs($owner)
+        ->put(route('dashboard.account.roles.update', $role), [
+            'name' => 'Site reader',
+            'permissions' => [],
+        ])
+        ->assertRedirect();
+
+    expect($role->fresh()->name)->toBe('Site reader')
+        ->and($role->fresh()->hasPermission(AccountPermission::ManageSiteAccess))->toBeFalse();
+});
+
 test('custom roles cannot receive the non delegable role management permission', function (): void {
     $account = Account::factory()->create();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);

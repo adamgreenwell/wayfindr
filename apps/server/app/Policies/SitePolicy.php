@@ -28,6 +28,14 @@ class SitePolicy
         return $user->hasAccountPermission(AccountPermission::ManagePrivacySettings) && $this->view($user, $site);
     }
 
+    public function viewLiveBoard(User $user, Site $site): bool
+    {
+        return $user->hasAnyAccountPermission(
+            AccountPermission::ViewConversations,
+            AccountPermission::ManageTickets,
+        ) && $this->view($user, $site);
+    }
+
     public function manageAccess(User $user, Site $site): bool
     {
         return $user->hasAccountPermission(AccountPermission::ManageSiteAccess) && $this->view($user, $site);

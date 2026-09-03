@@ -195,6 +195,7 @@ class AgentSiteController extends Controller
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'canUpdateSite' => Gate::forUser($agent)->allows('update', $site),
+            'canViewLiveBoard' => Gate::forUser($agent)->allows('viewLiveBoard', $site),
             'dataResponsibility' => $this->localizedDataResponsibility(),
             'appearance' => WidgetAppearance::for($site),
             'availability' => SiteAvailability::for($site),
@@ -750,7 +751,7 @@ class AgentSiteController extends Controller
      */
     public function live(Request $request, Site $site): View
     {
-        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'viewLiveBoard', $site, 404);
 
         $agent = $request->user();
 

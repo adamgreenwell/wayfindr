@@ -8,7 +8,9 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\CustomRole;
+use App\Models\Site;
 use App\Models\User;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -42,19 +44,23 @@ final class AgentAccountCustomRoleController extends Controller
         $this->authorizeRoleManagement($actor);
         $attributes = $this->validatedAttributes($request);
 
-        $role = DB::transaction(function () use ($actor, $attributes): CustomRole {
-            $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key']);
-            $role = CustomRole::query()->create([
-                'account_id' => $actor->account_id,
-                ...$attributes,
-            ]);
-            $this->audit($actor, $role, 'custom_role.created', [
-                'role_name' => $role->name,
-                'permissions' => $role->permissionValues(),
-            ]);
+        try {
+            $role = DB::transaction(function () use ($actor, $attributes): CustomRole {
+                $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key']);
+                $role = CustomRole::query()->create([
+                    'account_id' => $actor->account_id,
+                    ...$attributes,
+                ]);
+                $this->audit($actor, $role, 'custom_role.created', [
+                    'role_name' => $role->name,
+                    'permissions' => $role->permissionValues(),
+                ]);
 
-            return $role;
-        });
+                return $role;
+            });
+        } catch (UniqueConstraintViolationException) {
+            $this->throwDuplicateNameValidation();
+        }
 
         return redirect()
             ->route('dashboard.account.roles.index', ['role' => $role->id])
@@ -67,19 +73,24 @@ final class AgentAccountCustomRoleController extends Controller
         $this->authorizeRoleManagement($actor);
         $attributes = $this->validatedAttributes($request);
 
-        DB::transaction(function () use ($actor, $customRole, $attributes): void {
-            $role = $this->roleForActor($actor, $customRole, true);
-            $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key'], (int) $role->id);
-            $oldName = $role->name;
-            $oldPermissions = $role->permissionValues();
-            $role->fill($attributes)->save();
-            $this->audit($actor, $role, 'custom_role.updated', [
-                'old_role_name' => $oldName,
-                'role_name' => $role->name,
-                'old_permissions' => $oldPermissions,
-                'permissions' => $role->permissionValues(),
-            ]);
-        });
+        try {
+            DB::transaction(function () use ($actor, $customRole, $attributes): void {
+                $role = $this->roleForActor($actor, $customRole, true);
+                $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key'], (int) $role->id);
+                $this->ensureSiteManagerCoverage($role, $attributes['permissions']);
+                $oldName = $role->name;
+                $oldPermissions = $role->permissionValues();
+                $role->fill($attributes)->save();
+                $this->audit($actor, $role, 'custom_role.updated', [
+                    'old_role_name' => $oldName,
+                    'role_name' => $role->name,
+                    'old_permissions' => $oldPermissions,
+                    'permissions' => $role->permissionValues(),
+                ]);
+            });
+        } catch (UniqueConstraintViolationException) {
+            $this->throwDuplicateNameValidation();
+        }
 
         return redirect()
             ->route('dashboard.account.roles.index', ['role' => $customRole])
@@ -177,8 +188,43 @@ final class AgentAccountCustomRoleController extends Controller
         }
 
         if ($query->exists()) {
-            throw ValidationException::withMessages(['name' => __('account_roles.errors.duplicate')]);
+            $this->throwDuplicateNameValidation();
         }
+    }
+
+    /** @param list<string> $permissions */
+    private function ensureSiteManagerCoverage(CustomRole $role, array $permissions): void
+    {
+        if (! $role->hasPermission(AccountPermission::ManageSiteAccess)
+            || in_array(AccountPermission::ManageSiteAccess->value, $permissions, true)) {
+            return;
+        }
+
+        $strandedSite = $role->account
+            ->sites()
+            ->whereHas('supportAgents', fn ($query) => $query
+                ->where('users.account_id', $role->account_id)
+                ->whereNull('users.deactivated_at')
+                ->where('users.custom_role_id', $role->id))
+            ->with(['supportAgents' => fn ($query) => $query
+                ->where('users.account_id', $role->account_id)
+                ->whereNull('users.deactivated_at')
+                ->with('customRole')])
+            ->get()
+            ->first(fn (Site $site): bool => ! $site->supportAgents
+                ->contains(fn (User $user): bool => (int) $user->custom_role_id !== (int) $role->id
+                    && $user->hasAccountPermission(AccountPermission::ManageSiteAccess)));
+
+        if ($strandedSite instanceof Site) {
+            throw ValidationException::withMessages([
+                'permissions' => __('account_roles.errors.site_manager_required', ['site' => $strandedSite->name]),
+            ]);
+        }
+    }
+
+    private function throwDuplicateNameValidation(): never
+    {
+        throw ValidationException::withMessages(['name' => __('account_roles.errors.duplicate')]);
     }
 
     private function roleForActor(User $actor, string $roleId, bool $lock = false): CustomRole
