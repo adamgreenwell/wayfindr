@@ -22,6 +22,7 @@
                 $senderName = $isAgent
                     ? ($transcriptMessage->sender?->name ?? __('conversations.detail.roles.agent'))
                     : __('conversations.detail.roles.visitor');
+                $senderNameIsAuthored = $isAgent && $transcriptMessage->sender?->name !== null;
                 $secondsSincePrevious = $previousTranscriptMessage?->created_at?->diffInSeconds($transcriptMessage->created_at, false);
                 $isGrouped = $previousTranscriptMessage
                     && $previousTranscriptMessage->sender_type === $transcriptMessage->sender_type
@@ -33,7 +34,7 @@
             @endphp
             <article class="{{ $messageClasses }}" data-message-id="{{ $transcriptMessage->id }}">
                 <div class="message-meta">
-                    <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}">{{ $senderName }}</strong>
+                    <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}" @if ($senderNameIsAuthored) lang="" @endif>{{ $senderName }}</strong>
                     <span class="message-status-line">
                         <time class="message-time" datetime="{{ $transcriptMessage->created_at->toJSON() }}">{{ $transcriptMessage->created_at->diffForHumans() }}</time>
                         @if ($isAgent && $transcriptMessage->seen_at)

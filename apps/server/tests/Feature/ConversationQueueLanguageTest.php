@@ -2238,9 +2238,26 @@ test('the transcript declares its own language, not the dashboard\'s', function 
     $world = conversationQueueLanguageWorld();
     $spoken = Conversation::query()
         ->where('site_id', $world['site']->id)
-        ->whereHas('messages')
+        ->whereHas('messages', fn ($query) => $query->where('sender_type', User::class))
         ->orderBy('id')
         ->firstOrFail();
+    $authoredSenderName = $spoken->messages()
+        ->where('sender_type', User::class)
+        ->with('sender')
+        ->firstOrFail()
+        ->sender
+        ->name;
+
+    ConversationMessage::factory()->for($spoken)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $spoken->visitor_id,
+        'body' => 'Visitor boundary fixture',
+    ]);
+    ConversationMessage::factory()->for($spoken)->create([
+        'sender_type' => User::class,
+        'sender_id' => null,
+        'body' => 'Missing agent boundary fixture',
+    ]);
 
     $html = (string) $this->actingAs($world['agents']['de'])
         ->get(route('dashboard.conversations.show', $spoken->support_code))
@@ -2258,6 +2275,27 @@ test('the transcript declares its own language, not the dashboard\'s', function 
     foreach ($bodies as $body) {
         expect($body->hasAttribute('lang'))->toBeTrue('a message body inherits the document language');
         expect($body->getAttribute('lang'))->toBe('', 'a message body claims a language it cannot know');
+    }
+
+    $authoredSender = $xpath->query(
+        '//div[contains(@class, "message-list")]//strong[normalize-space(text())="'.$authoredSenderName.'"]'
+    )->item(0);
+
+    expect($authoredSender)->not->toBeNull('the authored agent name did not render')
+        ->and($authoredSender?->getAttribute('lang'))->toBe('');
+
+    foreach ([
+        'agent' => __('conversations.detail.roles.agent', [], 'de'),
+        'visitor' => __('conversations.detail.roles.visitor', [], 'de'),
+    ] as $role => $fallback) {
+        $fallbackSender = $xpath->query(
+            '//div[contains(@class, "message-list")]//strong[normalize-space(text())="'.$fallback.'"]'
+        )->item(0);
+
+        expect($fallbackSender)->not->toBeNull("the translated {$role} fallback did not render")
+            ->and($fallbackSender?->hasAttribute('lang'))->toBeFalse(
+                "the translated {$role} fallback was marked as unknown-language text"
+            );
     }
 
     // A neighbour with no subject. The switcher's fallback is OUR copy and has
