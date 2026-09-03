@@ -442,6 +442,35 @@ test('site settings use singular external issue metrics in Italian', function ()
         ->assertDontSee('1 sincronizzazioni');
 });
 
+test('site settings localize the generic external issue provider label', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $connection = ExternalIssueProviderConnection::factory()
+        ->for($account)
+        ->create([
+            'provider' => 'other',
+            'name' => 'Eigener Tracker',
+        ]);
+
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create();
+
+    $response = $this->actingAs($admin)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Andere')
+        ->assertDontSee('Other');
+
+    expect(substr_count($response->getContent(), 'Andere'))->toBeGreaterThanOrEqual(2);
+});
+
 test('site external issue routing labels project handoff states', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);

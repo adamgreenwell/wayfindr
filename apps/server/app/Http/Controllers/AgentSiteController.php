@@ -159,6 +159,14 @@ class AgentSiteController extends Controller
             ->orderBy('provider')
             ->orderBy('name')
             ->get();
+        $externalIssueProviderParts = $site->externalIssueProjects
+            ->pluck('providerConnection')
+            ->filter()
+            ->concat($externalIssueProviderConnections)
+            ->unique('id')
+            ->mapWithKeys(fn ($connection): array => [
+                (int) $connection->getKey() => $this->localizedExternalIssueProviderParts($connection->provider),
+            ]);
         $supportAgentIds = $this->eligibleSupportAgentIds($site);
         $maskSelectors = $this->maskSelectors($site);
         $maskTerms = $this->maskTerms($site);
@@ -190,6 +198,7 @@ class AgentSiteController extends Controller
             'widgetLanguages' => WidgetLanguage::options(),
             'externalIssueHealth' => $externalIssueHealth,
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
+            'externalIssueProviderParts' => $externalIssueProviderParts,
             'installHealth' => $installHealth,
             'installHostDiagnostic' => $installHostDiagnostic,
             'installVerification' => $this->localizedSiteInstallVerification($site->latestVisitor),
@@ -383,6 +392,29 @@ class AgentSiteController extends Controller
         return $site->externalIssueProjects
             ->filter(fn (SiteExternalIssueProject $project): bool => $project->supportsIssueCreationHandoff())
             ->count();
+    }
+
+    /** @return array{label: string, language: string|null} */
+    private function localizedExternalIssueProviderParts(mixed $provider): array
+    {
+        if ($provider === 'other') {
+            return [
+                'label' => __('integrations.providers.other'),
+                'language' => null,
+            ];
+        }
+
+        if (! is_string($provider) || ! in_array($provider, ['github', 'gitlab', 'bitbucket', 'jira'], true)) {
+            return [
+                'label' => __('integrations.providers.external_tracker'),
+                'language' => null,
+            ];
+        }
+
+        return [
+            'label' => ExternalIssueProvider::label($provider),
+            'language' => '',
+        ];
     }
 
     /**

@@ -579,6 +579,10 @@
                             <tbody>
                                 @foreach ($siteExternalIssueProjects as $externalIssueProject)
                                     @php
+                                        $providerParts = $externalIssueProviderParts->get(
+                                            $externalIssueProject->providerConnection?->id,
+                                            ['label' => __('integrations.providers.external_tracker'), 'language' => null],
+                                        );
                                         $handoffKey = ! $externalIssueProject->providerConnection?->is_enabled
                                             ? 'blocked'
                                             : (! $externalIssueProject->hasSupportedIssueCreationProvider()
@@ -593,8 +597,8 @@
                                     @endphp
                                     <tr>
                                         <td>
-                                            <strong lang="">{{ $externalIssueProject->providerConnection?->name ?? $externalIssueProject->providerLabel() }}</strong>
-                                            <span class="lede" lang="">{{ $externalIssueProject->providerLabel() }}</span>
+                                            <strong lang="">{{ $externalIssueProject->providerConnection?->name ?? $providerParts['label'] }}</strong>
+                                            <span class="lede" @if ($providerParts['language'] !== null) lang="{{ $providerParts['language'] }}" @endif>{{ $providerParts['label'] }}</span>
                                         </td>
                                         <td>
                                             <strong lang="">{{ $externalIssueProject->project_key }}</strong>
@@ -707,7 +711,7 @@
                                 <select id="external_issue_provider_connection_id" name="external_issue_provider_connection_id">
                                     @foreach ($externalIssueProviderConnections as $connection)
                                         <option value="{{ $connection->id }}" lang="" @selected((int) old('external_issue_provider_connection_id') === $connection->id)>
-                                            {{ $connection->name }} - {{ $connection->providerLabel() }}
+                                            {{ $connection->name }} - {{ $externalIssueProviderParts->get($connection->id, ['label' => __('integrations.providers.external_tracker')])['label'] }}
                                         </option>
                                     @endforeach
                                 </select>
