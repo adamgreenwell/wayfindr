@@ -29,6 +29,11 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
 - **A help centre**: articles written in the dashboard and searchable from
   inside the widget, so a visitor can find the answer before asking.
+- **A public API and outbound webhooks**: scoped tokens provide read and narrow
+  write access, while signed thin events announce new conversations, messages
+  and ticket lifecycle changes without pushing support content to the configured
+  destination. Deliveries are durable, ordered per endpoint, retried with
+  backoff, and visible to admins.
 - **Support hours, away state and offline capture**, per site and in the site's
   own timezone, with a pre-chat form for sites that need to know who is asking.
 - **Reporting**: conversation and ticket volume, first-response and resolution

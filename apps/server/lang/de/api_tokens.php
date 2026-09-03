@@ -32,13 +32,12 @@
  */
 
 return [
-    'title' => 'API-Token',
-    'subtitle' => 'Programmatischer Zugriff auf die Supportdaten dieses Kontos, für Integrationen, die Sie oder jemand anderes baut.',
+    'title' => 'API und Webhooks',
+    'subtitle' => 'Begrenzter API-Zugriff und signierte Ereigniszustellung für die Integrationen dieses Kontos.',
     'back' => 'Zurück zum Konto',
 
-    // German predicate adjectives do not inflect, so both branches are the
-    // same. The branches exist because the key is rendered with `trans_choice`.
-    'active' => '{1} :count aktiv|[2,*] :count aktiv',
+    // The token noun matters now that this page also counts webhook endpoints.
+    'active' => '{1} :count aktives Token|[2,*] :count aktive Token',
 
     'flash' => [
         'created' => 'API-Token erstellt. Kopieren Sie es jetzt — es kann nicht erneut angezeigt werden.',

@@ -8,6 +8,7 @@ use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
 use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
+use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentConversationAttachmentController;
@@ -99,6 +100,14 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         // the suite could never have shown this.
         ->whereNumber('apiToken')
         ->name('dashboard.account.api-tokens.destroy');
+    Route::post('/dashboard/account/outbound-webhooks', [AgentAccountOutboundWebhookController::class, 'store'])
+        ->name('dashboard.account.outbound-webhooks.store');
+    Route::delete('/dashboard/account/outbound-webhooks/{webhookEndpoint}', [AgentAccountOutboundWebhookController::class, 'destroy'])
+        ->whereNumber('webhookEndpoint')
+        ->name('dashboard.account.outbound-webhooks.destroy');
+    Route::post('/dashboard/account/outbound-webhook-deliveries/{webhookDelivery}/retry', [AgentAccountOutboundWebhookController::class, 'retry'])
+        ->whereNumber('webhookDelivery')
+        ->name('dashboard.account.outbound-webhooks.retry');
     Route::get('/dashboard/account/operator-access', [AgentAccountBreakGlassController::class, 'index'])
         ->name('dashboard.account.break-glass.index');
     Route::post('/dashboard/account/operator-access/{grant}/approve', [AgentAccountBreakGlassController::class, 'approve'])

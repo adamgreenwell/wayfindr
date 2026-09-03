@@ -8,6 +8,7 @@ use App\Models\ApiToken;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\Attachments\AttachmentBinder;
@@ -676,38 +677,45 @@ class AgentConversationController extends Controller
                 ->with('status', 'conversations.flash.ticket_exists');
         }
 
-        $ticket = $conversation->tickets()->create([
-            'account_id' => $conversation->site->account_id,
-            'site_id' => $conversation->site_id,
-            'requester_id' => $conversation->visitor_id,
-            'assignee_id' => $agent->id,
-            'status' => 'open',
-            'priority' => $validated['priority'] ?? 'normal',
-            'category' => $validated['category'] ?? null,
-            // Stored, not rendered: see DashboardLanguage::forStoredContent().
-            'subject' => filled($conversation->subject) ? $conversation->subject : __('conversations.detail.ticket_subject_fallback',
-                ['code' => $conversation->support_code], DashboardLanguage::forStoredContent()),
-            'description' => $this->ticketDescription($conversation),
-            'metadata' => [
-                'source' => 'conversation',
-                'description_source' => 'conversation_transcript',
-                'support_code' => $conversation->support_code,
-                'visitor_context' => $this->ticketVisitorContext($conversation, $visitorContextSanitizer),
-            ],
-        ]);
+        $ticket = DB::transaction(function () use ($conversation, $agent, $validated, $visitorContextSanitizer): Ticket {
+            // The ticket and its webhook outbox rows must share this outer
+            // transaction. TicketObserver runs during create; without the
+            // wrapper the ticket commits before the durable handoff exists.
+            $ticket = $conversation->tickets()->create([
+                'account_id' => $conversation->site->account_id,
+                'site_id' => $conversation->site_id,
+                'requester_id' => $conversation->visitor_id,
+                'assignee_id' => $agent->id,
+                'status' => 'open',
+                'priority' => $validated['priority'] ?? 'normal',
+                'category' => $validated['category'] ?? null,
+                // Stored, not rendered: see DashboardLanguage::forStoredContent().
+                'subject' => filled($conversation->subject) ? $conversation->subject : __('conversations.detail.ticket_subject_fallback',
+                    ['code' => $conversation->support_code], DashboardLanguage::forStoredContent()),
+                'description' => $this->ticketDescription($conversation),
+                'metadata' => [
+                    'source' => 'conversation',
+                    'description_source' => 'conversation_transcript',
+                    'support_code' => $conversation->support_code,
+                    'visitor_context' => $this->ticketVisitorContext($conversation, $visitorContextSanitizer),
+                ],
+            ]);
 
-        $ticket->auditEvents()->create([
-            'account_id' => $ticket->account_id,
-            'site_id' => $ticket->site_id,
-            'actor_type' => User::class,
-            'actor_id' => $agent->id,
-            'action' => 'ticket.created',
-            'metadata' => [
-                'source' => 'conversation',
-                'support_code' => $conversation->support_code,
-            ],
-            'occurred_at' => now(),
-        ]);
+            $ticket->auditEvents()->create([
+                'account_id' => $ticket->account_id,
+                'site_id' => $ticket->site_id,
+                'actor_type' => User::class,
+                'actor_id' => $agent->id,
+                'action' => 'ticket.created',
+                'metadata' => [
+                    'source' => 'conversation',
+                    'support_code' => $conversation->support_code,
+                ],
+                'occurred_at' => now(),
+            ]);
+
+            return $ticket;
+        });
 
         if (! $conversation->assigned_agent_id) {
             $conversation->forceFill([

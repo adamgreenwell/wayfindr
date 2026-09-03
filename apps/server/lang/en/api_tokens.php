@@ -25,17 +25,15 @@
  */
 
 return [
-    'title' => 'API tokens',
-    'subtitle' => "Programmatic access to this account's support data, for integrations you or somebody else builds.",
+    'title' => 'API and webhooks',
+    'subtitle' => "Scoped API access and signed event delivery for this account's integrations.",
     'back' => 'Back to account',
 
     // Usable rather than merely un-revoked: a token past its expiry is refused
     // at authentication and labelled Expired in the table, so counting it as
     // active would contradict the same page.
-    // A plural line even though English does not inflect `active`: the key is
-    // rendered with `trans_choice`, and a key without branches returns the whole
-    // string, selector and all.
-    'active' => '{1} :count active|[2,*] :count active',
+    // The token noun matters now that this page also counts webhook endpoints.
+    'active' => '{1} :count active token|[2,*] :count active tokens',
 
     'flash' => [
         'created' => 'API token created. Copy it now — it cannot be shown again.',

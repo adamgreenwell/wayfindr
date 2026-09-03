@@ -6,6 +6,7 @@ use App\Events\ConversationMessageCreated;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
@@ -417,34 +418,41 @@ class AgentTicketController extends Controller
             ];
         }
 
-        $message = $conversation->messages()->create([
-            'sender_type' => User::class,
-            'sender_id' => $agent->id,
-            'type' => 'text',
-            'body' => $body,
-            'metadata' => $metadata,
-        ]);
+        $message = DB::transaction(function () use ($conversation, $ticket, $agent, $body, $metadata, $resolvedTemplate): ConversationMessage {
+            // ConversationMessageObserver creates the webhook outbox rows
+            // during this insert. Keep the reply, conversation state and
+            // delivery handoff atomic even when the queue is unavailable.
+            $message = $conversation->messages()->create([
+                'sender_type' => User::class,
+                'sender_id' => $agent->id,
+                'type' => 'text',
+                'body' => $body,
+                'metadata' => $metadata,
+            ]);
 
-        $conversation->forceFill([
-            'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
-            'status' => 'open',
-            'closed_at' => null,
-            'last_message_at' => $message->created_at,
-        ])->save();
+            $conversation->forceFill([
+                'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
+                'status' => 'open',
+                'closed_at' => null,
+                'last_message_at' => $message->created_at,
+            ])->save();
 
-        $activityMetadata = [
-            'conversation_id' => $conversation->id,
-            'message_id' => $message->id,
-        ];
-
-        if ($resolvedTemplate) {
             $activityMetadata = [
-                ...$activityMetadata,
-                ...$this->replyTemplateMetadata($resolvedTemplate),
+                'conversation_id' => $conversation->id,
+                'message_id' => $message->id,
             ];
-        }
 
-        $this->recordActivity($ticket, $agent, 'ticket.reply_sent', $activityMetadata);
+            if ($resolvedTemplate) {
+                $activityMetadata = [
+                    ...$activityMetadata,
+                    ...$this->replyTemplateMetadata($resolvedTemplate),
+                ];
+            }
+
+            $this->recordActivity($ticket, $agent, 'ticket.reply_sent', $activityMetadata);
+
+            return $message;
+        });
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);
 

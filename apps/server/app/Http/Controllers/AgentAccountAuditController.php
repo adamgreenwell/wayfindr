@@ -8,6 +8,7 @@ use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\OutboundWebhookEndpoint;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -317,6 +318,9 @@ class AgentAccountAuditController extends Controller
             'site_access.updated' => 'Site access updated',
             'api_token.created' => 'API token issued',
             'api_token.revoked' => 'API token revoked',
+            'outbound_webhook.created' => 'Outbound webhook created',
+            'outbound_webhook.disabled' => 'Outbound webhook disabled',
+            'outbound_webhook.delivery_retried' => 'Outbound webhook delivery retried',
             // Without these the default arm headline-cases the raw action
             // and the account reads "Break Glass Resource Viewed" in its
             // own audit log -- the most user-facing place the old term had.
@@ -383,6 +387,13 @@ class AgentAccountAuditController extends Controller
             return [
                 'prefix' => __('account_audit.references.api_token'),
                 'value' => $event->subject->name.' ('.$event->subject->displayHint().')',
+            ];
+        }
+
+        if ($event->subject instanceof OutboundWebhookEndpoint) {
+            return [
+                'prefix' => __('account_audit.references.outbound_webhook'),
+                'value' => $event->subject->name.' ('.$event->subject->secretHint().')',
             ];
         }
 

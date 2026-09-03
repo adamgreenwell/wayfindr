@@ -10,6 +10,7 @@ ARG PHP_VERSION=8.4
 FROM dunglas/frankenphp:1-php${PHP_VERSION} AS php-base
 
 RUN install-php-extensions \
+        curl \
         intl \
         opcache \
         pcntl \

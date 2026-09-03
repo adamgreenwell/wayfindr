@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
+use App\Models\OutboundWebhookDelivery;
 use App\Models\User;
 use App\Support\DatabaseKey;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -36,6 +37,8 @@ class AgentAccountApiTokenController extends Controller
         // still leak the count, and no non-admin needs this page.
         abort_unless($agent->isAdmin(), 403);
 
+        $visibleSiteIds = $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id')->all();
+
         return view('agent.account.api-tokens', [
             'agent' => $agent,
             'account' => $account,
@@ -49,9 +52,24 @@ class AgentAccountApiTokenController extends Controller
             // What this admin may be shown of each token's reach. A token can
             // legitimately reach sites its viewer cannot, and naming those
             // would leak exactly what site access hides.
-            'visibleSiteIds' => $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id')->all(),
+            'visibleSiteIds' => $visibleSiteIds,
             // Shown once, immediately after creation, and never again.
             'issuedToken' => $this->issuedToken($request),
+            'webhookEndpoints' => $account->outboundWebhookEndpoints()
+                ->with(['createdBy', 'sites'])
+                ->orderByDesc('created_at')
+                ->get(),
+            // A newly site-limited admin must not gain identifiers from an old
+            // endpoint's deliveries. The endpoint row remains visible like an
+            // API token, but its delivery log follows current site visibility.
+            'webhookDeliveries' => OutboundWebhookDelivery::query()
+                ->with(['endpoint', 'site'])
+                ->whereHas('endpoint', fn ($query) => $query->where('account_id', $account->id))
+                ->whereIn('site_id', $visibleSiteIds)
+                ->orderByDesc('created_at')
+                ->limit(50)
+                ->get(),
+            'issuedWebhookSecret' => $this->issuedWebhookSecret($request),
         ]);
     }
 
@@ -276,6 +294,21 @@ class AgentAccountApiTokenController extends Controller
     private function issuedToken(Request $request): ?string
     {
         $flashed = $request->session()->get('issued_api_token');
+
+        if (! is_string($flashed) || $flashed === '') {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString($flashed);
+        } catch (DecryptException) {
+            return null;
+        }
+    }
+
+    private function issuedWebhookSecret(Request $request): ?string
+    {
+        $flashed = $request->session()->get('issued_webhook_secret');
 
         if (! is_string($flashed) || $flashed === '') {
             return null;

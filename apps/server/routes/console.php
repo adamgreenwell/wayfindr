@@ -41,6 +41,11 @@ Schedule::command('wayfindr:queue-conversation-reply-deliveries')
     ->withoutOverlapping()
     ->description('Recover durable conversation emails whose queue handoff did not complete.');
 
+Schedule::command('wayfindr:queue-outbound-webhooks')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->description('Recover durable outbound webhooks whose queue handoff did not complete.');
+
 // Daily rather than only at deploy time, because the deploy's own sweep cannot
 // be the last word. `$ACTIVATE_RELEASE()` stops NEW requests reaching the old
 // release; it does not cancel requests already executing, and one of those is

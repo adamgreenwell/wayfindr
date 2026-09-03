@@ -98,3 +98,19 @@ test('the v1 API payload never serialises a model wholesale', function (): void 
         expect($code)->not->toContain($wholesale);
     }
 });
+
+/**
+ * Outbound delivery is a second publication path, not permission to invent a
+ * second shape beside the reviewed API contract. Keeping construction in
+ * Payload also keeps the wholesale-model rule above over webhook changes.
+ */
+test('outbound webhooks reuse the v1 payload boundary', function (): void {
+    $source = file_get_contents(dirname(__DIR__, 2).'/app/Support/Webhooks/OutboundWebhookPublisher.php');
+
+    expect($source)->not->toBeFalse()
+        ->and($source)->toContain('Payload::webhookConversation(')
+        ->and($source)->toContain('Payload::webhookMessage(')
+        ->and($source)->toContain('Payload::webhookTicket(')
+        ->and($source)->not->toContain('->toArray()')
+        ->and($source)->not->toContain('->getAttributes()');
+});

@@ -222,6 +222,9 @@ final class DashboardLanguage
         'dashboard.account.api-tokens.index',
         'dashboard.account.api-tokens.store',
         'dashboard.account.api-tokens.destroy',
+        'dashboard.account.outbound-webhooks.store',
+        'dashboard.account.outbound-webhooks.destroy',
+        'dashboard.account.outbound-webhooks.retry',
 
         // The account audit SCREEN. Its CSV export is intentionally absent:
         // the download keeps stable English headers and labels, plus a

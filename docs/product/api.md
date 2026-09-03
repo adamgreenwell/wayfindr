@@ -1,14 +1,69 @@
 # The Wayfindr API
 
-Status: **v1, read and narrow write.** Outbound webhooks are not shipped yet.
+Status: **v1, read and narrow write, with outbound webhooks.**
 
 Wayfindr's public API exists so that integrations do not have to be built by
 Wayfindr's team. It is deliberately smaller than the dashboard, and the reasons
 for each limit are in [ADR 0018](../decisions/0018-public-api-and-programmatic-access.md).
+The outbound event contract and delivery guarantees are in
+[ADR 0020](../decisions/0020-outbound-webhook-contract.md).
+
+## Reacting with outbound webhooks
+
+Admins register endpoints under **Account → API and webhooks → Outbound webhooks**.
+Each endpoint chooses among `conversation.opened`,
+`conversation.message.created`, `ticket.created`, and `ticket.closed`, and may
+be narrowed to specific sites. It is pinned to the creator's current site
+ceiling: sites created later do not silently join it.
+
+The generated signing secret is shown once. Every delivery is an HTTPS POST
+with these headers:
+
+```text
+X-Wayfindr-Event: ticket.created
+X-Wayfindr-Delivery: 8e86e8dc-8d60-4af9-a1db-0f967c3dd45d
+X-Wayfindr-Signature: sha256=<HMAC-SHA256 of the exact request body>
+```
+
+Compare the signature in constant time. The body is deliberately thin:
+
+```php
+$body = file_get_contents('php://input');
+$expected = 'sha256='.hash_hmac('sha256', $body, $signingSecret);
+
+if (! hash_equals($expected, $_SERVER['HTTP_X_WAYFINDR_SIGNATURE'] ?? '')) {
+    http_response_code(401);
+    exit;
+}
+```
+
+```json
+{
+  "id": "8e86e8dc-8d60-4af9-a1db-0f967c3dd45d",
+  "event": "ticket.created",
+  "sequence": 42,
+  "occurred_at": "2026-09-03T14:30:00.000000Z",
+  "site_id": 12,
+  "resource": { "type": "ticket", "id": 481 }
+}
+```
+
+No message body, transcript, ticket description, metadata, anonymous visitor id
+or cobrowse content is pushed. Use a separately scoped API token to read the
+resource when the event arrives.
+
+Delivery is **at least once**. Retries keep the same delivery `id` and endpoint
+`sequence`; de-duplicate by `id`, and sort by `sequence` when an older retry
+arrives after a newer event. Failed attempts back off and become a visible,
+manual retry in the delivery log after the worker exhausts its attempts.
+
+Wayfindr accepts only public HTTPS destinations. DNS is rechecked and pinned for
+every attempt, and redirects are not followed. Historical events are not
+replayed when an endpoint is added.
 
 ## Getting a token
 
-**Account → API tokens → Issue a token.** Admins only.
+**Account → API and webhooks → Issue a token.** Admins only.
 
 The token is shown **once**, immediately after creation. Wayfindr stores a
 SHA-256 hash of it, not the token, so it cannot be recovered or resent — if you

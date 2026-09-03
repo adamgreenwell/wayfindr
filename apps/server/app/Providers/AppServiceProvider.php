@@ -4,6 +4,12 @@ namespace App\Providers;
 
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
+use App\Models\Conversation;
+use App\Models\ConversationMessage;
+use App\Models\Ticket;
+use App\Observers\ConversationMessageObserver;
+use App\Observers\ConversationObserver;
+use App\Observers\TicketObserver;
 use App\Policies\AlertPolicy;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
@@ -79,6 +85,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(DatabaseNotification::class, AlertPolicy::class);
+
+        Conversation::observe(ConversationObserver::class);
+        ConversationMessage::observe(ConversationMessageObserver::class);
+        Ticket::observe(TicketObserver::class);
 
         $this->configureRateLimiters();
     }

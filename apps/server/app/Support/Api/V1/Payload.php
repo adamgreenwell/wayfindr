@@ -9,6 +9,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Contracts\Pagination\CursorPaginator;
+use Illuminate\Support\Carbon;
 
 /**
  * The shapes of the v1 contract, in one file (ADR 0018).
@@ -193,6 +194,61 @@ final class Payload
     }
 
     /**
+     * A thin event that identifies a conversation without exporting its
+     * subject, visitor or metadata to a configured third-party URL.
+     *
+     * @return array<string, mixed>
+     */
+    public static function webhookConversation(
+        string $deliveryId,
+        string $event,
+        int $sequence,
+        Carbon $occurredAt,
+        Conversation $conversation,
+    ): array {
+        return self::webhookEnvelope($deliveryId, $event, $sequence, $occurredAt, (int) $conversation->site_id, [
+            'type' => 'conversation',
+            'support_code' => (string) $conversation->support_code,
+        ]);
+    }
+
+    /**
+     * A message notification, not the message. The subscriber can read the
+     * content with a separately scoped and revocable API token.
+     *
+     * @return array<string, mixed>
+     */
+    public static function webhookMessage(
+        string $deliveryId,
+        string $event,
+        int $sequence,
+        Carbon $occurredAt,
+        ConversationMessage $message,
+    ): array {
+        $message->loadMissing('conversation');
+
+        return self::webhookEnvelope($deliveryId, $event, $sequence, $occurredAt, (int) $message->conversation->site_id, [
+            'type' => 'conversation_message',
+            'id' => (int) $message->id,
+            'conversation_support_code' => (string) $message->conversation->support_code,
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    public static function webhookTicket(
+        string $deliveryId,
+        string $event,
+        int $sequence,
+        Carbon $occurredAt,
+        Ticket $ticket,
+    ): array {
+        return self::webhookEnvelope($deliveryId, $event, $sequence, $occurredAt, (int) $ticket->site_id, [
+            'type' => 'ticket',
+            'id' => (int) $ticket->id,
+        ]);
+    }
+
+    /**
      * A cursor-paginated list, in the one envelope every list endpoint uses.
      *
      * Cursor rather than page numbers, because a support inbox changes while
@@ -223,5 +279,27 @@ final class Payload
             ApiToken::class => 'integration',
             default => 'system',
         };
+    }
+
+    /**
+     * @param  array<string, int|string>  $resource
+     * @return array<string, mixed>
+     */
+    private static function webhookEnvelope(
+        string $deliveryId,
+        string $event,
+        int $sequence,
+        Carbon $occurredAt,
+        int $siteId,
+        array $resource,
+    ): array {
+        return [
+            'id' => $deliveryId,
+            'event' => $event,
+            'sequence' => $sequence,
+            'occurred_at' => $occurredAt->toJSON(),
+            'site_id' => $siteId,
+            'resource' => $resource,
+        ];
     }
 }
