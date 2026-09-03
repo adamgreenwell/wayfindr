@@ -114,6 +114,13 @@ final class DashboardLanguage
         'dashboard.profile.update',
         'dashboard.profile.alerts.update',
         'dashboard.profile.password.update',
+        'dashboard.profile.two-factor.start',
+        'dashboard.profile.two-factor.confirm',
+        'dashboard.profile.two-factor.cancel',
+        'dashboard.profile.two-factor.recovery-codes.regenerate',
+        'dashboard.profile.two-factor.disable',
+        'dashboard.account.security.show',
+        'dashboard.account.security.update',
         'dashboard.conversations.index',
         'dashboard.tickets.index',
 

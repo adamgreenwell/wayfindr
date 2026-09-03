@@ -20,7 +20,7 @@ use Illuminate\Notifications\Notifiable;
 use Throwable;
 
 #[Fillable(['account_id', 'account_role', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone'])]
-#[Hidden(['password', 'remember_token'])]
+#[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -60,7 +60,18 @@ class User extends Authenticatable
             'deactivated_at' => 'datetime',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'two_factor_secret' => 'encrypted',
+            'two_factor_recovery_codes' => 'array',
+            'two_factor_confirmed_at' => 'datetime',
+            'two_factor_last_used_timestep' => 'integer',
         ];
+    }
+
+    public function hasTwoFactorAuthentication(): bool
+    {
+        return $this->two_factor_confirmed_at !== null
+            && is_string($this->two_factor_secret)
+            && $this->two_factor_secret !== '';
     }
 
     /**

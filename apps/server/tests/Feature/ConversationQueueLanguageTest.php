@@ -1665,6 +1665,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.integrations'),
         route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
+        route('dashboard.account.security.show'),
         route('operator.settings.localization.edit'),
         route('operator.settings.scanning.edit'),
         route('operator.settings.mail.edit'),

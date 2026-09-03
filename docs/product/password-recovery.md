@@ -42,6 +42,10 @@ key cut for whoever already had one. Completing a reset:
 
 Only that agent's sessions; other people stay signed in.
 
+A password reset does **not** disable or satisfy two-factor authentication. An
+enrolled agent still needs their authenticator or an unused recovery code on
+the next sign-in.
+
 > Session deletion applies to the **database** session driver, which is what
 > `.env.example` ships and what the Compose stack runs. Other stores key sessions
 > by id alone with nothing to select a user's rows by, so on those the token
@@ -85,7 +89,7 @@ the test button confirms delivery before anybody needs it.
 
 ## Not covered here
 
-- **Two-factor authentication and SSO** — both real, both Tier 2, and neither
-  should hold recovery up.
+- **SSO and federated identity recovery.** TOTP two-factor authentication has
+  its own [enrollment and recovery-code flow](two-factor-authentication.md).
 - **Email address verification on invite.**
 - **Account lockout policy.**

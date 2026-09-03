@@ -9,6 +9,7 @@ use App\Http\Controllers\AgentAccountBreakGlassController;
 use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
 use App\Http\Controllers\AgentAccountOutboundWebhookController;
+use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentConversationAttachmentController;
@@ -18,6 +19,7 @@ use App\Http\Controllers\AgentConversationTypingController;
 use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
+use App\Http\Controllers\AgentProfileTwoFactorController;
 use App\Http\Controllers\AgentReplyTemplateController;
 use App\Http\Controllers\AgentReportController;
 use App\Http\Controllers\AgentSiteController;
@@ -31,6 +33,7 @@ use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\SessionController;
+use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Http\Controllers\FirstRunSetupController;
 use App\Http\Controllers\OperatorBackupSettingsController;
 use App\Http\Controllers\OperatorBreakGlassController;
@@ -45,6 +48,7 @@ use App\Http\Controllers\OperatorStorageSettingsController;
 use App\Http\Controllers\Widget\WidgetScriptController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
+use App\Http\Middleware\EnsureTwoFactorPolicy;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -59,6 +63,11 @@ Route::post('/setup', [FirstRunSetupController::class, 'store'])->name('setup.st
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])->name('login');
     Route::post('/login', [SessionController::class, 'store'])->name('login.store');
+    Route::get('/two-factor-challenge', [TwoFactorChallengeController::class, 'create'])
+        ->name('two-factor.challenge');
+    Route::post('/two-factor-challenge', [TwoFactorChallengeController::class, 'store'])
+        ->middleware('throttle:two-factor-challenge')
+        ->name('two-factor.challenge.store');
     Route::get('/forgot-password', [PasswordResetController::class, 'create'])->name('password.request');
     Route::post('/forgot-password', [PasswordResetController::class, 'store'])
         ->middleware('throttle:password-reset-request')
@@ -69,7 +78,7 @@ Route::middleware('guest')->group(function () {
         ->name('password.update');
 });
 
-Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
+Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwoFactorPolicy::class])->group(function () {
     Route::get('/dashboard', AgentDashboardController::class)->name('dashboard');
     Route::get('/dashboard/support-code', AgentSupportCodeLookupController::class)
         ->name('dashboard.support-code.lookup');
@@ -83,8 +92,25 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
         ->name('dashboard.profile.alerts.update');
     Route::put('/dashboard/profile/password', [AgentProfileController::class, 'updatePassword'])
         ->name('dashboard.profile.password.update');
+    Route::post('/dashboard/profile/two-factor', [AgentProfileTwoFactorController::class, 'start'])
+        ->name('dashboard.profile.two-factor.start');
+    Route::put('/dashboard/profile/two-factor', [AgentProfileTwoFactorController::class, 'confirm'])
+        ->middleware('throttle:two-factor-confirmation')
+        ->name('dashboard.profile.two-factor.confirm');
+    Route::delete('/dashboard/profile/two-factor/enrolment', [AgentProfileTwoFactorController::class, 'cancel'])
+        ->name('dashboard.profile.two-factor.cancel');
+    Route::post('/dashboard/profile/two-factor/recovery-codes', [AgentProfileTwoFactorController::class, 'regenerate'])
+        ->middleware('throttle:two-factor-confirmation')
+        ->name('dashboard.profile.two-factor.recovery-codes.regenerate');
+    Route::delete('/dashboard/profile/two-factor', [AgentProfileTwoFactorController::class, 'disable'])
+        ->middleware('throttle:two-factor-confirmation')
+        ->name('dashboard.profile.two-factor.disable');
     Route::get('/dashboard/account', AgentAccountController::class)
         ->name('dashboard.account.show');
+    Route::get('/dashboard/account/security', [AgentAccountSecurityController::class, 'show'])
+        ->name('dashboard.account.security.show');
+    Route::put('/dashboard/account/security', [AgentAccountSecurityController::class, 'update'])
+        ->name('dashboard.account.security.update');
     Route::get('/dashboard/account/integrations', [AgentAccountIntegrationsController::class, 'show'])
         ->name('dashboard.account.integrations');
     Route::get('/dashboard/account/api-tokens', [AgentAccountApiTokenController::class, 'index'])
@@ -302,7 +328,7 @@ Route::middleware(['auth', EnsureAgentIsActive::class])->group(function () {
     Route::post('/logout', [SessionController::class, 'destroy'])->name('logout');
 });
 
-Route::middleware(['auth', EnsureAgentIsActive::class, EnsurePlatformOperator::class])
+Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwoFactorPolicy::class, EnsurePlatformOperator::class])
     ->prefix('operator')
     ->name('operator.')
     ->group(function (): void {

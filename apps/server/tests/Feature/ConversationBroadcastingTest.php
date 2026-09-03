@@ -608,6 +608,36 @@ test('visitor messages dispatch conversation message broadcasts', function (): v
     );
 });
 
+test('agent broadcast auth signs an authorized private conversation channel', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    Broadcast::purge('reverb');
+    Broadcast::connection('reverb')->channel('conversations.{supportCode}', ConversationChannel::class);
+
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-AGENT-LIVE',
+    ]);
+
+    $response = $this->actingAs($agent)->postJson('/broadcasting/auth', [
+        'socket_id' => '1234.5678',
+        'channel_name' => 'private-conversations.WF-AGENT-LIVE',
+    ]);
+
+    $signature = hash_hmac('sha256', '1234.5678:private-conversations.WF-AGENT-LIVE', 'reverb-secret');
+
+    $response
+        ->assertOk()
+        ->assertJson([
+            'auth' => 'reverb-key:'.$signature,
+        ]);
+});
+
 test('visitor broadcast auth signs their private conversation channel', function (): void {
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');
     config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');

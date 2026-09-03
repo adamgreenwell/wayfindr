@@ -8,11 +8,14 @@
     "require": {
         "php": "^8.4",
         "ext-curl": "*",
+        "ext-gd": "*",
         "ext-intl": "*",
+        "bacon/bacon-qr-code": "^3.1",
         "laravel/framework": "^13.8",
         "laravel/reverb": "^1.10",
         "laravel/tinker": "^3.0",
         "league/flysystem-aws-s3-v3": "^3.35",
+        "pragmarx/google2fa": "^9.1",
         "predis/predis": "^3.4"
     },
     "require-dev": {

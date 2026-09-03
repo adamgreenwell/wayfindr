@@ -17,21 +17,39 @@ use App\Console\Commands\SendUnattendedConversationAlertsCommand;
 use App\Console\Commands\SweepOrphanedAttachmentsCommand;
 use App\Console\Commands\TranslateCatalogueCommand;
 use App\Console\Commands\UpgradeGuardCommand;
+use App\Http\Middleware\EnsureAgentIsActive;
+use App\Http\Middleware\EnsureTwoFactorPolicy;
 use App\Http\Middleware\RefuseServingWithUnmetRequirements;
+use App\Http\Middleware\SerializeAgentBroadcastAuthorization;
 use App\Http\Middleware\SetDashboardLocale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 
+// Secret-bearing values pass through framework and dependency call frames
+// that Wayfindr cannot annotate. Omitting arguments from every exception trace
+// keeps passwords, TOTP secrets, recovery codes, and provider credentials out
+// of local debug pages and remote exception reporters alike.
+ini_set('zend.exception_ignore_args', '1');
+
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
-        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
+    ->withBroadcasting(__DIR__.'/../routes/channels.php', [
+        'middleware' => [
+            'web',
+            'auth',
+            'auth.session',
+            EnsureAgentIsActive::class,
+            EnsureTwoFactorPolicy::class,
+            SerializeAgentBroadcastAuthorization::class,
+        ],
+    ])
     ->withCommands([
         AlertDigestPreviewCommand::class,
         BackupCommand::class,
@@ -83,5 +101,5 @@ return Application::configure(basePath: dirname(__DIR__))
         // session as old input. Keep operator secrets (S3 access keys) out of
         // that plaintext flash, alongside the framework's password defaults —
         // they are encrypted at rest and must never land in the session store.
-        $exceptions->dontFlash(['s3_access_key', 's3_secret_key']);
+        $exceptions->dontFlash(['s3_access_key', 's3_secret_key', 'one_time_code']);
     })->create();
