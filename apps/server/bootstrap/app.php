@@ -9,6 +9,7 @@ use App\Console\Commands\ExpireBreakGlassGrantsCommand;
 use App\Console\Commands\MailTestCommand;
 use App\Console\Commands\MeasureAttachmentRetentionCommand;
 use App\Console\Commands\PruneCobrowseContentCommand;
+use App\Console\Commands\QueueConversationReplyDeliveriesCommand;
 use App\Console\Commands\RestoreCommand;
 use App\Console\Commands\SanitiseStoredPageUrlsCommand;
 use App\Console\Commands\SendAlertDigestsCommand;
@@ -41,6 +42,7 @@ return Application::configure(basePath: dirname(__DIR__))
         MailTestCommand::class,
         MeasureAttachmentRetentionCommand::class,
         PruneCobrowseContentCommand::class,
+        QueueConversationReplyDeliveriesCommand::class,
         RestoreCommand::class,
         SanitiseStoredPageUrlsCommand::class,
         SendAlertDigestsCommand::class,

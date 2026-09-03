@@ -134,16 +134,23 @@ final class Payload
      * Deliberately not `conversation()`: write does not imply read, and the
      * token supplied the only content returned here itself.
      *
+     * @param  array{body: string}  $input
      * @return array<string, mixed>
      */
-    public static function createdMessage(ConversationMessage $message): array
+    public static function createdMessage(ConversationMessage $message, array $input): array
     {
         return [
             'conversation' => [
                 'support_code' => $message->conversation->support_code,
                 'status' => 'open',
             ],
-            'message' => self::message($message),
+            'message' => [
+                'id' => (int) $message->id,
+                'sender' => 'integration',
+                'type' => 'text',
+                'body' => $input['body'],
+                'created_at' => $message->created_at?->toJSON(),
+            ],
         ];
     }
 

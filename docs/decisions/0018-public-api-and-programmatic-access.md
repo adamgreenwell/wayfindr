@@ -242,9 +242,10 @@ alerts the assigned agent; the notification names the integration that did it.
 token, valid for 24 hours and hashed before storage. A retry with the same key,
 path and validated input returns the original resource receipt without another
 insert, broadcast or lifecycle event. On an email-origin conversation it may
-retry an email handoff that never committed; a message-level delivery marker,
-locked with the handoff, makes a successful replay a no-op instead of a second
-email. Reusing the key for any different request returns `409`.
+retry a pending durable outbox delivery. The unique outbox job retries with
+backoff, and the scheduler recovers a row when the process exits or Redis is
+unavailable before the first handoff. Reusing the key for any different request
+returns `409`.
 
 Receipts store only the resource type and id, not a second copy of a transcript
 or ticket response. They are pruned hourly after the retry window. Writes for

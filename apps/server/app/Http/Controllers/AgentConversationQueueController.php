@@ -133,7 +133,7 @@ class AgentConversationQueueController extends Controller
                 'latestCobrowseSession',
                 'latestAgentMessage',
                 'latestMessage',
-                'latestParticipantMessage',
+                'latestNonIntegrationMessage',
                 'readStates' => fn ($query) => $query->where('user_id', $agent->id),
                 'site',
                 'visitor',

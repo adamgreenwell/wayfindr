@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Support\Reporting;
 
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationRating;
 use App\Models\OperatorSetting;
 use App\Models\User;
-use App\Models\Visitor;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
@@ -398,12 +398,15 @@ final class SupportReport
                 ->needsHumanReply()
                 ->select(['conversations.id', 'conversations.last_message_at', 'conversations.created_at'])
                 ->addSelect([
-                    // Keep the clock on the visitor/agent exchange even when
-                    // a newer integration message updates last_message_at.
-                    'latest_participant_message_at' => ConversationMessage::query()
+                    // Keep the clock on the newest non-integration work
+                    // boundary even when an integration updates activity.
+                    'latest_non_integration_message_at' => ConversationMessage::query()
                         ->select('created_at')
                         ->whereColumn('conversation_id', 'conversations.id')
-                        ->whereIn('sender_type', [Visitor::class, User::class])
+                        ->where(function (Builder $query): void {
+                            $query->where('sender_type', '!=', ApiToken::class)
+                                ->orWhereNull('sender_type');
+                        })
                         ->whereNotNull('created_at')
                         ->orderByDesc('created_at')
                         ->orderByDesc('id')
@@ -416,7 +419,7 @@ final class SupportReport
 
             foreach ($waiting as $conversation) {
                 $since = CarbonImmutable::parse(
-                    $conversation->latest_participant_message_at
+                    $conversation->latest_non_integration_message_at
                     ?? $conversation->last_message_at
                     ?? $conversation->created_at,
                 );

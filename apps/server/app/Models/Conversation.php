@@ -169,19 +169,22 @@ class Conversation extends Model
     }
 
     /**
-     * The latest message that can decide which person owes the next reply.
+     * The latest message that can decide who owes the next human reply.
      *
      * Integration messages remain real conversation activity, but they cannot
-     * stand in for either the visitor or a human support agent when the desk
-     * decides who is waiting on whom.
+     * move that boundary. Senderless and future non-integration message types
+     * still require human review, so only ApiToken is excluded.
      */
-    public function latestParticipantMessage(): HasOne
+    public function latestNonIntegrationMessage(): HasOne
     {
         return $this->hasOne(ConversationMessage::class)
             ->ofMany([
                 'created_at' => 'max',
                 'id' => 'max',
-            ], fn (Builder $query) => $query->whereIn('sender_type', [Visitor::class, User::class]));
+            ], fn (Builder $query) => $query->where(function (Builder $query): void {
+                $query->where('sender_type', '!=', ApiToken::class)
+                    ->orWhereNull('sender_type');
+            }));
     }
 
     public function latestAgentMessage(): HasOne
@@ -293,11 +296,14 @@ class Conversation extends Model
     {
         return $query->where(function (Builder $query): void {
             $query
-                // No participant message means either an empty conversation
+                // No non-integration message means either an empty conversation
                 // or integration-only activity. Neither is a human reply.
-                ->whereDoesntHave('latestParticipantMessage')
-                ->orWhereHas('latestParticipantMessage', fn (Builder $query) => $query
-                    ->where('sender_type', Visitor::class));
+                ->whereDoesntHave('latestNonIntegrationMessage')
+                ->orWhereHas('latestNonIntegrationMessage', fn (Builder $query) => $query
+                    ->where(function (Builder $query): void {
+                        $query->where('sender_type', '!=', User::class)
+                            ->orWhereNull('sender_type');
+                    }));
         });
     }
 
@@ -744,17 +750,17 @@ class Conversation extends Model
 
     /**
      * Activity and human-work boundaries are deliberately different. Prefer
-     * the latest visitor/agent exchange; only fall back to another sender when
-     * the conversation has never had a human participant message at all.
+     * the latest non-integration message; only fall back to an integration
+     * when no other message type has ever supplied a work boundary.
      */
     public function latestMessageForHumanWork(): ?ConversationMessage
     {
-        $participant = $this->relationLoaded('latestParticipantMessage')
-            ? $this->latestParticipantMessage
-            : $this->latestParticipantMessage()->first();
+        $boundary = $this->relationLoaded('latestNonIntegrationMessage')
+            ? $this->latestNonIntegrationMessage
+            : $this->latestNonIntegrationMessage()->first();
 
-        if ($participant) {
-            return $participant;
+        if ($boundary) {
+            return $boundary;
         }
 
         return $this->relationLoaded('latestMessage')

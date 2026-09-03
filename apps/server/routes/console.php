@@ -36,6 +36,11 @@ Schedule::command('wayfindr:prune-api-idempotency-keys')
     ->hourly()
     ->description('Delete expired public API write receipts after their 24-hour retry window.');
 
+Schedule::command('wayfindr:queue-conversation-reply-deliveries')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->description('Recover durable conversation emails whose queue handoff did not complete.');
+
 // Daily rather than only at deploy time, because the deploy's own sweep cannot
 // be the last word. `$ACTIVATE_RELEASE()` stops NEW requests reaching the old
 // release; it does not cancel requests already executing, and one of those is

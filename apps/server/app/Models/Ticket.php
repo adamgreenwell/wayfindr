@@ -100,10 +100,10 @@ class Ticket extends Model
      */
     private static function attentionStateSql(): array
     {
-        // The latest participant message on the ticket's conversation,
+        // The latest non-integration message on the ticket's conversation,
         // matching `Conversation::latestMessageForHumanWork()`. Integration
         // activity is real, but cannot move the human reply boundary. When no
-        // visitor or agent has spoken, fall back to the latest message so an
+        // other sender has spoken, fall back to the latest message so an
         // integration-only conversation still enters the human-work lane.
         //
         // The difference is null `created_at`, which the column allows. A MAX
@@ -118,10 +118,16 @@ class Ticket extends Model
 
         $latestMessageSender = "(select m.sender_type {$datedMessage}"
             .' order by m.created_at desc, m.id desc limit 1)';
-        $latestParticipantSender = "(select m.sender_type {$datedMessage}"
-            .' and m.sender_type in (?, ?)'
+        $nonIntegrationMessage = $datedMessage
+            .' and (m.sender_type <> ? or m.sender_type is null)';
+        $hasNonIntegrationMessage = "exists (select 1 {$nonIntegrationMessage})";
+        $latestNonIntegrationSender = "(select m.sender_type {$nonIntegrationMessage}"
             .' order by m.created_at desc, m.id desc limit 1)';
-        $latestWorkSender = "coalesce({$latestParticipantSender}, {$latestMessageSender})";
+        // CASE rather than COALESCE: null is a supported sender value. A real
+        // senderless message must remain the boundary instead of falling back
+        // to a newer integration message.
+        $latestWorkSender = "(case when {$hasNonIntegrationMessage}"
+            ." then {$latestNonIntegrationSender} else {$latestMessageSender} end)";
 
         // Whether the conversation has a message AT ALL, asked separately from
         // who sent it. `conversation_messages.sender` is a nullable morph, so
@@ -142,9 +148,9 @@ class Ticket extends Model
 
         // The `pending` branch below deliberately does NOT need $hasMessage.
         // `attentionState()` treats a null-sender message and no message alike,
-        // so collapsing both to '' is what that rule actually says. A visitor
-        // or integration message falls through: neither can stand in for the
-        // human reply that would make the ticket wait on the customer.
+        // so collapsing both to '' is what that rule actually says. A visitor,
+        // or integration-only activity, falls through: neither can stand in
+        // for the human reply that would make the ticket wait on the customer.
         $case = "case
             when tickets.status <> 'closed' and {$recentEscalation} then 'escalated'
             when tickets.status = 'closed' then 'resolved'
@@ -158,12 +164,12 @@ class Ticket extends Model
         return [$case, [
             (new self)->getMorphClass(),
             Carbon::now()->subDay(),
-            (new Visitor)->getMorphClass(),
-            (new User)->getMorphClass(),
-            (new Visitor)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
             (new ApiToken)->getMorphClass(),
             (new Visitor)->getMorphClass(),
-            (new User)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
             (new User)->getMorphClass(),
         ]];
     }

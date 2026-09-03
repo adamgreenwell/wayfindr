@@ -207,7 +207,7 @@ class AgentDashboardController extends Controller
 
         $openTicketCount = (clone $visibleOpenTickets)->count();
         $tickets = (clone $visibleOpenTickets)
-            ->with(['conversation.latestMessage', 'conversation.latestParticipantMessage', 'latestEscalationEvent', 'site'])
+            ->with(['conversation.latestMessage', 'conversation.latestNonIntegrationMessage', 'latestEscalationEvent', 'site'])
             ->latest('updated_at')
             ->latest('id')
             ->get();

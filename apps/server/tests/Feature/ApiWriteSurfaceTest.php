@@ -3,12 +3,14 @@
 use App\Enums\AccountRole;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationReadReceiptUpdated;
+use App\Jobs\SendConversationReplyDelivery;
 use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\ApiIdempotencyKey;
 use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationReplyDelivery;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -22,6 +24,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schedule;
 
 uses(RefreshDatabase::class);
@@ -226,7 +229,7 @@ test('an API message is integration-authored, reopens the conversation, and broa
     $response->assertCreated()
         ->assertJsonPath('data.conversation.status', 'open')
         ->assertJsonPath('data.message.sender', 'integration')
-        ->assertJsonPath('data.message.sender_id', $world['token']->id)
+        ->assertJsonMissingPath('data.message.sender_id')
         ->assertJsonMissingPath('data.conversation.subject')
         ->assertJsonMissingPath('data.conversation.visitor_id');
 
@@ -292,7 +295,7 @@ test('an API message is integration-authored, reopens the conversation, and broa
     Event::assertDispatchedTimes(ConversationMessageCreated::class, 1);
 });
 
-test('an API reply to an email conversation is queued exactly once', function (): void {
+test('an API reply to an email conversation is delivered exactly once', function (): void {
     Mail::fake();
     Event::fake([ConversationMessageCreated::class]);
     $world = apiWriteWorld();
@@ -310,11 +313,11 @@ test('an API reply to an email conversation is queued exactly once', function ()
         apiWriteHeaders($world, 'email-message'),
     )->assertCreated();
 
-    Mail::assertQueued(ConversationReplyMessage::class, function (ConversationReplyMessage $mail): bool {
+    Mail::assertSent(ConversationReplyMessage::class, function (ConversationReplyMessage $mail): bool {
         return $mail->hasTo('visitor@example.test')
             && $mail->message->sender_type === ApiToken::class;
     });
-    Mail::assertQueuedCount(1);
+    Mail::assertSentCount(1);
 
     $this->postJson(
         '/api/v1/conversations/WF-APIEMAIL/messages',
@@ -322,11 +325,12 @@ test('an API reply to an email conversation is queued exactly once', function ()
         apiWriteHeaders($world, 'email-message'),
     )->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
 
-    Mail::assertQueuedCount(1);
-    expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull();
+    Mail::assertSentCount(1);
+    expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull()
+        ->and(ConversationReplyDelivery::query()->sole()->delivered_at)->not->toBeNull();
 });
 
-test('an idempotent replay retries an email reply whose first queue handoff failed', function (): void {
+test('an idempotent replay retries an email reply whose first delivery attempt failed', function (): void {
     Event::fake([ConversationMessageCreated::class]);
     $world = apiWriteWorld();
     $world['site']->forceFill(['inbound_address' => 'support@example.test'])->save();
@@ -340,7 +344,7 @@ test('an idempotent replay retries an email reply whose first queue handoff fail
     Mail::shouldReceive('to')
         ->once()
         ->with('visitor@example.test')
-        ->andThrow(new RuntimeException('Queue unavailable.'));
+        ->andThrow(new RuntimeException('Mail transport unavailable.'));
 
     $this->postJson(
         '/api/v1/conversations/WF-APIRETRY/messages',
@@ -348,7 +352,9 @@ test('an idempotent replay retries an email reply whose first queue handoff fail
         apiWriteHeaders($world, 'email-retry'),
     )->assertCreated()->assertHeader('Idempotent-Replayed', 'false');
 
-    expect(ConversationMessage::query()->sole()->email_message_id)->toBeNull();
+    expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull()
+        ->and(ConversationReplyDelivery::query()->sole()->delivered_at)->toBeNull()
+        ->and(ConversationReplyDelivery::query()->sole()->failed_at)->not->toBeNull();
 
     Mail::clearResolvedInstance('mail.manager');
     $this->app->forgetInstance('mail.manager');
@@ -360,8 +366,9 @@ test('an idempotent replay retries an email reply whose first queue handoff fail
         apiWriteHeaders($world, 'email-retry'),
     )->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
 
-    Mail::assertQueued(ConversationReplyMessage::class, 1);
-    expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull();
+    Mail::assertSent(ConversationReplyMessage::class, 1);
+    expect(ConversationReplyDelivery::query()->sole()->delivered_at)->not->toBeNull()
+        ->and(ConversationReplyDelivery::query()->sole()->failed_at)->toBeNull();
 
     $this->postJson(
         '/api/v1/conversations/WF-APIRETRY/messages',
@@ -369,7 +376,51 @@ test('an idempotent replay retries an email reply whose first queue handoff fail
         apiWriteHeaders($world, 'email-retry'),
     )->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
 
-    Mail::assertQueued(ConversationReplyMessage::class, 1);
+    Mail::assertSent(ConversationReplyMessage::class, 1);
+});
+
+test('the scheduler recovers an API reply when the Redis handoff fails', function (): void {
+    Event::fake([ConversationMessageCreated::class]);
+    $world = apiWriteWorld();
+    $world['site']->forceFill(['inbound_address' => 'support@example.test'])->save();
+    $world['visitor']->forceFill(['email' => 'visitor@example.test'])->save();
+    Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+        'support_code' => 'WF-APIHANDOFF',
+        'metadata' => ['channel' => 'email'],
+    ]);
+    $queueManager = Queue::getFacadeRoot();
+
+    Queue::shouldReceive('connection')
+        ->once()
+        ->andThrow(new RuntimeException('Redis unavailable.'));
+
+    try {
+        $this->postJson(
+            '/api/v1/conversations/WF-APIHANDOFF/messages',
+            ['body' => 'This reply must survive the queue outage.'],
+            apiWriteHeaders($world, 'email-handoff'),
+        )->assertCreated();
+    } finally {
+        Queue::swap($queueManager);
+    }
+
+    $delivery = ConversationReplyDelivery::query()->sole();
+
+    expect($delivery->delivered_at)->toBeNull()
+        ->and($delivery->failed_at)->toBeNull();
+
+    Queue::fake();
+
+    $this->artisan('wayfindr:queue-conversation-reply-deliveries')
+        ->expectsOutput('Queued 1 pending conversation reply delivery.')
+        ->assertSuccessful();
+
+    Queue::assertPushed(SendConversationReplyDelivery::class, fn ($job): bool => $job->uniqueId() === (string) $delivery->id);
+
+    expect(collect(Schedule::events())->contains(
+        fn ($event): bool => str_contains((string) $event->command, 'wayfindr:queue-conversation-reply-deliveries')
+            && $event->getExpression() === '* * * * *',
+    ))->toBeTrue();
 });
 
 test('an integration message can bound a visitor read receipt without becoming human work', function (): void {
@@ -461,8 +512,8 @@ test('integration activity preserves the human reply boundary and visitor wait c
             'body' => 'Automated follow-up after an unanswered visitor message.',
         ], apiWriteHeaders($world, 'wait-clock'))->assertCreated();
 
-        $conversation = $conversation->fresh()->load(['latestMessage', 'latestParticipantMessage']);
-        $ticket = $ticket->fresh()->load(['conversation.latestMessage', 'conversation.latestParticipantMessage']);
+        $conversation = $conversation->fresh()->load(['latestMessage', 'latestNonIntegrationMessage']);
+        $ticket = $ticket->fresh()->load(['conversation.latestMessage', 'conversation.latestNonIntegrationMessage']);
         $report = new SupportReport(
             ReportingScope::for($world['account'], $world['agent']),
             ReportingWindow::ofDays(30),
@@ -498,11 +549,23 @@ test('integration activity preserves the human reply boundary and visitor wait c
             'body' => 'Automated follow-up after the human response.',
         ], apiWriteHeaders($world, 'answered-clock'))->assertCreated();
 
-        $answered = $answered->fresh()->load(['latestMessage', 'latestParticipantMessage']);
+        $answered = $answered->fresh()->load(['latestMessage', 'latestNonIntegrationMessage']);
 
         expect($answered->attentionState())->toBe('waiting_on_visitor')
             ->and($answered->queueTimingContext()['wait_since']->equalTo($agentMessageAt))->toBeTrue()
             ->and(Conversation::query()->whereKey($answered->id)->needsHumanReply()->exists())->toBeFalse();
+
+        $senderlessAt = now();
+        ConversationMessage::factory()->for($answered)->create([
+            'sender_type' => null,
+            'sender_id' => null,
+            'created_at' => $senderlessAt,
+        ]);
+        $answered = $answered->fresh()->load(['latestMessage', 'latestNonIntegrationMessage']);
+
+        expect($answered->attentionState())->toBe('needs_reply')
+            ->and($answered->queueTimingContext()['wait_since']->equalTo($senderlessAt))->toBeTrue()
+            ->and(Conversation::query()->whereKey($answered->id)->needsHumanReply()->exists())->toBeTrue();
     } finally {
         CarbonImmutable::setTestNow();
     }

@@ -288,7 +288,7 @@ test('an agent replying to an email conversation sends an email back', function 
         ])
         ->assertRedirect();
 
-    Mail::assertQueued(ConversationReplyMessage::class, function (ConversationReplyMessage $mail): bool {
+    Mail::assertSent(ConversationReplyMessage::class, function (ConversationReplyMessage $mail): bool {
         return $mail->hasTo('ada@example.test');
     });
 
@@ -436,7 +436,7 @@ test('the files an agent attaches travel with the emailed reply', function (): v
         ])
         ->assertRedirect();
 
-    Mail::assertQueued(
+    Mail::assertSent(
         ConversationReplyMessage::class,
         fn (ConversationReplyMessage $mail): bool => count($mail->attachments()) === 1,
     );

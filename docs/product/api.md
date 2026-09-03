@@ -125,10 +125,10 @@ Keys are scoped to the token and retained for 24 hours. Repeating the same key,
 path and validated input returns the same created resource with
 `Idempotent-Replayed: true`; it does not insert, broadcast or record the
 lifecycle action again. For an email-origin conversation, a replay does retry a
-delivery handoff that never committed; the message-level delivery marker keeps
-an already-queued email from being queued twice. Reusing a key for different
-input or another path returns `409`. Only a SHA-256 hash of the key is stored,
-and expired receipts are pruned hourly.
+pending durable outbox delivery. The outbox job is unique per message, retries
+with backoff, and the scheduler recovers rows whose Redis handoff never
+completed. Reusing a key for different input or another path returns `409`.
+Only a SHA-256 hash of the key is stored, and expired receipts are pruned hourly.
 
 ### Who authored an API message
 

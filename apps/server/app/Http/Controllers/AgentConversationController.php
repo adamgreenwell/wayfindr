@@ -48,7 +48,7 @@ class AgentConversationController extends Controller
         $agent = $request->user();
 
         $conversation = $this->conversationForAgent($agent, $supportCode, 'view')
-            ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'latestParticipantMessage', 'site', 'visitor']);
+            ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'latestNonIntegrationMessage', 'site', 'visitor']);
 
         $conversationReturnQuery = $this->conversationQueueReturnQuery($request);
 
@@ -72,7 +72,7 @@ class AgentConversationController extends Controller
             ->orderBy('id')
             ->get();
         $tickets = $conversation->tickets()
-            ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'conversation.latestParticipantMessage'])
+            ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'conversation.latestNonIntegrationMessage'])
             ->latest()
             ->get();
 

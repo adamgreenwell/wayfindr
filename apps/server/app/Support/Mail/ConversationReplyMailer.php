@@ -2,11 +2,11 @@
 
 namespace App\Support\Mail;
 
-use App\Mail\ConversationReplyMessage;
+use App\Jobs\SendConversationReplyDelivery;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationReplyDelivery;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 /**
@@ -20,38 +20,51 @@ final class ConversationReplyMailer
 {
     public function send(ConversationMessage $message): bool
     {
-        return DB::transaction(function () use ($message): bool {
-            // Replays and concurrent API requests all converge on this row.
-            // With the shipped database queue, the job insert and delivery
-            // marker commit together; with another queue, a failed push rolls
-            // the marker back so a later replay can try again.
+        $delivery = DB::transaction(function () use ($message): ?ConversationReplyDelivery {
+            // Replays and concurrent API requests converge on this row before
+            // they create or requeue the one durable outbox record.
             $lockedMessage = ConversationMessage::query()
                 ->whereKey($message->id)
                 ->lockForUpdate()
                 ->first();
 
             if ($lockedMessage === null) {
-                return false;
+                return null;
             }
 
             if ($lockedMessage->email_message_id !== null) {
                 $message->forceFill(['email_message_id' => $lockedMessage->email_message_id]);
 
-                return false;
+                $existing = $lockedMessage->replyDelivery()->first();
+
+                // Messages from before the outbox migration already used this
+                // column as their successful handoff marker. Do not turn them
+                // into duplicate mail during an upgrade.
+                if ($existing === null) {
+                    return null;
+                }
+
+                if ($existing->delivered_at !== null) {
+                    return null;
+                }
+
+                $existing->forceFill(['failed_at' => null])->save();
+
+                return $existing;
             }
 
             $lockedMessage->loadMissing(['attachments', 'conversation.site', 'conversation.visitor']);
             $conversation = $lockedMessage->conversation;
 
             if (! $this->shouldSend($conversation)) {
-                return false;
+                return null;
             }
 
             $site = $conversation->site;
             $email = $conversation->visitor?->email;
 
             if ($site?->inbound_address === null || $email === null) {
-                return false;
+                return null;
             }
 
             // Minted once for both the job and the row. A later reply threads
@@ -59,18 +72,28 @@ final class ConversationReplyMailer
             // would leave the row holding a different one.
             $messageId = '<'.Str::uuid()->toString().'@wayfindr>';
 
-            Mail::to($email)->queue(new ConversationReplyMessage(
-                $lockedMessage,
-                $site,
-                $messageId,
-                $this->parentMessageId($conversation),
-            ));
+            $delivery = $lockedMessage->replyDelivery()->create([
+                'recipient' => $email,
+                'message_id' => $messageId,
+                'in_reply_to' => $this->parentMessageId($conversation),
+            ]);
 
             $lockedMessage->forceFill(['email_message_id' => $messageId])->save();
             $message->forceFill(['email_message_id' => $messageId]);
 
-            return true;
+            return $delivery;
         });
+
+        if ($delivery === null) {
+            return false;
+        }
+
+        // The outbox commits first. If Redis is unavailable or this process
+        // exits here, the scheduler (or an idempotent API replay) finds the
+        // pending row and dispatches this same unique job later.
+        SendConversationReplyDelivery::dispatchPending($delivery->id);
+
+        return true;
     }
 
     /**

@@ -212,7 +212,8 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     // expression cannot silently regress to the latest message again.
     $integrationAfterVisitor = $ticketOnItsOwnConversation('open', $assignee->id);
     $integrationAfterAgent = $ticketOnItsOwnConversation('open', $assignee->id);
-    array_push($handBuilt, $integrationAfterVisitor->id, $integrationAfterAgent->id);
+    $senderlessAfterAgent = $ticketOnItsOwnConversation('open', $assignee->id);
+    array_push($handBuilt, $integrationAfterVisitor->id, $integrationAfterAgent->id, $senderlessAfterAgent->id);
 
     foreach ([
         [$integrationAfterVisitor, Visitor::class, Visitor::query()->firstOrFail()->id],
@@ -235,6 +236,21 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     expect($integrationAfterVisitor->fresh()->attentionState())->toBe('needs_reply')
         ->and($integrationAfterAgent->fresh()->attentionState())->toBe('waiting_on_customer');
 
+    ConversationMessage::factory()->create([
+        'conversation_id' => $senderlessAfterAgent->conversation_id,
+        'sender_type' => User::class,
+        'sender_id' => $assignee->id,
+        'created_at' => now()->subMinutes(5),
+    ]);
+    ConversationMessage::factory()->create([
+        'conversation_id' => $senderlessAfterAgent->conversation_id,
+        'sender_type' => null,
+        'sender_id' => null,
+        'created_at' => now()->subMinute(),
+    ]);
+
+    expect($senderlessAfterAgent->fresh()->attentionState())->toBe('needs_reply');
+
     expect($mixedDates->fresh()->attentionState())->toBe('needs_reply',
         'the fixture no longer separates a MAX from a descending sort')
         ->and($allUndated->fresh()->attentionState())->toBe('needs_agent',
@@ -250,7 +266,7 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     expect($inSql)->not->toBeEmpty();
 
     $tickets = Ticket::query()
-        ->with(['conversation.latestMessage', 'conversation.latestParticipantMessage', 'latestEscalationEvent'])
+        ->with(['conversation.latestMessage', 'conversation.latestNonIntegrationMessage', 'latestEscalationEvent'])
         ->get();
 
     $disagreements = [];

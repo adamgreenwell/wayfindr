@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 #[Fillable(['conversation_id', 'sender_type', 'sender_id', 'type', 'body', 'metadata', 'seen_at', 'email_message_id'])]
@@ -37,5 +38,10 @@ class ConversationMessage extends Model
     public function attachments(): HasMany
     {
         return $this->hasMany(ConversationMessageAttachment::class);
+    }
+
+    public function replyDelivery(): HasOne
+    {
+        return $this->hasOne(ConversationReplyDelivery::class);
     }
 }

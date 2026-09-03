@@ -59,7 +59,7 @@ class AgentTicketController extends Controller
             'assignee',
             'conversation.latestAgentMessage',
             'conversation.latestMessage',
-            'conversation.latestParticipantMessage',
+            'conversation.latestNonIntegrationMessage',
             'externalLinks' => fn ($query) => $query
                 ->latest()
                 ->latest('id'),

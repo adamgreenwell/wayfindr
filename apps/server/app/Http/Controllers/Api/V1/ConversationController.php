@@ -266,8 +266,7 @@ class ConversationController extends Controller
         // Unlike the realtime announcement, email delivery is durable work.
         // A replay must retry it when the first process exited after the write
         // committed or a queue push failed. The mailer locks the message and
-        // no-ops once its delivery marker has committed, so successful sends
-        // are still queued only once.
+        // no-ops once delivery completes, so successful sends remain single.
         try {
             $replyMailer->send($message);
         } catch (Throwable $exception) {
@@ -278,7 +277,7 @@ class ConversationController extends Controller
         }
 
         return response()
-            ->json(['data' => Payload::createdMessage($message)], 201)
+            ->json(['data' => Payload::createdMessage($message, $validated)], 201)
             ->header('Idempotent-Replayed', $result->replayed ? 'true' : 'false');
     }
 
