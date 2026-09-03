@@ -205,6 +205,34 @@ test('a custom agent manager creates teammates inside their own role boundary', 
         ->and($audit->metadata['custom_role_name'])->toBe('Team coordinator');
 });
 
+test('agent creation reauthorizes a stale custom manager after acquiring the account lock', function (): void {
+    $account = Account::factory()->create();
+    $managerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageAgents->value],
+    ]);
+    $readerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewConversations->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $managerRole->id,
+    ]);
+
+    $this->actingAs($manager);
+
+    // Preserve the authenticated instance to model a request that passed the
+    // first gate immediately before an owner reassigned the manager.
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $readerRole->id]);
+
+    $this->post(route('dashboard.account.agents.store'), [
+        'name' => 'Late teammate',
+        'email' => 'late@example.test',
+    ])->assertForbidden();
+
+    expect(User::query()->where('email', 'late@example.test')->exists())->toBeFalse()
+        ->and(AuditEvent::query()->where('action', 'agent.created')->exists())->toBeFalse();
+});
+
 test('account agent creation rejects duplicate emails without updating an existing user', function (): void {
     $account = Account::factory()->create();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
