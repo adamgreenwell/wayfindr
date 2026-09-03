@@ -27,7 +27,7 @@ test('owners can deactivate and reactivate another same-account agent', function
         ->from('/dashboard/account')
         ->post("/dashboard/account/agents/{$agent->id}/deactivate")
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent deactivated.');
+        ->assertSessionHas('status', 'account.flash.deactivated');
 
     $deactivatedEvent = AuditEvent::query()
         ->where('action', 'agent.deactivated')
@@ -48,7 +48,7 @@ test('owners can deactivate and reactivate another same-account agent', function
         ->from('/dashboard/account')
         ->post("/dashboard/account/agents/{$agent->id}/reactivate")
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent reactivated.');
+        ->assertSessionHas('status', 'account.flash.reactivated');
 
     $reactivatedEvent = AuditEvent::query()
         ->where('action', 'agent.reactivated')
@@ -69,7 +69,7 @@ test('admins can deactivate and reactivate non-owner agents', function (): void 
         ->from('/dashboard/account')
         ->post("/dashboard/account/agents/{$agent->id}/deactivate")
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent deactivated.');
+        ->assertSessionHas('status', 'account.flash.deactivated');
 
     expect($agent->fresh()->deactivated_at)->not->toBeNull();
 
@@ -77,7 +77,7 @@ test('admins can deactivate and reactivate non-owner agents', function (): void 
         ->from('/dashboard/account')
         ->post("/dashboard/account/agents/{$agent->id}/reactivate")
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent reactivated.');
+        ->assertSessionHas('status', 'account.flash.reactivated');
 
     expect($agent->fresh()->deactivated_at)->toBeNull();
 });
@@ -159,3 +159,29 @@ test('deactivated agents are signed out before using dashboard routes', function
 
     $this->assertGuest();
 });
+
+test('access changes answer in the account page language', function (string $locale, string $deactivated, string $reactivated): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => $locale,
+    ]);
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    $this->actingAs($owner)
+        ->followingRedirects()
+        ->post(route('dashboard.account.agents.deactivate', $agent))
+        ->assertOk()
+        ->assertSee($deactivated)
+        ->assertDontSee('Agent deactivated.');
+
+    $this->actingAs($owner)
+        ->followingRedirects()
+        ->post(route('dashboard.account.agents.reactivate', $agent))
+        ->assertOk()
+        ->assertSee($reactivated)
+        ->assertDontSee('Agent reactivated.');
+})->with([
+    'German' => ['de', 'Agent deaktiviert.', 'Agent reaktiviert.'],
+    'Italian' => ['it', 'Agente disattivato.', 'Agente riattivato.'],
+]);

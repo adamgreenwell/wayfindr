@@ -79,9 +79,9 @@ class AgentAccountAgentController extends Controller
         ]);
 
         $status = match (true) {
-            $welcomeEmailSent => 'Agent created and welcome email sent.',
-            $welcomeEmailRequested => 'Agent created, but the welcome email could not be sent. Share the temporary password securely.',
-            default => 'Agent created. Share the temporary password securely.',
+            $welcomeEmailSent => 'account.flash.created_and_welcome_sent',
+            $welcomeEmailRequested => 'account.flash.created_welcome_failed',
+            default => 'account.flash.created',
         };
 
         return redirect()

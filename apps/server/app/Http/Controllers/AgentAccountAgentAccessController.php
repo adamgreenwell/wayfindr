@@ -15,7 +15,7 @@ class AgentAccountAgentAccessController extends Controller
 
         return redirect()
             ->route('dashboard.account.show')
-            ->with('status', 'Agent deactivated.');
+            ->with('status', 'account.flash.deactivated');
     }
 
     public function reactivate(Request $request, User $agent, UpdateAgentAccess $updateAgentAccess): RedirectResponse
@@ -24,6 +24,6 @@ class AgentAccountAgentAccessController extends Controller
 
         return redirect()
             ->route('dashboard.account.show')
-            ->with('status', 'Agent reactivated.');
+            ->with('status', 'account.flash.reactivated');
     }
 }

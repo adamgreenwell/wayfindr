@@ -53,38 +53,42 @@ class AccountAlertReadiness
             'detail' => $this->detail($attentionCount, $digestManualCount, $activeAgents->count()),
             'metrics' => [
                 [
-                    'label' => 'Active agents',
-                    'value' => $activeAgents->count().' '.str('active')->plural($activeAgents->count()),
+                    'label' => __('account.team_alert.metrics.active_agents'),
+                    'value' => trans_choice('account.team_alert.metrics.active_count', $activeAgents->count(), [
+                        'count' => ReaderNumber::count($activeAgents->count()),
+                    ]),
                     'tone' => 'ready',
                 ],
                 [
-                    'label' => 'Immediate email',
-                    'value' => $immediateEmailCount.' immediate '.str('email')->plural($immediateEmailCount),
+                    'label' => __('account.team_alert.metrics.immediate'),
+                    'value' => trans_choice('account.team_alert.metrics.immediate_count', $immediateEmailCount, [
+                        'count' => ReaderNumber::count($immediateEmailCount),
+                    ]),
                     'tone' => 'ready',
                 ],
                 [
-                    'label' => 'Digest ready',
-                    'value' => $digestReadyCount.' digest ready',
+                    'label' => __('account.team_alert.metrics.digest_ready'),
+                    'value' => __('account.team_alert.metrics.digest_ready_count', ['count' => ReaderNumber::count($digestReadyCount)]),
                     'tone' => 'ready',
                 ],
                 [
-                    'label' => 'Digest baseline',
-                    'value' => $digestManualCount.' digest needs baseline',
+                    'label' => __('account.team_alert.metrics.baseline'),
+                    'value' => __('account.team_alert.metrics.baseline_count', ['count' => ReaderNumber::count($digestManualCount)]),
                     'tone' => $digestManualCount > 0 ? 'manual' : 'ready',
                 ],
                 [
-                    'label' => 'Needs attention',
-                    'value' => $attentionCount.' needs attention',
+                    'label' => __('account.team_alert.metrics.attention'),
+                    'value' => __('account.team_alert.metrics.attention_count', ['count' => ReaderNumber::count($attentionCount)]),
                     'tone' => $attentionCount > 0 ? 'attention' : 'ready',
                 ],
                 [
-                    'label' => 'Dashboard only',
-                    'value' => $dashboardOnlyOrQuietCount.' dashboard only or quiet',
+                    'label' => __('account.team_alert.metrics.dashboard_only'),
+                    'value' => __('account.team_alert.metrics.dashboard_only_count', ['count' => ReaderNumber::count($dashboardOnlyOrQuietCount)]),
                     'tone' => $dashboardOnlyOrQuietCount > 0 ? 'manual' : 'ready',
                 ],
                 [
-                    'label' => 'Deactivated',
-                    'value' => $deactivatedCount.' deactivated',
+                    'label' => __('account.team_alert.metrics.deactivated'),
+                    'value' => __('account.team_alert.metrics.deactivated_count', ['count' => ReaderNumber::count($deactivatedCount)]),
                     'tone' => $deactivatedCount > 0 ? 'manual' : 'ready',
                 ],
             ],
@@ -121,30 +125,34 @@ class AccountAlertReadiness
     private function label(int $attentionCount, int $digestManualCount): string
     {
         if ($attentionCount > 0) {
-            return $attentionCount.' '.str('agent')->plural($attentionCount).' '.($attentionCount === 1 ? 'needs' : 'need').' attention';
+            return trans_choice('account.team_alert.labels.attention', $attentionCount, [
+                'count' => ReaderNumber::count($attentionCount),
+            ]);
         }
 
         if ($digestManualCount > 0) {
-            return $digestManualCount.' digest '.str('baseline')->plural($digestManualCount).' needed';
+            return trans_choice('account.team_alert.labels.baseline', $digestManualCount, [
+                'count' => ReaderNumber::count($digestManualCount),
+            ]);
         }
 
-        return 'Alert delivery looks ready';
+        return __('account.team_alert.labels.ready');
     }
 
     private function detail(int $attentionCount, int $digestManualCount, int $activeCount): string
     {
         if ($attentionCount > 0) {
-            return 'Digest delivery needs a mail/provider check. Raw provider errors stay in logs, not this account page.';
+            return __('account.team_alert.details.attention');
         }
 
         if ($digestManualCount > 0) {
-            return 'Run the alert digest command once after scheduler setup so digest-enabled agents have a recorded baseline.';
+            return __('account.team_alert.details.baseline');
         }
 
         if ($activeCount === 0) {
-            return 'No active agents can receive alerts yet.';
+            return __('account.team_alert.details.none_active');
         }
 
-        return 'Active agents have a readable notification path for their current preferences.';
+        return __('account.team_alert.details.ready');
     }
 }

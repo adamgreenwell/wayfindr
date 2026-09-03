@@ -1584,6 +1584,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.account.show'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -2051,6 +2052,7 @@ test('every extracted page translates its document title', function (): void {
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.account.show'),
     ];
 
     foreach ($urls as $url) {
@@ -2840,6 +2842,10 @@ test('every catalogue file answers the same set of keys', function (): void {
         'api_tokens.list.column_token = Token',
         'account_audit.references.system = System',
         'account_audit.references.cobrowse = Cobrowse',
+        'account.activity.system = System',
+        'account.create.name = Name',
+        'account.agents.columns.agent = Agent',
+        'account.agents.columns.status = Status',
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',
@@ -3806,6 +3812,7 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.account.show'),
     ];
 
     foreach (['de', 'en'] as $locale) {
@@ -3880,6 +3887,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.account.show'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
 

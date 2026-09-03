@@ -140,5 +140,9 @@ return [
         'credential_token' => 'Token o credenziale',
         'webhook_secret' => 'Segreto webhook',
         'capabilities' => 'Funzioni della connessione',
+
+        // La pagina dell’elenco dell’account.
+        'account_role' => 'Ruolo dell’account',
+        'send_welcome_email' => 'Email di benvenuto',
     ],
 ];

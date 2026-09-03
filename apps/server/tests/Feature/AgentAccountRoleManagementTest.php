@@ -33,7 +33,7 @@ test('account owners can change another same-account agent role from the account
             'account_role' => AccountRole::Admin->value,
         ])
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent role updated.');
+        ->assertSessionHas('status', 'account.flash.role_updated');
 
     $auditEvent = AuditEvent::query()
         ->where('action', 'agent.role_changed')
@@ -90,3 +90,32 @@ test('owners cannot change roles for agents outside their account from the dashb
     expect($outsideAgent->fresh()->account_role)->toBe(AccountRole::Agent)
         ->and(AuditEvent::query()->where('action', 'agent.role_changed')->exists())->toBeFalse();
 });
+
+test('role validation and completion answer in the account page language', function (string $locale, string $validation, string $flash): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => $locale,
+    ]);
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.account.show'))
+        ->put(route('dashboard.account.agents.role.update', $agent), ['account_role' => 'captain'])
+        ->assertRedirect(route('dashboard.account.show'))
+        ->assertSessionHasErrors('account_role');
+
+    expect((string) session('errors')->first('account_role'))->toBe($validation);
+
+    $this->actingAs($owner)
+        ->followingRedirects()
+        ->put(route('dashboard.account.agents.role.update', $agent), [
+            'account_role' => AccountRole::Admin->value,
+        ])
+        ->assertOk()
+        ->assertSee($flash)
+        ->assertDontSee('Agent role updated.');
+})->with([
+    'German' => ['de', 'Der gewählte Wert für Kontorolle ist ungültig.', 'Agentenrolle aktualisiert.'],
+    'Italian' => ['it', 'Il valore selezionato per Ruolo dell’account non è valido.', 'Ruolo dell’agente aggiornato.'],
+]);
