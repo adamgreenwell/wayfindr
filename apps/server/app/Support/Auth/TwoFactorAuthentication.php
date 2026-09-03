@@ -172,10 +172,16 @@ final class TwoFactorAuthentication
         #[\SensitiveParameter] string $credentialFingerprint,
     ): bool {
         return DB::transaction(function () use ($user, $proof, $credentialFingerprint): bool {
-            // User first, then account: the policy writer takes the same order.
-            // This keeps a concurrent policy enable from racing a disable
-            // without serialising every account member's sign-in on one row.
-            $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
+            // Match every account-scoped security writer: account first, then
+            // user. The shared order prevents a concurrent policy enable or
+            // provider update from deadlocking with this disable.
+            $accountId = (int) $user->account_id;
+            $account = Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $locked = User::query()
+                ->whereKey($user->getKey())
+                ->where('account_id', $accountId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
             if (! hash_equals(
                 $credentialFingerprint,
@@ -183,8 +189,6 @@ final class TwoFactorAuthentication
             ) || $locked->isDeactivated()) {
                 return false;
             }
-
-            $account = Account::query()->lockForUpdate()->findOrFail($locked->account_id);
 
             if ($account->requires_two_factor) {
                 return false;

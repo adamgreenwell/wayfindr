@@ -321,6 +321,19 @@ test('broadcast authorization follows the account first writer lock order', func
         ->and($accountLock)->toBeLessThan($userLock);
 });
 
+test('two factor disable follows the account first writer lock order', function (): void {
+    $source = file_get_contents(dirname(__DIR__, 2).'/app/Support/Auth/TwoFactorAuthentication.php');
+    $disableSource = strstr((string) $source, 'public function disable');
+    $accountLock = strpos((string) $disableSource, '$account = Account::query()');
+    $userLock = strpos((string) $disableSource, '$locked = User::query()');
+
+    expect($source)->not->toBeFalse()
+        ->and($disableSource)->not->toBeFalse()
+        ->and($accountLock)->not->toBeFalse()
+        ->and($userLock)->not->toBeFalse()
+        ->and($accountLock)->toBeLessThan($userLock);
+});
+
 test('recovery codes can be replaced with both proofs and two factor can be disabled', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'password' => Hash::make('password'),
