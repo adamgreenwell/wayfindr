@@ -18,7 +18,11 @@ class ConversationPolicy
     public function reply(User $user, Conversation $conversation): bool
     {
         return $this->view($user, $conversation)
-            && $user->hasAccountPermission(AccountPermission::ReplyToConversations);
+            && $user->hasAccountPermission(AccountPermission::ReplyToConversations)
+            // A reply necessarily reopens a closed conversation. Keep that
+            // status transition behind the conversation-management boundary.
+            && ($conversation->status !== 'closed'
+                || $user->hasAccountPermission(AccountPermission::ManageConversations));
     }
 
     public function updateStatus(User $user, Conversation $conversation): bool

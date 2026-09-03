@@ -463,7 +463,9 @@ class AgentConversationController extends Controller
             ]);
         }
 
-        $message = DB::transaction(function () use ($conversation, $agent, $body, $resolvedTemplate, $attachmentIds, $binder) {
+        $canManageConversation = $agent->hasAccountPermission(AccountPermission::ManageConversations);
+
+        $message = DB::transaction(function () use ($conversation, $agent, $body, $resolvedTemplate, $attachmentIds, $binder, $canManageConversation) {
             $message = $conversation->messages()->create([
                 'sender_type' => User::class,
                 'sender_id' => $agent->id,
@@ -485,17 +487,19 @@ class AgentConversationController extends Controller
             $previousStatus = (string) $conversation->status;
 
             $conversation->forceFill([
-                'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
-                'status' => 'open',
-                'closed_at' => null,
+                'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
+                'status' => $canManageConversation ? 'open' : $conversation->status,
+                'closed_at' => $canManageConversation ? null : $conversation->closed_at,
                 'last_message_at' => $message->created_at,
                 'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
             ])->save();
 
             // Replying to a closed conversation reopens it. That was silent
             // before -- indistinguishable from any other message.
-            app(ConversationLifecycleLog::class)
-                ->replyReopenedIfClosed($conversation, $agent, $previousStatus);
+            if ($canManageConversation) {
+                app(ConversationLifecycleLog::class)
+                    ->replyReopenedIfClosed($conversation, $agent, $previousStatus);
+            }
 
             return $message;
         });
@@ -729,7 +733,7 @@ class AgentConversationController extends Controller
             return $ticket;
         });
 
-        if (! $conversation->assigned_agent_id) {
+        if (! $conversation->assigned_agent_id && Gate::forUser($agent)->allows('claim', $conversation)) {
             $conversation->forceFill([
                 'assigned_agent_id' => $agent->id,
             ])->save();
