@@ -11,6 +11,7 @@ FROM dunglas/frankenphp:1-php${PHP_VERSION} AS php-base
 
 RUN install-php-extensions \
         curl \
+        gd \
         intl \
         opcache \
         pcntl \
