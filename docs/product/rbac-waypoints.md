@@ -57,7 +57,7 @@ These are the account permissions Wayfindr models explicitly:
 | `assign_tickets` | yes | yes | yes | yes |
 | `view_alerts` | yes | yes | yes | yes |
 
-Custom roles may contain any of these except `manage_roles`. Replying to, managing, or requesting cobrowse on a conversation requires `view_conversations`; assigning tickets requires `manage_tickets`.
+Custom roles may contain any of these except `manage_roles`. Replying to, managing, or requesting cobrowse on a conversation requires `view_conversations`; assigning tickets requires `manage_tickets`. A visitor-facing reply sent from a linked ticket still requires both `view_conversations` and `reply_to_conversations`: `manage_tickets` alone does not expose the linked support code, transcript, message preview, or conversation history.
 
 `manage_agents` lets a custom-role holder create teammates only in that same
 custom role; it does not mint a broader built-in Agent. `manage_integrations`
@@ -82,6 +82,8 @@ Site access remains separate from RBAC. It already controls which agents can sup
 Owner and admin roles may eventually need elevated views across all sites, but that must be explicit. No future role should accidentally bypass site access because a controller checked only `account_id`.
 
 Built-in owner/admin support queue access still follows site access, and custom roles follow the same boundary. A management view may list sites and assignment metadata for authorized roles, but it must not expose conversation bodies, ticket details, alerts, cobrowse state, or visitor page data unless the person also has support access to that site.
+
+Within that support boundary, mixed visitor and account views query and render conversation history, ticket history, and workload totals independently. A management-only role sees the site and roster metadata needed for its job without inheriting support-volume counts, and a ticket-only or conversation-only role does not receive the other domain's history.
 
 `manage_site_access` requires that permission plus support access to the site, matching the current site settings screen. A later metadata-only account administration surface may allow authorized roles to assign agents to sites they do not personally support, but that should be a separate product decision with tests for cross-account denial, cross-site denial, self-assignment behavior, and attempts to assign agents outside the account.
 
