@@ -44,8 +44,9 @@ class ConversationReplyMessage extends Mailable
                 $headers = $sentMessage->getHeaders();
 
                 // Set explicitly, because the Message-ID is what a later reply
-                // will be threaded against -- it is stored on the row before
-                // this is queued, and the two have to be the same string.
+                // will be threaded against. The queue handoff and row marker
+                // commit together on the shipped database queue, and the two
+                // have to be identical.
                 $headers->remove('Message-ID');
                 $headers->addIdHeader('Message-ID', trim($this->messageId, '<>'));
 

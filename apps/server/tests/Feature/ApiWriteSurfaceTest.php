@@ -326,6 +326,52 @@ test('an API reply to an email conversation is queued exactly once', function ()
     expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull();
 });
 
+test('an idempotent replay retries an email reply whose first queue handoff failed', function (): void {
+    Event::fake([ConversationMessageCreated::class]);
+    $world = apiWriteWorld();
+    $world['site']->forceFill(['inbound_address' => 'support@example.test'])->save();
+    $world['visitor']->forceFill(['email' => 'visitor@example.test'])->save();
+    Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+        'support_code' => 'WF-APIRETRY',
+        'metadata' => ['channel' => 'email'],
+    ]);
+    $payload = ['body' => 'Your replacement is on its way.'];
+
+    Mail::shouldReceive('to')
+        ->once()
+        ->with('visitor@example.test')
+        ->andThrow(new RuntimeException('Queue unavailable.'));
+
+    $this->postJson(
+        '/api/v1/conversations/WF-APIRETRY/messages',
+        $payload,
+        apiWriteHeaders($world, 'email-retry'),
+    )->assertCreated()->assertHeader('Idempotent-Replayed', 'false');
+
+    expect(ConversationMessage::query()->sole()->email_message_id)->toBeNull();
+
+    Mail::clearResolvedInstance('mail.manager');
+    $this->app->forgetInstance('mail.manager');
+    Mail::fake();
+
+    $this->postJson(
+        '/api/v1/conversations/WF-APIRETRY/messages',
+        $payload,
+        apiWriteHeaders($world, 'email-retry'),
+    )->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
+
+    Mail::assertQueued(ConversationReplyMessage::class, 1);
+    expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull();
+
+    $this->postJson(
+        '/api/v1/conversations/WF-APIRETRY/messages',
+        $payload,
+        apiWriteHeaders($world, 'email-retry'),
+    )->assertCreated()->assertHeader('Idempotent-Replayed', 'true');
+
+    Mail::assertQueued(ConversationReplyMessage::class, 1);
+});
+
 test('an integration message can bound a visitor read receipt without becoming human work', function (): void {
     Event::fake([ConversationMessageCreated::class, ConversationReadReceiptUpdated::class]);
     $world = apiWriteWorld();

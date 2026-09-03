@@ -249,10 +249,10 @@ class ConversationController extends Controller
         $message->loadMissing(['sender', 'attachments', 'conversation.site', 'conversation.visitor']);
 
         if (! $result->replayed) {
-            // Persistence is the acceptance boundary. Reverb and mail happen
-            // after commit and independently, so one unavailable transport does
-            // not turn a stored idempotent write into a retry-inducing 500 or
-            // stop the other transport from being attempted.
+            // Persistence is the acceptance boundary. Reverb happens after
+            // commit, so an unavailable transport does not turn a stored
+            // idempotent write into a retry-inducing 500. Unlike the durable
+            // email handoff below, this live announcement only happens once.
             try {
                 event(new ConversationMessageCreated($message));
             } catch (Throwable $exception) {
@@ -261,15 +261,20 @@ class ConversationController extends Controller
                     'exception' => $exception->getMessage(),
                 ]);
             }
+        }
 
-            try {
-                $replyMailer->send($message);
-            } catch (Throwable $exception) {
-                Log::error('API message stored, but queuing its email delivery failed.', [
-                    'conversation_message_id' => $message->id,
-                    'exception' => $exception->getMessage(),
-                ]);
-            }
+        // Unlike the realtime announcement, email delivery is durable work.
+        // A replay must retry it when the first process exited after the write
+        // committed or a queue push failed. The mailer locks the message and
+        // no-ops once its delivery marker has committed, so successful sends
+        // are still queued only once.
+        try {
+            $replyMailer->send($message);
+        } catch (Throwable $exception) {
+            Log::error('API message stored, but queuing its email delivery failed.', [
+                'conversation_message_id' => $message->id,
+                'exception' => $exception->getMessage(),
+            ]);
         }
 
         return response()

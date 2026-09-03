@@ -5,6 +5,7 @@ namespace App\Support\Mail;
 use App\Mail\ConversationReplyMessage;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
@@ -19,35 +20,57 @@ final class ConversationReplyMailer
 {
     public function send(ConversationMessage $message): bool
     {
-        $conversation = $message->conversation;
+        return DB::transaction(function () use ($message): bool {
+            // Replays and concurrent API requests all converge on this row.
+            // With the shipped database queue, the job insert and delivery
+            // marker commit together; with another queue, a failed push rolls
+            // the marker back so a later replay can try again.
+            $lockedMessage = ConversationMessage::query()
+                ->whereKey($message->id)
+                ->lockForUpdate()
+                ->first();
 
-        if (! $this->shouldSend($conversation)) {
-            return false;
-        }
+            if ($lockedMessage === null) {
+                return false;
+            }
 
-        $site = $conversation->site;
-        $email = $conversation->visitor?->email;
+            if ($lockedMessage->email_message_id !== null) {
+                $message->forceFill(['email_message_id' => $lockedMessage->email_message_id]);
 
-        if ($site?->inbound_address === null || $email === null) {
-            return false;
-        }
+                return false;
+            }
 
-        // Minted and stored before the send, because a later reply threads
-        // against this exact string. Generating it inside the mailable would
-        // leave the row holding a different one -- and a thread that cannot
-        // find its parent starts a second conversation.
-        $messageId = '<'.Str::uuid()->toString().'@wayfindr>';
+            $lockedMessage->loadMissing(['attachments', 'conversation.site', 'conversation.visitor']);
+            $conversation = $lockedMessage->conversation;
 
-        $message->forceFill(['email_message_id' => $messageId])->save();
+            if (! $this->shouldSend($conversation)) {
+                return false;
+            }
 
-        Mail::to($email)->queue(new ConversationReplyMessage(
-            $message,
-            $site,
-            $messageId,
-            $this->parentMessageId($conversation),
-        ));
+            $site = $conversation->site;
+            $email = $conversation->visitor?->email;
 
-        return true;
+            if ($site?->inbound_address === null || $email === null) {
+                return false;
+            }
+
+            // Minted once for both the job and the row. A later reply threads
+            // against this exact string; generating it inside the mailable
+            // would leave the row holding a different one.
+            $messageId = '<'.Str::uuid()->toString().'@wayfindr>';
+
+            Mail::to($email)->queue(new ConversationReplyMessage(
+                $lockedMessage,
+                $site,
+                $messageId,
+                $this->parentMessageId($conversation),
+            ));
+
+            $lockedMessage->forceFill(['email_message_id' => $messageId])->save();
+            $message->forceFill(['email_message_id' => $messageId]);
+
+            return true;
+        });
     }
 
     /**
@@ -68,7 +91,6 @@ final class ConversationReplyMailer
         return $conversation->messages()
             ->whereNotNull('email_message_id')
             ->orderByDesc('id')
-            ->skip(1)
             ->value('email_message_id');
     }
 }
