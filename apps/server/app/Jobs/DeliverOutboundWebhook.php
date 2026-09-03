@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Models\OutboundWebhookDelivery;
-use App\Models\OutboundWebhookEndpoint;
 use App\Models\Site;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use GuzzleHttp\Psr7\FnStream;
@@ -81,31 +80,13 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
 
         try {
             $shouldRetry = DB::transaction(function () use ($pointer, $destination): bool {
-                // One lock order everywhere: endpoint, site, delivery. Holding
-                // the lifecycle rows through the POST gives disable/purge a
-                // precise contract: they either win before this recheck and no
-                // request starts, or wait for this already-started request to
-                // finish before they return.
-                $endpoint = OutboundWebhookEndpoint::query()
-                    ->whereKey($pointer->outbound_webhook_endpoint_id)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($endpoint === null) {
-                    return false;
-                }
-
-                if (! $endpoint->isEnabled()) {
-                    OutboundWebhookDelivery::query()
-                        ->whereKey($pointer->id)
-                        ->whereNull('delivered_at')
-                        ->whereNull('failed_at')
-                        ->whereNull('cancelled_at')
-                        ->update(['cancelled_at' => now()]);
-
-                    return false;
-                }
-
+                // Holding the site and this specific delivery through the POST
+                // gives purge/disable a precise contract: they either win
+                // before this recheck and no request starts, or wait for this
+                // already-started request to finish before they return. Do NOT
+                // lock the endpoint here: publishers use that row to allocate
+                // sequence numbers, and foreground support writes must never
+                // queue behind subscriber network I/O.
                 $site = Site::query()
                     ->whereKey($pointer->site_id)
                     ->lockForUpdate()
@@ -122,12 +103,29 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
 
                 if (
                     $delivery === null
-                    || (int) $delivery->outbound_webhook_endpoint_id !== (int) $endpoint->id
                     || (int) $delivery->site_id !== (int) $site->id
                     || $delivery->delivered_at !== null
                     || $delivery->failed_at !== null
                     || $delivery->cancelled_at !== null
                 ) {
+                    return false;
+                }
+
+                // A plain fresh read is intentional. Disable locks the endpoint
+                // only long enough to stop publishers, then cancels this row;
+                // if it is in progress, that cancellation waits on the delivery
+                // lock above. Therefore an uncommitted disable means this POST
+                // is already the winner, while a committed disable is visible
+                // here and prevents it. No endpoint lock is needed across I/O.
+                $endpoint = $delivery->endpoint()->first();
+
+                if (
+                    $endpoint === null
+                    || (int) $endpoint->id !== (int) $pointer->outbound_webhook_endpoint_id
+                    || ! $endpoint->isEnabled()
+                ) {
+                    $delivery->forceFill(['cancelled_at' => now()])->save();
+
                     return false;
                 }
 
