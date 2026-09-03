@@ -74,7 +74,7 @@ Site access remains separate from RBAC. It already controls which agents can sup
 
 Owner and admin roles may eventually need elevated views across all sites, but that must be explicit. No future role should accidentally bypass site access because a controller checked only `account_id`.
 
-Built-in and custom role support queue access still follows site access. A management view may list sites and assignment metadata for authorized roles, but it must not expose conversation bodies, ticket details, alerts, cobrowse state, or visitor page data unless the person also has support access to that site.
+Built-in owner/admin support queue access still follows site access, and custom roles follow the same boundary. A management view may list sites and assignment metadata for authorized roles, but it must not expose conversation bodies, ticket details, alerts, cobrowse state, or visitor page data unless the person also has support access to that site.
 
 `manage_site_access` requires that permission plus support access to the site, matching the current site settings screen. A later metadata-only account administration surface may allow authorized roles to assign agents to sites they do not personally support, but that should be a separate product decision with tests for cross-account denial, cross-site denial, self-assignment behavior, and attempts to assign agents outside the account.
 
