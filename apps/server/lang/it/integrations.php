@@ -51,7 +51,7 @@ return [
     'capabilities' => [
         'heading' => 'Funzioni della connessione',
         'help' => 'Scelga cosa possono inviare gli agenti tramite questa connessione salvata. I webhook in ingresso firmati vengono autenticati separatamente con il segreto condiviso.',
-        'aria' => 'Funzioni della connessione',
+        'aria' => 'Funzioni della connessione :connection',
         'update' => 'Aggiorna funzioni',
         'labels' => [
             'create_issue' => 'Crea segnalazioni',
@@ -75,7 +75,7 @@ return [
         'missing_title' => 'Sincronizzazione in ingresso non configurata.',
         'missing_body' => 'Imposti un segreto webhook per questa connessione e indirizzi il provider all’URL seguente per sincronizzare lo stato della segnalazione.',
         'generated_url' => 'URL del webhook generato',
-        'settings_aria' => 'Impostazioni del webhook in ingresso',
+        'settings_aria' => 'Impostazioni del webhook in ingresso per :connection',
         'provider_destination_title' => 'Destinazione del provider:',
         'provider_destination_body' => 'Incolli l’URL generato nelle impostazioni webhook di questa connessione.',
         'github_title' => 'Impostazioni GitHub:',

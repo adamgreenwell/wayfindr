@@ -52,7 +52,7 @@ return [
     'capabilities' => [
         'heading' => 'Connection capabilities',
         'help' => 'Choose what agents may send through this saved connection. Inbound signed webhooks are authenticated separately by the shared secret.',
-        'aria' => 'Connection capabilities',
+        'aria' => 'Connection capabilities for :connection',
         'update' => 'Update capabilities',
         'labels' => [
             'create_issue' => 'Create issues',
@@ -76,7 +76,7 @@ return [
         'missing_title' => 'Inbound sync not configured.',
         'missing_body' => 'Set a webhook secret on this connection and point the provider at the URL below to sync issue state back.',
         'generated_url' => 'Generated webhook URL',
-        'settings_aria' => 'Inbound webhook settings',
+        'settings_aria' => 'Inbound webhook settings for :connection',
         'provider_destination_title' => 'Provider destination:',
         'provider_destination_body' => 'Paste the generated URL into this connection’s webhook settings.',
         'github_title' => 'GitHub settings:',
