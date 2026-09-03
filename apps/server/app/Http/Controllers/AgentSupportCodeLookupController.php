@@ -37,7 +37,7 @@ class AgentSupportCodeLookupController extends Controller
         if ($request->query('reference_type') === 'visitor') {
             $visitor = $this->visibleVisitor($lookupReference, $agent);
 
-            if ($visitor) {
+            if ($visitor && Gate::forUser($agent)->allows('view', $visitor)) {
                 return redirect()
                     ->route('dashboard.visitors.show', $visitor)
                     ->with('support_code_lookup_result', $this->visitorMatchedMessage($lookupReference));

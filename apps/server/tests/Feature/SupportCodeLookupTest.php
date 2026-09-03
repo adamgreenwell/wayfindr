@@ -1,7 +1,10 @@
 <?php
 
+use App\Enums\AccountPermission;
+use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -314,6 +317,30 @@ test('explicit visitor support lookup does not treat numeric host visitor id as 
             'support_code' => '12345',
         ]))
         ->assertRedirect(route('dashboard.visitors.show', $visitor));
+});
+
+test('explicit visitor lookup does not reveal matches to settings only roles', function (): void {
+    $account = Account::factory()->create();
+    $settingsRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $settingsRole->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    Visitor::factory()->for($site)->create(['external_id' => 'customer-private-match']);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.support-code.lookup', [
+            'reference_type' => 'visitor',
+            'support_code' => 'customer-private-match',
+        ]))
+        ->assertRedirect(route('dashboard'))
+        ->assertSessionHas(
+            'support_code_lookup_status',
+            'No visible support record found for customer-private-match.',
+        );
 });
 
 test('support code lookup does not expose another account record', function (): void {
