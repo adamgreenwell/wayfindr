@@ -8,8 +8,8 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\CustomRole;
-use App\Models\Site;
 use App\Models\User;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,6 +21,8 @@ use Illuminate\View\View;
 
 final class AgentAccountCustomRoleController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function index(Request $request): View
     {
         $actor = $request->user();
@@ -77,7 +79,7 @@ final class AgentAccountCustomRoleController extends Controller
             DB::transaction(function () use ($actor, $customRole, $attributes): void {
                 $role = $this->roleForActor($actor, $customRole, true);
                 $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key'], (int) $role->id);
-                $this->ensureSiteManagerCoverage($role, $attributes['permissions']);
+                $this->siteManagerCoverage->ensureRolePermissionsCanChange($role, $attributes['permissions']);
                 $oldName = $role->name;
                 $oldPermissions = $role->permissionValues();
                 $role->fill($attributes)->save();
@@ -189,36 +191,6 @@ final class AgentAccountCustomRoleController extends Controller
 
         if ($query->exists()) {
             $this->throwDuplicateNameValidation();
-        }
-    }
-
-    /** @param list<string> $permissions */
-    private function ensureSiteManagerCoverage(CustomRole $role, array $permissions): void
-    {
-        if (! $role->hasPermission(AccountPermission::ManageSiteAccess)
-            || in_array(AccountPermission::ManageSiteAccess->value, $permissions, true)) {
-            return;
-        }
-
-        $strandedSite = $role->account
-            ->sites()
-            ->whereHas('supportAgents', fn ($query) => $query
-                ->where('users.account_id', $role->account_id)
-                ->whereNull('users.deactivated_at')
-                ->where('users.custom_role_id', $role->id))
-            ->with(['supportAgents' => fn ($query) => $query
-                ->where('users.account_id', $role->account_id)
-                ->whereNull('users.deactivated_at')
-                ->with('customRole')])
-            ->get()
-            ->first(fn (Site $site): bool => ! $site->supportAgents
-                ->contains(fn (User $user): bool => (int) $user->custom_role_id !== (int) $role->id
-                    && $user->hasAccountPermission(AccountPermission::ManageSiteAccess)));
-
-        if ($strandedSite instanceof Site) {
-            throw ValidationException::withMessages([
-                'permissions' => __('account_roles.errors.site_manager_required', ['site' => $strandedSite->name]),
-            ]);
         }
     }
 

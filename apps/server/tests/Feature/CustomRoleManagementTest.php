@@ -230,6 +230,41 @@ test('site management permission cannot be removed from a sites only assigned ma
         ->and($role->fresh()->hasPermission(AccountPermission::ManageSiteAccess))->toBeFalse();
 });
 
+test('a sites only assigned manager cannot be moved to a role without site management', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageSiteAccess->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Managed docs']);
+    $site->supportAgents()->attach($manager);
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.account.show'))
+        ->put(route('dashboard.account.agents.role.update', $manager), [
+            'account_role' => AccountRole::Agent->value,
+        ])
+        ->assertRedirect(route('dashboard.account.show'))
+        ->assertSessionHasErrors('account_role');
+
+    expect($manager->fresh()->custom_role_id)->toBe($role->id);
+
+    $site->supportAgents()->attach($owner);
+
+    $this->actingAs($owner)
+        ->put(route('dashboard.account.agents.role.update', $manager), [
+            'account_role' => AccountRole::Agent->value,
+        ])
+        ->assertRedirect(route('dashboard.account.show'));
+
+    expect($manager->fresh()->custom_role_id)->toBeNull()
+        ->and($manager->fresh()->account_role)->toBe(AccountRole::Agent);
+});
+
 test('custom roles cannot receive the non delegable role management permission', function (): void {
     $account = Account::factory()->create();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);

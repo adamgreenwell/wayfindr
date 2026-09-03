@@ -6,6 +6,7 @@ use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\CustomRole;
 use App\Models\User;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -15,6 +16,8 @@ use Illuminate\Validation\ValidationException;
 
 class UpdateAgentRole
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function handle(User $actor, User $target, AccountRole|CustomRole $role): User
     {
         return DB::transaction(function () use ($actor, $target, $role): User {
@@ -36,6 +39,8 @@ class UpdateAgentRole
             if ($oldRole === $newAccountRole && (int) $target->custom_role_id === (int) $newCustomRoleId) {
                 return $target;
             }
+
+            $this->siteManagerCoverage->ensureAgentRoleCanChange($target, $role);
 
             $target->forceFill([
                 'account_role' => $newAccountRole,
