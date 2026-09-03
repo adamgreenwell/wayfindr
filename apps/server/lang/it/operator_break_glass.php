@@ -153,5 +153,9 @@ return [
 
     'errors' => [
         'grant_not_active' => 'Questa concessione non è attiva.',
+        'not_awaiting_approval' => 'Questa concessione non è in attesa di approvazione.',
+        'self_approval_requires_standing' => 'L’autoapprovazione richiede il ruolo di titolare o amministratore dell’account di destinazione.',
+        'account_decides' => 'Questo account ha un titolare o un amministratore, quindi spetta a loro decidere. La sua richiesta è in attesa.',
+        'only_active_can_close' => 'È possibile terminare solo una concessione attiva.',
     ],
 ];

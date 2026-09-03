@@ -153,5 +153,9 @@ return [
 
     'errors' => [
         'grant_not_active' => 'Diese Zugriffsfreigabe ist nicht aktiv.',
+        'not_awaiting_approval' => 'Für diese Zugriffsfreigabe steht keine Genehmigung mehr aus.',
+        'self_approval_requires_standing' => 'Die Selbstgenehmigung erfordert die Rolle als Inhaber oder Admin des Zielkontos.',
+        'account_decides' => 'Dieses Konto hat eine Inhaberin, einen Inhaber oder eine Admin-Person. Diese Person entscheidet; Ihre Anfrage wartet auf sie.',
+        'only_active_can_close' => 'Nur eine aktive Zugriffsfreigabe kann beendet werden.',
     ],
 ];

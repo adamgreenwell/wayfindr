@@ -368,6 +368,59 @@ test('operator access validation and lifecycle flashes follow the operator langu
         ->assertDontSee('Grant closed.');
 });
 
+test('stale and ineligible break-glass writes fail in the reader language', function (): void {
+    $w = breakGlassFlowWorld();
+    $w['operator']->forceFill(['locale' => 'de'])->save();
+    $operator = $w['operator']->fresh();
+    $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
+
+    $active = BreakGlassGrant::factory()->activeFor($w['account'], $operator)->create();
+
+    $this->actingAs($operator)
+        ->post(route('operator.break-glass.approve', $active))
+        ->assertStatus(409)
+        ->assertSee('Für diese Zugriffsfreigabe steht keine Genehmigung mehr aus.');
+
+    $pending = BreakGlassGrant::factory()
+        ->scopedToConversation($w['conversation'])
+        ->create(['requester_id' => $operator->id, 'account_id' => $w['account']->id]);
+
+    $this->actingAs($operator)
+        ->post(route('operator.break-glass.approve', $pending))
+        ->assertForbidden()
+        ->assertSee('Dieses Konto hat eine Inhaberin, einen Inhaber oder eine Admin-Person.');
+
+    $foreignAccount = Account::factory()->create();
+    $foreignGrant = BreakGlassGrant::factory()->create([
+        'account_id' => $foreignAccount->id,
+        'requester_id' => $operator->id,
+        'scope_type' => BreakGlassGrant::SCOPE_ACCOUNT,
+    ]);
+
+    $this->actingAs($operator)
+        ->post(route('operator.break-glass.approve', $foreignGrant))
+        ->assertForbidden()
+        ->assertSee('Die Selbstgenehmigung erfordert die Rolle als Inhaber oder Admin des Zielkontos.');
+
+    $closed = BreakGlassGrant::factory()->create([
+        'account_id' => $w['account']->id,
+        'requester_id' => $operator->id,
+        'status' => BreakGlassGrant::STATUS_CLOSED,
+    ]);
+
+    $this->actingAs($operator)
+        ->post(route('operator.break-glass.close', $closed))
+        ->assertStatus(409)
+        ->assertSee('Nur eine aktive Zugriffsfreigabe kann beendet werden.');
+
+    $admin->forceFill(['locale' => 'it'])->save();
+
+    $this->actingAs($admin->fresh())
+        ->post(route('dashboard.account.break-glass.deny', $active))
+        ->assertStatus(409)
+        ->assertSee('Questa concessione non è in attesa di approvazione.');
+});
+
 // --- Account approval page ------------------------------------------------------
 
 test('an account admin sees pending requests and approves one', function (): void {

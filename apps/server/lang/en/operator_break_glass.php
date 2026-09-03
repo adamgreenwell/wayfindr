@@ -155,5 +155,9 @@ return [
 
     'errors' => [
         'grant_not_active' => 'This grant is not active.',
+        'not_awaiting_approval' => 'This grant is not awaiting approval.',
+        'self_approval_requires_standing' => 'Self-approval requires owner or admin standing on the target account.',
+        'account_decides' => 'This account has an owner or admin, so they decide. Your request is waiting with them.',
+        'only_active_can_close' => 'Only an active grant can be closed.',
     ],
 ];
