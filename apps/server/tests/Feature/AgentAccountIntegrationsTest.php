@@ -310,7 +310,7 @@ test('integration writes answer in the language of the page they return to', fun
     $admin->forceFill(['locale' => 'de'])->save();
     $admin = $admin->fresh();
 
-    // Connection creation is shared with the still-English site page, so the
+    // Connection creation is shared with the now-extracted site page, so the
     // Referer decides the validation language instead of the write route.
     $invalid = [
         'return_to' => 'integrations',
@@ -334,8 +334,8 @@ test('integration writes answer in the language of the page they return to', fun
         ->assertSessionHasErrors('base_url');
 
     expect((string) session('errors')->first('base_url'))
-        ->toContain('valid URL')
-        ->not->toContain('Basis-URL');
+        ->toContain('Basis-URL')
+        ->not->toContain('valid URL');
 
     $this->actingAs($admin)
         ->from(route('dashboard.account.integrations'))

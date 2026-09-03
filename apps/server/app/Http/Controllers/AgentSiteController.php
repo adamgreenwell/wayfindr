@@ -11,9 +11,9 @@ use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
-use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\OperatorDashboardPresenter;
 use App\Support\OperatorReadiness;
 use App\Support\ReaderNumber;
 use App\Support\SiteInstallHealth;
@@ -163,6 +163,8 @@ class AgentSiteController extends Controller
         $maskSelectors = $this->maskSelectors($site);
         $maskTerms = $this->maskTerms($site);
         $externalIssueHealth = $this->externalIssueHealth($site);
+        $installHealth = $this->localizedSiteInstallHealth($site->latestVisitor);
+        $installHostDiagnostic = $this->localizedSiteInstallHostDiagnostic($site->latestVisitor, $site->domain);
 
         return view('agent.sites.show', [
             'account' => $account,
@@ -186,11 +188,11 @@ class AgentSiteController extends Controller
             'ratingPrompt' => SiteRatingPrompt::for($site),
             'widgetLocale' => WidgetLanguage::for($site),
             'widgetLanguages' => WidgetLanguage::options(),
-            'dataResponsibility' => config('wayfindr.data_responsibility'),
-            'externalIssueCapabilities' => ExternalIssueCapability::options(),
             'externalIssueHealth' => $externalIssueHealth,
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
-            'externalIssueProviders' => ExternalIssueProvider::options(),
+            'installHealth' => $installHealth,
+            'installHostDiagnostic' => $installHostDiagnostic,
+            'installVerification' => $this->localizedSiteInstallVerification($site->latestVisitor),
             'presenceEnabled' => SitePresenceReporting::for($site)->enabled,
             'presencePageUrls' => SitePresenceReporting::for($site)->pageUrls,
             // The same number the visitor's notice quotes. An operator reading
@@ -201,7 +203,7 @@ class AgentSiteController extends Controller
             'presenceEvery' => SitePresenceReporting::HEARTBEAT_SECONDS,
             'maskSelectors' => $maskSelectors,
             'maskTerms' => $maskTerms,
-            'operatorSmokePath' => $readiness->summary()['smoke_path'],
+            'operatorSmokePath' => OperatorDashboardPresenter::readiness($readiness->summary())['smoke_path'],
             'site' => $site,
             'siteActivity' => $this->siteActivityItems($site, $agent),
             'siteActivityAuditUrl' => $agent->isAdmin()
@@ -214,6 +216,7 @@ class AgentSiteController extends Controller
             'siteHasExplicitSupportAgents' => $site->hasExplicitSupportAgents(),
             'siteSupportLoad' => $this->siteSupportLoad($site, $supportAgentIds, $accountAgents->count()),
             'siteSupportReadiness' => $this->siteSupportReadiness($site, $supportAgentIds, $maskSelectors, $externalIssueHealth),
+            'siteStatusFeedback' => $this->siteShowStatusFeedback($request->session()->get('status')),
             'supportAgentIds' => $supportAgentIds,
             'supportAgents' => $accountAgents->whereIn('id', $supportAgentIds)->values(),
             'widgetInstallSnippet' => $this->widgetInstallSnippet($site),
@@ -252,10 +255,11 @@ class AgentSiteController extends Controller
             ->limit(5)
             ->get()
             ->map(fn (AuditEvent $event): array => [
-                'label' => 'Site access updated',
-                'actor' => $event->actor instanceof User ? $event->actor->name : 'System',
+                'label' => __('site_settings.activity.label'),
+                'actor' => $event->actor instanceof User ? $event->actor->name : __('site_settings.activity.system'),
+                'actor_is_authored' => $event->actor instanceof User,
                 'subject' => $event->subject instanceof Site ? $event->subject->name : $site->name,
-                'body' => 'Updated support access',
+                'body' => __('site_settings.activity.body'),
                 'occurred_at' => $event->occurred_at,
             ]);
     }
@@ -281,37 +285,37 @@ class AgentSiteController extends Controller
 
         return collect([
             [
-                'label' => 'Open conversations',
-                'value' => $openConversationCount.' '.Str::plural('conversation', $openConversationCount),
-                'detail' => 'Currently open for this site.',
+                'label' => __('site_settings.load.conversations.label'),
+                'value' => trans_choice('site_settings.load.conversations.count', $openConversationCount, ['count' => ReaderNumber::count($openConversationCount)]),
+                'detail' => __('site_settings.load.conversations.detail'),
                 'href' => route('dashboard.conversations.index', ['conversation_site' => $site->id]),
-                'action' => 'View conversations',
+                'action' => __('site_settings.load.conversations.action'),
             ],
             [
-                'label' => 'Open tickets',
-                'value' => $openTicketCount.' '.Str::plural('ticket', $openTicketCount),
-                'detail' => 'Active tickets for this site.',
+                'label' => __('site_settings.load.open_tickets.label'),
+                'value' => trans_choice('site_settings.load.open_tickets.count', $openTicketCount, ['count' => ReaderNumber::count($openTicketCount)]),
+                'detail' => __('site_settings.load.open_tickets.detail'),
                 'href' => route('dashboard.tickets.index', ['ticket_site' => $site->id]),
-                'action' => 'View open tickets',
+                'action' => __('site_settings.load.open_tickets.action'),
             ],
             [
-                'label' => 'Pending tickets',
-                'value' => $pendingTicketCount.' '.Str::plural('ticket', $pendingTicketCount),
-                'detail' => 'Waiting on a customer, agent, or next step.',
+                'label' => __('site_settings.load.pending_tickets.label'),
+                'value' => trans_choice('site_settings.load.pending_tickets.count', $pendingTicketCount, ['count' => ReaderNumber::count($pendingTicketCount)]),
+                'detail' => __('site_settings.load.pending_tickets.detail'),
                 'href' => route('dashboard.tickets.index', [
                     'ticket_status' => 'pending',
                     'ticket_site' => $site->id,
                 ]),
-                'action' => 'View pending tickets',
+                'action' => __('site_settings.load.pending_tickets.action'),
             ],
             [
-                'label' => 'Support coverage',
-                'value' => $supportAgentCount.' '.Str::plural('agent', $supportAgentCount),
+                'label' => __('site_settings.load.coverage.label'),
+                'value' => trans_choice('site_settings.load.coverage.count', $supportAgentCount, ['count' => ReaderNumber::count($supportAgentCount)]),
                 'detail' => $site->hasExplicitSupportAgents()
-                    ? 'Active agents assigned to this site.'
-                    : 'Account-wide fallback is active for this site.',
+                    ? __('site_settings.load.coverage.explicit')
+                    : __('site_settings.load.coverage.fallback'),
                 'href' => route('dashboard.sites.show', $site).'#support-access-heading',
-                'action' => 'Review access',
+                'action' => __('site_settings.load.coverage.action'),
             ],
         ]);
     }
@@ -330,39 +334,45 @@ class AgentSiteController extends Controller
 
         return collect([
             [
-                'label' => 'Widget install',
+                'label' => __('site_settings.readiness.items.install.label'),
                 'value' => $installHealth['label'],
                 'tone' => $installHealth['tone'],
                 'detail' => $installHealth['needs_attention']
                     ? $installHealth['detail']
-                    : 'The widget has checked in recently.',
+                    : __('site_settings.readiness.items.install.recent'),
                 'href' => route('dashboard.sites.show', $site).'#install-verification',
             ],
             [
-                'label' => 'Support coverage',
-                'value' => $explicitSupport ? 'Explicit access' : 'Account-wide fallback',
+                'label' => __('site_settings.readiness.items.coverage.label'),
+                'value' => $explicitSupport
+                    ? __('site_settings.readiness.items.coverage.explicit')
+                    : __('site_settings.readiness.items.coverage.fallback'),
                 'tone' => $explicitSupport ? 'ready' : 'manual',
                 'detail' => $explicitSupport
-                    ? count($supportAgentIds).' assigned'
-                    : 'All account agents can support this site until explicit access is configured.',
+                    ? trans_choice('site_settings.readiness.items.coverage.assigned', count($supportAgentIds), ['count' => ReaderNumber::count(count($supportAgentIds))])
+                    : __('site_settings.readiness.items.coverage.fallback_detail'),
                 'href' => route('dashboard.sites.show', $site).'#support-access-heading',
             ],
             [
-                'label' => 'Privacy masking',
-                'value' => count($maskSelectors) > 0 ? count($maskSelectors).' selectors configured' : 'No custom selectors',
+                'label' => __('site_settings.readiness.items.privacy.label'),
+                'value' => count($maskSelectors) > 0
+                    ? trans_choice('site_settings.readiness.items.privacy.configured', count($maskSelectors), ['count' => ReaderNumber::count(count($maskSelectors))])
+                    : __('site_settings.readiness.items.privacy.none'),
                 'tone' => count($maskSelectors) > 0 ? 'ready' : 'manual',
                 'detail' => count($maskSelectors) > 0
-                    ? 'Custom selectors are sent as public widget configuration.'
-                    : 'Known sensitive fields still use built-in masking patterns.',
+                    ? __('site_settings.readiness.items.privacy.configured_detail')
+                    : __('site_settings.readiness.items.privacy.none_detail'),
                 'href' => route('dashboard.sites.show', $site).'#privacy-settings-heading',
             ],
             [
-                'label' => 'External routing',
-                'value' => $handoffProjectCount > 0 ? $handoffProjectCount.' mapped' : 'Not mapped',
+                'label' => __('site_settings.readiness.items.external.label'),
+                'value' => $handoffProjectCount > 0
+                    ? trans_choice('site_settings.readiness.items.external.mapped', $handoffProjectCount, ['count' => ReaderNumber::count($handoffProjectCount)])
+                    : __('site_settings.readiness.items.external.none'),
                 'tone' => $handoffProjectCount > 0 ? $externalIssueHealth['tone'] : 'manual',
                 'detail' => $handoffProjectCount > 0
-                    ? 'Ticket handoff can use mapped external issue projects.'
-                    : 'Map external issue routing if tickets should leave Wayfindr.',
+                    ? __('site_settings.readiness.items.external.mapped_detail')
+                    : __('site_settings.readiness.items.external.none_detail'),
                 'href' => route('dashboard.sites.show', $site).'#external-issue-routing-heading',
             ],
         ]);
@@ -382,7 +392,7 @@ class AgentSiteController extends Controller
      *     detail: string,
      *     metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>,
      *     status_counts: Collection<int, array{key: string, label: string, count: int}>,
-     *     recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>
+     *     recent_failures: Collection<int, array{body_feedback: array<string, mixed>, status: string|null, occurred_at: Carbon|null}>
      * }
      */
     private function externalIssueHealth(Site $site): array
@@ -411,83 +421,80 @@ class AgentSiteController extends Controller
             ->latest('id')
             ->limit(3)
             ->get()
-            ->map(fn (AuditEvent $event): array => [
-                'provider' => ExternalIssueProvider::label(data_get($event->metadata, 'provider')),
-                'project_key' => $this->externalIssueFailureProjectKey($event),
-                'status' => $this->externalIssueFailureStatus($event),
-                'occurred_at' => $event->occurred_at,
-            ]);
+            ->map(function (AuditEvent $event): array {
+                $provider = ExternalIssueProvider::label(data_get($event->metadata, 'provider'));
+                $storedProjectKey = data_get($event->metadata, 'project_key');
+                $hasProjectKey = is_string($storedProjectKey) && trim($storedProjectKey) !== '';
+                $project = $hasProjectKey
+                    ? trim($storedProjectKey)
+                    : __('site_settings.external.failures.unknown_project');
+
+                return [
+                    'body_feedback' => [
+                        'key' => 'site_settings.external.failures.body',
+                        'parameters' => array_filter([
+                            'provider' => $provider,
+                            'project' => $hasProjectKey ? $project : null,
+                        ]),
+                        ...($hasProjectKey ? [] : ['localized_parameters' => ['project' => $project]]),
+                    ],
+                    'status' => $this->externalIssueFailureStatus($event),
+                    'occurred_at' => $event->occurred_at,
+                ];
+            });
 
         $failedCount = max((int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0), $auditFailureCount);
         $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
         $failedQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::FAILED] ?? 0);
         $pendingQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::PENDING] ?? 0);
-        $statusItems = collect(ExternalIssueSyncStatus::options())
-            ->map(fn (string $label, string $status): array => [
+        $statusItems = collect(ExternalIssueSyncStatus::values())
+            ->map(fn (string $status): array => [
                 'key' => $status,
-                'label' => $label,
+                'label' => __("site_settings.external.status_counts.{$status}.label"),
                 'count' => $status === ExternalIssueSyncStatus::FAILED
                     ? $failedCount
                     : (int) ($statusCounts[$status] ?? 0),
             ])
+            ->map(fn (array $item): array => [
+                ...$item,
+                'value' => __("site_settings.external.status_counts.{$item['key']}.count", [
+                    'count' => ReaderNumber::count($item['count']),
+                ]),
+            ])
             ->values();
 
-        [$label, $tone, $detail] = match (true) {
-            $mappedProjectCount === 0 => [
-                'Not configured',
-                'manual',
-                'Map a project before this site can send tickets outside Wayfindr.',
-            ],
-            $disabledProjectCount > 0 => [
-                'Needs attention',
-                'attention',
-                'Enable or replace disabled provider mappings before ticket handoff depends on them.',
-            ],
-            $failedCount > 0 => [
-                'Needs attention',
-                'attention',
-                'Review failed syncs before relying on external handoff for this site.',
-            ],
-            $pendingCount > 0 => [
-                'Sync pending',
-                'manual',
-                'Some ticket handoffs are still waiting for provider confirmation.',
-            ],
-            $handoffProjectCount === 0 => [
-                'Not ready',
-                'manual',
-                'Mapped projects exist, but none can currently create external issues.',
-            ],
-            default => [
-                'Ready',
-                'ready',
-                'Tickets can route to an enabled external project for this site.',
-            ],
+        [$state, $tone] = match (true) {
+            $mappedProjectCount === 0 => ['not_configured', 'manual'],
+            $disabledProjectCount > 0 => ['disabled', 'attention'],
+            $failedCount > 0 => ['failed', 'attention'],
+            $pendingCount > 0 => ['pending', 'manual'],
+            $handoffProjectCount === 0 => ['not_ready', 'manual'],
+            default => ['ready', 'ready'],
         };
 
         return [
-            'label' => $label,
+            'label' => __("site_settings.external.states.{$state}.label"),
             'tone' => $tone,
-            'detail' => $detail,
+            'detail' => __("site_settings.external.states.{$state}.detail"),
             'metrics' => collect([
                 [
-                    'label' => 'Mapped projects',
-                    'value' => $mappedProjectCount.' mapped '.Str::plural('project', $mappedProjectCount),
+                    'label' => __('site_settings.external.metrics.mapped.label'),
+                    'value' => trans_choice('site_settings.external.metrics.mapped.count', $mappedProjectCount, ['count' => ReaderNumber::count($mappedProjectCount)]),
                     'tone' => $mappedProjectCount > 0 ? 'ready' : 'manual',
                 ],
                 [
-                    'label' => 'Handoff ready',
-                    'value' => $handoffProjectCount.' handoff ready',
+                    'label' => __('site_settings.external.metrics.handoff.label'),
+                    'value' => __('site_settings.external.metrics.handoff.count', ['count' => ReaderNumber::count($handoffProjectCount)]),
                     'tone' => $handoffProjectCount > 0 ? 'ready' : 'manual',
                 ],
                 [
-                    'label' => 'Disabled mappings',
-                    'value' => $disabledProjectCount.' disabled',
+                    'label' => __('site_settings.external.metrics.disabled.label'),
+                    'value' => __('site_settings.external.metrics.disabled.count', ['count' => ReaderNumber::count($disabledProjectCount)]),
                     'tone' => $disabledProjectCount > 0 ? 'attention' : 'ready',
                 ],
                 [
-                    'label' => 'Sync failed',
-                    'value' => $failedCount.' sync failed',
+                    'label' => __('site_settings.external.metrics.failed.label'),
+                    'value' => __('site_settings.external.metrics.failed.count', ['count' => ReaderNumber::count($failedCount)]),
                     'tone' => $failedCount > 0 ? 'attention' : 'ready',
                     'href' => $failedQueueCount > 0
                         ? route('dashboard.tickets.index', [
@@ -496,11 +503,11 @@ class AgentSiteController extends Controller
                             'ticket_external' => 'failed',
                         ])
                         : null,
-                    'action' => 'Review failed tickets',
+                    'action' => __('site_settings.external.metrics.failed.action'),
                 ],
                 [
-                    'label' => 'Sync pending',
-                    'value' => $pendingCount.' sync pending',
+                    'label' => __('site_settings.external.metrics.pending.label'),
+                    'value' => __('site_settings.external.metrics.pending.count', ['count' => ReaderNumber::count($pendingCount)]),
                     'tone' => $pendingCount > 0 ? 'manual' : 'ready',
                     'href' => $pendingQueueCount > 0
                         ? route('dashboard.tickets.index', [
@@ -509,7 +516,7 @@ class AgentSiteController extends Controller
                             'ticket_external' => 'pending',
                         ])
                         : null,
-                    'action' => 'Review pending tickets',
+                    'action' => __('site_settings.external.metrics.pending.action'),
                 ],
             ]),
             'status_counts' => $statusItems,
@@ -517,25 +524,16 @@ class AgentSiteController extends Controller
         ];
     }
 
-    private function externalIssueFailureProjectKey(AuditEvent $event): string
-    {
-        $projectKey = data_get($event->metadata, 'project_key');
-
-        return is_string($projectKey) && trim($projectKey) !== ''
-            ? trim($projectKey)
-            : 'Project not recorded';
-    }
-
     private function externalIssueFailureStatus(AuditEvent $event): ?string
     {
         $status = data_get($event->metadata, 'status');
 
         if (is_int($status) || (is_string($status) && preg_match('/^\d{3}$/', $status))) {
-            return 'Status '.$status;
+            return (string) $status;
         }
 
         if (is_string($status) && preg_match('/^[A-Za-z0-9 _.-]{1,40}$/', $status)) {
-            return 'Status '.$status;
+            return $status;
         }
 
         return null;
@@ -560,7 +558,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Site privacy settings saved.');
+            ->with('status', 'site_settings.flash.privacy_saved');
     }
 
     /**
@@ -629,7 +627,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Rating prompt saved.');
+            ->with('status', 'site_settings.flash.rating_saved');
     }
 
     public function updateIntake(Request $request, Site $site): RedirectResponse
@@ -660,7 +658,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Visitor intake saved.');
+            ->with('status', 'site_settings.flash.intake_saved');
     }
 
     /**
@@ -869,19 +867,23 @@ class AgentSiteController extends Controller
             ->with('status', $this->presenceStatusMessage($enabled, $removed));
     }
 
-    private function presenceStatusMessage(bool $enabled, int $removed): string
+    /** @return array{key: string, count: int}|string */
+    private function presenceStatusMessage(bool $enabled, int $removed): array|string
     {
         if ($enabled) {
-            return 'Live visitor presence is on.';
+            return 'site_settings.flash.presence_on';
         }
 
         if ($removed === 0) {
-            return 'Live visitor presence is off.';
+            return 'site_settings.flash.presence_off';
         }
 
-        return $removed === 1
-            ? 'Live visitor presence is off. 1 visitor who never made contact was deleted.'
-            : 'Live visitor presence is off. '.$removed.' visitors who never made contact were deleted.';
+        return [
+            'key' => $removed === 1
+                ? 'site_settings.flash.presence_off_removed_one'
+                : 'site_settings.flash.presence_off_removed_many',
+            'count' => $removed,
+        ];
     }
 
     /**
@@ -1008,7 +1010,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Widget language saved.');
+            ->with('status', 'site_settings.flash.language_saved');
     }
 
     /**
@@ -1073,7 +1075,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Support hours saved.');
+            ->with('status', 'site_settings.flash.hours_saved');
     }
 
     /**
@@ -1099,7 +1101,7 @@ class AgentSiteController extends Controller
         if ($endsAt === null) {
             return redirect()
                 ->route('dashboard.sites.show', $site)
-                ->with('status', 'The desk was left open.');
+                ->with('status', 'site_settings.flash.desk_left_open');
         }
 
         $this->storeClosure($site, $endsAt->toIso8601String());
@@ -1113,8 +1115,11 @@ class AgentSiteController extends Controller
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', $reopens === null
-                ? 'Desk closed. The schedule has no opening to return to.'
-                : 'Desk closed. Support is back at '.$reopens->format('H:i').' on '.$reopens->format('j M').'.');
+                ? 'site_settings.flash.desk_closed_no_return'
+                : [
+                    'key' => 'site_settings.flash.desk_closed_return',
+                    'reopens_at' => $reopens->toIso8601String(),
+                ]);
     }
 
     /**
@@ -1129,7 +1134,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Desk reopened.');
+            ->with('status', 'site_settings.flash.desk_reopened');
     }
 
     /**
@@ -1183,7 +1188,7 @@ class AgentSiteController extends Controller
             ->whereRaw('LOWER(inbound_address) = ?', [$address])
             ->exists()) {
             throw ValidationException::withMessages([
-                'inbound_address' => 'Another site already receives mail at that address.',
+                'inbound_address' => __('site_settings.validation.inbound_unique'),
             ]);
         }
 
@@ -1191,7 +1196,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', $address === '' ? 'Inbound email turned off.' : 'Inbound email address saved.');
+            ->with('status', $address === '' ? 'site_settings.flash.inbound_off' : 'site_settings.flash.inbound_saved');
     }
 
     public function updateAppearance(Request $request, Site $site): RedirectResponse
@@ -1208,8 +1213,8 @@ class AgentSiteController extends Controller
 
         $accent = trim((string) ($validated['widget_accent'] ?? ''));
 
-        if ($accent !== '' && ($rejection = WidgetAppearance::accentRejection($accent)) !== null) {
-            throw ValidationException::withMessages(['widget_accent' => $rejection]);
+        if ($accent !== '' && WidgetAppearance::accentRejection($accent) !== null) {
+            throw ValidationException::withMessages(['widget_accent' => __('site_settings.validation.widget_accent')]);
         }
 
         $settings = $site->mutateSettings(function (array $settings) use ($accent, $validated): array {
@@ -1226,7 +1231,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Widget appearance saved.');
+            ->with('status', 'site_settings.flash.appearance_saved');
     }
 
     public function updateDetails(Request $request, Site $site): RedirectResponse
@@ -1277,7 +1282,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Site details saved.');
+            ->with('status', 'site_settings.flash.details_saved');
     }
 
     /**
@@ -1295,7 +1300,7 @@ class AgentSiteController extends Controller
         if ($site->isArchived()) {
             return redirect()
                 ->route('dashboard.sites.show', $site)
-                ->with('status', 'That site is already archived.');
+                ->with('status', 'site_settings.flash.already_archived');
         }
 
         $site->forceFill(['archived_at' => now()])->save();
@@ -1309,7 +1314,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Site archived. The widget has stopped serving it, and nothing has been deleted.');
+            ->with('status', 'site_settings.flash.archived');
     }
 
     public function unarchive(Request $request, Site $site): RedirectResponse
@@ -1320,7 +1325,7 @@ class AgentSiteController extends Controller
         if (! $site->isArchived()) {
             return redirect()
                 ->route('dashboard.sites.show', $site)
-                ->with('status', 'That site is not archived.');
+                ->with('status', 'site_settings.flash.not_archived');
         }
 
         $site->forceFill(['archived_at' => null])->save();
@@ -1329,7 +1334,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Site restored. The widget is serving it again.');
+            ->with('status', 'site_settings.flash.restored');
     }
 
     /**
@@ -1355,7 +1360,7 @@ class AgentSiteController extends Controller
         if ($request->string('confirm_name')->trim()->value() !== $site->name) {
             return redirect()
                 ->route('dashboard.sites.show', $site)
-                ->withErrors(['confirm_name' => 'That name did not match, so nothing was deleted. Type the site name exactly to confirm.']);
+                ->withErrors(['confirm_name' => __('site_settings.validation.purge_name')]);
         }
 
         $summary = $purge->purge($site, $request->user());
@@ -1365,11 +1370,10 @@ class AgentSiteController extends Controller
             ->with('status', [
                 'key' => 'sites.flash.purged',
                 'parameters' => ['site' => $site->name],
-                // Raw until the destination page renders. The purge is
-                // submitted from the still-English site settings page, while
-                // the translated directory belongs to its reader; formatting
-                // these during the write would freeze the wrong language into
-                // the flash.
+                // Raw until the destination page renders. The translated
+                // directory belongs to its reader; formatting these during
+                // the write would freeze one request's language into the
+                // flash instead.
                 'counts' => $summary,
             ]);
     }
@@ -1387,7 +1391,7 @@ class AgentSiteController extends Controller
     private function purgeBlockedReason(Site $site): ?string
     {
         if (! $site->isArchived()) {
-            return 'This site has to be archived before it can be deleted. Archive it first, confirm the widget has stopped serving, then delete it.';
+            return __('site_settings.validation.purge_archived');
         }
 
         return null;
@@ -1428,9 +1432,9 @@ class AgentSiteController extends Controller
             'support_agent_ids' => ['required', 'array', 'min:1'],
             'support_agent_ids.*' => ['integer', Rule::in($accountAgentIds)],
         ], [
-            'support_agent_ids.required' => 'Choose at least one support agent.',
-            'support_agent_ids.min' => 'Choose at least one support agent.',
-            'support_agent_ids.*.in' => 'Choose only agents from this account.',
+            'support_agent_ids.required' => __('site_settings.validation.support_required'),
+            'support_agent_ids.min' => __('site_settings.validation.support_required'),
+            'support_agent_ids.*.in' => __('site_settings.validation.support_account'),
         ]);
 
         $beforeAgentIds = $this->eligibleSupportAgentIds($site);
@@ -1438,7 +1442,7 @@ class AgentSiteController extends Controller
 
         if (! $this->hasAssignedSiteManager($site, $afterAgentIds)) {
             throw ValidationException::withMessages([
-                'support_agent_ids' => 'Keep at least one account owner or admin assigned so site access remains manageable.',
+                'support_agent_ids' => __('site_settings.validation.support_manager'),
             ]);
         }
 
@@ -1450,7 +1454,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Site access saved.');
+            ->with('status', 'site_settings.flash.access_saved');
     }
 
     private function authorizeSiteAbility(Request $request, string $ability, Site $site, int $status = 403): void
@@ -1744,10 +1748,10 @@ class AgentSiteController extends Controller
     }
 
     /**
-     * Keep the shared install-health service state-only on this newly
-     * extracted surface. The same service still feeds English-only site pages,
-     * so translating it globally would leak German or Italian into those
-     * documents whenever a request happened to leave the process locale set.
+     * Keep the shared install-health service state-only on this extracted
+     * surface. The same service also feeds request-neutral callers, so
+     * translating it globally would leak whichever request locale happened to
+     * be active into them.
      *
      * @return array{label: string, tone: string, detail: string, needs_attention: bool, action_label: string|null}
      */
@@ -1775,6 +1779,88 @@ class AgentSiteController extends Controller
                 ? __('sites.index.install.review')
                 : null,
         ];
+    }
+
+    /**
+     * Translate the host diagnostic without teaching the request-neutral
+     * install-health service about the dashboard locale.
+     *
+     * @return array{checked_in_host: string|null, status: string, label: string, tone: string, detail: string, needs_attention: bool, detail_feedback: array<string, mixed>}
+     */
+    private function localizedSiteInstallHostDiagnostic(?Visitor $visitor, ?string $domain): array
+    {
+        $diagnostic = SiteInstallHealth::hostDiagnostic($visitor, $domain);
+        $base = 'site_settings.verification.host.'.$diagnostic['status'];
+        $parameters = array_filter([
+            'checked' => $diagnostic['checked_in_host'],
+            'expected' => $domain ? explode(':', $domain)[0] : null,
+        ], fn (mixed $value): bool => is_string($value) && $value !== '');
+
+        return [
+            ...$diagnostic,
+            'label' => __($base.'.label'),
+            'detail_feedback' => [
+                'key' => $base.'.detail',
+                'parameters' => $parameters,
+            ],
+        ];
+    }
+
+    /** @return array{status: string, tone: string, message: string, guidance: string} */
+    private function localizedSiteInstallVerification(?Visitor $visitor): array
+    {
+        $lastSeenAt = $visitor?->last_seen_at;
+        $state = ! $lastSeenAt
+            ? 'not_seen'
+            : ($lastSeenAt->greaterThanOrEqualTo(now()->subMinutes(30)) ? 'recent' : 'stale');
+        $parameters = $lastSeenAt ? ['elapsed' => $lastSeenAt->diffForHumans()] : [];
+
+        return [
+            'status' => __("site_settings.verification.{$state}.status", $parameters),
+            'tone' => $state === 'recent' ? 'ready' : ($state === 'not_seen' ? 'attention' : 'manual'),
+            'message' => __("site_settings.verification.{$state}.message"),
+            'guidance' => __("site_settings.verification.{$state}.guidance"),
+        ];
+    }
+
+    /**
+     * Resolve structured settings feedback only after the destination request
+     * has selected its reader language.
+     *
+     * @return array{key: string, parameters?: array<string, string>, localized_parameters?: array<string, string>}|string|null
+     */
+    private function siteShowStatusFeedback(mixed $status): array|string|null
+    {
+        if (! is_array($status)) {
+            return is_string($status) ? $status : null;
+        }
+
+        $key = $status['key'] ?? null;
+
+        if (! is_string($key) || ! str_starts_with($key, 'site_settings.flash.')) {
+            return null;
+        }
+
+        if (isset($status['count'])) {
+            return [
+                'key' => $key,
+                'localized_parameters' => ['count' => ReaderNumber::count((int) $status['count'])],
+            ];
+        }
+
+        if ($key === 'site_settings.flash.desk_closed_return' && is_string($status['reopens_at'] ?? null)) {
+            $reopensAt = Carbon::parse($status['reopens_at']);
+
+            return [
+                'key' => $key,
+                'localized_parameters' => [
+                    'time' => $reopensAt->format('H:i'),
+                    'date' => $reopensAt->translatedFormat('j M'),
+                ],
+            ];
+        }
+
+        return $key;
     }
 
     /**

@@ -788,7 +788,7 @@ test('account admins can manage support agents assigned to a site', function ():
             'support_agent_ids' => [$admin->id, $newAgent->id],
         ])
         ->assertRedirect("/dashboard/sites/{$site->id}")
-        ->assertSessionHas('status', 'Site access saved.');
+        ->assertSessionHas('status', 'site_settings.flash.access_saved');
 
     expect($site->fresh()->eligibleSupportAgents()->pluck('users.id')->sort()->values()->all())
         ->toBe([$admin->id, $newAgent->id]);

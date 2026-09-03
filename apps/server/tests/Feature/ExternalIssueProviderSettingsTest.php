@@ -83,7 +83,7 @@ test('account admins can map a site to an external provider project', function (
             'web_url' => 'https://github.com/adamgreenwell/wayfindr',
         ])
         ->assertRedirect("/dashboard/sites/{$site->id}")
-        ->assertSessionHas('status', 'External issue project mapped.');
+        ->assertSessionHas('status', 'site_settings.flash.project_mapped');
 
     $mapping = SiteExternalIssueProject::query()->firstOrFail();
 
@@ -227,7 +227,8 @@ test('site settings show external issue sync health without raw provider failure
         ->assertSee('Last failure')
         ->assertSee('GitHub')
         ->assertSee('adamgreenwell/wayfindr')
-        ->assertSee('Status 422')
+        ->assertSee('Status')
+        ->assertSee('422')
         ->assertDontSee('ghp_super_secret_sync_token')
         ->assertDontSee('Authorization: Bearer')
         ->assertDontSee('raw provider body should stay private');

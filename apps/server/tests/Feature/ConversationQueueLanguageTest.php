@@ -481,6 +481,9 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
 function conversationQueueLanguageReaderForUrl(array $world, string $url, string $locale): User
 {
     $path = (string) parse_url($url, PHP_URL_PATH);
+    $routeName = app('router')->getRoutes()
+        ->match(Request::create($path, 'GET'))
+        ->getName();
 
     // Break-glass viewer routes are requester-only. Use the grant's requester
     // for both renders and move that reader's locale between requests; the
@@ -496,7 +499,11 @@ function conversationQueueLanguageReaderForUrl(array $world, string $url, string
         return $world['operators'][$locale];
     }
 
-    if (str_starts_with($path, '/dashboard/account') || str_starts_with($path, '/dashboard/reports')) {
+    if (
+        str_starts_with($path, '/dashboard/account')
+        || str_starts_with($path, '/dashboard/reports')
+        || $routeName === 'dashboard.sites.show'
+    ) {
         return $world['admins'][$locale];
     }
 
@@ -1625,6 +1632,7 @@ test('no English is rendered as German on any extracted surface', function (): v
             'site_install' => 'needs_attention',
             'site_state' => 'all',
         ]),
+        route('dashboard.sites.show', $world['site']),
         route('dashboard.sites.create'),
         route('dashboard.sites.tester', $world['site']),
         route('dashboard.conversations.index'),
@@ -1655,6 +1663,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
         route('operator.settings.scanning.edit'),
@@ -2150,6 +2159,7 @@ test('every extracted page translates its document title', function (): void {
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
         route('operator.settings.scanning.edit'),
@@ -2979,6 +2989,11 @@ test('every catalogue file answers the same set of keys', function (): void {
         'reports.tables.agent = Agent',
         'sites.index.filters.options.install.live = Live',
         'sites.index.install.live = Live',
+        'site_settings.common.roles.agent = Agent',
+        'site_settings.site.name = Name',
+        'site_settings.access.columns.name = Name',
+        'site_settings.activity.system = System',
+        'site_settings.intake.fields.name = Name',
         'tickets.document_title = Tickets',
         'tickets.columns.status = Status',
         'tickets.columns.labels = Labels',
@@ -3456,8 +3471,8 @@ test('a write answers in the language of the page it renders back to', function 
     ], 'de'));
 
     // Two tabs: the session's previous URL is the conversation page (the most
-    // recent navigation anywhere), but THIS request came from a still-English
-    // site page.
+    // recent navigation anywhere), but THIS request came from the translated
+    // Site Settings page.
     // The redirect follows the header, so the locale must too -- reading the
     // session first answered in German on an English page.
     $this->actingAs($agent)
@@ -3467,14 +3482,14 @@ test('a write answers in the language of the page it renders back to', function 
         ->assertSessionHasErrors('resolution_note');
 
     expect((string) session('errors')->getBag('default')->first('resolution_note'))
-        ->not->toBe(__('validation.max.string', [
+        ->toBe(__('validation.max.string', [
             'attribute' => __('validation.attributes.resolution_note', [], 'de'),
             'max' => 4000,
-        ], 'de'), 'a stale session URL outvoted the Referer this request actually carried');
+        ], 'de'), 'the translated Site Settings referer did not control the validation language');
 
     // Submitted from a page that is not extracted, so the same endpoint
     // answers in English -- the page that will render it.
-    $englishError = $errorFor(route('dashboard.sites.show', $world['site']));
+    $englishError = $errorFor(route('dashboard'));
 
     expect($englishError)->not->toBe('')
         ->and($englishError)->not->toBe($germanError)
@@ -4390,6 +4405,7 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
         route('operator.settings.scanning.edit'),
@@ -4473,6 +4489,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
+        route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
         route('operator.settings.localization.edit'),
         route('operator.settings.scanning.edit'),

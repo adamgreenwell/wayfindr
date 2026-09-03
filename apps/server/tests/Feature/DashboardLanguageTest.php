@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -465,37 +466,201 @@ test('the language selector names each language in its own language', function (
     }
 });
 
-test('an unextracted page is English all the way down, not only at the root', function (): void {
-    // Marking the DOCUMENT English while leaving the LOCALE German left German
-    // fragments scattered inside it -- a model's option labels here, a Carbon
-    // relative time there, a validation message somewhere else. Each is a
-    // separate leak with a separate fix and there is no end to the list.
-    //
-    // So the locale is scoped rather than the attribute: on a surface that has
-    // not been extracted there is nothing German to be inconsistent with, and
-    // `lang="en"` is simply true rather than a claim a second mechanism has to
-    // keep honest.
+test('site settings follow the agent language without claiming the site identity', function (): void {
     $agent = languageAgent('de');
     $site = Site::factory()->for($agent->account)->create([
         'name' => 'Datenpunkt Docs',
         'domain' => 'datenpunkt.example',
     ]);
 
-    $settings = $this->actingAs($agent)->get(route('dashboard.sites.show', $site))->assertOk();
-
-    $settings->assertSee('<html lang="en"', false)
-        ->assertSee('Site Settings')
-        ->assertSee('Sign out')
-        ->assertDontSee('Abmelden');
-
-    // The same agent, on the surface that HAS been extracted, still reads
-    // German -- so this measures scoping rather than a translation that broke.
-    $this->actingAs($agent)
-        ->get(route('dashboard.sites.index'))
+    $html = (string) $this->actingAs($agent)
+        ->get(route('dashboard.sites.show', $site))
         ->assertOk()
         ->assertSee('<html lang="de"', false)
-        ->assertSee('Überblick zum Websitebetrieb')
-        ->assertDontSee('Site operations snapshot');
+        ->assertSee('Website-Einstellungen')
+        ->assertSee('Abmelden')
+        ->assertSee('Support-Bereitschaft')
+        ->assertDontSee('Site Settings')
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        'site name' => '//h1//span[normalize-space(text())="Datenpunkt Docs"]',
+        'domain' => '//span[contains(@class, "meta-value")][normalize-space(text())="datenpunkt.example"]',
+    ] as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class)
+            ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
+            ->and($node->getAttribute('lang'))->toBe('');
+    }
+});
+
+test('populated site settings speak Italian while visitor and provider copy stays authored data', function (): void {
+    $account = Account::factory()->create(['name' => 'Dati Assistenza']);
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => 'it',
+        'name' => 'Dati Operatore',
+        'email' => 'dati-operatore@example.test',
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Dati Negozio',
+        'domain' => 'dati.example',
+        'inbound_address' => 'dati-inbound@example.test',
+        'settings' => [
+            'appearance' => [
+                'accent' => '#7C3AED',
+                'position' => 'left',
+                'greeting' => 'Dati saluto ai visitatori',
+                'placeholder' => 'Dati testo del compositore',
+            ],
+            'availability' => [
+                'enabled' => true,
+                'timezone' => 'Europe/Rome',
+                'weekdays' => ['mon' => ['09:00', '17:00']],
+                'away_message' => 'Dati messaggio fuori orario',
+            ],
+            'intake' => [
+                'fields' => ['name' => 'required', 'email' => 'optional', 'reason' => 'off'],
+                'intro' => 'Dati introduzione alla raccolta',
+            ],
+            'locale' => 'de',
+            'mask_selectors' => ['.dati-segreto'],
+            'mask_terms' => ['Dati numero cliente'],
+            'presence' => ['enabled' => true, 'page_urls' => true],
+            'rating' => ['enabled' => true, 'intro' => 'Dati domanda di valutazione'],
+        ],
+    ]);
+    $site->supportAgents()->attach($owner);
+
+    $html = (string) $this->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('<html lang="it"', false)
+        ->assertSee('Impostazioni del sito')
+        ->assertSee('Preparazione del supporto')
+        ->assertSee('Verifica dell’installazione')
+        ->assertSee('Accesso al supporto')
+        ->assertSee('Email a questo sito')
+        ->assertSee('Aspetto del widget')
+        ->assertSee('Quando il supporto è aperto')
+        ->assertSee('Lingua parlata dal widget')
+        ->assertSee('Chiedere com’è andata')
+        ->assertSee('Cosa chiedere prima di iniziare una conversazione')
+        ->assertSee('Presenza in tempo reale dei visitatori')
+        ->assertSee('Selettori da mascherare')
+        ->assertSee('Ritira questo sito')
+        ->assertDontSee('Support readiness')
+        ->assertDontSee('Widget appearance')
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        'site name' => '//input[@id="site_name" and @value="Dati Negozio"]',
+        'domain' => '//input[@id="site_domain" and @value="dati.example"]',
+        'agent name' => '//label[normalize-space(text())="Dati Operatore"]',
+        'agent email' => '//td[normalize-space(text())="dati-operatore@example.test"]',
+        'inbound address' => '//input[@id="inbound_address" and @value="dati-inbound@example.test"]',
+        'widget greeting' => '//input[@id="widget_greeting" and @value="Dati saluto ai visitatori"]',
+        'composer placeholder' => '//input[@id="widget_placeholder" and @value="Dati testo del compositore"]',
+        'away message' => '//textarea[@id="availability_away_message" and normalize-space(text())="Dati messaggio fuori orario"]',
+        'rating prompt' => '//input[@id="rating_intro" and @value="Dati domanda di valutazione"]',
+        'intake introduction' => '//textarea[@id="intake_intro" and normalize-space(text())="Dati introduzione alla raccolta"]',
+        'mask selector' => '//textarea[@id="mask_selectors" and normalize-space(text())=".dati-segreto"]',
+        'mask term' => '//textarea[@id="mask_terms" and normalize-space(text())="Dati numero cliente"]',
+    ] as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class)
+            ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
+            ->and($node->getAttribute('lang'))->toBe('');
+    }
+});
+
+test('site settings validation and dynamic feedback follow the German agent', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => 'de',
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Datenpunkt Laden',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+    $site->supportAgents()->attach($owner);
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.sites.show', $site))
+        ->followingRedirects()
+        ->put(route('dashboard.sites.appearance.update', $site), [
+            'widget_accent' => 'nope',
+            'widget_position' => 'right',
+        ])
+        ->assertOk()
+        ->assertSee('Verwenden Sie eine Farbe wie #7C3AED.')
+        ->assertDontSee('Use a colour like #7C3AED.');
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.sites.show', $site))
+        ->followingRedirects()
+        ->put(route('dashboard.sites.availability.update', $site), [])
+        ->assertOk()
+        ->assertSee('Zeitzone der Supportzeiten muss ausgefüllt werden.')
+        ->assertDontSee('The availability timezone field is required.');
+
+    Visitor::factory()->for($site)->count(2)->create(['presence_only' => true]);
+
+    $this->actingAs($owner)
+        ->followingRedirects()
+        ->put(route('dashboard.sites.presence.update', $site), ['presence_page_urls' => '1'])
+        ->assertOk()
+        ->assertSee('2 Personen ohne Kontakt wurden gelöscht.')
+        ->assertDontSee('2 visitors who never made contact were deleted.');
+});
+
+test('the archived site branch and its reversible lifecycle speak German', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => 'de',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Datenpunkt Archiv']);
+    $site->supportAgents()->attach($owner);
+
+    $this->actingAs($owner)
+        ->followingRedirects()
+        ->post(route('dashboard.sites.archive', $site))
+        ->assertOk()
+        ->assertSee('Website archiviert. Das Widget bedient sie nicht mehr und es wurden keine Daten gelöscht.')
+        ->assertSee('Diese Website ist archiviert')
+        ->assertSee('Diese Website endgültig löschen')
+        ->assertDontSee('This site is archived')
+        ->assertDontSee('Permanently delete this site');
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.sites.show', $site))
+        ->followingRedirects()
+        ->delete(route('dashboard.sites.purge', $site), ['confirm_name' => 'Falscher Name'])
+        ->assertOk()
+        ->assertSee('Der Name stimmte nicht überein; deshalb wurde nichts gelöscht.')
+        ->assertDontSee('The name did not match');
+
+    $this->actingAs($owner)
+        ->followingRedirects()
+        ->post(route('dashboard.sites.unarchive', $site))
+        ->assertOk()
+        ->assertSee('Website wiederhergestellt. Das Widget bedient sie wieder.')
+        ->assertSee('Diese Website stilllegen')
+        ->assertDontSee('Site restored.');
 });
 
 test('the sites directory and new-site form follow the agent language without claiming authored data', function (): void {
@@ -684,9 +849,9 @@ test('site creation validation follows the form language and its success resolve
 
     $this->get(route('dashboard.sites.show', $site))
         ->assertOk()
-        ->assertSee('<html lang="en"', false)
-        ->assertSee('Site created. Copy the install snippet to finish connecting it.')
-        ->assertDontSee('Website erstellt.');
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Website erstellt. Kopieren Sie das Installations-Snippet, um die Verbindung abzuschließen.')
+        ->assertDontSee('Site created.');
 });
 
 test('the alert center renders its relative times in the agent language', function (): void {

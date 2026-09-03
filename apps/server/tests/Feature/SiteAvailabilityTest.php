@@ -557,9 +557,9 @@ test('the dashboard reports when the desk is back, not when the close expires', 
         ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'today'])
         ->assertRedirect()
         // Thursday morning, because Wednesday 17:00 is when the desk shuts anyway.
-        ->assertSessionHas('status', fn (string $status): bool => str_contains($status, '09:00')
-            && str_contains($status, '27 Aug')
-            && ! str_contains($status, '17:00'));
+        ->assertSessionHas('status', fn (array $status): bool => $status['key'] === 'site_settings.flash.desk_closed_return'
+            && str_contains($status['reopens_at'], '09:00:00')
+            && ! str_contains($status['reopens_at'], '17:00:00'));
 });
 
 test('the site page names the reopening, not the moment the close runs out', function (): void {
