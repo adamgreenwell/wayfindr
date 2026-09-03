@@ -23,6 +23,7 @@ return [
         'document_title' => 'Set up Wayfindr',
         'title' => 'Set up your installation',
         'subtitle' => 'A guided walk to a runnable Wayfindr — configure the essentials in the browser, mail first.',
+        'setup_complete' => 'Wayfindr is ready. Finish setting up your installation below — start by connecting your first site.',
         'essential_steps' => 'Essential steps',
         'progress' => ':ready of :total ready. Work top to bottom.',
         'all_ready' => 'All essentials ready',

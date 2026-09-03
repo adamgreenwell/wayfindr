@@ -23,6 +23,7 @@ return [
         'document_title' => 'Wayfindr einrichten',
         'title' => 'Ihre Installation einrichten',
         'subtitle' => 'Ein geführter Weg zu einer betriebsbereiten Wayfindr-Installation — konfigurieren Sie die Grundlagen im Browser, beginnend mit E-Mail.',
+        'setup_complete' => 'Wayfindr ist bereit. Schließen Sie die Einrichtung Ihrer Installation unten ab — verbinden Sie zuerst Ihre erste Website.',
         'essential_steps' => 'Grundlegende Schritte',
         'progress' => ':ready von :total bereit. Arbeiten Sie von oben nach unten.',
         'all_ready' => 'Alle grundlegenden Schritte bereit',

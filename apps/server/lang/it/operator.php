@@ -30,6 +30,7 @@ return [
         'document_title' => 'Configurazione di Wayfindr',
         'title' => 'Configurazione dell’installazione',
         'subtitle' => 'Un percorso guidato verso un’installazione Wayfindr operativa: prima la posta, poi le altre impostazioni essenziali nel browser.',
+        'setup_complete' => 'Wayfindr è pronto. Completi la configurazione dell’installazione qui sotto, iniziando dal collegamento del primo sito.',
         'essential_steps' => 'Passaggi essenziali',
         'progress' => ':ready di :total pronti. Proceda dall’alto verso il basso.',
         'all_ready' => 'Tutti i passaggi essenziali sono pronti',
