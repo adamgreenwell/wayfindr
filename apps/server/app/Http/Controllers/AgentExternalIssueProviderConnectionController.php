@@ -5,14 +5,19 @@ namespace App\Http\Controllers;
 use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\ExternalIssueProviderConnection;
+use App\Models\User;
 use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class AgentExternalIssueProviderConnectionController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function store(Request $request): RedirectResponse
     {
         $agent = $request->user();
@@ -33,15 +38,19 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'capabilities.*' => ['string', Rule::in(ExternalIssueCapability::values())],
         ]);
 
-        $account->externalIssueProviderConnections()->create([
-            'provider' => $validated['provider'],
-            'name' => trim($validated['name']),
-            'base_url' => $this->blankToNull($validated['base_url'] ?? null),
-            'credentials' => $this->credentials($validated['credential_token'] ?? null, $validated['webhook_secret'] ?? null),
-            'capabilities' => ExternalIssueCapability::flags($validated['capabilities'] ?? []),
-            'settings' => [],
-            'is_enabled' => true,
-        ]);
+        DB::transaction(function () use ($account, $agent, $validated): void {
+            $this->lockedIntegrationManager($agent, (int) $account->id);
+
+            $account->externalIssueProviderConnections()->create([
+                'provider' => $validated['provider'],
+                'name' => trim($validated['name']),
+                'base_url' => $this->blankToNull($validated['base_url'] ?? null),
+                'credentials' => $this->credentials($validated['credential_token'] ?? null, $validated['webhook_secret'] ?? null),
+                'capabilities' => ExternalIssueCapability::flags($validated['capabilities'] ?? []),
+                'settings' => [],
+                'is_enabled' => true,
+            ]);
+        });
 
         return $this->redirectAfterUpdate($account, $validated['site_id'] ?? null, $validated['return_to'] ?? null);
     }
@@ -65,23 +74,28 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'webhook_secret' => ['nullable', 'string', 'max:4096'],
         ]);
 
-        $credentials = $connection->credentials ?? [];
         $secret = trim((string) ($validated['webhook_secret'] ?? ''));
 
-        if ($secret === '') {
-            unset($credentials['webhook_secret']);
-        } else {
-            $credentials['webhook_secret'] = $secret;
-        }
+        DB::transaction(function () use ($account, $agent, $connection, $secret): void {
+            $this->lockedIntegrationManager($agent, (int) $account->id);
+            $lockedConnection = $this->lockedConnection($connection, (int) $account->id);
+            $credentials = $lockedConnection->credentials ?? [];
 
-        $settings = $connection->settings ?? [];
-        unset($settings['inbound_webhook']);
+            if ($secret === '') {
+                unset($credentials['webhook_secret']);
+            } else {
+                $credentials['webhook_secret'] = $secret;
+            }
 
-        $connection->forceFill([
-            'credentials' => $credentials === [] ? null : $credentials,
-            'settings' => $settings,
-            'last_checked_at' => null,
-        ])->save();
+            $settings = $lockedConnection->settings ?? [];
+            unset($settings['inbound_webhook']);
+
+            $lockedConnection->forceFill([
+                'credentials' => $credentials === [] ? null : $credentials,
+                'settings' => $settings,
+                'last_checked_at' => null,
+            ])->save();
+        });
 
         return redirect()
             ->route('dashboard.account.integrations')
@@ -104,9 +118,14 @@ class AgentExternalIssueProviderConnectionController extends Controller
             'capabilities.*' => ['string', Rule::in(ExternalIssueCapability::values())],
         ]);
 
-        $connection->forceFill([
-            'capabilities' => ExternalIssueCapability::flags($validated['capabilities'] ?? []),
-        ])->save();
+        DB::transaction(function () use ($account, $agent, $connection, $validated): void {
+            $this->lockedIntegrationManager($agent, (int) $account->id);
+            $lockedConnection = $this->lockedConnection($connection, (int) $account->id);
+
+            $lockedConnection->forceFill([
+                'capabilities' => ExternalIssueCapability::flags($validated['capabilities'] ?? []),
+            ])->save();
+        });
 
         return redirect()
             ->route('dashboard.account.integrations')
@@ -130,6 +149,29 @@ class AgentExternalIssueProviderConnectionController extends Controller
         return redirect()
             ->route('dashboard')
             ->with('status', 'Provider connection saved.');
+    }
+
+    private function lockedIntegrationManager(User $agent, int $accountId): User
+    {
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $lockedAgent = User::query()
+            ->whereKey($agent->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->first();
+
+        abort_unless($lockedAgent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
+
+        return $lockedAgent;
+    }
+
+    private function lockedConnection(ExternalIssueProviderConnection $connection, int $accountId): ExternalIssueProviderConnection
+    {
+        return ExternalIssueProviderConnection::query()
+            ->whereKey($connection->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 
     /**
