@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -35,6 +36,10 @@ class AgentVisitorController extends Controller
     public function index(Request $request): View
     {
         $agent = $request->user();
+        abort_unless($agent->hasAnyAccountPermission(
+            AccountPermission::ViewConversations,
+            AccountPermission::ManageTickets,
+        ), 403);
         $account = $agent->account()->firstOrFail();
 
         // Read before narrowing, exactly as the search and site filters below

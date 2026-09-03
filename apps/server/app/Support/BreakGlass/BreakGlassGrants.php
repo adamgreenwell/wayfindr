@@ -2,6 +2,7 @@
 
 namespace App\Support\BreakGlass;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\BreakGlassGrant;
 use App\Models\Conversation;
@@ -102,7 +103,7 @@ class BreakGlassGrants
                 abort_unless(
                     (int) $approver->account_id === (int) $locked->account_id
                         && ! $approver->isDeactivated()
-                        && $approver->isAdmin(),
+                        && $approver->hasAccountPermission(AccountPermission::ManageOperatorAccess),
                     403,
                     __('operator_break_glass.errors.self_approval_requires_standing'),
                 );
@@ -297,7 +298,7 @@ class BreakGlassGrants
             ->whereNull('deactivated_at')
             ->when($grant->requester_id !== null, fn ($query) => $query->whereKeyNot($grant->requester_id))
             ->get()
-            ->filter(fn (User $user): bool => $user->isAdmin())
+            ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageOperatorAccess))
             ->values();
     }
 
@@ -305,7 +306,7 @@ class BreakGlassGrants
     {
         return (int) $user->account_id === (int) $grant->account_id
             && ! $user->isDeactivated()
-            && $user->isAdmin()
+            && $user->hasAccountPermission(AccountPermission::ManageOperatorAccess)
             && (int) $user->id !== (int) $grant->requester_id;
     }
 

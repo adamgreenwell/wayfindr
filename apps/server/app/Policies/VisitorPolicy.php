@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\AccountPermission;
 use App\Models\User;
 use App\Models\Visitor;
 
@@ -12,6 +13,10 @@ class VisitorPolicy
         $visitor->loadMissing('site');
 
         return ! $user->isDeactivated()
+            && $user->hasAnyAccountPermission(
+                AccountPermission::ViewConversations,
+                AccountPermission::ManageTickets,
+            )
             && $visitor->site?->supportsAgent($user) === true;
     }
 }

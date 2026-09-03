@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use Illuminate\Http\Request;
@@ -13,7 +14,7 @@ class AgentAccountIntegrationsController extends Controller
      * The account-level Integrations home: provider connections are
      * account-scoped, so their setup lives here instead of at the bottom of an
      * individual site's page. Every agent can see what is connected (and who
-     * to ask); managing connections stays admin-only.
+     * to ask); managing connections requires manage-integrations permission.
      */
     public function show(Request $request): View
     {
@@ -48,7 +49,7 @@ class AgentAccountIntegrationsController extends Controller
                     'permission' => __('integrations.capabilities.permissions.'.$capability),
                 ]])
                 ->all(),
-            'canManageIntegrations' => $agent->isAdmin(),
+            'canManageIntegrations' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
         ]);
     }
 

@@ -102,15 +102,16 @@
                     </div>
                 </div>
 
-                <div class="section-form-row">
-                    @if (! $conversation->assigned_agent_id)
+                @if ($canUpdateConversation)
+                    <div class="section-form-row">
+                    @if (! $conversation->assigned_agent_id && $canClaimConversation)
                         <form class="section-form" method="POST" action="{{ route('dashboard.conversations.claim', $conversation->support_code) }}">
                             @csrf
                             @include('agent.conversations.partials.return-query-fields')
 
                             <button class="button" type="submit">{{ __('conversations.detail.ticket.claim') }}</button>
                         </form>
-                    @elseif ($conversation->assigned_agent_id === $agent->id)
+                    @elseif ($conversation->assigned_agent_id === $agent->id && $canReleaseConversation)
                         <form class="section-form" method="POST" action="{{ route('dashboard.conversations.release', $conversation->support_code) }}">
                             @csrf
                             @include('agent.conversations.partials.return-query-fields')
@@ -127,7 +128,8 @@
                             {{ $conversation->status === 'closed' ? __('conversations.detail.context.reopen') : __('conversations.detail.context.close') }}
                         </button>
                     </form>
-                </div>
+                    </div>
+                @endif
             </section>
                 </x-tab-panel>
 
@@ -162,14 +164,14 @@
                     </div>
                 @endif
 
-                @if (in_array($cobrowseConsent['status'], ['unavailable', 'revoked', 'ended'], true))
+                @if ($canRequestCobrowse && in_array($cobrowseConsent['status'], ['unavailable', 'revoked', 'ended'], true))
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.request', $conversation->support_code) }}">
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
 
                         <button class="button" type="submit">{{ __('conversations.detail.cobrowse.request') }}</button>
                     </form>
-                @elseif (in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
+                @elseif ($canEndCobrowse && in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
                     @if ($cobrowseConsent['status'] === 'granted')
                         @php
                             $resyncStatus = $cobrowseConsent['resync_request']['status'] ?? null;
@@ -882,18 +884,20 @@
                                         <span>{{ __('conversations.detail.context.owner_label', ['name' => $priorConversation->assignedAgent?->name ?? __('conversations.detail.context.unassigned')]) }}</span>
                                         <span>{{ __('conversations.detail.context.last_activity_label', ['elapsed' => $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans()]) }}</span>
                                     </div>
-                                    <div class="timeline-meta">
-                                        <strong>{{ __('conversations.detail.ticket.heading') }}</strong>
-                                        @forelse ($priorConversation->tickets as $ticket)
-                                            <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
-                                                <span lang="">{{ $ticket->subject }}</span>
-                                            </a>
-                                            {{-- A TICKET status, from the ticket catalogue rather than this one. --}}
-                                            <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>
-                                        @empty
-                                            <span>{{ __('conversations.detail.ticket.none') }}</span>
-                                        @endforelse
-                                    </div>
+                                    @if ($canCreateTicket)
+                                        <div class="timeline-meta">
+                                            <strong>{{ __('conversations.detail.ticket.heading') }}</strong>
+                                            @forelse ($priorConversation->tickets as $ticket)
+                                                <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
+                                                    <span lang="">{{ $ticket->subject }}</span>
+                                                </a>
+                                                {{-- A TICKET status, from the ticket catalogue rather than this one. --}}
+                                                <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>
+                                            @empty
+                                                <span>{{ __('conversations.detail.ticket.none') }}</span>
+                                            @endforelse
+                                        </div>
+                                    @endif
                                 </div>
                             </article>
                         @endforeach
@@ -909,7 +913,7 @@
                     <span class="lede">{{ $tickets->isEmpty() ? __('conversations.detail.tabs.not_created') : trans_choice('conversations.detail.tabs.linked_badge', $tickets->count(), ['count' => $tickets->count()]) }}</span>
                 </div>
 
-                @if ($tickets->isEmpty())
+                @if ($canCreateTicket && $tickets->isEmpty())
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.tickets.store', $conversation->support_code) }}">
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
@@ -943,8 +947,10 @@
 
                         <button class="button" type="submit">{{ __('conversations.detail.ticket.create') }}</button>
                     </form>
-                @else
+                @elseif ($tickets->isNotEmpty())
                     @include('agent.conversations.partials.linked-ticket-work')
+                @else
+                    <p class="empty">{{ __('conversations.detail.ticket.none') }}</p>
                 @endif
             </section>
                 </x-tab-panel>

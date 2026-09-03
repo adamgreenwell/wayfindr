@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
 use App\Models\ApiToken;
@@ -52,6 +53,8 @@ class AgentConversationController extends Controller
             ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'latestNonIntegrationMessage', 'site', 'visitor']);
 
         $conversationReturnQuery = $this->conversationQueueReturnQuery($request);
+        $canReply = Gate::forUser($agent)->allows('reply', $conversation);
+        $canManageTickets = Gate::forUser($agent)->allows('createTicket', $conversation);
 
         // Computed BEFORE the read state is mutated. The new-activity lane is
         // defined by withNewActivityFor(), so marking this conversation read
@@ -72,10 +75,12 @@ class AgentConversationController extends Controller
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
-        $tickets = $conversation->tickets()
-            ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'conversation.latestNonIntegrationMessage'])
-            ->latest()
-            ->get();
+        $tickets = $canManageTickets
+            ? $conversation->tickets()
+                ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'conversation.latestNonIntegrationMessage'])
+                ->latest()
+                ->get()
+            : collect();
 
         return view('agent.conversations.show', [
             'account' => $agent->account()->firstOrFail(),
@@ -193,17 +198,24 @@ class AgentConversationController extends Controller
                 // which is what this is for.
                 'locale' => str_replace('_', '-', app()->getLocale()),
             ],
-            'accountAgents' => $this->supportAgentsForSite($conversation->site),
+            'accountAgents' => $canManageTickets ? $this->supportAgentsForSite($conversation->site) : collect(),
             'agent' => $agent,
+            'canClaimConversation' => Gate::forUser($agent)->allows('claim', $conversation),
+            'canCreateTicket' => $canManageTickets,
+            'canEndCobrowse' => Gate::forUser($agent)->allows('endCobrowse', $conversation),
+            'canReleaseConversation' => Gate::forUser($agent)->allows('release', $conversation),
+            'canReply' => $canReply,
+            'canRequestCobrowse' => Gate::forUser($agent)->allows('requestCobrowse', $conversation),
+            'canUpdateConversation' => Gate::forUser($agent)->allows('updateStatus', $conversation),
             'cobrowseConsent' => $cobrowseConsent,
             'conversation' => $conversation,
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
             'conversationSiblings' => $conversationSiblings,
             'messages' => $messages,
-            'priorConversations' => $this->priorConversations($conversation),
+            'priorConversations' => $this->priorConversations($conversation, $canManageTickets),
             'realtime' => $this->realtimeConfig($conversation),
-            'replyTemplates' => $replyTemplateOptions->forAgent($agent),
+            'replyTemplates' => $canReply ? $replyTemplateOptions->forAgent($agent) : [],
             'tickets' => $tickets,
             'ticketCategories' => TicketCategory::options(),
             'ticketPriorities' => TicketPriority::options(),
@@ -899,15 +911,21 @@ class AgentConversationController extends Controller
     private function supportAgentsForSite(Site $site): Collection
     {
         $supportAgents = $site->eligibleSupportAgents()
+            ->with('customRole')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageTickets))
+            ->values();
 
         return $supportAgents->isNotEmpty()
             ? $supportAgents
             : $site->account->agents()
                 ->whereNull('deactivated_at')
+                ->with('customRole')
                 ->orderBy('name')
-                ->get();
+                ->get()
+                ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageTickets))
+                ->values();
     }
 
     /**
@@ -963,10 +981,10 @@ class AgentConversationController extends Controller
     /**
      * @return Collection<int, Conversation>
      */
-    private function priorConversations(Conversation $conversation): Collection
+    private function priorConversations(Conversation $conversation, bool $includeTickets): Collection
     {
         return Conversation::query()
-            ->with(['assignedAgent', 'tickets'])
+            ->with($includeTickets ? ['assignedAgent', 'tickets'] : ['assignedAgent'])
             ->where('site_id', $conversation->site_id)
             ->where('visitor_id', $conversation->visitor_id)
             ->whereKeyNot($conversation->id)

@@ -414,7 +414,7 @@
                 </div>
             </section>
 
-            @if ($agent->isAdmin() || $agent->isPlatformOperator())
+            @if ($agent->hasAccountPermission(\App\Enums\AccountPermission::ManageSites) || $agent->isPlatformOperator())
                 <x-operator-smoke-path :smoke-path="$operatorSmokePath" />
             @endif
 

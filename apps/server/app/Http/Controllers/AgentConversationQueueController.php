@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
@@ -19,7 +20,7 @@ class AgentConversationQueueController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent->account_id, 403);
+        abort_unless($agent->account_id && $agent->hasAccountPermission(AccountPermission::ViewConversations), 403);
 
         $account = $agent->account()->firstOrFail();
         $sites = $account->sites()

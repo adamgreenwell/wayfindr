@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Events\ConversationMessageCreated;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
@@ -85,6 +86,7 @@ class AgentTicketController extends Controller
             'account' => $agent->account()->firstOrFail(),
             'accountAgents' => $this->supportAgentsForSite($ticket->site),
             'agent' => $agent,
+            'canAssignTickets' => Gate::forUser($agent)->allows('assign', $ticket),
             'canPostNoteToExternalIssue' => $this->commentableExternalLinks($ticket)->isNotEmpty(),
             'externalIssueProviders' => collect(ExternalIssueProvider::options())
                 ->map(fn (string $_label, string $provider): string => $this->ticketExternalIssueProviderLabel($provider))
@@ -662,7 +664,8 @@ class AgentTicketController extends Controller
             ? $agent->account->agents()->whereKey($newAssigneeId)->first()
             : null;
 
-        if ($newAssignee && ! $ticket->site->supportsAgent($newAssignee)) {
+        if ($newAssignee && (! $ticket->site->supportsAgent($newAssignee)
+            || ! $newAssignee->hasAccountPermission(AccountPermission::ManageTickets))) {
             throw ValidationException::withMessages([
                 'assignee_id' => __('tickets.errors.assignee_not_on_site'),
             ]);
@@ -715,7 +718,8 @@ class AgentTicketController extends Controller
             ->whereKey($validated['target_agent_id'])
             ->first();
 
-        if (! $targetAgent || ! $ticket->site->supportsAgent($targetAgent)) {
+        if (! $targetAgent || ! $ticket->site->supportsAgent($targetAgent)
+            || ! $targetAgent->hasAccountPermission(AccountPermission::ManageTickets)) {
             throw ValidationException::withMessages([
                 'target_agent_id' => __('tickets.errors.assignee_not_on_site'),
             ]);
@@ -765,15 +769,21 @@ class AgentTicketController extends Controller
     private function supportAgentsForSite(Site $site): Collection
     {
         $supportAgents = $site->eligibleSupportAgents()
+            ->with('customRole')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageTickets))
+            ->values();
 
         return $supportAgents->isNotEmpty()
             ? $supportAgents
             : $site->account->agents()
                 ->whereNull('deactivated_at')
+                ->with('customRole')
                 ->orderBy('name')
-                ->get();
+                ->get()
+                ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageTickets))
+                ->values();
     }
 
     /**

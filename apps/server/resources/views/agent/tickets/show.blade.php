@@ -179,6 +179,7 @@
                     <span class="lede" @if ($ticket->assignee?->name !== null) lang="" @endif>{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
                 </div>
 
+                @if ($canAssignTickets)
                 @php
                     $escalationAgents = $accountAgents->reject(fn ($accountAgent) => $accountAgent->is($agent))->values();
                 @endphp
@@ -243,6 +244,7 @@
                         </form>
                     @endif
                 </div>
+                @endif
 
                 @if ($ticket->status === 'open')
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.pending', $ticket) }}">

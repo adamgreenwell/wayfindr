@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\AccountPermission;
 use App\Models\Site;
 use App\Models\User;
 
@@ -10,22 +11,31 @@ class SitePolicy
     public function view(User $user, Site $site): bool
     {
         return ! $user->isDeactivated()
+            && $user->hasAnyAccountPermission(
+                AccountPermission::ManageSites,
+                AccountPermission::ManageSiteAccess,
+                AccountPermission::ManagePrivacySettings,
+                AccountPermission::ManageIntegrations,
+                AccountPermission::ViewAudit,
+                AccountPermission::ViewConversations,
+                AccountPermission::ManageTickets,
+            )
             && $site->supportsAgent($user);
     }
 
     public function updatePrivacy(User $user, Site $site): bool
     {
-        return $user->isAdmin() && $this->view($user, $site);
+        return $user->hasAccountPermission(AccountPermission::ManagePrivacySettings) && $this->view($user, $site);
     }
 
     public function manageAccess(User $user, Site $site): bool
     {
-        return $user->isAdmin() && $this->view($user, $site);
+        return $user->hasAccountPermission(AccountPermission::ManageSiteAccess) && $this->view($user, $site);
     }
 
     public function manageIntegrations(User $user, Site $site): bool
     {
-        return $user->isAdmin() && $this->view($user, $site);
+        return $user->hasAccountPermission(AccountPermission::ManageIntegrations) && $this->view($user, $site);
     }
 
     /**
@@ -37,7 +47,7 @@ class SitePolicy
      */
     public function update(User $user, Site $site): bool
     {
-        return $user->isAdmin() && $this->view($user, $site);
+        return $user->hasAccountPermission(AccountPermission::ManageSites) && $this->view($user, $site);
     }
 
     /**
@@ -47,7 +57,7 @@ class SitePolicy
      */
     public function archive(User $user, Site $site): bool
     {
-        return $user->isAdmin() && $this->view($user, $site);
+        return $user->hasAccountPermission(AccountPermission::ManageSites) && $this->view($user, $site);
     }
 
     /**

@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\AccountRole;
+use App\Enums\AccountPermission;
 use App\Enums\SiteColor;
 use App\Models\Account;
 use App\Models\AuditEvent;
@@ -45,6 +45,15 @@ class AgentSiteController extends Controller
     public function index(Request $request): View
     {
         $agent = $request->user();
+        abort_unless($agent->hasAnyAccountPermission(
+            AccountPermission::ManageSites,
+            AccountPermission::ManageSiteAccess,
+            AccountPermission::ManagePrivacySettings,
+            AccountPermission::ManageIntegrations,
+            AccountPermission::ViewAudit,
+            AccountPermission::ViewConversations,
+            AccountPermission::ManageTickets,
+        ), 403);
         $account = $this->account($request);
         $sites = $account->sites()
             ->visibleToAgentIncludingArchived($agent)
@@ -85,7 +94,8 @@ class AgentSiteController extends Controller
         return view('agent.sites.index', [
             'account' => $account,
             'agent' => $agent,
-            'siteEmptyState' => $this->siteEmptyState($siteFilters),
+            'canCreateSite' => $agent->canCreateAccountSite(),
+            'siteEmptyState' => $this->siteEmptyState($siteFilters, $agent->canCreateAccountSite()),
             'siteFilters' => $siteFilters,
             'siteInstallHealth' => $siteInstallHealth,
             'siteOperationsSnapshot' => $siteOperationsSnapshot,
@@ -96,6 +106,7 @@ class AgentSiteController extends Controller
 
     public function create(Request $request): View
     {
+        abort_unless($request->user()->canCreateAccountSite(), 403);
         $account = $this->account($request);
 
         return view('agent.sites.create', [
@@ -106,6 +117,7 @@ class AgentSiteController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        abort_unless($request->user()->canCreateAccountSite(), 403);
         $account = $this->account($request);
 
         $validated = $request->validate(
@@ -178,7 +190,7 @@ class AgentSiteController extends Controller
             'account' => $account,
             'accountAgents' => $accountAgents,
             'agent' => $agent,
-            'canViewSiteActivity' => $agent->isAdmin(),
+            'canViewSiteActivity' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
             'canManageIntegrations' => Gate::forUser($agent)->allows('manageIntegrations', $site),
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
@@ -216,7 +228,7 @@ class AgentSiteController extends Controller
             'operatorSmokePath' => OperatorDashboardPresenter::readiness($readiness->summary())['smoke_path'],
             'site' => $site,
             'siteActivity' => $this->siteActivityItems($site, $agent),
-            'siteActivityAuditUrl' => $agent->isAdmin()
+            'siteActivityAuditUrl' => $agent->hasAccountPermission(AccountPermission::ViewAudit)
                 ? route('dashboard.account.audit.index', [
                     'audit_action' => 'site_access.updated',
                     'audit_site' => $site->id,
@@ -252,7 +264,7 @@ class AgentSiteController extends Controller
      */
     private function siteActivityItems(Site $site, User $agent): Collection
     {
-        if (! $agent->isAdmin()) {
+        if (! $agent->hasAccountPermission(AccountPermission::ViewAudit)) {
             return collect();
         }
 
@@ -1724,11 +1736,13 @@ class AgentSiteController extends Controller
      * @param  array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
      * @return array{heading: array{key: string, parameters: array<string, string>}, detail: string, actions: list<array{label: string, url: string}>}
      */
-    private function siteEmptyState(array $siteFilters): array
+    private function siteEmptyState(array $siteFilters, bool $canCreateSite): array
     {
         $actions = $siteFilters['has_active_filters']
             ? [['label' => __('sites.index.empty.actions.clear_all'), 'url' => route('dashboard.sites.index')]]
-            : [['label' => __('sites.add_site'), 'url' => route('dashboard.sites.create')]];
+            : ($canCreateSite
+                ? [['label' => __('sites.add_site'), 'url' => route('dashboard.sites.create')]]
+                : []);
 
         if ($siteFilters['search'] !== '') {
             array_unshift($actions, [
@@ -2145,11 +2159,9 @@ class AgentSiteController extends Controller
             ->agents()
             ->whereIn('users.id', $agentIds)
             ->whereNull('deactivated_at')
-            ->whereIn('account_role', [
-                AccountRole::Owner->value,
-                AccountRole::Admin->value,
-            ])
-            ->exists();
+            ->with('customRole')
+            ->get()
+            ->contains(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageSiteAccess));
     }
 
     /**

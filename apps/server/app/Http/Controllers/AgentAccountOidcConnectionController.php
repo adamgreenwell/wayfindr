@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\OidcConnection;
@@ -22,7 +23,7 @@ final class AgentAccountOidcConnectionController extends Controller
     public function update(Request $request, OidcHttpClientFactory $httpClients): RedirectResponse
     {
         $agent = $request->user();
-        abort_unless($agent?->account_id && $agent->isAdmin(), 403);
+        abort_unless($agent?->account_id && $agent->hasAccountPermission(AccountPermission::ManageSecurity), 403);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
@@ -59,7 +60,7 @@ final class AgentAccountOidcConnectionController extends Controller
 
             abort_unless(
                 ! $lockedAgent->isDeactivated()
-                && $lockedAgent->isAdmin()
+                && $lockedAgent->hasAccountPermission(AccountPermission::ManageSecurity)
                 && (int) $lockedAgent->account_id === (int) $agent->account_id
                 && hash_equals(
                     $credentialFingerprint,

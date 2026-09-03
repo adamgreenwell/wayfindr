@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Jobs\DeliverOutboundWebhook;
 use App\Models\AuditEvent;
 use App\Models\OutboundWebhookDelivery;
@@ -26,7 +27,7 @@ class AgentAccountOutboundWebhookController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
-        abort_unless($agent->isAdmin(), 403);
+        abort_unless($agent->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $validated = $request->validate([
             'webhook.name' => ['required', 'string', 'max:120'],
@@ -83,7 +84,7 @@ class AgentAccountOutboundWebhookController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
-        abort_unless($agent->isAdmin(), 403);
+        abort_unless($agent->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $endpoint = DatabaseKey::isValid($webhookEndpoint)
             ? OutboundWebhookEndpoint::query()->whereKey($webhookEndpoint)->first()
@@ -124,7 +125,7 @@ class AgentAccountOutboundWebhookController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
-        abort_unless($agent->isAdmin(), 403);
+        abort_unless($agent->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $delivery = DatabaseKey::isValid($webhookDelivery)
             ? OutboundWebhookDelivery::query()->with('endpoint')->whereKey($webhookDelivery)->first()

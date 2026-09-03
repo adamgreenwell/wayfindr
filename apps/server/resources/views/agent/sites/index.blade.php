@@ -2,7 +2,9 @@
     <x-page-header :title="__('sites.title')" :subtitle="__('sites.subtitle')">
         <x-slot:actions>
             <span class="lede">{{ $siteFilters['summary_label'] }}</span>
-            <a class="button secondary" href="{{ route('dashboard.sites.create') }}">{{ __('sites.add_site') }}</a>
+            @if ($canCreateSite)
+                <a class="button secondary" href="{{ route('dashboard.sites.create') }}">{{ __('sites.add_site') }}</a>
+            @endif
         </x-slot:actions>
     </x-page-header>
 

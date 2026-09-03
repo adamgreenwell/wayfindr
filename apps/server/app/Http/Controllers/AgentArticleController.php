@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Article;
 use App\Support\Knowledge\ArticleDocument;
 use App\Support\LiteralLike;
@@ -14,7 +15,7 @@ use Illuminate\Validation\ValidationException;
 /**
  * Authoring the answers a visitor can find without asking.
  *
- * Admin-only, matching reply templates: both are account-wide copy that every
+ * Restricted to manage-knowledge permission, matching reply templates: both are account-wide copy that every
  * agent then speaks with, and one agent editing what the desk says to everybody
  * is a different act from answering one conversation.
  */
@@ -24,7 +25,7 @@ class AgentArticleController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageKnowledge), 403);
 
         $account = $agent->account()->firstOrFail();
 
@@ -73,7 +74,7 @@ class AgentArticleController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageKnowledge), 403);
 
         $account = $agent->account()->firstOrFail();
         $input = $this->validatedArticleInput($request);
@@ -146,7 +147,7 @@ class AgentArticleController extends Controller
     private function authorizeManageArticle(mixed $agent, Article $article): void
     {
         abort_unless(
-            $agent?->isAdmin()
+            $agent?->hasAccountPermission(AccountPermission::ManageKnowledge)
             && $agent->account_id !== null
             && (int) $agent->account_id === (int) $article->account_id,
             404,

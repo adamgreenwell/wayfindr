@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\ReplyTemplate;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -14,7 +15,7 @@ class AgentReplyTemplateController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageKnowledge), 403);
 
         $account = $agent->account()->firstOrFail();
 
@@ -32,7 +33,7 @@ class AgentReplyTemplateController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageKnowledge), 403);
 
         $account = $agent->account()->firstOrFail();
 
@@ -74,7 +75,7 @@ class AgentReplyTemplateController extends Controller
     private function authorizeManageReplyTemplate(mixed $agent, ReplyTemplate $replyTemplate): void
     {
         abort_unless(
-            $agent?->isAdmin()
+            $agent?->hasAccountPermission(AccountPermission::ManageKnowledge)
             && $agent->account_id !== null
             && (int) $agent->account_id === (int) $replyTemplate->account_id,
             404,

@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\AccountPermission;
 use App\Models\Ticket;
 use App\Models\User;
 
@@ -12,6 +13,7 @@ class TicketPolicy
         $ticket->loadMissing('site');
 
         return ! $user->isDeactivated()
+            && $user->hasAccountPermission(AccountPermission::ManageTickets)
             && $user->account_id
             && (int) $ticket->account_id === (int) $user->account_id
             && $ticket->site?->supportsAgent($user) === true;
@@ -40,6 +42,7 @@ class TicketPolicy
 
     public function assign(User $user, Ticket $ticket): bool
     {
-        return $this->view($user, $ticket);
+        return $this->view($user, $ticket)
+            && $user->hasAccountPermission(AccountPermission::AssignTickets);
     }
 }

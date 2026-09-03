@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\User;
 use App\Support\ReaderNumber;
@@ -20,7 +21,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 /**
  * Whether support is working, and who is carrying it.
  *
- * Admin-only and account-scoped, following the account audit page it reads
+ * Restricted to view-reports permission and account-scoped, following the account audit page it reads
  * from: the same inline admin guard, the same site allowlist including archived
  * sites, and the same rule that a site id in the query string can only narrow
  * the answer (ADR 0015).
@@ -130,7 +131,7 @@ class AgentReportController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->account_id && $agent->isAdmin(), 403);
+        abort_unless($agent?->account_id && $agent->hasAccountPermission(AccountPermission::ViewReports), 403);
 
         return $agent;
     }

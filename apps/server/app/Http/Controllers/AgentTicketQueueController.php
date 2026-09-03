@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -21,7 +22,7 @@ class AgentTicketQueueController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent->account_id, 403);
+        abort_unless($agent->account_id && $agent->hasAccountPermission(AccountPermission::ManageTickets), 403);
 
         $account = $agent->account()->firstOrFail();
         $sites = $account->sites()

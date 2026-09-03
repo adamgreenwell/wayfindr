@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Ticket;
 use App\Models\User;
@@ -15,6 +16,7 @@ class AlertPolicy
     public function view(User $user, DatabaseNotification $notification): bool
     {
         return ! $user->isDeactivated()
+            && $user->hasAccountPermission(AccountPermission::ViewAlerts)
             && $this->belongsTo($user, $notification)
             && $this->supportAlertVisibleTo($user, $notification);
     }

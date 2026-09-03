@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\OutboundWebhookDelivery;
@@ -18,7 +19,7 @@ use Illuminate\View\View;
 /**
  * Issuing and revoking programmatic access to an account (ADR 0018).
  *
- * Admin-only, and account-scoped throughout. A token is a standing credential
+ * Restricted to manage-integrations permission, and account-scoped throughout. A token is a standing credential
  * for support transcripts, which is a heavier thing to hand out than any other
  * setting on this page -- so it is issued deliberately, listed with enough to
  * recognise it, and revocable in one click.
@@ -30,12 +31,12 @@ class AgentAccountApiTokenController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
-        // Admin-only to READ, not merely to change. The list names the sites
+        // Permission-gated to READ, not merely to change. The list names the sites
         // each token reaches, and an agent whose site access is restricted
         // would otherwise learn the names of sites that 404 for them
         // everywhere else. Filtering the relationship would hide the names and
         // still leak the count, and no non-admin needs this page.
-        abort_unless($agent->isAdmin(), 403);
+        abort_unless($agent->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $visibleSiteIds = $account->sites()->visibleToAgentIncludingArchived($agent)->pluck('id')->all();
 
@@ -78,7 +79,7 @@ class AgentAccountApiTokenController extends Controller
         $agent = $request->user();
         $account = $agent->account()->firstOrFail();
 
-        abort_unless($agent->isAdmin(), 403);
+        abort_unless($agent->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
@@ -199,7 +200,7 @@ class AgentAccountApiTokenController extends Controller
 
         // Authority FIRST, so a non-admin learns nothing from which refusal
         // they get -- including whether the id exists at all.
-        abort_unless($agent->isAdmin(), 403);
+        abort_unless($agent->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         // Numeric is not the same as a usable key. The route constraint allows
         // any run of digits, and PostgreSQL raises casting a 30-digit value to

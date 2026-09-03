@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\ExternalIssueProviderConnection;
 use App\Support\ExternalIssueCapability;
@@ -16,7 +17,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $account = $agent->account()->firstOrFail();
 
@@ -55,7 +56,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $account = $agent->account()->firstOrFail();
         abort_unless($connection->account_id === $account->id, 404);
@@ -93,7 +94,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
 
         $account = $agent->account()->firstOrFail();
         abort_unless($connection->account_id === $account->id, 404);
