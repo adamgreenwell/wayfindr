@@ -129,7 +129,7 @@
                                 </span>
                             </div>
                             <p class="readiness-action">
-                                <a class="text-link" href="{{ $readinessItem['href'] }}">{{ __('site_settings.readiness.review', ['item' => mb_strtolower($readinessItem['label'])]) }}</a>
+                                <a class="text-link" href="{{ $readinessItem['href'] }}">{{ $readinessItem['action'] }}</a>
                             </p>
                         </article>
                     @endforeach

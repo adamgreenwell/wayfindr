@@ -94,11 +94,11 @@ return [
 
     'readiness' => [
         'heading' => 'Support readiness',
-        'review' => 'Review :item',
         'items' => [
-            'install' => ['label' => 'Widget install', 'recent' => 'The widget has checked in recently.'],
+            'install' => ['label' => 'Widget install', 'recent' => 'The widget has checked in recently.', 'action' => 'Review widget install'],
             'coverage' => [
                 'label' => 'Support coverage',
+                'action' => 'Review support coverage',
                 'explicit' => 'Explicit access',
                 'fallback' => 'Account-wide fallback',
                 'assigned' => '{1} :count assigned|[2,*] :count assigned',
@@ -106,6 +106,7 @@ return [
             ],
             'privacy' => [
                 'label' => 'Privacy masking',
+                'action' => 'Review privacy masking',
                 'configured' => '{1} :count selector configured|[2,*] :count selectors configured',
                 'none' => 'No custom selectors',
                 'configured_detail' => 'Custom selectors are sent as public widget configuration.',
@@ -113,6 +114,7 @@ return [
             ],
             'external' => [
                 'label' => 'External routing',
+                'action' => 'Review external routing',
                 'mapped' => '{1} :count mapped|[2,*] :count mapped',
                 'none' => 'Not mapped',
                 'mapped_detail' => 'Ticket handoff can use mapped external issue projects.',

@@ -94,11 +94,11 @@ return [
 
     'readiness' => [
         'heading' => 'Preparazione del supporto',
-        'review' => 'Controlla :item',
         'items' => [
-            'install' => ['label' => 'Installazione del widget', 'recent' => 'Il widget ha comunicato di recente.'],
+            'install' => ['label' => 'Installazione del widget', 'recent' => 'Il widget ha comunicato di recente.', 'action' => 'Controllare l’installazione del widget'],
             'coverage' => [
                 'label' => 'Copertura del supporto',
+                'action' => 'Controllare la copertura del supporto',
                 'explicit' => 'Accesso esplicito',
                 'fallback' => 'Accesso predefinito dell’account',
                 'assigned' => '{1} :count assegnato|[2,*] :count assegnati',
@@ -106,6 +106,7 @@ return [
             ],
             'privacy' => [
                 'label' => 'Mascheramento per la privacy',
+                'action' => 'Controllare il mascheramento per la privacy',
                 'configured' => '{1} :count selettore configurato|[2,*] :count selettori configurati',
                 'none' => 'Nessun selettore personalizzato',
                 'configured_detail' => 'I selettori personalizzati vengono inviati come configurazione pubblica del widget.',
@@ -113,6 +114,7 @@ return [
             ],
             'external' => [
                 'label' => 'Instradamento esterno',
+                'action' => 'Controllare l’instradamento esterno',
                 'mapped' => '{1} :count associato|[2,*] :count associati',
                 'none' => 'Non associato',
                 'mapped_detail' => 'Il passaggio dei ticket può usare i progetti di segnalazioni esterne associati.',

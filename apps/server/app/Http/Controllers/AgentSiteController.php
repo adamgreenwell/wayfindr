@@ -333,7 +333,7 @@ class AgentSiteController extends Controller
      * @param  array<int, int>  $supportAgentIds
      * @param  array<int, string>  $maskSelectors
      * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int, value: string}>, recent_failures: Collection<int, array{body_feedback: array<string, mixed>, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
-     * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string}>
+     * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string, action: string}>
      */
     private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, array $externalIssueHealth): Collection
     {
@@ -350,6 +350,7 @@ class AgentSiteController extends Controller
                     ? $installHealth['detail']
                     : __('site_settings.readiness.items.install.recent'),
                 'href' => route('dashboard.sites.show', $site).'#install-verification',
+                'action' => __('site_settings.readiness.items.install.action'),
             ],
             [
                 'label' => __('site_settings.readiness.items.coverage.label'),
@@ -361,6 +362,7 @@ class AgentSiteController extends Controller
                     ? trans_choice('site_settings.readiness.items.coverage.assigned', count($supportAgentIds), ['count' => ReaderNumber::count(count($supportAgentIds))])
                     : __('site_settings.readiness.items.coverage.fallback_detail'),
                 'href' => route('dashboard.sites.show', $site).'#support-access-heading',
+                'action' => __('site_settings.readiness.items.coverage.action'),
             ],
             [
                 'label' => __('site_settings.readiness.items.privacy.label'),
@@ -372,6 +374,7 @@ class AgentSiteController extends Controller
                     ? __('site_settings.readiness.items.privacy.configured_detail')
                     : __('site_settings.readiness.items.privacy.none_detail'),
                 'href' => route('dashboard.sites.show', $site).'#privacy-settings-heading',
+                'action' => __('site_settings.readiness.items.privacy.action'),
             ],
             [
                 'label' => __('site_settings.readiness.items.external.label'),
@@ -383,6 +386,7 @@ class AgentSiteController extends Controller
                     ? __('site_settings.readiness.items.external.mapped_detail')
                     : __('site_settings.readiness.items.external.none_detail'),
                 'href' => route('dashboard.sites.show', $site).'#external-issue-routing-heading',
+                'action' => __('site_settings.readiness.items.external.action'),
             ],
         ]);
     }

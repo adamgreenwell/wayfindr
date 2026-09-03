@@ -94,11 +94,11 @@ return [
 
     'readiness' => [
         'heading' => 'Support-Bereitschaft',
-        'review' => ':item prüfen',
         'items' => [
-            'install' => ['label' => 'Widget-Installation', 'recent' => 'Das Widget hat sich kürzlich gemeldet.'],
+            'install' => ['label' => 'Widget-Installation', 'recent' => 'Das Widget hat sich kürzlich gemeldet.', 'action' => 'Widget-Installation prüfen'],
             'coverage' => [
                 'label' => 'Support-Abdeckung',
+                'action' => 'Support-Abdeckung prüfen',
                 'explicit' => 'Expliziter Zugriff',
                 'fallback' => 'Kontoweiter Standardzugriff',
                 'assigned' => '{1} :count zugewiesen|[2,*] :count zugewiesen',
@@ -106,6 +106,7 @@ return [
             ],
             'privacy' => [
                 'label' => 'Datenschutzmaskierung',
+                'action' => 'Datenschutzmaskierung prüfen',
                 'configured' => '{1} :count Selektor eingerichtet|[2,*] :count Selektoren eingerichtet',
                 'none' => 'Keine eigenen Selektoren',
                 'configured_detail' => 'Eigene Selektoren werden als öffentliche Widget-Konfiguration gesendet.',
@@ -113,6 +114,7 @@ return [
             ],
             'external' => [
                 'label' => 'Externe Route',
+                'action' => 'Externe Route prüfen',
                 'mapped' => '{1} :count zugeordnet|[2,*] :count zugeordnet',
                 'none' => 'Nicht zugeordnet',
                 'mapped_detail' => 'Die Ticketübergabe kann zugeordnete externe Issue-Projekte verwenden.',

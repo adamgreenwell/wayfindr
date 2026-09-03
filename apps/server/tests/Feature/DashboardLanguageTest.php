@@ -481,8 +481,15 @@ test('site settings follow the agent language without claiming the site identity
         ->assertSee('Nicht installiert')
         ->assertSee('Abmelden')
         ->assertSee('Support-Bereitschaft')
+        ->assertSee('Widget-Installation prüfen')
+        ->assertSee('Support-Abdeckung prüfen')
+        ->assertSee('Datenschutzmaskierung prüfen')
+        ->assertSee('Externe Route prüfen')
         ->assertDontSee('Site Settings')
         ->assertDontSee('Not installed')
+        ->assertDontSee('widget-installation prüfen')
+        ->assertDontSee('support-abdeckung prüfen')
+        ->assertDontSee('datenschutzmaskierung prüfen')
         ->getContent();
 
     $document = new DOMDocument;
