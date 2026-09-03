@@ -1,8 +1,11 @@
 <?php
 
+use App\Enums\AccountPermission;
+use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -10,6 +13,70 @@ use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
+
+test('visitor profiles show only the support history granted to a custom role', function (): void {
+    $account = Account::factory()->create();
+    $conversationRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewConversations->value],
+    ]);
+    $ticketRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageTickets->value],
+    ]);
+    $conversationReader = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $conversationRole->id,
+    ]);
+    $ticketManager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $ticketRole->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach([$conversationReader->id, $ticketManager->id]);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-VISITOR-PRIVATE',
+        'subject' => 'Conversation-only history',
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-VISITOR-SECOND',
+        'subject' => 'Second conversation-only history',
+    ]);
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Conversation reply needed',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->create(['subject' => 'Ticket-only history']);
+
+    $this->actingAs($conversationReader)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Conversation-only history')
+        ->assertSee('WF-VISITOR-PRIVATE')
+        ->assertDontSee('Reply to visitor')
+        ->assertDontSee('Ticket-only history')
+        ->assertDontSee(route('dashboard.tickets.show', $ticket), false);
+
+    $this->actingAs($ticketManager)
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->assertDontSee('2 conversations');
+
+    $this->actingAs($ticketManager)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk()
+        ->assertSee('Ticket-only history')
+        ->assertSee(route('dashboard.tickets.show', $ticket), false)
+        ->assertDontSee('Assign an owner')
+        ->assertDontSee('Conversation-only history')
+        ->assertDontSee('WF-VISITOR-PRIVATE')
+        ->assertDontSee(route('dashboard.conversations.show', $conversation->support_code), false);
+});
 
 test('agent can view a safe visitor profile with same-site support history', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);

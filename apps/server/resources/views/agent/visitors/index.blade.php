@@ -72,7 +72,9 @@
                             <th>{{ __('visitors.list.columns.visitor') }}</th>
                             <th>{{ __('visitors.list.columns.site') }}</th>
                             <th>{{ __('visitors.list.columns.last_seen') }}</th>
-                            <th>{{ __('visitors.list.columns.conversations') }}</th>
+                            @if ($canViewConversations)
+                                <th>{{ __('visitors.list.columns.conversations') }}</th>
+                            @endif
                         </tr>
                     </thead>
                     <tbody>
@@ -102,7 +104,9 @@
                                             : __('visitors.presence.'.$presenceCue['key']) }}
                                     </span>
                                 </td>
-                                <td>{{ trans_choice('visitors.counts.conversations', $visitor->conversations_count, ['count' => \App\Support\ReaderNumber::count($visitor->conversations_count)]) }}</td>
+                                @if ($canViewConversations)
+                                    <td>{{ trans_choice('visitors.counts.conversations', $visitor->conversations_count, ['count' => \App\Support\ReaderNumber::count($visitor->conversations_count)]) }}</td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>

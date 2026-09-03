@@ -33,9 +33,13 @@
             <div class="meta-item">
                 <span class="meta-label">{{ __('visitors.profile.glance.support_history') }}</span>
                 <span class="meta-value">
-                    {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
-                    ·
-                    {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
+                    @if ($canViewConversations)
+                        {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
+                    @endif
+                    @if ($canViewConversations && $canManageTickets) · @endif
+                    @if ($canManageTickets)
+                        {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
+                    @endif
                 </span>
             </div>
         </div>
@@ -48,14 +52,18 @@
         </div>
 
         <div class="meta-grid">
-            <div class="meta-item">
-                <span class="meta-label">{{ __('visitors.snapshot.conversations') }}</span>
-                <span class="meta-value">{{ $supportSnapshot['active_conversation_label'] }}</span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-label">{{ __('visitors.snapshot.tickets') }}</span>
-                <span class="meta-value">{{ $supportSnapshot['active_ticket_label'] }}</span>
-            </div>
+            @if ($canViewConversations)
+                <div class="meta-item">
+                    <span class="meta-label">{{ __('visitors.snapshot.conversations') }}</span>
+                    <span class="meta-value">{{ $supportSnapshot['active_conversation_label'] }}</span>
+                </div>
+            @endif
+            @if ($canManageTickets)
+                <div class="meta-item">
+                    <span class="meta-label">{{ __('visitors.snapshot.tickets') }}</span>
+                    <span class="meta-value">{{ $supportSnapshot['active_ticket_label'] }}</span>
+                </div>
+            @endif
             <div class="meta-item">
                 <span class="meta-label">{{ __('visitors.snapshot.next_step') }}</span>
                 <span class="meta-value">{{ $supportSnapshot['next_action']['title'] }}</span>
@@ -98,30 +106,34 @@
                     @endif
                 </span>
             </div>
-            <div class="meta-item">
-                <span class="meta-label">{{ __('visitors.references.latest_support_code') }}</span>
-                <span class="meta-value">
-                    @if ($supportReferences['latest_conversation'])
-                        <a class="text-link" lang="" href="{{ route('dashboard.conversations.show', $supportReferences['latest_conversation']->support_code) }}">
-                            {{ $supportReferences['latest_conversation']->support_code }}
-                        </a>
-                    @else
-                        {{ __('visitors.references.no_conversations') }}
-                    @endif
-                </span>
-            </div>
-            <div class="meta-item">
-                <span class="meta-label">{{ __('visitors.references.latest_ticket') }}</span>
-                <span class="meta-value">
-                    @if ($supportReferences['latest_ticket'])
-                        <a class="text-link" href="{{ route('dashboard.tickets.show', $supportReferences['latest_ticket']) }}">
-                            {{ __('visitors.references.ticket', ['id' => $supportReferences['latest_ticket']->id]) }}
-                        </a>
-                    @else
-                        {{ __('visitors.references.no_tickets') }}
-                    @endif
-                </span>
-            </div>
+            @if ($canViewConversations)
+                <div class="meta-item">
+                    <span class="meta-label">{{ __('visitors.references.latest_support_code') }}</span>
+                    <span class="meta-value">
+                        @if ($supportReferences['latest_conversation'])
+                            <a class="text-link" lang="" href="{{ route('dashboard.conversations.show', $supportReferences['latest_conversation']->support_code) }}">
+                                {{ $supportReferences['latest_conversation']->support_code }}
+                            </a>
+                        @else
+                            {{ __('visitors.references.no_conversations') }}
+                        @endif
+                    </span>
+                </div>
+            @endif
+            @if ($canManageTickets)
+                <div class="meta-item">
+                    <span class="meta-label">{{ __('visitors.references.latest_ticket') }}</span>
+                    <span class="meta-value">
+                        @if ($supportReferences['latest_ticket'])
+                            <a class="text-link" href="{{ route('dashboard.tickets.show', $supportReferences['latest_ticket']) }}">
+                                {{ __('visitors.references.ticket', ['id' => $supportReferences['latest_ticket']->id]) }}
+                            </a>
+                        @else
+                            {{ __('visitors.references.no_tickets') }}
+                        @endif
+                    </span>
+                </div>
+            @endif
         </div>
 
         <div class="notice-copy notice-copy-bordered">
@@ -165,12 +177,17 @@
         <div class="section-header">
             <h2 id="visitor-history-heading">{{ __('visitors.history.heading') }}</h2>
             <span class="lede">
-                {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
-                ·
-                {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
+                @if ($canViewConversations)
+                    {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
+                @endif
+                @if ($canViewConversations && $canManageTickets) · @endif
+                @if ($canManageTickets)
+                    {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
+                @endif
             </span>
         </div>
 
+        @if ($canViewConversations)
         <div class="section-header">
             <strong>{{ __('visitors.history.conversations') }}</strong>
             <span class="lede">{{ trans_choice('visitors.counts.shown_conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}</span>
@@ -200,7 +217,9 @@
                 @endforeach
             </div>
         @endif
+        @endif
 
+        @if ($canManageTickets)
         <div class="section-header">
             <strong>{{ __('visitors.history.tickets') }}</strong>
             <span class="lede">{{ trans_choice('visitors.counts.shown_tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}</span>
@@ -224,7 +243,7 @@
                                 <span>{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span>
                                 <span>{{ __('tickets.priorities.'.$ticket->priority) }}</span>
                                 <span>{{ __('visitors.history.owner') }}: @if ($ticket->assignee)<span lang="">{{ $ticket->assignee->name }}</span>@else{{ __('visitors.history.unassigned') }}@endif</span>
-                                @if ($ticket->conversation)
+                                @if ($canViewConversations && $ticket->conversation)
                                     <span>{{ __('visitors.history.support_code') }}: <span lang="">{{ $ticket->conversation->support_code }}</span></span>
                                 @endif
                                 <span>{{ __('visitors.history.updated', ['elapsed' => $ticket->updated_at->diffForHumans()]) }}</span>
@@ -233,6 +252,7 @@
                     </article>
                 @endforeach
             </div>
+        @endif
         @endif
     </section>
 </x-layouts.app>
