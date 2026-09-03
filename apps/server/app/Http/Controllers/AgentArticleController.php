@@ -4,11 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
 use App\Models\Article;
+use App\Models\User;
 use App\Support\Knowledge\ArticleDocument;
 use App\Support\LiteralLike;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -21,6 +24,8 @@ use Illuminate\Validation\ValidationException;
  */
 class AgentArticleController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function index(Request $request): View
     {
         $agent = $request->user();
@@ -79,10 +84,14 @@ class AgentArticleController extends Controller
         $account = $agent->account()->firstOrFail();
         $input = $this->validatedArticleInput($request);
 
-        $article = $account->articles()->create([
-            ...$input,
-            'slug' => $this->uniqueSlug($account->id, $input['title']),
-        ]);
+        $article = DB::transaction(function () use ($agent, $account, $input): Article {
+            $this->lockedKnowledgeManager($agent, (int) $account->id, 403);
+
+            return $account->articles()->create([
+                ...$input,
+                'slug' => $this->uniqueSlug($account->id, $input['title']),
+            ]);
+        });
 
         return redirect()
             ->route('dashboard.account.articles.show', $article)
@@ -97,10 +106,18 @@ class AgentArticleController extends Controller
 
         $input = $this->validatedArticleInput($request);
 
-        // The slug is the article's stable name. Renaming the title of a
-        // published article must not break a link an agent already sent to a
-        // visitor, so the slug is settled once, at creation.
-        $article->forceFill($input)->save();
+        $article = DB::transaction(function () use ($agent, $article, $input): Article {
+            $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $article->account_id);
+            $article = $this->lockedArticle($article);
+            $this->authorizeManageArticle($lockedAgent, $article);
+
+            // The slug is the article's stable name. Renaming the title of a
+            // published article must not break a link an agent already sent to
+            // a visitor, so the slug is settled once, at creation.
+            $article->forceFill($input)->save();
+
+            return $article;
+        });
 
         return redirect()
             ->route('dashboard.account.articles.show', $article)
@@ -120,9 +137,16 @@ class AgentArticleController extends Controller
 
         $this->authorizeManageArticle($agent, $article);
 
-        $publishing = ! $article->isPublished();
+        $publishing = DB::transaction(function () use ($agent, $article): bool {
+            $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $article->account_id);
+            $article = $this->lockedArticle($article);
+            $this->authorizeManageArticle($lockedAgent, $article);
+            $publishing = ! $article->isPublished();
 
-        $article->forceFill(['published_at' => $publishing ? now() : null])->save();
+            $article->forceFill(['published_at' => $publishing ? now() : null])->save();
+
+            return $publishing;
+        });
 
         return redirect()
             ->route('dashboard.account.articles.show', $article)
@@ -137,7 +161,12 @@ class AgentArticleController extends Controller
 
         $this->authorizeManageArticle($agent, $article);
 
-        $article->delete();
+        DB::transaction(function () use ($agent, $article): void {
+            $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $article->account_id);
+            $article = $this->lockedArticle($article);
+            $this->authorizeManageArticle($lockedAgent, $article);
+            $article->delete();
+        });
 
         return redirect()
             ->route('dashboard.account.articles.index')
@@ -152,6 +181,32 @@ class AgentArticleController extends Controller
             && (int) $agent->account_id === (int) $article->account_id,
             404,
         );
+    }
+
+    private function lockedKnowledgeManager(User $agent, int $accountId, int $failureStatus = 404): User
+    {
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $lockedAgent = User::query()
+            ->whereKey($agent->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->first();
+
+        abort_unless(
+            $lockedAgent?->hasAccountPermission(AccountPermission::ManageKnowledge),
+            $failureStatus,
+        );
+
+        return $lockedAgent;
+    }
+
+    private function lockedArticle(Article $article): Article
+    {
+        return Article::query()
+            ->whereKey($article->id)
+            ->where('account_id', $article->account_id)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 
     /**
