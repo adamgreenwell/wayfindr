@@ -21,6 +21,8 @@ use Illuminate\View\View;
 
 final class AgentAccountCustomRoleController extends Controller
 {
+    private const NAME_MAX_LENGTH = 80;
+
     public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
 
     public function index(Request $request): View
@@ -132,11 +134,12 @@ final class AgentAccountCustomRoleController extends Controller
     private function validatedAttributes(Request $request): array
     {
         $validated = $request->validate([
-            'name' => ['required', 'string', 'max:80'],
+            'name' => ['required', 'string', 'max:'.self::NAME_MAX_LENGTH],
             'permissions' => ['sometimes', 'array'],
             'permissions.*' => ['string', Rule::in(AccountPermission::delegableValues())],
         ]);
         $name = Str::of($validated['name'])->squish()->toString();
+        $nameKey = Str::lower($name);
         $permissions = collect($validated['permissions'] ?? [])
             ->unique()
             ->sort()
@@ -147,11 +150,23 @@ final class AgentAccountCustomRoleController extends Controller
             throw ValidationException::withMessages(['name' => __('validation.required', ['attribute' => __('account_roles.fields.name')])]);
         }
 
+        // Unicode lowercasing can expand a string (for example, U+0130 becomes
+        // two code points). Keep the canonical key inside the same database
+        // boundary as the display name instead of letting PostgreSQL reject it.
+        if (Str::length($nameKey) > self::NAME_MAX_LENGTH) {
+            throw ValidationException::withMessages([
+                'name' => __('validation.max.string', [
+                    'attribute' => __('account_roles.fields.name'),
+                    'max' => self::NAME_MAX_LENGTH,
+                ]),
+            ]);
+        }
+
         $this->validatePermissionDependencies($permissions);
 
         return [
             'name' => $name,
-            'name_key' => Str::lower($name),
+            'name_key' => $nameKey,
             'permissions' => $permissions,
         ];
     }

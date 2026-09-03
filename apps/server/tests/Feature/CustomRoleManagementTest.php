@@ -112,6 +112,32 @@ test('permission dependencies are enforced and role names are unique within an a
     expect(CustomRole::query()->count())->toBe(1);
 });
 
+test('normalized custom role names must fit the persisted key boundary', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create([
+        'name' => 'Original role',
+        'name_key' => 'original role',
+    ]);
+    $expandingName = str_repeat('İ', 80);
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.account.roles.index'))
+        ->post(route('dashboard.account.roles.store'), ['name' => $expandingName])
+        ->assertRedirect(route('dashboard.account.roles.index'))
+        ->assertSessionHasErrors('name');
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.account.roles.index'))
+        ->put(route('dashboard.account.roles.update', $role), ['name' => $expandingName])
+        ->assertRedirect(route('dashboard.account.roles.index'))
+        ->assertSessionHasErrors('name');
+
+    expect(CustomRole::query()->count())->toBe(1)
+        ->and($role->fresh()->name)->toBe('Original role')
+        ->and(AuditEvent::query()->where('action', 'custom_role.updated')->exists())->toBeFalse();
+});
+
 test('custom role mutations reauthorize a stale owner after acquiring the account lock', function (string $action): void {
     $account = Account::factory()->create();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
