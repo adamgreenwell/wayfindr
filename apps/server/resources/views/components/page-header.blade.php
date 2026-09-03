@@ -30,8 +30,8 @@
                  `no language marker is rendered inside an attribute` has the
                  whole story, including the iframe it once blanked. --}}
             <h1{!! $titleLang !== null ? ' lang="'.e(str_replace('_', '-', $titleLang)).'"' : '' !!}>@isset($titleContent){!! $titleContent !!}@else{{ $title }}@endisset</h1>
-            @if (filled($subtitle))
-                <p class="lede">{{ $subtitle }}</p>
+            @if (filled($subtitle) || isset($subtitleContent))
+                <p class="lede">@isset($subtitleContent){{ $subtitleContent }}@else{{ $subtitle }}@endisset</p>
             @endif
             {{ $slot }}
         </div>

@@ -162,7 +162,7 @@ test('platform operators can confirm manual readiness items from the operator co
         ->get('/operator')
         ->assertOk()
         ->assertSee('Backups and restore confirmed.')
-        ->assertSee('Confirmed by Olive Operator')
+        ->assertSeeText('Confirmed by Olive Operator')
         ->assertSee('Evidence note recorded.')
         ->assertDontSee('Snapshot and database restore tested.');
 });
@@ -282,8 +282,8 @@ test('operator console summarizes readiness proof coverage without evidence note
         ], false)
         ->assertSee('Scheduler')
         ->assertSee('Backups and restore')
-        ->assertSee('Confirmed by Olive Operator 1 day ago')
-        ->assertSee('Confirmed by Olive Operator 1 month ago')
+        ->assertSeeText('Confirmed by Olive Operator 1 day ago')
+        ->assertSeeText('Confirmed by Olive Operator 1 month ago')
         ->assertSee('Your notes are never shown here.')
         ->assertDontSee('Scheduler proof mentioned support code WF-PROOFSECRET.')
         ->assertDontSee('Restore proof mentioned anon-proof-secret.')
@@ -543,7 +543,7 @@ test('operator console shows aggregate cobrowse transport readiness without supp
         ->get('/operator')
         ->assertOk()
         ->assertSee('Cobrowse transport')
-        ->assertSee('1 active cobrowse session needs transport attention.')
+        ->assertSeeText('1 active cobrowse session needs transport attention.')
         ->assertSee('1 degraded')
         ->assertDontSee('WF-PRIVATE')
         ->assertDontSee('Checkout account number is wrong')

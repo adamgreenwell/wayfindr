@@ -3,15 +3,14 @@
 <section class="section" aria-labelledby="operator-cobrowse-budget-defaults-heading">
     <div class="section-header">
         <div>
-            <h2 id="operator-cobrowse-budget-defaults-heading">Cobrowse budget defaults</h2>
-            <p class="lede">Safe default limits for stock widget payloads and server intake.</p>
+            <h2 id="operator-cobrowse-budget-defaults-heading">{{ __('operator.dashboard.budget.title') }}</h2>
+            <p class="lede">{{ __('operator.dashboard.budget.subtitle') }}</p>
         </div>
     </div>
 
     <div class="notice-copy notice-copy-bordered">
         <p>
-            These values are product guardrails, not live support-session data. Support codes, visitor identifiers,
-            page URLs, snapshots, transcripts, and queue contents stay out of readiness screens.
+            {{ __('operator.dashboard.budget.boundary') }}
         </p>
     </div>
 
@@ -19,7 +18,7 @@
         <div class="section-header">
             <div>
                 <strong>{{ $group['label'] }}</strong>
-                <p class="lede">{{ $group['description'] }}</p>
+                <p class="lede"><x-operator-feedback :feedback="$group['description']" /></p>
             </div>
         </div>
 

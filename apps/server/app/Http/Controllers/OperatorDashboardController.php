@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\DashboardLanguage;
+use App\Support\OperatorDashboardPresenter;
 use App\Support\OperatorReadiness;
 use App\Support\OperatorSystemIdentity;
+use App\Support\ReaderNumber;
 use App\Support\RealtimeHealth;
 use App\Support\Release\UpgradeGuard;
 use Illuminate\Contracts\View\View;
@@ -27,9 +29,9 @@ class OperatorDashboardController extends Controller
             'operator' => $request->user(),
             'operatorActivity' => $this->operatorActivity(),
             'operatorActivityTotal' => $this->operatorActivityTotal(),
-            'readiness' => $readiness->summary(),
-            'realtimeHealth' => $realtimeHealth->summary(),
-            'systemIdentity' => $systemIdentity->summary(),
+            'readiness' => OperatorDashboardPresenter::readiness($readiness->summary()),
+            'realtimeHealth' => OperatorDashboardPresenter::realtime($realtimeHealth->summary()),
+            'systemIdentity' => OperatorDashboardPresenter::systemIdentity($systemIdentity->summary()),
             // Advisory notices (ADR 0013). This is the console half of "reported
             // where the operator meets it" — the other half is the upgrade
             // output. `notices()` swallows an unreadable declaration and returns
@@ -40,7 +42,7 @@ class OperatorDashboardController extends Controller
     }
 
     /**
-     * @return Collection<int, array{actor: string, body: string, details: array<int, array{label: string, value: string}>, label: string, occurred_at: Carbon|null}>
+     * @return Collection<int, array{actor: array|string, body: array|string, details: array<int, array{label: string, value: array|string}>, label: string, occurred_at: Carbon|null}>
      */
     private function operatorActivity(): Collection
     {
@@ -83,61 +85,57 @@ class OperatorDashboardController extends Controller
         ];
     }
 
-    private function operatorActivityActor(AuditEvent $event): string
+    private function operatorActivityActor(AuditEvent $event): array|string
     {
         if ($event->actor instanceof User) {
-            return $event->actor->name;
+            return $this->raw($event->actor->name);
         }
 
-        return 'System';
+        return __('operator.dashboard.activity.system');
     }
 
     private function operatorActivityLabel(AuditEvent $event): string
     {
         return match ($event->action) {
             'operator_readiness.confirmed' => $this->readinessConfirmationLabel($event),
-            'operator_settings.mail.updated' => 'Mail settings updated',
-            'operator_settings.storage.updated' => 'Storage settings updated',
-            'operator_settings.scanning.updated' => 'Scanning settings updated',
-            'operator_settings.backup.updated' => 'Backup settings updated',
-            'operator_settings.backup.triggered' => 'Backup triggered',
-            'operator_settings.localization.updated' => 'Language and region updated',
-            default => 'Operator activity',
+            'operator_settings.mail.updated' => __('operator.dashboard.activity.labels.mail'),
+            'operator_settings.storage.updated' => __('operator.dashboard.activity.labels.storage'),
+            'operator_settings.scanning.updated' => __('operator.dashboard.activity.labels.scanning'),
+            'operator_settings.backup.updated' => __('operator.dashboard.activity.labels.backup'),
+            'operator_settings.backup.triggered' => __('operator.dashboard.activity.labels.backup_run'),
+            'operator_settings.localization.updated' => __('operator.dashboard.activity.labels.localization'),
+            default => __('operator.dashboard.activity.labels.generic'),
         };
     }
 
-    private function operatorActivityBody(AuditEvent $event): string
+    private function operatorActivityBody(AuditEvent $event): array
     {
         if ($event->action === 'operator_settings.mail.updated') {
-            return sprintf(
-                'Outbound mail settings were updated (transport: %s).',
-                (string) data_get($event->metadata, 'mailer', 'unknown'),
-            );
+            return $this->feedback('operator.dashboard.activity.body.mail', [
+                'transport' => (string) data_get($event->metadata, 'mailer', 'unknown'),
+            ]);
         }
 
         if ($event->action === 'operator_settings.storage.updated') {
-            return sprintf(
-                'Attachment storage was updated (disk: %s).',
-                (string) data_get($event->metadata, 'disk', 'unknown'),
-            );
+            return $this->feedback('operator.dashboard.activity.body.storage', [
+                'disk' => (string) data_get($event->metadata, 'disk', 'unknown'),
+            ]);
         }
 
         if ($event->action === 'operator_settings.scanning.updated') {
-            return sprintf(
-                'Attachment scanning was updated (scanner: %s).',
-                (string) data_get($event->metadata, 'driver', 'unknown'),
-            );
+            return $this->feedback('operator.dashboard.activity.body.scanning', [
+                'scanner' => (string) data_get($event->metadata, 'driver', 'unknown'),
+            ]);
         }
 
         if ($event->action === 'operator_settings.backup.updated') {
-            return sprintf(
-                'Backup settings were updated (offsite: %s).',
-                (string) data_get($event->metadata, 'offsite_disk', 'unknown'),
-            );
+            return $this->feedback('operator.dashboard.activity.body.backup', [
+                'offsite' => (string) data_get($event->metadata, 'offsite_disk', 'unknown'),
+            ]);
         }
 
         if ($event->action === 'operator_settings.backup.triggered') {
-            return 'A backup was queued to run in the background.';
+            return $this->feedback('operator.dashboard.activity.body.backup_run');
         }
 
         // Before the readiness fall-through below, and that ordering is the
@@ -145,137 +143,140 @@ class OperatorDashboardController extends Controller
         // rendered blank, it is captioned "Instance readiness proof was
         // recorded" -- a settings change described as something it is not.
         if ($event->action === 'operator_settings.localization.updated') {
-            return sprintf(
-                'Dashboard language and region were updated (language: %s, timezone: %s).',
-                (string) data_get($event->metadata, 'language', 'unknown'),
-                (string) data_get($event->metadata, 'timezone', 'unknown'),
-            );
+            return $this->feedback('operator.dashboard.activity.body.localization', [
+                'language' => (string) data_get($event->metadata, 'language', 'unknown'),
+                'timezone' => (string) data_get($event->metadata, 'timezone', 'unknown'),
+            ]);
         }
 
         return match (data_get($event->metadata, 'key')) {
-            'scheduler' => 'Scheduler readiness proof was recorded.',
-            'backups_restore' => 'Backups and restore readiness proof was recorded.',
-            default => 'Instance readiness proof was recorded.',
+            'scheduler' => $this->feedback('operator.dashboard.activity.body.readiness_scheduler'),
+            'backups_restore' => $this->feedback('operator.dashboard.activity.body.readiness_backups'),
+            default => $this->feedback('operator.dashboard.activity.body.readiness_generic'),
         };
     }
 
     /**
-     * @return array<int, array{label: string, value: string}>
+     * @return array<int, array{label: string, value: array|string}>
      */
     private function operatorActivityDetails(AuditEvent $event): array
     {
         return match ($event->action) {
             'operator_readiness.confirmed' => [
                 [
-                    'label' => 'Readiness item',
+                    'label' => __('operator.dashboard.activity.details.readiness_item'),
                     'value' => $this->readinessConfirmationItem($event),
                 ],
                 [
-                    'label' => 'Evidence note',
+                    'label' => __('operator.dashboard.activity.details.evidence_note'),
                     'value' => $this->readinessConfirmationHasNote($event)
-                        ? 'Evidence note recorded'
-                        : 'No evidence note recorded',
+                        ? __('operator.dashboard.activity.values.evidence_recorded')
+                        : __('operator.dashboard.activity.values.evidence_missing'),
                 ],
                 [
-                    'label' => 'Event type',
-                    'value' => 'Readiness confirmation',
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.readiness_confirmation'),
                 ],
             ],
             'operator_settings.mail.updated' => [
                 [
-                    'label' => 'Transport',
-                    'value' => (string) data_get($event->metadata, 'mailer', 'unknown'),
+                    'label' => __('operator.dashboard.activity.details.transport'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'mailer', 'unknown')),
                 ],
                 [
-                    'label' => 'Password',
+                    'label' => __('operator.dashboard.activity.details.password'),
                     'value' => match (data_get($event->metadata, 'password_changed')) {
-                        'updated' => 'Updated',
-                        'removed' => 'Removed',
-                        default => 'Unchanged',
+                        'updated' => __('operator.dashboard.activity.values.updated'),
+                        'removed' => __('operator.dashboard.activity.values.removed'),
+                        default => __('operator.dashboard.activity.values.unchanged'),
                     },
                 ],
                 [
-                    'label' => 'Event type',
-                    'value' => 'Instance settings change',
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.settings_change'),
                 ],
             ],
             'operator_settings.storage.updated' => [
                 [
-                    'label' => 'Disk',
-                    'value' => (string) data_get($event->metadata, 'disk', 'unknown'),
+                    'label' => __('operator.dashboard.activity.details.disk'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'disk', 'unknown')),
                 ],
                 [
-                    'label' => 'Credentials',
+                    'label' => __('operator.dashboard.activity.details.credentials'),
                     'value' => match (true) {
                         in_array('updated', [
                             data_get($event->metadata, 'key_changed'),
                             data_get($event->metadata, 'secret_changed'),
-                        ], true) => 'Updated',
+                        ], true) => __('operator.dashboard.activity.values.updated'),
                         in_array('cleared', [
                             data_get($event->metadata, 'key_changed'),
                             data_get($event->metadata, 'secret_changed'),
-                        ], true) => 'Cleared',
-                        default => 'Unchanged',
+                        ], true) => __('operator.dashboard.activity.values.cleared'),
+                        default => __('operator.dashboard.activity.values.unchanged'),
                     },
                 ],
                 [
-                    'label' => 'Event type',
-                    'value' => 'Instance settings change',
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.settings_change'),
                 ],
             ],
             'operator_settings.localization.updated' => [
                 [
-                    'label' => 'Language',
-                    'value' => DashboardLanguage::SUPPORTED[(string) data_get($event->metadata, 'language')]
-                        ?? (string) data_get($event->metadata, 'language', 'unknown'),
+                    'label' => __('operator.dashboard.activity.details.language'),
+                    'value' => $this->raw(DashboardLanguage::SUPPORTED[(string) data_get($event->metadata, 'language')]
+                        ?? (string) data_get($event->metadata, 'language', 'unknown')),
                 ],
                 [
-                    'label' => 'Timezone',
-                    'value' => (string) data_get($event->metadata, 'timezone', 'unknown'),
+                    'label' => __('operator.dashboard.activity.details.timezone'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'timezone', 'unknown')),
                 ],
                 [
-                    'label' => 'Event type',
-                    'value' => 'Instance settings change',
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.settings_change'),
                 ],
             ],
             'operator_settings.scanning.updated' => [
                 [
-                    'label' => 'Scanner',
-                    'value' => (string) data_get($event->metadata, 'driver', 'unknown'),
+                    'label' => __('operator.dashboard.activity.details.scanner'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'driver', 'unknown')),
                 ],
                 [
-                    'label' => 'Unreachable policy',
-                    'value' => data_get($event->metadata, 'fail_closed') ? 'Fail closed (reject)' : 'Fail open (accept)',
+                    'label' => __('operator.dashboard.activity.details.unreachable_policy'),
+                    'value' => __(data_get($event->metadata, 'fail_closed')
+                        ? 'operator.dashboard.activity.values.fail_closed'
+                        : 'operator.dashboard.activity.values.fail_open'),
                 ],
                 [
-                    'label' => 'Event type',
-                    'value' => 'Instance settings change',
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.settings_change'),
                 ],
             ],
             'operator_settings.backup.updated' => [
                 [
-                    'label' => 'Offsite',
-                    'value' => (string) data_get($event->metadata, 'offsite_disk', 'unknown'),
+                    'label' => __('operator.dashboard.activity.details.offsite'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'offsite_disk', 'unknown')),
                 ],
                 [
-                    'label' => 'Retention',
+                    'label' => __('operator.dashboard.activity.details.retention'),
                     'value' => ((int) data_get($event->metadata, 'retention_days', 0)) > 0
-                        ? data_get($event->metadata, 'retention_days').' day(s)'
-                        : 'Keep everything',
+                        ? trans_choice('operator.dashboard.activity.values.retention_days', (int) data_get($event->metadata, 'retention_days'), [
+                            'count' => ReaderNumber::count((int) data_get($event->metadata, 'retention_days')),
+                        ])
+                        : __('operator.dashboard.activity.values.keep_everything'),
                 ],
                 [
-                    'label' => 'Event type',
-                    'value' => 'Instance settings change',
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.settings_change'),
                 ],
             ],
             'operator_settings.backup.triggered' => [
                 [
-                    'label' => 'Offsite',
-                    'value' => (string) data_get($event->metadata, 'offsite_disk', 'unknown'),
+                    'label' => __('operator.dashboard.activity.details.offsite'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'offsite_disk', 'unknown')),
                 ],
                 [
-                    'label' => 'Event type',
-                    'value' => 'Backup run (background)',
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.backup_run'),
                 ],
             ],
             default => [],
@@ -285,23 +286,41 @@ class OperatorDashboardController extends Controller
     private function readinessConfirmationLabel(AuditEvent $event): string
     {
         return match (data_get($event->metadata, 'key')) {
-            'scheduler' => 'Scheduler confirmation',
-            'backups_restore' => 'Backups and restore confirmation',
-            default => 'Readiness confirmation',
+            'scheduler' => __('operator.dashboard.activity.labels.scheduler_confirmation'),
+            'backups_restore' => __('operator.dashboard.activity.labels.backups_confirmation'),
+            default => __('operator.dashboard.activity.labels.readiness_confirmation'),
         };
     }
 
     private function readinessConfirmationItem(AuditEvent $event): string
     {
         return match (data_get($event->metadata, 'key')) {
-            'scheduler' => 'Scheduler',
-            'backups_restore' => 'Backups and restore',
-            default => 'Instance readiness',
+            'scheduler' => __('operator.readiness.checks.scheduler.label'),
+            'backups_restore' => __('operator.readiness.checks.backups_restore.label'),
+            default => __('operator.dashboard.activity.values.instance_readiness'),
         };
     }
 
     private function readinessConfirmationHasNote(AuditEvent $event): bool
     {
         return trim((string) data_get($event->metadata, 'note', '')) !== '';
+    }
+
+    /** @return array{raw: string} */
+    private function raw(string $value): array
+    {
+        return ['raw' => $value];
+    }
+
+    /**
+     * @param  array<string, mixed>  $parameters
+     * @return array{key: string, parameters: array<string, string>}
+     */
+    private function feedback(string $key, array $parameters = []): array
+    {
+        return [
+            'key' => $key,
+            'parameters' => array_map(static fn (mixed $value): string => (string) $value, $parameters),
+        ];
     }
 }

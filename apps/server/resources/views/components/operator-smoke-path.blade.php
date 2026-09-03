@@ -6,10 +6,10 @@
 <section class="section" aria-labelledby="post-install-smoke-path-heading">
     <div class="section-header">
         <div>
-            <h2 id="post-install-smoke-path-heading">Prove the install works</h2>
-            <p class="lede">Do these once, in order, before this install carries real conversations.</p>
+            <h2 id="post-install-smoke-path-heading">{{ __('operator.dashboard.smoke.title') }}</h2>
+            <p class="lede">{{ __('operator.dashboard.smoke.subtitle') }}</p>
         </div>
-        <span class="lede">{{ count($smokePath) }} steps</span>
+        <span class="lede">{{ trans_choice('operator.dashboard.smoke.count', count($smokePath), ['count' => \App\Support\ReaderNumber::count(count($smokePath))]) }}</span>
     </div>
 
     <div class="readiness-list">
@@ -17,16 +17,16 @@
             <article class="readiness-check" data-status="{{ $step['status'] }}">
                 <div class="readiness-check-main">
                     <div>
-                        <span class="meta-label">Step {{ $loop->iteration }}</span>
+                        <span class="meta-label">{{ __('operator.dashboard.smoke.step', ['count' => \App\Support\ReaderNumber::count($loop->iteration)]) }}</span>
                         <h3>{{ $step['label'] }}</h3>
-                        <p>{{ $step['summary'] }}</p>
+                        <p><x-operator-feedback :feedback="$step['summary']" /></p>
                     </div>
                     <span class="readiness-status" data-status="{{ $step['status'] }}">
                         {{ $step['status_label'] }}
                     </span>
                 </div>
 
-                <p class="readiness-action">{{ $step['action'] }}</p>
+                <p class="readiness-action"><x-operator-feedback :feedback="$step['action']" /></p>
                 <x-operator-readiness-commands :commands="$step['commands'] ?? []" />
                 <x-operator-readiness-confirmation-form :action="$confirmationRoute" id-prefix="operator-smoke-path" :item="$step" />
             </article>

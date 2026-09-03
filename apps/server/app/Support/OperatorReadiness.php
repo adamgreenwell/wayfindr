@@ -146,17 +146,17 @@ class OperatorReadiness
     private function applicationKey(): array
     {
         if ($this->hasValue(config('app.key'))) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'application_key',
                 label: 'Application key',
                 status: 'ready',
                 summary: 'APP_KEY is set.',
                 detail: 'Encrypted cookies, sessions, and signed data have an application key available.',
                 action: 'Keep this value secret and stable between deploys.'
-            );
+            ), 'ready');
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'application_key',
             label: 'Application key',
             status: 'attention',
@@ -164,7 +164,7 @@ class OperatorReadiness
             detail: 'Laravel cannot safely encrypt sessions, cookies, or signed data without an application key.',
             action: 'Run php artisan key:generate and save the generated APP_KEY in the environment.',
             commands: ['php artisan key:generate']
-        );
+        ), 'missing');
     }
 
     /**
@@ -300,7 +300,7 @@ class OperatorReadiness
         $environment = (string) app()->environment();
 
         if ($debugEnabled && app()->environment('production')) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'security_posture',
                 label: 'Debug mode',
                 status: 'attention',
@@ -308,11 +308,11 @@ class OperatorReadiness
                 detail: 'APP_DEBUG=true in production exposes stack traces, environment values, and configuration to anyone who triggers an error, which can leak database credentials, API keys, and visitor data.',
                 action: 'Set APP_DEBUG=false in the environment, then run php artisan config:cache so the cached config reflects it.',
                 commands: ['php artisan config:cache']
-            );
+            ), 'production_enabled');
         }
 
         if ($debugEnabled) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'security_posture',
                 label: 'Debug mode',
                 status: 'ready',
@@ -320,10 +320,10 @@ class OperatorReadiness
                 detail: 'Debug mode is expected outside production. A production install must keep APP_DEBUG=false so errors never expose stack traces, environment values, or secrets.',
                 action: 'Keep APP_ENV=production and APP_DEBUG=false on the live install, then run php artisan config:cache after changing them.',
                 commands: ['php artisan config:cache']
-            );
+            ), 'nonproduction_enabled', ['environment' => $environment]);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'security_posture',
             label: 'Debug mode',
             status: 'ready',
@@ -331,7 +331,7 @@ class OperatorReadiness
             detail: sprintf('APP_DEBUG is off in the %s environment, so application errors will not expose stack traces, environment values, or secrets.', $environment),
             action: 'Keep APP_DEBUG=false in production and re-run php artisan config:cache after environment changes.',
             commands: ['php artisan config:cache']
-        );
+        ), 'disabled', ['environment' => $environment]);
     }
 
     /**
@@ -344,24 +344,27 @@ class OperatorReadiness
         try {
             DB::connection()->select('select 1');
         } catch (Throwable $exception) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'database_connection',
                 label: 'Database connection',
                 status: 'attention',
                 summary: sprintf('The %s connection could not be reached.', $connection),
                 detail: $exception->getMessage(),
                 action: 'Review DB_CONNECTION, DB_HOST, DB_DATABASE, DB_USERNAME, and DB_PASSWORD.'
-            );
+            ), 'unreachable', [
+                'connection' => $connection,
+                'error' => $exception->getMessage(),
+            ]);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'database_connection',
             label: 'Database connection',
             status: 'ready',
             summary: sprintf('The %s connection responded.', $connection),
             detail: 'Wayfindr can reach the configured database.',
             action: 'Keep migrations in the deploy script so schema changes land with releases.'
-        );
+        ), 'ready', ['connection' => $connection]);
     }
 
     /**
@@ -378,24 +381,30 @@ class OperatorReadiness
         // rate limiters, and locks. Outside production it is expected.
         if ($persistentStores === []) {
             if (app()->environment('production')) {
-                return $this->check(
+                return $this->withTranslation($this->check(
                     key: 'cache_store',
                     label: 'Cache store',
                     status: 'attention',
                     summary: sprintf('CACHE_STORE is %s in production.', $default),
                     detail: 'The configured cache store does not persist between requests or across workers, so cached config, rate limiters, and locks will not behave correctly in production.',
                     action: 'Set CACHE_STORE to a shared, persistent store such as redis, memcached, database, or file (a failover chain must include a persistent store).'
-                );
+                ), 'nonpersistent_production', [
+                    'setting' => 'CACHE_STORE',
+                    'store' => $default,
+                ]);
             }
 
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'cache_store',
                 label: 'Cache store',
                 status: 'ready',
                 summary: sprintf('CACHE_STORE is %s.', $default),
                 detail: 'Non-persistent cache stores are expected outside production. A production install should use a shared, persistent store.',
                 action: 'Use redis, memcached, database, or file for the cache store before relying on it in production.'
-            );
+            ), 'nonpersistent_nonproduction', [
+                'setting' => 'CACHE_STORE',
+                'store' => $default,
+            ]);
         }
 
         // Probe the persistent backends directly. For a failover chain this means
@@ -409,18 +418,22 @@ class OperatorReadiness
                     ? sprintf('The %s store in the %s cache chain', $name, $default)
                     : sprintf('The %s cache store', $name);
 
-                return $this->check(
+                return $this->withTranslation($this->check(
                     key: 'cache_store',
                     label: 'Cache store',
                     status: 'attention',
                     summary: sprintf('%s could not be verified.', $where),
                     detail: $failure,
                     action: 'Check the cache server connection and credentials (for redis or memcached) or the cache table (for the database store), then retry.'
-                );
+                ), $isFailover && $name !== $default ? 'chain_unreachable' : 'store_unreachable', [
+                    'chain' => $default,
+                    'error' => $failure,
+                    'store' => $name,
+                ]);
             }
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'cache_store',
             label: 'Cache store',
             status: 'ready',
@@ -429,7 +442,9 @@ class OperatorReadiness
                 : sprintf('The %s cache store responded.', $default),
             detail: 'Wayfindr wrote and read back a value from the persistent cache backend'.(count($persistentStores) > 1 ? 's' : '').'.',
             action: 'Keep the cache store shared across web and queue workers.'
-        );
+        ), $isFailover ? 'chain_ready' : 'store_ready', [
+            'store' => $default,
+        ]);
     }
 
     private function cacheStoreDriver(string $name): ?string
@@ -581,7 +596,7 @@ class OperatorReadiness
         $connection = (string) config('queue.default', 'sync');
 
         if (in_array($connection, ['null', 'sync'], true)) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'queue_worker',
                 label: 'Queue worker',
                 status: 'attention',
@@ -589,10 +604,13 @@ class OperatorReadiness
                 detail: 'Synchronous queues are useful locally, but production installs should run durable background workers.',
                 action: 'Use database or redis queues and run php artisan queue:work under Forge, Supervisor, systemd, or your process manager.',
                 commands: ['php artisan queue:work']
-            );
+            ), 'synchronous', [
+                'connection' => $connection,
+                'setting' => 'QUEUE_CONNECTION',
+            ]);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'queue_worker',
             label: 'Queue worker',
             status: 'ready',
@@ -600,7 +618,10 @@ class OperatorReadiness
             detail: 'The queue driver is configured for background work.',
             action: 'Confirm php artisan queue:work is managed by Forge, Supervisor, systemd, or your deployment platform, then run php artisan queue:failed after testing to inspect failures.',
             commands: ['php artisan queue:work', 'php artisan queue:failed']
-        );
+        ), 'ready', [
+            'connection' => $connection,
+            'setting' => 'QUEUE_CONNECTION',
+        ]);
     }
 
     /**
@@ -611,7 +632,7 @@ class OperatorReadiness
         $realtime = $this->realtimeHealth->summary();
         $status = $realtime['status'] === 'ready' ? 'ready' : 'attention';
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'realtime_broadcasting',
             label: 'Realtime broadcasting',
             status: $status,
@@ -623,7 +644,11 @@ class OperatorReadiness
             commands: $status === 'ready'
                 ? ['php artisan reverb:start --host=127.0.0.1 --port=8080', 'php artisan reverb:restart']
                 : []
-        );
+        ), match ($realtime['status']) {
+            'ready' => 'ready',
+            'disabled' => 'disabled',
+            default => 'incomplete',
+        });
     }
 
     /**
@@ -638,24 +663,24 @@ class OperatorReadiness
         $unwritablePaths = array_filter($paths, fn (string $path): bool => ! is_dir($path) || ! is_writable($path));
 
         if ($unwritablePaths !== []) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'storage_paths',
                 label: 'Storage paths',
                 status: 'attention',
                 summary: 'One or more storage paths are not writable.',
                 detail: implode(', ', $unwritablePaths),
                 action: 'Make storage/framework and storage/logs writable by the PHP user.'
-            );
+            ), 'unwritable', ['paths' => implode(', ', $unwritablePaths)]);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'storage_paths',
             label: 'Storage paths',
             status: 'ready',
             summary: 'Laravel storage paths are writable.',
             detail: 'Cache, compiled views, sessions, and logs can be written by the application.',
             action: 'Keep storage shared between zero-downtime releases.'
-        );
+        ), 'ready');
     }
 
     /**
@@ -666,7 +691,7 @@ class OperatorReadiness
         try {
             $diskName = AttachmentStorage::diskName();
         } catch (Throwable $exception) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'attachment_storage',
                 label: 'Attachment storage',
                 status: 'attention',
@@ -674,7 +699,10 @@ class OperatorReadiness
                 detail: $exception->getMessage().' New uploads are being rejected until this is corrected.',
                 action: 'Set WAYFINDR_ATTACHMENT_STORAGE_DISK to attachments (local) or attachments-s3, then run php artisan config:cache.',
                 commands: ['php artisan config:cache'],
-            );
+            ), 'misconfigured', [
+                'error' => $exception->getMessage(),
+                'setting' => 'WAYFINDR_ATTACHMENT_STORAGE_DISK',
+            ]);
         }
 
         $driver = (string) config("filesystems.disks.{$diskName}.driver", 'local');
@@ -702,7 +730,7 @@ class OperatorReadiness
             // The retention sweep reconciles by LISTING the disk; credentials
             // that can write/read but not list would let it silently do nothing.
             if (! $listed) {
-                return $this->check(
+                return $this->withTranslation($this->check(
                     key: 'attachment_storage',
                     label: 'Attachment storage',
                     status: 'attention',
@@ -711,7 +739,9 @@ class OperatorReadiness
                     action: $driver === 's3'
                         ? 'Grant the credentials ListBucket permission on the bucket.'
                         : 'Make the attachments storage directory readable and listable by the PHP user.',
-                );
+                ), $driver === 's3' ? 'cannot_list_s3' : 'cannot_list_local', [
+                    'disk' => $diskName,
+                ]);
             }
 
             // The disks run with throw => false, so a delete refused by the
@@ -719,7 +749,7 @@ class OperatorReadiness
             // chip-removal cleanup depend on delete working — surface it
             // rather than reporting ready.
             if ($deleted === false || $disk->exists($probeKey)) {
-                return $this->check(
+                return $this->withTranslation($this->check(
                     key: 'attachment_storage',
                     label: 'Attachment storage',
                     status: 'attention',
@@ -728,10 +758,12 @@ class OperatorReadiness
                     action: $driver === 's3'
                         ? 'Grant the credentials DeleteObject permission on the bucket.'
                         : 'Make the attachments storage directory writable and deletable by the PHP user.',
-                );
+                ), $driver === 's3' ? 'cannot_delete_s3' : 'cannot_delete_local', [
+                    'disk' => $diskName,
+                ]);
             }
         } catch (Throwable $exception) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'attachment_storage',
                 label: 'Attachment storage',
                 status: 'attention',
@@ -740,10 +772,13 @@ class OperatorReadiness
                 action: $driver === 's3'
                     ? 'Check WAYFINDR_ATTACHMENT_S3_KEY/SECRET/REGION/BUCKET (and ENDPOINT + USE_PATH_STYLE for non-AWS stores), then reload.'
                     : 'Make the attachments storage directory writable by the PHP user.',
-            );
+            ), $driver === 's3' ? 'probe_failed_s3' : 'probe_failed_local', [
+                'disk' => $diskName,
+                'error' => $exception->getMessage(),
+            ]);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'attachment_storage',
             label: 'Attachment storage',
             status: 'ready',
@@ -752,7 +787,10 @@ class OperatorReadiness
             action: $driver === 's3'
                 ? 'Keep the bucket private (block public access) — downloads always stream through Wayfindr, never from a bucket URL.'
                 : 'Keep storage shared between zero-downtime releases, or set WAYFINDR_ATTACHMENT_STORAGE_DISK=attachments-s3 to store new uploads in an S3-compatible bucket.',
-        );
+        ), $driver === 's3' ? 'ready_s3' : 'ready_local', [
+            'disk' => $diskName,
+            'setting' => 'WAYFINDR_ATTACHMENT_STORAGE_DISK',
+        ]);
     }
 
     /**
@@ -766,33 +804,39 @@ class OperatorReadiness
             // Accept-with-defense-in-depth is a valid, safe default — surfaced
             // here so the operator knows uploads are not virus-scanned, but not
             // flagged as attention or a pending manual action.
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'attachment_scanning',
                 label: 'Attachment scanning',
                 status: 'ready',
                 summary: 'No malware scanner configured (accepting with defense-in-depth).',
                 detail: 'Uploaded attachments are accepted with a byte-sniffed type allowlist, private storage, forced-download disposition, and nosniff, but they are not virus-scanned. Configure a scanner if your policy requires one.',
                 action: 'Set WAYFINDR_ATTACHMENT_SCANNER=clamav with WAYFINDR_CLAMAV_SOCKET pointing at a reachable clamd, or knowingly keep the defense-in-depth default.'
-            );
+            ), 'none', [
+                'scanner_setting' => 'WAYFINDR_ATTACHMENT_SCANNER',
+                'socket_setting' => 'WAYFINDR_CLAMAV_SOCKET',
+            ]);
         }
 
         if ($driver !== 'clamav') {
             // An unknown driver makes every upload throw (fail loud), so surface
             // it here rather than silently disabling scanning.
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'attachment_scanning',
                 label: 'Attachment scanning',
                 status: 'attention',
                 summary: sprintf('Unknown malware scanner driver "%s".', $driver),
                 detail: 'WAYFINDR_ATTACHMENT_SCANNER is set to an unsupported value, so uploads are being rejected until it is corrected.',
                 action: "Set WAYFINDR_ATTACHMENT_SCANNER to 'clamav' or leave it unset."
-            );
+            ), 'unknown', [
+                'driver' => $driver,
+                'setting' => 'WAYFINDR_ATTACHMENT_SCANNER',
+            ]);
         }
 
         $failClosed = (bool) config('wayfindr.attachments.scanner.fail_closed', true);
 
         if (! app(AttachmentScanner::class)->isAvailable()) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'attachment_scanning',
                 label: 'Attachment scanning',
                 status: 'attention',
@@ -801,17 +845,20 @@ class OperatorReadiness
                     ? 'Scanning is fail-closed, so uploads are being rejected until the scanner recovers.'
                     : 'Scanning is fail-open, so uploads are currently being accepted WITHOUT a malware scan.',
                 action: 'Confirm the ClamAV daemon (clamd) is running and reachable at WAYFINDR_CLAMAV_SOCKET.'
-            );
+            ), $failClosed ? 'unreachable_closed' : 'unreachable_open', [
+                'driver' => $driver,
+                'socket_setting' => 'WAYFINDR_CLAMAV_SOCKET',
+            ]);
         }
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'attachment_scanning',
             label: 'Attachment scanning',
             status: 'ready',
             summary: sprintf('The %s scanner is reachable.', $driver),
             detail: 'Uploaded attachments are scanned before they are stored; infected uploads are rejected and audited.',
             action: 'Keep clamd and its signature database (freshclam) running and up to date.'
-        );
+        ), 'ready', ['driver' => $driver]);
     }
 
     /**
@@ -819,7 +866,7 @@ class OperatorReadiness
      */
     private function scheduler(): array
     {
-        return $this->manualCheck(
+        return $this->withTranslation($this->manualCheck(
             key: 'scheduler',
             label: 'Scheduler',
             summary: 'Confirm the Laravel scheduler is running once per minute.',
@@ -829,7 +876,7 @@ class OperatorReadiness
                 '* * * * * cd /path/to/apps/server && php artisan schedule:run',
                 'php artisan schedule:list',
             ]
-        );
+        ), 'manual');
     }
 
     /**
@@ -838,7 +885,7 @@ class OperatorReadiness
     private function alertDigestDelivery(): array
     {
         if (! Schema::hasTable('users')) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'alert_digest_delivery',
                 label: 'Alert digest delivery',
                 status: 'manual',
@@ -846,7 +893,7 @@ class OperatorReadiness
                 detail: 'Run migrations before checking digest delivery state.',
                 action: 'Run php artisan migrate from apps/server, then revisit readiness once agents can opt into digest email.',
                 commands: ['php artisan migrate']
-            );
+            ), 'preferences_unavailable');
         }
 
         $digestAgents = User::query()
@@ -859,14 +906,14 @@ class OperatorReadiness
             ->values();
 
         if ($digestAgents->isEmpty()) {
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'alert_digest_delivery',
                 label: 'Alert digest delivery',
                 status: 'ready',
                 summary: 'No active digest email agents yet.',
                 detail: 'Wayfindr will begin recording digest delivery state after agents opt into digest email.',
                 action: 'Use agent profiles or account settings to enable digest cadence when a team wants quieter email alerts.'
-            );
+            ), 'no_agents');
         }
 
         $failedAgents = $digestAgents
@@ -876,7 +923,7 @@ class OperatorReadiness
         if ($failedAgents->isNotEmpty()) {
             $failedCount = $failedAgents->count();
 
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'alert_digest_delivery',
                 label: 'Alert digest delivery',
                 status: 'attention',
@@ -891,7 +938,10 @@ class OperatorReadiness
                     $failedAgents->pluck('name')->filter()->join(', '),
                 ),
                 action: 'Check the application logs and mail provider, then run php artisan wayfindr:send-alert-digests from apps/server to record a fresh delivery state.'
-            );
+            ), $failedCount === 1 ? 'failed_one' : 'failed_many', [
+                'count' => (string) $failedCount,
+                'names' => $failedAgents->pluck('name')->filter()->join(', '),
+            ]);
         }
 
         $notRunAgents = $digestAgents
@@ -901,7 +951,7 @@ class OperatorReadiness
         if ($notRunAgents->isNotEmpty()) {
             $notRunCount = $notRunAgents->count();
 
-            return $this->check(
+            return $this->withTranslation($this->check(
                 key: 'alert_digest_delivery',
                 label: 'Alert digest delivery',
                 status: 'manual',
@@ -913,12 +963,14 @@ class OperatorReadiness
                 ),
                 detail: 'The scheduler may not have run since digest cadence was enabled, or the team has not had digest-ready alerts yet.',
                 action: 'Confirm the scheduler is running, then run php artisan wayfindr:send-alert-digests once from apps/server to establish a baseline delivery state.'
-            );
+            ), $notRunCount === 1 ? 'not_run_one' : 'not_run_many', [
+                'count' => (string) $notRunCount,
+            ]);
         }
 
         $digestCount = $digestAgents->count();
 
-        return $this->check(
+        return $this->withTranslation($this->check(
             key: 'alert_digest_delivery',
             label: 'Alert digest delivery',
             status: 'ready',
@@ -929,7 +981,9 @@ class OperatorReadiness
             ),
             detail: 'The latest digest attempts are either queued or found no digest-ready alerts.',
             action: 'Keep the scheduler confirmed and review this check after mail transport or alert cadence changes.'
-        );
+        ), $digestCount === 1 ? 'ready_one' : 'ready_many', [
+            'count' => (string) $digestCount,
+        ]);
     }
 
     /**
@@ -1177,6 +1231,7 @@ class OperatorReadiness
                 action: 'Run scripts/smoke/support-loop.sh with the staging app URL, host page URL, site public key, and disposable demo agent credentials.',
                 commands: [$supportLoopCommand],
                 docsUrl: 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/product/mvp-demo-rehearsal.md#full-support-loop-smoke',
+                translation: ['detail_variant' => $widgetSmoke ? 'with_signal' : 'default'],
             ),
             $this->dogfoodGate(
                 key: 'ticket_workflow',
@@ -1254,7 +1309,8 @@ class OperatorReadiness
 
     /**
      * @param  array<int, string>  $commands
-     * @return array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string}
+     * @param  array<string, string>  $translation
+     * @return array{action: string, commands: array<int, string>, detail: string, docs_url: string|null, key: string, label: string, status: string, status_label: string, summary: string, translation: array<string, string>}
      */
     private function dogfoodGate(
         string $key,
@@ -1265,6 +1321,7 @@ class OperatorReadiness
         string $action,
         array $commands = [],
         ?string $docsUrl = null,
+        array $translation = [],
     ): array {
         return [
             'action' => $action,
@@ -1280,6 +1337,7 @@ class OperatorReadiness
                 default => 'Needs attention',
             },
             'summary' => $summary,
+            'translation' => $translation,
         ];
     }
 

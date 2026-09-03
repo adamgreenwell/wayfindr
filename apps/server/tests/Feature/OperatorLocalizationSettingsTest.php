@@ -317,7 +317,7 @@ test('operator pages outside the extracted slice remain wholly English', functio
     ]);
 
     $this->actingAs($operator)
-        ->get(route('operator.dashboard'))
+        ->get(route('operator.break-glass.index'))
         ->assertOk()
         ->assertSee('<html lang="en">', false)
         ->assertSee('aria-label="Operator sections"', false)
@@ -459,7 +459,7 @@ test('a language and region change appears in the operator activity feed, descri
         ->get(route('operator.dashboard'))
         ->assertOk()
         ->assertSee('Language and region updated')
-        ->assertSee('Dashboard language and region were updated (language: de, timezone: Europe/Berlin).')
+        ->assertSeeText('Dashboard language and region were updated (language: de, timezone: Europe/Berlin).')
         ->assertSee('Deutsch')
         ->assertDontSee('Instance readiness proof was recorded.');
 });
@@ -516,7 +516,7 @@ test('the operator console raises language and region too, not just the checklis
     $console = $this->actingAs($operator)->get(route('operator.dashboard'))->assertOk();
 
     $console->assertSee('Language and region')
-        ->assertSee('Nobody has confirmed that is right.');
+        ->assertSee('Nobody has confirmed that this is right.');
 
     $this->actingAs($operator)
         ->post(route('operator.settings.localization.update'), [
@@ -529,5 +529,5 @@ test('the operator console raises language and region too, not just the checklis
         ->get(route('operator.dashboard'))
         ->assertOk()
         ->assertSee('Language and region')
-        ->assertDontSee('Nobody has confirmed that is right.');
+        ->assertDontSee('Nobody has confirmed that this is right.');
 });
