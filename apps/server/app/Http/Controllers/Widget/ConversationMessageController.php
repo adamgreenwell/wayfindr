@@ -288,7 +288,11 @@ class ConversationMessageController extends Controller
         if ($seenMessageId) {
             $seenMessage = $conversation->messages()
                 ->whereKey($seenMessageId)
-                ->where('sender_type', User::class)
+                // The widget presents both people and API integrations on the
+                // support side, so either can be the newest rendered boundary.
+                // The update query above remains human-only: seeing an
+                // automated message must not turn it into agent work.
+                ->whereIn('sender_type', [User::class, ApiToken::class])
                 ->first();
 
             if (! $seenMessage) {

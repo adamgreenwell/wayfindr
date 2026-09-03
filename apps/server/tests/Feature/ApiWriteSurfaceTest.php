@@ -2,6 +2,7 @@
 
 use App\Enums\AccountRole;
 use App\Events\ConversationMessageCreated;
+use App\Events\ConversationReadReceiptUpdated;
 use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\ApiIdempotencyKey;
@@ -320,6 +321,36 @@ test('an API reply to an email conversation is queued exactly once', function ()
 
     Mail::assertQueuedCount(1);
     expect(ConversationMessage::query()->sole()->email_message_id)->not->toBeNull();
+});
+
+test('an integration message can bound a visitor read receipt without becoming human work', function (): void {
+    Event::fake([ConversationMessageCreated::class, ConversationReadReceiptUpdated::class]);
+    $world = apiWriteWorld();
+    $conversation = Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+        'support_code' => 'WF-APISEEN',
+    ]);
+    $humanMessage = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $world['agent']->id,
+        'body' => 'A human reply rendered before the integration update.',
+    ]);
+
+    $integrationMessageId = $this->postJson('/api/v1/conversations/WF-APISEEN/messages', [
+        'body' => 'An automated follow-up rendered last.',
+    ], apiWriteHeaders($world, 'read-boundary'))->assertCreated()->json('data.message.id');
+
+    $this->getJson('/api/conversations/WF-APISEEN/messages?'.http_build_query([
+        'site_public_key' => $world['site']->public_key,
+        'anonymous_id' => $world['visitor']->anonymous_id,
+        'visitor_token' => apiWriteVisitorToken($this, $world),
+        'mark_seen' => true,
+        'seen_message_id' => $integrationMessageId,
+    ]))->assertOk();
+
+    expect($humanMessage->fresh()->seen_at)->not->toBeNull()
+        ->and(ConversationMessage::query()->findOrFail($integrationMessageId)->seen_at)->toBeNull();
+
+    Event::assertDispatchedTimes(ConversationReadReceiptUpdated::class, 1);
 });
 
 test('an API message does not impersonate a human response in reporting', function (): void {
