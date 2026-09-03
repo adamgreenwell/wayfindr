@@ -310,6 +310,17 @@ test('broadcast authorization validates the current password and two-factor poli
     $this->assertGuest();
 });
 
+test('broadcast authorization follows the account first writer lock order', function (): void {
+    $source = file_get_contents(dirname(__DIR__, 2).'/app/Http/Middleware/SerializeAgentBroadcastAuthorization.php');
+    $accountLock = strpos((string) $source, '$account = Account::query()->lockForUpdate()');
+    $userLock = strpos((string) $source, '$lockedAgent = User::query()');
+
+    expect($source)->not->toBeFalse()
+        ->and($accountLock)->not->toBeFalse()
+        ->and($userLock)->not->toBeFalse()
+        ->and($accountLock)->toBeLessThan($userLock);
+});
+
 test('recovery codes can be replaced with both proofs and two factor can be disabled', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'password' => Hash::make('password'),
