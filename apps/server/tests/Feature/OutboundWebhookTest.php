@@ -363,6 +363,19 @@ test('destination checks reject internal and mixed DNS answers and pin a public 
         ->and($inspected['curl'][CURLOPT_NOPROXY])->toBe('*');
 });
 
+test('destination accepts a bracketed public IPv6 literal without resolving it again', function (): void {
+    $destination = new OutboundWebhookDestination;
+    $url = 'https://[2001:4860:4860::8888]:8443/wayfindr';
+    $inspected = $destination->inspect($url);
+
+    expect($inspected['url'])->toBe($url)
+        ->and($inspected['host'])->toBe('2001:4860:4860::8888')
+        ->and($inspected['port'])->toBe(8443)
+        ->and($inspected['ips'])->toBe(['2001:4860:4860::8888'])
+        ->and($inspected['curl'])->toBe([CURLOPT_NOPROXY => '*'])
+        ->and($destination->isAllowed('https://[::1]/wayfindr'))->toBeFalse();
+});
+
 test('purging a site deletes its delivery data before recovery can send it', function (): void {
     Queue::fake();
     $world = outboundWebhookWorld();

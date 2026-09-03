@@ -107,6 +107,8 @@ coverage includes deprecated-but-routable ranges such as IPv6 site-local
 `fec0::/10`, not only the ranges PHP's public-address flags happen to reject.
 IPv6 destinations must also fall inside IANA's currently allocated global
 unicast `2000::/3`; reserved space fails closed until it is publicly allocated.
+Bracketed public IPv6 literals are accepted, with brackets retained only in the
+request URL and removed from the host passed through address validation.
 
 The delivery check pins cURL to the complete verified address set while
 retaining the hostname for TLS SNI and certificate validation. cURL may fall

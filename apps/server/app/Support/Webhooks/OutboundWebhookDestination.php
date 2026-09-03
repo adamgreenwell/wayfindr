@@ -109,7 +109,14 @@ final class OutboundWebhookDestination
             throw new InvalidArgumentException('The webhook destination host must not have a trailing dot.');
         }
 
-        $host = strtolower($rawHost);
+        // parse_url preserves the RFC 3986 brackets around an IPv6 literal.
+        // They belong in the request URL but not in filter_var(), DNS handling
+        // or the returned canonical host.
+        $host = strtolower(
+            str_starts_with($rawHost, '[') && str_ends_with($rawHost, ']')
+                ? substr($rawHost, 1, -1)
+                : $rawHost,
+        );
 
         // Keep the wire host unambiguous. Unicode hostnames can be supplied in
         // their ASCII/punycode form; control characters and percent escapes do
