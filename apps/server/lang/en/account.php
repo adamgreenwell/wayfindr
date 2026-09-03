@@ -53,6 +53,7 @@ return [
         'authority' => 'Account roles describe authority. Site access still decides which support queues an agent can work.',
         'changes' => 'Role changes are limited to account owners. Owners cannot change their own role here, and every role change is audited.',
         'suspension' => 'Owners and admins can suspend access without deleting account history. Admins can only suspend agents; owners can manage any other same-account user.',
+        'manage_custom_roles' => 'Manage custom roles',
     ],
 
     'site_access' => [

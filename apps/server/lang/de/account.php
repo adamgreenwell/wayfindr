@@ -48,6 +48,7 @@ return [
         'authority' => 'Kontorollen beschreiben Berechtigungen. Der Website-Zugriff entscheidet weiterhin, welche Support-Warteschlangen ein Agent bearbeiten kann.',
         'changes' => 'Rollenänderungen sind Kontoinhabern vorbehalten. Inhaber können hier ihre eigene Rolle nicht ändern, und jede Rollenänderung wird protokolliert.',
         'suspension' => 'Inhaber und Administratoren können den Zugriff sperren, ohne den Kontoverlauf zu löschen. Administratoren können nur Agenten sperren; Inhaber können alle anderen Personen desselben Kontos verwalten.',
+        'manage_custom_roles' => 'Benutzerdefinierte Rollen verwalten',
     ],
     'site_access' => [
         'heading' => 'Matrix für Website-Zugriff',

@@ -102,7 +102,7 @@
                 <div class="meta-grid">
                     <div class="meta-item">
                         <span class="meta-label">{{ __('account.context.your_role') }}</span>
-                        <span class="meta-value">{{ $roleLabels[$agent->account_role?->value] ?? __('profile.roles.agent') }}</span>
+                        <span class="meta-value" @if ($agent->customRole) lang="" @endif>{{ $agent->customRole?->name ?? ($roleLabels[$agent->account_role?->value] ?? __('profile.roles.agent')) }}</span>
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('account.context.sites') }}</span>
@@ -129,6 +129,11 @@
                     <p>{{ __('account.role_boundary.changes') }}</p>
                     <p>{{ __('account.role_boundary.suspension') }}</p>
                 </div>
+                @if ($canManageRoles)
+                    <div class="section-actions">
+                        <a class="button secondary" href="{{ route('dashboard.account.roles.index') }}">{{ __('account.role_boundary.manage_custom_roles') }}</a>
+                    </div>
+                @endif
             </section>
 
             <section id="site-access-matrix" class="section" aria-labelledby="site-access-matrix-heading">
@@ -179,7 +184,7 @@
                                                 <strong>{{ trans_choice('account.site_access.assigned', $assignedAgents->count(), ['count' => \App\Support\ReaderNumber::count($assignedAgents->count())]) }}</strong>
                                                 <span class="lede">
                                                     @foreach ($assignedAgents as $supportAgent)
-                                                        <span lang="">{{ $supportAgent->name }}</span> ({{ $roleLabels[$supportAgent->account_role?->value] ?? __('profile.roles.agent') }})@if (! $loop->last), @endif
+                                                        <span lang="">{{ $supportAgent->name }}</span> (<span @if ($supportAgent->customRole) lang="" @endif>{{ $supportAgent->customRole?->name ?? ($roleLabels[$supportAgent->account_role?->value] ?? __('profile.roles.agent')) }}</span>)@if (! $loop->last), @endif
                                                     @endforeach
                                                 </span>
                                             @endif
@@ -329,16 +334,18 @@
                             <strong>{{ __('account.management.items.integrations.label') }}</strong>
                             <span class="lede">{{ __('account.management.items.integrations.detail') }}</span>
                         </span>
-                        <span class="management-action">{{ $canManageAccountSettings ? __('account.management.actions.manage') : __('account.management.actions.view') }}</span>
+                        <span class="management-action">{{ $canManageIntegrations ? __('account.management.actions.manage') : __('account.management.actions.view') }}</span>
                     </a>
-                    <a class="management-link" href="{{ route('dashboard.sites.index') }}">
-                        <span>
-                            <strong>{{ __('account.management.items.sites.label') }}</strong>
-                            <span class="lede">{{ __('account.management.items.sites.detail') }}</span>
-                        </span>
-                        <span class="management-action">{{ __('account.management.actions.open') }}</span>
-                    </a>
-                    @if ($canManageAccountSettings)
+                    @if ($canViewSites)
+                        <a class="management-link" href="{{ route('dashboard.sites.index') }}">
+                            <span>
+                                <strong>{{ __('account.management.items.sites.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.sites.detail') }}</span>
+                            </span>
+                            <span class="management-action">{{ __('account.management.actions.open') }}</span>
+                        </a>
+                    @endif
+                    @if ($canManageSecurity)
                         <a class="management-link" href="{{ route('dashboard.account.security.show') }}">
                             <span>
                                 <strong>{{ __('two_factor.policy.link_label') }}</strong>
@@ -346,6 +353,8 @@
                             </span>
                             <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
+                    @endif
+                    @if ($canManageKnowledge)
                         <a class="management-link" href="{{ route('dashboard.account.articles.index') }}">
                             <span>
                                 <strong>{{ __('account.management.items.articles.label') }}</strong>
@@ -367,6 +376,8 @@
                             </span>
                             <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
+                    @endif
+                    @if ($canViewAudit)
                         <a class="management-link" href="{{ route('dashboard.account.audit.index') }}">
                             <span>
                                 <strong>{{ __('account.management.items.audit.label') }}</strong>
@@ -374,6 +385,8 @@
                             </span>
                             <span class="management-action">{{ __('account.management.actions.open') }}</span>
                         </a>
+                    @endif
+                    @if ($canManageIntegrations)
                         <a class="management-link" href="{{ route('dashboard.account.api-tokens.index') }}">
                             <span>
                                 <strong>{{ __('account.management.items.tokens.label') }}</strong>
@@ -381,6 +394,8 @@
                             </span>
                             <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
+                    @endif
+                    @if ($canManageOperatorAccess)
                         <a class="management-link" href="{{ route('dashboard.account.break-glass.index') }}">
                             <span>
                                 <strong>{{ __('account.management.items.operator_access.label') }}</strong>
@@ -547,7 +562,7 @@
                                     $hasVisibleOpenWork = $visibleOpenConversationCount > 0 || $visibleOpenTicketCount > 0;
                                     $canManageThisAgentAccess = $canManageAgentAccess
                                         && ! $accountAgent->is($agent)
-                                        && ($agent->isOwner() || $accountAgent->account_role === \App\Enums\AccountRole::Agent);
+                                        && ($agent->isOwner() || ($accountAgent->account_role === \App\Enums\AccountRole::Agent && $accountAgent->custom_role_id === null));
                                     $supportScope = $agentSupportScopes[$accountAgent->id] ?? [
                                         'explicitSites' => collect(),
                                         'fallbackSites' => collect(),
@@ -581,7 +596,7 @@
                                         <span class="lede" lang="">{{ $accountAgent->email }}</span>
                                     </td>
                                     <td>{{ $accountAgent->isDeactivated() ? __('account.agents.status.deactivated') : __('account.agents.status.active') }}</td>
-                                    <td>{{ $roleLabels[$accountAgent->account_role?->value] ?? __('profile.roles.agent') }}</td>
+                                    <td @if ($accountAgent->customRole) lang="" @endif>{{ $accountAgent->customRole?->name ?? ($roleLabels[$accountAgent->account_role?->value] ?? __('profile.roles.agent')) }}</td>
                                     @if ($canViewAlertDelivery)
                                         <td>
                                             <strong>{{ $alertDeliverySummary['primary'] }}</strong>
@@ -607,7 +622,7 @@
                                                     <label class="sr-only" for="account-role-{{ $accountAgent->id }}">{{ __('account.agents.columns.manage_role') }} <span lang="">{{ $accountAgent->name }}</span></label>
                                                     <select id="account-role-{{ $accountAgent->id }}" name="account_role">
                                                         @foreach ($roleOptions as $roleValue => $roleLabel)
-                                                            <option value="{{ $roleValue }}" @selected($accountAgent->account_role?->value === $roleValue)>{{ $roleLabel }}</option>
+                                                            <option value="{{ $roleValue }}" @selected($accountAgent->roleAssignmentKey() === $roleValue) @if (str_starts_with($roleValue, 'custom:')) lang="" @endif>{{ $roleLabel }}</option>
                                                         @endforeach
                                                     </select>
                                                     <button class="button secondary" type="submit">{{ __('account.agents.save_role') }}</button>

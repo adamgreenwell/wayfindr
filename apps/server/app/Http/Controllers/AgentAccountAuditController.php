@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\OidcConnection;
 use App\Models\OidcIdentity;
 use App\Models\OutboundWebhookEndpoint;
@@ -83,7 +85,7 @@ class AgentAccountAuditController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->account_id && $agent->isAdmin(), 403);
+        abort_unless($agent?->account_id && $agent->hasAccountPermission(AccountPermission::ViewAudit), 403);
 
         return $agent;
     }
@@ -278,6 +280,11 @@ class AgentAccountAuditController extends Controller
                             ->orWhereLike('domain', $searchPattern))
                         ->orWhereHasMorph('subject', [Conversation::class], fn (Builder $query) => $query
                             ->whereLike('support_code', $searchPattern))
+                        ->orWhereHasMorph('subject', [CustomRole::class], fn (Builder $query) => $query
+                            ->whereLike('name', $searchPattern))
+                        ->orWhereLike('metadata->role_name', $searchPattern)
+                        ->orWhereLike('metadata->old_role_name', $searchPattern)
+                        ->orWhereLike('metadata->new_role_name', $searchPattern)
                         // The token's name and last four are what the subject
                         // column shows, so the search has to reach them --
                         // otherwise an account with several credentials can see
@@ -322,6 +329,9 @@ class AgentAccountAuditController extends Controller
             'agent.password_updated' => 'Password changed',
             'agent.reactivated' => 'Agent reactivated',
             'agent.role_changed' => 'Agent role changed',
+            'custom_role.created' => 'Custom role created',
+            'custom_role.updated' => 'Custom role updated',
+            'custom_role.deleted' => 'Custom role deleted',
             'site_access.updated' => 'Site access updated',
             'api_token.created' => 'API token issued',
             'api_token.revoked' => 'API token revoked',
@@ -391,6 +401,15 @@ class AgentAccountAuditController extends Controller
 
         if ($event->subject instanceof User || $event->subject instanceof Site) {
             return ['prefix' => null, 'value' => $event->subject->name];
+        }
+
+        if ($event->subject instanceof CustomRole || $this->isDeletedCustomRoleSubject($event)) {
+            return [
+                'prefix' => __('account_audit.references.custom_role'),
+                'value' => $event->subject instanceof CustomRole
+                    ? $event->subject->name
+                    : $this->customRoleName($event),
+            ];
         }
 
         if ($event->subject instanceof ApiToken) {
@@ -545,6 +564,12 @@ class AgentAccountAuditController extends Controller
             return $event->subject->name;
         }
 
+        if ($event->subject instanceof CustomRole || $this->isDeletedCustomRoleSubject($event)) {
+            return 'Custom role '.($event->subject instanceof CustomRole
+                ? $event->subject->name
+                : $this->customRoleName($event));
+        }
+
         if ($event->subject instanceof Site) {
             return $event->subject->name;
         }
@@ -582,6 +607,21 @@ class AgentAccountAuditController extends Controller
         }
 
         return 'Account';
+    }
+
+    private function isDeletedCustomRoleSubject(AuditEvent $event): bool
+    {
+        return $event->subject === null
+            && $event->subject_type === (new CustomRole)->getMorphClass();
+    }
+
+    private function customRoleName(AuditEvent $event): string
+    {
+        $name = data_get($event->metadata, 'role_name')
+            ?? data_get($event->metadata, 'new_role_name')
+            ?? data_get($event->metadata, 'old_role_name');
+
+        return is_string($name) && $name !== '' ? $name : '#'.$event->subject_id;
     }
 
     private function isOidcIdentitySubject(AuditEvent $event): bool

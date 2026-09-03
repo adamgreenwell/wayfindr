@@ -7,6 +7,7 @@ use App\Http\Controllers\AgentAccountApiTokenController;
 use App\Http\Controllers\AgentAccountAuditController;
 use App\Http\Controllers\AgentAccountBreakGlassController;
 use App\Http\Controllers\AgentAccountController;
+use App\Http\Controllers\AgentAccountCustomRoleController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
 use App\Http\Controllers\AgentAccountOidcConnectionController;
 use App\Http\Controllers\AgentAccountOutboundWebhookController;
@@ -116,6 +117,16 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.profile.two-factor.disable');
     Route::get('/dashboard/account', AgentAccountController::class)
         ->name('dashboard.account.show');
+    Route::get('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'index'])
+        ->name('dashboard.account.roles.index');
+    Route::post('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'store'])
+        ->name('dashboard.account.roles.store');
+    Route::put('/dashboard/account/roles/{customRole}', [AgentAccountCustomRoleController::class, 'update'])
+        ->whereNumber('customRole')
+        ->name('dashboard.account.roles.update');
+    Route::delete('/dashboard/account/roles/{customRole}', [AgentAccountCustomRoleController::class, 'destroy'])
+        ->whereNumber('customRole')
+        ->name('dashboard.account.roles.destroy');
     Route::get('/dashboard/account/security', [AgentAccountSecurityController::class, 'show'])
         ->name('dashboard.account.security.show');
     Route::put('/dashboard/account/security', [AgentAccountSecurityController::class, 'update'])

@@ -49,6 +49,7 @@ return [
         'authority' => 'I ruoli dell’account descrivono l’autorità. L’accesso al sito decide comunque quali code di supporto può gestire un agente.',
         'changes' => 'Le modifiche dei ruoli sono riservate ai titolari dell’account. I titolari non possono cambiare qui il proprio ruolo e ogni modifica viene registrata.',
         'suspension' => 'Titolari e amministratori possono sospendere l’accesso senza eliminare la cronologia dell’account. Gli amministratori possono sospendere solo gli agenti; i titolari possono gestire qualsiasi altra persona dello stesso account.',
+        'manage_custom_roles' => 'Gestisci ruoli personalizzati',
     ],
     'site_access' => [
         'heading' => 'Matrice di accesso ai siti', 'visible_count' => '{1} :count sito visibile|[2,*] :count siti visibili',

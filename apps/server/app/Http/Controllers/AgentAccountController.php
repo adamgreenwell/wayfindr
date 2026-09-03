@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
@@ -28,6 +29,7 @@ class AgentAccountController extends Controller
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
+        $agent->loadMissing('customRole');
 
         $account = $agent->account()->firstOrFail();
         $visibleSiteIds = $account->sites()
@@ -37,6 +39,7 @@ class AgentAccountController extends Controller
             ->all();
 
         $agents = $account->agents()
+            ->with('customRole')
             ->withCount([
                 'assignedConversations as visible_open_conversations_count' => fn ($query) => $query
                     ->where('status', 'open')
@@ -57,6 +60,7 @@ class AgentAccountController extends Controller
         $visibleSites = $account->sites()
             ->visibleToAgent($agent)
             ->with(['supportAgents' => fn ($query) => $query
+                ->with('customRole')
                 ->where('users.account_id', $account->id)
                 ->whereNull('users.deactivated_at')
                 ->orderByRaw(
@@ -86,7 +90,7 @@ class AgentAccountController extends Controller
             'account' => $account,
             'accountActivity' => $this->accountActivityItems($account, $visibleSiteIds),
             'agent' => $agent,
-            'agentAlertReadinessSummary' => $agent->isAdmin()
+            'agentAlertReadinessSummary' => $agent->hasAccountPermission(AccountPermission::ManageAgents)
                 ? app(AccountAlertReadiness::class)->summarize($agents)
                 : null,
             'agentAlertDeliverySummaries' => $agents->mapWithKeys(fn (User $accountAgent): array => [
@@ -95,18 +99,37 @@ class AgentAccountController extends Controller
             'agents' => $agents,
             'agentSupportScopes' => $agentSupportScopes,
             'activeAgentCount' => $agents->reject->isDeactivated()->count(),
-            'canCreateAgents' => $agent->isAdmin(),
-            'canViewExternalIssueReadiness' => $agent->isAdmin(),
-            'canViewAlertDelivery' => $agent->isAdmin(),
-            'canManageAccountSettings' => $agent->isAdmin(),
-            'canManageAgentAccess' => $agent->isAdmin(),
-            'canManageRoles' => $agent->isOwner(),
-            'canViewAudit' => $agent->isAdmin(),
-            'externalIssueReadiness' => $agent->isAdmin()
+            'canCreateAgents' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'canViewExternalIssueReadiness' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
+            'canViewAlertDelivery' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'canManageAgentAccess' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'canManageIntegrations' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
+            'canManageKnowledge' => $agent->hasAccountPermission(AccountPermission::ManageKnowledge),
+            'canManageOperatorAccess' => $agent->hasAccountPermission(AccountPermission::ManageOperatorAccess),
+            'canManageRoles' => $agent->hasAccountPermission(AccountPermission::ManageRoles),
+            'canManageSecurity' => $agent->hasAccountPermission(AccountPermission::ManageSecurity),
+            'canViewSites' => $agent->hasAnyAccountPermission(
+                AccountPermission::ManageSites,
+                AccountPermission::ManageSiteAccess,
+                AccountPermission::ManagePrivacySettings,
+                AccountPermission::ManageIntegrations,
+                AccountPermission::ViewAudit,
+                AccountPermission::ViewConversations,
+                AccountPermission::ManageTickets,
+            ),
+            'canViewAudit' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
+            'externalIssueReadiness' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations)
                 ? $this->externalIssueReadiness($account, $visibleSiteIds)
                 : null,
             'roleLabels' => $this->roleLabels(),
-            'roleOptions' => $this->roleLabels(),
+            'roleOptions' => [
+                ...$this->roleLabels(),
+                ...$account->customRoles()
+                    ->orderBy('name')
+                    ->get()
+                    ->mapWithKeys(fn ($role): array => ['custom:'.$role->id => $role->name])
+                    ->all(),
+            ],
             'siteCount' => $account->sites()->count(),
             'supportAssignmentCount' => $agentSupportScopes
                 ->sum(fn (array $scope): int => $scope['explicitSites']->count()),
@@ -544,7 +567,16 @@ class AgentAccountController extends Controller
     {
         $oldRole = data_get($event->metadata, 'old_role');
         $newRole = data_get($event->metadata, 'new_role');
+        $oldRoleName = data_get($event->metadata, 'old_role_name');
+        $newRoleName = data_get($event->metadata, 'new_role_name');
         $roleLabels = $this->roleLabels();
+
+        if (is_string($oldRoleName) && is_string($newRoleName)) {
+            return __('account.activity.bodies.role_changed', [
+                'old' => $roleLabels[$oldRoleName] ?? $oldRoleName,
+                'new' => $roleLabels[$newRoleName] ?? $newRoleName,
+            ]);
+        }
 
         if (is_string($oldRole) && is_string($newRole)
             && isset($roleLabels[$oldRole], $roleLabels[$newRole])) {
