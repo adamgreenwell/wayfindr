@@ -70,8 +70,10 @@ return [
             'no_connections' => 'Fügen Sie eine Anbieter-Verbindung hinzu, wenn Tickets Wayfindr verlassen sollen.',
             'no_projects' => 'Ordnen Sie mindestens ein Website-Projekt zu, bevor Tickets Wayfindr verlassen können.',
             'attention' => 'Prüfen Sie deaktivierte Verbindungen oder fehlgeschlagene Abgleiche, bevor Sie sich auf die externe Übergabe verlassen.',
+            'disabled_connections' => 'Prüfen Sie deaktivierte Anbieter-Verbindungen, bevor Sie sich auf die externe Übergabe verlassen.',
             'pending' => 'Einige externe Verknüpfungen warten noch auf Bestätigung.',
             'ready' => 'Für externe Issue-Routen sind Projekte zugeordnet und keine Abgleiche fehlgeschlagen.',
+            'configured' => 'Anbieter-Verbindungen und zugeordnete Projekte sind für die externe Übergabe eingerichtet.',
         ],
         'tones' => ['ready' => 'Bereit', 'manual' => 'Manuell', 'attention' => 'Achtung'],
         'metrics' => [

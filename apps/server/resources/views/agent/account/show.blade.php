@@ -286,39 +286,41 @@
                         </div>
                     @endif
 
-                    @if ($externalIssueReadiness['recent_failures']->isEmpty())
-                        <p class="empty">{{ __('account.external.failures.empty') }}</p>
-                    @else
-                        <div class="timeline-list">
-                            @foreach ($externalIssueReadiness['recent_failures'] as $failure)
-                                @php
-                                    $failureProvider = $failure['provider_language'] === ''
-                                        ? $unknownLanguage($failure['provider'])
-                                        : e($failure['provider']);
-                                    $failureProject = $failure['project_language'] === ''
-                                        ? $unknownLanguage($failure['project_key'])
-                                        : e($failure['project_key']);
-                                @endphp
-                                <article class="timeline-item internal-note">
-                                    <div class="timeline-content">
-                                        <strong>{{ $loop->first ? __('account.external.failures.last') : __('account.external.failures.earlier') }}</strong>
-                                        <p class="message-body">{!! __('account.external.failures.body', [
-                                            'provider' => $failureProvider,
-                                            'project' => $failureProject,
-                                        ]) !!}</p>
-                                        <div class="timeline-meta">
-                                            @if ($failure['status'])
-                                                <span>{!! __('account.external.failures.status', ['status' => $unknownLanguage($failure['status'])]) !!}</span>
-                                            @endif
-                                            @if ($failure['occurred_at'])
-                                                <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
-                                            @endif
-                                            <span>{{ __('account.external.failures.details_withheld') }}</span>
+                    @if ($canManageTickets)
+                        @if ($externalIssueReadiness['recent_failures']->isEmpty())
+                            <p class="empty">{{ __('account.external.failures.empty') }}</p>
+                        @else
+                            <div class="timeline-list">
+                                @foreach ($externalIssueReadiness['recent_failures'] as $failure)
+                                    @php
+                                        $failureProvider = $failure['provider_language'] === ''
+                                            ? $unknownLanguage($failure['provider'])
+                                            : e($failure['provider']);
+                                        $failureProject = $failure['project_language'] === ''
+                                            ? $unknownLanguage($failure['project_key'])
+                                            : e($failure['project_key']);
+                                    @endphp
+                                    <article class="timeline-item internal-note">
+                                        <div class="timeline-content">
+                                            <strong>{{ $loop->first ? __('account.external.failures.last') : __('account.external.failures.earlier') }}</strong>
+                                            <p class="message-body">{!! __('account.external.failures.body', [
+                                                'provider' => $failureProvider,
+                                                'project' => $failureProject,
+                                            ]) !!}</p>
+                                            <div class="timeline-meta">
+                                                @if ($failure['status'])
+                                                    <span>{!! __('account.external.failures.status', ['status' => $unknownLanguage($failure['status'])]) !!}</span>
+                                                @endif
+                                                @if ($failure['occurred_at'])
+                                                    <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
+                                                @endif
+                                                <span>{{ __('account.external.failures.details_withheld') }}</span>
+                                            </div>
                                         </div>
-                                    </div>
-                                </article>
-                            @endforeach
-                        </div>
+                                    </article>
+                                @endforeach
+                            </div>
+                        @endif
                     @endif
                 </section>
             @endif

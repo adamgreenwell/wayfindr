@@ -87,8 +87,10 @@ return [
             'no_connections' => 'Add a provider connection when tickets need to leave Wayfindr.',
             'no_projects' => 'Map at least one site project before tickets can leave Wayfindr.',
             'attention' => 'Review disabled connections or failed syncs before relying on external handoff.',
+            'disabled_connections' => 'Review disabled provider connections before relying on external handoff.',
             'pending' => 'Some external links are still waiting for confirmation.',
             'ready' => 'External issue routing has mapped projects and no failed syncs.',
+            'configured' => 'Provider connections and mapped projects are configured for external handoff.',
         ],
         'tones' => [
             'ready' => 'Ready',

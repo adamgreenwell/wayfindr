@@ -66,8 +66,10 @@ return [
             'no_connections' => 'Aggiunga una connessione provider quando i ticket devono uscire da Wayfindr.',
             'no_projects' => 'Associ almeno un progetto a un sito prima che i ticket possano uscire da Wayfindr.',
             'attention' => 'Controlli le connessioni disabilitate o le sincronizzazioni non riuscite prima di fare affidamento sul passaggio esterno.',
+            'disabled_connections' => 'Controlli le connessioni provider disabilitate prima di fare affidamento sul passaggio esterno.',
             'pending' => 'Alcuni collegamenti esterni attendono ancora conferma.',
             'ready' => 'L’instradamento delle segnalazioni esterne ha progetti associati e nessuna sincronizzazione non riuscita.',
+            'configured' => 'Le connessioni provider e i progetti associati sono configurati per il passaggio esterno.',
         ],
         'tones' => ['ready' => 'Pronto', 'manual' => 'Manuale', 'attention' => 'Attenzione'],
         'metrics' => [
