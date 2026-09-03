@@ -42,6 +42,8 @@ return [
         'system' => 'System',
         'visitor' => 'Visitor',
         'agent' => 'Agent',
+        'integration' => 'Integration',
+        'integration_actor' => 'Integration · :name',
         'external_tracker' => 'External tracker',
         'external_record' => 'External record',
         'back_dashboard' => 'Back to dashboard',
@@ -322,6 +324,7 @@ return [
         ],
         'message' => [
             'agent_reply' => 'Agent reply',
+            'integration_reply' => 'Integration reply',
             'visitor_message' => 'Visitor message',
             'customer_visible' => 'Customer-visible',
             'customer_message' => 'Customer message',

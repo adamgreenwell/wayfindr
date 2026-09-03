@@ -1,6 +1,6 @@
 # The Wayfindr API
 
-Status: **v1, read-only.** Writes and outbound webhooks are not shipped yet.
+Status: **v1, read and narrow write.** Outbound webhooks are not shipped yet.
 
 Wayfindr's public API exists so that integrations do not have to be built by
 Wayfindr's team. It is deliberately smaller than the dashboard, and the reasons
@@ -29,6 +29,10 @@ Two settings on the form are worth spending a moment on:
   not be a credential for all of them. If every site a token was restricted to
   is later purged, the token reaches **nothing** — it does not fall back to the
   whole account.
+
+Read and write are separate abilities. Neither implies the other. A reporting
+export normally needs only `read`; an integration that opens work or changes a
+ticket needs `write`; a two-way integration needs both.
 
 A token can never reach further than the person issuing it. If you do not
 support every site on the account, a token you issue is pinned to the sites you
@@ -88,6 +92,77 @@ you are reading it — with offsets, new conversations arriving between requests
 silently shift rows across page boundaries, and a walk loses some with no error
 to notice.
 
+## What you can write
+
+The write surface is deliberately smaller than the dashboard:
+
+| Endpoint | Accepted fields | Result |
+| --- | --- | --- |
+| `POST /api/v1/conversations` | `site_id`, `visitor_id`, optional `subject` | Opens a conversation for a known visitor. |
+| `POST /api/v1/conversations/{support_code}/messages` | `body` | Posts one customer-visible text message. |
+| `POST /api/v1/tickets` | `site_id`, `subject`, optional `requester_id`, `description`, `priority` | Creates an open ticket. |
+| `PATCH /api/v1/tickets/{id}` | `status`, `assignee_id`, or both | Changes status (`open`, `pending`, `closed`) and/or assignment. |
+
+There is no delete endpoint, attachment write, cobrowse write, transcript edit,
+or broad ticket edit. Ticket priority may be `low`, `normal`, `high` or
+`urgent`. An assignee must be an active agent who supports that ticket's site.
+
+### Idempotent POSTs
+
+Every `POST` requires an `Idempotency-Key` header containing 1 to 255 visible
+ASCII characters:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer wfk_your_token_here" \
+  -H "Idempotency-Key: 7c8df5d6-4dcf-455a-a488-f67352f45a70" \
+  -H "Content-Type: application/json" \
+  --data '{"site_id":12,"visitor_id":481,"subject":"Checkout help"}' \
+  https://support.example.com/api/v1/conversations
+```
+
+Keys are scoped to the token and retained for 24 hours. Repeating the same key,
+path and validated input returns the same created resource with
+`Idempotent-Replayed: true`; it does not insert, broadcast or record the
+lifecycle action again. For an email-origin conversation, a replay does retry a
+pending durable outbox delivery. The outbox job is unique per message, retries
+with backoff, and the scheduler recovers rows whose Redis handoff never
+completed. Reusing a key for different input or another path returns `409`.
+Only a SHA-256 hash of the key is stored, and expired receipts are pruned hourly.
+After five failed worker attempts, the row cools for 60 minutes and then enters
+a new automatic retry cycle; terminal worker exhaustion does not discard the
+accepted reply or require an API replay.
+
+The email relay is **at least once**. The outbox records mail-transport
+acceptance, not exactly-once mailbox delivery. If the transport accepts a
+message and the worker exits before that acceptance is committed, a retry can
+send a duplicate. Retries reuse the same `Message-ID` to preserve threading,
+but generic SMTP does not guarantee deduplication.
+
+### Who authored an API message
+
+The API token did. Wayfindr stores that token as the message sender and shows
+the message on the support side to the visitor, but it never attributes the
+machine's words to the person who issued the credential.
+
+That distinction is functional, not cosmetic. An integration message does not
+count as a human first response, agent activity, or a reason to silence the
+unattended-conversation alert. A person still owes the visitor a reply. Posting
+to a closed conversation does follow the ordinary lifecycle and reopens it,
+with the integration recorded as the actor.
+
+Ticket writes are audited against the token for the same reason. Assigning a
+ticket still alerts the assigned agent, naming the integration that assigned
+it.
+
+### Write-only does not become read-by-response
+
+Create responses contain the input the caller supplied plus the generated id or
+support code. A ticket `PATCH` returns only its id and the fields that the request
+asked to change. Those deliberately are not the full read payload: otherwise a
+token granted `write` but not `read` could use mutation responses to read
+support records anyway.
+
 ## What you cannot read, and why
 
 **`metadata` is never returned.** On conversations and visitors it is a
@@ -124,6 +199,11 @@ that dropped archived sites would make a year of transcripts vanish from an
 integration the day somebody tidied up. **Purging** is the operation that
 removes data, and it removes it from here too.
 
+Archived sites are **not writable**. New conversations and tickets, messages on
+existing conversations, and ticket transitions are all refused after archive.
+An idempotent replay of a write accepted before archive still returns its
+receipt because it performs no new write.
+
 **Operator access grants do not extend to tokens.** A break-glass grant widens
 what a *person* can see, under an approval trail, for a bounded window
 ([ADR 0008](../decisions/0008-platform-operator-break-glass.md)). A token has no
@@ -159,6 +239,7 @@ Over either limit returns `429`.
 | `401` | No token, or a token that is unknown, revoked or expired. All four say the same thing on purpose. |
 | `403` | The token authenticated but lacks the ability for this endpoint. |
 | `404` | No such record **within this token's reach**. |
+| `409` | An idempotency key was reused for a different request, or its original resource was purged. |
 | `422` | A malformed filter or pagination parameter. For a cursor that means one that does not decode, is missing its direction marker or an ordering column, or carries a value the column cannot be compared with — including a timestamp that is well formed but names no real moment, and an id that is not an id. Anything less than a cursor this API itself issued is refused rather than treated as no cursor, which would hand you page one again and have you reprocess rows you have already seen. |
 | `429` | Rate limited. |
 
@@ -166,6 +247,8 @@ Over either limit returns `429`.
 
 A read made with a token cannot answer *who* read it. There is no person at the
 other end and no session to attribute it to, and no amount of logging changes
-that. It is why a token is bounded by what it can reach rather than by who holds
-it, and why `last_used_at` is on the token list — so an operator can tell a live
-credential from a forgotten one and revoke what nobody is using.
+that. A write can answer which token performed it, but still not which person or
+process held that token at the time. It is why a token is bounded by what it can
+reach rather than by who holds it, and why `last_used_at` is on the token list —
+so an operator can tell a live credential from a forgotten one and revoke what
+nobody is using.

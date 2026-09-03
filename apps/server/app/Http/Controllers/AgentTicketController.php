@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\ConversationMessageCreated;
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ExternalIssueProviderConnection;
@@ -58,6 +59,7 @@ class AgentTicketController extends Controller
             'assignee',
             'conversation.latestAgentMessage',
             'conversation.latestMessage',
+            'conversation.latestNonIntegrationMessage',
             'externalLinks' => fn ($query) => $query
                 ->latest()
                 ->latest('id'),
@@ -1069,13 +1071,23 @@ class AgentTicketController extends Controller
 
         $messageItems = $conversationMessages->toBase()->map(function ($message): array {
             $isAgentMessage = $message->sender_type === User::class;
+            $isIntegrationMessage = $message->sender_type === ApiToken::class;
+            $isSupportMessage = $isAgentMessage || $isIntegrationMessage;
 
             return [
-                'type' => $isAgentMessage ? 'agent-message' : 'visitor-message',
-                'label' => $isAgentMessage ? __('ticket_detail.timeline.message.agent_reply') : __('ticket_detail.timeline.message.visitor_message'),
-                'actor' => $isAgentMessage ? ($message->sender?->name ?? __('ticket_detail.common.agent')) : __('ticket_detail.common.visitor'),
-                'actor_is_authored' => $isAgentMessage && $message->sender?->name !== null,
-                'badge' => $isAgentMessage ? __('ticket_detail.timeline.message.customer_visible') : __('ticket_detail.timeline.message.customer_message'),
+                'type' => $isSupportMessage ? 'agent-message' : 'visitor-message',
+                'label' => match (true) {
+                    $isAgentMessage => __('ticket_detail.timeline.message.agent_reply'),
+                    $isIntegrationMessage => __('ticket_detail.timeline.message.integration_reply'),
+                    default => __('ticket_detail.timeline.message.visitor_message'),
+                },
+                'actor' => match (true) {
+                    $isAgentMessage => $message->sender?->name ?? __('ticket_detail.common.agent'),
+                    $isIntegrationMessage => $message->sender?->name ?? __('ticket_detail.common.integration'),
+                    default => __('ticket_detail.common.visitor'),
+                },
+                'actor_is_authored' => $isSupportMessage && $message->sender?->name !== null,
+                'badge' => $isSupportMessage ? __('ticket_detail.timeline.message.customer_visible') : __('ticket_detail.timeline.message.customer_message'),
                 'badge_feedback' => null,
                 'body' => $message->body,
                 'occurred_at' => $message->created_at,
@@ -1820,12 +1832,19 @@ class AgentTicketController extends Controller
             return __('ticket_detail.common.visitor');
         }
 
+        if ($activity->actor_type === ApiToken::class) {
+            return __('ticket_detail.common.integration_actor', [
+                'name' => $activity->actor?->name ?? __('ticket_detail.common.integration'),
+            ]);
+        }
+
         return $activity->actor?->name ?? __('ticket_detail.common.system');
     }
 
     private function ticketActivityActorIsAuthored(object $activity): bool
     {
-        return $activity->actor_type !== Visitor::class && $activity->actor?->name !== null;
+        return ! in_array($activity->actor_type, [Visitor::class, ApiToken::class], true)
+            && $activity->actor?->name !== null;
     }
 
     private function ticketTimelineBody(object $activity): ?string

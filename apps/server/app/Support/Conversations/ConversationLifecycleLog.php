@@ -2,6 +2,7 @@
 
 namespace App\Support\Conversations;
 
+use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\Visitor;
 use Illuminate\Database\Eloquent\Model;
@@ -88,7 +89,12 @@ class ConversationLifecycleLog
                 // Named so a reader can tell an agent closing a thread from a
                 // visitor's reply dragging it back open, without resolving the
                 // actor morph.
-                'actor' => $actor instanceof Visitor ? 'visitor' : ($actor === null ? 'system' : 'agent'),
+                'actor' => match (true) {
+                    $actor instanceof Visitor => 'visitor',
+                    $actor instanceof ApiToken => 'integration',
+                    $actor === null => 'system',
+                    default => 'agent',
+                },
             ],
             'occurred_at' => now(),
         ]);

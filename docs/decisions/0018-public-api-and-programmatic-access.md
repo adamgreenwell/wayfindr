@@ -131,9 +131,12 @@ not service. Dropping archived sites here would make a year of transcripts
 vanish from an integration the day somebody tidied up, while the dashboard
 carried on showing them. Purge is the operation that removes data.
 
-The write surface will need the opposite rule, and this is the reason to state
-the read rule explicitly rather than let it be inferred: an archived site stops
-accepting new work.
+The write surface has the opposite rule, and this is the reason to state the
+read rule explicitly rather than let it be inferred: an archived site stops
+accepting new work. Creating a conversation or ticket for one is refused, as is
+posting to or transitioning a record already on one. An idempotent replay of a
+write accepted before archive still returns its original receipt; it does not
+perform the write again.
 
 ### Break-glass grants do not extend to tokens
 
@@ -192,16 +195,77 @@ refused on a regex. A flood of malformed guesses never reaches the database.
 A well-formed guess still costs one indexed read, locked out or not, and that
 is the price of not locking a building out of its own integrations.
 
-### Read first, and less than the dashboard can do
+### Read first, then less than the dashboard can do
 
-The first surface is read-only: conversations, messages, tickets, visitors. The
-write surface follows separately and stays deliberately narrower than the
-dashboard — create a conversation, post a message, create or transition a
-ticket.
+The first surface shipped read-only: conversations, messages, tickets, visitors.
+The write surface followed separately and stays deliberately narrower than the
+dashboard:
+
+- open a conversation for a visitor the token can already identify;
+- post a text message to a conversation;
+- create a ticket; and
+- change a ticket's status or assignment.
+
+There is no delete, no transcript mutation, no ticket subject/description edit,
+no attachment path and no way to reach cobrowse. `write` is a separate ability:
+it does not imply `read`, and `read` does not imply it. Write responses are
+receipts containing the caller's own input plus generated identity, not the
+ordinary read payload; otherwise a write-only token could turn a PATCH into a
+read of the ticket it guessed.
 
 Explicitly out: cobrowse, in any form. The consent model is the product's
 strongest privacy claim, and a token reaching it before that has been thought
 through properly would undo the claim rather than extend it.
+
+### A token authors its own messages
+
+An API-posted message is stored with the `ApiToken` as its polymorphic sender.
+It is not attributed to the user who issued that credential: doing so would put
+a machine's words in a person's mouth and make every agent figure keyed on
+`sender_type = User` claim work that person did not do.
+
+Visitor surfaces present it on the support side, because it is a message the
+visitor is meant to receive. Reporting and alerting do **not** count it as a
+human agent reply: it does not satisfy first-response time, add agent activity,
+or silence the unattended-conversation alert. The human queue therefore keeps
+calling the conversation unanswered until a person replies.
+
+The ordinary lifecycle still applies. Posting to a closed conversation reopens
+it and records `conversation.reopened`, with the token — and `integration` — as
+the actor. Ticket creation, status changes and assignment changes are likewise
+audited against the token rather than its issuer. Assigning a ticket still
+alerts the assigned agent; the notification names the integration that did it.
+
+### Every POST carries a short-lived idempotency key
+
+`POST` writes require an `Idempotency-Key` header. The key is scoped to the API
+token, valid for 24 hours and hashed before storage. A retry with the same key,
+path and validated input returns the original resource receipt without another
+insert, broadcast or lifecycle event. On an email-origin conversation it may
+retry a pending durable outbox delivery. The unique outbox job retries with
+backoff, and the scheduler recovers a row when the process exits or Redis is
+unavailable before the first handoff. Reusing the key for any different request
+returns `409`.
+
+Five failed worker attempts stamp the latest failed cycle, then the row cools
+for 60 minutes before the scheduler starts another retry cycle. The failure
+stamp is not a permanent tombstone: this automatic recovery applies equally to
+API and human-agent replies, including the latter's lack of an idempotent API
+replay.
+
+Email relay is explicitly **at least once**, not exactly once. The outbox records
+when the configured mail transport returns successfully. If that transport
+accepts a message and the worker exits before the acceptance stamp commits, a
+retry can send another copy. Every attempt reuses the stored `Message-ID` for
+threading, but generic SMTP does not promise deduplication from that header.
+
+Receipts store only the resource type and id, not a second copy of a transcript
+or ticket response. They are pruned hourly after the retry window. Writes for
+one token briefly serialize on that token's row so every supported database has
+the same check-and-insert behavior under concurrent retries; unrelated tokens
+do not wait on each other. Revocation takes the same lock, which leaves a clean
+ordering: either the write commits before revocation, or the revoked token is
+refused before it changes anything.
 
 ## Consequences
 

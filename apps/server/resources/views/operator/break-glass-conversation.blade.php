@@ -5,8 +5,8 @@
             ? $unknownLanguage($value['label'])
             : e($value['label']);
         $senderHtml = static function (array $sender) use ($unknownLanguage): string {
-            if ($sender['key'] === 'agent' && $sender['name'] !== null) {
-                return __('operator_break_glass.conversation.senders.agent', ['name' => $unknownLanguage($sender['name'])]);
+            if (in_array($sender['key'], ['agent', 'integration'], true) && $sender['name'] !== null) {
+                return __('operator_break_glass.conversation.senders.'.$sender['key'], ['name' => $unknownLanguage($sender['name'])]);
             }
 
             return e(__('operator_break_glass.conversation.senders.'.$sender['key']));

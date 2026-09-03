@@ -52,6 +52,7 @@ return [
     'references' => [
         'visitor' => 'Besucher',
         'system' => 'System',
+        'integration' => 'Integration',
         'operator_access' => 'Betreiberzugriff:',
         'operator_access_conversation' => 'Betreiberzugriff: Unterhaltung',
         'operator_access_conversation_deleted' => 'Betreiberzugriff: Gelöschte Unterhaltung',

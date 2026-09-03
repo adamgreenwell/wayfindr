@@ -51,7 +51,7 @@ return [
         'heading' => 'Jetzt kopieren',
         'once' => 'Einmalig sichtbar',
         'hashed' => 'Dies ist das einzige Mal, dass dieses Token angezeigt wird. Wayfindr speichert einen Hash davon, nicht das Token selbst, sodass es nicht wiederhergestellt werden kann — wenn Sie es verlieren, widerrufen Sie es und stellen Sie ein neues aus.',
-        'send_as' => 'Senden Sie es als :header. Behandeln Sie es wie ein Passwort: Wer es besitzt, kann die Unterhaltungen und Tickets dieses Kontos lesen.',
+        'send_as' => 'Senden Sie es als :header. Behandeln Sie es wie ein Passwort: Wer es besitzt, kann jede unten gewährte Berechtigung nutzen.',
     ],
 
     'list' => [
@@ -79,6 +79,7 @@ return [
 
     'abilities' => [
         'read' => 'Lesen',
+        'write' => 'Schreiben',
     ],
 
     'last_used' => [
@@ -94,13 +95,14 @@ return [
 
     'create' => [
         'heading' => 'Token ausstellen',
-        'read_only' => 'Vorerst nur lesend',
+        'read_only' => 'Lesen und Schreiben sind getrennt',
         'name_label' => 'Wofür ist es da',
         'name_placeholder' => 'Reporting-Abgleich',
         'name_help' => 'Geschrieben für die Person, die diese Zeile in einem Jahr findet und entscheiden muss, ob sie noch gebraucht wird.',
         'abilities_label' => 'Was es darf',
         'ability_read' => 'Unterhaltungen, Nachrichten, Tickets und Besuchende lesen',
-        'abilities_help' => 'Schreiben wird noch nicht angeboten. Sobald es das wird, ist es eine eigene Berechtigung und nicht in dieser enthalten.',
+        'ability_write' => 'Unterhaltungen eröffnen, Nachrichten senden sowie Tickets erstellen oder ihren Status ändern',
+        'abilities_help' => 'Jede Berechtigung steht für sich. Schreiben gewährt kein Lesen, und Lesen gewährt niemals Schreiben.',
         'expires_label' => 'Läuft ab nach',
         'expires_help' => 'Tage. Bleibt das Feld leer, läuft das Token nie ab — dann ist es niemandes Aufgabe mehr, es zu bemerken.',
         'sites_label' => 'Auf Websites begrenzen',
@@ -109,6 +111,6 @@ return [
         'submit' => 'Token ausstellen',
     ],
 
-    'accountability' => 'Hinter einem Token steht keine Person, deshalb kann ein damit ausgeführter Lesezugriff nicht beantworten, :who gelesen hat, wie es ein Zugriff über das Dashboard kann. Darum wird ein Token darüber begrenzt, was es erreichen kann, und nicht darüber, wer es hält — und darum erweitert eine Betreiber-Zugriffsfreigabe es nie.',
+    'accountability' => 'Hinter einem Token steht keine Person, deshalb kann ein damit ausgeführter Lesezugriff nicht beantworten, :who gelesen hat, wie es ein Zugriff über das Dashboard kann. Schreibvorgänge werden dem Token zugeschrieben, niemals der Person, die es ausgestellt hat. Darum wird ein Token darüber begrenzt, was es erreichen kann — und darum erweitert eine Betreiber-Zugriffsfreigabe es nie.',
     'accountability_who' => 'wer',
 ];

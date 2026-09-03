@@ -34,6 +34,8 @@ return [
         'system' => 'Sistema',
         'visitor' => 'Visitatore',
         'agent' => 'Un agente',
+        'integration' => 'Integrazione',
+        'integration_actor' => 'Integrazione · :name',
         'external_tracker' => 'Sistema esterno',
         'external_record' => 'Record esterno',
         'back_dashboard' => 'Torna alla panoramica',
@@ -314,6 +316,7 @@ return [
         ],
         'message' => [
             'agent_reply' => 'Risposta dell’agente',
+            'integration_reply' => 'Risposta dell’integrazione',
             'visitor_message' => 'Messaggio del visitatore',
             'customer_visible' => 'Visibile al cliente',
             'customer_message' => 'Messaggio del cliente',

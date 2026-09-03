@@ -63,7 +63,7 @@ final class ApiScope
         // Purging is the operation that removes data, and it removes these rows
         // too.
         //
-        // The write surface will need the opposite rule -- an archived site
+        // The write surface uses the opposite rule below -- an archived site
         // stops accepting new work, exactly as the inbound mail router already
         // refuses it.
         $query = Site::query()
@@ -81,6 +81,20 @@ final class ApiScope
     }
 
     /**
+     * The sites where this token may create or change support records.
+     *
+     * Read reach includes archived history; write reach deliberately does not.
+     * Archiving takes a site out of service for the widget and inbound mail,
+     * and an API token is not a back door around that operator decision.
+     *
+     * @return Builder<Site>
+     */
+    public function writableSiteIdsQuery(): Builder
+    {
+        return $this->siteIdsQuery()->whereNull('sites.archived_at');
+    }
+
+    /**
      * Whether one site is inside this token's reach.
      *
      * An `exists` rather than a lookup in a loaded list, for the same reason
@@ -89,6 +103,11 @@ final class ApiScope
     public function includesSite(int $siteId): bool
     {
         return $this->siteIdsQuery()->whereKey($siteId)->exists();
+    }
+
+    public function includesWritableSite(int $siteId): bool
+    {
+        return $this->writableSiteIdsQuery()->whereKey($siteId)->exists();
     }
 
     /**

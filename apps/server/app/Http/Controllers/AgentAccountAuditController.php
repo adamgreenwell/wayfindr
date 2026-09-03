@@ -264,6 +264,9 @@ class AgentAccountAuditController extends Controller
                             ->orWhereLike('email', $searchPattern)
                             ->orWhereLike('external_id', $searchPattern)
                             ->orWhereLike('anonymous_id', $searchPattern))
+                        ->orWhereHasMorph('actor', [ApiToken::class], fn (Builder $query) => $query
+                            ->whereLike('name', $searchPattern)
+                            ->orWhereLike('last_four', $searchPattern))
                         ->orWhereHasMorph('subject', [User::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern))
@@ -352,6 +355,13 @@ class AgentAccountAuditController extends Controller
             return [
                 'prefix' => __('account_audit.references.visitor'),
                 'value' => $this->visitorLabel($event->actor),
+            ];
+        }
+
+        if ($event->actor instanceof ApiToken) {
+            return [
+                'prefix' => __('account_audit.references.integration'),
+                'value' => $event->actor->name.' ('.$event->actor->displayHint().')',
             ];
         }
 
@@ -473,6 +483,10 @@ class AgentAccountAuditController extends Controller
 
         if ($event->actor instanceof Visitor) {
             return 'Visitor '.$this->visitorLabel($event->actor);
+        }
+
+        if ($event->actor instanceof ApiToken) {
+            return 'Integration '.$event->actor->name.' ('.$event->actor->displayHint().')';
         }
 
         return 'System';

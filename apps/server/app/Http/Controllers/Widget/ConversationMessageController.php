@@ -6,6 +6,7 @@ use App\Events\ConversationMessageCreated;
 use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationReadReceiptUpdated;
 use App\Http\Controllers\Controller;
+use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\User;
@@ -46,7 +47,7 @@ class ConversationMessageController extends Controller
         }
 
         $messages = $conversation->messages()
-            ->with(['sender', 'attachments'])
+            ->with(['sender', 'attachments', 'conversation.site'])
             ->orderBy('created_at')
             ->orderBy('id')
             ->get()
@@ -287,7 +288,11 @@ class ConversationMessageController extends Controller
         if ($seenMessageId) {
             $seenMessage = $conversation->messages()
                 ->whereKey($seenMessageId)
-                ->where('sender_type', User::class)
+                // The widget presents both people and API integrations on the
+                // support side, so either can be the newest rendered boundary.
+                // The update query above remains human-only: seeing an
+                // automated message must not turn it into agent work.
+                ->whereIn('sender_type', [User::class, ApiToken::class])
                 ->first();
 
             if (! $seenMessage) {
@@ -314,6 +319,13 @@ class ConversationMessageController extends Controller
             return [
                 'kind' => 'agent',
                 'name' => $message->sender?->name ?? 'Agent',
+            ];
+        }
+
+        if ($message->sender_type === ApiToken::class) {
+            return [
+                'kind' => 'agent',
+                'name' => $message->conversation?->site?->name ?? 'Support',
             ];
         }
 

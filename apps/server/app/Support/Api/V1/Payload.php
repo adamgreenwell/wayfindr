@@ -2,6 +2,7 @@
 
 namespace App\Support\Api\V1;
 
+use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Ticket;
@@ -111,6 +112,87 @@ final class Payload
     }
 
     /**
+     * The receipt for opening a conversation with a write-only token.
+     *
+     * @param  array{site_id: int, visitor_id: int, subject?: string|null}  $input
+     * @return array<string, mixed>
+     */
+    public static function createdConversation(Conversation $conversation, array $input): array
+    {
+        return [
+            'support_code' => $conversation->support_code,
+            'site_id' => (int) $input['site_id'],
+            'visitor_id' => (int) $input['visitor_id'],
+            'status' => 'open',
+            'subject' => $input['subject'] ?? null,
+        ];
+    }
+
+    /**
+     * The receipt for a support-side integration message.
+     *
+     * Deliberately not `conversation()`: write does not imply read, and the
+     * token supplied the only content returned here itself.
+     *
+     * @param  array{body: string}  $input
+     * @return array<string, mixed>
+     */
+    public static function createdMessage(ConversationMessage $message, array $input): array
+    {
+        return [
+            'conversation' => [
+                'support_code' => $message->conversation->support_code,
+                'status' => 'open',
+            ],
+            'message' => [
+                'id' => (int) $message->id,
+                'sender' => 'integration',
+                'type' => 'text',
+                'body' => $input['body'],
+                'created_at' => $message->created_at?->toJSON(),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array{site_id: int, requester_id?: int|null, subject: string, description?: string|null, priority?: string|null}  $input
+     * @return array<string, mixed>
+     */
+    public static function createdTicket(Ticket $ticket, array $input): array
+    {
+        return [
+            'id' => (int) $ticket->id,
+            'site_id' => (int) $input['site_id'],
+            'requester_id' => isset($input['requester_id']) ? (int) $input['requester_id'] : null,
+            'status' => 'open',
+            'priority' => $input['priority'] ?? 'normal',
+            'subject' => $input['subject'],
+            'description' => $input['description'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  array{status?: string, assignee_id?: int|null}  $input
+     * @return array<string, mixed>
+     */
+    public static function updatedTicket(Ticket $ticket, array $input): array
+    {
+        $data = ['id' => (int) $ticket->id];
+
+        foreach (['status', 'assignee_id'] as $field) {
+            if (! array_key_exists($field, $input)) {
+                continue;
+            }
+
+            $data[$field] = $field === 'assignee_id'
+                ? ($ticket->assignee_id === null ? null : (int) $ticket->assignee_id)
+                : (string) $ticket->status;
+        }
+
+        return $data;
+    }
+
+    /**
      * A cursor-paginated list, in the one envelope every list endpoint uses.
      *
      * Cursor rather than page numbers, because a support inbox changes while
@@ -138,6 +220,7 @@ final class Payload
         return match ((string) $message->sender_type) {
             Visitor::class => 'visitor',
             User::class => 'agent',
+            ApiToken::class => 'integration',
             default => 'system',
         };
     }

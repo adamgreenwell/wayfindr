@@ -55,6 +55,7 @@ return [
     'references' => [
         'visitor' => 'Visitor',
         'system' => 'System',
+        'integration' => 'Integration',
         'operator_access' => 'Operator access:',
         'operator_access_conversation' => 'Operator access: Conversation',
         'operator_access_conversation_deleted' => 'Operator access: Conversation (deleted)',

@@ -6,6 +6,7 @@ use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationReplyDelivery;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -15,7 +16,9 @@ use App\Support\Mail\InboundMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -288,7 +291,7 @@ test('an agent replying to an email conversation sends an email back', function 
         ])
         ->assertRedirect();
 
-    Mail::assertQueued(ConversationReplyMessage::class, function (ConversationReplyMessage $mail): bool {
+    Mail::assertSent(ConversationReplyMessage::class, function (ConversationReplyMessage $mail): bool {
         return $mail->hasTo('ada@example.test');
     });
 
@@ -297,6 +300,44 @@ test('an agent replying to an email conversation sends an email back', function 
     $reply = $inbound->conversation->fresh()->messages()->where('sender_type', User::class)->firstOrFail();
 
     expect($reply->email_message_id)->not->toBeNull();
+});
+
+test('a queue outage does not turn a durably stored agent reply into a resubmit-inducing error', function (): void {
+    Event::fake([ConversationMessageCreated::class]);
+    Log::spy();
+    $site = mailSite();
+    $inbound = deliver(mailPayload());
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+    $queueManager = Queue::getFacadeRoot();
+
+    Queue::shouldReceive('connection')
+        ->once()
+        ->andThrow(new RuntimeException('Redis unavailable.'));
+
+    try {
+        $this->actingAs($agent)
+            ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
+                'body' => 'This reply is safely in the outbox.',
+            ])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+    } finally {
+        Queue::swap($queueManager);
+    }
+
+    $reply = $inbound->conversation->messages()->where('sender_type', User::class)->sole();
+    $delivery = ConversationReplyDelivery::query()->sole();
+
+    expect($reply->body)->toBe('This reply is safely in the outbox.')
+        ->and($delivery->conversation_message_id)->toBe($reply->id)
+        ->and($delivery->accepted_at)->toBeNull()
+        ->and($delivery->failed_at)->toBeNull();
+
+    Log::shouldHaveReceived('error')
+        ->once()
+        ->withArgs(fn (string $message, array $context): bool => $message === 'Conversation reply stored, but its immediate queue handoff failed.'
+            && $context['conversation_reply_delivery_id'] === $delivery->id);
 });
 
 test('a widget conversation is not also emailed', function (): void {
@@ -436,7 +477,7 @@ test('the files an agent attaches travel with the emailed reply', function (): v
         ])
         ->assertRedirect();
 
-    Mail::assertQueued(
+    Mail::assertSent(
         ConversationReplyMessage::class,
         fn (ConversationReplyMessage $mail): bool => count($mail->attachments()) === 1,
     );

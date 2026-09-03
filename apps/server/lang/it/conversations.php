@@ -159,6 +159,7 @@ return [
         ],
         'roles' => [
             'agent' => 'Agente',
+            'integration' => 'Integrazione',
             'visitor' => 'Visitatore',
         ],
         'reply' => [

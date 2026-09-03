@@ -168,6 +168,25 @@ class Conversation extends Model
         ]);
     }
 
+    /**
+     * The latest message that can decide who owes the next human reply.
+     *
+     * Integration messages remain real conversation activity, but they cannot
+     * move that boundary. Senderless and future non-integration message types
+     * still require human review, so only ApiToken is excluded.
+     */
+    public function latestNonIntegrationMessage(): HasOne
+    {
+        return $this->hasOne(ConversationMessage::class)
+            ->ofMany([
+                'created_at' => 'max',
+                'id' => 'max',
+            ], fn (Builder $query) => $query->where(function (Builder $query): void {
+                $query->where('sender_type', '!=', ApiToken::class)
+                    ->orWhereNull('sender_type');
+            }));
+    }
+
     public function latestAgentMessage(): HasOne
     {
         return $this->hasOne(ConversationMessage::class)
@@ -262,16 +281,30 @@ class Conversation extends Model
 
     public function attentionState(): string
     {
-        $latestMessage = $this->relationLoaded('latestMessage')
-            ? $this->latestMessage
-            : $this->messages()
-                ->latest('created_at')
-                ->latest('id')
-                ->first();
+        $latestMessage = $this->latestMessageForHumanWork();
 
         return $latestMessage?->sender_type === User::class
             ? 'waiting_on_visitor'
             : 'needs_reply';
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeNeedsHumanReply(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query
+                // No non-integration message means either an empty conversation
+                // or integration-only activity. Neither is a human reply.
+                ->whereDoesntHave('latestNonIntegrationMessage')
+                ->orWhereHas('latestNonIntegrationMessage', fn (Builder $query) => $query
+                    ->where(function (Builder $query): void {
+                        $query->where('sender_type', '!=', User::class)
+                            ->orWhereNull('sender_type');
+                    }));
+        });
     }
 
     /**
@@ -311,12 +344,7 @@ class Conversation extends Model
             ];
         }
 
-        $latestMessage = $this->relationLoaded('latestMessage')
-            ? $this->latestMessage
-            : $this->messages()
-                ->latest('created_at')
-                ->latest('id')
-                ->first();
+        $latestMessage = $this->latestMessageForHumanWork();
 
         if (! $latestMessage) {
             return [
@@ -336,11 +364,29 @@ class Conversation extends Model
             ];
         }
 
+        if ($latestMessage->sender_type === Visitor::class) {
+            return [
+                'body' => 'Visitor replied last. Send a clear response or create a ticket when the request needs durable follow-up.',
+                'cta' => 'Jump to reply',
+                'href' => '#reply-heading',
+                'title' => 'Reply to visitor',
+            ];
+        }
+
+        if ($latestMessage->sender_type === ApiToken::class) {
+            return [
+                'body' => 'An integration update is visible, but a human reply is still needed before this conversation can wait on the visitor.',
+                'cta' => 'Jump to reply',
+                'href' => '#reply-heading',
+                'title' => 'Reply to visitor',
+            ];
+        }
+
         return [
-            'body' => 'Visitor replied last. Send a clear response or create a ticket when the request needs durable follow-up.',
-            'cta' => 'Jump to reply',
-            'href' => '#reply-heading',
-            'title' => 'Reply to visitor',
+            'body' => 'New conversation activity needs human review before the conversation can wait on anyone.',
+            'cta' => 'Review messages',
+            'href' => '#messages-heading',
+            'title' => 'Review new activity',
         ];
     }
 
@@ -396,12 +442,7 @@ class Conversation extends Model
      */
     public function queueTimingContext(): array
     {
-        $latestMessage = $this->relationLoaded('latestMessage')
-            ? $this->latestMessage
-            : $this->messages()
-                ->latest('created_at')
-                ->latest('id')
-                ->first();
+        $latestMessage = $this->latestMessageForHumanWork();
 
         return [
             'opened_label' => 'Opened '.$this->created_at->diffForHumans(),
@@ -673,11 +714,9 @@ class Conversation extends Model
             return 'no_messages';
         }
 
-        return match ($latestMessage->sender_type) {
-            Visitor::class => 'waiting_on_reply',
-            User::class => 'waiting_on_visitor',
-            default => 'waiting_on_update',
-        };
+        return $latestMessage->sender_type === User::class
+            ? 'waiting_on_visitor'
+            : 'waiting_on_reply';
     }
 
     /**
@@ -701,11 +740,9 @@ class Conversation extends Model
         if ($latestMessage?->created_at) {
             $elapsed = $this->elapsedQueueTime($latestMessage->created_at);
 
-            return match ($latestMessage->sender_type) {
-                Visitor::class => 'Waiting on reply for '.$elapsed,
-                User::class => 'Waiting on visitor for '.$elapsed,
-                default => 'Waiting on update for '.$elapsed,
-            };
+            return $latestMessage->sender_type === User::class
+                ? 'Waiting on visitor for '.$elapsed
+                : 'Waiting on reply for '.$elapsed;
         }
 
         return 'No messages yet';
@@ -725,6 +762,26 @@ class Conversation extends Model
             'syntax' => CarbonInterface::DIFF_ABSOLUTE,
             'parts' => 1,
         ]);
+    }
+
+    /**
+     * Activity and human-work boundaries are deliberately different. Prefer
+     * the latest non-integration message; only fall back to an integration
+     * when no other message type has ever supplied a work boundary.
+     */
+    public function latestMessageForHumanWork(): ?ConversationMessage
+    {
+        $boundary = $this->relationLoaded('latestNonIntegrationMessage')
+            ? $this->latestNonIntegrationMessage
+            : $this->latestNonIntegrationMessage()->first();
+
+        if ($boundary) {
+            return $boundary;
+        }
+
+        return $this->relationLoaded('latestMessage')
+            ? $this->latestMessage
+            : $this->latestMessage()->first();
     }
 
     private function visitorTypingAt(): ?CarbonInterface

@@ -100,9 +100,11 @@ class Ticket extends Model
      */
     private static function attentionStateSql(): array
     {
-        // The latest message on the ticket's conversation, matching
-        // `Conversation::latestMessage()` -- which is `ofMany(max)`, not an
-        // `order by ... desc limit 1`.
+        // The latest non-integration message on the ticket's conversation,
+        // matching `Conversation::latestMessageForHumanWork()`. Integration
+        // activity is real, but cannot move the human reply boundary. When no
+        // other sender has spoken, fall back to the latest message so an
+        // integration-only conversation still enters the human-work lane.
         //
         // The difference is null `created_at`, which the column allows. A MAX
         // skips nulls, so `ofMany` never returns a null-dated message; a
@@ -114,8 +116,18 @@ class Ticket extends Model
             .' where m.conversation_id = tickets.conversation_id'
             .' and m.created_at is not null';
 
-        $latestSender = "(select m.sender_type {$datedMessage}"
+        $latestMessageSender = "(select m.sender_type {$datedMessage}"
             .' order by m.created_at desc, m.id desc limit 1)';
+        $nonIntegrationMessage = $datedMessage
+            .' and (m.sender_type <> ? or m.sender_type is null)';
+        $hasNonIntegrationMessage = "exists (select 1 {$nonIntegrationMessage})";
+        $latestNonIntegrationSender = "(select m.sender_type {$nonIntegrationMessage}"
+            .' order by m.created_at desc, m.id desc limit 1)';
+        // CASE rather than COALESCE: null is a supported sender value. A real
+        // senderless message must remain the boundary instead of falling back
+        // to a newer integration message.
+        $latestWorkSender = "(case when {$hasNonIntegrationMessage}"
+            ." then {$latestNonIntegrationSender} else {$latestMessageSender} end)";
 
         // Whether the conversation has a message AT ALL, asked separately from
         // who sent it. `conversation_messages.sender` is a nullable morph, so
@@ -135,16 +147,16 @@ class Ticket extends Model
             .' and e.occurred_at >= ?)';
 
         // The `pending` branch below deliberately does NOT need $hasMessage.
-        // `attentionState()` reaches it through `?->sender_type !== Visitor`,
-        // which is true for a null-sender message and for no message alike, so
-        // collapsing both to '' is what that rule actually says. The asymmetry
-        // with the `needs_reply` branch is the asymmetry in the PHP.
+        // `attentionState()` treats a null-sender message and no message alike,
+        // so collapsing both to '' is what that rule actually says. A visitor,
+        // or integration-only activity, falls through: neither can stand in
+        // for the human reply that would make the ticket wait on the customer.
         $case = "case
             when tickets.status <> 'closed' and {$recentEscalation} then 'escalated'
             when tickets.status = 'closed' then 'resolved'
-            when tickets.status = 'pending' and coalesce({$latestSender}, '') <> ? then 'waiting_on_customer'
+            when tickets.status = 'pending' and coalesce({$latestWorkSender}, '') not in (?, ?) then 'waiting_on_customer'
             when tickets.assignee_id is null then 'needs_owner'
-            when {$latestSender} = ? then 'waiting_on_customer'
+            when {$latestWorkSender} = ? then 'waiting_on_customer'
             when {$hasMessage} then 'needs_reply'
             else 'needs_agent'
         end";
@@ -152,7 +164,12 @@ class Ticket extends Model
         return [$case, [
             (new self)->getMorphClass(),
             Carbon::now()->subDay(),
+            (new ApiToken)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
             (new Visitor)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
+            (new ApiToken)->getMorphClass(),
             (new User)->getMorphClass(),
         ]];
     }
@@ -262,9 +279,10 @@ class Ticket extends Model
             return 'resolved';
         }
 
-        $latestMessage = $this->latestConversationMessage();
+        $latestMessage = $this->latestConversationMessageForHumanWork();
 
-        if ($this->status === 'pending' && $latestMessage?->sender_type !== Visitor::class) {
+        if ($this->status === 'pending'
+            && ! in_array($latestMessage?->sender_type, [Visitor::class, ApiToken::class], true)) {
             return 'waiting_on_customer';
         }
 
@@ -587,7 +605,7 @@ class Ticket extends Model
      */
     public function queueTimingContext(): array
     {
-        $latestMessage = $this->latestConversationMessage();
+        $latestMessage = $this->latestConversationMessageForHumanWork();
 
         return [
             'opened_label' => 'Opened '.$this->created_at->diffForHumans(),
@@ -614,9 +632,9 @@ class Ticket extends Model
         }
 
         if ($latestMessage?->created_at) {
-            return match ($latestMessage->sender_type) {
-                Visitor::class => 'waiting_on_reply',
-                User::class => 'waiting_on_customer',
+            return match ($attentionState) {
+                'needs_reply' => 'waiting_on_reply',
+                'waiting_on_customer' => 'waiting_on_customer',
                 default => 'waiting_on_update',
             };
         }
@@ -667,9 +685,9 @@ class Ticket extends Model
         if ($latestMessage?->created_at) {
             $elapsed = $this->elapsedQueueTime($latestMessage->created_at);
 
-            return match ($latestMessage->sender_type) {
-                Visitor::class => 'Waiting on reply for '.$elapsed,
-                User::class => 'Waiting on customer for '.$elapsed,
+            return match ($attentionState) {
+                'needs_reply' => 'Waiting on reply for '.$elapsed,
+                'waiting_on_customer' => 'Waiting on customer for '.$elapsed,
                 default => 'Waiting on update for '.$elapsed,
             };
         }
@@ -700,6 +718,11 @@ class Ticket extends Model
         return $this->conversation?->relationLoaded('latestMessage')
             ? $this->conversation->latestMessage
             : $this->conversation?->latestMessage()->first();
+    }
+
+    private function latestConversationMessageForHumanWork(): ?ConversationMessage
+    {
+        return $this->conversation?->latestMessageForHumanWork();
     }
 
     private function activityPreviewLabelKey(ConversationMessage $message): string

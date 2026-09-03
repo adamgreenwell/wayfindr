@@ -3,19 +3,112 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApiToken;
+use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\User;
+use App\Models\Visitor;
+use App\Notifications\TicketAssigned;
 use App\Rules\DecodableCursor;
+use App\Support\Api\ApiIdempotency;
 use App\Support\Api\ApiScope;
 use App\Support\Api\V1\Payload;
 use App\Support\DatabaseKey;
+use App\Support\TicketPriority;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 /**
- * Tickets, read-only (ADR 0018).
+ * Tickets in the deliberately narrow public contract (ADR 0018).
  */
 class TicketController extends Controller
 {
+    public function store(Request $request, ApiIdempotency $idempotency): JsonResponse
+    {
+        $scope = ApiScope::fromRequest($request);
+
+        $validated = $request->validate([
+            'site_id' => ['required', 'integer'],
+            'requester_id' => ['nullable', 'integer'],
+            'subject' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:10000'],
+            'priority' => ['nullable', 'string', Rule::in(TicketPriority::values())],
+        ]);
+
+        $result = $idempotency->run(
+            $request,
+            $validated,
+            'ticket',
+            function (ApiToken $token) use ($scope, $validated): Ticket {
+                $site = Site::query()
+                    ->whereIn('id', $scope->writableSiteIdsQuery())
+                    ->whereKey($validated['site_id'])
+                    ->sharedLock()
+                    ->first();
+
+                if ($site === null) {
+                    $this->invalidReference('site_id');
+                }
+
+                $requesterId = $validated['requester_id'] ?? null;
+                $requester = null;
+
+                if ($requesterId !== null) {
+                    $requester = Visitor::query()
+                        ->where('site_id', $site->id)
+                        ->whereKey($requesterId)
+                        // Serializes with the presence pruner's final check so
+                        // a valid requester cannot disappear between this
+                        // lookup and the ticket's foreign-key insert.
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($requester === null) {
+                        $this->invalidReference('requester_id');
+                    }
+
+                    // A ticket is support contact just as a conversation is.
+                    // Keep the live-board profile state and retention marker
+                    // aligned with the relationship this transaction creates.
+                    $requester->forceFill(['presence_only' => false])->save();
+                }
+
+                $ticket = Ticket::query()->create([
+                    'account_id' => $scope->accountId(),
+                    'site_id' => $site->id,
+                    'requester_id' => $requesterId,
+                    'status' => 'open',
+                    'priority' => $validated['priority'] ?? 'normal',
+                    'subject' => $validated['subject'],
+                    'description' => $validated['description'] ?? null,
+                    'metadata' => ['source' => 'api'],
+                ]);
+
+                $this->recordActivity($ticket, $token, 'ticket.created', ['source' => 'api']);
+
+                return $ticket;
+            },
+            fn (int $id) => Ticket::query()
+                ->where('account_id', $scope->accountId())
+                ->whereIn('site_id', $scope->siteIdsQuery())
+                ->whereKey($id)
+                ->first(),
+        );
+
+        return response()
+            // Creation receipts echo what the caller supplied plus generated
+            // identity/defaults. A later retry must not become a read of edits
+            // somebody made after creation.
+            ->json(['data' => Payload::createdTicket($result->resource, $validated)], 201)
+            ->header('Idempotent-Replayed', $result->replayed ? 'true' : 'false');
+    }
+
     public function index(Request $request): JsonResponse
     {
         $scope = ApiScope::fromRequest($request);
@@ -69,5 +162,182 @@ class TicketController extends Controller
             ->firstOrFail();
 
         return response()->json(['data' => Payload::ticket($found)]);
+    }
+
+    /**
+     * Status and assignment only. A token cannot silently inherit the wider
+     * dashboard edit form just because both operate on a Ticket model.
+     */
+    public function update(Request $request, string $ticket): JsonResponse
+    {
+        $scope = ApiScope::fromRequest($request);
+
+        abort_unless(DatabaseKey::isValid($ticket), 404);
+
+        $validated = $request->validate([
+            'status' => ['sometimes', 'string', 'in:open,pending,closed'],
+            'assignee_id' => ['sometimes', 'nullable', 'integer'],
+        ]);
+
+        if (! array_key_exists('status', $validated) && ! array_key_exists('assignee_id', $validated)) {
+            throw ValidationException::withMessages([
+                'status' => 'Provide a status or assignee_id to change.',
+            ]);
+        }
+
+        $candidate = Ticket::query()
+            ->where('account_id', $scope->accountId())
+            ->whereIn('site_id', $scope->writableSiteIdsQuery())
+            ->whereKey($ticket)
+            ->firstOrFail();
+
+        $newAssignee = null;
+        $assigneeChanged = false;
+
+        $ticket = DB::transaction(function () use (
+            $scope,
+            $candidate,
+            $validated,
+            &$newAssignee,
+            &$assigneeChanged,
+        ): Ticket {
+            $token = ApiToken::query()
+                ->whereKey($scope->token->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            // Authentication happened before the transaction, so revocation
+            // can otherwise land in the small gap before this update. POSTs
+            // take this same lock through ApiIdempotency; PATCH must keep the
+            // same clean ordering even though it needs no idempotency receipt.
+            if ($token === null || ! $token->isUsable()) {
+                throw new HttpResponseException(response()->json([
+                    'message' => 'That API token is not valid.',
+                ], 401));
+            }
+
+            $site = Site::query()->whereKey($candidate->site_id)->sharedLock()->first();
+
+            if ($site === null || $site->isArchived() || ! $scope->includesWritableSite((int) $site->id)) {
+                abort(404);
+            }
+
+            $locked = Ticket::query()
+                ->where('account_id', $scope->accountId())
+                ->where('site_id', $site->id)
+                ->whereKey($candidate->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $attributes = [];
+            $previousStatus = (string) $locked->status;
+            $nextStatus = array_key_exists('status', $validated)
+                ? (string) $validated['status']
+                : $previousStatus;
+
+            if ($nextStatus !== $previousStatus) {
+                $attributes['status'] = $nextStatus;
+                $attributes['closed_at'] = $nextStatus === 'closed' ? now() : null;
+            }
+
+            $oldAssigneeId = $locked->assignee_id === null ? null : (int) $locked->assignee_id;
+            $nextAssigneeId = $oldAssigneeId;
+
+            if (array_key_exists('assignee_id', $validated)) {
+                $nextAssigneeId = $validated['assignee_id'] === null ? null : (int) $validated['assignee_id'];
+
+                if ($nextAssigneeId !== null) {
+                    $newAssignee = User::query()
+                        ->where('account_id', $scope->accountId())
+                        ->whereKey($nextAssigneeId)
+                        ->first();
+
+                    if ($newAssignee === null || ! $site->supportsAgent($newAssignee)) {
+                        $this->invalidReference('assignee_id');
+                    }
+                }
+
+                if ($nextAssigneeId !== $oldAssigneeId) {
+                    $attributes['assignee_id'] = $nextAssigneeId;
+                    $assigneeChanged = true;
+                }
+            }
+
+            if ($attributes !== []) {
+                $locked->forceFill($attributes)->save();
+            }
+
+            if ($nextStatus !== $previousStatus) {
+                // Leaving closed is a reopen whichever target state follows.
+                if ($previousStatus === 'closed') {
+                    $this->recordActivity($locked, $token, 'ticket.reopened', ['source' => 'api']);
+                }
+
+                if ($nextStatus === 'pending') {
+                    $this->recordActivity($locked, $token, 'ticket.pending', ['source' => 'api']);
+                } elseif ($previousStatus === 'pending' && $nextStatus === 'open') {
+                    $this->recordActivity($locked, $token, 'ticket.unheld', ['source' => 'api']);
+                } elseif ($nextStatus === 'closed') {
+                    $this->recordActivity($locked, $token, 'ticket.closed', ['source' => 'api']);
+                }
+            }
+
+            if ($assigneeChanged) {
+                $oldAssigneeName = $oldAssigneeId === null
+                    ? null
+                    : User::query()->whereKey($oldAssigneeId)->value('name');
+
+                $this->recordActivity($locked, $token, 'ticket.assignee_updated', [
+                    'source' => 'api',
+                    'old_assignee_name' => $oldAssigneeName,
+                    'new_assignee_name' => $newAssignee?->name,
+                ]);
+            }
+
+            return $locked;
+        });
+
+        if ($assigneeChanged && $newAssignee !== null && $newAssignee->shouldReceiveTicketAssignmentAlert($ticket)) {
+            try {
+                $newAssignee->notify(new TicketAssigned($ticket, $scope->token));
+            } catch (Throwable $exception) {
+                // The ticket is already assigned. A mail or queue outage must
+                // not turn that committed state into a retry that tells the
+                // integration the change failed.
+                Log::error('API ticket assignment stored, but its alert failed.', [
+                    'ticket_id' => $ticket->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
+        }
+
+        // Only the fields this request asked to change. Returning the whole
+        // Ticket payload here would make `write` an accidental read ability.
+        return response()->json(['data' => Payload::updatedTicket($ticket, $validated)]);
+    }
+
+    private function invalidReference(string $field): never
+    {
+        throw ValidationException::withMessages([
+            $field => 'The selected '.$field.' is invalid.',
+        ]);
+    }
+
+    /**
+     * API activity is attributable to the credential, never to its issuer.
+     *
+     * @param  array<string, mixed>  $metadata
+     */
+    private function recordActivity(Ticket $ticket, ApiToken $token, string $action, array $metadata = []): void
+    {
+        $ticket->auditEvents()->create([
+            'account_id' => $ticket->account_id,
+            'site_id' => $ticket->site_id,
+            'actor_type' => $token->getMorphClass(),
+            'actor_id' => $token->id,
+            'action' => $action,
+            'metadata' => $metadata,
+            'occurred_at' => now(),
+        ]);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Reporting;
 
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -394,16 +395,34 @@ final class SupportReport
 
             $waiting = $this->scopedConversations()
                 ->where('status', 'open')
-                ->where(fn (Builder $query) => $query
-                    ->whereDoesntHave('messages')
-                    ->orWhereHas('latestMessage', fn (Builder $latest) => $latest->where('sender_type', '!=', User::class)))
+                ->needsHumanReply()
+                ->select(['conversations.id', 'conversations.last_message_at', 'conversations.created_at'])
+                ->addSelect([
+                    // Keep the clock on the newest non-integration work
+                    // boundary even when an integration updates activity.
+                    'latest_non_integration_message_at' => ConversationMessage::query()
+                        ->select('created_at')
+                        ->whereColumn('conversation_id', 'conversations.id')
+                        ->where(function (Builder $query): void {
+                            $query->where('sender_type', '!=', ApiToken::class)
+                                ->orWhereNull('sender_type');
+                        })
+                        ->whereNotNull('created_at')
+                        ->orderByDesc('created_at')
+                        ->orderByDesc('id')
+                        ->limit(1),
+                ])
                 ->toBase()
-                ->get(['conversations.id', 'conversations.last_message_at', 'conversations.created_at']);
+                ->get();
 
             $oldest = null;
 
             foreach ($waiting as $conversation) {
-                $since = CarbonImmutable::parse($conversation->last_message_at ?? $conversation->created_at);
+                $since = CarbonImmutable::parse(
+                    $conversation->latest_non_integration_message_at
+                    ?? $conversation->last_message_at
+                    ?? $conversation->created_at,
+                );
                 $seconds = max(0, CarbonImmutable::now()->getTimestamp() - $since->getTimestamp());
                 $oldest = $oldest === null ? $seconds : max($oldest, $seconds);
             }

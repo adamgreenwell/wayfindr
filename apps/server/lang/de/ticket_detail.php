@@ -34,6 +34,8 @@ return [
         'system' => 'System',
         'visitor' => 'Besucher',
         'agent' => 'Agent',
+        'integration' => 'Integration',
+        'integration_actor' => 'Integration · :name',
         'external_tracker' => 'Externes Ticketsystem',
         'external_record' => 'Externer Datensatz',
         'back_dashboard' => 'Zurück zur Übersicht',
@@ -314,6 +316,7 @@ return [
         ],
         'message' => [
             'agent_reply' => 'Agentenantwort',
+            'integration_reply' => 'Integrationsantwort',
             'visitor_message' => 'Besuchernachricht',
             'customer_visible' => 'Für Kunden sichtbar',
             'customer_message' => 'Kundennachricht',

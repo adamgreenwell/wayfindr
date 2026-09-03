@@ -12,11 +12,11 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
 /**
- * An agent's reply, as an ordinary email.
+ * A support-side reply, as an ordinary email.
  *
- * Nothing about it announces the tooling. Somebody who wrote to a support
- * address should get an answer that looks like a person answered, and the
- * headers that make a reply thread are the only machinery on it.
+ * Nothing about it exposes internal tooling or credential names. Somebody who
+ * wrote to a support address gets an answer from that site's support identity,
+ * and the headers that make a reply thread are the only machinery on it.
  */
 class ConversationReplyMessage extends Mailable
 {
@@ -44,8 +44,8 @@ class ConversationReplyMessage extends Mailable
                 $headers = $sentMessage->getHeaders();
 
                 // Set explicitly, because the Message-ID is what a later reply
-                // will be threaded against -- it is stored on the row before
-                // this is queued, and the two have to be the same string.
+                // will be threaded against. It comes from the durable outbox
+                // row, and the delivered mail has to use that identical value.
                 $headers->remove('Message-ID');
                 $headers->addIdHeader('Message-ID', trim($this->messageId, '<>'));
 

@@ -16,12 +16,17 @@
         @foreach ($transcriptMessages as $transcriptMessage)
             @php
                 $isAgent = $transcriptMessage->sender_type === \App\Models\User::class;
+                $isIntegration = $transcriptMessage->sender_type === \App\Models\ApiToken::class;
+                $isSupportSide = $isAgent || $isIntegration;
                 // Shared by the translated conversation and ticket pages. A
                 // shared VIEW may read the catalogue because it only renders
                 // inside a request.
                 $senderName = $isAgent
                     ? ($transcriptMessage->sender?->name ?? __('conversations.detail.roles.agent'))
-                    : __('conversations.detail.roles.visitor');
+                    : ($isIntegration
+                        ? __('conversations.detail.roles.integration')
+                        : __('conversations.detail.roles.visitor'));
+                $integrationName = $isIntegration ? $transcriptMessage->sender?->name : null;
                 $senderNameIsAuthored = $isAgent && $transcriptMessage->sender?->name !== null;
                 $secondsSincePrevious = $previousTranscriptMessage?->created_at?->diffInSeconds($transcriptMessage->created_at, false);
                 $isGrouped = $previousTranscriptMessage
@@ -30,11 +35,13 @@
                     && $secondsSincePrevious !== null
                     && $secondsSincePrevious >= 0
                     && $secondsSincePrevious <= 300;
-                $messageClasses = 'message '.($isAgent ? 'agent' : 'visitor').($isGrouped ? ' grouped' : '');
+                $messageClasses = 'message '.($isSupportSide ? 'agent' : 'visitor').($isGrouped ? ' grouped' : '');
             @endphp
             <article class="{{ $messageClasses }}" data-message-id="{{ $transcriptMessage->id }}">
                 <div class="message-meta">
-                    <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}" @if ($senderNameIsAuthored) lang="" @endif>{{ $senderName }}</strong>
+                    <strong class="{{ $isGrouped ? 'sr-only' : 'message-sender' }}" @if ($senderNameIsAuthored) lang="" @endif>
+                        {{ $senderName }}@if ($integrationName) · <span lang="">{{ $integrationName }}</span>@endif
+                    </strong>
                     <span class="message-status-line">
                         <time class="message-time" datetime="{{ $transcriptMessage->created_at->toJSON() }}">{{ $transcriptMessage->created_at->diffForHumans() }}</time>
                         @if ($isAgent && $transcriptMessage->seen_at)
