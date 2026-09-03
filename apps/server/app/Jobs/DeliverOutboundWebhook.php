@@ -89,7 +89,10 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
                 // queue behind subscriber network I/O.
                 $site = Site::query()
                     ->whereKey($pointer->site_id)
-                    ->lockForUpdate()
+                    // Normal support creation also takes a shared site lock so
+                    // it can coordinate with purge without serializing readers.
+                    // Match that mode: only the destructive DELETE must wait.
+                    ->sharedLock()
                     ->first();
 
                 if ($site === null) {

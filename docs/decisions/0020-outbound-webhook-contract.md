@@ -72,15 +72,18 @@ consume unbounded worker memory or disk. An administrator may explicitly retry
 a terminal failure. Disabling an endpoint cancels pending rows and prevents new
 ones while retaining its history.
 
-An attempt locks its site and delivery row, rechecks the endpoint, and holds
-those two lifecycle locks until the HTTP request finishes. Endpoint disable
-cancels pending delivery rows under its short endpoint mutation; site purge
-deletes under the site lock. If either mutation commits first, the worker sends
-nothing; if a request has already started, the mutation waits for it to finish
-before returning. The endpoint row is deliberately not held during subscriber
-I/O because foreground publishing uses it to allocate sequence numbers. A
-completed disable or purge can never be followed by a request authorized from
-stale state, and a slow subscriber cannot block creation of new support work.
+An attempt takes a shared lock on its site and an exclusive lock on its delivery
+row, rechecks the endpoint, and holds those lifecycle guards until the HTTP
+request finishes. Endpoint disable cancels pending delivery rows under its short
+endpoint mutation; site purge's delete conflicts with the shared site guard. If
+either mutation commits first, the worker sends nothing; if a request has
+already started, the mutation waits for it to finish before returning. Normal
+support creation uses the same shared site guard, so it remains concurrent with
+delivery, as do separate deliveries for one site. The endpoint row is also not
+held during subscriber I/O because foreground publishing uses it to allocate
+sequence numbers. A completed disable or purge can never be followed by a
+request authorized from stale state, and a slow subscriber cannot block
+creation of new support work.
 
 ### Signing covers the exact bytes sent
 

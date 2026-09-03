@@ -287,7 +287,7 @@ test('a purge that wins after the worker pointer read prevents the request', fun
     expect(OutboundWebhookDelivery::query()->whereKey($delivery->id)->exists())->toBeFalse();
 });
 
-test('delivery locks only site and delivery while subscriber io is in flight', function (): void {
+test('delivery shares the site guard and exclusively locks only its own row', function (): void {
     // SQLite compiles SELECT FOR UPDATE away, so the two stale-pointer tests
     // prove the recheck and this invariant guard protects the synchronization
     // that PostgreSQL supplies in production and in the PostgreSQL CI lane. An
@@ -295,7 +295,8 @@ test('delivery locks only site and delivery while subscriber io is in flight', f
     $source = file_get_contents(dirname(__DIR__, 2).'/app/Jobs/DeliverOutboundWebhook.php');
 
     expect($source)->not->toBeFalse()
-        ->and(substr_count((string) $source, '->lockForUpdate()'))->toBe(2)
+        ->and(substr_count((string) $source, '->sharedLock()'))->toBe(1)
+        ->and(substr_count((string) $source, '->lockForUpdate()'))->toBe(1)
         ->and($source)->not->toContain('OutboundWebhookEndpoint::query()');
 });
 
