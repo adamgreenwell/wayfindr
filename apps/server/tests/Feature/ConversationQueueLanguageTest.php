@@ -21,6 +21,8 @@ use App\Models\Ticket;
 use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Notifications\ConversationNeedsReply;
+use App\Notifications\TicketAssigned;
 use App\Support\AgentReplyTemplate;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseReplayPreview;
@@ -1593,8 +1595,27 @@ test('no English is rendered as German on any extracted surface', function (): v
     $ticketWorkspace = conversationQueueLanguageTicketStates($world, $conversation);
     conversationQueueLanguageIntegrationStates($world);
 
+    // Alerts need populated states for BOTH readers. Comparing a populated
+    // German page with an empty English page would let untranslated card copy
+    // pass merely because the comparison string never rendered on the other
+    // side.
+    $alertMessage = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $conversation->visitor_id,
+        'body' => 'Datenpunkt alert message',
+    ]);
+
+    foreach ($world['agents'] as $alertReader) {
+        $alertReader->notify(new ConversationNeedsReply($alertMessage));
+        $alertReader->notify(new TicketAssigned($ticketWorkspace, $world['agents']['en']));
+    }
+
     $states = [
         route('dashboard.profile.show'),
+        route('dashboard.alerts.index'),
+        route('dashboard.alerts.index', ['alert_filter' => 'unread', 'alert_kind' => 'conversation']),
+        route('dashboard.alerts.index', ['alert_kind' => 'ticket']),
+        route('dashboard.alerts.index', ['alert_search' => 'zzzz']),
         route('dashboard.conversations.index'),
         route('dashboard.conversations.index', ['conversation_filter' => 'closed']),
         route('dashboard.conversations.index', ['conversation_filter' => 'assigned_to_me']),

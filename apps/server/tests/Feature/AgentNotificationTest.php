@@ -653,7 +653,7 @@ test('dashboard shows unread ticket assignment alerts', function (): void {
         ->assertSee('1 unread')
         ->assertSee('Escalated checkout issue')
         ->assertSee('Ticket assigned')
-        ->assertSee('Ada Agent assigned this ticket to you.')
+        ->assertSeeText('Ada Agent assigned this ticket to you.')
         ->assertSee('High priority')
         ->assertSee("/dashboard/tickets/{$ticket->id}", false);
 });
@@ -993,8 +993,8 @@ test('agents can narrow alert center alerts by kind and reference search', funct
         ->assertSee('Alert type')
         ->assertSee('Search alerts')
         ->assertSee('Active alert filters')
-        ->assertSee('Type: Conversation alerts')
-        ->assertSee('Search: WF-FILTER1')
+        ->assertSeeText('Type: Conversation alerts')
+        ->assertSeeText('Search: WF-FILTER1')
         ->assertSee('/dashboard/alerts?alert_filter=unread&amp;alert_search=WF-FILTER1', false)
         ->assertSee('/dashboard/alerts?alert_filter=unread&amp;alert_kind=conversation', false)
         ->assertSee('/dashboard/alerts?alert_filter=unread', false)
@@ -1042,11 +1042,11 @@ test('alert center shows focus context for the current filters', function (): vo
         ->assertOk()
         ->assertSee('Alert focus')
         ->assertSee('What this alert center is showing before you triage items.')
-        ->assertSee('View: Unread only')
-        ->assertSee('Type: Conversation alerts')
-        ->assertSee('Search: WF-ALERTFOCUS')
-        ->assertSee('Visible: 1 visible')
-        ->assertSee('Unread: 1 unread')
+        ->assertSeeText('View: Unread only')
+        ->assertSeeText('Type: Conversation alerts')
+        ->assertSeeText('Search: WF-ALERTFOCUS')
+        ->assertSeeText('Visible: 1 visible')
+        ->assertSeeText('Unread: 1 unread')
         ->assertSee('Showing 1 matching conversation alert.');
 });
 
@@ -1074,13 +1074,155 @@ test('alert center gives agents a clearer empty alert search state', function ()
     $this->actingAs($agent)
         ->get('/dashboard/alerts?alert_kind=conversation&alert_search=missing')
         ->assertOk()
-        ->assertSee('No alerts match &quot;missing&quot;.', false)
+        ->assertSeeText('No alerts match "missing".')
         ->assertSee('Search checks support codes, ticket numbers, subjects, sites, visitors, and message previews you can still access.')
         ->assertSee('Clear search')
         ->assertSee('Clear all alert filters')
         ->assertDontSee('Filterable install help')
         ->assertDontSee('WF-ALERT-MATCH');
 });
+
+test('localized alert cards keep authored values in an unknown language boundary', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Datenpunkt', 'locale' => 'de']);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Bea Datenpunkt']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Datenpunkt Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-datenpunkt-alert']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-LANGALERT',
+        'subject' => 'Datenpunkt conversation',
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Datenpunkt visitor preview',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create(['subject' => 'Datenpunkt assigned ticket', 'priority' => 'high']);
+
+    $agent->notify(new ConversationNeedsReply($message));
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+
+    $fallbackConversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-LANGFALLBACK',
+        'subject' => null,
+    ]);
+    $fallbackMessage = ConversationMessage::factory()->for($fallbackConversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Datenpunkt fallback preview',
+    ]);
+    $agent->notify(new ConversationNeedsReply($fallbackMessage));
+
+    $fallbackNotification = $agent->notifications()->get()
+        ->first(fn ($notification): bool => data_get($notification->data, 'support_code') === 'WF-LANGFALLBACK');
+    expect($fallbackNotification)->not->toBeNull();
+    $fallbackData = $fallbackNotification->data;
+    $fallbackData['site_name'] = null;
+    $fallbackNotification->forceFill(['data' => $fallbackData])->save();
+
+    $html = (string) $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index', ['alert_search' => 'Datenpunkt']))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->getContent();
+
+    $document = new DOMDocument;
+    $previous = libxml_use_internal_errors(true);
+    $document->loadHTML($html);
+    libxml_clear_errors();
+    libxml_use_internal_errors($previous);
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        '//strong[@lang="" and normalize-space(.)="Datenpunkt conversation"]',
+        '//strong[@lang="" and normalize-space(.)="Datenpunkt assigned ticket"]',
+        '//p[@lang="" and normalize-space(.)="Datenpunkt visitor preview"]',
+        '//a[@lang="" and normalize-space(.)="WF-LANGALERT"]',
+        '//span[@lang="" and normalize-space(.)="Bea Datenpunkt"]',
+        '//span[@lang="" and normalize-space(.)="Acme Datenpunkt Docs"]',
+        '//span[@lang="" and normalize-space(.)="Datenpunkt"]',
+    ] as $query) {
+        expect($xpath->query($query)->length)->toBeGreaterThan(0, "missing authored alert boundary: {$query}");
+    }
+
+    // Catalogue fallbacks and known priority labels belong to the surrounding
+    // German document; only account-authored or searched values opt out.
+    expect($xpath->query('//strong[not(@lang) and normalize-space(.)="Unterhaltung ohne Titel"]')->length)->toBe(1)
+        ->and($xpath->query('//*[@lang="" and normalize-space(.)="Unterhaltung ohne Titel"]')->length)->toBe(0)
+        ->and($xpath->query('//*[@lang="" and normalize-space(.)="Unbekannte Website"]')->length)->toBe(0)
+        ->and($xpath->query('//*[@lang="" and normalize-space(.)="Hoch"]')->length)->toBe(0)
+        ->and($html)->toContain('auf Unbekannte Website')
+        ->and($html)->toContain('Priorität Hoch');
+});
+
+test('agents can search for the translated untitled-conversation fallback', function (string $locale, string $fallback): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['locale' => $locale]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-fallback-search']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-FALLBACK-SEARCH',
+        'subject' => null,
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'The subject fallback should be searchable.',
+    ]);
+
+    $agent->notify(new ConversationNeedsReply($message));
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index', ['alert_search' => $fallback]))
+        ->assertOk()
+        ->assertSee($fallback)
+        ->assertSee('WF-FALLBACK-SEARCH');
+})->with([
+    'German' => ['de', 'Unterhaltung ohne Titel'],
+    'Italian' => ['it', 'Conversazione senza titolo'],
+]);
+
+test('agents can search for translated ticket-card values', function (string $locale): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['locale' => $locale]);
+    $assigningAgent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create(['subject' => 'Localized search ticket', 'priority' => 'high']);
+
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+    $notification = $agent->notifications()->firstOrFail();
+    $notificationData = $notification->data;
+    $notificationData['site_name'] = null;
+    $notification->forceFill(['data' => $notificationData])->save();
+
+    app()->setLocale($locale);
+    $searches = [
+        __('alerts.card.ticket_reference', ['id' => $ticket->id]),
+        __('alerts.card.priority', ['priority' => __('tickets.priorities.high')]),
+        __('alerts.card.on_site', ['site' => __('alerts.card.unknown_site')]),
+    ];
+
+    foreach ($searches as $search) {
+        $this->actingAs($agent)
+            ->get(route('dashboard.alerts.index', ['alert_search' => $search]))
+            ->assertOk()
+            ->assertSee('Localized search ticket');
+    }
+})->with([
+    'German' => ['de'],
+    'Italian' => ['it'],
+]);
 
 test('alert center gives agents a clearer empty unread state', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);

@@ -2,32 +2,62 @@
     $notificationData = $notification->data;
     $notificationKind = data_get($notificationData, 'kind');
     $messageCount = max(1, (int) data_get($notificationData, 'message_count', 1));
-    $alertStatusLabel = $notification->unread() ? 'Unread' : 'Read';
+    $alertStatusLabel = $notification->unread() ? __('alerts.card.status.unread') : __('alerts.card.status.read');
     $alertActionUrl = data_get($notificationData, 'url');
+    $storedSubject = data_get($notificationData, 'subject');
+    $storedSubjectIsFallback = $notificationKind === 'conversation_needs_reply'
+        && $storedSubject === 'Untitled conversation';
+    $subjectIsAuthored = filled($storedSubject) && ! $storedSubjectIsFallback;
+    $subject = $subjectIsAuthored
+        ? $storedSubject
+        : ($notificationKind === 'ticket_assigned' ? __('alerts.card.untitled_ticket') : __('alerts.card.untitled_conversation'));
+    $siteName = data_get($notificationData, 'site_name');
+    $siteNameIsAuthored = filled($siteName);
+    $siteFeedback = [
+        'key' => 'alerts.card.on_site',
+        'parameters' => $siteNameIsAuthored ? ['site' => $siteName] : [],
+        'localized_parameters' => $siteNameIsAuthored ? [] : ['site' => __('alerts.card.unknown_site')],
+    ];
 
     if ($notificationKind === 'ticket_assigned') {
-        $alertActionLabel = 'Open ticket';
-        $alertNextMove = 'Open the assigned ticket and decide the owner, priority, or next status.';
+        $alertActionLabel = __('alerts.card.open_ticket');
+        $alertNextMove = __('alerts.card.ticket_next');
+        $assignedByName = data_get($notificationData, 'assigned_by_name');
+        $assignedByIsAuthored = filled($assignedByName);
+        $assignedByFeedback = [
+            'key' => 'alerts.card.assigned_by',
+            'parameters' => $assignedByIsAuthored ? ['name' => $assignedByName] : [],
+            'localized_parameters' => $assignedByIsAuthored ? [] : ['name' => __('alerts.card.someone')],
+        ];
+        $priority = (string) data_get($notificationData, 'priority', 'normal');
+        $priorityKey = 'tickets.priorities.'.$priority;
+        $priorityLabel = __($priorityKey);
+        $priorityIsKnown = $priorityLabel !== $priorityKey;
+        $priorityFeedback = [
+            'key' => 'alerts.card.priority',
+            'parameters' => $priorityIsKnown ? [] : ['priority' => $priority],
+            'localized_parameters' => $priorityIsKnown ? ['priority' => $priorityLabel] : [],
+        ];
     } else {
-        $alertActionLabel = 'Open conversation';
-        $alertNextMove = 'Open the conversation and reply while the visitor is waiting.';
+        $alertActionLabel = __('alerts.card.open_conversation');
+        $alertNextMove = __('alerts.card.conversation_next');
     }
 @endphp
 
 <article class="message">
     <div class="message-meta">
-        <strong>{{ data_get($notificationData, 'subject', $notificationKind === 'ticket_assigned' ? 'Untitled ticket' : 'Untitled conversation') }}</strong>
+        <strong @if ($subjectIsAuthored) lang="" @endif>{{ $subject }}</strong>
         <span class="message-status-line">
             <span
                 class="readiness-status"
                 data-status="{{ $notification->unread() ? 'attention' : 'ready' }}"
-                aria-label="Alert status: {{ $alertStatusLabel }}"
+                aria-label="{{ __('alerts.card.status.aria', ['status' => $alertStatusLabel]) }}"
             >
                 {{ $alertStatusLabel }}
             </span>
             <span>
                 @if ($notification->read())
-                    Read {{ $notification->read_at->diffForHumans() }}
+                    {{ __('alerts.card.status.read_at', ['elapsed' => $notification->read_at->diffForHumans()]) }}
                     ·
                 @endif
                 {{ $notification->created_at->diffForHumans() }}
@@ -35,41 +65,43 @@
         </span>
     </div>
     @if ($notificationKind === 'ticket_assigned')
-        <p class="lede">Ticket assigned</p>
-        <p class="message-body">{{ data_get($notificationData, 'assigned_by_name', 'Someone') }} assigned this ticket to you.</p>
+        <p class="lede">{{ __('alerts.card.ticket_assigned') }}</p>
+        <p class="message-body"><x-translated-feedback :feedback="$assignedByFeedback" /></p>
         <p class="field-help">
-            <strong>Why this alert:</strong>
-            This ticket was assigned to you. Open the ticket or mark this alert read once triaged.
+            <strong>{{ __('alerts.card.why') }}</strong>
+            {{ __('alerts.card.ticket_why') }}
         </p>
         <p class="field-help">
-            <strong>Next move:</strong>
+            <strong>{{ __('alerts.card.next_move') }}</strong>
             {{ $alertNextMove }}
         </p>
         <p class="lede">
             <a class="text-link" href="{{ data_get($notificationData, 'url') }}">
-                Ticket #{{ data_get($notificationData, 'ticket_id') }}
+                {{ __('alerts.card.ticket_reference', ['id' => data_get($notificationData, 'ticket_id')]) }}
             </a>
-            on {{ data_get($notificationData, 'site_name', 'Unknown site') }}
-            · {{ ucfirst((string) data_get($notificationData, 'priority', 'normal')) }} priority
+            <x-translated-feedback :feedback="$siteFeedback" />
+            · <x-translated-feedback :feedback="$priorityFeedback" />
         </p>
     @else
         <p class="lede">
-            {{ $messageCount === 1 ? '1 new message' : $messageCount.' new messages' }}
+            {{ trans_choice('alerts.counts.new_messages', $messageCount, ['count' => $messageCount]) }}
         </p>
-        <p class="message-body">{{ data_get($notificationData, 'message_preview') }}</p>
+        @if (filled(data_get($notificationData, 'message_preview')))
+            <p class="message-body" lang="">{{ data_get($notificationData, 'message_preview') }}</p>
+        @endif
         <p class="field-help">
-            <strong>Why this alert:</strong>
-            Visitor reply is waiting on a conversation you can support. Open the conversation or mark this alert read once handled.
+            <strong>{{ __('alerts.card.why') }}</strong>
+            {{ __('alerts.card.conversation_why') }}
         </p>
         <p class="field-help">
-            <strong>Next move:</strong>
+            <strong>{{ __('alerts.card.next_move') }}</strong>
             {{ $alertNextMove }}
         </p>
         <p class="lede">
-            <a class="text-link" href="{{ data_get($notificationData, 'url') }}">
+            <a class="text-link" @if (filled(data_get($notificationData, 'support_code'))) lang="" @endif href="{{ data_get($notificationData, 'url') }}">
                 {{ data_get($notificationData, 'support_code') }}
             </a>
-            on {{ data_get($notificationData, 'site_name', 'Unknown site') }}
+            <x-translated-feedback :feedback="$siteFeedback" />
         </p>
     @endif
 
@@ -93,10 +125,10 @@
                 @if (($alertSearch ?? '') !== '')
                     <input type="hidden" name="alert_search" value="{{ $alertSearch }}">
                 @endif
-                <button class="button secondary" type="submit">Mark read</button>
+                <button class="button secondary" type="submit">{{ __('alerts.card.mark_read') }}</button>
             </form>
         @else
-            <p class="lede">Already read.</p>
+            <p class="lede">{{ __('alerts.card.already_read') }}</p>
         @endif
     </div>
 </article>

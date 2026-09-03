@@ -117,6 +117,13 @@ final class DashboardLanguage
         'dashboard.conversations.index',
         'dashboard.tickets.index',
 
+        // The alert centre and its two mark-read actions. Both writes can
+        // return to this page with the active filter/query context intact, so
+        // they share its request-scoped language boundary.
+        'dashboard.alerts.index',
+        'dashboard.alerts.read',
+        'dashboard.alerts.read-all',
+
         // The ticket workspace and endpoints owned exclusively by it. The
         // assignee and lifecycle writes are deliberately absent: those are
         // also submitted from the conversation's linked-ticket panel, so the
