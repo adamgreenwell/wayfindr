@@ -78,15 +78,17 @@ class ExternalIssueExportPreview
     {
         $description = trim((string) $ticket->description);
 
-        if ($this->shouldOmitDescription($ticket, $description)) {
+        if ($this->containsConversationTranscript($ticket)) {
             return self::OMITTED_CONVERSATION_DESCRIPTION;
         }
 
         return $description === '' ? 'No description provided.' : $description;
     }
 
-    private function shouldOmitDescription(Ticket $ticket, string $description): bool
+    public function containsConversationTranscript(Ticket $ticket): bool
     {
+        $description = trim((string) $ticket->description);
+
         if ($description === '') {
             return false;
         }

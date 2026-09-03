@@ -993,13 +993,15 @@
                         @enderror
                     </div>
 
-                    <div class="field">
-                        <label for="description">{{ __('ticket_detail.details.description') }}</label>
-                        <textarea id="description" name="description" rows="6" lang="">{{ old('description', $ticketDescription) }}</textarea>
-                        @error('description')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-                    </div>
+                    @if ($canViewTicketDescription)
+                        <div class="field">
+                            <label for="description">{{ __('ticket_detail.details.description') }}</label>
+                            <textarea id="description" name="description" rows="6" lang="">{{ old('description', $ticketDescription) }}</textarea>
+                            @error('description')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    @endif
 
                     <button class="button" type="submit">{{ __('ticket_detail.details.save') }}</button>
                 </form>

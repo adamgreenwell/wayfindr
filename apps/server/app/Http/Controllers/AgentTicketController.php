@@ -81,6 +81,8 @@ class AgentTicketController extends Controller
         $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
         $ticketDetailReturnQuery = $this->ticketDetailReturnQuery($request);
         $ticketTimelineFilter = $this->ticketTimelineFilter($request);
+        $canViewTicketDescription = $canViewLinkedConversation
+            || ! $externalIssueExportPreview->containsConversationTranscript($ticket);
         $fullTicketTimeline = $this->ticketTimeline($ticket, $canViewLinkedConversation);
         $ticketTimeline = $this->filteredTicketTimeline($fullTicketTimeline, $ticketTimelineFilter);
 
@@ -91,6 +93,7 @@ class AgentTicketController extends Controller
             'canAssignTickets' => Gate::forUser($agent)->allows('assign', $ticket),
             'canReplyToLinkedConversation' => $canReplyToLinkedConversation,
             'canViewLinkedConversation' => $canViewLinkedConversation,
+            'canViewTicketDescription' => $canViewTicketDescription,
             'canPostNoteToExternalIssue' => $this->commentableExternalLinks($ticket)->isNotEmpty(),
             'externalIssueProviders' => collect(ExternalIssueProvider::options())
                 ->map(fn (string $_label, string $provider): string => $this->ticketExternalIssueProviderLabel($provider))
@@ -114,7 +117,7 @@ class AgentTicketController extends Controller
             'ticketActivity' => $this->visibleTicketActivity($ticket, $canViewLinkedConversation),
             'ticketCategories' => TicketCategory::options(),
             'ticketCategoryGuidance' => TicketCategory::options(),
-            'ticketDescription' => $this->ticketDescriptionForViewer($ticket, $canViewLinkedConversation),
+            'ticketDescription' => $canViewTicketDescription ? $ticket->description : null,
             'ticketPriorities' => TicketPriority::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'ticket' => $ticket,
@@ -1848,16 +1851,6 @@ class AgentTicketController extends Controller
         return null;
     }
 
-    private function ticketDescriptionForViewer(Ticket $ticket, bool $canViewLinkedConversation): ?string
-    {
-        if (! $canViewLinkedConversation
-            && data_get($ticket->metadata, 'description_source') === 'conversation_transcript') {
-            return null;
-        }
-
-        return $ticket->description;
-    }
-
     /**
      * @param  array<string, string>  $parameters
      * @param  array<string, string>  $localizedParameters
@@ -2016,6 +2009,10 @@ class AgentTicketController extends Controller
         $changes = [];
 
         foreach (['subject', 'description', 'category', 'priority'] as $field) {
+            if (! array_key_exists($field, $validated)) {
+                continue;
+            }
+
             $oldValue = $ticket->{$field};
             $newValue = $validated[$field] ?? null;
 
