@@ -37,7 +37,10 @@ final class TwoFactorChallengeController extends Controller
 
     public function store(Request $request, TwoFactorAuthentication $twoFactor): RedirectResponse
     {
-        $user = $this->pendingUser($request);
+        // The password credential is revalidated under the same user-row lock
+        // as factor consumption below, so a concurrent reset cannot pass in
+        // the gap between two independent reads.
+        $user = $this->pendingUser($request, checkCredential: false);
 
         if (! $user) {
             return $this->expired($request);
@@ -49,7 +52,18 @@ final class TwoFactorChallengeController extends Controller
             'one_time_code' => ['required', 'string', 'max:32'],
         ]);
 
-        if (! $twoFactor->verify($user, $validated['one_time_code'])) {
+        $pending = $request->session()->get(self::SESSION_KEY);
+        $verified = $twoFactor->verifyChallenge(
+            $user,
+            $validated['one_time_code'],
+            $pending['credential_fingerprint'],
+        );
+
+        if ($verified === null) {
+            return $this->expired($request);
+        }
+
+        if (! $verified) {
             throw ValidationException::withMessages([
                 'one_time_code' => __('two_factor.challenge.invalid'),
             ]);
@@ -62,7 +76,7 @@ final class TwoFactorChallengeController extends Controller
         return redirect()->intended(route('dashboard'));
     }
 
-    private function pendingUser(Request $request): ?User
+    private function pendingUser(Request $request, bool $checkCredential = true): ?User
     {
         $pending = $request->session()->get(self::SESSION_KEY);
 
@@ -77,10 +91,10 @@ final class TwoFactorChallengeController extends Controller
         $user = User::query()->find((int) $pending['user_id']);
 
         return $user
-            && hash_equals(
+            && (! $checkCredential || hash_equals(
                 $pending['credential_fingerprint'],
                 PendingTwoFactorChallenge::credentialFingerprint($user),
-            )
+            ))
             && ! $user->isDeactivated()
             && $user->hasTwoFactorAuthentication()
             ? $user

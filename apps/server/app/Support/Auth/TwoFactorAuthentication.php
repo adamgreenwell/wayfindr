@@ -26,7 +26,7 @@ final class TwoFactorAuthentication
         return $this->totp->generateSecretKey(32);
     }
 
-    public function provisioningUri(User $user, string $secret): string
+    public function provisioningUri(User $user, #[\SensitiveParameter] string $secret): string
     {
         return $this->totp->getQRCodeUrl(
             'Wayfindr - '.$user->account()->value('name'),
@@ -35,7 +35,7 @@ final class TwoFactorAuthentication
         );
     }
 
-    public function qrCodeDataUri(User $user, string $secret): string
+    public function qrCodeDataUri(User $user, #[\SensitiveParameter] string $secret): string
     {
         $png = (new Writer(new GDLibRenderer(280)))
             ->writeString($this->provisioningUri($user, $secret));
@@ -46,8 +46,11 @@ final class TwoFactorAuthentication
     /**
      * @return list<string>|null Plaintext codes, returned once at enrolment.
      */
-    public function confirm(User $user, string $secret, string $code): ?array
-    {
+    public function confirm(
+        User $user,
+        #[\SensitiveParameter] string $secret,
+        #[\SensitiveParameter] string $code,
+    ): ?array {
         return DB::transaction(function () use ($user, $secret, $code): ?array {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
 
@@ -66,7 +69,7 @@ final class TwoFactorAuthentication
             $locked->forceFill([
                 'two_factor_secret' => $secret,
                 'two_factor_recovery_codes' => array_map(
-                    fn (string $recoveryCode): string => Hash::make($this->normaliseRecoveryCode($recoveryCode)),
+                    fn (#[\SensitiveParameter] string $recoveryCode): string => Hash::make($this->normaliseRecoveryCode($recoveryCode)),
                     $recoveryCodes,
                 ),
                 'two_factor_confirmed_at' => now(),
@@ -82,7 +85,7 @@ final class TwoFactorAuthentication
         });
     }
 
-    public function verify(User $user, string $code): bool
+    public function verify(User $user, #[\SensitiveParameter] string $code): bool
     {
         return DB::transaction(function () use ($user, $code): bool {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
@@ -97,10 +100,40 @@ final class TwoFactorAuthentication
     }
 
     /**
+     * Null means the password credential changed after the challenge began.
+     */
+    public function verifyChallenge(
+        User $user,
+        #[\SensitiveParameter] string $code,
+        #[\SensitiveParameter] string $credentialFingerprint,
+    ): ?bool {
+        return DB::transaction(function () use ($user, $code, $credentialFingerprint): ?bool {
+            $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
+
+            if (! hash_equals(
+                $credentialFingerprint,
+                PendingTwoFactorChallenge::credentialFingerprint($locked),
+            )) {
+                return null;
+            }
+
+            $verified = $this->verifyLocked($locked, $code);
+
+            if ($verified) {
+                $user->refresh();
+            }
+
+            return $verified;
+        });
+    }
+
+    /**
      * @return list<string>|null
      */
-    public function regenerateRecoveryCodes(User $user, string $proof): ?array
-    {
+    public function regenerateRecoveryCodes(
+        User $user,
+        #[\SensitiveParameter] string $proof,
+    ): ?array {
         return DB::transaction(function () use ($user, $proof): ?array {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
 
@@ -111,7 +144,7 @@ final class TwoFactorAuthentication
             $recoveryCodes = $this->generateRecoveryCodes();
             $locked->forceFill([
                 'two_factor_recovery_codes' => array_map(
-                    fn (string $code): string => Hash::make($this->normaliseRecoveryCode($code)),
+                    fn (#[\SensitiveParameter] string $code): string => Hash::make($this->normaliseRecoveryCode($code)),
                     $recoveryCodes,
                 ),
             ])->save();
@@ -123,7 +156,7 @@ final class TwoFactorAuthentication
         });
     }
 
-    public function disable(User $user, string $proof): bool
+    public function disable(User $user, #[\SensitiveParameter] string $proof): bool
     {
         return DB::transaction(function () use ($user, $proof): bool {
             // User first, then account: the policy writer takes the same order.
@@ -165,7 +198,7 @@ final class TwoFactorAuthentication
         );
     }
 
-    private function verifyLocked(User $locked, string $code): bool
+    private function verifyLocked(User $locked, #[\SensitiveParameter] string $code): bool
     {
         if (! $locked->hasTwoFactorAuthentication()) {
             return false;
@@ -217,7 +250,7 @@ final class TwoFactorAuthentication
         return true;
     }
 
-    private function normaliseRecoveryCode(string $code): string
+    private function normaliseRecoveryCode(#[\SensitiveParameter] string $code): string
     {
         return strtoupper(str_replace(['-', ' '], '', trim($code)));
     }
