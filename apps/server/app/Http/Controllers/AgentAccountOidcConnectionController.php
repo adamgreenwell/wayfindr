@@ -56,20 +56,19 @@ final class AgentAccountOidcConnectionController extends Controller
         $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
 
         DB::transaction(function () use ($agent, $validated, $issuerUrl, $isEnabled, $credentialFingerprint): void {
+            $account = Account::query()->lockForUpdate()->findOrFail($agent->account_id);
             $lockedAgent = User::query()->lockForUpdate()->findOrFail($agent->id);
 
             abort_unless(
                 ! $lockedAgent->isDeactivated()
                 && $lockedAgent->hasAccountPermission(AccountPermission::ManageSecurity)
-                && (int) $lockedAgent->account_id === (int) $agent->account_id
+                && (int) $lockedAgent->account_id === (int) $account->id
                 && hash_equals(
                     $credentialFingerprint,
                     PendingTwoFactorChallenge::credentialFingerprint($lockedAgent),
                 ),
                 403,
             );
-
-            $account = Account::query()->lockForUpdate()->findOrFail($lockedAgent->account_id);
             $connection = OidcConnection::query()
                 ->where('account_id', $account->id)
                 ->lockForUpdate()
