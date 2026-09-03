@@ -7,14 +7,15 @@ extracted surfaces are the app shell, the agent profile, the conversation queue
 and detail, the ticket queue, reply templates, ticket labels, articles, API
 tokens, the account audit, account-side operator access, account integrations,
 the account overview and team roster, the live-visitors board, the visitor
-directory and profile, and the operator's guided-setup, language-and-region,
+directory and profile, and the operator's dashboard, guided-setup, language-and-region,
 scanning, mail, attachment-storage, backup-configuration, backup-history, and
 backup-restore pages.
 
 That list is the one the guards read, and counting it is the only honest way to
 answer how far this has got: counting *views* that call `__()` overstates it,
-because a page is not extracted until its endpoints are. The operator console is
-the largest surface still untouched. The rest is going view by view.
+because a page is not extracted until its endpoints are. The operator
+break-glass request and read-only viewer flow is the last operator-owned surface
+still outside the extracted slice. The rest is going view by view.
 
 The account audit draws a deliberate line between its screen and its download.
 The screen's action labels, counts, and timestamps follow the agent's language
