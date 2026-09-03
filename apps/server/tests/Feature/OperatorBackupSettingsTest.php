@@ -1007,12 +1007,16 @@ test('the restore confirmation page follows the operator language without weaken
         ->assertSee($copy['confirm'])
         ->assertSee($copy['version_warning'])
         ->assertSee($copy['danger'])
+        ->assertSee($copy['stop_comment'])
+        ->assertSee($copy['start_comment'])
         ->assertSee($copy['acknowledge'])
         ->assertSee($copy['restore'])
         ->assertSee('Datenpunkt &lt;instance&gt;', false)
         ->assertDontSee('Datenpunkt <instance>', false)
         ->assertDontSee('Replace this install’s data')
         ->assertDontSee('Restoring replaces ALL current data')
+        ->assertDontSee('before — leave backup-queue running')
+        ->assertDontSee('after the restore completes')
         ->assertDontSee('Restore now');
 
     $document = new DOMDocument;
@@ -1027,7 +1031,8 @@ test('the restore confirmation page follows the operator language without weaken
         '//input[@id="confirm_name"]' => null,
         '//code[normalize-space(.)="php artisan migrate --force"]' => 'php artisan migrate --force',
         '//code[normalize-space(.)="php artisan up"]' => 'php artisan up',
-        '//code[normalize-space(.)="docker compose stop queue scheduler"]' => 'docker compose stop queue scheduler',
+        '//code/span[normalize-space(.)="docker compose stop queue scheduler"]' => 'docker compose stop queue scheduler',
+        '//code/span[normalize-space(.)="docker compose start queue scheduler"]' => 'docker compose start queue scheduler',
     ] as $query => $text) {
         $node = $xpath->query($query)->item(0);
 
@@ -1046,6 +1051,8 @@ test('the restore confirmation page follows the operator language without weaken
         'confirm' => 'Wiederherstellung bestätigen',
         'version_warning' => 'Da Schema und Code möglicherweise nicht übereinstimmen',
         'danger' => 'Die Wiederherstellung ersetzt ALLE aktuellen Daten',
+        'stop_comment' => 'vorher — backup-queue weiterlaufen lassen',
+        'start_comment' => 'nach Abschluss der Wiederherstellung',
         'acknowledge' => 'Ich verstehe, dass dadurch ALLE aktuellen Daten GELÖSCHT werden',
         'restore' => 'Jetzt wiederherstellen',
     ]],
@@ -1055,6 +1062,8 @@ test('the restore confirmation page follows the operator language without weaken
         'confirm' => 'Conferma del ripristino',
         'version_warning' => 'potrebbe esserci una mancata corrispondenza tra schema e codice',
         'danger' => 'Il ripristino sostituisce TUTTI i dati attuali',
+        'stop_comment' => 'prima — lasciare backup-queue in esecuzione',
+        'start_comment' => 'dopo il completamento del ripristino',
         'acknowledge' => 'Ho compreso che questa operazione CANCELLA tutti i dati attuali',
         'restore' => 'Ripristina ora',
     ]],

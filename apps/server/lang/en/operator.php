@@ -274,6 +274,8 @@ return [
             'danger_heading' => 'Restoring replaces ALL current data and cannot be undone.',
             'danger_body' => 'The database and local attachment files are replaced. The whole site enters maintenance mode while the restore runs, so visitors and agents see a 503, nothing new writes into the database mid-restore, and you are logged out. Wait a minute, then log back in with the credentials stored in this backup and check the restore status on the backup settings page.',
             'workers_warning' => 'Maintenance mode stops new work, but it cannot drain a background job that is already running. Before restoring, stop the background workers so nothing writes into the database while it is rebuilt, and start them again once the restore reports complete:',
+            'workers_stop_comment' => 'before — leave backup-queue running',
+            'workers_start_comment' => 'after the restore completes',
             'confirm_name' => 'Type the instance name to confirm',
             'instance_name' => 'This install is named :name.',
             'acknowledge' => 'I understand that this ERASES all current data and cannot be undone.',

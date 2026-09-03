@@ -274,6 +274,8 @@ return [
             'danger_heading' => 'Die Wiederherstellung ersetzt ALLE aktuellen Daten und kann nicht rückgängig gemacht werden.',
             'danger_body' => 'Datenbank und lokale Anhangsdateien werden ersetzt. Die gesamte Website wechselt während der Wiederherstellung in den Wartungsmodus, sodass Besucher und Agenten den Status 503 sehen, während des Vorgangs keine neuen Datenbankeinträge entstehen und Sie abgemeldet werden. Warten Sie eine Minute, melden Sie sich mit den in dieser Sicherung gespeicherten Zugangsdaten erneut an und prüfen Sie den Wiederherstellungsstatus in den Sicherungseinstellungen.',
             'workers_warning' => 'Der Wartungsmodus verhindert neue Arbeit, kann aber einen bereits laufenden Hintergrundauftrag nicht beenden. Stoppen Sie vor der Wiederherstellung die Hintergrundprozesse, damit beim Neuaufbau keine Datenbankeinträge entstehen, und starten Sie die Prozesse nach erfolgreichem Abschluss erneut:',
+            'workers_stop_comment' => 'vorher — backup-queue weiterlaufen lassen',
+            'workers_start_comment' => 'nach Abschluss der Wiederherstellung',
             'confirm_name' => 'Zur Bestätigung den Instanznamen eingeben',
             'instance_name' => 'Diese Installation heißt :name.',
             'acknowledge' => 'Ich verstehe, dass dadurch ALLE aktuellen Daten GELÖSCHT werden und der Vorgang nicht rückgängig gemacht werden kann.',

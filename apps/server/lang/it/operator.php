@@ -281,6 +281,8 @@ return [
             'danger_heading' => 'Il ripristino sostituisce TUTTI i dati attuali e non può essere annullato.',
             'danger_body' => 'Vengono sostituiti il database e i file locali degli allegati. Durante il ripristino l’intero sito entra in modalità di manutenzione: visitatori e agenti vedono uno stato 503, nessun nuovo dato viene scritto nel database e l’utente viene disconnesso. Attenda un minuto, acceda di nuovo con le credenziali contenute nella copia e controlli lo stato del ripristino nella pagina delle impostazioni delle copie.',
             'workers_warning' => 'La modalità di manutenzione blocca le nuove operazioni, ma non può interrompere un processo in background già in esecuzione. Prima del ripristino arresti i processi in background, affinché nulla scriva nel database durante la ricostruzione, e li riavvii al completamento:',
+            'workers_stop_comment' => 'prima — lasciare backup-queue in esecuzione',
+            'workers_start_comment' => 'dopo il completamento del ripristino',
             'confirm_name' => 'Inserisci il nome dell’istanza per confermare',
             'instance_name' => 'Questa installazione si chiama :name.',
             'acknowledge' => 'Ho compreso che questa operazione CANCELLA tutti i dati attuali e non può essere annullata.',

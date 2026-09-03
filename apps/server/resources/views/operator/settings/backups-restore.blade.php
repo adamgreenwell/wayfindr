@@ -123,8 +123,8 @@
                     <p><strong>{{ __('operator.backups.restore.danger_heading') }}</strong> {{ __('operator.backups.restore.danger_body') }}</p>
                     <p>{{ __('operator.backups.restore.workers_warning') }}</p>
                 </div>
-                <pre class="code-block"><code lang="">docker compose stop queue scheduler   # before — leave backup-queue running
-docker compose start queue scheduler  # after the restore completes</code></pre>
+                <pre class="code-block"><code><span lang="">docker compose stop queue scheduler</span>   # {{ __('operator.backups.restore.workers_stop_comment') }}
+<span lang="">docker compose start queue scheduler</span>  # {{ __('operator.backups.restore.workers_start_comment') }}</code></pre>
 
                 <form class="section-form" method="POST" action="{{ route('operator.settings.backups.restore.run') }}">
                     @csrf
