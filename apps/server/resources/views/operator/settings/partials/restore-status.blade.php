@@ -3,18 +3,24 @@
         <p>
             <strong>
                 @switch($status['status'] ?? '')
-                    @case('succeeded') Last restore: succeeded @break
-                    @case('failed') Last restore: failed @break
-                    @default Restore in progress… @break
+                    @case('succeeded') {{ __('operator.backups.restore_status.succeeded') }} @break
+                    @case('failed') {{ __('operator.backups.restore_status.failed') }} @break
+                    @default {{ __('operator.backups.restore_status.running') }} @break
                 @endswitch
             </strong>
         </p>
         @if (! empty($status['message']))
-            <p>{{ $status['message'] }}</p>
+            <p lang="">{{ $status['message'] }}</p>
         @endif
         <p class="lede">
-            @if (! empty($status['archive'])){{ $status['archive'] }} · @endif
-            @if (! empty($status['triggered_by_name']))Triggered by {{ $status['triggered_by_name'] }}@else Triggered @endif
+            @if (! empty($status['archive']))<span lang="">{{ $status['archive'] }}</span> · @endif
+            @if (! empty($status['triggered_by_name']))
+                {!! __('operator.backups.restore_status.triggered_by', [
+                    'name' => '<span lang="">'.e($status['triggered_by_name']).'</span>',
+                ]) !!}
+            @else
+                {{ __('operator.backups.restore_status.triggered') }}
+            @endif
             @if (! empty($status['updated_at'])) · {{ \Illuminate\Support\Carbon::parse($status['updated_at'])->diffForHumans() }}@endif
         </p>
     </div>

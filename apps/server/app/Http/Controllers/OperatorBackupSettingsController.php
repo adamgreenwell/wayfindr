@@ -84,7 +84,9 @@ class OperatorBackupSettingsController extends Controller
             // log back in.
             'restoreStatus' => $this->restoreStatus(),
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
-            'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
+            'backLabel' => $from === 'onboarding'
+                ? __('operator.shell.back_to_setup')
+                : __('operator.shell.back_to_console'),
             'returnTo' => $from,
         ]);
     }
@@ -135,7 +137,7 @@ class OperatorBackupSettingsController extends Controller
             // every backup at runtime.
             'prefix' => ['nullable', 'string', 'max:255', function (string $attribute, mixed $value, Closure $fail): void {
                 if (preg_match('#(^|/)\.\.(/|$)#', trim((string) $value, '/')) === 1) {
-                    $fail('The prefix must not contain ".." path segments.');
+                    $fail(__('operator.backups.validation.prefix_segments'));
                 }
             }],
             'bucket' => [$offsite, 'required', 'string', 'max:255'],
@@ -156,13 +158,13 @@ class OperatorBackupSettingsController extends Controller
 
         if ($disk === self::OFFSITE_DISK) {
             if ($clearCreds && ($keyProvided || $secretProvided)) {
-                return $this->credentialError($request, 'Either clear the stored keys to use a role, or enter new static keys — not both.');
+                return $this->credentialError($request, __('operator.backups.validation.clear_or_static'));
             }
 
             // Matched pair: both together, or neither. Both blank is valid (keeps
             // the saved pair, or uses the SDK default provider chain).
             if (! $clearCreds && $keyProvided !== $secretProvided) {
-                return $this->credentialError($request, 'Enter both the access key and secret together, or leave both blank to keep the saved pair.');
+                return $this->credentialError($request, __('operator.backups.validation.paired_keys'));
             }
         }
 
@@ -213,7 +215,9 @@ class OperatorBackupSettingsController extends Controller
 
         return redirect()
             ->route('operator.settings.backups.edit', $this->returnParams($request))
-            ->with('status', 'Backup settings saved.'.($disk === self::OFFSITE_DISK ? ' Run a connection test to confirm offsite uploads can be stored.' : ''));
+            ->with('status', $disk === self::OFFSITE_DISK
+                ? 'operator.backups.flash.saved_offsite'
+                : 'operator.backups.flash.saved_local');
     }
 
     public function test(Request $request, BackupService $backups): RedirectResponse
@@ -224,13 +228,16 @@ class OperatorBackupSettingsController extends Controller
         if ($diskName === '') {
             return redirect()
                 ->route('operator.settings.backups.edit', $returnParams)
-                ->with('error', 'No offsite disk is configured — backups are written to the local path only. Enable offsite backups and save to test a connection.');
+                ->with('error', 'operator.backups.flash.no_offsite');
         }
 
         if (config("filesystems.disks.{$diskName}") === null) {
             return redirect()
                 ->route('operator.settings.backups.edit', $returnParams)
-                ->with('error', 'The backup disk ['.$diskName.'] is not configured.');
+                ->with('error', [
+                    'key' => 'operator.backups.flash.disk_missing',
+                    'parameters' => ['disk' => $diskName],
+                ]);
         }
 
         // Backups can never live on an attachment disk (BackupService rejects it):
@@ -239,7 +246,10 @@ class OperatorBackupSettingsController extends Controller
         if (str_starts_with($diskName, 'attachments')) {
             return redirect()
                 ->route('operator.settings.backups.edit', $returnParams)
-                ->with('error', 'The backup disk ['.$diskName.'] is an attachment disk — the orphaned-attachment sweep would delete backups written there. Use a separate disk for backups.');
+                ->with('error', [
+                    'key' => 'operator.backups.flash.attachment_disk',
+                    'parameters' => ['disk' => $diskName],
+                ]);
         }
 
         // Probe INSIDE the configured prefix, where real uploads and retention
@@ -250,20 +260,31 @@ class OperatorBackupSettingsController extends Controller
         } catch (Throwable $exception) {
             return redirect()
                 ->route('operator.settings.backups.edit', $returnParams)
-                ->with('error', 'The backup prefix is invalid: '.$exception->getMessage());
+                ->with('error', [
+                    'key' => 'operator.backups.flash.prefix_invalid',
+                    'parameters' => ['message' => $exception->getMessage()],
+                ]);
         }
 
         $failure = $this->probeDisk($diskName, $prefix);
 
         if ($failure !== null) {
+            $failure['parameters'] = [
+                ...($failure['parameters'] ?? []),
+                'disk' => $diskName,
+            ];
+
             return redirect()
                 ->route('operator.settings.backups.edit', $returnParams)
-                ->with('error', 'Offsite backup test failed on the ['.$diskName.'] disk: '.$failure);
+                ->with('error', $failure);
         }
 
         return redirect()
             ->route('operator.settings.backups.edit', $returnParams)
-            ->with('status', 'Offsite backup test passed: the ['.$diskName.'] disk accepted a write, read, list, and delete.');
+            ->with('status', [
+                'key' => 'operator.backups.flash.test_passed',
+                'parameters' => ['disk' => $diskName],
+            ]);
     }
 
     public function run(Request $request): RedirectResponse
@@ -293,7 +314,10 @@ class OperatorBackupSettingsController extends Controller
 
             return redirect()
                 ->route('operator.settings.backups.edit', $this->returnParams($request))
-                ->with('error', 'Could not queue the backup — confirm the queue backend is reachable: '.$exception->getMessage());
+                ->with('error', [
+                    'key' => 'operator.backups.flash.queue_failed',
+                    'parameters' => ['message' => $exception->getMessage()],
+                ]);
         }
 
         AuditEvent::query()->create([
@@ -309,7 +333,7 @@ class OperatorBackupSettingsController extends Controller
 
         return redirect()
             ->route('operator.settings.backups.edit', $this->returnParams($request))
-            ->with('status', 'Backup queued. It runs in the background — the latest run appears below once a worker picks it up. Confirm the queue worker is running if it stays queued.');
+            ->with('status', 'operator.backups.flash.queued');
     }
 
     /**
@@ -372,7 +396,7 @@ class OperatorBackupSettingsController extends Controller
         if (! $this->restoreIsDurable()) {
             return redirect()
                 ->route('operator.settings.backups.restore')
-                ->with('error', 'In-GUI restore is unavailable on this configuration. Restore from the server with php artisan wayfindr:restore.');
+                ->with('error', 'operator.backups.flash.restore_unavailable');
         }
 
         $archive = trim((string) $request->input('archive', ''));
@@ -432,7 +456,7 @@ class OperatorBackupSettingsController extends Controller
         if ($pendingToken === null) {
             return redirect()
                 ->route('operator.settings.backups.restore', ['archive' => $archive])
-                ->with('error', 'A restore is already queued or running. Wait for it to finish before starting another.');
+                ->with('error', 'operator.backups.flash.restore_pending');
         }
 
         $agent = $request->user();
@@ -494,19 +518,27 @@ class OperatorBackupSettingsController extends Controller
 
             return redirect()
                 ->route('operator.settings.backups.restore', ['archive' => $archive])
-                ->with('error', 'Could not start the restore: '.$exception->getMessage());
+                ->with('error', [
+                    'key' => 'operator.backups.flash.restore_start_failed',
+                    'parameters' => ['message' => $exception->getMessage()],
+                ]);
         }
 
         return redirect()
             ->route('operator.settings.backups.edit')
-            ->with('status', 'Restore queued from '.$archive.'. It replaces ALL current data and will log you out when it runs — wait a minute, log back in, and check the restore status here. If nothing changes, confirm the backup queue worker is running.');
+            ->with('status', [
+                'key' => 'operator.backups.flash.restore_queued',
+                'parameters' => ['archive' => $archive],
+            ]);
     }
 
     /**
      * The write / read / list / delete round-trip a backup upload needs, run
      * inside the given prefix so prefix-scoped credentials are exercised.
+     *
+     * @return array{key: string, parameters?: array<string, string>}|null
      */
-    private function probeDisk(string $diskName, string $prefix): ?string
+    private function probeDisk(string $diskName, string $prefix): ?array
     {
         $dir = trim($prefix, '/').'/.wayfindr-backup-test-'.Str::random(12);
         $probeKey = $dir.'/.probe';
@@ -519,22 +551,25 @@ class OperatorBackupSettingsController extends Controller
             $needsCleanup = $wrote;
 
             if (! $wrote || $disk->get($probeKey) !== 'ok') {
-                return 'a write/read round-trip failed.';
+                return ['key' => 'operator.backups.flash.write_read_failed'];
             }
 
             if (! in_array($probeKey, $disk->files($dir), true)) {
-                return 'writes work but a listing probe did not return the object — retention needs list access.';
+                return ['key' => 'operator.backups.flash.list_failed'];
             }
 
             if ($disk->delete($probeKey) === false || $disk->exists($probeKey)) {
-                return 'writes work but the probe could not be deleted — retention needs delete access.';
+                return ['key' => 'operator.backups.flash.delete_failed'];
             }
 
             $needsCleanup = false;
 
             return null;
         } catch (Throwable $exception) {
-            return $exception->getMessage();
+            return [
+                'key' => 'operator.backups.flash.test_failed',
+                'parameters' => ['message' => $exception->getMessage()],
+            ];
         } finally {
             if ($needsCleanup && $disk !== null) {
                 try {

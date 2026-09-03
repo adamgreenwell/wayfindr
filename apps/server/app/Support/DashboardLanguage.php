@@ -90,6 +90,11 @@ final class DashboardLanguage
         'operator.settings.storage.edit',
         'operator.settings.storage.update',
         'operator.settings.storage.test',
+        'operator.settings.backups.edit',
+        'operator.settings.backups.history',
+        'operator.settings.backups.update',
+        'operator.settings.backups.test',
+        'operator.settings.backups.run',
 
         'dashboard.profile.show',
         'dashboard.profile.update',

@@ -140,6 +140,9 @@ return [
         's3_no_keys' => 'Cancellazione delle chiavi salvate',
         's3_confirm_migrated' => 'Conferma della migrazione',
         'use_path_style' => 'Indirizzamento basato sul percorso',
+        'retention_days' => 'Periodo di conservazione',
+        'prefix' => 'Prefisso delle copie',
+        'root' => 'Prefisso della chiave',
 
         // The articles page. `body` was already here for the reply composer;
         // `title` was not, so an over-long article title produced a correct

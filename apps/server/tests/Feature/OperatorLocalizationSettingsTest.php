@@ -317,7 +317,7 @@ test('operator pages outside the extracted slice remain wholly English', functio
     ]);
 
     $this->actingAs($operator)
-        ->get(route('operator.settings.backups.edit'))
+        ->get(route('operator.settings.backups.restore'))
         ->assertOk()
         ->assertSee('<html lang="en">', false)
         ->assertSee('aria-label="Operator sections"', false)
