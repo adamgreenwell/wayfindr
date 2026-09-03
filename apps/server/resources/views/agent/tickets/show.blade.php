@@ -519,8 +519,8 @@
                             @foreach ($ticketExternalIssueHandoffReadiness['projects'] as $project)
                                 <article class="message-card">
                                     <div class="message-meta">
-                                        <strong lang="">{{ $project['provider_name'] }}</strong>
-                                        <span lang="">{{ $project['provider_label'] }}</span>
+                                        <strong @if ($project['provider_name_is_authored']) lang="" @endif>{{ $project['provider_name'] }}</strong>
+                                        <span @if ($project['provider_is_brand']) lang="" @endif>{{ $project['provider_label'] }}</span>
                                     </div>
                                     <p>
                                         <span lang="">{{ $project['project_key'] }}</span>
@@ -552,8 +552,8 @@
                         @endforeach
                         <div class="meta-item">
                             <span class="meta-label">{{ __('ticket_detail.external.last_attempt') }}</span>
-                            <span class="meta-value">{{ $ticketExternalIssueHealth['latest_attempt']['label'] }}</span>
-                            <span class="lede">{{ $ticketExternalIssueHealth['latest_attempt']['body'] }}</span>
+                            <span class="meta-value"><x-translated-feedback :feedback="$ticketExternalIssueHealth['latest_attempt']['label_feedback']" /></span>
+                            <span class="lede"><x-translated-feedback :feedback="$ticketExternalIssueHealth['latest_attempt']['body_feedback']" /></span>
                             @if ($ticketExternalIssueHealth['latest_attempt']['occurred_at'])
                                 <span class="table-note">{{ $ticketExternalIssueHealth['latest_attempt']['occurred_at']->diffForHumans() }}</span>
                             @endif
@@ -567,16 +567,10 @@
                     @else
                         <div class="timeline-list">
                             @foreach ($ticketExternalIssueHealth['failures'] as $failure)
-                                @php
-                                    // The sentence is dashboard chrome; the
-                                    // project key belongs to the account and
-                                    // may be written in any language.
-                                    $failureProject = '<span lang="">'.e($failure['project_key']).'</span>';
-                                @endphp
                                 <article class="timeline-item internal-note">
                                     <div class="timeline-content">
                                         <strong>{{ $loop->first ? __('ticket_detail.external.last_failure') : __('ticket_detail.external.earlier_failure') }}</strong>
-                                        <p class="message-body">{!! __('ticket_detail.external.sync_failed', ['provider' => e($failure['provider']), 'project' => $failureProject]) !!}</p>
+                                        <p class="message-body"><x-translated-feedback :feedback="$failure['feedback']" /></p>
                                         <div class="timeline-meta">
                                             @if ($failure['occurred_at'])
                                                 <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
@@ -587,7 +581,7 @@
                                             <form class="compact-form external-issue-retry-form" method="POST" action="{{ $failure['retry']['route'] }}">
                                                 @csrf
                                                 <input type="hidden" name="site_external_issue_project_id" value="{{ $failure['retry']['site_external_issue_project_id'] }}">
-                                                <button class="button secondary" type="submit">{{ $failure['retry']['label'] }}</button>
+                                                <button class="button secondary" type="submit"><x-translated-feedback :feedback="$failure['retry']['label_feedback']" /></button>
                                                 <span class="lede">{{ __('ticket_detail.external.retry_detail') }}</span>
                                             </form>
                                         @else
@@ -670,7 +664,7 @@
                     @forelse ($ticket->externalLinks as $externalLink)
                         <article class="message-card">
                             <div class="message-meta">
-                                <strong lang="">{{ $externalLink->providerLabel() }}</strong>
+                                <strong @if ($externalLink->provider !== 'other' && array_key_exists($externalLink->provider, $externalIssueProviders)) lang="" @endif>{{ $externalIssueProviders[$externalLink->provider] ?? __('ticket_detail.external.provider_unknown') }}</strong>
                                 @php
                                     $externalIssueSyncStatus = $externalIssueSyncStatuses[$externalLink->sync_status] ?? null;
                                 @endphp
@@ -727,7 +721,7 @@
                         <label for="provider">{{ __('ticket_detail.external.provider') }}</label>
                         <select id="provider" name="provider">
                             @foreach ($externalIssueProviders as $value => $label)
-                                <option lang="" value="{{ $value }}" @selected(old('provider', 'github') === $value)>
+                                <option @if ($value !== 'other') lang="" @endif value="{{ $value }}" @selected(old('provider', 'github') === $value)>
                                     {{ $label }}
                                 </option>
                             @endforeach
@@ -1140,12 +1134,18 @@
                         <article class="timeline-item {{ $timelineItem['type'] }}">
                             <div class="timeline-content">
                                 <div class="message-meta">
-                                    <strong><x-ticket-activity-label :label="$timelineItem['label']" :subject-change="$timelineItem['subject_change'] ?? null" :label-change="$timelineItem['label_change'] ?? null" /></strong>
+                                    <strong><x-ticket-activity-label :label="$timelineItem['label']" :feedback="$timelineItem['label_feedback'] ?? null" :subject-change="$timelineItem['subject_change'] ?? null" :label-change="$timelineItem['label_change'] ?? null" /></strong>
                                     <span>{{ $timelineItem['occurred_at']?->diffForHumans() }}</span>
                                 </div>
                                 <div class="timeline-meta">
-                                    <span>{{ $timelineItem['actor'] }}</span>
-                                    <span>{{ $timelineItem['badge'] }}</span>
+                                    <span @if ($timelineItem['actor_is_authored']) lang="" @endif>{{ $timelineItem['actor'] }}</span>
+                                    <span>
+                                        @if ($timelineItem['badge_feedback'] ?? null)
+                                            <x-translated-feedback :feedback="$timelineItem['badge_feedback']" />
+                                        @else
+                                            {{ $timelineItem['badge'] }}
+                                        @endif
+                                    </span>
                                 </div>
                                 @if ($timelineItem['body'])
                                     <p class="message-body" lang="">{{ $timelineItem['body'] }}</p>
@@ -1172,11 +1172,11 @@
                         <article class="message-card">
                             <div class="message-meta">
                                 <strong>
-                                    {{ $activity['actor'] }}
+                                    <span @if ($activity['actor_is_authored']) lang="" @endif>{{ $activity['actor'] }}</span>
                                 </strong>
                                 <span>{{ $activity['occurred_at']?->diffForHumans() }}</span>
                             </div>
-                            <p><x-ticket-activity-label :label="$activity['label']" :subject-change="$activity['subject_change']" :label-change="$activity['label_change']" /></p>
+                            <p><x-ticket-activity-label :label="$activity['label']" :feedback="$activity['label_feedback']" :subject-change="$activity['subject_change']" :label-change="$activity['label_change']" /></p>
                             @if ($activity['body'])
                                 <p class="message-body" lang="">{{ $activity['body'] }}</p>
                             @endif

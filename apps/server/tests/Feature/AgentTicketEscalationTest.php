@@ -58,7 +58,7 @@ test('agent can manually escalate a ticket to an eligible site agent', function 
     $this->actingAs($agent)
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
-        ->assertSee('Ticket escalated from Ada Agent to Bea Builder')
+        ->assertSeeText('Ticket escalated from Ada Agent to Bea Builder')
         ->assertSee('Customer has an enterprise billing question.');
 });
 

@@ -83,7 +83,9 @@ class AgentTicketController extends Controller
             'accountAgents' => $this->supportAgentsForSite($ticket->site),
             'agent' => $agent,
             'canPostNoteToExternalIssue' => $this->commentableExternalLinks($ticket)->isNotEmpty(),
-            'externalIssueProviders' => ExternalIssueProvider::options(),
+            'externalIssueProviders' => collect(ExternalIssueProvider::options())
+                ->map(fn (string $_label, string $provider): string => $this->ticketExternalIssueProviderLabel($provider))
+                ->all(),
             'externalIssueSyncStatuses' => $this->translatedOptions('ticket_detail.external.sync_statuses', array_keys(ExternalIssueSyncStatus::options())),
             'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
@@ -782,6 +784,44 @@ class AgentTicketController extends Controller
         return $options;
     }
 
+    private function ticketExternalIssueProviderLabel(?string $provider): string
+    {
+        return match ($provider) {
+            'other' => __('ticket_detail.external.provider_other'),
+            null => __('ticket_detail.external.provider_unknown'),
+            default => ExternalIssueProvider::options()[$provider] ?? __('ticket_detail.external.provider_unknown'),
+        };
+    }
+
+    private function ticketExternalIssueProviderIsBrand(?string $provider): bool
+    {
+        return $provider !== null
+            && $provider !== 'other'
+            && array_key_exists($provider, ExternalIssueProvider::options());
+    }
+
+    /**
+     * @param  array<string, string>  $parameters
+     * @param  array<string, string>  $localizedParameters
+     * @return array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}
+     */
+    private function ticketExternalIssueFeedback(
+        string $key,
+        ?string $provider,
+        array $parameters = [],
+        array $localizedParameters = [],
+    ): array {
+        $providerLabel = $this->ticketExternalIssueProviderLabel($provider);
+
+        if ($this->ticketExternalIssueProviderIsBrand($provider)) {
+            $parameters['provider'] = $providerLabel;
+        } else {
+            $localizedParameters['provider'] = $providerLabel;
+        }
+
+        return $this->translatedFeedback($key, $parameters, $localizedParameters);
+    }
+
     /**
      * Only the helper label is dashboard chrome. Its body becomes stored team
      * content, so the built-in English body stays English and says so rather
@@ -801,7 +841,7 @@ class AgentTicketController extends Controller
     }
 
     /**
-     * @return Collection<int, array{label: string, subject_change: array{old: string, new: string}|null, label_change: array{action: string, name: string}|null, actor: string, body: string|null, occurred_at: CarbonInterface|null}>
+     * @return Collection<int, array{label: string, label_feedback: array<string, mixed>|null, subject_change: array{old: string, new: string}|null, label_change: array{action: string, name: string}|null, actor: string, actor_is_authored: bool, body: string|null, occurred_at: CarbonInterface|null}>
      */
     private function visibleTicketActivity(Ticket $ticket): Collection
     {
@@ -813,9 +853,11 @@ class AgentTicketController extends Controller
             ->get()
             ->map(fn (AuditEvent $activity): array => [
                 'label' => $this->ticketActivityLabel($activity),
+                'label_feedback' => $this->ticketActivityLabelFeedback($activity),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
+                'actor_is_authored' => $this->ticketActivityActorIsAuthored($activity),
                 'body' => $this->ticketTimelineBody($activity),
                 'occurred_at' => $activity->occurred_at,
             ]);
@@ -1032,7 +1074,9 @@ class AgentTicketController extends Controller
                 'type' => $isAgentMessage ? 'agent-message' : 'visitor-message',
                 'label' => $isAgentMessage ? __('ticket_detail.timeline.message.agent_reply') : __('ticket_detail.timeline.message.visitor_message'),
                 'actor' => $isAgentMessage ? ($message->sender?->name ?? __('ticket_detail.common.agent')) : __('ticket_detail.common.visitor'),
+                'actor_is_authored' => $isAgentMessage && $message->sender?->name !== null,
                 'badge' => $isAgentMessage ? __('ticket_detail.timeline.message.customer_visible') : __('ticket_detail.timeline.message.customer_message'),
+                'badge_feedback' => null,
                 'body' => $message->body,
                 'occurred_at' => $message->created_at,
                 'sequence' => $message->id,
@@ -1047,16 +1091,26 @@ class AgentTicketController extends Controller
             ->map(fn ($activity): array => [
                 'type' => in_array($activity->action, ['ticket.note_added', 'ticket.external_comment_received'], true) ? 'internal-note' : 'ticket-activity',
                 'label' => $this->ticketActivityLabel($activity),
+                'label_feedback' => $this->ticketActivityLabelFeedback($activity),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
+                'actor_is_authored' => $this->ticketActivityActorIsAuthored($activity),
                 'badge' => match ($activity->action) {
                     'ticket.note_added' => __('ticket_detail.timeline.message.internal'),
                     'ticket.external_comment_received' => __('ticket_detail.timeline.message.from_provider', [
-                        'provider' => ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
+                        'provider' => $this->ticketExternalIssueProviderLabel(
+                            is_string(data_get($activity->metadata, 'provider')) ? data_get($activity->metadata, 'provider') : null
+                        ),
                     ]),
                     default => __('ticket_detail.timeline.message.ticket_activity'),
                 },
+                'badge_feedback' => $activity->action === 'ticket.external_comment_received'
+                    ? $this->ticketExternalIssueFeedback(
+                        'ticket_detail.timeline.message.from_provider',
+                        is_string(data_get($activity->metadata, 'provider')) ? data_get($activity->metadata, 'provider') : null,
+                    )
+                    : null,
                 'body' => $this->ticketTimelineBody($activity),
                 'occurred_at' => $activity->occurred_at,
                 'sequence' => $activity->id,
@@ -1196,8 +1250,8 @@ class AgentTicketController extends Controller
      *     tone: string,
      *     total: int,
      *     status_counts: Collection<int, array{key: string, label: string, count: int}>,
-     *     latest_attempt: array{label: string, body: string, occurred_at: CarbonInterface|null},
-     *     failures: Collection<int, array{provider: string, project_key: string, occurred_at: CarbonInterface|null, retry: array{label: string, route: string, site_external_issue_project_id: int}|null}>
+     *     latest_attempt: array{label: string, label_feedback: array<string, mixed>, body: string, body_feedback: array<string, mixed>, occurred_at: CarbonInterface|null},
+     *     failures: Collection<int, array{provider: string, project_key: string, feedback: array<string, mixed>, occurred_at: CarbonInterface|null, retry: array{label: string, label_feedback: array<string, mixed>, route: string, site_external_issue_project_id: int}|null}>
      * }
      */
     private function ticketExternalIssueHealth(Ticket $ticket): array
@@ -1233,8 +1287,13 @@ class AgentTicketController extends Controller
             ->where('sync_status', 'sync_failed')
             ->values()
             ->map(fn ($externalLink): array => [
-                'provider' => $externalLink->providerLabel(),
+                'provider' => $this->ticketExternalIssueProviderLabel($externalLink->provider),
                 'project_key' => $externalLink->project_key,
+                'feedback' => $this->ticketExternalIssueFeedback(
+                    'ticket_detail.external.sync_failed',
+                    $externalLink->provider,
+                    ['project' => $externalLink->project_key],
+                ),
                 'occurred_at' => $externalLink->last_synced_at ?? $externalLink->updated_at,
                 'retry' => $this->externalIssueRetryAction(
                     $ticket,
@@ -1305,15 +1364,24 @@ class AgentTicketController extends Controller
     }
 
     /**
-     * @return array{provider: string, project_key: string, occurred_at: CarbonInterface|null, retry: array{label: string, route: string, site_external_issue_project_id: int}|null}
+     * @return array{provider: string, project_key: string, feedback: array<string, mixed>, occurred_at: CarbonInterface|null, retry: array{label: string, label_feedback: array<string, mixed>, route: string, site_external_issue_project_id: int}|null}
      */
     private function externalIssueFailureItem(Ticket $ticket, AuditEvent $event): array
     {
         $provider = data_get($event->metadata, 'provider');
+        $projectValue = data_get($event->metadata, 'project_key');
+        $projectKey = TicketExternalIssueAttempt::eventProjectKey($event);
+        $hasProjectKey = is_string($projectValue) && trim($projectValue) !== '';
 
         return [
-            'provider' => ExternalIssueProvider::label(is_string($provider) ? $provider : null),
-            'project_key' => TicketExternalIssueAttempt::eventProjectKey($event),
+            'provider' => $this->ticketExternalIssueProviderLabel(is_string($provider) ? $provider : null),
+            'project_key' => $projectKey,
+            'feedback' => $this->ticketExternalIssueFeedback(
+                'ticket_detail.external.sync_failed',
+                is_string($provider) ? $provider : null,
+                $hasProjectKey ? ['project' => $projectKey] : [],
+                $hasProjectKey ? [] : ['project' => $projectKey],
+            ),
             'occurred_at' => $event->occurred_at,
             'retry' => $this->externalIssueRetryAction(
                 $ticket,
@@ -1324,7 +1392,7 @@ class AgentTicketController extends Controller
     }
 
     /**
-     * @return array{label: string, route: string, site_external_issue_project_id: int}|null
+     * @return array{label: string, label_feedback: array<string, mixed>, route: string, site_external_issue_project_id: int}|null
      */
     private function externalIssueRetryAction(Ticket $ticket, ?string $provider, mixed $projectId): ?array
     {
@@ -1348,7 +1416,8 @@ class AgentTicketController extends Controller
         }
 
         return [
-            'label' => __('ticket_detail.external.retry', ['provider' => ExternalIssueProvider::label($provider)]),
+            'label' => __('ticket_detail.external.retry', ['provider' => $this->ticketExternalIssueProviderLabel($provider)]),
+            'label_feedback' => $this->ticketExternalIssueFeedback('ticket_detail.external.retry', $provider),
             'route' => route($routeName, $ticket),
             'site_external_issue_project_id' => $project->id,
         ];
@@ -1379,7 +1448,7 @@ class AgentTicketController extends Controller
      *     tone: string,
      *     summary: string,
      *     detail: string,
-     *     projects: Collection<int, array{provider_name: string, provider_label: string, project_key: string, state: array{label: string, detail: string, tone: string}}>
+     *     projects: Collection<int, array{provider_name: string, provider_name_is_authored: bool, provider_label: string, provider_is_brand: bool, project_key: string, state: array{label: string, detail: string, tone: string}}>
      * }
      */
     private function ticketExternalIssueHandoffReadiness(Ticket $ticket): array
@@ -1413,7 +1482,9 @@ class AgentTicketController extends Controller
             'projects' => $projects
                 ->map(fn (SiteExternalIssueProject $project): array => [
                     'provider_name' => $project->providerConnection?->name ?? __('ticket_detail.common.external_tracker'),
-                    'provider_label' => $project->providerLabel(),
+                    'provider_name_is_authored' => $project->providerConnection?->name !== null,
+                    'provider_label' => $this->ticketExternalIssueProviderLabel($project->providerConnection?->provider),
+                    'provider_is_brand' => $this->ticketExternalIssueProviderIsBrand($project->providerConnection?->provider),
                     'project_key' => $project->project_key,
                     'state' => $this->ticketExternalIssueProjectState($project),
                 ]),
@@ -1606,12 +1677,9 @@ class AgentTicketController extends Controller
 
     private function ticketActivityLabel(object $activity): string
     {
-        $provider = ExternalIssueProvider::label(data_get($activity->metadata, 'provider'));
-        $reference = data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? '';
-
         return match ($activity->action) {
             'ticket.created' => data_get($activity->metadata, 'source') === 'conversation' && data_get($activity->metadata, 'support_code')
-                ? __('ticket_detail.activity.created_from', ['code' => data_get($activity->metadata, 'support_code')])
+                ? ''
                 : __('ticket_detail.activity.created'),
             'ticket.closed' => __('ticket_detail.activity.closed'),
             'ticket.pending' => __('ticket_detail.activity.pending'),
@@ -1621,31 +1689,129 @@ class AgentTicketController extends Controller
             'ticket.label_added', 'ticket.label_removed' => '',
             'ticket.note_added' => __('ticket_detail.activity.note'),
             'ticket.reply_sent' => __('ticket_detail.activity.reply_sent'),
-            'ticket.external_link_created' => __('ticket_detail.activity.external_link_added_detail', compact('provider', 'reference')),
-            'ticket.external_issue_created' => __('ticket_detail.activity.external_issue_created_detail', compact('provider', 'reference')),
-            'ticket.external_link_removed' => __('ticket_detail.activity.external_link_removed_detail', compact('provider', 'reference')),
-            'ticket.external_sync_failed' => __('ticket_detail.activity.external_sync_failed_detail', compact('provider')),
-            'ticket.external_comment_posted' => __('ticket_detail.activity.external_comment_posted', compact('provider', 'reference')),
-            'ticket.external_comment_failed' => __('ticket_detail.activity.external_comment_failed', compact('provider')),
-            'ticket.external_comment_received' => filled(data_get($activity->metadata, 'author'))
-                ? __('ticket_detail.activity.external_comment_received_from', [
-                    'provider' => $provider,
-                    'author' => data_get($activity->metadata, 'author'),
-                ])
-                : __('ticket_detail.activity.external_comment_received', compact('provider')),
-            'ticket.assignee_updated' => __('ticket_detail.activity.assignee_changed', [
-                'old' => data_get($activity->metadata, 'old_assignee_name') ?? __('ticket_detail.common.unassigned'),
-                'new' => data_get($activity->metadata, 'new_assignee_name') ?? __('ticket_detail.common.unassigned'),
-            ]),
-            'ticket.escalated' => __('ticket_detail.activity.escalated', [
-                'old' => data_get($activity->metadata, 'old_assignee_name') ?? __('ticket_detail.common.unassigned'),
-                'new' => data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? __('ticket_detail.common.unassigned'),
-            ]),
+            'ticket.external_link_created',
+            'ticket.external_issue_created',
+            'ticket.external_link_removed',
+            'ticket.external_sync_failed',
+            'ticket.external_comment_posted',
+            'ticket.external_comment_failed',
+            'ticket.external_comment_received' => '',
+            'ticket.assignee_updated', 'ticket.escalated' => '',
             'ticket.updated' => $this->ticketUpdatedLabel(data_get($activity->metadata, 'changes', [])),
             default => __('ticket_detail.activity.unknown', [
                 'action' => ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)),
             ]),
         };
+    }
+
+    /**
+     * Keep account-authored names and external identifiers structured until
+     * Blade can mark each one as unknown-language inside localized chrome.
+     *
+     * @return array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}|null
+     */
+    private function ticketActivityLabelFeedback(object $activity): ?array
+    {
+        $providerValue = data_get($activity->metadata, 'provider');
+        $provider = is_string($providerValue) ? $providerValue : null;
+        $reference = data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id');
+
+        if ($activity->action === 'ticket.created'
+            && data_get($activity->metadata, 'source') === 'conversation'
+            && filled(data_get($activity->metadata, 'support_code'))) {
+            return $this->translatedFeedback(
+                'ticket_detail.activity.created_from',
+                ['code' => (string) data_get($activity->metadata, 'support_code')],
+            );
+        }
+
+        if (in_array($activity->action, [
+            'ticket.external_link_created',
+            'ticket.external_issue_created',
+            'ticket.external_link_removed',
+            'ticket.external_sync_failed',
+            'ticket.external_comment_posted',
+            'ticket.external_comment_failed',
+            'ticket.external_comment_received',
+        ], true)) {
+            $key = match ($activity->action) {
+                'ticket.external_link_created' => filled($reference)
+                    ? 'ticket_detail.activity.external_link_added_detail'
+                    : 'ticket_detail.activity.external_link_added',
+                'ticket.external_issue_created' => filled($reference)
+                    ? 'ticket_detail.activity.external_issue_created_detail'
+                    : 'ticket_detail.activity.external_issue_created',
+                'ticket.external_link_removed' => filled($reference)
+                    ? 'ticket_detail.activity.external_link_removed_detail'
+                    : 'ticket_detail.activity.external_link_removed',
+                'ticket.external_sync_failed' => 'ticket_detail.activity.external_sync_failed_detail',
+                'ticket.external_comment_posted' => filled($reference)
+                    ? 'ticket_detail.activity.external_comment_posted'
+                    : 'ticket_detail.activity.external_comment_posted_bare',
+                'ticket.external_comment_failed' => 'ticket_detail.activity.external_comment_failed',
+                default => filled(data_get($activity->metadata, 'author'))
+                    ? 'ticket_detail.activity.external_comment_received_from'
+                    : 'ticket_detail.activity.external_comment_received',
+            };
+
+            $parameters = [];
+
+            if (filled($reference) && $activity->action !== 'ticket.external_comment_received') {
+                $parameters['reference'] = (string) $reference;
+            }
+
+            if ($activity->action === 'ticket.external_comment_received'
+                && filled(data_get($activity->metadata, 'author'))) {
+                $parameters['author'] = (string) data_get($activity->metadata, 'author');
+            }
+
+            return $this->ticketExternalIssueFeedback(
+                $key,
+                $provider,
+                $parameters,
+            );
+        }
+
+        if (in_array($activity->action, ['ticket.assignee_updated', 'ticket.escalated'], true)) {
+            $old = data_get($activity->metadata, 'old_assignee_name');
+            $new = $activity->action === 'ticket.escalated'
+                ? data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name')
+                : data_get($activity->metadata, 'new_assignee_name');
+            $parameters = [];
+            $localizedParameters = [];
+
+            foreach (['old' => $old, 'new' => $new] as $key => $value) {
+                if (filled($value)) {
+                    $parameters[$key] = (string) $value;
+                } else {
+                    $localizedParameters[$key] = __('ticket_detail.common.unassigned');
+                }
+            }
+
+            return $this->translatedFeedback(
+                $activity->action === 'ticket.escalated'
+                    ? 'ticket_detail.activity.escalated'
+                    : 'ticket_detail.activity.assignee_changed',
+                $parameters,
+                $localizedParameters,
+            );
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, string>  $parameters
+     * @param  array<string, string>  $localizedParameters
+     * @return array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}
+     */
+    private function translatedFeedback(string $key, array $parameters = [], array $localizedParameters = []): array
+    {
+        return [
+            'key' => $key,
+            'parameters' => $parameters,
+            'localized_parameters' => $localizedParameters,
+        ];
     }
 
     private function ticketActivityActor(object $activity): string
@@ -1655,6 +1821,11 @@ class AgentTicketController extends Controller
         }
 
         return $activity->actor?->name ?? __('ticket_detail.common.system');
+    }
+
+    private function ticketActivityActorIsAuthored(object $activity): bool
+    {
+        return $activity->actor_type !== Visitor::class && $activity->actor?->name !== null;
     }
 
     private function ticketTimelineBody(object $activity): ?string

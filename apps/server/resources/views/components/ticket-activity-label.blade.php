@@ -1,10 +1,13 @@
 @props([
     'label',
+    'feedback' => null,
     'subjectChange' => null,
     'labelChange' => null,
 ])
 
-@if ($labelChange)
+@if ($feedback)
+    <x-translated-feedback :feedback="$feedback" />@if (filled($label)) {{ ' '.$label }}@endif
+@elseif ($labelChange)
     @php
         // Label names belong to the account, not the dashboard catalogue.
         // Escape the name before giving it an explicit unknown-language span

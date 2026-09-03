@@ -4261,7 +4261,7 @@ test('agent can view a durable ticket record for their account', function (): vo
         ->assertSee('WF-TICKETSHOW')
         ->assertSee('Checkout trouble')
         ->assertSee('View linked conversation')
-        ->assertSee('Ticket created from conversation WF-TICKETSHOW')
+        ->assertSeeText('Ticket created from conversation WF-TICKETSHOW')
         ->assertSee('Visitor at a glance')
         ->assertSee('Safe context only')
         ->assertSee('Latest page')
@@ -4684,12 +4684,14 @@ test('ticket detail shows a unified timeline across conversation messages notes 
             'The checkout button is still stuck.',
             'Agent reply',
             'I can help with that.',
-            'Ticket created from conversation WF-TIMELINE',
+            'Ticket created from conversation',
             'Internal note',
             'Follow up with billing before noon.',
             'Ticket marked pending',
-            'Assignee changed from Ada Agent to Bea Builder',
-        ]);
+            'Assignee changed from',
+        ])
+        ->assertSeeText('Ticket created from conversation WF-TIMELINE')
+        ->assertSeeText('Assignee changed from Ada Agent to Bea Builder');
 });
 
 test('ticket detail renders linked conversation messages with agent transcript grouping', function (): void {
@@ -6011,7 +6013,7 @@ test('agent can reassign a linked ticket to another account agent', function ():
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
         ->assertSee('Activity')
-        ->assertSee('Assignee changed from Ada Agent to Bea Builder');
+        ->assertSeeText('Assignee changed from Ada Agent to Bea Builder');
 
     $this->actingAs($agent)
         ->get('/dashboard/tickets')

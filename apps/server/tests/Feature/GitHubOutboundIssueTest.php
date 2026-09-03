@@ -96,7 +96,7 @@ test('agent can create a conservative GitHub issue from a mapped ticket', functi
     $this->actingAs($agent)
         ->get("/dashboard/tickets/{$ticket->id}")
         ->assertOk()
-        ->assertSee('GitHub issue created')
+        ->assertSeeText('GitHub issue created')
         ->assertSee('https://github.com/adamgreenwell/wayfindr/issues/123');
 });
 

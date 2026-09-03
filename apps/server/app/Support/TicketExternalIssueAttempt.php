@@ -17,13 +17,15 @@ final /*
     /**
      * @param  Collection<int, TicketExternalLink>|null  $externalLinks
      * @param  Collection<int, AuditEvent>|null  $auditEvents
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null}
+     * @return array{label: string, label_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, body: string, body_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, occurred_at: CarbonInterface|null}
      */
     public static function latestForTicket(Ticket $ticket, ?Collection $externalLinks = null, ?Collection $auditEvents = null): array
     {
         return self::latestCueForTicket($ticket, $externalLinks, $auditEvents) ?? [
             'label' => __('tickets.external_attempt.none_label'),
+            'label_feedback' => self::feedback('tickets.external_attempt.none_label'),
             'body' => __('tickets.external_attempt.none_body'),
+            'body_feedback' => self::feedback('tickets.external_attempt.none_body'),
             'occurred_at' => null,
         ];
     }
@@ -31,7 +33,7 @@ final /*
     /**
      * @param  Collection<int, TicketExternalLink>|null  $externalLinks
      * @param  Collection<int, AuditEvent>|null  $auditEvents
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null}|null
+     * @return array{label: string, label_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, body: string, body_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, occurred_at: CarbonInterface|null}|null
      */
     public static function latestCueForTicket(Ticket $ticket, ?Collection $externalLinks = null, ?Collection $auditEvents = null): ?array
     {
@@ -57,7 +59,9 @@ final /*
 
         return [
             'body' => $attempt['body'],
+            'body_feedback' => $attempt['body_feedback'],
             'label' => $attempt['label'],
+            'label_feedback' => $attempt['label_feedback'],
             'occurred_at' => $attempt['occurred_at'],
         ];
     }
@@ -111,25 +115,32 @@ final /*
     }
 
     /**
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null, sequence: int}
+     * @return array{label: string, label_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, body: string, body_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, occurred_at: CarbonInterface|null, sequence: int}
      */
     private static function linkAttemptItem(TicketExternalLink $externalLink): array
     {
-        $provider = $externalLink->providerLabel();
-        $projectKey = $externalLink->project_key ?: __('tickets.external_attempt.project_unknown');
+        $provider = self::providerLabel($externalLink->provider);
+        $hasProjectKey = filled($externalLink->project_key);
+        $projectKey = $hasProjectKey ? $externalLink->project_key : __('tickets.external_attempt.project_unknown');
+        $projectParameters = $hasProjectKey ? ['project' => $projectKey] : [];
+        $localizedProjectParameters = $hasProjectKey ? [] : ['project' => $projectKey];
         $externalReference = $externalLink->external_key ?: $externalLink->external_id;
         $occurredAt = $externalLink->last_synced_at ?? $externalLink->updated_at;
 
         return match ($externalLink->sync_status) {
             ExternalIssueSyncStatus::FAILED => [
                 'body' => __('tickets.external_attempt.failed_body', ['project' => $projectKey]),
+                'body_feedback' => self::feedback('tickets.external_attempt.failed_body', $projectParameters, $localizedProjectParameters),
                 'label' => __('tickets.external_attempt.failed_label', ['provider' => $provider]),
+                'label_feedback' => self::providerFeedback('tickets.external_attempt.failed_label', $externalLink->provider),
                 'occurred_at' => $occurredAt,
                 'sequence' => (int) $externalLink->id,
             ],
             ExternalIssueSyncStatus::PENDING => [
                 'body' => __('tickets.external_attempt.pending_body', ['project' => $projectKey]),
+                'body_feedback' => self::feedback('tickets.external_attempt.pending_body', $projectParameters, $localizedProjectParameters),
                 'label' => __('tickets.external_attempt.pending_label', ['provider' => $provider]),
+                'label_feedback' => self::providerFeedback('tickets.external_attempt.pending_label', $externalLink->provider),
                 'occurred_at' => $occurredAt,
                 'sequence' => (int) $externalLink->id,
             ],
@@ -137,7 +148,13 @@ final /*
                 'body' => $externalReference
                     ? __('tickets.external_attempt.linked_body', ['project' => $projectKey, 'reference' => $externalReference])
                     : __('tickets.external_attempt.linked_body_bare', ['project' => $projectKey]),
+                'body_feedback' => self::feedback(
+                    $externalReference ? 'tickets.external_attempt.linked_body' : 'tickets.external_attempt.linked_body_bare',
+                    [...$projectParameters, ...($externalReference ? ['reference' => $externalReference] : [])],
+                    $localizedProjectParameters,
+                ),
                 'label' => __('tickets.external_attempt.linked_label', ['provider' => $provider]),
+                'label_feedback' => self::providerFeedback('tickets.external_attempt.linked_label', $externalLink->provider),
                 'occurred_at' => $occurredAt,
                 'sequence' => (int) $externalLink->id,
             ],
@@ -145,13 +162,17 @@ final /*
     }
 
     /**
-     * @return array{label: string, body: string, occurred_at: CarbonInterface|null, sequence: int}
+     * @return array{label: string, label_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, body: string, body_feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, occurred_at: CarbonInterface|null, sequence: int}
      */
     private static function eventAttemptItem(AuditEvent $event): array
     {
         $provider = data_get($event->metadata, 'provider');
-        $providerLabel = ExternalIssueProvider::label(is_string($provider) ? $provider : null);
+        $providerLabel = self::providerLabel(is_string($provider) ? $provider : null);
         $projectKey = self::eventProjectKey($event);
+        $hasProjectKey = is_string(data_get($event->metadata, 'project_key'))
+            && trim((string) data_get($event->metadata, 'project_key')) !== '';
+        $projectParameters = $hasProjectKey ? ['project' => $projectKey] : [];
+        $localizedProjectParameters = $hasProjectKey ? [] : ['project' => $projectKey];
 
         if ($event->action === 'ticket.external_link_removed') {
             $externalReference = self::eventReference($event);
@@ -160,7 +181,13 @@ final /*
                 'body' => $externalReference
                     ? __('tickets.external_attempt.removed_body', ['project' => $projectKey, 'reference' => $externalReference])
                     : __('tickets.external_attempt.removed_body_bare', ['project' => $projectKey]),
+                'body_feedback' => self::feedback(
+                    $externalReference ? 'tickets.external_attempt.removed_body' : 'tickets.external_attempt.removed_body_bare',
+                    [...$projectParameters, ...($externalReference ? ['reference' => $externalReference] : [])],
+                    $localizedProjectParameters,
+                ),
                 'label' => __('tickets.external_attempt.removed_label', ['provider' => $providerLabel]),
+                'label_feedback' => self::providerFeedback('tickets.external_attempt.removed_label', is_string($provider) ? $provider : null),
                 'occurred_at' => $event->occurred_at,
                 'sequence' => (int) $event->id,
             ];
@@ -173,7 +200,13 @@ final /*
                 'body' => $externalReference
                     ? __('tickets.external_attempt.created_body', ['project' => $projectKey, 'reference' => $externalReference])
                     : __('tickets.external_attempt.created_body_bare', ['project' => $projectKey]),
+                'body_feedback' => self::feedback(
+                    $externalReference ? 'tickets.external_attempt.created_body' : 'tickets.external_attempt.created_body_bare',
+                    [...$projectParameters, ...($externalReference ? ['reference' => $externalReference] : [])],
+                    $localizedProjectParameters,
+                ),
                 'label' => __('tickets.external_attempt.created_label', ['provider' => $providerLabel]),
+                'label_feedback' => self::providerFeedback('tickets.external_attempt.created_label', is_string($provider) ? $provider : null),
                 'occurred_at' => $event->occurred_at,
                 'sequence' => (int) $event->id,
             ];
@@ -185,7 +218,9 @@ final /*
         // most common of the three.
         return [
             'body' => __('tickets.external_attempt.failed_body', ['project' => $projectKey]),
+            'body_feedback' => self::feedback('tickets.external_attempt.failed_body', $projectParameters, $localizedProjectParameters),
             'label' => __('tickets.external_attempt.failed_label', ['provider' => $providerLabel]),
+            'label_feedback' => self::providerFeedback('tickets.external_attempt.failed_label', is_string($provider) ? $provider : null),
             'occurred_at' => $event->occurred_at,
             'sequence' => (int) $event->id,
         ];
@@ -199,5 +234,48 @@ final /*
         return is_string($externalReference) && trim($externalReference) !== ''
             ? trim($externalReference)
             : null;
+    }
+
+    /**
+     * @param  array<string, string>  $parameters
+     * @param  array<string, string>  $localizedParameters
+     * @return array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}
+     */
+    private static function feedback(string $key, array $parameters = [], array $localizedParameters = []): array
+    {
+        return [
+            'key' => $key,
+            'parameters' => $parameters,
+            'localized_parameters' => $localizedParameters,
+        ];
+    }
+
+    private static function providerLabel(?string $provider): string
+    {
+        return match ($provider) {
+            'other' => __('ticket_detail.external.provider_other'),
+            null => __('ticket_detail.external.provider_unknown'),
+            default => ExternalIssueProvider::options()[$provider] ?? __('ticket_detail.external.provider_unknown'),
+        };
+    }
+
+    /**
+     * Product names are proper nouns with no reliable language. Generic and
+     * unknown provider labels come from the active dashboard catalogue.
+     *
+     * @return array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}
+     */
+    private static function providerFeedback(string $key, ?string $provider): array
+    {
+        $label = self::providerLabel($provider);
+        $isBrand = $provider !== null
+            && $provider !== 'other'
+            && array_key_exists($provider, ExternalIssueProvider::options());
+
+        return self::feedback(
+            $key,
+            $isBrand ? ['provider' => $label] : [],
+            $isBrand ? [] : ['provider' => $label],
+        );
     }
 }

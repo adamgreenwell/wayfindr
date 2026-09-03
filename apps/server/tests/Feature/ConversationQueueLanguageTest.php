@@ -3600,8 +3600,133 @@ test('external failure project keys keep their own language boundary', function 
         ->getContent();
 
     expect($html)->toContain('<span lang="">Billing &amp; Rückgabe</span>')
-        ->and($html)->toContain('GitHub konnte')
-        ->and($html)->toContain('nicht synchronisieren.');
+        ->and($html)->toContain('<span lang="">GitHub</span>')
+        ->and(conversationQueueLanguageVisibleText($html))
+        ->toContain('GitHub konnte Billing & Rückgabe nicht synchronisieren.');
+});
+
+test('the generic external provider is localized on the ticket workspace', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'Other provider']);
+
+    TicketExternalLink::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($ticket)
+        ->create([
+            'provider' => 'other',
+            'project_key' => 'External project',
+        ]);
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+
+    expect(preg_match('/<option[^>]*value="other"[^>]*>\s*Sonstiger\s*<\/option>/', $html))->toBe(1)
+        ->and($html)->toMatch('/<option[^>]*lang=""[^>]*value="github"[^>]*>\s*GitHub\s*<\/option>/')
+        ->and($html)->toMatch('/<strong[^>]*>Sonstiger<\/strong>/')
+        ->and($html)->not->toMatch('/<option[^>]*value="other"[^>]*>\s*Other\s*<\/option>/');
+});
+
+test('latest external attempt identifiers keep their own language boundaries', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'Latest attempt']);
+
+    TicketExternalLink::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($ticket)
+        ->create([
+            'provider' => 'github',
+            'project_key' => 'Billing & Rückgabe',
+            'external_key' => 'EXT & 42',
+            'sync_status' => ExternalIssueSyncStatus::LINKED,
+            'last_synced_at' => now(),
+        ]);
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+
+    $matched = preg_match(
+        '/Letzter externer Versuch.*?<span class="lede">.*?<span lang="">Billing &amp; Rückgabe<\/span>.*?<span lang="">EXT &amp; 42<\/span>/s',
+        $html
+    );
+
+    expect($matched)->toBe(1, 'the latest-attempt sentence lost an identifier language boundary');
+});
+
+test('authored ticket activity values keep their own language boundaries', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'Activity boundaries']);
+    $agent = $world['agents']['de'];
+    $events = [
+        ['ticket.created', ['source' => 'conversation', 'support_code' => 'WF-&-CREATED']],
+        ['ticket.external_link_created', ['provider' => 'github', 'external_key' => 'EXT-&-LINK']],
+        ['ticket.external_issue_created', ['provider' => 'github', 'external_key' => 'EXT-&-CREATED']],
+        ['ticket.external_link_removed', ['provider' => 'github', 'external_key' => 'EXT-&-REMOVED']],
+        ['ticket.external_comment_posted', ['provider' => 'github', 'external_key' => 'EXT-&-COMMENT']],
+        ['ticket.external_comment_received', ['provider' => 'github', 'author' => 'Author & Name']],
+        ['ticket.assignee_updated', ['old_assignee_name' => 'Old & Owner', 'new_assignee_name' => 'New & Owner']],
+        ['ticket.escalated', ['old_assignee_name' => 'First & Owner', 'target_agent_name' => 'Next & Owner']],
+    ];
+
+    foreach ($events as $offset => [$action, $metadata]) {
+        AuditEvent::query()->create([
+            'account_id' => $world['account']->id,
+            'site_id' => $world['site']->id,
+            'actor_type' => $agent->getMorphClass(),
+            'actor_id' => $agent->id,
+            'subject_type' => $ticket->getMorphClass(),
+            'subject_id' => $ticket->id,
+            'action' => $action,
+            'metadata' => $metadata,
+            'occurred_at' => now()->addSeconds($offset),
+        ]);
+    }
+
+    $html = (string) $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+
+    foreach ([
+        'WF-&amp;-CREATED' => 2,
+        'EXT-&amp;-LINK' => 2,
+        'EXT-&amp;-CREATED' => 2,
+        // Also appears in the latest-attempt summary above the two activity
+        // lists; all three copies must keep the same boundary.
+        'EXT-&amp;-REMOVED' => 3,
+        'EXT-&amp;-COMMENT' => 2,
+        'Author &amp; Name' => 2,
+        'Old &amp; Owner' => 2,
+        'New &amp; Owner' => 2,
+        'First &amp; Owner' => 2,
+        'Next &amp; Owner' => 2,
+    ] as $authoredValue => $expectedOccurrences) {
+        expect(substr_count($html, '<span lang="">'.$authoredValue.'</span>'))
+            ->toBe($expectedOccurrences, "{$authoredValue} is not bounded everywhere it renders");
+    }
 });
 
 test('a reply template says what language its body is in', function (): void {
