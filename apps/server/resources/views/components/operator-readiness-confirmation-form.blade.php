@@ -1,21 +1,23 @@
 @props([
     'action' => null,
+    'idPrefix',
     'item',
     'returnTo' => null,
 ])
 
 @if ($action && ($item['confirmable'] ?? false))
+    @php($noteId = $idPrefix.'-readiness-confirmation-note-'.$item['confirmation_key'])
     <form class="compact-form" method="POST" action="{{ $action }}">
         @csrf
         <input type="hidden" name="key" value="{{ $item['confirmation_key'] }}">
         @if ($returnTo)
             <input type="hidden" name="redirect_to" value="{{ $returnTo }}">
         @endif
-        <label class="sr-only" for="readiness-confirmation-note-{{ $item['confirmation_key'] }}">
+        <label class="sr-only" for="{{ $noteId }}">
             {{ __('operator.readiness.confirmation.note_for', ['label' => $item['label']]) }}
         </label>
         <input
-            id="readiness-confirmation-note-{{ $item['confirmation_key'] }}"
+            id="{{ $noteId }}"
             name="note"
             type="text"
             lang=""
