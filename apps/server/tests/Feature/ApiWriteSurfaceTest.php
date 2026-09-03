@@ -92,6 +92,7 @@ test('write is a separate ability in both directions', function (): void {
 
 test('a token opens a conversation for a known visitor in its writable scope', function (): void {
     $world = apiWriteWorld();
+    $world['visitor']->forceFill(['presence_only' => true])->save();
 
     $response = $this->postJson('/api/v1/conversations', [
         'site_id' => $world['site']->id,
@@ -109,6 +110,7 @@ test('a token opens a conversation for a known visitor in its writable scope', f
     $conversation = Conversation::query()->sole();
 
     expect($conversation->metadata)->toBe(['channel' => 'api'])
+        ->and($world['visitor']->fresh()->presence_only)->toBeFalse()
         ->and($conversation->auditEvents()->where('action', 'conversation.created')->sole()->actor_type)->toBe(ApiToken::class)
         ->and($conversation->auditEvents()->where('action', 'conversation.created')->sole()->actor_id)->toBe($world['token']->id);
 });
@@ -414,6 +416,7 @@ test('one idempotency key cannot be moved to another conversation', function ():
 
 test('a token creates an idempotent ticket for a visitor in its writable scope', function (): void {
     $world = apiWriteWorld();
+    $world['visitor']->forceFill(['presence_only' => true])->save();
     $payload = [
         'site_id' => $world['site']->id,
         'requester_id' => $world['visitor']->id,
@@ -447,6 +450,7 @@ test('a token creates an idempotent ticket for a visitor in its writable scope',
     $created = $ticket->auditEvents()->where('action', 'ticket.created')->sole();
 
     expect($ticket->metadata)->toBe(['source' => 'api'])
+        ->and($world['visitor']->fresh()->presence_only)->toBeFalse()
         ->and($created->actor_type)->toBe(ApiToken::class)
         ->and($created->actor_id)->toBe($world['token']->id);
 });

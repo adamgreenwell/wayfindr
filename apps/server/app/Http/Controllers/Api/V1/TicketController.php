@@ -57,12 +57,26 @@ class TicketController extends Controller
                 }
 
                 $requesterId = $validated['requester_id'] ?? null;
+                $requester = null;
 
-                if ($requesterId !== null && ! Visitor::query()
-                    ->where('site_id', $site->id)
-                    ->whereKey($requesterId)
-                    ->exists()) {
-                    $this->invalidReference('requester_id');
+                if ($requesterId !== null) {
+                    $requester = Visitor::query()
+                        ->where('site_id', $site->id)
+                        ->whereKey($requesterId)
+                        // Serializes with the presence pruner's final check so
+                        // a valid requester cannot disappear between this
+                        // lookup and the ticket's foreign-key insert.
+                        ->lockForUpdate()
+                        ->first();
+
+                    if ($requester === null) {
+                        $this->invalidReference('requester_id');
+                    }
+
+                    // A ticket is support contact just as a conversation is.
+                    // Keep the live-board profile state and retention marker
+                    // aligned with the relationship this transaction creates.
+                    $requester->forceFill(['presence_only' => false])->save();
                 }
 
                 $ticket = Ticket::query()->create([

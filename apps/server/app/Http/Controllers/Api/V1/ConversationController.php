@@ -62,6 +62,11 @@ class ConversationController extends Controller
                 $visitor = Visitor::query()
                     ->where('site_id', $site->id)
                     ->whereKey($validated['visitor_id'])
+                    // The presence pruner takes this same lock before its final
+                    // delete check. Whichever arrives second therefore sees
+                    // the other's committed contact decision instead of
+                    // inserting against a visitor deleted after lookup.
+                    ->lockForUpdate()
                     ->first();
 
                 if ($visitor === null) {
@@ -69,6 +74,11 @@ class ConversationController extends Controller
                     // integration cannot use validation as an id oracle.
                     $this->invalidReference('visitor_id');
                 }
+
+                // Opening support work is contact. Besides telling the live
+                // board the truth, clearing this while the row is locked makes
+                // the pruner's final predicate false before the FK insert.
+                $visitor->forceFill(['presence_only' => false])->save();
 
                 $conversation = Conversation::query()->create([
                     'site_id' => $site->id,
