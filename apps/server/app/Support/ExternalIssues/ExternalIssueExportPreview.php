@@ -78,37 +78,10 @@ class ExternalIssueExportPreview
     {
         $description = trim((string) $ticket->description);
 
-        if ($this->containsConversationTranscript($ticket)) {
+        if ($ticket->hasConversationDerivedDescription()) {
             return self::OMITTED_CONVERSATION_DESCRIPTION;
         }
 
         return $description === '' ? 'No description provided.' : $description;
-    }
-
-    public function containsConversationTranscript(Ticket $ticket): bool
-    {
-        $description = trim((string) $ticket->description);
-
-        if ($description === '') {
-            return false;
-        }
-
-        $descriptionSource = data_get($ticket->metadata, 'description_source');
-
-        if ($descriptionSource === 'agent_summary') {
-            return false;
-        }
-
-        if ($descriptionSource === 'conversation_transcript') {
-            return true;
-        }
-
-        return data_get($ticket->metadata, 'source') === 'conversation'
-            && $this->looksLikeConversationTranscript($description);
-    }
-
-    private function looksLikeConversationTranscript(string $description): bool
-    {
-        return preg_match('/(?:^|\R)(?:Visitor|Agent|[A-Z][\p{L}\p{M}\p{N} .\'-]{1,80}):\s+\S/u', $description) === 1;
     }
 }

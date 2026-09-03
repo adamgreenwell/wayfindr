@@ -75,7 +75,7 @@ test('ticket policy denies deactivated agents even when stale site assignments r
         ->and(Gate::forUser($deactivatedAgent)->allows('assign', $ticket))->toBeFalse();
 });
 
-test('ticket managers cannot read or reply to linked conversations without conversation permissions', function (array $ticketMetadata): void {
+test('ticket managers cannot read or reply to linked conversations without conversation permissions', function (string $ticketDescription, array $ticketMetadata): void {
     $account = Account::factory()->create();
     $role = CustomRole::factory()->for($account)->create([
         'permissions' => [AccountPermission::ManageTickets->value],
@@ -103,7 +103,7 @@ test('ticket managers cannot read or reply to linked conversations without conve
         ->for($visitor, 'requester')
         ->create([
             'subject' => 'Visible ticket subject',
-            'description' => 'Visitor: Copied private conversation transcript',
+            'description' => $ticketDescription,
             'metadata' => $ticketMetadata,
         ]);
     $ticket->auditEvents()->create([
@@ -141,7 +141,7 @@ test('ticket managers cannot read or reply to linked conversations without conve
         ->assertDontSee('WF-PRIVATE-CONVERSATION')
         ->assertDontSee('Private conversation subject')
         ->assertDontSee('Private conversation transcript')
-        ->assertDontSee('Visitor: Copied private conversation transcript')
+        ->assertDontSee($ticketDescription)
         ->assertDontSee('Ticket created from conversation')
         ->assertDontSee('name="description"', false)
         ->assertDontSee(route('dashboard.conversations.show', $conversation->support_code), false)
@@ -156,7 +156,7 @@ test('ticket managers cannot read or reply to linked conversations without conve
 
     expect($ticket->fresh())
         ->subject->toBe('Updated visible ticket subject')
-        ->description->toBe('Visitor: Copied private conversation transcript')
+        ->description->toBe($ticketDescription)
         ->metadata->toBe($ticketMetadata);
 
     $this->actingAs($ticketManager)
@@ -167,12 +167,20 @@ test('ticket managers cannot read or reply to linked conversations without conve
 
     expect($conversation->messages()->where('body', 'Unauthorized reply')->exists())->toBeFalse();
 })->with([
-    'stamped conversation description' => [[
+    'stamped conversation description' => ['Visitor: Copied private conversation transcript', [
         'source' => 'conversation',
         'description_source' => 'conversation_transcript',
         'support_code' => 'WF-PRIVATE-CONVERSATION',
     ]],
-    'legacy conversation description' => [[
+    'legacy visitor transcript' => ['Visitor: Copied private conversation transcript', [
+        'source' => 'conversation',
+        'support_code' => 'WF-PRIVATE-CONVERSATION',
+    ]],
+    'legacy empty transcript fallback' => ['Created from conversation WF-PRIVATE-CONVERSATION.', [
+        'source' => 'conversation',
+        'support_code' => 'WF-PRIVATE-CONVERSATION',
+    ]],
+    'legacy integration transcript' => ['Integration “Billing bot”: Private integration transcript', [
         'source' => 'conversation',
         'support_code' => 'WF-PRIVATE-CONVERSATION',
     ]],

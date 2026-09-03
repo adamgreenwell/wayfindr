@@ -186,9 +186,17 @@ class AgentTicketQueueController extends Controller
                 $ticketReferenceId = $this->ticketReferenceId($ticketSearch);
 
                 $query->where(function ($query) use ($searchPattern, $ticketReferenceId, $canViewTicketConversations): void {
+                    $query->whereLike('subject', $searchPattern);
+
+                    if ($canViewTicketConversations) {
+                        $query->orWhereLike('description', $searchPattern);
+                    } else {
+                        $query->orWhere(fn ($query) => $query
+                            ->whereLike('description', $searchPattern)
+                            ->whereDescriptionIsNotConversationDerived());
+                    }
+
                     $query
-                        ->whereLike('subject', $searchPattern)
-                        ->orWhereLike('description', $searchPattern)
                         ->orWhereHas('requester', fn ($query) => $query
                             ->whereLike('external_id', $searchPattern)
                             ->orWhereLike('anonymous_id', $searchPattern)

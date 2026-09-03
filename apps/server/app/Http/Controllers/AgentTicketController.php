@@ -82,7 +82,7 @@ class AgentTicketController extends Controller
         $ticketDetailReturnQuery = $this->ticketDetailReturnQuery($request);
         $ticketTimelineFilter = $this->ticketTimelineFilter($request);
         $canViewTicketDescription = $canViewLinkedConversation
-            || ! $externalIssueExportPreview->containsConversationTranscript($ticket);
+            || ! $ticket->hasConversationDerivedDescription();
         $fullTicketTimeline = $this->ticketTimeline($ticket, $canViewLinkedConversation);
         $ticketTimeline = $this->filteredTicketTimeline($fullTicketTimeline, $ticketTimelineFilter);
 
