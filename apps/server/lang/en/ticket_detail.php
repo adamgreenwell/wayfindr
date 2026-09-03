@@ -237,6 +237,7 @@ return [
             'server_error' => ':provider had a server error. Wait a moment and try again.',
             'http_error' => ':provider could not create the issue (status :status).',
             'request_failed' => ':provider request failed before a response was received.',
+            'response_contract' => ':provider returned a successful response without the issue reference Wayfindr needs.',
             'configuration' => ':provider could not create the issue. Check the connection settings and try again.',
         ],
     ],

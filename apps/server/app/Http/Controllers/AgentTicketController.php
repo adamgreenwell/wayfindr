@@ -801,7 +801,7 @@ class AgentTicketController extends Controller
     }
 
     /**
-     * @return Collection<int, array{label: string, actor: string, body: string|null, occurred_at: CarbonInterface|null}>
+     * @return Collection<int, array{label: string, subject_change: array{old: string, new: string}|null, actor: string, body: string|null, occurred_at: CarbonInterface|null}>
      */
     private function visibleTicketActivity(Ticket $ticket): Collection
     {
@@ -813,6 +813,7 @@ class AgentTicketController extends Controller
             ->get()
             ->map(fn (AuditEvent $activity): array => [
                 'label' => $this->ticketActivityLabel($activity),
+                'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
                 'body' => $this->ticketTimelineBody($activity),
                 'occurred_at' => $activity->occurred_at,
@@ -1045,6 +1046,7 @@ class AgentTicketController extends Controller
             ->map(fn ($activity): array => [
                 'type' => in_array($activity->action, ['ticket.note_added', 'ticket.external_comment_received'], true) ? 'internal-note' : 'ticket-activity',
                 'label' => $this->ticketActivityLabel($activity),
+                'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
                 'badge' => match ($activity->action) {
                     'ticket.note_added' => __('ticket_detail.timeline.message.internal'),
@@ -1668,21 +1670,45 @@ class AgentTicketController extends Controller
         };
     }
 
+    /**
+     * Subject values are authored content, not dashboard chrome. Keep them
+     * structured until Blade can give each value its own unknown-language
+     * boundary inside the translated sentence.
+     *
+     * @return array{old: string, new: string}|null
+     */
+    private function ticketActivitySubjectChange(object $activity): ?array
+    {
+        if ($activity->action !== 'ticket.updated') {
+            return null;
+        }
+
+        $change = data_get($activity->metadata, 'changes.subject');
+
+        if (! is_array($change)) {
+            return null;
+        }
+
+        return [
+            'old' => (string) data_get($change, 'old'),
+            'new' => (string) data_get($change, 'new'),
+        ];
+    }
+
     private function ticketUpdatedLabel(array $changes): string
     {
         if ($changes === []) {
             return __('ticket_detail.activity.updated');
         }
 
-        return collect($changes)
-            ->map(function (array $change, string $field): string {
-                if ($field === 'subject') {
-                    return __('ticket_detail.activity.subject_changed', [
-                        'old' => data_get($change, 'old'),
-                        'new' => data_get($change, 'new'),
-                    ]);
-                }
+        $otherChanges = collect($changes)->except('subject');
 
+        if ($otherChanges->isEmpty()) {
+            return '';
+        }
+
+        return $otherChanges
+            ->map(function (array $change, string $field): string {
                 if ($field === 'description') {
                     return __('ticket_detail.activity.description_updated');
                 }

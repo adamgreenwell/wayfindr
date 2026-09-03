@@ -36,5 +36,7 @@ test('exposes stable failure reasons for request-facing translation', function (
         ->and(ExternalIssueFailureGuidance::reason(422))->toBe('issue_rejected')
         ->and(ExternalIssueFailureGuidance::reason(503))->toBe('server_error')
         ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub request failed before a response was received.'))->toBe('request_failed')
+        ->and(ExternalIssueFailureGuidance::reason(201, 'GitHub did not return an issue URL.'))->toBe('response_contract')
+        ->and(ExternalIssueFailureGuidance::reason(201, 'Jira did not return an issue key.'))->toBe('response_contract')
         ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub token is missing.'))->toBe('configuration');
 });

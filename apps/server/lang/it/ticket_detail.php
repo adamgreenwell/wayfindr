@@ -229,6 +229,7 @@ return [
             'server_error' => ':provider ha restituito un errore del server. Attenda un momento e riprovi.',
             'http_error' => ':provider non ha potuto creare la segnalazione (stato :status).',
             'request_failed' => 'La richiesta a :provider non è riuscita prima di ricevere una risposta.',
+            'response_contract' => ':provider ha restituito una risposta riuscita senza il riferimento alla segnalazione necessario a Wayfindr.',
             'configuration' => ':provider non ha potuto creare la segnalazione. Verifichi le impostazioni della connessione e riprovi.',
         ],
     ],

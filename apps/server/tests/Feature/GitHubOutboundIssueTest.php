@@ -215,6 +215,37 @@ test('GitHub issue creation failure is audited without storing credentials', fun
         ->and(json_encode($auditEvent->metadata))->not->toContain('ghp_test_secret');
 });
 
+test('a successful GitHub response without an issue URL reports a response contract failure', function (): void {
+    $fixture = githubOutboundIssueFixture();
+    $ticket = $fixture['ticket'];
+    $project = $fixture['project'];
+
+    Http::fake([
+        'https://api.github.com/repos/adamgreenwell/wayfindr/issues' => Http::response([
+            'id' => 123,
+            'number' => 123,
+        ], 201),
+    ]);
+
+    $this->actingAs($fixture['agent'])
+        ->from("/dashboard/tickets/{$ticket->id}")
+        ->post("/dashboard/tickets/{$ticket->id}/external-issues/github", [
+            'site_external_issue_project_id' => $project->id,
+        ])
+        ->assertSessionHasErrors([
+            'external_issue' => 'GitHub returned a successful response without the issue reference Wayfindr needs.',
+        ]);
+
+    $failure = $ticket->auditEvents()
+        ->where('action', 'ticket.external_sync_failed')
+        ->firstOrFail();
+
+    expect($failure->metadata)->toMatchArray([
+        'status' => 201,
+        'message' => 'GitHub did not return an issue URL.',
+    ]);
+});
+
 test('GitHub issue creation surfaces actionable guidance when the repository is not found', function (): void {
     $fixture = githubOutboundIssueFixture();
     $ticket = $fixture['ticket'];

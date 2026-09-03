@@ -3454,6 +3454,50 @@ test('ticket workspace writes validate their fields in the agent language', func
         ->assertDontSee('External link added.');
 });
 
+test('authored subject changes keep their own language boundary in ticket activity', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'Problem gelöst']);
+    $agent = $world['agents']['de'];
+
+    AuditEvent::query()->create([
+        'account_id' => $world['account']->id,
+        'site_id' => $world['site']->id,
+        'actor_type' => $agent->getMorphClass(),
+        'actor_id' => $agent->id,
+        'subject_type' => $ticket->getMorphClass(),
+        'subject_id' => $ticket->id,
+        'action' => 'ticket.updated',
+        'metadata' => [
+            'changes' => [
+                'subject' => [
+                    'old' => 'Checkout & billing',
+                    'new' => 'Problem gelöst',
+                ],
+            ],
+        ],
+        'occurred_at' => now(),
+    ]);
+
+    $html = (string) $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+
+    // The update appears in both the unified timeline and the activity tab.
+    // Its sentence is German, while each authored value declares HTML's
+    // unknown language instead of inheriting German pronunciation rules.
+    expect(substr_count($html, '<span lang="">Checkout &amp; billing</span>'))->toBe(2)
+        ->and(substr_count($html, '<span lang="">Problem gelöst</span>'))->toBeGreaterThanOrEqual(2)
+        ->and($html)->toContain('Betreff von')
+        ->and($html)->toContain('geändert');
+});
+
 test('a reply template says what language its body is in', function (): void {
     // The body is what the VISITOR receives, not chrome. A built-in is English
     // and says so. A managed one is written by the account in whatever language

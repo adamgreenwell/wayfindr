@@ -12,9 +12,11 @@ final class ExternalIssueFailureGuidance
     public static function reason(?int $status, string $fallback = ''): string
     {
         if ($status === null || $status < 400) {
-            return str_contains($fallback, 'request failed before a response was received')
-                ? 'request_failed'
-                : 'configuration';
+            return match (true) {
+                str_contains($fallback, 'request failed before a response was received') => 'request_failed',
+                str_contains($fallback, 'did not return an issue') => 'response_contract',
+                default => 'configuration',
+            };
         }
 
         return match (true) {

@@ -229,6 +229,7 @@ return [
             'server_error' => 'Bei :provider ist ein Serverfehler aufgetreten. Warten Sie einen Moment und versuchen Sie es erneut.',
             'http_error' => ':provider konnte das Issue nicht erstellen (Status :status).',
             'request_failed' => 'Die Anfrage an :provider ist fehlgeschlagen, bevor eine Antwort empfangen wurde.',
+            'response_contract' => ':provider hat eine erfolgreiche Antwort ohne die von Wayfindr benötigte Issue-Referenz zurückgegeben.',
             'configuration' => ':provider konnte das Issue nicht erstellen. Prüfen Sie die Verbindungseinstellungen und versuchen Sie es erneut.',
         ],
     ],

@@ -5411,7 +5411,7 @@ test('agent can update ticket fields from the detail page', function (): void {
         ->assertSee('Bug')
         ->assertSee('Category changed from Question to Bug')
         ->assertSee('High')
-        ->assertSee('Subject changed from Old checkout issue to Updated checkout issue')
+        ->assertSee('Subject changed from <span lang="">Old checkout issue</span> to <span lang="">Updated checkout issue</span>', false)
         ->assertSee('Priority changed from Normal to High')
         ->assertSee('Description updated');
 });
