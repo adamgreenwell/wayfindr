@@ -26,6 +26,9 @@ display name, issuer URL, client ID, client secret, and enabled state. The
 client secret is encrypted at rest, hidden from serialization, never rendered
 back into the form, and replaced only when a new non-empty value is submitted.
 Configuration changes are audited without credentials.
+Changing the issuer or client ID deletes existing subject bindings so an opaque
+subject from the new authority cannot inherit a link created by the old one.
+Renaming the provider or rotating only its secret preserves those bindings.
 
 The callback URL is stable for the connection. The public login page asks for
 an account slug before beginning federation; it never accepts an email address

@@ -131,7 +131,7 @@ test('an account administrator configures one encrypted OIDC connection', functi
         ->and($connection->toArray())->not->toHaveKey('client_secret')
         ->and(DB::table('oidc_connections')->value('client_secret'))->not->toBe('very-secret-value')
         ->and(AuditEvent::query()->where('action', 'account.oidc_connection_updated')->value('metadata'))
-        ->toBe(['enabled' => true, 'name' => 'Acme Identity']);
+        ->toBe(['enabled' => true, 'name' => 'Acme Identity', 'identity_links_cleared' => 0]);
 
     $this->actingAs($admin)
         ->get(route('dashboard.account.security.show'))
@@ -144,6 +144,8 @@ test('updating OIDC preserves a blank secret and rotates pending configuration',
     $world = oidcWorld();
     $originalSecret = $world['connection']->client_secret;
     $originalVersion = $world['connection']->configuration_version;
+    $linked = User::factory()->for($world['account'])->create();
+    OidcIdentity::factory()->for($world['connection'], 'connection')->for($linked)->create();
     app()->instance(
         OutboundWebhookDestination::class,
         new OutboundWebhookDestination(fn (): array => ['1.1.1.1']),
@@ -159,7 +161,31 @@ test('updating OIDC preserves a blank secret and rotates pending configuration',
     $connection = $world['connection']->fresh();
     expect($connection->client_secret)->toBe($originalSecret)
         ->and($connection->configuration_version)->not->toBe($originalVersion)
-        ->and($connection->is_enabled)->toBeFalse();
+        ->and($connection->is_enabled)->toBeFalse()
+        ->and(OidcIdentity::query()->count())->toBe(0)
+        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['identity_links_cleared'])->toBe(1);
+});
+
+test('renaming a provider or rotating only its secret preserves identity bindings', function (): void {
+    $world = oidcWorld();
+    $linked = User::factory()->for($world['account'])->create();
+    $identity = OidcIdentity::factory()->for($world['connection'], 'connection')->for($linked)->create();
+    app()->instance(
+        OutboundWebhookDestination::class,
+        new OutboundWebhookDestination(fn (): array => ['1.1.1.1']),
+    );
+
+    $this->actingAs($world['admin'])->put(route('dashboard.account.security.oidc.update'), [
+        'name' => 'A clearer label',
+        'issuer_url' => $world['connection']->issuer_url,
+        'client_id' => $world['connection']->client_id,
+        'client_secret' => 'rotated-secret',
+        'is_enabled' => '1',
+    ])->assertRedirect(route('dashboard.account.security.show'));
+
+    expect($world['connection']->fresh()->client_secret)->toBe('rotated-secret')
+        ->and(OidcIdentity::query()->whereKey($identity->id)->exists())->toBeTrue()
+        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['identity_links_cleared'])->toBe(0);
 });
 
 test('OIDC settings require account administration and a public HTTPS issuer', function (): void {

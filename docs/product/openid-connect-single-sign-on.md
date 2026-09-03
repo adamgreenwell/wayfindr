@@ -17,6 +17,10 @@ The page shows the exact callback URL to register with the provider. A saved
 secret is never displayed again. Leaving the secret field blank during an
 edit keeps the existing value.
 
+Changing the issuer URL or client ID clears existing agent links; those agents
+must pass the verified-email linking gate again on their next sign-in. Renaming
+the provider or rotating only its client secret keeps the links.
+
 OIDC discovery and every endpoint it names must resolve to public HTTPS
 addresses. Wayfindr refuses local and private network destinations so an
 account setting cannot be used to reach infrastructure inside the server's

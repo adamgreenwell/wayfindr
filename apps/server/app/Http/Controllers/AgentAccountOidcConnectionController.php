@@ -83,6 +83,7 @@ final class AgentAccountOidcConnectionController extends Controller
                 'client_id' => trim($validated['client_id']),
                 'is_enabled' => (bool) ($validated['is_enabled'] ?? false),
             ];
+            $identityLinksCleared = 0;
 
             if (is_string($replacementSecret) && $replacementSecret !== '') {
                 $values['client_secret'] = $replacementSecret;
@@ -96,6 +97,14 @@ final class AgentAccountOidcConnectionController extends Controller
                 $connection->account()->associate($account);
                 $connection->save();
             } else {
+                // OIDC subjects are scoped to the issuer and may also be
+                // pairwise per client. Carrying a binding across either
+                // boundary could let the new authority reuse an opaque value
+                // that belonged to somebody else under the old one.
+                if ($connection->issuer_url !== $issuerUrl || $connection->client_id !== $values['client_id']) {
+                    $identityLinksCleared = $connection->identities()->delete();
+                }
+
                 $connection->update($values);
             }
 
@@ -109,6 +118,7 @@ final class AgentAccountOidcConnectionController extends Controller
                 'metadata' => [
                     'enabled' => $connection->is_enabled,
                     'name' => $connection->name,
+                    'identity_links_cleared' => $identityLinksCleared,
                 ],
                 'occurred_at' => now(),
             ]);
