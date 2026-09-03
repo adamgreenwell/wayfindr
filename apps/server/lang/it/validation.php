@@ -143,6 +143,10 @@ return [
         'retention_days' => 'Periodo di conservazione',
         'prefix' => 'Prefisso delle copie',
         'root' => 'Prefisso della chiave',
+        'archive' => 'Archivio di sicurezza',
+        'confirm_name' => 'Nome dell’istanza',
+        'acknowledge' => 'Conferma della perdita dei dati',
+        'workers_stopped' => 'Conferma dell’arresto delle scritture',
 
         // The articles page. `body` was already here for the reply composer;
         // `title` was not, so an over-long article title produced a correct

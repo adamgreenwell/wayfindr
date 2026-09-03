@@ -1618,6 +1618,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('operator.settings.storage.edit'),
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
+        route('operator.settings.backups.restore'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -2095,6 +2096,7 @@ test('every extracted page translates its document title', function (): void {
         route('operator.settings.storage.edit'),
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
+        route('operator.settings.backups.restore'),
     ];
 
     foreach ($urls as $url) {
@@ -3864,6 +3866,7 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('operator.settings.storage.edit'),
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
+        route('operator.settings.backups.restore'),
     ];
 
     foreach (['de', 'en'] as $locale) {
@@ -3944,6 +3947,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('operator.settings.storage.edit'),
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
+        route('operator.settings.backups.restore'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
 

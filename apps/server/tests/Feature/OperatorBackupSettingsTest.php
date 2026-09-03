@@ -984,6 +984,215 @@ test('the restore page lists local archives when the queue and cache are durable
         ->assertSee('wayfindr-backup-20260728-100000-aaaaaa.tar.gz');
 });
 
+test('the restore confirmation page follows the operator language without weakening its warnings', function (string $locale, array $copy): void {
+    $archive = 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz';
+    seedLocalArchives([$archive]);
+    config()->set('app.name', 'Datenpunkt <instance>');
+
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('preflight')->once()->andReturn([
+        'archive_version' => 'v0.2.0-datenpunkt',
+        'running_version' => 'v0.3.0-datenpunkt',
+        'version_skew' => true,
+    ]);
+    $this->app->instance(RestoreService::class, $restores);
+
+    $response = $this->actingAs(backupOperator($locale))
+        ->get(route('operator.settings.backups.restore', ['archive' => $archive]));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($copy['title'])
+        ->assertSee($copy['choose'])
+        ->assertSee($copy['confirm'])
+        ->assertSee($copy['version_warning'])
+        ->assertSee($copy['danger'])
+        ->assertSee($copy['stop_comment'])
+        ->assertSee($copy['start_comment'])
+        ->assertSee($copy['acknowledge'])
+        ->assertSee($copy['restore'])
+        ->assertSee('Datenpunkt &lt;instance&gt;', false)
+        ->assertDontSee('Datenpunkt <instance>', false)
+        ->assertDontSee('Replace this install’s data')
+        ->assertDontSee('Restoring replaces ALL current data')
+        ->assertDontSee('before — leave backup-queue running')
+        ->assertDontSee('after the restore completes')
+        ->assertDontSee('Restore now');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        '//span[@class="meta-value" and normalize-space(.)="'.$archive.'"]' => $archive,
+        '//span[@class="meta-value" and normalize-space(.)="v0.2.0-datenpunkt"]' => 'v0.2.0-datenpunkt',
+        '//span[@class="meta-value" and normalize-space(.)="v0.3.0-datenpunkt"]' => 'v0.3.0-datenpunkt',
+        '//strong[normalize-space(.)="Datenpunkt <instance>"]' => 'Datenpunkt <instance>',
+        '//input[@id="confirm_name"]' => null,
+        '//code[normalize-space(.)="php artisan migrate --force"]' => 'php artisan migrate --force',
+        '//code[normalize-space(.)="php artisan up"]' => 'php artisan up',
+        '//code/span[normalize-space(.)="docker compose stop queue scheduler"]' => 'docker compose stop queue scheduler',
+        '//code/span[normalize-space(.)="docker compose start queue scheduler"]' => 'docker compose start queue scheduler',
+    ] as $query => $text) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->toBeInstanceOf(DOMElement::class, "missing {$query}")
+            ->and($node->hasAttribute('lang'))->toBeTrue("missing language boundary on {$query}")
+            ->and($node->getAttribute('lang'))->toBe('');
+
+        if ($text !== null) {
+            expect(trim($node->textContent))->toBe($text);
+        }
+    }
+})->with([
+    'German' => ['de', [
+        'title' => 'Aus Sicherung wiederherstellen',
+        'choose' => 'Archiv auswählen',
+        'confirm' => 'Wiederherstellung bestätigen',
+        'version_warning' => 'Da Schema und Code möglicherweise nicht übereinstimmen',
+        'danger' => 'Die Wiederherstellung ersetzt ALLE aktuellen Daten',
+        'stop_comment' => 'vorher — backup-queue weiterlaufen lassen',
+        'start_comment' => 'nach Abschluss der Wiederherstellung',
+        'acknowledge' => 'Ich verstehe, dass dadurch ALLE aktuellen Daten GELÖSCHT werden',
+        'restore' => 'Jetzt wiederherstellen',
+    ]],
+    'Italian' => ['it', [
+        'title' => 'Ripristino da una copia di sicurezza',
+        'choose' => 'Scelta di un archivio',
+        'confirm' => 'Conferma del ripristino',
+        'version_warning' => 'potrebbe esserci una mancata corrispondenza tra schema e codice',
+        'danger' => 'Il ripristino sostituisce TUTTI i dati attuali',
+        'stop_comment' => 'prima — lasciare backup-queue in esecuzione',
+        'start_comment' => 'dopo il completamento del ripristino',
+        'acknowledge' => 'Ho compreso che questa operazione CANCELLA tutti i dati attuali',
+        'restore' => 'Ripristina ora',
+    ]],
+]);
+
+test('restore durability guidance follows the operator language and isolates configuration values', function (string $locale, string $heading, string $issue): void {
+    config()->set('queue.connections.backups.driver', 'datenpunkt-driver');
+
+    $response = $this->actingAs(backupOperator($locale))
+        ->get(route('operator.settings.backups.restore'));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($heading)
+        ->assertSee($issue)
+        ->assertSee('datenpunkt-driver')
+        ->assertSee('BACKUP_QUEUE_DRIVER=redis')
+        ->assertDontSee('The backup queue must use Redis');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach (['datenpunkt-driver', 'BACKUP_QUEUE_DRIVER=redis'] as $value) {
+        $node = $xpath->query('//li//span[normalize-space(.)="'.$value.'"]')->item(0);
+
+        expect($node)->toBeInstanceOf(DOMElement::class, "missing {$value}")
+            ->and($node->hasAttribute('lang'))->toBeTrue()
+            ->and($node->getAttribute('lang'))->toBe('');
+    }
+
+    $command = $xpath->query('//code[contains(normalize-space(.), "php artisan wayfindr:restore")]')->item(0);
+
+    expect($command)->toBeInstanceOf(DOMElement::class)
+        ->and($command->hasAttribute('lang'))->toBeTrue()
+        ->and($command->getAttribute('lang'))->toBe('');
+})->with([
+    'German' => ['de', 'Wiederherstellung über die Oberfläche ist hier nicht verfügbar', 'Die Sicherungswarteschlange muss Redis verwenden'],
+    'Italian' => ['it', 'Il ripristino tramite l’interfaccia non è disponibile', 'La coda delle copie deve usare Redis'],
+]);
+
+test('restore confirmation validation answers in the operator language', function (string $locale, array $copy): void {
+    Bus::fake();
+    config()->set('app.name', 'datenpunkt-prod');
+    seedLocalArchives(['wayfindr-backup-20260728-100000-aaaaaa.tar.gz']);
+
+    $this->actingAs(backupOperator($locale))
+        ->post(route('operator.settings.backups.restore.run'), [
+            'archive' => 'wayfindr-backup-19990101-000000-ffffff.tar.gz',
+            'confirm_name' => 'wrong-name',
+        ])
+        ->assertSessionHasErrors(['archive', 'confirm_name', 'acknowledge', 'workers_stopped']);
+
+    expect((string) session('errors')->first('archive'))->toBe($copy['archive'])
+        ->and((string) session('errors')->first('confirm_name'))->toBe($copy['name'])
+        ->and((string) session('errors')->first('acknowledge'))->toBe($copy['acknowledge'])
+        ->and((string) session('errors')->first('workers_stopped'))->toBe($copy['workers']);
+
+    Bus::assertNotDispatched(RunRestoreJob::class);
+})->with([
+    'German' => ['de', [
+        'archive' => 'Wählen Sie ein Archiv aus der Liste.',
+        'name' => 'Der eingegebene Name stimmt nicht genau mit dieser Instanz überein.',
+        'acknowledge' => 'Sie müssen bestätigen, dass bei der Wiederherstellung alle aktuellen Daten gelöscht werden.',
+        'workers' => 'Halten Sie zuerst Schreibvorgänge an: Stoppen Sie die Prozesse für Hintergrundwarteschlange und Zeitplaner, stellen Sie sicher, dass keine lang laufenden Uploads aktiv sind, und bestätigen Sie anschließend. Die Wiederherstellung kann dies nicht übernehmen.',
+    ]],
+    'Italian' => ['it', [
+        'archive' => 'Scelga un archivio dall’elenco.',
+        'name' => 'Il nome inserito non corrisponde esattamente a questa istanza.',
+        'acknowledge' => 'È necessario confermare che il ripristino cancella tutti i dati attuali.',
+        'workers' => 'Prima arresti le scritture: fermi i processi della coda in background e dell’utilità di pianificazione, si assicuri che non siano presenti caricamenti di lunga durata, quindi confermi. Il ripristino non può farlo automaticamente.',
+    ]],
+]);
+
+test('a restore preflight failure keeps translated guidance separate from escaped diagnostics', function (): void {
+    $archive = 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz';
+    seedLocalArchives([$archive]);
+
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('preflight')->once()->andThrow(new RuntimeException('Datenpunkt <broken>'));
+    $this->app->instance(RestoreService::class, $restores);
+
+    $this->actingAs(backupOperator('de'))
+        ->get(route('operator.settings.backups.restore', ['archive' => $archive]))
+        ->assertOk()
+        ->assertSee('Dieses Archiv konnte nicht gelesen werden')
+        ->assertSee('<span lang="">Datenpunkt &lt;broken&gt;</span>', false)
+        ->assertDontSee('Could not read that archive');
+});
+
+test('queued and pending restore feedback follows the operator language', function (string $locale, array $copy): void {
+    Bus::fake();
+    config()->set('app.name', 'datenpunkt-prod');
+    $archive = 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz';
+    seedLocalArchives([$archive]);
+    stubPassingPreflight();
+    $operator = backupOperator($locale);
+    $payload = [
+        'archive' => $archive,
+        'confirm_name' => 'datenpunkt-prod',
+        'acknowledge' => '1',
+        'workers_stopped' => '1',
+    ];
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.backups.restore.run'), $payload)
+        ->assertOk()
+        ->assertSee($copy['queued'])
+        ->assertSee('<span lang="">'.$archive.'</span>', false)
+        ->assertDontSee('Restore queued from');
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.backups.restore.run'), $payload)
+        ->assertOk()
+        ->assertSee($copy['pending'])
+        ->assertDontSee('A restore is already queued or running');
+})->with([
+    'German' => ['de', [
+        'queued' => 'Wiederherstellung aus',
+        'pending' => 'Eine Wiederherstellung befindet sich bereits in der Warteschlange',
+    ]],
+    'Italian' => ['it', [
+        'queued' => 'Ripristino da',
+        'pending' => 'Un ripristino è già in coda',
+    ]],
+]);
+
 test('the restore page points to the CLI when the queue is database-backed', function (): void {
     config()->set('queue.connections.backups.driver', 'database');
 

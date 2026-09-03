@@ -20,7 +20,7 @@
                 <h2 id="backup-run-heading">{{ __('operator.backups.run_heading') }}</h2>
                 <p class="lede">{!! __('operator.backups.run_lede', [
                     'history' => '<a class="text-link" href="'.e(route('operator.settings.backups.history')).'">'.e(__('operator.backups.history_link')).'</a>',
-                    'restore' => '<a class="text-link" href="'.e(route('operator.settings.backups.restore')).'">'.e(__('operator.backups.restore_link')).'</a>',
+                    'restore_link' => '<a class="text-link" href="'.e(route('operator.settings.backups.restore')).'">'.e(__('operator.backups.restore_link')).'</a>',
                 ]) !!}</p>
             </div>
             <form method="POST" action="{{ route('operator.settings.backups.run') }}">
