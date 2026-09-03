@@ -146,9 +146,11 @@ final class OperatorDashboardPresenter
         $base = "operator.dashboard.smoke.steps.{$key}";
         $summary = self::feedback($base.'.summary');
         $action = self::feedback($base.'.action');
+        $statusLabel = self::statusLabel($step);
 
         if ($key === 'cobrowse_transport_smoke' && isset($checks['cobrowse_transport'])) {
             $summary = $checks['cobrowse_transport']['summary'];
+            $statusLabel = $checks['cobrowse_transport']['status_label'];
 
             if (($step['commands'] ?? []) === []) {
                 $action = $checks['cobrowse_transport']['action'];
@@ -159,7 +161,7 @@ final class OperatorDashboardPresenter
             ...$step,
             'action' => $action,
             'label' => __($base.'.label'),
-            'status_label' => self::statusLabel($step),
+            'status_label' => $statusLabel,
             'summary' => $summary,
         ];
     }

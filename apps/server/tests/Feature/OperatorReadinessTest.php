@@ -152,6 +152,17 @@ test('operator dashboard localizes its interface while isolating runtime values'
                 1,
                 "the {$locale} realtime status is repeated",
             );
+
+        $cobrowseSmokeLabel = __('operator.dashboard.smoke.steps.cobrowse_transport_smoke.label', [], $locale);
+        $cobrowseSmokeCard = $xpath->query(sprintf(
+            '//h3[normalize-space(.)="%s"]/ancestor::article[1]',
+            $cobrowseSmokeLabel,
+        ))->item(0);
+
+        expect($cobrowseSmokeCard)->not->toBeNull('the cobrowse smoke card did not render')
+            ->and($cobrowseSmokeCard->textContent)->toContain(
+                __('operator.readiness.status.no_data', [], $locale),
+            );
     }
 });
 
