@@ -207,6 +207,34 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
         ->and($pendingSilent->fresh()->attentionState())->toBe('waiting_on_customer', 'pending with no message at all')
         ->and($pendingSenderless->fresh()->attentionState())->toBe('waiting_on_customer', 'pending with a senderless message');
 
+    // An integration is the latest ACTIVITY, but the prior participant still
+    // decides who owes the next human reply. Cover both directions so the SQL
+    // expression cannot silently regress to the latest message again.
+    $integrationAfterVisitor = $ticketOnItsOwnConversation('open', $assignee->id);
+    $integrationAfterAgent = $ticketOnItsOwnConversation('open', $assignee->id);
+    array_push($handBuilt, $integrationAfterVisitor->id, $integrationAfterAgent->id);
+
+    foreach ([
+        [$integrationAfterVisitor, Visitor::class, Visitor::query()->firstOrFail()->id],
+        [$integrationAfterAgent, User::class, $assignee->id],
+    ] as [$ticket, $senderType, $senderId]) {
+        ConversationMessage::factory()->create([
+            'conversation_id' => $ticket->conversation_id,
+            'sender_type' => $senderType,
+            'sender_id' => $senderId,
+            'created_at' => now()->subMinutes(5),
+        ]);
+        ConversationMessage::factory()->create([
+            'conversation_id' => $ticket->conversation_id,
+            'sender_type' => ApiToken::class,
+            'sender_id' => ApiToken::factory()->for($account)->create()->id,
+            'created_at' => now()->subMinute(),
+        ]);
+    }
+
+    expect($integrationAfterVisitor->fresh()->attentionState())->toBe('needs_reply')
+        ->and($integrationAfterAgent->fresh()->attentionState())->toBe('waiting_on_customer');
+
     expect($mixedDates->fresh()->attentionState())->toBe('needs_reply',
         'the fixture no longer separates a MAX from a descending sort')
         ->and($allUndated->fresh()->attentionState())->toBe('needs_agent',
@@ -222,7 +250,7 @@ test('the SQL attention state agrees with the PHP one, ticket by ticket', functi
     expect($inSql)->not->toBeEmpty();
 
     $tickets = Ticket::query()
-        ->with(['conversation.latestMessage', 'latestEscalationEvent'])
+        ->with(['conversation.latestMessage', 'conversation.latestParticipantMessage', 'latestEscalationEvent'])
         ->get();
 
     $disagreements = [];

@@ -159,6 +159,7 @@ class AgentTicketQueueController extends Controller
                 'auditEvents' => fn ($query) => $query->whereIn('action', TicketExternalIssueState::trackedAuditActions()),
                 'conversation.latestAgentMessage',
                 'conversation.latestMessage',
+                'conversation.latestParticipantMessage',
                 'externalLinks',
                 'labels',
                 'latestEscalationEvent.actor',

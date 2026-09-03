@@ -127,12 +127,7 @@ class AgentDashboardController extends Controller
         $definitions = $this->conversationNextStepDefinitions();
         $counts = [
             'new_activity' => (clone $visibleOpenConversations)->withNewActivityFor($agent)->count(),
-            'needs_reply' => (clone $visibleOpenConversations)
-                ->where(function ($query): void {
-                    $query->whereDoesntHave('messages')
-                        ->orWhereHas('latestMessage', fn ($query) => $query->where('sender_type', '!=', User::class));
-                })
-                ->count(),
+            'needs_reply' => (clone $visibleOpenConversations)->needsHumanReply()->count(),
             'assigned_to_me' => (clone $visibleOpenConversations)->where('assigned_agent_id', $agent->id)->count(),
             'unassigned' => (clone $visibleOpenConversations)->whereNull('assigned_agent_id')->count(),
         ];
@@ -212,7 +207,7 @@ class AgentDashboardController extends Controller
 
         $openTicketCount = (clone $visibleOpenTickets)->count();
         $tickets = (clone $visibleOpenTickets)
-            ->with(['conversation.latestMessage', 'latestEscalationEvent', 'site'])
+            ->with(['conversation.latestMessage', 'conversation.latestParticipantMessage', 'latestEscalationEvent', 'site'])
             ->latest('updated_at')
             ->latest('id')
             ->get();

@@ -144,7 +144,7 @@ class AgentVisitorController extends Controller
     private function visitorConversations(Visitor $visitor): Collection
     {
         return Conversation::query()
-            ->with(['assignedAgent', 'latestMessage', 'tickets'])
+            ->with(['assignedAgent', 'latestMessage', 'latestParticipantMessage', 'tickets'])
             ->where('site_id', $visitor->site_id)
             ->where('visitor_id', $visitor->id)
             ->latest('last_message_at')
@@ -160,7 +160,7 @@ class AgentVisitorController extends Controller
     private function visitorTickets(Visitor $visitor): Collection
     {
         return Ticket::query()
-            ->with(['assignee', 'conversation.latestMessage'])
+            ->with(['assignee', 'conversation.latestMessage', 'conversation.latestParticipantMessage'])
             ->where('account_id', $visitor->site->account_id)
             ->where('site_id', $visitor->site_id)
             ->where('requester_id', $visitor->id)
@@ -330,7 +330,7 @@ class AgentVisitorController extends Controller
     private function activeConversationCandidates(Visitor $visitor): Collection
     {
         return Conversation::query()
-            ->with('latestMessage')
+            ->with(['latestMessage', 'latestParticipantMessage'])
             ->where('site_id', $visitor->site_id)
             ->where('visitor_id', $visitor->id)
             ->where('status', '!=', 'closed')
@@ -346,7 +346,7 @@ class AgentVisitorController extends Controller
     private function activeTicketCandidates(Visitor $visitor): Collection
     {
         return Ticket::query()
-            ->with('conversation.latestMessage')
+            ->with(['conversation.latestMessage', 'conversation.latestParticipantMessage'])
             ->where('account_id', $visitor->site->account_id)
             ->where('site_id', $visitor->site_id)
             ->where('requester_id', $visitor->id)

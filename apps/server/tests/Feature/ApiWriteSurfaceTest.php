@@ -17,6 +17,7 @@ use App\Notifications\TicketAssigned;
 use App\Support\Reporting\ReportingScope;
 use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\SupportReport;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
@@ -383,6 +384,82 @@ test('an API message does not impersonate a human response in reporting', functi
         ->and($conversation->fresh()->attentionState())->toBe('needs_reply')
         ->and($ticket->fresh()->attentionState())->toBe('needs_reply')
         ->and(Ticket::query()->whereKey($ticket->id)->whereAttentionState('needs_reply')->exists())->toBeTrue();
+});
+
+test('integration activity preserves the human reply boundary and visitor wait clock', function (): void {
+    Event::fake([ConversationMessageCreated::class]);
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-03 14:00:00', 'UTC'));
+
+    try {
+        $world = apiWriteWorld();
+        $visitorMessageAt = now()->subHour();
+        $conversation = Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+            'support_code' => 'WF-WAITCLOCK',
+            'created_at' => now()->subHours(2),
+            'last_message_at' => $visitorMessageAt,
+        ]);
+        ConversationMessage::factory()->for($conversation)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $world['visitor']->id,
+            'created_at' => $visitorMessageAt,
+        ]);
+        $ticket = Ticket::factory()
+            ->for($world['account'])
+            ->for($world['site'])
+            ->for($conversation)
+            ->for($world['visitor'], 'requester')
+            ->for($world['agent'], 'assignee')
+            ->create();
+
+        $this->postJson('/api/v1/conversations/WF-WAITCLOCK/messages', [
+            'body' => 'Automated follow-up after an unanswered visitor message.',
+        ], apiWriteHeaders($world, 'wait-clock'))->assertCreated();
+
+        $conversation = $conversation->fresh()->load(['latestMessage', 'latestParticipantMessage']);
+        $ticket = $ticket->fresh()->load(['conversation.latestMessage', 'conversation.latestParticipantMessage']);
+        $report = new SupportReport(
+            ReportingScope::for($world['account'], $world['agent']),
+            ReportingWindow::ofDays(30),
+        );
+
+        expect($conversation->last_message_at->equalTo(now()))->toBeTrue()
+            ->and($conversation->attentionState())->toBe('needs_reply')
+            ->and($conversation->queueTimingContext()['wait_since']->equalTo($visitorMessageAt))->toBeTrue()
+            ->and($conversation->queueTimingContext()['wait_key'])->toBe('waiting_on_reply')
+            ->and($ticket->attentionState())->toBe('needs_reply')
+            ->and($ticket->queueTimingContext()['wait_since']->equalTo($visitorMessageAt))->toBeTrue()
+            ->and($ticket->queueTimingContext()['wait_key'])->toBe('waiting_on_reply')
+            ->and($report->queueHealth()['oldest_wait_seconds'])->toBe(3600);
+
+        $answered = Conversation::factory()->for($world['site'])->for($world['visitor'])->create([
+            'support_code' => 'WF-ANSWERED',
+            'created_at' => now()->subHours(3),
+            'last_message_at' => now()->subMinutes(30),
+        ]);
+        ConversationMessage::factory()->for($answered)->create([
+            'sender_type' => Visitor::class,
+            'sender_id' => $world['visitor']->id,
+            'created_at' => now()->subHours(2),
+        ]);
+        $agentMessageAt = now()->subMinutes(30);
+        ConversationMessage::factory()->for($answered)->create([
+            'sender_type' => User::class,
+            'sender_id' => $world['agent']->id,
+            'created_at' => $agentMessageAt,
+        ]);
+
+        $this->postJson('/api/v1/conversations/WF-ANSWERED/messages', [
+            'body' => 'Automated follow-up after the human response.',
+        ], apiWriteHeaders($world, 'answered-clock'))->assertCreated();
+
+        $answered = $answered->fresh()->load(['latestMessage', 'latestParticipantMessage']);
+
+        expect($answered->attentionState())->toBe('waiting_on_visitor')
+            ->and($answered->queueTimingContext()['wait_since']->equalTo($agentMessageAt))->toBeTrue()
+            ->and(Conversation::query()->whereKey($answered->id)->needsHumanReply()->exists())->toBeFalse();
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
 });
 
 test('messages cannot be posted to archived or unreachable conversations', function (): void {

@@ -133,6 +133,7 @@ class AgentConversationQueueController extends Controller
                 'latestCobrowseSession',
                 'latestAgentMessage',
                 'latestMessage',
+                'latestParticipantMessage',
                 'readStates' => fn ($query) => $query->where('user_id', $agent->id),
                 'site',
                 'visitor',
@@ -325,10 +326,7 @@ class AgentConversationQueueController extends Controller
         $presenceQuery = fn (): Builder => $this->visibleOpenConversationQuery($agent, $conversationSite, $conversationSearch);
 
         $needsReplyQuery = $laneQuery();
-        $needsReplyQuery->where(function (Builder $query): void {
-            $query->whereDoesntHave('messages')
-                ->orWhereHas('latestMessage', fn (Builder $query) => $query->where('sender_type', '!=', User::class));
-        });
+        $needsReplyQuery->needsHumanReply();
 
         $activeVisitorsQuery = $presenceQuery();
         $this->applyConversationPresenceFilter($activeVisitorsQuery, 'active');

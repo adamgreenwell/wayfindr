@@ -83,12 +83,7 @@ final class ConversationQueueQuery
     {
         return $query
             ->when($lane === 'new_activity', fn (Builder $query) => $query->withNewActivityFor($agent))
-            ->when($lane === 'needs_reply', function (Builder $query): void {
-                $query->where(function (Builder $query): void {
-                    $query->whereDoesntHave('messages')
-                        ->orWhereHas('latestMessage', fn (Builder $query) => $query->where('sender_type', '!=', User::class));
-                });
-            })
+            ->when($lane === 'needs_reply', fn (Builder $query) => $query->needsHumanReply())
             ->when($lane === 'assigned_to_me', fn (Builder $query) => $query->where('assigned_agent_id', $agent->id))
             ->when($lane === 'unassigned', fn (Builder $query) => $query->whereNull('assigned_agent_id'))
             ->when($lane === 'cobrowse_attention', fn (Builder $query) => $query->withActiveCobrowseSession());
