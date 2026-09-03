@@ -123,9 +123,7 @@ class AgentExternalIssueProviderConnectionController extends Controller
         if (is_numeric($siteId) && $account->sites()->whereKey((int) $siteId)->exists()) {
             return redirect()
                 ->route('dashboard.sites.show', (int) $siteId)
-                // The site page is not extracted yet, so its flash remains
-                // English until that surface can translate the key itself.
-                ->with('status', 'Provider connection saved.');
+                ->with('status', 'site_settings.flash.connection_saved');
         }
 
         return redirect()

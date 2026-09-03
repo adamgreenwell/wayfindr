@@ -8,9 +8,9 @@
  * marks them with an unknown language and passes escaped markup into the few
  * translated sentences that wrap them.
  *
- * Connection creation is also available from the still-English site page. Its
- * success sentence therefore stays English on that path; only the explicit
- * return to this page flashes the key below.
+ * Connection creation is also available from Site Settings. Both surfaces are
+ * extracted, so the shared write resolves its feedback in the language of the
+ * page that submitted it rather than owning a language itself.
  */
 
 return [

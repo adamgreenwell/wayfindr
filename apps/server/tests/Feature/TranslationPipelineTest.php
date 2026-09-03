@@ -1269,6 +1269,10 @@ test('an italian plural branch inflects something', function (): void {
         // -- and this string is a bare `:count token` with no article to agree
         // with it.
         'api_tokens.list.total',
+        // `ticket in attesa` is an invariable noun phrase. The number is the
+        // only part that changes, and adding an adjective would change the
+        // product state merely to satisfy this mechanical check.
+        'site_settings.load.pending_tickets.count',
         // `in sospeso` is a prepositional phrase, invariable by construction.
         'tickets.summary.heading.pending',
         // Both branches are one noun phrase (`Visualizzazione di ...`); the

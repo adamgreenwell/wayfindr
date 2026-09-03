@@ -161,7 +161,7 @@ test('account admins can update mask selectors for their account site', function
             'mask_selectors' => " [data-secret] \n\ninput[name=\"token\"]\n[data-secret]\n",
         ])
         ->assertRedirect("/dashboard/sites/{$site->id}")
-        ->assertSessionHas('status', 'Site privacy settings saved.');
+        ->assertSessionHas('status', 'site_settings.flash.privacy_saved');
 
     expect($site->fresh()->settings)->toBe([
         'mask_selectors' => ['[data-secret]', 'input[name="token"]'],
@@ -186,7 +186,7 @@ test('account admins can configure extra sensitive field terms for their account
             'mask_terms' => " contraseña \n\nNHS number\ncontraseña\n",
         ])
         ->assertRedirect("/dashboard/sites/{$site->id}")
-        ->assertSessionHas('status', 'Site privacy settings saved.');
+        ->assertSessionHas('status', 'site_settings.flash.privacy_saved');
 
     expect($site->fresh()->settings)->toBe([
         'mask_selectors' => ['[data-secret]'],

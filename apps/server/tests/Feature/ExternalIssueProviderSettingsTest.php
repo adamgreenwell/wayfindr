@@ -38,7 +38,7 @@ test('account admins can create encrypted external issue provider connections', 
             'capabilities' => ['create_issue', 'add_comment'],
         ])
         ->assertRedirect("/dashboard/sites/{$site->id}")
-        ->assertSessionHas('status', 'Provider connection saved.');
+        ->assertSessionHas('status', 'site_settings.flash.connection_saved');
 
     $connection = ExternalIssueProviderConnection::query()->firstOrFail();
 
@@ -83,7 +83,7 @@ test('account admins can map a site to an external provider project', function (
             'web_url' => 'https://github.com/adamgreenwell/wayfindr',
         ])
         ->assertRedirect("/dashboard/sites/{$site->id}")
-        ->assertSessionHas('status', 'External issue project mapped.');
+        ->assertSessionHas('status', 'site_settings.flash.project_mapped');
 
     $mapping = SiteExternalIssueProject::query()->firstOrFail();
 
@@ -227,7 +227,8 @@ test('site settings show external issue sync health without raw provider failure
         ->assertSee('Last failure')
         ->assertSee('GitHub')
         ->assertSee('adamgreenwell/wayfindr')
-        ->assertSee('Status 422')
+        ->assertSee('Status')
+        ->assertSee('422')
         ->assertDontSee('ghp_super_secret_sync_token')
         ->assertDontSee('Authorization: Bearer')
         ->assertDontSee('raw provider body should stay private');
@@ -275,7 +276,7 @@ test('site external issue health is scoped to the current account and site', fun
         ->assertOk()
         ->assertSee('External issue health')
         ->assertSee('1 linked')
-        ->assertSee('0 sync failed')
+        ->assertSee('0 syncs failed')
         ->assertSee('No recent external sync failures for this site.')
         ->assertDontSee('other/private')
         ->assertDontSee('Status 401');

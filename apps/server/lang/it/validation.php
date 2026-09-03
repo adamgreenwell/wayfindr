@@ -36,6 +36,7 @@ return [
     'confirmed' => 'La conferma del campo :attribute non corrisponde.',
     'current_password' => 'La password non è corretta.',
     'date' => 'Il campo :attribute deve contenere una data valida.',
+    'date_format' => 'Il campo :attribute deve rispettare il formato :format.',
     'email' => 'Il campo :attribute deve contenere un indirizzo email valido.',
     'exists' => 'Il valore selezionato per :attribute non esiste.',
     'file' => 'Il campo :attribute deve contenere un file.',
@@ -73,7 +74,14 @@ return [
         'uncompromised' => 'Il campo :attribute è comparso in una violazione di dati. Ne scelga un altro.',
     ],
 
-    'custom' => [],
+    'custom' => [
+        'availability_from.*' => [
+            'date_format' => 'Il campo Orario di apertura deve rispettare il formato :format.',
+        ],
+        'availability_to.*' => [
+            'date_format' => 'Il campo Orario di chiusura deve rispettare il formato :format.',
+        ],
+    ],
 
     /*
      * Field names as an agent sees them on the form, not as the database
@@ -183,5 +191,31 @@ return [
         // La pagina dell’elenco dell’account.
         'account_role' => 'Ruolo dell’account',
         'send_welcome_email' => 'Email di benvenuto',
+
+        // Le impostazioni del sito.
+        'domain' => 'Dominio',
+        'color' => 'Colore del sito',
+        'mask_selectors' => 'Selettori da mascherare',
+        'mask_terms' => 'Parole per campi sensibili',
+        'rating_enabled' => 'Domanda di valutazione',
+        'rating_intro' => 'Testo della domanda di valutazione',
+        'intake_intro' => 'Introduzione alla raccolta iniziale',
+        'intake_fields' => 'Campi della raccolta iniziale',
+        'presence_enabled' => 'Presenza in tempo reale',
+        'presence_page_urls' => 'Indirizzi di pagina della presenza',
+        'widget_locale' => 'Lingua del widget',
+        'availability_enabled' => 'Orari di supporto',
+        'availability_timezone' => 'Fuso orario del supporto',
+        'availability_away_message' => 'Messaggio di assenza',
+        'availability_open' => 'Giorni di apertura',
+        'availability_from' => 'Orario di apertura',
+        'availability_to' => 'Orario di chiusura',
+        'closure' => 'Durata della chiusura anticipata',
+        'inbound_address' => 'Indirizzo email in ingresso',
+        'widget_accent' => 'Colore principale del widget',
+        'widget_position' => 'Posizione del pulsante del widget',
+        'widget_greeting' => 'Saluto del widget',
+        'widget_placeholder' => 'Segnaposto del widget',
+        'support_agent_ids' => 'Agenti di supporto',
     ],
 ];

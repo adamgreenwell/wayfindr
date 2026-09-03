@@ -310,7 +310,7 @@ test('integration writes answer in the language of the page they return to', fun
     $admin->forceFill(['locale' => 'de'])->save();
     $admin = $admin->fresh();
 
-    // Connection creation is shared with the still-English site page, so the
+    // Connection creation is shared with the now-extracted site page, so the
     // Referer decides the validation language instead of the write route.
     $invalid = [
         'return_to' => 'integrations',
@@ -334,8 +334,8 @@ test('integration writes answer in the language of the page they return to', fun
         ->assertSessionHasErrors('base_url');
 
     expect((string) session('errors')->first('base_url'))
-        ->toContain('valid URL')
-        ->not->toContain('Basis-URL');
+        ->toContain('Basis-URL')
+        ->not->toContain('valid URL');
 
     $this->actingAs($admin)
         ->from(route('dashboard.account.integrations'))
@@ -364,6 +364,22 @@ test('integration writes answer in the language of the page they return to', fun
     expect((string) session('errors')->first('webhook_secret'))
         ->toContain('Webhook-Geheimnis')
         ->not->toContain('webhook secret');
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.sites.show', $fixture['site']))
+        ->post(route('dashboard.external-issue-provider-connections.store'), [
+            'site_id' => $fixture['site']->id,
+            'provider' => 'gitlab',
+            'name' => 'Datenpunkt site connection',
+            'capabilities' => ['create_issue'],
+        ])
+        ->assertRedirect(route('dashboard.sites.show', $fixture['site']))
+        ->assertSessionHas('status', 'site_settings.flash.connection_saved');
+
+    $this->get(route('dashboard.sites.show', $fixture['site']))
+        ->assertOk()
+        ->assertSee('Anbieter-Verbindung gespeichert.')
+        ->assertDontSee('Provider connection saved.');
 
     $admin->forceFill(['locale' => 'it'])->save();
     $admin = $admin->fresh();

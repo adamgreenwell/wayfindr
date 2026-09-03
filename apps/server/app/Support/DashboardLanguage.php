@@ -140,6 +140,28 @@ final class DashboardLanguage
         // the page around them follows the agent running the verification.
         'dashboard.sites.tester',
 
+        // Site Settings and every write that renders validation or lifecycle
+        // feedback back onto it. Stored visitor-facing copy remains authored
+        // data; only the agent-facing controls and explanations are localized.
+        'dashboard.sites.show',
+        'dashboard.sites.update',
+        'dashboard.sites.intake.update',
+        'dashboard.sites.rating.update',
+        'dashboard.sites.presence.update',
+        'dashboard.sites.language.update',
+        'dashboard.sites.availability.update',
+        'dashboard.sites.inbound-address.update',
+        'dashboard.sites.appearance.update',
+        'dashboard.sites.availability.close',
+        'dashboard.sites.availability.reopen',
+        'dashboard.sites.details.update',
+        'dashboard.sites.archive',
+        'dashboard.sites.unarchive',
+        'dashboard.sites.purge',
+        'dashboard.sites.support-agents.update',
+        'dashboard.sites.external-issue-projects.store',
+        'dashboard.sites.external-issue-projects.destroy',
+
         // The ticket workspace and endpoints owned exclusively by it. The
         // assignee and lifecycle writes are deliberately absent: those are
         // also submitted from the conversation's linked-ticket panel, so the
@@ -216,9 +238,9 @@ final class DashboardLanguage
         'dashboard.account.break-glass.close',
 
         // The account integrations page and the two writes that belong only
-        // to it. Connection creation is shared with the still-English site
-        // page, so its locale follows the referring page instead of living in
-        // this route list.
+        // to it. Connection creation is shared with Site Settings, so its
+        // locale follows the referring page instead of living in this route
+        // list independently.
         'dashboard.account.integrations',
         'dashboard.external-issue-provider-connections.webhook-secret.update',
         'dashboard.external-issue-provider-connections.capabilities.update',

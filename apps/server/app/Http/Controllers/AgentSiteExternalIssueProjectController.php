@@ -20,18 +20,27 @@ class AgentSiteExternalIssueProjectController extends Controller
         $this->authorizeSiteAbility($agent, 'view', $site, 404);
         $this->authorizeSiteAbility($agent, 'manageIntegrations', $site);
 
-        $validated = $request->validate([
-            'external_issue_provider_connection_id' => [
-                'required',
-                'integer',
-                Rule::exists('external_issue_provider_connections', 'id')
-                    ->where('account_id', $site->account_id)
-                    ->where('is_enabled', true),
+        $validated = $request->validate(
+            [
+                'external_issue_provider_connection_id' => [
+                    'required',
+                    'integer',
+                    Rule::exists('external_issue_provider_connections', 'id')
+                        ->where('account_id', $site->account_id)
+                        ->where('is_enabled', true),
+                ],
+                'project_key' => ['required', 'string', 'max:255'],
+                'project_name' => ['nullable', 'string', 'max:255'],
+                'web_url' => ['nullable', 'url', 'max:2048'],
             ],
-            'project_key' => ['required', 'string', 'max:255'],
-            'project_name' => ['nullable', 'string', 'max:255'],
-            'web_url' => ['nullable', 'url', 'max:2048'],
-        ]);
+            [],
+            [
+                'external_issue_provider_connection_id' => __('site_settings.external.routing.connection'),
+                'project_key' => __('site_settings.external.routing.project_key'),
+                'project_name' => __('site_settings.external.routing.project_name'),
+                'web_url' => __('site_settings.external.routing.project_url'),
+            ],
+        );
 
         $connection = ExternalIssueProviderConnection::query()
             ->where('account_id', $site->account_id)
@@ -56,7 +65,7 @@ class AgentSiteExternalIssueProjectController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'External issue project mapped.');
+            ->with('status', 'site_settings.flash.project_mapped');
     }
 
     public function destroy(Request $request, Site $site, SiteExternalIssueProject $externalIssueProject): RedirectResponse
@@ -81,7 +90,7 @@ class AgentSiteExternalIssueProjectController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'External issue project removed.');
+            ->with('status', 'site_settings.flash.project_removed');
     }
 
     private function authorizeSiteAbility(?User $agent, string $ability, Site $site, int $status = 403): void

@@ -28,6 +28,7 @@ return [
     'confirmed' => 'Die Bestätigung für :attribute stimmt nicht überein.',
     'current_password' => 'Das Passwort ist nicht korrekt.',
     'date' => ':attribute muss ein gültiges Datum sein.',
+    'date_format' => ':attribute muss dem Format :format entsprechen.',
     'email' => ':attribute muss eine gültige E-Mail-Adresse sein.',
     'exists' => 'Der gewählte Wert für :attribute existiert nicht.',
     'file' => ':attribute muss eine Datei sein.',
@@ -65,7 +66,14 @@ return [
         'uncompromised' => ':attribute ist in einem Datenleck aufgetaucht. Bitte wählen Sie ein anderes.',
     ],
 
-    'custom' => [],
+    'custom' => [
+        'availability_from.*' => [
+            'date_format' => 'Öffnungszeit muss dem Format :format entsprechen.',
+        ],
+        'availability_to.*' => [
+            'date_format' => 'Schließzeit muss dem Format :format entsprechen.',
+        ],
+    ],
 
     /*
      * Field names as an agent sees them on the form, not as the database
@@ -175,5 +183,31 @@ return [
         // The account roster page.
         'account_role' => 'Kontorolle',
         'send_welcome_email' => 'Willkommens-E-Mail',
+
+        // Die Website-Einstellungen.
+        'domain' => 'Domain',
+        'color' => 'Website-Farbe',
+        'mask_selectors' => 'Selektoren zum Maskieren',
+        'mask_terms' => 'Begriffe für sensible Felder',
+        'rating_enabled' => 'Bewertungsfrage',
+        'rating_intro' => 'Text der Bewertungsfrage',
+        'intake_intro' => 'Einführung der Besucherabfrage',
+        'intake_fields' => 'Felder der Besucherabfrage',
+        'presence_enabled' => 'Live-Anwesenheit',
+        'presence_page_urls' => 'Seitenadressen der Anwesenheit',
+        'widget_locale' => 'Widget-Sprache',
+        'availability_enabled' => 'Supportzeiten',
+        'availability_timezone' => 'Zeitzone der Supportzeiten',
+        'availability_away_message' => 'Abwesenheitsmeldung',
+        'availability_open' => 'Öffnungstage',
+        'availability_from' => 'Öffnungszeit',
+        'availability_to' => 'Schließzeit',
+        'closure' => 'Dauer der vorzeitigen Schließung',
+        'inbound_address' => 'Adresse für eingehende E-Mails',
+        'widget_accent' => 'Akzentfarbe des Widgets',
+        'widget_position' => 'Position der Widget-Schaltfläche',
+        'widget_greeting' => 'Widget-Begrüßung',
+        'widget_placeholder' => 'Platzhalter im Widget',
+        'support_agent_ids' => 'Supportpersonen',
     ],
 ];

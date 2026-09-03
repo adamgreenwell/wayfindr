@@ -131,7 +131,7 @@ test('the site page offers the languages and says what the setting does not deci
         ->get("/dashboard/sites/{$world['site']->id}")
         ->assertOk()
         ->assertSee('What language the widget speaks', false)
-        ->assertSee("Follow the visitor's browser", false)
+        ->assertSee('Follow the visitor’s browser', false)
         ->assertSee('Deutsch (German)', false)
         // The host page's own override outranks this, and an operator reading
         // this screen is the person who would need to know that.
