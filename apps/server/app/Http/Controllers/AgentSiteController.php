@@ -20,6 +20,7 @@ use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
@@ -42,6 +43,8 @@ use Illuminate\View\View;
 
 class AgentSiteController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function index(Request $request): View
     {
         $agent = $request->user();
@@ -1516,20 +1519,42 @@ class AgentSiteController extends Controller
             'support_agent_ids.*.in' => __('site_settings.validation.support_account'),
         ]);
 
-        $beforeAgentIds = $this->eligibleSupportAgentIds($site);
         $afterAgentIds = $this->normalizeAgentIds($validated['support_agent_ids']);
 
-        if (! $this->hasAssignedSiteManager($site, $afterAgentIds)) {
-            throw ValidationException::withMessages([
-                'support_agent_ids' => __('site_settings.validation.support_manager'),
-            ]);
-        }
+        DB::transaction(function () use ($request, $site, $afterAgentIds): void {
+            $this->siteManagerCoverage->lockAccount((int) $site->account_id);
+            $request->user()->unsetRelation('customRole');
+            $this->authorizeSiteAbility($request, 'view', $site, 404);
+            $this->authorizeSiteAbility($request, 'manageAccess', $site);
 
-        $site->supportAgents()->sync($afterAgentIds);
+            $currentAccountAgentIds = $site->account()
+                ->firstOrFail()
+                ->agents()
+                ->whereNull('deactivated_at')
+                ->pluck('users.id')
+                ->map(fn (int|string $id): int => (int) $id)
+                ->all();
 
-        if ($beforeAgentIds !== $afterAgentIds) {
-            $this->recordSiteAccessChange($site, $request->user(), $beforeAgentIds, $afterAgentIds);
-        }
+            if (array_diff($afterAgentIds, $currentAccountAgentIds) !== []) {
+                throw ValidationException::withMessages([
+                    'support_agent_ids' => __('site_settings.validation.support_account'),
+                ]);
+            }
+
+            $beforeAgentIds = $this->eligibleSupportAgentIds($site);
+
+            if (! $this->hasAssignedSiteManager($site, $afterAgentIds)) {
+                throw ValidationException::withMessages([
+                    'support_agent_ids' => __('site_settings.validation.support_manager'),
+                ]);
+            }
+
+            $site->supportAgents()->sync($afterAgentIds);
+
+            if ($beforeAgentIds !== $afterAgentIds) {
+                $this->recordSiteAccessChange($site, $request->user(), $beforeAgentIds, $afterAgentIds);
+            }
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)

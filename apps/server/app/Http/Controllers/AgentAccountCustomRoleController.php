@@ -48,6 +48,7 @@ final class AgentAccountCustomRoleController extends Controller
 
         try {
             $role = DB::transaction(function () use ($actor, $attributes): CustomRole {
+                $this->siteManagerCoverage->lockAccount((int) $actor->account_id);
                 $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key']);
                 $role = CustomRole::query()->create([
                     'account_id' => $actor->account_id,
@@ -77,6 +78,7 @@ final class AgentAccountCustomRoleController extends Controller
 
         try {
             DB::transaction(function () use ($actor, $customRole, $attributes): void {
+                $this->siteManagerCoverage->lockAccount((int) $actor->account_id);
                 $role = $this->roleForActor($actor, $customRole, true);
                 $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key'], (int) $role->id);
                 $this->siteManagerCoverage->ensureRolePermissionsCanChange($role, $attributes['permissions']);

@@ -35,7 +35,7 @@ return [
         'duplicate' => 'A role with this name already exists.',
         'reserved' => 'Owner, Admin, and Agent are reserved built-in role names.',
         'requires' => ':permission requires :required.',
-        'site_manager_required' => 'Keep Manage site access on this role, or assign another site manager to :site first.',
+        'site_manager_required' => ':site needs another assigned site manager before this change can be saved.',
     ],
     'permissions' => [
         'manage_agents' => ['label' => 'Manage agents', 'detail' => 'Add teammates and suspend ordinary agents.'],

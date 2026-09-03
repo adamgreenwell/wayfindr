@@ -22,7 +22,7 @@ return [
         'duplicate' => 'Eine Rolle mit diesem Namen ist bereits vorhanden.',
         'reserved' => 'Owner, Admin und Agent sind reservierte Namen für integrierte Rollen.',
         'requires' => ':permission erfordert :required.',
-        'site_manager_required' => 'Behalten Sie „Website-Zugriff verwalten“ für diese Rolle bei oder weisen Sie zuerst :site eine andere Website-Verwaltung zu.',
+        'site_manager_required' => 'Für :site muss eine andere Website-Verwaltung zugewiesen werden, bevor diese Änderung gespeichert werden kann.',
     ],
     'permissions' => [
         'manage_agents' => ['label' => 'Agenten verwalten', 'detail' => 'Teammitglieder hinzufügen und gewöhnliche Agenten sperren.'],

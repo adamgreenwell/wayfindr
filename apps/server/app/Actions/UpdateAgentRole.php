@@ -21,6 +21,7 @@ class UpdateAgentRole
     public function handle(User $actor, User $target, AccountRole|CustomRole $role): User
     {
         return DB::transaction(function () use ($actor, $target, $role): User {
+            $this->siteManagerCoverage->lockAccount((int) $target->account_id);
             $users = $this->lockUsers($actor, $target);
             $actor = $this->lockedUser($users, $actor);
             $target = $this->lockedUser($users, $target);

@@ -22,7 +22,7 @@ return [
         'duplicate' => 'Esiste già un ruolo con questo nome.',
         'reserved' => 'Owner, Admin e Agent sono nomi riservati ai ruoli integrati.',
         'requires' => ':permission richiede :required.',
-        'site_manager_required' => 'Il permesso Gestisci accesso ai siti deve rimanere assegnato a questo ruolo; in alternativa, occorre prima assegnare un altro responsabile del sito a :site.',
+        'site_manager_required' => 'È necessario assegnare un altro responsabile del sito a :site prima di poter salvare questa modifica.',
     ],
     'permissions' => [
         'manage_agents' => ['label' => 'Gestisci agenti', 'detail' => 'Aggiunta dei membri del team e sospensione degli agenti ordinari.'],

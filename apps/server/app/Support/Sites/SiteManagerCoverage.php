@@ -6,6 +6,7 @@ namespace App\Support\Sites;
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Models\Account;
 use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
@@ -13,6 +14,17 @@ use Illuminate\Validation\ValidationException;
 
 final class SiteManagerCoverage
 {
+    /**
+     * Serialize every operation that can reduce explicit site-manager coverage.
+     *
+     * Call this first inside the surrounding transaction, before locking users
+     * or roles, so concurrent account changes use one stable lock order.
+     */
+    public function lockAccount(int $accountId): void
+    {
+        Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+    }
+
     /** @param list<string> $permissions */
     public function ensureRolePermissionsCanChange(CustomRole $role, array $permissions): void
     {
@@ -38,6 +50,15 @@ final class SiteManagerCoverage
         }
 
         $this->ensureSitesHaveAnotherManager((int) $agent->account_id, [(int) $agent->id], 'account_role');
+    }
+
+    public function ensureAgentCanDeactivate(User $agent): void
+    {
+        if (! $agent->hasAccountPermission(AccountPermission::ManageSiteAccess)) {
+            return;
+        }
+
+        $this->ensureSitesHaveAnotherManager((int) $agent->account_id, [(int) $agent->id], 'agent');
     }
 
     private function roleGrantsSiteManagement(AccountRole|CustomRole $role): bool
