@@ -2,7 +2,7 @@
             <x-page-header :title="$site->name" :subtitle="'Settings for '.($site->domain ?? 'an unconfigured domain')" :back-href="route('dashboard.sites.index')" back-label="Back to sites" />
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             @if ($site->isArchived())

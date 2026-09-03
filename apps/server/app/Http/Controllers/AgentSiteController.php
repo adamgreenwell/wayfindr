@@ -15,6 +15,7 @@ use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorReadiness;
+use App\Support\ReaderNumber;
 use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
@@ -74,6 +75,11 @@ class AgentSiteController extends Controller
         $siteOperationsSnapshot = $this->siteOperationsSnapshot(
             $sites->reject(fn (Site $site): bool => $site->isArchived())->values()
         );
+        $siteInstallHealth = $sites
+            ->mapWithKeys(fn (Site $site): array => [
+                $site->id => $this->localizedSiteInstallHealth($site->latestVisitor),
+            ])
+            ->all();
         [$sites, $siteFilters] = $this->filteredSites($sites, $request);
 
         return view('agent.sites.index', [
@@ -81,7 +87,9 @@ class AgentSiteController extends Controller
             'agent' => $agent,
             'siteEmptyState' => $this->siteEmptyState($siteFilters),
             'siteFilters' => $siteFilters,
+            'siteInstallHealth' => $siteInstallHealth,
             'siteOperationsSnapshot' => $siteOperationsSnapshot,
+            'siteStatusFeedback' => $this->siteIndexStatusFeedback($request->session()->get('status')),
             'sites' => $sites,
         ]);
     }
@@ -100,10 +108,17 @@ class AgentSiteController extends Controller
     {
         $account = $this->account($request);
 
-        $validated = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'domain' => ['nullable', 'string', 'max:255'],
-        ]);
+        $validated = $request->validate(
+            [
+                'name' => ['required', 'string', 'max:255'],
+                'domain' => ['nullable', 'string', 'max:255'],
+            ],
+            [],
+            [
+                'name' => __('sites.create.fields.name'),
+                'domain' => __('sites.create.fields.domain'),
+            ],
+        );
 
         $site = $account->sites()->create([
             'name' => trim($validated['name']),
@@ -121,7 +136,7 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'Site created. Copy the install snippet to finish connecting it.');
+            ->with('status', 'sites.flash.created');
     }
 
     public function show(Request $request, Site $site, OperatorReadiness $readiness): View
@@ -1347,16 +1362,16 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.index')
-            ->with('status', sprintf(
-                'Site "%s" was permanently deleted, along with %d %s, %d %s and %d %s.',
-                $site->name,
-                $summary['conversations'],
-                Str::plural('conversation', $summary['conversations']),
-                $summary['tickets'],
-                Str::plural('ticket', $summary['tickets']),
-                $summary['attachments'],
-                Str::plural('attachment', $summary['attachments']),
-            ));
+            ->with('status', [
+                'key' => 'sites.flash.purged',
+                'parameters' => ['site' => $site->name],
+                // Raw until the destination page renders. The purge is
+                // submitted from the still-English site settings page, while
+                // the translated directory belongs to its reader; formatting
+                // these during the write would freeze the wrong language into
+                // the flash.
+                'counts' => $summary,
+            ]);
     }
 
     /**
@@ -1447,7 +1462,7 @@ class AgentSiteController extends Controller
 
     /**
      * @param  Collection<int, Site>  $sites
-     * @return array{0: Collection<int, Site>, 1: array{search: string, workload: string, install: string, workload_options: array<string, string>, install_options: array<string, string>, active: list<array{label: string, value: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}}
+     * @return array{0: Collection<int, Site>, 1: array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}}
      */
     private function siteMatchesStateFilter(Site $site, string $state): bool
     {
@@ -1461,9 +1476,9 @@ class AgentSiteController extends Controller
     private function filteredSites(Collection $sites, Request $request): array
     {
         $stateOptions = [
-            'active' => 'Active sites',
-            'archived' => 'Archived',
-            'all' => 'All states',
+            'active' => __('sites.index.filters.options.state.active_sites'),
+            'archived' => __('sites.index.filters.options.state.archived'),
+            'all' => __('sites.index.filters.options.state.all'),
         ];
         $state = $this->normalizeSiteFilter(
             $this->stringQuery($request, 'site_state', 'active'),
@@ -1479,14 +1494,14 @@ class AgentSiteController extends Controller
 
         $visibleCount = $sites->count();
         $workloadOptions = [
-            'all' => 'All workloads',
-            'active' => 'Active support work',
-            'quiet' => 'Quiet',
+            'all' => __('sites.index.filters.options.workload.all'),
+            'active' => __('sites.index.filters.options.workload.active'),
+            'quiet' => __('sites.index.filters.options.workload.without_work'),
         ];
         $installOptions = [
-            'all' => 'All install states',
-            'needs_attention' => 'Needs attention',
-            'live' => 'Live',
+            'all' => __('sites.index.filters.options.install.all'),
+            'needs_attention' => __('sites.index.filters.options.install.needs_attention'),
+            'live' => __('sites.index.filters.options.install.live'),
         ];
         $search = trim($this->stringQuery($request, 'site_search'));
         $workload = $this->normalizeSiteFilter(
@@ -1506,21 +1521,37 @@ class AgentSiteController extends Controller
         $activeFilters = [];
 
         if ($search !== '') {
-            $activeFilters[] = ['label' => 'Search', 'value' => $search];
+            $activeFilters[] = [
+                'label' => __('sites.index.filters.search'),
+                'value' => $search,
+                'value_is_authored' => true,
+            ];
         }
 
         if ($workload !== 'all') {
-            $activeFilters[] = ['label' => 'Workload', 'value' => $workloadOptions[$workload]];
+            $activeFilters[] = [
+                'label' => __('sites.index.filters.workload'),
+                'value' => $workloadOptions[$workload],
+                'value_is_authored' => false,
+            ];
         }
 
         if ($install !== 'all') {
-            $activeFilters[] = ['label' => 'Install', 'value' => $installOptions[$install]];
+            $activeFilters[] = [
+                'label' => __('sites.index.filters.install'),
+                'value' => $installOptions[$install],
+                'value_is_authored' => false,
+            ];
         }
 
         // 'active' is the default view rather than a filter the operator chose,
         // so it earns no chip; the other two are worth announcing.
         if ($state !== 'active') {
-            $activeFilters[] = ['label' => 'State', 'value' => $stateOptions[$state]];
+            $activeFilters[] = [
+                'label' => __('sites.index.filters.state'),
+                'value' => $stateOptions[$state],
+                'value_is_authored' => false,
+            ];
         }
 
         $resultCount = $filteredSites->count();
@@ -1541,8 +1572,13 @@ class AgentSiteController extends Controller
                 'visible_count' => $visibleCount,
                 'result_count' => $resultCount,
                 'summary_label' => $hasActiveFilters
-                    ? "{$resultCount} shown of {$visibleCount} visible"
-                    : "{$visibleCount} visible",
+                    ? trans_choice('sites.index.filters.summary.shown', $resultCount, [
+                        'shown' => ReaderNumber::count($resultCount),
+                        'visible' => ReaderNumber::count($visibleCount),
+                    ])
+                    : trans_choice('sites.index.filters.summary.visible', $visibleCount, [
+                        'count' => ReaderNumber::count($visibleCount),
+                    ]),
             ],
         ];
     }
@@ -1570,36 +1606,44 @@ class AgentSiteController extends Controller
 
         return [
             [
-                'label' => 'Visible sites',
-                'value' => $visibleCount.' '.Str::plural('visible site', $visibleCount),
-                'detail' => 'Visible to your support role before filters.',
+                'label' => __('sites.index.snapshot.visible.label'),
+                'value' => trans_choice('sites.index.snapshot.visible.value', $visibleCount, [
+                    'count' => ReaderNumber::count($visibleCount),
+                ]),
+                'detail' => __('sites.index.snapshot.visible.detail'),
                 'href' => route('dashboard.sites.index'),
-                'action' => 'Review sites',
+                'action' => __('sites.index.snapshot.visible.action'),
             ],
             [
-                'label' => 'Active support work',
-                'value' => $activeSiteCount.' active '.Str::plural('site', $activeSiteCount),
-                'detail' => sprintf(
-                    '%s, %s, %s across visible sites.',
-                    $openConversationCount.' open '.Str::plural('conversation', $openConversationCount),
-                    $openTicketCount.' open '.Str::plural('ticket', $openTicketCount),
-                    $pendingTicketCount.' pending '.Str::plural('ticket', $pendingTicketCount),
-                ),
+                'label' => __('sites.index.snapshot.workload.label'),
+                'value' => trans_choice('sites.index.snapshot.workload.value', $activeSiteCount, [
+                    'count' => ReaderNumber::count($activeSiteCount),
+                ]),
+                'detail' => __('sites.index.snapshot.workload.detail', [
+                    'conversations' => trans_choice('sites.index.counts.open_conversations', $openConversationCount, ['count' => ReaderNumber::count($openConversationCount)]),
+                    'open_tickets' => trans_choice('sites.index.counts.open_tickets', $openTicketCount, ['count' => ReaderNumber::count($openTicketCount)]),
+                    'pending_tickets' => trans_choice('sites.index.counts.pending_tickets', $pendingTicketCount, ['count' => ReaderNumber::count($pendingTicketCount)]),
+                ]),
                 'href' => route('dashboard.sites.index', ['site_workload' => 'active']),
-                'action' => 'Review active sites',
+                'action' => __('sites.index.snapshot.workload.action'),
             ],
             [
-                'label' => 'Install attention',
-                'value' => $installAttentionCount.' '.Str::plural('site', $installAttentionCount).' '
-                    .($installAttentionCount === 1 ? 'needs' : 'need').' install attention',
-                'detail' => 'Widget installs that have not checked in recently or have not reported yet.',
+                'label' => __('sites.index.snapshot.install.label'),
+                'value' => trans_choice('sites.index.snapshot.install.value', $installAttentionCount, [
+                    'count' => ReaderNumber::count($installAttentionCount),
+                ]),
+                'detail' => __('sites.index.snapshot.install.detail'),
                 'href' => route('dashboard.sites.index', ['site_install' => 'needs_attention']),
-                'action' => 'Review installs',
+                'action' => __('sites.index.snapshot.install.action'),
             ],
             [
-                'label' => 'Support access',
-                'value' => $explicitAccessCount.' '.Str::plural('site', $explicitAccessCount).' with explicit access',
-                'detail' => $fallbackAccessCount.' '.($fallbackAccessCount === 1 ? 'uses' : 'use').' account-wide fallback.',
+                'label' => __('sites.index.snapshot.access.label'),
+                'value' => trans_choice('sites.index.snapshot.access.value', $explicitAccessCount, [
+                    'count' => ReaderNumber::count($explicitAccessCount),
+                ]),
+                'detail' => trans_choice('sites.index.snapshot.access.detail', $fallbackAccessCount, [
+                    'count' => ReaderNumber::count($fallbackAccessCount),
+                ]),
                 'href' => null,
                 'action' => null,
             ],
@@ -1607,92 +1651,162 @@ class AgentSiteController extends Controller
     }
 
     /**
-     * @param  array{search: string, workload: string, install: string, workload_options: array<string, string>, install_options: array<string, string>, active: list<array{label: string, value: string}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
-     * @return array{heading: string, detail: string, actions: list<array{label: string, url: string}>}
+     * @param  array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
+     * @return array{heading: array{key: string, parameters: array<string, string>}, detail: string, actions: list<array{label: string, url: string}>}
      */
     private function siteEmptyState(array $siteFilters): array
     {
         $actions = $siteFilters['has_active_filters']
-            ? [['label' => 'Clear all site filters', 'url' => route('dashboard.sites.index')]]
-            : [['label' => 'Add site', 'url' => route('dashboard.sites.create')]];
+            ? [['label' => __('sites.index.empty.actions.clear_all'), 'url' => route('dashboard.sites.index')]]
+            : [['label' => __('sites.add_site'), 'url' => route('dashboard.sites.create')]];
 
         if ($siteFilters['search'] !== '') {
             array_unshift($actions, [
-                'label' => 'Clear search',
+                'label' => __('sites.index.empty.actions.clear_search'),
                 'url' => $this->siteFilterUrl($siteFilters, ['search' => '']),
             ]);
 
             return [
-                'heading' => sprintf('No sites match "%s".', $siteFilters['search']),
-                'detail' => 'Search checks site name and domain. Clear the search term or loosen the other site filters to review more visible sites.',
+                'heading' => [
+                    'key' => 'sites.index.empty.search.heading',
+                    'parameters' => ['search' => $siteFilters['search']],
+                ],
+                'detail' => __('sites.index.empty.search.detail'),
                 'actions' => $actions,
             ];
         }
 
         if ($siteFilters['install'] === 'needs_attention') {
             array_unshift($actions, [
-                'label' => 'Clear install health filter',
+                'label' => __('sites.index.empty.actions.clear_install'),
                 'url' => $this->siteFilterUrl($siteFilters, ['install' => 'all']),
             ]);
 
             return [
-                'heading' => 'No sites need install attention right now.',
-                'detail' => 'Every visible site has sent a recent widget signal. Clear the install health filter to review all connected sites.',
+                'heading' => ['key' => 'sites.index.empty.install_attention.heading', 'parameters' => []],
+                'detail' => __('sites.index.empty.install_attention.detail'),
                 'actions' => $actions,
             ];
         }
 
         if ($siteFilters['install'] === 'live') {
             array_unshift($actions, [
-                'label' => 'Clear install health filter',
+                'label' => __('sites.index.empty.actions.clear_install'),
                 'url' => $this->siteFilterUrl($siteFilters, ['install' => 'all']),
             ]);
 
             return [
-                'heading' => 'No live widget installs match these filters.',
-                'detail' => 'Try clearing the install health filter to see sites that still need their first widget signal.',
+                'heading' => ['key' => 'sites.index.empty.live.heading', 'parameters' => []],
+                'detail' => __('sites.index.empty.live.detail'),
                 'actions' => $actions,
             ];
         }
 
         if ($siteFilters['workload'] === 'active') {
             array_unshift($actions, [
-                'label' => 'Clear workload filter',
+                'label' => __('sites.index.empty.actions.clear_workload'),
                 'url' => $this->siteFilterUrl($siteFilters, ['workload' => 'all']),
             ]);
 
             return [
-                'heading' => 'No sites have active support work right now.',
-                'detail' => 'Clear the workload filter to include quiet sites that may still need install or access review.',
+                'heading' => ['key' => 'sites.index.empty.workload_active.heading', 'parameters' => []],
+                'detail' => __('sites.index.empty.workload_active.detail'),
                 'actions' => $actions,
             ];
         }
 
         if ($siteFilters['workload'] === 'quiet') {
             array_unshift($actions, [
-                'label' => 'Clear workload filter',
+                'label' => __('sites.index.empty.actions.clear_workload'),
                 'url' => $this->siteFilterUrl($siteFilters, ['workload' => 'all']),
             ]);
 
             return [
-                'heading' => 'No quiet sites match these filters.',
-                'detail' => 'Clear the workload filter to include sites with active conversations or tickets.',
+                'heading' => ['key' => 'sites.index.empty.workload_quiet.heading', 'parameters' => []],
+                'detail' => __('sites.index.empty.workload_quiet.detail'),
                 'actions' => $actions,
             ];
         }
 
         if ($siteFilters['state'] === 'archived') {
             return [
-                'heading' => 'No sites are archived.',
-                'detail' => 'Archiving takes a site out of service without deleting anything, so it can be undone at any time. Nothing here means every site you can see is still serving its widget.',
-                'actions' => [['label' => 'Back to active sites', 'url' => route('dashboard.sites.index')]],
+                'heading' => ['key' => 'sites.index.empty.archived.heading', 'parameters' => []],
+                'detail' => __('sites.index.empty.archived.detail'),
+                'actions' => [['label' => __('sites.index.empty.actions.back_to_active'), 'url' => route('dashboard.sites.index')]],
             ];
         }
 
         return [
-            'heading' => 'No sites are visible to you yet.',
-            'detail' => 'Add the first site to get a public key and widget install snippet.',
+            'heading' => ['key' => 'sites.index.empty.default.heading', 'parameters' => []],
+            'detail' => __('sites.index.empty.default.detail'),
             'actions' => $actions,
+        ];
+    }
+
+    /**
+     * Keep the shared install-health service state-only on this newly
+     * extracted surface. The same service still feeds English-only site pages,
+     * so translating it globally would leak German or Italian into those
+     * documents whenever a request happened to leave the process locale set.
+     *
+     * @return array{label: string, tone: string, detail: string, needs_attention: bool, action_label: string|null}
+     */
+    private function localizedSiteInstallHealth(?Visitor $visitor): array
+    {
+        $health = SiteInstallHealth::fromVisitor($visitor);
+        $lastSeenAt = $visitor?->last_seen_at;
+
+        if (! $lastSeenAt) {
+            return [
+                ...$health,
+                'label' => __('sites.index.install.not_installed'),
+                'detail' => __('sites.index.install.no_check_in'),
+                'action_label' => __('sites.index.install.finish'),
+            ];
+        }
+
+        return [
+            ...$health,
+            'label' => $health['needs_attention']
+                ? __('sites.index.install.needs_check')
+                : __('sites.index.install.live'),
+            'detail' => __('sites.index.install.seen', ['elapsed' => $lastSeenAt->diffForHumans()]),
+            'action_label' => $health['needs_attention']
+                ? __('sites.index.install.review')
+                : null,
+        ];
+    }
+
+    /**
+     * Resolve count phrases when the translated destination renders, while
+     * leaving the deleted site name as authored data for the feedback
+     * component to mark with an unknown language.
+     *
+     * @return array{key: string, parameters?: array<string, string>, localized_parameters?: array<string, string>}|string|null
+     */
+    private function siteIndexStatusFeedback(mixed $status): array|string|null
+    {
+        if (! is_array($status) || ($status['key'] ?? null) !== 'sites.flash.purged') {
+            return is_string($status) ? $status : null;
+        }
+
+        $counts = is_array($status['counts'] ?? null) ? $status['counts'] : [];
+        $countPhrase = fn (string $name): string => trans_choice(
+            'sites.flash.purge_counts.'.$name,
+            (int) ($counts[$name] ?? 0),
+            ['count' => ReaderNumber::count((int) ($counts[$name] ?? 0))],
+        );
+
+        return [
+            'key' => 'sites.flash.purged',
+            'parameters' => [
+                'site' => (string) data_get($status, 'parameters.site', ''),
+            ],
+            'localized_parameters' => [
+                'conversations' => $countPhrase('conversations'),
+                'tickets' => $countPhrase('tickets'),
+                'attachments' => $countPhrase('attachments'),
+            ],
         ];
     }
 

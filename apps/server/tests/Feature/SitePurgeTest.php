@@ -69,7 +69,10 @@ test('purging destroys the site, its records and its attachment binaries', funct
     Storage::fake('attachments');
 
     $account = Account::factory()->create();
-    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => 'de',
+    ]);
     $site = purgeableSite($account);
 
     $message = ConversationMessage::query()->firstOrFail();
@@ -95,7 +98,9 @@ test('purging destroys the site, its records and its attachment binaries', funct
 
     $this->actingAs($owner)
         ->delete("/dashboard/sites/{$site->id}", ['confirm_name' => 'Doomed Site'])
-        ->assertRedirect(route('dashboard.sites.index'));
+        ->assertRedirect(route('dashboard.sites.index'))
+        ->assertSessionHas('status', fn (mixed $status): bool => is_array($status)
+            && ($status['key'] ?? null) === 'sites.flash.purged');
 
     $this->assertDatabaseMissing('sites', ['id' => $site->id]);
     $this->assertDatabaseMissing('conversations', ['site_id' => $site->id]);
@@ -107,6 +112,12 @@ test('purging destroys the site, its records and its attachment binaries', funct
     // The neighbouring site is untouched.
     $this->assertDatabaseHas('sites', ['id' => $survivor->id]);
     Storage::disk('attachments')->assertExists('attachments/survivor/file.png');
+
+    $this->get(route('dashboard.sites.index'))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Website „<span lang="">Doomed Site</span>“ wurde zusammen mit 1 Unterhaltung, 0 Tickets und 1 Anhang dauerhaft gelöscht.', false)
+        ->assertDontSee('was permanently deleted');
 });
 
 test('the record of a purge outlives the site it destroyed', function (): void {

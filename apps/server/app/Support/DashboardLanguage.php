@@ -128,6 +128,13 @@ final class DashboardLanguage
         // keeps stable English headers and machine-readable numeric cells.
         'dashboard.reports.index',
 
+        // The sites directory and the new-site form. The store action belongs
+        // here because validation renders back onto the form in the reader's
+        // language; its success key is resolved only after the redirect.
+        'dashboard.sites.index',
+        'dashboard.sites.create',
+        'dashboard.sites.store',
+
         // The ticket workspace and endpoints owned exclusively by it. The
         // assignee and lifecycle writes are deliberately absent: those are
         // also submitted from the conversation's linked-ticket panel, so the
