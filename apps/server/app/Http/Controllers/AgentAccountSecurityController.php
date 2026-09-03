@@ -31,6 +31,7 @@ final class AgentAccountSecurityController extends Controller
             'activeAgentCount' => (clone $activeAgents)->count(),
             'enabledCount' => $enabledCount,
             'missingCount' => (clone $activeAgents)->whereNull('two_factor_confirmed_at')->count(),
+            'oidcConnection' => $account->oidcConnection()->first(),
         ]);
     }
 
