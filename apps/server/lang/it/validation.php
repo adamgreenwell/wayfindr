@@ -112,11 +112,14 @@ return [
         'alert_mode' => 'Avvisi',
         'current_password' => 'Password attuale',
         'email' => 'Indirizzo email',
+        'driver' => 'Scanner',
+        'fail_closed' => 'Impostazione fail-closed',
         'locale' => 'Lingua',
         'language' => 'Lingua',
         'name' => 'Nome',
         'password' => 'Password',
         'password_confirmation' => 'Conferma della password',
+        'socket' => 'Socket ClamAV',
         'timezone' => 'Fuso orario',
 
         // The articles page. `body` was already here for the reply composer;

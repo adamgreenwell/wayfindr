@@ -41,7 +41,9 @@ class OperatorScanningSettingsController extends Controller
             'socket' => (string) $settings->effective('scanning.socket'),
             'failClosed' => filter_var($settings->effective('scanning.fail_closed'), FILTER_VALIDATE_BOOL),
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
-            'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
+            'backLabel' => $from === 'onboarding'
+                ? __('operator.shell.back_to_setup')
+                : __('operator.shell.back_to_console'),
             'returnTo' => $from,
         ]);
     }
@@ -92,7 +94,7 @@ class OperatorScanningSettingsController extends Controller
 
         return redirect()
             ->route('operator.settings.scanning.edit', $this->returnParams($request))
-            ->with('status', 'Scanning settings saved. Run a reachability test to confirm the scanner responds.');
+            ->with('status', 'operator.scanning.flash.saved');
     }
 
     public function test(Request $request): RedirectResponse
@@ -103,7 +105,7 @@ class OperatorScanningSettingsController extends Controller
         if (in_array($driver, ['', 'null', 'none'], true)) {
             return redirect()
                 ->route('operator.settings.scanning.edit', $returnParams)
-                ->with('error', 'No scanner is configured — uploads are accepted with defense-in-depth (type allowlist, private storage, forced download) but not virus-scanned. Choose ClamAV and save to enable scanning.');
+                ->with('error', 'operator.scanning.flash.none');
         }
 
         try {
@@ -111,18 +113,30 @@ class OperatorScanningSettingsController extends Controller
         } catch (Throwable $exception) {
             return redirect()
                 ->route('operator.settings.scanning.edit', $returnParams)
-                ->with('error', 'Scanner is misconfigured: '.$exception->getMessage());
+                ->with('error', [
+                    'key' => 'operator.scanning.flash.misconfigured',
+                    'parameters' => ['message' => $exception->getMessage()],
+                ]);
         }
 
         if ($scanner->isAvailable()) {
             return redirect()
                 ->route('operator.settings.scanning.edit', $returnParams)
-                ->with('status', 'Scanner reachable: the '.$driver.' scanner responded. Uploads will be scanned before they are stored.');
+                ->with('status', [
+                    'key' => 'operator.scanning.flash.reachable',
+                    'parameters' => ['driver' => $driver],
+                ]);
         }
 
         return redirect()
             ->route('operator.settings.scanning.edit', $returnParams)
-            ->with('error', 'The '.$driver.' scanner is configured but unreachable at '.config('wayfindr.attachments.scanner.clamav.socket').'. Confirm clamd is running and the socket is correct.');
+            ->with('error', [
+                'key' => 'operator.scanning.flash.unreachable',
+                'parameters' => [
+                    'driver' => $driver,
+                    'socket' => (string) config('wayfindr.attachments.scanner.clamav.socket'),
+                ],
+            ]);
     }
 
     private function returnContext(Request $request): ?string

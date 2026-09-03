@@ -81,6 +81,9 @@ final class DashboardLanguage
         // preserving the one-language-per-document boundary during rollout.
         'operator.settings.localization.edit',
         'operator.settings.localization.update',
+        'operator.settings.scanning.edit',
+        'operator.settings.scanning.update',
+        'operator.settings.scanning.test',
 
         'dashboard.profile.show',
         'dashboard.profile.update',

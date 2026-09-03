@@ -95,11 +95,14 @@ return [
         'alert_mode' => 'Benachrichtigungen',
         'current_password' => 'Aktuelles Passwort',
         'email' => 'E-Mail-Adresse',
+        'driver' => 'Scanner',
+        'fail_closed' => 'Fail-Closed-Einstellung',
         'locale' => 'Sprache',
         'language' => 'Sprache',
         'name' => 'Name',
         'password' => 'Passwort',
         'password_confirmation' => 'Passwortbestätigung',
+        'socket' => 'ClamAV-Socket',
         'timezone' => 'Zeitzone',
 
         // The articles page. `body` was already here for the reply composer;

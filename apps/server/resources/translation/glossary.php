@@ -87,6 +87,7 @@ return [
             'Token',
             'Normal',
             'System',
+            'Scanner',
             ':count ms',
             'Status: :value',
             'Label: :value',
@@ -103,6 +104,7 @@ return [
             'Ticket',
             // Invariable in the plural: `i token`, never `i tokens`.
             'Token',
+            'Scanner',
             // The seconds abbreviation on the live board. `s` is the SI symbol
             // and Italian writes it the same way -- unlike minutes and hours,
             // which are `min` and `h` against English `m` and `h`, so only this
