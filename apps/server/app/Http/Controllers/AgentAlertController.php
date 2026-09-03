@@ -114,31 +114,35 @@ class AgentAlertController extends Controller
         $emailEnabled = $agent->alertEmailEnabled();
 
         return [
-            'source_detail' => 'Dashboard alerts remain the source of truth for support work that needs attention.',
+            'source_detail' => __('alerts.delivery.source_detail'),
             'profile_href' => route('dashboard.profile.show'),
             'items' => [
                 [
-                    'label' => 'Current mode',
+                    'label' => __('alerts.delivery.mode.label'),
                     'value' => User::alertModeOptions()[$mode],
                     'detail' => match ($mode) {
-                        User::ALERT_MODE_ASSIGNED => 'Only assigned conversations and tickets create new alerts for you.',
-                        User::ALERT_MODE_QUIET => 'Quiet mode pauses new alerts without changing existing visible alerts.',
-                        default => 'Eligible support work from sites you can support can create alerts.',
+                        User::ALERT_MODE_ASSIGNED => __('alerts.delivery.mode.assigned_detail'),
+                        User::ALERT_MODE_QUIET => __('alerts.delivery.mode.quiet_detail'),
+                        default => __('alerts.delivery.mode.all_detail'),
                     },
                 ],
                 [
-                    'label' => 'Email delivery',
+                    'label' => __('alerts.delivery.email.label'),
                     'value' => match (true) {
-                        ! $emailEnabled => 'Email off',
-                        $cadence === User::ALERT_CADENCE_DIGEST => 'Digest preferred',
-                        $cadence === User::ALERT_CADENCE_UNATTENDED => 'Unattended only',
-                        default => 'Immediate email',
+                        ! $emailEnabled => __('alerts.delivery.email.off'),
+                        $cadence === User::ALERT_CADENCE_DIGEST => __('alerts.delivery.email.digest'),
+                        $cadence === User::ALERT_CADENCE_UNATTENDED => __('alerts.delivery.email.unattended'),
+                        default => __('alerts.delivery.email.immediate'),
                     },
                     'detail' => match (true) {
-                        ! $emailEnabled => 'Email alerts are off for your profile. The alert center remains available here.',
-                        $cadence === User::ALERT_CADENCE_DIGEST => 'Digest delivery is preferred when the scheduler runs. Dashboard alerts still appear here immediately.',
-                        $cadence === User::ALERT_CADENCE_UNATTENDED => sprintf('Email goes out only when a visitor message stays unseen for %d minutes. Dashboard alerts still appear here immediately.', UnattendedConversationAlertCollector::THRESHOLD_MINUTES),
-                        default => 'Immediate email delivery is enabled when mail is configured. Dashboard alerts still appear here immediately.',
+                        ! $emailEnabled => __('alerts.delivery.email.off_detail'),
+                        $cadence === User::ALERT_CADENCE_DIGEST => __('alerts.delivery.email.digest_detail'),
+                        $cadence === User::ALERT_CADENCE_UNATTENDED => trans_choice(
+                            'alerts.delivery.email.unattended_detail',
+                            UnattendedConversationAlertCollector::THRESHOLD_MINUTES,
+                            ['count' => UnattendedConversationAlertCollector::THRESHOLD_MINUTES],
+                        ),
+                        default => __('alerts.delivery.email.immediate_detail'),
                     },
                 ],
             ],
@@ -240,32 +244,32 @@ class AgentAlertController extends Controller
 
         return [
             [
-                'label' => 'Visible alerts',
-                'value' => $visibleNotifications->count().' visible',
+                'label' => __('alerts.snapshot.visible.label'),
+                'value' => trans_choice('alerts.counts.visible', $visibleNotifications->count(), ['count' => $visibleNotifications->count()]),
                 'detail' => $visibleNotifications->isNotEmpty()
-                    ? 'Current alerts you can still open.'
-                    : 'Nothing currently needs attention in this alert view.',
+                    ? __('alerts.snapshot.visible.present')
+                    : __('alerts.snapshot.visible.empty'),
             ],
             [
-                'label' => 'Unread alerts',
-                'value' => $visibleUnreadNotificationCount.' unread',
+                'label' => __('alerts.snapshot.unread.label'),
+                'value' => trans_choice('alerts.counts.unread', $visibleUnreadNotificationCount, ['count' => $visibleUnreadNotificationCount]),
                 'detail' => $visibleUnreadNotificationCount > 0
-                    ? 'Still waiting for review or mark-read.'
-                    : 'No unread alerts are waiting for review.',
+                    ? __('alerts.snapshot.unread.present')
+                    : __('alerts.snapshot.unread.empty'),
             ],
             [
-                'label' => 'Conversation alerts',
-                'value' => $conversationAlertCount.' '.Str::plural('conversation', $conversationAlertCount),
+                'label' => __('alerts.snapshot.conversations.label'),
+                'value' => trans_choice('alerts.counts.conversations', $conversationAlertCount, ['count' => $conversationAlertCount]),
                 'detail' => $conversationAlertCount > 0
-                    ? 'Visitor replies and chat follow-up.'
-                    : 'No visitor reply alerts in this view.',
+                    ? __('alerts.snapshot.conversations.present')
+                    : __('alerts.snapshot.conversations.empty'),
             ],
             [
-                'label' => 'Ticket alerts',
-                'value' => $ticketAlertCount.' '.Str::plural('ticket', $ticketAlertCount),
+                'label' => __('alerts.snapshot.tickets.label'),
+                'value' => trans_choice('alerts.counts.tickets', $ticketAlertCount, ['count' => $ticketAlertCount]),
                 'detail' => $ticketAlertCount > 0
-                    ? 'Ticket assignments and durable work.'
-                    : 'No ticket assignment alerts in this view.',
+                    ? __('alerts.snapshot.tickets.present')
+                    : __('alerts.snapshot.tickets.empty'),
             ],
         ];
     }
@@ -285,69 +289,85 @@ class AgentAlertController extends Controller
         $isCapped = $matchingNotificationCount > $visibleNotificationCount;
 
         if ($isCapped && ($hasAlertFilters || $isUnreadOnlyView)) {
-            $matchingAlertLabel = $this->matchingAlertLabel($alertFilter, $alertKind, $matchingNotificationCount);
+            $summaryKind = $this->alertSummaryKind($alertFilter, $alertKind);
 
             return [
-                'heading' => "{$visibleNotificationCount} shown of {$matchingNotificationCount} matching {$matchingAlertLabel}.",
-                'detail' => "Showing {$visibleNotificationCount} alerts after the current display cap. {$matchingNotificationCount} {$matchingAlertLabel} match this view.",
+                'heading' => trans_choice('alerts.summary.capped_heading.'.$summaryKind, $matchingNotificationCount, [
+                    'shown' => $visibleNotificationCount,
+                    'count' => $matchingNotificationCount,
+                ]),
+                'detail' => trans_choice('alerts.summary.capped_detail.'.$summaryKind, $matchingNotificationCount, [
+                    'shown' => $visibleNotificationCount,
+                    'count' => $matchingNotificationCount,
+                ]),
             ];
         }
 
         if ($hasAlertFilters) {
-            $matchingAlertLabel = $this->matchingAlertLabel($alertFilter, $alertKind, $visibleNotificationCount);
+            $summaryKind = $this->alertSummaryKind($alertFilter, $alertKind);
 
             return [
-                'heading' => "Showing {$visibleNotificationCount} matching {$matchingAlertLabel}.",
+                'heading' => trans_choice('alerts.summary.matching_heading.'.$summaryKind, $visibleNotificationCount, [
+                    'count' => $visibleNotificationCount,
+                ]),
                 'detail' => null,
             ];
         }
 
         if ($alertFilter === 'unread') {
             return [
-                'heading' => 'Showing unread visible alerts.',
+                'heading' => __('alerts.summary.unread_heading'),
                 'detail' => null,
             ];
         }
 
         return [
-            'heading' => "Showing the latest {$visibleNotificationCount} visible ".Str::plural('alert', $visibleNotificationCount).'.',
+            'heading' => trans_choice('alerts.summary.latest', $visibleNotificationCount, ['count' => $visibleNotificationCount]),
             'detail' => null,
         ];
     }
 
-    private function matchingAlertLabel(string $alertFilter, string $alertKind, int $alertCount): string
+    private function alertSummaryKind(string $alertFilter, string $alertKind): string
     {
         if ($alertKind === 'conversation') {
-            return Str::plural('conversation alert', $alertCount);
+            return 'conversation';
         }
 
         if ($alertKind === 'ticket') {
-            return Str::plural('ticket alert', $alertCount);
+            return 'ticket';
         }
 
         if ($alertFilter === 'unread') {
-            return 'unread '.Str::plural('alert', $alertCount);
+            return 'unread';
         }
 
-        return Str::plural('alert', $alertCount);
+        return 'all';
     }
 
     /**
-     * @return array{heading: string, detail: string, actions: list<array{label: string, url: string}>}
+     * @return array{
+     *     heading: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>},
+     *     detail: string,
+     *     actions: list<array{label: string, url: string}>
+     * }
      */
     private function alertEmptyState(string $alertFilter, string $alertKind, string $alertSearch): array
     {
         if ($alertSearch !== '') {
             return [
-                'heading' => sprintf('No alerts match "%s".', $alertSearch),
-                'detail' => 'Search checks support codes, ticket numbers, subjects, sites, visitors, and message previews you can still access.',
+                'heading' => [
+                    'key' => 'alerts.empty.search.heading',
+                    'parameters' => ['search' => $alertSearch],
+                    'localized_parameters' => [],
+                ],
+                'detail' => __('alerts.empty.search.detail'),
                 'actions' => [
                     [
-                        'label' => 'Clear search',
+                        'label' => __('alerts.actions.clear_search'),
                         'url' => route('dashboard.alerts.index', $this->alertReturnParams($alertFilter, $alertKind, '')),
                     ],
                     [
-                        'label' => 'Clear all alert filters',
+                        'label' => __('alerts.actions.clear_all_filters'),
                         'url' => route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []),
                     ],
                 ],
@@ -356,15 +376,19 @@ class AgentAlertController extends Controller
 
         if ($alertKind !== 'all') {
             return [
-                'heading' => 'No '.$this->matchingAlertLabel($alertFilter, $alertKind, 2).' match this view.',
-                'detail' => 'Try all alert types to include the other support signals you can still access.',
+                'heading' => [
+                    'key' => 'alerts.empty.kind.'.$this->alertSummaryKind($alertFilter, $alertKind),
+                    'parameters' => [],
+                    'localized_parameters' => [],
+                ],
+                'detail' => __('alerts.empty.kind.detail'),
                 'actions' => [
                     [
-                        'label' => 'Clear alert type filter',
+                        'label' => __('alerts.actions.clear_type'),
                         'url' => route('dashboard.alerts.index', $this->alertReturnParams($alertFilter, 'all', $alertSearch)),
                     ],
                     [
-                        'label' => 'Clear all alert filters',
+                        'label' => __('alerts.actions.clear_all_filters'),
                         'url' => route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []),
                     ],
                 ],
@@ -373,11 +397,15 @@ class AgentAlertController extends Controller
 
         if ($alertFilter === 'unread') {
             return [
-                'heading' => 'You are caught up.',
-                'detail' => 'New eligible visitor replies and ticket assignments will appear here when they need attention.',
+                'heading' => [
+                    'key' => 'alerts.empty.unread.heading',
+                    'parameters' => [],
+                    'localized_parameters' => [],
+                ],
+                'detail' => __('alerts.empty.unread.detail'),
                 'actions' => [
                     [
-                        'label' => 'Show recent alerts',
+                        'label' => __('alerts.actions.show_recent'),
                         'url' => route('dashboard.alerts.index'),
                     ],
                 ],
@@ -385,15 +413,19 @@ class AgentAlertController extends Controller
         }
 
         return [
-            'heading' => 'No visible alerts yet.',
-            'detail' => 'Visitor replies and ticket assignments you can support will appear here once they need attention.',
+            'heading' => [
+                'key' => 'alerts.empty.all.heading',
+                'parameters' => [],
+                'localized_parameters' => [],
+            ],
+            'detail' => __('alerts.empty.all.detail'),
             'actions' => [
                 [
-                    'label' => 'Back to dashboard',
+                    'label' => __('alerts.actions.back_to_dashboard'),
                     'url' => route('dashboard'),
                 ],
                 [
-                    'label' => 'Review alert preferences',
+                    'label' => __('alerts.actions.review_preferences'),
                     'url' => route('dashboard.profile.show'),
                 ],
             ],
@@ -450,7 +482,10 @@ class AgentAlertController extends Controller
     }
 
     /**
-     * @return array<int, array{label: string, href: string}>
+     * @return array<int, array{
+     *     feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>},
+     *     href: string
+     * }>
      */
     private function activeAlertFilters(string $alertFilter, string $alertKind, string $alertSearch): array
     {
@@ -460,13 +495,21 @@ class AgentAlertController extends Controller
         if ($alertKind !== 'all') {
             $filters[] = $this->alertFilterChip(
                 'alert_kind',
-                'Type: '.$this->alertKindLabels()[$alertKind],
+                [
+                    'key' => 'alerts.chips.type',
+                    'parameters' => [],
+                    'localized_parameters' => ['value' => $this->alertKindLabels()[$alertKind]],
+                ],
                 $alertQuery,
             );
         }
 
         if ($alertSearch !== '') {
-            $filters[] = $this->alertFilterChip('alert_search', 'Search: '.$alertSearch, $alertQuery);
+            $filters[] = $this->alertFilterChip('alert_search', [
+                'key' => 'alerts.chips.search',
+                'parameters' => ['value' => $alertSearch],
+                'localized_parameters' => [],
+            ], $alertQuery);
         }
 
         return $filters;
@@ -474,14 +517,15 @@ class AgentAlertController extends Controller
 
     /**
      * @param  array<string, string>  $alertQuery
-     * @return array{label: string, href: string}
+     * @param  array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}  $feedback
+     * @return array{feedback: array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}, href: string}
      */
-    private function alertFilterChip(string $queryKey, string $label, array $alertQuery): array
+    private function alertFilterChip(string $queryKey, array $feedback, array $alertQuery): array
     {
         unset($alertQuery[$queryKey]);
 
         return [
-            'label' => $label,
+            'feedback' => $feedback,
             'href' => route('dashboard.alerts.index', $alertQuery),
         ];
     }
@@ -492,8 +536,8 @@ class AgentAlertController extends Controller
     private function alertKindLabels(): array
     {
         return [
-            'conversation' => 'Conversation alerts',
-            'ticket' => 'Ticket alerts',
+            'conversation' => __('alerts.kinds.conversation'),
+            'ticket' => __('alerts.kinds.ticket'),
         ];
     }
 }

@@ -1,5 +1,11 @@
-<x-layouts.app title="Alerts" :agent="$agent" :account="$account">
-    <x-page-header title="Alert center" :subtitle="'Visible support alerts for '.$account->name.'.'" />
+<x-layouts.app :title="__('alerts.document_title')" :agent="$agent" :account="$account">
+    <x-page-header :title="__('alerts.title')">
+        <x-slot:subtitleContent><x-translated-feedback :feedback="[
+            'key' => 'alerts.subtitle',
+            'parameters' => ['account' => $account->name],
+            'localized_parameters' => [],
+        ]" /></x-slot:subtitleContent>
+    </x-page-header>
 
     <section class="section" aria-labelledby="alert-center-heading">
         @php
@@ -14,20 +20,20 @@
             }
 
             $hasAlertFilters = $alertKind !== 'all' || $alertSearch !== '';
-            $bulkReadLabel = $hasAlertFilters ? 'Mark matching read' : 'Mark unread alerts read';
+            $bulkReadLabel = $hasAlertFilters ? __('alerts.center.bulk_matching') : __('alerts.center.bulk_unread');
             $bulkReadHelp = $hasAlertFilters
-                ? 'All unread alerts matching this view, including alerts outside the current display, will be marked read.'
-                : 'All unread alerts you can still access, including alerts outside the current display, will be marked read.';
+                ? __('alerts.center.bulk_matching_help')
+                : __('alerts.center.bulk_unread_help');
         @endphp
 
         <div class="section-header">
             <div>
-                <h2 id="alert-center-heading">Recent alerts</h2>
-                <p class="lede">Unread alerts stay here until the related work is opened or marked read.</p>
+                <h2 id="alert-center-heading">{{ __('alerts.center.heading') }}</h2>
+                <p class="lede">{{ __('alerts.center.lede') }}</p>
             </div>
             <div class="section-actions">
-                <nav class="wf-lanes" aria-label="Alert lanes">
-                @foreach (['all' => 'All alerts', 'unread' => 'Unread only'] as $filterValue => $filterLabel)
+                <nav class="wf-lanes" aria-label="{{ __('alerts.center.lanes') }}">
+                @foreach (['all' => __('alerts.center.all'), 'unread' => __('alerts.center.unread_only')] as $filterValue => $filterLabel)
                     @php
                         $filterParams = [];
 
@@ -73,9 +79,9 @@
         </div>
 
         <div class="notice-copy notice-copy-bordered" aria-labelledby="alert-delivery-context-heading">
-            <p><strong id="alert-delivery-context-heading">Alert delivery context</strong></p>
+            <p><strong id="alert-delivery-context-heading">{{ __('alerts.delivery.heading') }}</strong></p>
             <p>{{ $alertDeliveryContext['source_detail'] }}</p>
-            <div class="meta-grid" aria-label="Personal alert delivery context">
+            <div class="meta-grid" aria-label="{{ __('alerts.delivery.region') }}">
                 @foreach ($alertDeliveryContext['items'] as $deliveryContextItem)
                     <div class="meta-item">
                         <span class="meta-label">{{ $deliveryContextItem['label'] }}</span>
@@ -85,97 +91,97 @@
                 @endforeach
             </div>
             <div class="notice-actions">
-                <a class="button secondary" href="{{ $alertDeliveryContext['profile_href'] }}">Change alert preferences</a>
+                <a class="button secondary" href="{{ $alertDeliveryContext['profile_href'] }}">{{ __('alerts.delivery.change_preferences') }}</a>
             </div>
         </div>
 
-        <form class="wf-filters" method="GET" action="{{ route('dashboard.alerts.index') }}" aria-label="Filter alerts">
+        <form class="wf-filters" method="GET" action="{{ route('dashboard.alerts.index') }}" aria-label="{{ __('alerts.filters.region') }}">
             @if ($alertFilter === 'unread')
                 <input type="hidden" name="alert_filter" value="unread">
             @endif
 
             <div class="wf-filter wf-filter-search">
-                <label for="alert_search">Search alerts</label>
+                <label for="alert_search">{{ __('alerts.filters.search_label') }}</label>
                 <input
                     id="alert_search"
                     name="alert_search"
                     type="search"
                     value="{{ $alertSearch }}"
-                    placeholder="Support code, ticket #, subject, site, or visitor"
+                    placeholder="{{ __('alerts.filters.search_placeholder') }}"
                     aria-describedby="alert-search-help"
                 >
-                <span id="alert-search-help" class="wf-filter-help">Search visible alert context only; restricted support work stays hidden.</span>
+                <span id="alert-search-help" class="wf-filter-help">{{ __('alerts.filters.search_help') }}</span>
             </div>
 
             <div class="wf-filter">
-                <label for="alert_kind">Alert type</label>
+                <label for="alert_kind">{{ __('alerts.filters.kind_label') }}</label>
                 <select id="alert_kind" name="alert_kind">
-                    @foreach (['all' => 'All alerts', 'conversation' => 'Conversation alerts', 'ticket' => 'Ticket alerts'] as $kindValue => $kindLabel)
+                    @foreach (['all' => __('alerts.kinds.all'), 'conversation' => __('alerts.kinds.conversation'), 'ticket' => __('alerts.kinds.ticket')] as $kindValue => $kindLabel)
                         <option value="{{ $kindValue }}" @selected($alertKind === $kindValue)>{{ $kindLabel }}</option>
                     @endforeach
                 </select>
             </div>
 
             <div class="wf-filter-actions">
-                <button class="button" type="submit">Apply</button>
+                <button class="button" type="submit">{{ __('alerts.filters.apply') }}</button>
                 @if ($hasAlertFilters)
-                    <a class="button secondary" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">Clear filters</a>
+                    <a class="button secondary" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">{{ __('alerts.filters.clear') }}</a>
                 @endif
             </div>
         </form>
 
         @php
             $alertKindLabels = [
-                'all' => 'All alerts',
-                'conversation' => 'Conversation alerts',
-                'ticket' => 'Ticket alerts',
+                'all' => __('alerts.kinds.all'),
+                'conversation' => __('alerts.kinds.conversation'),
+                'ticket' => __('alerts.kinds.ticket'),
             ];
             $alertFocusItems = [
-                ['label' => 'View', 'value' => $alertFilter === 'unread' ? 'Unread only' : 'All alerts'],
-                ['label' => 'Type', 'value' => $alertKindLabels[$alertKind]],
-                ['label' => 'Visible', 'value' => $notificationCount.' visible'],
-                ['label' => 'Unread', 'value' => $unreadNotificationCount.' unread'],
+                ['label' => __('alerts.focus.view'), 'value' => $alertFilter === 'unread' ? __('alerts.center.unread_only') : __('alerts.center.all'), 'authored' => false],
+                ['label' => __('alerts.focus.type'), 'value' => $alertKindLabels[$alertKind], 'authored' => false],
+                ['label' => __('alerts.focus.visible'), 'value' => trans_choice('alerts.counts.visible', $notificationCount, ['count' => $notificationCount]), 'authored' => false],
+                ['label' => __('alerts.focus.unread'), 'value' => trans_choice('alerts.counts.unread', $unreadNotificationCount, ['count' => $unreadNotificationCount]), 'authored' => false],
             ];
 
             if ($alertSearch !== '') {
-                $alertFocusItems[] = ['label' => 'Search', 'value' => $alertSearch];
+                $alertFocusItems[] = ['label' => __('alerts.focus.search'), 'value' => $alertSearch, 'authored' => true];
             }
         @endphp
 
-        <div class="filter-summary" aria-label="Alert center focus">
+        <div class="filter-summary" aria-label="{{ __('alerts.focus.region') }}">
             <div>
-                <strong>Alert focus</strong>
-                <p class="lede">What this alert center is showing before you triage items.</p>
+                <strong>{{ __('alerts.focus.heading') }}</strong>
+                <p class="lede">{{ __('alerts.focus.detail') }}</p>
                 <p class="lede">{{ $alertCountSummary['heading'] }}</p>
             </div>
             <div class="filter-chips">
                 @foreach ($alertFocusItems as $alertFocusItem)
                     <span class="filter-chip">
-                        {{ $alertFocusItem['label'] }}: {{ $alertFocusItem['value'] }}
+                        {{ $alertFocusItem['label'] }}: <span @if ($alertFocusItem['authored']) lang="" @endif>{{ $alertFocusItem['value'] }}</span>
                     </span>
                 @endforeach
             </div>
         </div>
 
         @if ($activeAlertFilters !== [])
-            <div class="filter-summary" aria-label="Active alert filters">
+            <div class="filter-summary" aria-label="{{ __('alerts.filters.active_region') }}">
                 <div>
-                    <strong>Active alert filters</strong>
-                    <p class="lede">Alerts narrowed to the support work matching this view.</p>
+                    <strong>{{ __('alerts.filters.active_heading') }}</strong>
+                    <p class="lede">{{ __('alerts.filters.active_detail') }}</p>
                 </div>
                 <div class="filter-chips">
                     @foreach ($activeAlertFilters as $activeFilter)
                         <a class="filter-chip" href="{{ $activeFilter['href'] }}">
-                            {{ $activeFilter['label'] }}
+                            <x-translated-feedback :feedback="$activeFilter['feedback']" />
                             <span aria-hidden="true">x</span>
                         </a>
                     @endforeach
-                    <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">Clear all alert filters</a>
+                    <a class="filter-chip filter-chip-clear" href="{{ route('dashboard.alerts.index', $alertFilter === 'unread' ? ['alert_filter' => 'unread'] : []) }}">{{ __('alerts.actions.clear_all_filters') }}</a>
                 </div>
             </div>
         @endif
 
-        <div class="meta-grid" aria-label="Alert snapshot">
+        <div class="meta-grid" aria-label="{{ __('alerts.snapshot.region') }}">
             @foreach ($alertSnapshot as $snapshotItem)
                 <div class="meta-item">
                     <span class="meta-label">{{ $snapshotItem['label'] }}</span>
@@ -187,7 +193,7 @@
 
         @if ($notifications->isEmpty())
             <div class="empty empty-state">
-                <strong>{{ $alertEmptyState['heading'] }}</strong>
+                <strong><x-translated-feedback :feedback="$alertEmptyState['heading']" /></strong>
                 <p>{{ $alertEmptyState['detail'] }}</p>
                 <div class="empty-state-actions">
                     @foreach ($alertEmptyState['actions'] as $action)
@@ -201,7 +207,7 @@
                 @if ($alertCountSummary['detail'])
                     <p>{{ $alertCountSummary['detail'] }}</p>
                 @endif
-                <p>Alerts you can no longer access are hidden so old notifications do not leak restricted support work.</p>
+                <p>{{ __('alerts.center.privacy') }}</p>
             </div>
 
             <div class="message-list">
