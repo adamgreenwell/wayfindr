@@ -42,7 +42,9 @@
             @php
                 $latestVisitor = $site->latestVisitor;
                 $lastSeenAt = $latestVisitor?->last_seen_at;
-                $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
+                $lastPageUrl = $canViewSupportWork
+                    ? data_get($latestVisitor?->metadata, 'last_page_url')
+                    : null;
                 $installAttentionSiteUrl = $site->domain ? 'https://'.$site->domain : null;
                 $installAttentionGuidance = [
                     'key' => $lastSeenAt ? 'site_settings.setup.stale' : 'site_settings.setup.not_installed',
@@ -63,9 +65,15 @@
                     ->all();
                 $siteMapSections = [
                     ['label' => __('site_settings.map.sections.readiness'), 'href' => '#site-support-readiness-heading'],
-                    ['label' => __('site_settings.map.sections.load'), 'href' => '#site-support-load-heading'],
                     ['label' => __('site_settings.map.sections.external_readiness'), 'href' => '#site-external-issue-readiness-heading'],
                 ];
+
+                if ($canViewSupportWork) {
+                    array_splice($siteMapSections, 1, 0, [[
+                        'label' => __('site_settings.map.sections.load'),
+                        'href' => '#site-support-load-heading',
+                    ]]);
+                }
 
                 if ($installHealth['needs_attention']) {
                     $siteMapSections[] = ['label' => __('site_settings.map.sections.setup'), 'href' => '#setup-attention-heading'];
@@ -136,7 +144,8 @@
                 </div>
             </section>
 
-            <section class="section" aria-labelledby="site-support-load-heading">
+            @if ($canViewSupportWork)
+                <section class="section" aria-labelledby="site-support-load-heading">
                 <div class="section-header">
                     <div>
                         <h2 id="site-support-load-heading">{{ __('site_settings.load.heading') }}</h2>
@@ -155,7 +164,8 @@
                         </div>
                     @endforeach
                 </div>
-            </section>
+                </section>
+            @endif
 
             <section class="section" aria-labelledby="site-external-issue-readiness-heading">
                 <div class="section-header">
@@ -268,14 +278,16 @@
                             @endif
                         </span>
                     </div>
-                    <div class="meta-item">
-                        <span class="meta-label">{{ __('site_settings.site.last_page') }}</span>
-                        @if ($lastPageUrl)
-                            <span class="meta-value" lang="">{{ $lastPageUrl }}</span>
-                        @else
-                            <span class="meta-value">{{ __('site_settings.common.not_reported') }}</span>
-                        @endif
-                    </div>
+                    @if ($canViewSupportWork)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ __('site_settings.site.last_page') }}</span>
+                            @if ($lastPageUrl)
+                                <span class="meta-value" lang="">{{ $lastPageUrl }}</span>
+                            @else
+                                <span class="meta-value">{{ __('site_settings.common.not_reported') }}</span>
+                            @endif
+                        </div>
+                    @endif
                     <div class="meta-item">
                         <span class="meta-label">{{ __('site_settings.site.lab') }}</span>
                         <a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">{{ __('site_settings.common.open_tester') }}</a>
@@ -354,10 +366,12 @@
                     <p>{{ $installVerification['message'] }}</p>
                     <p>{{ $installVerification['guidance'] }}</p>
 
-                    @if ($lastPageUrl)
-                        <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: <span lang="">{{ $lastPageUrl }}</span></p>
-                    @else
-                        <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: {{ __('site_settings.verification.not_reported') }}</p>
+                    @if ($canViewSupportWork)
+                        @if ($lastPageUrl)
+                            <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: <span lang="">{{ $lastPageUrl }}</span></p>
+                        @else
+                            <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: {{ __('site_settings.verification.not_reported') }}</p>
+                        @endif
                     @endif
                 </div>
 

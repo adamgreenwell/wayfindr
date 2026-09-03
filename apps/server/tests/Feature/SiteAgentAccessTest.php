@@ -1,12 +1,14 @@
 <?php
 
 use App\Broadcasting\ConversationChannel;
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -169,6 +171,46 @@ test('site index summarizes active support coverage for explicitly assigned site
         ->assertSee('Ada Active')
         ->assertSee('Mara Mentor')
         ->assertDontSee('Gabe Gone');
+});
+
+test('settings only site viewers do not receive visitor URLs or support workload data', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $privacyManager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Private support site']);
+    $site->supportAgents()->attach($privacyManager);
+    $visitor = Visitor::factory()->for($site)->create([
+        'last_seen_at' => now()->subMinutes(5),
+        'metadata' => ['last_page_url' => 'https://private.example.test/customer-record/secret'],
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create(['status' => 'open']);
+    Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+
+    $this->actingAs($privacyManager)
+        ->get(route('dashboard.sites.index'))
+        ->assertOk()
+        ->assertSee('Private support site')
+        ->assertSee('Seen 5 minutes ago')
+        ->assertDontSee('https://private.example.test/customer-record/secret')
+        ->assertDontSee('1 open conversation')
+        ->assertDontSee('1 open ticket')
+        ->assertDontSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
+        ->assertDontSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false);
+
+    $this->actingAs($privacyManager)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Privacy')
+        ->assertDontSee('https://private.example.test/customer-record/secret')
+        ->assertDontSee('1 open conversation')
+        ->assertDontSee('1 open ticket')
+        ->assertDontSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
+        ->assertDontSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false);
 });
 
 test('site index summarizes visible workload without exposing restricted sites', function (): void {

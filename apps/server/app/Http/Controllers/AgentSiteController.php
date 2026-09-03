@@ -58,46 +58,68 @@ class AgentSiteController extends Controller
             AccountPermission::ManageTickets,
         ), 403);
         $account = $this->account($request);
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canViewSupportWork = $canViewConversations || $canManageTickets;
+        $workloadCounts = [
+            'supportAgents as support_agents_count' => fn ($query) => $query
+                ->where('users.account_id', $account->id)
+                ->whereNull('users.deactivated_at'),
+        ];
+
+        if ($canViewConversations) {
+            $workloadCounts['conversations as open_conversations_count'] = fn ($query) => $query
+                ->where('status', 'open');
+        }
+
+        if ($canManageTickets) {
+            $workloadCounts['tickets as open_tickets_count'] = fn ($query) => $query
+                ->where('status', 'open');
+            $workloadCounts['tickets as pending_tickets_count'] = fn ($query) => $query
+                ->where('status', 'pending');
+        }
+
         $sites = $account->sites()
             ->visibleToAgentIncludingArchived($agent)
-            ->with('latestVisitor')
             ->with([
+                'latestVisitor' => function ($query) use ($canViewSupportWork): void {
+                    if (! $canViewSupportWork) {
+                        // Install recency is site diagnostics; visitor
+                        // metadata is support data. Keep the former without
+                        // selecting page URLs for a settings-only role.
+                        $query->select(['visitors.id', 'visitors.site_id', 'visitors.last_seen_at']);
+                    }
+                },
                 'supportAgents' => fn ($query) => $query
                     ->where('users.account_id', $account->id)
                     ->whereNull('users.deactivated_at')
                     ->orderBy('name')
                     ->orderBy('email'),
             ])
-            ->withCount([
-                'conversations as open_conversations_count' => fn ($query) => $query
-                    ->where('status', 'open'),
-                'supportAgents as support_agents_count' => fn ($query) => $query
-                    ->where('users.account_id', $account->id)
-                    ->whereNull('users.deactivated_at'),
-                'tickets as open_tickets_count' => fn ($query) => $query
-                    ->where('status', 'open'),
-                'tickets as pending_tickets_count' => fn ($query) => $query
-                    ->where('status', 'pending'),
-            ])
+            ->withCount($workloadCounts)
             ->orderBy('name')
             ->get();
         // Always describes sites still in service, whichever state the operator is
         // browsing: an archived site has no install to fix and no support work to
         // chase, so counting it here would nag about a site deliberately retired.
         $siteOperationsSnapshot = $this->siteOperationsSnapshot(
-            $sites->reject(fn (Site $site): bool => $site->isArchived())->values()
+            $sites->reject(fn (Site $site): bool => $site->isArchived())->values(),
+            $canViewConversations && $canManageTickets,
         );
         $siteInstallHealth = $sites
             ->mapWithKeys(fn (Site $site): array => [
                 $site->id => $this->localizedSiteInstallHealth($site->latestVisitor),
             ])
             ->all();
-        [$sites, $siteFilters] = $this->filteredSites($sites, $request);
+        [$sites, $siteFilters] = $this->filteredSites($sites, $request, $canViewSupportWork);
 
         return view('agent.sites.index', [
             'account' => $account,
             'agent' => $agent,
             'canCreateSite' => $agent->canCreateAccountSite(),
+            'canManageTickets' => $canManageTickets,
+            'canViewConversations' => $canViewConversations,
+            'canViewSupportWork' => $canViewSupportWork,
             'siteEmptyState' => $this->siteEmptyState($siteFilters, $agent->canCreateAccountSite()),
             'siteFilters' => $siteFilters,
             'siteInstallHealth' => $siteInstallHealth,
@@ -159,10 +181,15 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
 
         $agent = $request->user();
-        $site->loadMissing([
-            'externalIssueProjects.providerConnection',
-            'latestVisitor',
-        ]);
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canViewSupportWork = $canViewConversations || $canManageTickets;
+        $site->loadMissing('externalIssueProjects.providerConnection');
+
+        $site->setRelation('latestVisitor', $site->latestVisitor()
+            ->when(! $canViewSupportWork, fn ($query) => $query
+                ->select(['visitors.id', 'visitors.site_id', 'visitors.last_seen_at']))
+            ->first());
         $account = $agent->account()->firstOrFail();
         $accountAgents = $account->agents()
             ->whereNull('deactivated_at')
@@ -194,6 +221,7 @@ class AgentSiteController extends Controller
             'accountAgents' => $accountAgents,
             'agent' => $agent,
             'canViewSiteActivity' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
+            'canViewSupportWork' => $canViewSupportWork,
             'canManageIntegrations' => Gate::forUser($agent)->allows('manageIntegrations', $site),
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
@@ -240,7 +268,13 @@ class AgentSiteController extends Controller
                 : null,
             'siteExternalIssueProjects' => $site->externalIssueProjects,
             'siteHasExplicitSupportAgents' => $site->hasExplicitSupportAgents(),
-            'siteSupportLoad' => $this->siteSupportLoad($site, $supportAgentIds, $accountAgents->count()),
+            'siteSupportLoad' => $this->siteSupportLoad(
+                $site,
+                $supportAgentIds,
+                $accountAgents->count(),
+                $canViewConversations,
+                $canManageTickets,
+            ),
             'siteSupportReadiness' => $this->siteSupportReadiness($site, $supportAgentIds, $maskSelectors, $externalIssueHealth),
             'siteStatusFeedback' => $this->siteShowStatusFeedback($request->session()->get('status')),
             'supportAgentIds' => $supportAgentIds,
@@ -294,37 +328,50 @@ class AgentSiteController extends Controller
      * @param  array<int, int>  $supportAgentIds
      * @return Collection<int, array{label: string, value: string, detail: string, href: string, action: string}>
      */
-    private function siteSupportLoad(Site $site, array $supportAgentIds, int $accountAgentCount): Collection
-    {
-        $openConversationCount = $site->conversations()
-            ->where('status', 'open')
-            ->count();
-        $openTicketCount = $site->tickets()
-            ->where('status', 'open')
-            ->count();
-        $pendingTicketCount = $site->tickets()
-            ->where('status', 'pending')
-            ->count();
+    private function siteSupportLoad(
+        Site $site,
+        array $supportAgentIds,
+        int $accountAgentCount,
+        bool $canViewConversations,
+        bool $canManageTickets,
+    ): Collection {
+        if (! $canViewConversations && ! $canManageTickets) {
+            return collect();
+        }
+
         $supportAgentCount = $site->hasExplicitSupportAgents()
             ? count($supportAgentIds)
             : $accountAgentCount;
+        $items = collect();
 
-        return collect([
-            [
+        if ($canViewConversations) {
+            $openConversationCount = $site->conversations()
+                ->where('status', 'open')
+                ->count();
+            $items->push([
                 'label' => __('site_settings.load.conversations.label'),
                 'value' => trans_choice('site_settings.load.conversations.count', $openConversationCount, ['count' => ReaderNumber::count($openConversationCount)]),
                 'detail' => __('site_settings.load.conversations.detail'),
                 'href' => route('dashboard.conversations.index', ['conversation_site' => $site->id]),
                 'action' => __('site_settings.load.conversations.action'),
-            ],
-            [
+            ]);
+        }
+
+        if ($canManageTickets) {
+            $openTicketCount = $site->tickets()
+                ->where('status', 'open')
+                ->count();
+            $pendingTicketCount = $site->tickets()
+                ->where('status', 'pending')
+                ->count();
+            $items->push([
                 'label' => __('site_settings.load.open_tickets.label'),
                 'value' => trans_choice('site_settings.load.open_tickets.count', $openTicketCount, ['count' => ReaderNumber::count($openTicketCount)]),
                 'detail' => __('site_settings.load.open_tickets.detail'),
                 'href' => route('dashboard.tickets.index', ['ticket_site' => $site->id]),
                 'action' => __('site_settings.load.open_tickets.action'),
-            ],
-            [
+            ]);
+            $items->push([
                 'label' => __('site_settings.load.pending_tickets.label'),
                 'value' => trans_choice('site_settings.load.pending_tickets.count', $pendingTicketCount, ['count' => ReaderNumber::count($pendingTicketCount)]),
                 'detail' => __('site_settings.load.pending_tickets.detail'),
@@ -333,16 +380,17 @@ class AgentSiteController extends Controller
                     'ticket_site' => $site->id,
                 ]),
                 'action' => __('site_settings.load.pending_tickets.action'),
-            ],
-            [
-                'label' => __('site_settings.load.coverage.label'),
-                'value' => trans_choice('site_settings.load.coverage.count', $supportAgentCount, ['count' => ReaderNumber::count($supportAgentCount)]),
-                'detail' => $site->hasExplicitSupportAgents()
-                    ? __('site_settings.load.coverage.explicit')
-                    : __('site_settings.load.coverage.fallback'),
-                'href' => route('dashboard.sites.show', $site).'#support-access-heading',
-                'action' => __('site_settings.load.coverage.action'),
-            ],
+            ]);
+        }
+
+        return $items->push([
+            'label' => __('site_settings.load.coverage.label'),
+            'value' => trans_choice('site_settings.load.coverage.count', $supportAgentCount, ['count' => ReaderNumber::count($supportAgentCount)]),
+            'detail' => $site->hasExplicitSupportAgents()
+                ? __('site_settings.load.coverage.explicit')
+                : __('site_settings.load.coverage.fallback'),
+            'href' => route('dashboard.sites.show', $site).'#support-access-heading',
+            'action' => __('site_settings.load.coverage.action'),
         ]);
     }
 
@@ -1581,7 +1629,7 @@ class AgentSiteController extends Controller
         };
     }
 
-    private function filteredSites(Collection $sites, Request $request): array
+    private function filteredSites(Collection $sites, Request $request, bool $canViewSupportWork): array
     {
         $stateOptions = [
             'active' => __('sites.index.filters.options.state.active_sites'),
@@ -1612,10 +1660,12 @@ class AgentSiteController extends Controller
             'live' => __('sites.index.filters.options.install.live'),
         ];
         $search = trim($this->stringQuery($request, 'site_search'));
-        $workload = $this->normalizeSiteFilter(
-            $this->stringQuery($request, 'site_workload', 'all'),
-            array_keys($workloadOptions),
-        );
+        $workload = $canViewSupportWork
+            ? $this->normalizeSiteFilter(
+                $this->stringQuery($request, 'site_workload', 'all'),
+                array_keys($workloadOptions),
+            )
+            : 'all';
         $install = $this->normalizeSiteFilter(
             $this->stringQuery($request, 'site_install', 'all'),
             array_keys($installOptions),
@@ -1695,15 +1745,9 @@ class AgentSiteController extends Controller
      * @param  Collection<int, Site>  $sites
      * @return list<array{label: string, value: string, detail: string, href: string|null, action: string|null}>
      */
-    private function siteOperationsSnapshot(Collection $sites): array
+    private function siteOperationsSnapshot(Collection $sites, bool $canViewCombinedWorkload): array
     {
         $visibleCount = $sites->count();
-        $activeSiteCount = $sites
-            ->filter(fn (Site $site): bool => $this->siteHasActiveWorkload($site))
-            ->count();
-        $openConversationCount = $sites->sum(fn (Site $site): int => (int) $site->open_conversations_count);
-        $openTicketCount = $sites->sum(fn (Site $site): int => (int) $site->open_tickets_count);
-        $pendingTicketCount = $sites->sum(fn (Site $site): int => (int) $site->pending_tickets_count);
         $installAttentionCount = $sites
             ->filter(fn (Site $site): bool => SiteInstallHealth::fromVisitor($site->latestVisitor)['needs_attention'])
             ->count();
@@ -1712,7 +1756,7 @@ class AgentSiteController extends Controller
             ->count();
         $fallbackAccessCount = max(0, $visibleCount - $explicitAccessCount);
 
-        return [
+        $snapshot = collect([
             [
                 'label' => __('sites.index.snapshot.visible.label'),
                 'value' => trans_choice('sites.index.snapshot.visible.value', $visibleCount, [
@@ -1722,7 +1766,16 @@ class AgentSiteController extends Controller
                 'href' => route('dashboard.sites.index'),
                 'action' => __('sites.index.snapshot.visible.action'),
             ],
-            [
+        ]);
+
+        if ($canViewCombinedWorkload) {
+            $activeSiteCount = $sites
+                ->filter(fn (Site $site): bool => $this->siteHasActiveWorkload($site))
+                ->count();
+            $openConversationCount = $sites->sum(fn (Site $site): int => (int) $site->open_conversations_count);
+            $openTicketCount = $sites->sum(fn (Site $site): int => (int) $site->open_tickets_count);
+            $pendingTicketCount = $sites->sum(fn (Site $site): int => (int) $site->pending_tickets_count);
+            $snapshot->push([
                 'label' => __('sites.index.snapshot.workload.label'),
                 'value' => trans_choice('sites.index.snapshot.workload.value', $activeSiteCount, [
                     'count' => ReaderNumber::count($activeSiteCount),
@@ -1734,17 +1787,19 @@ class AgentSiteController extends Controller
                 ]),
                 'href' => route('dashboard.sites.index', ['site_workload' => 'active']),
                 'action' => __('sites.index.snapshot.workload.action'),
-            ],
-            [
-                'label' => __('sites.index.snapshot.install.label'),
-                'value' => trans_choice('sites.index.snapshot.install.value', $installAttentionCount, [
-                    'count' => ReaderNumber::count($installAttentionCount),
-                ]),
-                'detail' => __('sites.index.snapshot.install.detail'),
-                'href' => route('dashboard.sites.index', ['site_install' => 'needs_attention']),
-                'action' => __('sites.index.snapshot.install.action'),
-            ],
-            [
+            ]);
+        }
+
+        return $snapshot->push([
+            'label' => __('sites.index.snapshot.install.label'),
+            'value' => trans_choice('sites.index.snapshot.install.value', $installAttentionCount, [
+                'count' => ReaderNumber::count($installAttentionCount),
+            ]),
+            'detail' => __('sites.index.snapshot.install.detail'),
+            'href' => route('dashboard.sites.index', ['site_install' => 'needs_attention']),
+            'action' => __('sites.index.snapshot.install.action'),
+        ])
+            ->push([
                 'label' => __('sites.index.snapshot.access.label'),
                 'value' => trans_choice('sites.index.snapshot.access.value', $explicitAccessCount, [
                     'count' => ReaderNumber::count($explicitAccessCount),
@@ -1754,8 +1809,8 @@ class AgentSiteController extends Controller
                 ]),
                 'href' => null,
                 'action' => null,
-            ],
-        ];
+            ])
+            ->all();
     }
 
     /**
