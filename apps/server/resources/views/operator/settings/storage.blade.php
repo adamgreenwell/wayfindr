@@ -1,23 +1,21 @@
-<x-layouts.operator title="Storage settings">
+<x-layouts.operator :title="__('operator.storage.document_title')">
 
     <x-page-header
         :back-href="$backUrl ?? null"
-        :back-label="$backLabel ?? 'Back'"
-        title="Attachment storage"
-        subtitle="Choose where uploaded files are stored — the local disk or an S3-compatible bucket. Changes apply immediately, no restart." />
+        :back-label="$backLabel ?? __('operator.shell.back')"
+        :title="__('operator.storage.title')"
+        :subtitle="__('operator.storage.subtitle')" />
 
-    @if (session('status'))
-        <p class="status-message">{{ session('status') }}</p>
-    @endif
-
-    @if (session('error'))
-        <p class="status-message">{{ session('error') }}</p>
-    @endif
+    @foreach (['status', 'error'] as $feedbackType)
+        @if ($feedback = session($feedbackType))
+            <p class="status-message"><x-operator-feedback :feedback="$feedback" /></p>
+        @endif
+    @endforeach
 
     <section class="section" aria-labelledby="storage-config-heading">
         <div class="section-header">
-            <h2 id="storage-config-heading">Where new uploads land</h2>
-            <span class="lede">Existing attachments keep serving from where they were saved — switching only affects new uploads.</span>
+            <h2 id="storage-config-heading">{{ __('operator.storage.heading') }}</h2>
+            <span class="lede">{{ __('operator.storage.lede') }}</span>
         </div>
 
         <form class="section-form" method="POST" action="{{ route('operator.settings.storage.update') }}">
@@ -27,81 +25,100 @@
             @endif
 
             <div class="field">
-                <label for="disk">Storage disk</label>
+                <label for="disk">{{ __('operator.storage.disk') }}</label>
                 <select id="disk" name="disk">
                     @if ($externalDisk)
-                        <option value="{{ $externalDisk }}" @selected(old('disk', $disk) === $externalDisk)>{{ $externalDisk }} (current, configured in env)</option>
+                        <option lang="" value="{{ $externalDisk }}" @selected(old('disk', $disk) === $externalDisk)>{{ $externalDisk }}</option>
                     @endif
-                    <option value="attachments" @selected(old('disk', $disk) === 'attachments')>Local disk (this server)</option>
-                    <option value="attachments-s3" @selected(old('disk', $disk) === 'attachments-s3')>S3-compatible bucket</option>
+                    <option value="attachments" @selected(old('disk', $disk) === 'attachments')>{{ __('operator.storage.local_disk') }}</option>
+                    <option value="attachments-s3" @selected(old('disk', $disk) === 'attachments-s3')>{{ __('operator.storage.s3_disk') }}</option>
                 </select>
                 @error('disk')<p class="field-error">{{ $message }}</p>@enderror
-                <p class="field-help">Local storage works out of the box. Use an S3-compatible bucket (AWS S3, Cloudflare R2, DigitalOcean Spaces, MinIO) for durability or multi-server installs.</p>
+                @if ($externalDisk)
+                    <p class="field-help">{!! __('operator.storage.external_disk_help', ['disk' => '<code lang="">'.e($externalDisk).'</code>']) !!}</p>
+                @endif
+                <p class="field-help">{!! __('operator.storage.disk_help', [
+                    'aws' => '<span lang="">AWS S3</span>',
+                    'r2' => '<span lang="">Cloudflare R2</span>',
+                    'spaces' => '<span lang="">DigitalOcean Spaces</span>',
+                    'minio' => '<span lang="">MinIO</span>',
+                ]) !!}</p>
             </div>
 
-            <h3>S3-compatible bucket</h3>
-            <p class="field-help">Used when the S3 disk is selected. The bucket must stay private — files are only served through Wayfindr, never a bucket URL. Once attachments are stored here, the bucket, endpoint, and region are locked so existing files stay reachable (credentials and ACL can still change).</p>
+            <h3>{!! __('operator.storage.s3_heading', ['s3' => '<span lang="">S3</span>']) !!}</h3>
+            <p class="field-help">{!! __('operator.storage.s3_help', ['s3' => '<span lang="">S3</span>']) !!}</p>
 
             <div class="field">
-                <label for="bucket">Bucket</label>
-                <input id="bucket" name="bucket" value="{{ old('bucket', $bucket) }}" autocomplete="off" placeholder="my-wayfindr-attachments">
+                <label for="bucket">{{ __('operator.storage.bucket') }}</label>
+                <input id="bucket" name="bucket" lang="" value="{{ old('bucket', $bucket) }}" autocomplete="off" placeholder="my-wayfindr-attachments">
                 @error('bucket')<p class="field-error">{{ $message }}</p>@enderror
             </div>
 
             <div class="field">
-                <label for="region">Region</label>
-                <input id="region" name="region" value="{{ old('region', $region) }}" autocomplete="off" placeholder="us-east-1">
+                <label for="region">{{ __('operator.storage.region') }}</label>
+                <input id="region" name="region" lang="" value="{{ old('region', $region) }}" autocomplete="off" placeholder="us-east-1">
                 @error('region')<p class="field-error">{{ $message }}</p>@enderror
-                <p class="field-help">For Cloudflare R2 use <code>auto</code>.</p>
+                <p class="field-help">{!! __('operator.storage.region_help', [
+                    'r2' => '<span lang="">Cloudflare R2</span>',
+                    'auto' => '<code lang="">auto</code>',
+                ]) !!}</p>
             </div>
 
             <div class="field">
-                <label for="endpoint">Endpoint</label>
-                <input id="endpoint" name="endpoint" value="{{ old('endpoint', $endpoint) }}" autocomplete="off" placeholder="https://…">
+                <label for="endpoint">{{ __('operator.storage.endpoint') }}</label>
+                <input id="endpoint" name="endpoint" lang="" value="{{ old('endpoint', $endpoint) }}" autocomplete="off" placeholder="https://…">
                 @error('endpoint')<p class="field-error">{{ $message }}</p>@enderror
-                <p class="field-help">Leave blank for AWS S3. Required for R2, Spaces, MinIO, and other S3-compatible stores.</p>
+                <p class="field-help">{!! __('operator.storage.endpoint_help', [
+                    'aws' => '<span lang="">AWS S3</span>',
+                    'r2' => '<span lang="">Cloudflare R2</span>',
+                    'spaces' => '<span lang="">DigitalOcean Spaces</span>',
+                    'minio' => '<span lang="">MinIO</span>',
+                ]) !!}</p>
             </div>
 
             <div class="field">
-                <label for="s3_access_key">Access key ID</label>
+                <label for="s3_access_key">{{ __('operator.storage.access_key') }}</label>
                 <input id="s3_access_key" name="s3_access_key" type="password" autocomplete="off"
-                    placeholder="{{ $keyUnreadable ? 'Could not read the saved key — re-enter it' : ($keyIsSet ? '•••••••• (a key is configured)' : 'No key configured') }}">
+                    placeholder="{{ $keyUnreadable ? __('operator.storage.key_placeholder_unreadable') : ($keyIsSet ? __('operator.storage.key_placeholder_configured') : __('operator.storage.key_placeholder_none')) }}">
                 @error('s3_access_key')<p class="field-error">{{ $message }}</p>@enderror
                 @if ($keyUnreadable)
-                    <p class="field-error">The saved access key could not be decrypted (this can happen after an APP_KEY change). Re-enter it below.</p>
+                    <p class="field-error">{{ __('operator.storage.key_unreadable') }}</p>
                 @endif
             </div>
 
             <div class="field">
-                <label for="s3_secret_key">Secret access key</label>
+                <label for="s3_secret_key">{{ __('operator.storage.secret_key') }}</label>
                 <input id="s3_secret_key" name="s3_secret_key" type="password" autocomplete="new-password"
-                    placeholder="{{ $secretUnreadable ? 'Could not read the saved secret — re-enter it' : ($secretIsSet ? '•••••••• (a secret is configured)' : 'No secret configured') }}">
+                    placeholder="{{ $secretUnreadable ? __('operator.storage.secret_placeholder_unreadable') : ($secretIsSet ? __('operator.storage.secret_placeholder_configured') : __('operator.storage.secret_placeholder_none')) }}">
                 @error('s3_secret_key')<p class="field-error">{{ $message }}</p>@enderror
                 @if ($secretUnreadable)
-                    <p class="field-error">The saved secret access key could not be decrypted (this can happen after an APP_KEY change). Re-enter it below.</p>
+                    <p class="field-error">{{ __('operator.storage.secret_unreadable') }}</p>
                 @endif
-                <p class="field-help">Access keys are stored encrypted and never shown. Leave blank to keep the saved values.</p>
+                <p class="field-help">{{ __('operator.storage.credentials_help') }}</p>
                 <label class="check-row" for="s3_no_keys">
                     <input id="s3_no_keys" type="checkbox" name="s3_no_keys" value="1" @checked(old('s3_no_keys'))>
-                    <span>This bucket authenticates with an instance role or default credential provider — clear any stored access keys</span>
+                    <span>{{ __('operator.storage.no_keys') }}</span>
                 </label>
             </div>
 
             <div class="field">
-                <label for="acl">Object ACL</label>
+                <label for="acl">{{ __('operator.storage.acl') }}</label>
                 <select id="acl" name="acl">
-                    <option value="bucket-owner-full-control" @selected(old('acl', $acl ?: 'bucket-owner-full-control') === 'bucket-owner-full-control')>Bucket owner full control (AWS default)</option>
-                    <option value="private" @selected(old('acl', $acl) === 'private')>Private (Cloudflare R2 and compatible stores)</option>
-                    <option value="bucket-owner-read" @selected(old('acl', $acl) === 'bucket-owner-read')>Bucket owner read</option>
+                    <option value="bucket-owner-full-control" @selected(old('acl', $acl ?: 'bucket-owner-full-control') === 'bucket-owner-full-control')>{{ __('operator.storage.acl_owner_full') }}</option>
+                    <option value="private" @selected(old('acl', $acl) === 'private')>{{ __('operator.storage.acl_private') }}</option>
+                    <option value="bucket-owner-read" @selected(old('acl', $acl) === 'bucket-owner-read')>{{ __('operator.storage.acl_owner_read') }}</option>
                 </select>
                 @error('acl')<p class="field-error">{{ $message }}</p>@enderror
-                <p class="field-help">Keep the AWS default unless your store rejects it. Cloudflare R2 needs <code>Private</code>. Only private ACLs are allowed — attachments are never public.</p>
+                <p class="field-help">{!! __('operator.storage.acl_help', [
+                    'aws' => '<span lang="">AWS S3</span>',
+                    'r2' => '<span lang="">Cloudflare R2</span>',
+                ]) !!}</p>
             </div>
 
             <div class="field">
                 <label class="check-row" for="s3_confirm_migrated">
                     <input id="s3_confirm_migrated" type="checkbox" name="s3_confirm_migrated" value="1" @checked(old('s3_confirm_migrated'))>
-                    <span>I have migrated existing attachments to the new location (only needed to change the bucket, endpoint, or region once files are already stored — check this after moving the objects, or they become unreachable).</span>
+                    <span>{{ __('operator.storage.confirm_migrated') }}</span>
                 </label>
             </div>
 
@@ -112,18 +129,21 @@
                 <input type="hidden" name="use_path_style" value="0">
                 <label class="check-row" for="use_path_style">
                     <input id="use_path_style" type="checkbox" name="use_path_style" value="1" @checked(old('use_path_style', $usePathStyle))>
-                    <span>Use path-style addressing (required for MinIO and most non-AWS stores)</span>
+                    <span>{!! __('operator.storage.path_style', [
+                        'minio' => '<span lang="">MinIO</span>',
+                        'aws' => '<span lang="">AWS S3</span>',
+                    ]) !!}</span>
                 </label>
             </div>
 
-            <button class="button" type="submit">Save storage settings</button>
+            <button class="button" type="submit">{{ __('operator.storage.save') }}</button>
         </form>
     </section>
 
     <section class="section" aria-labelledby="storage-test-heading">
         <div class="section-header">
-            <h2 id="storage-test-heading">Test the connection</h2>
-            <span class="lede">Verify the active disk can write, read, list, and delete — the round-trip uploads and cleanup need.</span>
+            <h2 id="storage-test-heading">{{ __('operator.storage.test_heading') }}</h2>
+            <span class="lede">{{ __('operator.storage.test_lede') }}</span>
         </div>
 
         <form class="section-form" method="POST" action="{{ route('operator.settings.storage.test') }}">
@@ -132,7 +152,7 @@
                 <input type="hidden" name="from" value="{{ $returnTo }}">
             @endif
 
-            <button class="button secondary" type="submit">Run storage test</button>
+            <button class="button secondary" type="submit">{{ __('operator.storage.test') }}</button>
         </form>
     </section>
 </x-layouts.operator>

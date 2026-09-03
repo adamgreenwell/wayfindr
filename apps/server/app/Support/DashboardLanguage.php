@@ -87,6 +87,9 @@ final class DashboardLanguage
         'operator.settings.mail.edit',
         'operator.settings.mail.update',
         'operator.settings.mail.test',
+        'operator.settings.storage.edit',
+        'operator.settings.storage.update',
+        'operator.settings.storage.test',
 
         'dashboard.profile.show',
         'dashboard.profile.update',

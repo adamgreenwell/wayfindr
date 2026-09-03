@@ -130,6 +130,16 @@ return [
         'timezone' => 'Fuso orario',
         'to' => 'Destinatario',
         'username' => 'Nome utente SMTP',
+        'disk' => 'Disco di archiviazione',
+        'bucket' => 'Nome del bucket',
+        'region' => 'Area geografica del bucket',
+        'endpoint' => 'URL dell’endpoint',
+        'acl' => 'ACL dell’oggetto',
+        's3_access_key' => 'ID della chiave di accesso',
+        's3_secret_key' => 'Chiave di accesso segreta',
+        's3_no_keys' => 'Cancellazione delle chiavi salvate',
+        's3_confirm_migrated' => 'Conferma della migrazione',
+        'use_path_style' => 'Indirizzamento basato sul percorso',
 
         // The articles page. `body` was already here for the reply composer;
         // `title` was not, so an over-long article title produced a correct
