@@ -135,6 +135,11 @@ final class DashboardLanguage
         'dashboard.sites.create',
         'dashboard.sites.store',
 
+        // The hosted tester is a read-only utility with no form endpoints of
+        // its own. Its fake visitor/site values remain language-neutral while
+        // the page around them follows the agent running the verification.
+        'dashboard.sites.tester',
+
         // The ticket workspace and endpoints owned exclusively by it. The
         // assignee and lifecycle writes are deliberately absent: those are
         // also submitted from the conversation's linked-ticket panel, so the

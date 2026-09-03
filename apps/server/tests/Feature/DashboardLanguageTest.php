@@ -584,6 +584,70 @@ test('the sites directory and new-site form follow the agent language without cl
         ->assertDontSee('Site details');
 });
 
+test('the site tester follows the agent language while site and fake visitor data stay language neutral', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
+    $german = User::factory()->for($account)->create(['locale' => 'de']);
+    $italian = User::factory()->for($account)->create(['locale' => 'it']);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Datenpunkt Hilfe',
+        'domain' => 'hilfe.example',
+        'public_key' => 'site_datenpunkt_public',
+    ]);
+    $site->supportAgents()->attach([$german->id, $italian->id]);
+
+    $germanHtml = (string) $this->actingAs($german)
+        ->get(route('dashboard.sites.tester', $site))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Tester für')
+        ->assertSee('Testoberfläche')
+        ->assertSee('Prüflauf')
+        ->assertSee('Beispielseite')
+        ->assertSee('aria-label="Fiktives Bestellformular"', false)
+        ->assertDontSee('Test surface')
+        // The tester now exercises the widget's real browser/site-default
+        // catalogue instead of freezing two pieces of its chrome in English.
+        ->assertDontSee('launcherLabel:', false)
+        ->assertDontSee("title: 'Wayfindr Tester'", false)
+        ->assertSee("test_surface: 'Dashboard tester'", false)
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$germanHtml);
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        'site name in heading' => '//header[contains(@class, "page-header")]//h1//span[normalize-space(text())="Datenpunkt Hilfe"]',
+        'site name in context' => '//section[@aria-labelledby="tester-context-heading"]//span[contains(@class, "meta-value")][normalize-space(text())="Datenpunkt Hilfe"]',
+        'domain' => '//span[contains(@class, "meta-value")][normalize-space(text())="hilfe.example"]',
+        'public key' => '//span[contains(@class, "meta-value")][normalize-space(text())="site_datenpunkt_public"]',
+        'tester visitor identifier' => '//span[contains(@class, "meta-value")][contains(normalize-space(text()), "tester-site-")]',
+        'example route' => '//span[contains(@class, "meta-value")][contains(normalize-space(text()), "/tester")]',
+        'fake host context' => '//span[contains(@class, "meta-value")][normalize-space(text())="Plan: Team, region: Demo"]',
+        'email value' => '//input[@id="tester-email"]',
+        'password value' => '//input[@id="tester-password"]',
+        'card value' => '//input[@id="tester-card"]',
+        'editable support note' => '//textarea[@id="tester-note"]',
+    ] as $label => $query) {
+        $node = $xpath->query($query)->item(0);
+
+        expect($node)->not->toBeNull("{$label} did not render; this guard is checking nothing")
+            ->and($node)->toBeInstanceOf(DOMElement::class)
+            ->and($node->hasAttribute('lang'))->toBeTrue("{$label} carries no language reset")
+            ->and($node->getAttribute('lang'))->toBe('');
+    }
+
+    $this->actingAs($italian)
+        ->get(route('dashboard.sites.tester', $site))
+        ->assertOk()
+        ->assertSee('<html lang="it"', false)
+        ->assertSee('Pagina di prova di')
+        ->assertSee('Ambiente di prova')
+        ->assertSee('Esecuzione di verifica')
+        ->assertSee('Solo dati fittizi sicuri')
+        ->assertDontSee('Test surface');
+});
+
 test('site creation validation follows the form language and its success resolves after the redirect', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Datenpunkt']);
     $agent = User::factory()->for($account)->create(['locale' => 'de']);
