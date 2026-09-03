@@ -31,6 +31,7 @@ class CobrowseTransportReadiness
                 summary: 'Cobrowse transport readiness could not inspect active sessions.',
                 detail: 'The cobrowse session table could not be inspected. Check database connectivity and run migrations before relying on cobrowse diagnostics.',
                 action: 'Confirm the database is reachable, run php artisan migrate --force if needed, then rerun php artisan wayfindr:cobrowse-transport-smoke.',
+                translationVariant: 'inspection_failed',
             );
         }
 
@@ -43,6 +44,7 @@ class CobrowseTransportReadiness
                 detail: 'Cobrowse health will appear after a visitor grants consent and the widget reports telemetry.',
                 action: 'Send a test message from the widget with cobrowse consent before relying on cobrowse for real visitor support.',
                 statusLabel: 'No data yet',
+                translationVariant: 'no_samples',
             );
         }
 
@@ -59,6 +61,9 @@ class CobrowseTransportReadiness
                 ),
                 detail: 'Aggregate signals: '.$this->stateSummary($states).'. No support codes, visitor identifiers, page URLs, snapshots, or transcripts are shown here.',
                 action: 'Use chat to confirm fast-changing page state, request a fresh snapshot when the visitor transport settles, and review the conversation-level cobrowse health panel for the assigned support team.',
+                translationVariant: $attentionCount === 1 ? 'attention_one' : 'attention_many',
+                translationParameters: ['count' => (string) $attentionCount],
+                translationStates: $states,
             );
         }
 
@@ -75,6 +80,9 @@ class CobrowseTransportReadiness
                 ),
                 detail: 'Aggregate signals: '.$this->stateSummary($states).'. This usually means consent was granted but the visitor widget has not reported page state or telemetry yet.',
                 action: 'Keep the chat fallback available and confirm the widget can reach the cobrowse telemetry endpoints from the visitor site.',
+                translationVariant: $unreportedCount === 1 ? 'unreported_one' : 'unreported_many',
+                translationParameters: ['count' => (string) $unreportedCount],
+                translationStates: $states,
             );
         }
 
@@ -87,6 +95,9 @@ class CobrowseTransportReadiness
             ),
             detail: 'Aggregate signals: '.$this->stateSummary($states).'.',
             action: 'Keep exercising cobrowse on representative pages and review this check after deploys, Reverb changes, or widget configuration changes.',
+            translationVariant: $activeCount === 1 ? 'ready_one' : 'ready_many',
+            translationParameters: ['count' => (string) $activeCount],
+            translationStates: $states,
         );
     }
 
@@ -162,8 +173,11 @@ class CobrowseTransportReadiness
         string $detail,
         string $action,
         ?string $statusLabel = null,
+        ?string $translationVariant = null,
+        array $translationParameters = [],
+        array $translationStates = [],
     ): array {
-        return [
+        $check = [
             'action' => $action,
             'detail' => $detail,
             'key' => 'cobrowse_transport',
@@ -176,5 +190,15 @@ class CobrowseTransportReadiness
             },
             'summary' => $summary,
         ];
+
+        if ($translationVariant !== null) {
+            $check['translation'] = [
+                'parameters' => $translationParameters,
+                'states' => $translationStates,
+                'variant' => $translationVariant,
+            ];
+        }
+
+        return $check;
     }
 }

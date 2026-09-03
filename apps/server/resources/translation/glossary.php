@@ -116,6 +116,9 @@ return [
             'Admin',
             'Bug',
             'Payload',
+            // The established Italian UI term for an authentication secret;
+            // translating it as `parola d’ordine` would be less familiar.
+            'Password',
             // Established in the ticket catalogues and used as the visible
             // integration-field label; `fornitore` would introduce a second
             // term for the same external service on adjacent surfaces.

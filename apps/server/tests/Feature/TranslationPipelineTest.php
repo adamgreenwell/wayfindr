@@ -1346,6 +1346,22 @@ test('a bare label uses the term its own key names', function (): void {
         // the permission to read, not something already read.
         'it/api_tokens.abilities.read' => 'read: message state vs token permission',
         'de/api_tokens.abilities.read' => 'read: message state vs token permission',
+        // These `summary` leaves are the headline copy for a realtime state,
+        // not a ticket summary or digest.
+        'it/operator.readiness.checks.realtime_broadcasting.disabled.summary' => 'summary: state headline vs ticket summary',
+        'it/operator.readiness.checks.realtime_broadcasting.incomplete.summary' => 'summary: state headline vs ticket summary',
+        'it/operator.readiness.checks.realtime_broadcasting.ready.summary' => 'summary: state headline vs ticket summary',
+        'de/operator.readiness.checks.realtime_broadcasting.disabled.summary' => 'summary: state headline vs ticket summary',
+        'de/operator.readiness.checks.realtime_broadcasting.incomplete.summary' => 'summary: state headline vs ticket summary',
+        'de/operator.readiness.checks.realtime_broadcasting.ready.summary' => 'summary: state headline vs ticket summary',
+        // Confirmation freshness and documented retention use the same stable
+        // machine states as live-data freshness and general readiness, but the
+        // reader-facing concepts are deliberately different.
+        'it/operator.dashboard.proof.status.fresh' => 'fresh: confirmation currency vs new data',
+        'de/operator.dashboard.proof.status.fresh' => 'fresh: confirmation currency vs new data',
+        'de/operator.dashboard.proof.status.stale' => 'stale: confirmation due again vs stale data',
+        'it/operator.dashboard.retention.status.ready' => 'ready: documented retention vs runtime readiness',
+        'de/operator.dashboard.retention.status.ready' => 'ready: documented retention vs runtime readiness',
     ];
 
     $unbound = [];

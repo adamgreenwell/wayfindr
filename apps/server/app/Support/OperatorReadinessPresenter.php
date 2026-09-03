@@ -53,15 +53,47 @@ final class OperatorReadinessPresenter
 
         $variant = $translation['variant'];
         $parameters = is_array($translation['parameters'] ?? null) ? $translation['parameters'] : [];
+        $localized = [];
+
+        if (array_key_exists('count', $parameters)) {
+            $localized['count'] = ReaderNumber::count((int) $parameters['count']);
+            unset($parameters['count']);
+        }
+
+        if (is_array($translation['states'] ?? null) && $translation['states'] !== []) {
+            $localized['state_summary'] = self::transportStateSummary($translation['states']);
+        }
 
         return [
             ...$check,
-            'action' => self::feedback("{$base}.{$variant}.action", $parameters),
-            'detail' => self::feedback("{$base}.{$variant}.detail", $parameters),
+            'action' => self::feedback("{$base}.{$variant}.action", $parameters, $localized),
+            'detail' => self::feedback("{$base}.{$variant}.detail", $parameters, $localized),
             'label' => $label,
             'status_label' => self::statusLabel($check),
-            'summary' => self::feedback("{$base}.{$variant}.summary", $parameters),
+            'summary' => self::feedback("{$base}.{$variant}.summary", $parameters, $localized),
         ];
+    }
+
+    /** @param array<string, mixed> $states */
+    private static function transportStateSummary(array $states): string
+    {
+        $parts = [];
+
+        foreach (['live', 'degraded', 'reconnecting', 'stale', 'unavailable'] as $state) {
+            $count = (int) ($states[$state] ?? 0);
+
+            if ($count > 0) {
+                $parts[] = trans_choice(
+                    "operator.readiness.transport_states.{$state}",
+                    $count,
+                    ['count' => ReaderNumber::count($count)],
+                );
+            }
+        }
+
+        return $parts === []
+            ? __('operator.readiness.transport_states.none')
+            : implode(', ', $parts);
     }
 
     /** @param array<string, mixed> $check */
@@ -69,6 +101,11 @@ final class OperatorReadinessPresenter
     {
         if (($check['confirmation']['freshness_status'] ?? null) === 'stale') {
             return __('operator.readiness.status.due_again');
+        }
+
+        if (($check['key'] ?? null) === 'cobrowse_transport'
+            && ($check['translation']['variant'] ?? null) === 'no_samples') {
+            return __('operator.readiness.status.no_data');
         }
 
         return match ($check['status'] ?? null) {
@@ -117,9 +154,18 @@ final class OperatorReadinessPresenter
         }
 
         try {
-            return CarbonImmutable::parse($confirmedAt)
-                ->locale(App::currentLocale())
-                ->diffForHumans();
+            $confirmed = CarbonImmutable::parse($confirmedAt);
+            $days = (int) $confirmed->diffInDays(now());
+
+            if ($days > 0 && $days < 30) {
+                return trans_choice(
+                    'operator.readiness.confirmation.days_ago',
+                    $days,
+                    ['count' => ReaderNumber::count($days)],
+                );
+            }
+
+            return $confirmed->locale(App::currentLocale())->diffForHumans();
         } catch (Throwable) {
             return null;
         }

@@ -85,6 +85,72 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Confirm backups can restore');
 });
 
+test('operator dashboard localizes its interface while isolating runtime values', function (): void {
+    config([
+        'app.url' => 'https://support.example.test',
+        'app.key' => 'base64:'.base64_encode(str_repeat('a', 32)),
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.app_id' => 'wayfindr-production',
+        'broadcasting.connections.reverb.key' => 'wayfindr-key',
+        'broadcasting.connections.reverb.secret' => 'wayfindr-secret',
+        'broadcasting.connections.reverb.options.host' => 'relay.datenpunkt.test',
+        'broadcasting.connections.reverb.options.port' => 443,
+        'broadcasting.connections.reverb.options.scheme' => 'https',
+        'mail.default' => 'smtp',
+        'mail.mailers.smtp.host' => 'smtp.example.test',
+        'mail.mailers.smtp.port' => 587,
+        'mail.from.address' => 'support@example.test',
+        'queue.default' => 'database',
+    ]);
+
+    $operator = User::factory()->for(Account::factory())->create([
+        'name' => 'Datenpunkt Operator',
+        'account_role' => AccountRole::Owner,
+        'platform_role' => PlatformRole::Operator,
+    ]);
+
+    foreach ([
+        'de' => ['title' => 'Betreiberkonsole', 'overview' => 'Betreiberschwerpunkt'],
+        'it' => ['title' => 'Console del gestore', 'overview' => 'Priorità del gestore'],
+    ] as $locale => $expected) {
+        $operator->forceFill(['locale' => $locale])->save();
+
+        $html = (string) $this->actingAs($operator)
+            ->get(route('operator.dashboard'))
+            ->assertOk()
+            ->assertSee('<html lang="'.$locale.'"', false)
+            ->assertSee($expected['title'])
+            ->assertSee($expected['overview'])
+            ->assertDontSee('Operator focus')
+            ->getContent();
+
+        $document = new DOMDocument;
+        @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+        $xpath = new DOMXPath($document);
+
+        foreach (['Datenpunkt Operator', 'relay.datenpunkt.test:443', 'reverb'] as $runtimeValue) {
+            $nodes = $xpath->query(sprintf(
+                '//*[@lang="" and normalize-space(.)="%s"]',
+                $runtimeValue,
+            ));
+
+            expect($nodes->length)->toBeGreaterThan(
+                0,
+                "the runtime value {$runtimeValue} inherits the {$locale} interface language",
+            );
+        }
+
+        $realtimeMessage = __('operator.dashboard.realtime.states.ready.message', [], $locale);
+        $realtimeSection = $xpath->query('//*[@id="realtime-heading"]/ancestor::section[1]')->item(0);
+
+        expect($realtimeSection)->not->toBeNull('the realtime section did not render')
+            ->and(substr_count($realtimeSection->textContent, $realtimeMessage))->toBe(
+                1,
+                "the {$locale} realtime status is repeated",
+            );
+    }
+});
+
 test('an account admin cannot reach the instance readiness report', function (): void {
     // Readiness reports on mail, queues, storage and scanning for the whole
     // install. It used to answer on a /dashboard route to any account admin,
@@ -730,7 +796,7 @@ test('dashboard readiness shows stale confirmation refresh guidance', function (
         ->get('/operator')
         ->assertOk()
         ->assertSee('Scheduler confirmation needs refresh.')
-        ->assertSee('Confirmed by Adam Admin 8 days ago.')
+        ->assertSee('Confirmed by <span lang="">Adam Admin</span> 8 days ago.', false)
         ->assertSee('Evidence note recorded.')
         ->assertDontSee('Scheduler was checked before a deploy.')
         ->assertSee('Refresh confirmation');
@@ -809,7 +875,7 @@ test('account admins can confirm a manual readiness item', function (): void {
         ->get('/operator')
         ->assertOk()
         ->assertSee('Scheduler confirmed.')
-        ->assertSee('Confirmed by Adam Admin')
+        ->assertSee('Confirmed by <span lang="">Adam Admin</span>', false)
         ->assertSee('Evidence note recorded.')
         ->assertDontSee('Forge scheduled job is configured.');
 });

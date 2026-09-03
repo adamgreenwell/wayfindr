@@ -14,4 +14,8 @@
         ->all();
 @endphp
 
-{!! __($feedbackKey, [...$feedbackParameters, ...$localizedParameters]) !!}
+@if (is_array($feedback) && array_key_exists('raw', $feedback))
+    <span lang="">{{ $feedback['raw'] }}</span>
+@else
+    {!! __($feedbackKey, [...$feedbackParameters, ...$localizedParameters]) !!}
+@endif

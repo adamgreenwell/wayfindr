@@ -1619,6 +1619,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
         route('operator.settings.backups.restore'),
+        route('operator.dashboard'),
         route('operator.onboarding'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
@@ -2098,6 +2099,7 @@ test('every extracted page translates its document title', function (): void {
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
         route('operator.settings.backups.restore'),
+        route('operator.dashboard'),
         route('operator.onboarding'),
     ];
 
@@ -2895,6 +2897,11 @@ test('every catalogue file answers the same set of keys', function (): void {
         'operator.scanning.driver = Scanner',
         'operator.mail.transport = Transport',
         'operator.backups.history.status = Status',
+        'operator.dashboard.overview.status = Status',
+        'operator.dashboard.budget.units.milliseconds = :count ms',
+        'operator.dashboard.activity.system = System',
+        'operator.dashboard.activity.details.transport = Transport',
+        'operator.dashboard.activity.details.scanner = Scanner',
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',
@@ -3869,6 +3876,7 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
         route('operator.settings.backups.restore'),
+        route('operator.dashboard'),
         route('operator.onboarding'),
     ];
 
@@ -3882,8 +3890,8 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
             );
 
             foreach ($placeholders as $placeholder) {
-                $this->assertStringNotContainsString(
-                    ':'.$placeholder,
+                $this->assertDoesNotMatchRegularExpression(
+                    '/(?<![\pL\pN]):'.preg_quote($placeholder, '/').'\b/u',
                     $text,
                     "unreplaced :{$placeholder} rendered at {$url} in {$locale}"
                 );
@@ -3951,6 +3959,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('operator.settings.backups.edit'),
         route('operator.settings.backups.history'),
         route('operator.settings.backups.restore'),
+        route('operator.dashboard'),
         route('operator.onboarding'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
@@ -3980,7 +3989,10 @@ test('no raw catalogue key ever reaches the page', function (): void {
             // two mutations survived because `tickets` was missing from here,
             // so a raw `tickets.row.…` key rendered unnoticed.
             foreach ($catalogues as $catalogue) {
-                $pattern = '/\b'.preg_quote($catalogue, '/').'\.[a-z][a-z_]*(\.[a-zA-Z_]+)*/';
+                // Ignore catalogue-shaped hostnames in example URLs (for
+                // example `support.example.com`). A raw key is visible copy,
+                // so it cannot begin immediately after a URL slash or `@`.
+                $pattern = '/(?<![\/@])\b'.preg_quote($catalogue, '/').'\.[a-z][a-z_]*(\.[a-zA-Z_]+)*/';
 
                 // A PHPUnit assertion rather than `expect()->not->toContain()`,
                 // which is variadic: passing a message there asserts the text
