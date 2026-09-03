@@ -6,8 +6,14 @@
         </x-slot:actions>
     </x-page-header>
 
-    @if (session('status'))
-        <p class="status-message">{{ __(session('status')) }}</p>
+    @if ($siteStatusFeedback)
+        <p class="status-message">
+            @if (is_array($siteStatusFeedback))
+                <x-translated-feedback :feedback="$siteStatusFeedback" />
+            @else
+                {{ __($siteStatusFeedback) }}
+            @endif
+        </p>
     @endif
 
     <section class="section" aria-labelledby="site-operations-snapshot-heading">

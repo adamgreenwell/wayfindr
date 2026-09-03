@@ -15,6 +15,12 @@ return [
 
     'flash' => [
         'created' => 'Sito creato. Copi il frammento di installazione per completare il collegamento.',
+        'purged' => 'Il sito “:site” è stato eliminato definitivamente insieme a :conversations, :tickets e :attachments.',
+        'purge_counts' => [
+            'conversations' => '{1} :count conversazione|[0,*] :count conversazioni',
+            'tickets' => '{1} :count ticket|[0,*] :count ticket',
+            'attachments' => '{1} :count allegato|[0,*] :count allegati',
+        ],
     ],
 
     'index' => [

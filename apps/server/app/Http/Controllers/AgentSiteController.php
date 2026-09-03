@@ -89,6 +89,7 @@ class AgentSiteController extends Controller
             'siteFilters' => $siteFilters,
             'siteInstallHealth' => $siteInstallHealth,
             'siteOperationsSnapshot' => $siteOperationsSnapshot,
+            'siteStatusFeedback' => $this->siteIndexStatusFeedback($request->session()->get('status')),
             'sites' => $sites,
         ]);
     }
@@ -1361,16 +1362,16 @@ class AgentSiteController extends Controller
 
         return redirect()
             ->route('dashboard.sites.index')
-            ->with('status', sprintf(
-                'Site "%s" was permanently deleted, along with %d %s, %d %s and %d %s.',
-                $site->name,
-                $summary['conversations'],
-                Str::plural('conversation', $summary['conversations']),
-                $summary['tickets'],
-                Str::plural('ticket', $summary['tickets']),
-                $summary['attachments'],
-                Str::plural('attachment', $summary['attachments']),
-            ));
+            ->with('status', [
+                'key' => 'sites.flash.purged',
+                'parameters' => ['site' => $site->name],
+                // Raw until the destination page renders. The purge is
+                // submitted from the still-English site settings page, while
+                // the translated directory belongs to its reader; formatting
+                // these during the write would freeze the wrong language into
+                // the flash.
+                'counts' => $summary,
+            ]);
     }
 
     /**
@@ -1773,6 +1774,39 @@ class AgentSiteController extends Controller
             'action_label' => $health['needs_attention']
                 ? __('sites.index.install.review')
                 : null,
+        ];
+    }
+
+    /**
+     * Resolve count phrases when the translated destination renders, while
+     * leaving the deleted site name as authored data for the feedback
+     * component to mark with an unknown language.
+     *
+     * @return array{key: string, parameters?: array<string, string>, localized_parameters?: array<string, string>}|string|null
+     */
+    private function siteIndexStatusFeedback(mixed $status): array|string|null
+    {
+        if (! is_array($status) || ($status['key'] ?? null) !== 'sites.flash.purged') {
+            return is_string($status) ? $status : null;
+        }
+
+        $counts = is_array($status['counts'] ?? null) ? $status['counts'] : [];
+        $countPhrase = fn (string $name): string => trans_choice(
+            'sites.flash.purge_counts.'.$name,
+            (int) ($counts[$name] ?? 0),
+            ['count' => ReaderNumber::count((int) ($counts[$name] ?? 0))],
+        );
+
+        return [
+            'key' => 'sites.flash.purged',
+            'parameters' => [
+                'site' => (string) data_get($status, 'parameters.site', ''),
+            ],
+            'localized_parameters' => [
+                'conversations' => $countPhrase('conversations'),
+                'tickets' => $countPhrase('tickets'),
+                'attachments' => $countPhrase('attachments'),
+            ],
         ];
     }
 

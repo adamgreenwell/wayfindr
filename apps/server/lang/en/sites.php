@@ -18,6 +18,12 @@ return [
 
     'flash' => [
         'created' => 'Site created. Copy the install snippet to finish connecting it.',
+        'purged' => 'Site ":site" was permanently deleted, along with :conversations, :tickets and :attachments.',
+        'purge_counts' => [
+            'conversations' => '{1} :count conversation|[0,*] :count conversations',
+            'tickets' => '{1} :count ticket|[0,*] :count tickets',
+            'attachments' => '{1} :count attachment|[0,*] :count attachments',
+        ],
     ],
 
     'index' => [

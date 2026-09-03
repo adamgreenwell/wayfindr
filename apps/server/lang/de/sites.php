@@ -15,6 +15,12 @@ return [
 
     'flash' => [
         'created' => 'Website erstellt. Kopieren Sie das Installations-Snippet, um die Verbindung abzuschließen.',
+        'purged' => 'Website „:site“ wurde zusammen mit :conversations, :tickets und :attachments dauerhaft gelöscht.',
+        'purge_counts' => [
+            'conversations' => '{1} :count Unterhaltung|[0,*] :count Unterhaltungen',
+            'tickets' => '{1} :count Ticket|[0,*] :count Tickets',
+            'attachments' => '{1} :count Anhang|[0,*] :count Anhängen',
+        ],
     ],
 
     'index' => [
