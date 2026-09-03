@@ -439,7 +439,7 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
             ]);
     }
 
-    BreakGlassGrant::factory()
+    $operatorGrant = BreakGlassGrant::factory()
         ->activeFor($account, $operator)
         ->scopedToSite($site)
         ->create([
@@ -469,12 +469,23 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         // entries stops appearing.
         'admins' => $admins,
         'operators' => $operators,
+        'operator_grant' => $operatorGrant,
     ];
 }
 
 function conversationQueueLanguageReaderForUrl(array $world, string $url, string $locale): User
 {
     $path = (string) parse_url($url, PHP_URL_PATH);
+
+    // Break-glass viewer routes are requester-only. Use the grant's requester
+    // for both renders and move that reader's locale between requests; the
+    // German response is already captured before the English render begins.
+    if (str_starts_with($path, '/operator/break-glass')) {
+        $operator = $world['operators']['de'];
+        $operator->forceFill(['locale' => $locale])->save();
+
+        return $operator->fresh();
+    }
 
     if (str_starts_with($path, '/operator')) {
         return $world['operators'][$locale];
@@ -1561,7 +1572,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         ]);
     }
 
-    Ticket::factory()
+    $breakGlassTicket = Ticket::factory()
         ->for($world['account'])
         ->for($world['site'])
         ->for($conversation)
@@ -1621,6 +1632,10 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('operator.settings.backups.restore'),
         route('operator.dashboard'),
         route('operator.onboarding'),
+        route('operator.break-glass.index'),
+        route('operator.break-glass.show', $world['operator_grant']),
+        route('operator.break-glass.conversations.show', [$world['operator_grant'], $conversation]),
+        route('operator.break-glass.tickets.show', [$world['operator_grant'], $breakGlassTicket]),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -2074,6 +2089,12 @@ test('every extracted page translates its document title', function (): void {
     // exists for, in the one place a page names itself.
     $world = conversationQueueLanguageWorld();
     $conversation = Conversation::query()->firstOrFail();
+    $breakGlassTicket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'Datenpunkt title ticket']);
 
     $titleOf = function (string $url, string $locale) use ($world): string {
         $reader = conversationQueueLanguageReaderForUrl($world, $url, $locale);
@@ -2101,6 +2122,10 @@ test('every extracted page translates its document title', function (): void {
         route('operator.settings.backups.restore'),
         route('operator.dashboard'),
         route('operator.onboarding'),
+        route('operator.break-glass.index'),
+        route('operator.break-glass.show', $world['operator_grant']),
+        route('operator.break-glass.conversations.show', [$world['operator_grant'], $conversation]),
+        route('operator.break-glass.tickets.show', [$world['operator_grant'], $breakGlassTicket]),
     ];
 
     foreach ($urls as $url) {
@@ -2902,6 +2927,10 @@ test('every catalogue file answers the same set of keys', function (): void {
         'operator.dashboard.activity.system = System',
         'operator.dashboard.activity.details.transport = Transport',
         'operator.dashboard.activity.details.scanner = Scanner',
+        'operator_break_glass.grant.tickets.heading = Tickets',
+        'operator_break_glass.conversation.senders.system = System',
+        'operator_break_glass.ticket.record.status = Status',
+        'operator_break_glass.values.not_set = —',
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',

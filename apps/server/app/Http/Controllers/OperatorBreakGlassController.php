@@ -7,7 +7,7 @@ use App\Models\BreakGlassGrant;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Support\BreakGlass\BreakGlassGrants;
-use App\Support\ReaderClock;
+use App\Support\OperatorBreakGlassPresenter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -65,25 +65,36 @@ class OperatorBreakGlassController extends Controller
 
         return view('operator.break-glass', [
             'operator' => $operator,
-            'ownGrants' => $ownGrants,
+            'ownGrants' => $ownGrants->map(fn (BreakGlassGrant $grant): array => OperatorBreakGlassPresenter::grant($grant)),
             'approvalHints' => $approvalHints,
             'accounts' => Account::query()->orderBy('name')->get(['id', 'name']),
             'sites' => Site::query()->with('account:id,name')->orderBy('name')->get(['id', 'name', 'account_id']),
+            'flashStatus' => OperatorBreakGlassPresenter::flash($request),
             'defaultMinutes' => BreakGlassGrant::DEFAULT_MINUTES,
-            'durationChoices' => $this->durationChoices(),
+            'durationChoices' => OperatorBreakGlassPresenter::durationChoices(),
         ]);
     }
 
     public function store(Request $request, BreakGlassGrants $grants): RedirectResponse
     {
-        $data = $request->validate([
-            'scope_type' => 'required|in:conversation,site,account',
-            'account_id' => 'required_if:scope_type,account|nullable|integer|exists:accounts,id',
-            'site_id' => 'required_if:scope_type,site|nullable|integer|exists:sites,id',
-            'support_code' => 'required_if:scope_type,conversation|nullable|string|max:32',
-            'reason' => 'required|string|max:1000',
-            'requested_minutes' => 'required|integer|min:1|max:'.BreakGlassGrant::MAX_MINUTES,
-        ]);
+        $data = $request->validate(
+            [
+                'scope_type' => 'required|in:conversation,site,account',
+                'account_id' => 'required_if:scope_type,account|nullable|integer|exists:accounts,id',
+                'site_id' => 'required_if:scope_type,site|nullable|integer|exists:sites,id',
+                'support_code' => 'required_if:scope_type,conversation|nullable|string|max:32',
+                'reason' => 'required|string|max:1000',
+                'requested_minutes' => 'required|integer|min:1|max:'.BreakGlassGrant::MAX_MINUTES,
+            ],
+            [
+                // The framework's required_if sentence exposes the machine
+                // values `conversation`, `site`, and `account`. Whole custom
+                // sentences keep those implementation tokens out of the UI.
+                'account_id.required_if' => __('operator_break_glass.validation.account_required'),
+                'site_id.required_if' => __('operator_break_glass.validation.site_required'),
+                'support_code.required_if' => __('operator_break_glass.validation.support_code_required'),
+            ],
+        );
 
         $scope = $this->resolveScope($data);
 
@@ -91,7 +102,11 @@ class OperatorBreakGlassController extends Controller
 
         return redirect()
             ->route('operator.break-glass.index')
-            ->with('status', sprintf('Access requested for %s. The account decides.', $grant->scopeLabel()));
+            ->with('status', 'operator_break_glass.flash.requested')
+            ->with('operator_break_glass_status', [
+                'scope_type' => $grant->scope_type,
+                'scope_label' => $grant->scopeLabel(),
+            ]);
     }
 
     public function approve(Request $request, BreakGlassGrant $grant, BreakGlassGrants $grants): RedirectResponse
@@ -102,7 +117,12 @@ class OperatorBreakGlassController extends Controller
 
         return redirect()
             ->route('operator.break-glass.index')
-            ->with('status', sprintf('Self-approved — access to %s until %s.', $grant->scopeLabel(), ReaderClock::timeWithZone($grant->expires_at)));
+            ->with('status', 'operator_break_glass.flash.self_approved')
+            ->with('operator_break_glass_status', [
+                'scope_type' => $grant->scope_type,
+                'scope_label' => $grant->scopeLabel(),
+                'expires_at' => $grant->expires_at?->toJSON(),
+            ]);
     }
 
     public function close(Request $request, BreakGlassGrant $grant, BreakGlassGrants $grants): RedirectResponse
@@ -114,8 +134,8 @@ class OperatorBreakGlassController extends Controller
         return redirect()
             ->route('operator.break-glass.index')
             ->with('status', $grant->status === BreakGlassGrant::STATUS_EXPIRED
-                ? 'That grant had already expired; it is recorded as expired.'
-                : 'Grant closed. Access is revoked.');
+                ? 'operator_break_glass.flash.already_expired'
+                : 'operator_break_glass.flash.closed');
     }
 
     /**
@@ -142,23 +162,10 @@ class OperatorBreakGlassController extends Controller
 
         if (! $conversation) {
             throw ValidationException::withMessages([
-                'support_code' => sprintf('No conversation found for support code %s.', $code),
+                'support_code' => __('operator_break_glass.validation.conversation_not_found'),
             ]);
         }
 
         return $conversation;
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function durationChoices(): array
-    {
-        return [
-            15 => '15 minutes',
-            BreakGlassGrant::DEFAULT_MINUTES => '1 hour',
-            240 => '4 hours',
-            BreakGlassGrant::MAX_MINUTES => '24 hours (maximum)',
-        ];
     }
 }

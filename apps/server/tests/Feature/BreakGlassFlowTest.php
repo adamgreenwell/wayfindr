@@ -197,6 +197,177 @@ test('an operator\'s open grant never scrolls out behind their own history', fun
         ->assertSee('The oldest still-open request.');
 });
 
+test('the operator access request page localizes its empty state in German and Italian', function (): void {
+    foreach ([
+        'de' => [
+            'title' => 'Betreiberzugriff',
+            'heading' => 'Zugriff anfordern',
+            'scope' => 'Was müssen Sie sehen?',
+            'duration' => 'Wie lange benötigen Sie den Zugriff?',
+            'empty' => 'Sie haben noch keinen Zugriff auf ein Konto angefordert.',
+            'count' => '0 neuere Einträge',
+        ],
+        'it' => [
+            'title' => 'Accesso del gestore',
+            'heading' => 'Richiedi l’accesso',
+            'scope' => 'Che cosa deve vedere?',
+            'duration' => 'Per quanto tempo le serve?',
+            'empty' => 'Non ha ancora richiesto l’accesso ad alcun account.',
+            'count' => '0 voci recenti',
+        ],
+    ] as $locale => $copy) {
+        $account = Account::factory()->create();
+        $operator = User::factory()->for($account)->create([
+            'platform_role' => 'operator',
+            'locale' => $locale,
+        ]);
+
+        $this->actingAs($operator)
+            ->get(route('operator.break-glass.index'))
+            ->assertOk()
+            ->assertSee('<html lang="'.$locale.'">', false)
+            ->assertSee($copy['title'])
+            ->assertSee($copy['heading'])
+            ->assertSee($copy['scope'])
+            ->assertSee($copy['duration'])
+            ->assertSee($copy['empty'])
+            ->assertSee($copy['count'])
+            ->assertDontSee('Ask for access')
+            ->assertDontSee('You have not asked for access');
+    }
+});
+
+test('the operator access list translates grant states and marks account data language neutral', function (): void {
+    $account = Account::factory()->create(['name' => 'Datenpunkt Konto']);
+    $operator = User::factory()->for($account)->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+        'locale' => 'de',
+    ]);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Datenpunkt',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Datenpunkt Portal']);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->create([
+        'visitor_id' => $visitor->id,
+        'support_code' => 'WF-LANGOPERATOR',
+    ]);
+
+    BreakGlassGrant::factory()->scopedToConversation($conversation)->create([
+        'requester_id' => $operator->id,
+        'reason' => 'Datenpunkt pending reason',
+    ]);
+    BreakGlassGrant::factory()->activeFor($account, $operator)->scopedToSite($site)->create([
+        'approver_id' => $admin->id,
+        'reason' => 'Datenpunkt active reason',
+    ]);
+    BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => $operator->id,
+        'scope_type' => BreakGlassGrant::SCOPE_ACCOUNT,
+        'status' => BreakGlassGrant::STATUS_DENIED,
+        'reason' => 'Datenpunkt denied reason',
+    ]);
+
+    $german = $this->actingAs($operator)->get(route('operator.break-glass.index'));
+
+    $german->assertOk()
+        ->assertSeeInOrder(['Unterhaltung', 'WF-LANGOPERATOR', 'Genehmigung ausstehend'])
+        ->assertSeeInOrder(['Website', 'Datenpunkt Portal', 'Aktiv'])
+        ->assertSeeInOrder(['Gesamtes Konto', 'Abgelehnt'])
+        ->assertSee('wartet auf')
+        ->assertSee('Zugriff öffnen')
+        ->assertSee('Jetzt beenden')
+        ->assertDontSee('Awaiting approval')
+        ->assertDontSee('Open access');
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $german->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    foreach (['Datenpunkt Konto', 'Datenpunkt Portal', 'WF-LANGOPERATOR', 'Ada Datenpunkt', 'Datenpunkt pending reason'] as $value) {
+        expect($xpath->query('//span[@lang="" and normalize-space(.)="'.$value.'"]')?->length)
+            ->toBeGreaterThan(0, "{$value} is not marked as language-neutral account data");
+    }
+
+    $operator->forceFill(['locale' => 'it'])->save();
+
+    $this->actingAs($operator->fresh())
+        ->get(route('operator.break-glass.index'))
+        ->assertOk()
+        ->assertSeeInOrder(['Conversazione', 'WF-LANGOPERATOR', 'In attesa di approvazione'])
+        ->assertSeeInOrder(['Sito', 'Datenpunkt Portal', 'Attivo'])
+        ->assertSeeInOrder(['Intero account', 'Negato'])
+        ->assertSee('in attesa di')
+        ->assertSee('Apri l’accesso')
+        ->assertDontSee('Awaiting approval');
+});
+
+test('operator access validation and lifecycle flashes follow the operator language and clock', function (): void {
+    $this->travelTo(CarbonImmutable::create(2026, 8, 24, 14, 0, 0, 'UTC'));
+
+    $w = breakGlassFlowWorld();
+    $operator = $w['operator'];
+    $operator->forceFill(['locale' => 'de', 'timezone' => 'Europe/Berlin'])->save();
+
+    $this->actingAs($operator->fresh())
+        ->from(route('operator.break-glass.index'))
+        ->post(route('operator.break-glass.store'), [
+            'scope_type' => 'site',
+            'reason' => 'Datenpunkt investigation',
+            'requested_minutes' => 60,
+        ])
+        ->assertSessionHasErrors([
+            'site_id' => 'Wählen Sie eine Website für den Website-Zugriff aus.',
+        ]);
+
+    $this->actingAs($operator->fresh())
+        ->from(route('operator.break-glass.index'))
+        ->post(route('operator.break-glass.store'), [
+            'scope_type' => 'conversation',
+            'support_code' => 'WF-NOPE',
+            'reason' => 'Datenpunkt investigation',
+            'requested_minutes' => 60,
+        ])
+        ->assertRedirect(route('operator.break-glass.index'))
+        ->assertSessionHasErrors([
+            'support_code' => 'Für diesen Support-Code wurde keine Unterhaltung gefunden.',
+        ]);
+
+    $this->followingRedirects()
+        ->post(route('operator.break-glass.store'), [
+            'scope_type' => 'conversation',
+            'support_code' => $w['conversation']->support_code,
+            'reason' => 'Datenpunkt investigation',
+            'requested_minutes' => 60,
+        ])
+        ->assertOk()
+        ->assertSee('Zugriff für Unterhaltung')
+        ->assertSee($w['conversation']->support_code)
+        ->assertSee('Das Konto entscheidet.')
+        ->assertDontSee('Access requested for');
+
+    $grant = BreakGlassGrant::query()->latest('id')->firstOrFail();
+
+    $this->followingRedirects()
+        ->post(route('operator.break-glass.approve', $grant))
+        ->assertOk()
+        ->assertSee('Selbst genehmigt — Zugriff auf Unterhaltung')
+        ->assertSee('bis 17:00 CEST')
+        ->assertDontSee('Self-approved — access');
+
+    $operator->forceFill(['locale' => 'it', 'timezone' => 'Europe/Rome'])->save();
+
+    $this->actingAs($operator->fresh())
+        ->followingRedirects()
+        ->post(route('operator.break-glass.close', $grant->fresh()))
+        ->assertOk()
+        ->assertSee('Concessione terminata. L’accesso è stato revocato.')
+        ->assertDontSee('Grant closed.');
+});
+
 // --- Account approval page ------------------------------------------------------
 
 test('an account admin sees pending requests and approves one', function (): void {

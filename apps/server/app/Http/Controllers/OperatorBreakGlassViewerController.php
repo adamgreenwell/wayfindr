@@ -6,9 +6,8 @@ use App\Models\BreakGlassGrant;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
-use App\Models\User;
-use App\Models\Visitor;
 use App\Support\BreakGlass\BreakGlassGrants;
+use App\Support\OperatorBreakGlassPresenter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -28,11 +27,16 @@ class OperatorBreakGlassViewerController extends Controller
         $this->usableGrant($request, $grant);
 
         $grants->recordOpened($grant, $request->user());
+        $coveredTickets = $this->coveredTickets($grant);
 
         return view('operator.break-glass-grant', [
             'grant' => $grant->loadMissing(['account', 'conversation', 'site']),
+            'grantItem' => OperatorBreakGlassPresenter::grant($grant),
             'coveredConversations' => $this->coveredConversations($grant),
-            'coveredTickets' => $this->coveredTickets($grant),
+            'coveredTickets' => $coveredTickets,
+            'ticketStatuses' => $coveredTickets->mapWithKeys(fn (Ticket $ticket): array => [
+                $ticket->id => OperatorBreakGlassPresenter::ticketValue('status', $ticket->status),
+            ]),
         ]);
     }
 
@@ -73,20 +77,24 @@ class OperatorBreakGlassViewerController extends Controller
                     && (int) $attachment->site_id === (int) $conversation->site_id)
                 ->values(),
         ]);
+        $tickets = $conversation->tickets()
+            ->orderByDesc('id')
+            ->get()
+            ->filter(fn (Ticket $ticket): bool => $grant->coversTicket($ticket))
+            ->values();
 
         return view('operator.break-glass-conversation', [
             'grant' => $grant,
             'conversation' => $conversation->loadMissing('site'),
             'messages' => $messages,
             'attachmentsByMessage' => $attachmentsByMessage,
-            'senderLabels' => $messages->mapWithKeys(fn ($message): array => [
-                $message->id => $this->senderLabel($message->sender),
+            'senders' => $messages->mapWithKeys(fn ($message): array => [
+                $message->id => OperatorBreakGlassPresenter::sender($message->sender),
             ]),
-            'tickets' => $conversation->tickets()
-                ->orderByDesc('id')
-                ->get()
-                ->filter(fn (Ticket $ticket): bool => $grant->coversTicket($ticket))
-                ->values(),
+            'tickets' => $tickets,
+            'ticketStatuses' => $tickets->mapWithKeys(fn (Ticket $ticket): array => [
+                $ticket->id => OperatorBreakGlassPresenter::ticketValue('status', $ticket->status),
+            ]),
         ]);
     }
 
@@ -112,6 +120,9 @@ class OperatorBreakGlassViewerController extends Controller
         return view('operator.break-glass-ticket', [
             'grant' => $grant,
             'ticket' => $ticket->loadMissing(['site', 'conversation']),
+            'status' => OperatorBreakGlassPresenter::ticketValue('status', $ticket->status),
+            'priority' => OperatorBreakGlassPresenter::ticketValue('priority', $ticket->priority),
+            'category' => OperatorBreakGlassPresenter::ticketValue('category', $ticket->category),
         ]);
     }
 
@@ -123,7 +134,7 @@ class OperatorBreakGlassViewerController extends Controller
     private function usableGrant(Request $request, BreakGlassGrant $grant): void
     {
         abort_unless((int) $grant->requester_id === (int) $request->user()->id, 404);
-        abort_unless($grant->isActive(), 403, 'This grant is not active.');
+        abort_unless($grant->isActive(), 403, __('operator_break_glass.errors.grant_not_active'));
     }
 
     /**
@@ -179,14 +190,5 @@ class OperatorBreakGlassViewerController extends Controller
         return $candidates
             ->filter(fn (Ticket $ticket): bool => $grant->coversTicket($ticket))
             ->values();
-    }
-
-    private function senderLabel(?object $sender): string
-    {
-        return match (true) {
-            $sender instanceof Visitor => 'Visitor',
-            $sender instanceof User => $sender->name.' (agent)',
-            default => 'System',
-        };
     }
 }
