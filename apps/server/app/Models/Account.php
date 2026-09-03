@@ -27,6 +27,11 @@ class Account extends Model
         return $this->hasMany(User::class);
     }
 
+    public function customRoles(): HasMany
+    {
+        return $this->hasMany(CustomRole::class);
+    }
+
     public function sites(): HasMany
     {
         return $this->hasMany(Site::class);

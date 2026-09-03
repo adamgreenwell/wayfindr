@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\PlatformRole;
@@ -19,7 +20,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Throwable;
 
-#[Fillable(['account_id', 'account_role', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone'])]
+#[Fillable(['account_id', 'account_role', 'custom_role_id', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone'])]
 #[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {
@@ -108,6 +109,11 @@ class User extends Authenticatable
         return $this->hasMany(OidcIdentity::class);
     }
 
+    public function customRole(): BelongsTo
+    {
+        return $this->belongsTo(CustomRole::class);
+    }
+
     public function hasAccountRole(AccountRole $role): bool
     {
         return $this->account_role === $role;
@@ -126,6 +132,50 @@ class User extends Authenticatable
     public function isAgent(): bool
     {
         return $this->isAdmin() || $this->hasAccountRole(AccountRole::Agent);
+    }
+
+    public function hasAccountPermission(AccountPermission $permission): bool
+    {
+        if ($this->isDeactivated() || $this->account_id === null) {
+            return false;
+        }
+
+        if ($this->custom_role_id === null) {
+            return $this->account_role?->hasPermission($permission) === true;
+        }
+
+        $role = $this->relationLoaded('customRole')
+            ? $this->customRole
+            : $this->customRole()->first();
+
+        return $role instanceof CustomRole
+            && (int) $role->account_id === (int) $this->account_id
+            && $role->hasPermission($permission);
+    }
+
+    public function hasAnyAccountPermission(AccountPermission ...$permissions): bool
+    {
+        return collect($permissions)
+            ->contains(fn (AccountPermission $permission): bool => $this->hasAccountPermission($permission));
+    }
+
+    /**
+     * Site creation predates account permissions and remains available to the
+     * three built-in roles. Custom roles must opt into site management.
+     */
+    public function canCreateAccountSite(): bool
+    {
+        return ! $this->isDeactivated()
+            && $this->account_id !== null
+            && ($this->custom_role_id === null
+                || $this->hasAccountPermission(AccountPermission::ManageSites));
+    }
+
+    public function roleAssignmentKey(): string
+    {
+        return $this->custom_role_id !== null
+            ? 'custom:'.$this->custom_role_id
+            : ($this->account_role?->value ?? AccountRole::Agent->value);
     }
 
     public function isPlatformOperator(): bool
@@ -262,7 +312,9 @@ class User extends Authenticatable
 
     public function shouldReceiveConversationAlert(Conversation $conversation): bool
     {
-        if ($this->isDeactivated() || $this->alertMode() === self::ALERT_MODE_QUIET) {
+        if (! $this->hasAccountPermission(AccountPermission::ViewAlerts)
+            || ! $this->hasAccountPermission(AccountPermission::ViewConversations)
+            || $this->alertMode() === self::ALERT_MODE_QUIET) {
             return false;
         }
 
@@ -276,6 +328,8 @@ class User extends Authenticatable
     public function shouldReceiveTicketAssignmentAlert(Ticket $ticket): bool
     {
         return ! $this->isDeactivated()
+            && $this->hasAccountPermission(AccountPermission::ViewAlerts)
+            && $this->hasAccountPermission(AccountPermission::ManageTickets)
             && $this->alertMode() !== self::ALERT_MODE_QUIET
             && (int) $ticket->assignee_id === $this->id;
     }
