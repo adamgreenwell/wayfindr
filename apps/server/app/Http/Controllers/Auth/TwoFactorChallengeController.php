@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\Auth\Oidc\OidcSignInRecorder;
 use App\Support\Auth\PendingTwoFactorChallenge;
 use App\Support\Auth\TwoFactorAuthentication;
 use App\Support\DashboardLanguage;
@@ -35,8 +36,11 @@ final class TwoFactorChallengeController extends Controller
         return view('auth.two-factor-challenge');
     }
 
-    public function store(Request $request, TwoFactorAuthentication $twoFactor): RedirectResponse
-    {
+    public function store(
+        Request $request,
+        TwoFactorAuthentication $twoFactor,
+        OidcSignInRecorder $oidcSignIns,
+    ): RedirectResponse {
         // The password credential is revalidated under the same user-row lock
         // as factor consumption below, so a concurrent reset cannot pass in
         // the gap between two independent reads.
@@ -57,6 +61,7 @@ final class TwoFactorChallengeController extends Controller
             $user,
             $validated['one_time_code'],
             $pending['credential_fingerprint'],
+            $pending,
         );
 
         if ($verified === null) {
@@ -67,6 +72,10 @@ final class TwoFactorChallengeController extends Controller
             throw ValidationException::withMessages([
                 'one_time_code' => __('two_factor.challenge.invalid'),
             ]);
+        }
+
+        if (! $oidcSignIns->complete($user, $pending)) {
+            return $this->expired($request);
         }
 
         $pending = $request->session()->pull(self::SESSION_KEY);
@@ -95,6 +104,7 @@ final class TwoFactorChallengeController extends Controller
                 $pending['credential_fingerprint'],
                 PendingTwoFactorChallenge::credentialFingerprint($user),
             ))
+            && PendingTwoFactorChallenge::federatedCredentialIsCurrent($user, $pending)
             && ! $user->isDeactivated()
             && $user->hasTwoFactorAuthentication()
             ? $user

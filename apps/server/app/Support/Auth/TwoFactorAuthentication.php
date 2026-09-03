@@ -110,14 +110,16 @@ final class TwoFactorAuthentication
         User $user,
         #[\SensitiveParameter] string $code,
         #[\SensitiveParameter] string $credentialFingerprint,
+        #[\SensitiveParameter] array $pending = [],
     ): ?bool {
-        return DB::transaction(function () use ($user, $code, $credentialFingerprint): ?bool {
+        return DB::transaction(function () use ($user, $code, $credentialFingerprint, $pending): ?bool {
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
 
             if (! hash_equals(
                 $credentialFingerprint,
                 PendingTwoFactorChallenge::credentialFingerprint($locked),
-            ) || $locked->isDeactivated()) {
+            ) || $locked->isDeactivated()
+                || ! PendingTwoFactorChallenge::federatedCredentialIsCurrent($locked, $pending, lock: true)) {
                 return null;
             }
 

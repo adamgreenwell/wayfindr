@@ -46,6 +46,32 @@
             </form>
 
             <p><a class="text-link" href="{{ route('password.request') }}">Forgotten your password?</a></p>
+
+            <hr>
+
+            <h2>Single sign-on</h2>
+            <p class="lede">Use your organization's identity provider with your Wayfindr account slug.</p>
+
+            <form method="POST" action="{{ route('oidc.redirect') }}">
+                @csrf
+
+                <div class="field">
+                    <label for="account_slug">Account slug</label>
+                    <input
+                        id="account_slug"
+                        name="account_slug"
+                        type="text"
+                        autocomplete="organization"
+                        value="{{ old('account_slug') }}"
+                        required
+                    >
+                    @error('account_slug')
+                        <p class="field-error">{{ $message }}</p>
+                    @enderror
+                </div>
+
+                <button class="button full" type="submit">Sign in with SSO</button>
+            </form>
         </section>
     </main>
 </x-layouts.app>
