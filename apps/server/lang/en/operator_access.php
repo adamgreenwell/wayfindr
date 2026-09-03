@@ -19,6 +19,14 @@ return [
     'subtitle' => 'When a platform operator needs to see this account’s support data, they have to ask. Approve, refuse, or end access here.',
     'back' => 'Back to account',
 
+    'banner' => [
+        'title' => 'Platform operator access is active',
+        'review' => 'Review or revoke',
+        'former_operator' => 'A former operator',
+        'grant' => ':requester has read-only access to :scope until :until (:elapsed):self_approved.',
+        'self_approved' => ' — self-approved',
+    ],
+
     'counts' => [
         'active' => '{1} :count active grant|[2,*] :count active grants',
         'pending' => '{1} :count pending request|[2,*] :count pending requests',

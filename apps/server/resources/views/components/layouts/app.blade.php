@@ -2890,6 +2890,8 @@
                 </header>
 
                 <main class="page">
+                    <x-active-break-glass-banner :agent="$agent" :account="$account" />
+
                     @if (session('support_code_lookup_result'))
                         <p class="status-message">{{ session('support_code_lookup_result') }}</p>
                     @endif

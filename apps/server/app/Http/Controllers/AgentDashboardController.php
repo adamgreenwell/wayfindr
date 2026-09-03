@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
-use App\Models\BreakGlassGrant;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -42,15 +41,6 @@ class AgentDashboardController extends Controller
         return view('agent.dashboard', [
             'account' => $account,
             'agent' => $agent,
-            // Transparency is prominent while access is live (ADR 0008): any
-            // agent of the account sees an active break-glass grant here, not
-            // just admins on the operator-access page.
-            'activeBreakGlassGrants' => BreakGlassGrant::query()
-                ->where('account_id', $account->id)
-                ->active()
-                ->with('requester')
-                ->orderBy('expires_at')
-                ->get(),
             'canManageTickets' => $canManageTickets,
             'canViewConversations' => $canViewConversations,
             'conversationNextSteps' => $canViewConversations ? $this->conversationNextSteps($agent) : null,

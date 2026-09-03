@@ -18,6 +18,14 @@ return [
     'subtitle' => 'Wenn ein Plattformbetreiber die Supportdaten dieses Kontos einsehen muss, ist dafür eine Anfrage erforderlich. Genehmigen, verweigern oder beenden Sie den Zugriff hier.',
     'back' => 'Zurück zum Konto',
 
+    'banner' => [
+        'title' => 'Plattformbetreiberzugriff ist aktiv',
+        'review' => 'Prüfen oder widerrufen',
+        'former_operator' => 'Ein ehemaliger Betreiber',
+        'grant' => ':requester hat bis :until (:elapsed) nur lesenden Zugriff auf :scope:self_approved.',
+        'self_approved' => ' — selbst genehmigt',
+    ],
+
     'counts' => [
         'active' => '{1} :count aktive Zugriffsfreigabe|[2,*] :count aktive Zugriffsfreigaben',
         'pending' => '{1} :count ausstehende Anfrage|[2,*] :count ausstehende Anfragen',
