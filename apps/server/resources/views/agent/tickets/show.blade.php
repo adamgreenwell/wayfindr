@@ -694,7 +694,7 @@
                                 <span @if ($externalIssueSyncStatus === null) lang="" @endif>{{ $externalIssueSyncStatus ?? $externalLink->syncStatusLabel() }}</span>
                             </div>
                             <p>
-                                <span lang="">{{ $externalLink->external_key ?? $externalLink->external_id ?? __('ticket_detail.common.external_record') }}</span>
+                                <span @if ($externalLink->external_key !== null || $externalLink->external_id !== null) lang="" @endif>{{ $externalLink->external_key ?? $externalLink->external_id ?? __('ticket_detail.common.external_record') }}</span>
                                 <span class="lede" lang="">{{ $externalLink->project_key }}</span>
                             </p>
                             @php
@@ -995,7 +995,7 @@
                     <div class="meta-grid">
                         <div class="meta-item">
                             <span class="meta-label">{{ __('ticket_detail.visitor_context.visitor') }}</span>
-                            <span class="meta-value" lang="">{{ $visitorContext['anonymous_id'] }}</span>
+                            <span class="meta-value" @if ($ticket->requester?->anonymous_id !== null) lang="" @endif>{{ $visitorContext['anonymous_id'] }}</span>
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('ticket_detail.visitor_context.host_id') }}</span>

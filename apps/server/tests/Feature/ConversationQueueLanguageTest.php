@@ -3759,6 +3759,48 @@ test('authored ticket activity values keep their own language boundaries', funct
         ->and($escalationValues->item(1)?->textContent)->toBe('Next & Owner');
 });
 
+test('ticket detail translated identifier fallbacks keep the dashboard language', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $visitor = Visitor::factory()->for($world['site'])->create([
+        'name' => 'Authored requester',
+        'anonymous_id' => null,
+    ]);
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($visitor, 'requester')
+        ->create(['subject' => 'Nullable identifiers']);
+
+    TicketExternalLink::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($ticket)
+        ->create([
+            'external_id' => null,
+            'external_key' => null,
+        ]);
+
+    $html = (string) $this->actingAs($world['agents']['de'])
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        'external record' => __('ticket_detail.common.external_record', [], 'de'),
+        'visitor identifier' => __('ticket_detail.common.not_linked', [], 'de'),
+    ] as $what => $fallback) {
+        $nodes = $xpath->query('//span[normalize-space(text())="'.$fallback.'"]');
+
+        expect($nodes)->toHaveCount(1, "the {$what} fallback did not render exactly once")
+            ->and($nodes->item(0)?->hasAttribute('lang'))->toBeFalse(
+                "the translated {$what} fallback was marked as unknown-language text"
+            );
+    }
+});
+
 test('a reply template says what language its body is in', function (): void {
     // The body is what the VISITOR receives, not chrome. A built-in is English
     // and says so. A managed one is written by the account in whatever language
