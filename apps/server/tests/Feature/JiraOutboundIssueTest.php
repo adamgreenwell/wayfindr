@@ -239,6 +239,25 @@ test('a missing Jira base URL fails with guidance and records the sync failure',
     )->toBe(1);
 });
 
+test('a missing Jira credential preserves the required credential formats', function (): void {
+    $fixture = jiraOutboundIssueFixture([
+        'credentials' => ['token' => null],
+    ]);
+
+    Http::fake();
+
+    $this->actingAs($fixture['agent'])
+        ->from("/dashboard/tickets/{$fixture['ticket']->id}")
+        ->post("/dashboard/tickets/{$fixture['ticket']->id}/external-issues/jira", [
+            'site_external_issue_project_id' => $fixture['project']->id,
+        ])
+        ->assertSessionHasErrors([
+            'external_issue' => 'Jira credential is missing. Use email:api-token for Jira Cloud, or a personal access token for Jira Server/Data Center.',
+        ]);
+
+    Http::assertNothingSent();
+});
+
 test('a Jira API rejection surfaces failure guidance without leaking the raw error', function (): void {
     $fixture = jiraOutboundIssueFixture();
 

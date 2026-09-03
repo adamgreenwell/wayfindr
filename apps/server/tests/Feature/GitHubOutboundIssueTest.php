@@ -269,6 +269,24 @@ test('GitHub issue creation surfaces actionable guidance when the repository is 
     $this->assertDatabaseCount('ticket_external_links', 0);
 });
 
+test('a malformed GitHub project key preserves its corrective guidance', function (): void {
+    $fixture = githubOutboundIssueFixture();
+    $fixture['project']->update(['project_key' => 'not-an-owner-repository-pair']);
+
+    Http::fake();
+
+    $this->actingAs($fixture['agent'])
+        ->from("/dashboard/tickets/{$fixture['ticket']->id}")
+        ->post("/dashboard/tickets/{$fixture['ticket']->id}/external-issues/github", [
+            'site_external_issue_project_id' => $fixture['project']->id,
+        ])
+        ->assertSessionHasErrors([
+            'external_issue' => 'GitHub project key must use owner/repository.',
+        ]);
+
+    Http::assertNothingSent();
+});
+
 test('GitHub connection failures are audited without crashing the agent request', function (): void {
     $fixture = githubOutboundIssueFixture();
     $ticket = $fixture['ticket'];

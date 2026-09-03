@@ -12,6 +12,21 @@ final class ExternalIssueFailureGuidance
     public static function reason(?int $status, string $fallback = ''): string
     {
         if ($status === null || $status < 400) {
+            $configurationReason = match ($fallback) {
+                'GitHub token is missing.',
+                'GitLab token is missing.' => 'token_missing',
+                'GitLab project key is missing.',
+                'Jira project key is missing.' => 'project_key_missing',
+                'GitHub project key must use owner/repository.' => 'github_project_key_format',
+                'Jira credential is missing. Use email:api-token for Jira Cloud, or a personal access token for Jira Server/Data Center.' => 'jira_credential_missing',
+                'Jira base URL is missing. Set the connection base URL to your Jira site, like https://your-team.atlassian.net.' => 'jira_base_url_missing',
+                default => null,
+            };
+
+            if ($configurationReason !== null) {
+                return $configurationReason;
+            }
+
             return match (true) {
                 str_contains($fallback, 'request failed before a response was received') => 'request_failed',
                 str_contains($fallback, 'did not return an issue') => 'response_contract',

@@ -38,5 +38,10 @@ test('exposes stable failure reasons for request-facing translation', function (
         ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub request failed before a response was received.'))->toBe('request_failed')
         ->and(ExternalIssueFailureGuidance::reason(201, 'GitHub did not return an issue URL.'))->toBe('response_contract')
         ->and(ExternalIssueFailureGuidance::reason(201, 'Jira did not return an issue key.'))->toBe('response_contract')
-        ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub token is missing.'))->toBe('configuration');
+        ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub token is missing.'))->toBe('token_missing')
+        ->and(ExternalIssueFailureGuidance::reason(null, 'GitLab project key is missing.'))->toBe('project_key_missing')
+        ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub project key must use owner/repository.'))->toBe('github_project_key_format')
+        ->and(ExternalIssueFailureGuidance::reason(null, 'Jira credential is missing. Use email:api-token for Jira Cloud, or a personal access token for Jira Server/Data Center.'))->toBe('jira_credential_missing')
+        ->and(ExternalIssueFailureGuidance::reason(null, 'Jira base URL is missing. Set the connection base URL to your Jira site, like https://your-team.atlassian.net.'))->toBe('jira_base_url_missing')
+        ->and(ExternalIssueFailureGuidance::reason(null, 'Unknown local problem.'))->toBe('configuration');
 });
