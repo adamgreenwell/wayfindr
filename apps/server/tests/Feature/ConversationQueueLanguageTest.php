@@ -52,7 +52,7 @@ uses(RefreshDatabase::class);
  *
  * @param  array{account: Account, site: Site, agents: array<string, User>}  $world
  */
-function conversationQueueLanguageTicketStates(array $world, Conversation $conversation): void
+function conversationQueueLanguageTicketStates(array $world, Conversation $conversation): Ticket
 {
     $agent = $world['agents']['de'];
 
@@ -103,6 +103,8 @@ function conversationQueueLanguageTicketStates(array $world, Conversation $conve
             'sync_status' => ExternalIssueSyncStatus::FAILED,
             'last_synced_at' => now(),
         ]);
+
+    return $escalated;
 }
 
 /**
@@ -834,12 +836,12 @@ test('every column header is translated, read from the header row itself', funct
     }
 });
 
-test('the shared support-code control speaks the surface it is rendered on', function (): void {
+test('the shared support-code control speaks every extracted surface it is rendered on', function (): void {
     // A shared Blade component, unlike a shared model, may use the catalogue
     // directly: a view is only rendered inside a request, and the locale is
     // scoped per request to surfaces that have been extracted. So the same
-    // component renders German here and English on the ticket queue beside it,
-    // which is right while the extraction is half done.
+    // component renders German everywhere it appears now that all four
+    // conversation and ticket surfaces carrying it have been extracted.
     //
     // The comparison test cannot see any of this: `Copy` is under its length
     // floor and the rest are attributes, which `strip_tags` discards.
@@ -856,13 +858,7 @@ test('the shared support-code control speaks the surface it is rendered on', fun
         ->and($german)->not->toContain('>Copy</button>')
         ->and($german)->not->toContain('Open support record');
 
-    // A page still outside `EXTRACTED_ROUTES` renders the same component in
-    // English, for the same German agent in the same session -- the property
-    // that makes translating a shared view safe.
-    //
-    // This used the conversation detail page until that surface was extracted
-    // too, which is the recurring cost of a contrast built on "not done yet":
-    // it expires. The ticket detail page is the contrast now.
+    // The ticket detail page is the other detail surface using the component.
     $conversation = Conversation::query()->orderByDesc('id')->firstOrFail();
 
     $ticket = Ticket::factory()
@@ -872,13 +868,13 @@ test('the shared support-code control speaks the surface it is rendered on', fun
         ->for($conversation->visitor, 'requester')
         ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt contrast', 'description' => 'Datenpunkt body']);
 
-    $unextracted = (string) $this->actingAs($world['agents']['de'])
+    $ticketPage = (string) $this->actingAs($world['agents']['de'])
         ->get(route('dashboard.tickets.show', $ticket))
         ->assertOk()
         ->getContent();
 
-    expect($unextracted)->toContain('>Copy</button>')
-        ->and($unextracted)->not->toContain('>Kopieren</button>');
+    expect($ticketPage)->toContain('>Kopieren</button>')
+        ->and($ticketPage)->not->toContain('>Copy</button>');
 });
 
 test('the queue claims to be translated, so a screen reader is told the truth', function (): void {
@@ -1593,7 +1589,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         ->for($conversation->visitor, 'requester')
         ->create(['category' => 'task', 'priority' => 'low', 'status' => 'open', 'subject' => 'Datenpunkt bare', 'description' => null]);
 
-    conversationQueueLanguageTicketStates($world, $conversation);
+    $ticketWorkspace = conversationQueueLanguageTicketStates($world, $conversation);
     conversationQueueLanguageIntegrationStates($world);
 
     $states = [
@@ -1611,6 +1607,10 @@ test('no English is rendered as German on any extracted surface', function (): v
         // A refinement that matches nothing, which is a DIFFERENT empty state
         // from the search one and carries its own message.
         route('dashboard.tickets.index', ['ticket_priority' => 'urgent']),
+        route('dashboard.tickets.show', $ticketWorkspace),
+        route('dashboard.tickets.show', ['ticket' => $ticketWorkspace, 'timeline_filter' => 'conversation']),
+        route('dashboard.tickets.show', ['ticket' => $ticketWorkspace, 'timeline_filter' => 'internal_notes']),
+        route('dashboard.tickets.show', ['ticket' => $ticketWorkspace, 'timeline_filter' => 'ticket_activity']),
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'context']),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'ticket']),
@@ -2100,7 +2100,7 @@ test('every extracted page translates its document title', function (): void {
         $reader = conversationQueueLanguageReaderForUrl($world, $url, $locale);
         $html = (string) $this->actingAs($reader)->get($url)->assertOk()->getContent();
 
-        preg_match('#<title>(.*?)</title>#is', $html, $found);
+        preg_match('#<title\b[^>]*>(.*?)</title>#is', $html, $found);
 
         return trim(html_entity_decode($found[1] ?? '', ENT_QUOTES));
     };
@@ -2109,6 +2109,7 @@ test('every extracted page translates its document title', function (): void {
         route('dashboard.profile.show'),
         route('dashboard.conversations.index'),
         route('dashboard.tickets.index'),
+        route('dashboard.tickets.show', $breakGlassTicket),
         route('dashboard.conversations.show', $conversation->support_code),
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
@@ -2906,6 +2907,12 @@ test('every catalogue file answers the same set of keys', function (): void {
         'tickets.chips.status = Status: :value',
         'tickets.chips.label = Label: :value',
         'tickets.row.actor_system = System',
+        'ticket_detail.common.status = Status',
+        'ticket_detail.common.agent = Agent',
+        'ticket_detail.common.system = System',
+        'ticket_detail.external.url = URL',
+        'ticket_detail.details.labels = Labels',
+        'ticket_detail.artifacts.labels = Labels',
         'reply_templates.list.column_status = Status',
         'reply_templates.manage.name = Name',
         'ticket_labels.list.heading = Labels',
@@ -3329,10 +3336,9 @@ test('the draft stops claiming the template language once the agent types', func
 
 test('a write answers in the language of the page it renders back to', function (): void {
     // A linked-ticket action is submitted from BOTH the conversation panel and
-    // the ticket page, and its validation runs before the redirect. Listing the
-    // endpoint would answer in German on the English ticket page; not listing
-    // it put English errors on the German conversation page. The language
-    // belongs to whichever surface renders the answer.
+    // the ticket page, and its validation runs before the redirect. A route-name
+    // allowlist cannot say which page owns the response. The language belongs
+    // to whichever surface actually renders the answer.
     $world = conversationQueueLanguageWorld();
     $conversation = Conversation::query()->firstOrFail();
     $agent = $world['agents']['de'];
@@ -3363,12 +3369,13 @@ test('a write answers in the language of the page it renders back to', function 
     ], 'de'));
 
     // Two tabs: the session's previous URL is the conversation page (the most
-    // recent navigation anywhere), but THIS request came from the ticket page.
+    // recent navigation anywhere), but THIS request came from a still-English
+    // site page.
     // The redirect follows the header, so the locale must too -- reading the
     // session first answered in German on an English page.
     $this->actingAs($agent)
         ->from(route('dashboard.conversations.show', $conversation->support_code))
-        ->withHeaders(['referer' => route('dashboard.tickets.show', $ticket)])
+        ->withHeaders(['referer' => route('dashboard.sites.show', $world['site'])])
         ->post(route('dashboard.tickets.close', $ticket), $tooLong)
         ->assertSessionHasErrors('resolution_note');
 
@@ -3378,13 +3385,73 @@ test('a write answers in the language of the page it renders back to', function 
             'max' => 4000,
         ], 'de'), 'a stale session URL outvoted the Referer this request actually carried');
 
-    // Submitted from the ticket page, which is NOT extracted, so the same
-    // endpoint answers in English -- the page that will render it.
-    $englishError = $errorFor(route('dashboard.tickets.show', $ticket));
+    // Submitted from a page that is not extracted, so the same endpoint
+    // answers in English -- the page that will render it.
+    $englishError = $errorFor(route('dashboard.sites.show', $world['site']));
 
     expect($englishError)->not->toBe('')
         ->and($englishError)->not->toBe($germanError)
         ->and($englishError)->toContain('4000');
+});
+
+test('ticket workspace writes validate their fields in the agent language', function (): void {
+    // These routes belong only to the ticket workspace, so each is named in
+    // EXTRACTED_ROUTES. Exercising both the ticket itself and the integration
+    // forms keeps their field names from leaking raw database vocabulary into
+    // an otherwise German validation sentence.
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['status' => 'open', 'subject' => 'Datenpunkt validation', 'priority' => 'normal']);
+    $agent = $world['agents']['de'];
+    $from = route('dashboard.tickets.show', $ticket);
+
+    $requiredError = function (string $method, string $route, array $payload, string $field) use ($agent, $from): string {
+        $this->actingAs($agent)
+            ->from($from)
+            ->call($method, $route, $payload)
+            ->assertSessionHasErrors($field);
+
+        return (string) session('errors')->getBag('default')->first($field);
+    };
+
+    expect($requiredError('PUT', route('dashboard.tickets.update', $ticket), [
+        'subject' => '',
+        'priority' => 'normal',
+    ], 'subject'))->toBe(__('validation.required', [
+        'attribute' => __('validation.attributes.subject', [], 'de'),
+    ], 'de'));
+
+    expect($requiredError('POST', route('dashboard.tickets.external-links.store', $ticket), [
+        'provider' => 'github',
+    ], 'project_key'))->toBe(__('validation.required', [
+        'attribute' => __('validation.attributes.project_key', [], 'de'),
+    ], 'de'));
+
+    expect($requiredError('POST', route('dashboard.tickets.external-issues.github.store', $ticket), [], 'site_external_issue_project_id'))
+        ->toBe(__('validation.required', [
+            'attribute' => __('validation.attributes.site_external_issue_project_id', [], 'de'),
+        ], 'de'));
+
+    $this->actingAs($agent)
+        ->from($from)
+        ->post(route('dashboard.tickets.external-links.store', $ticket), [
+            'provider' => 'github',
+            'project_key' => 'wayfindr/project',
+            'url' => 'https://github.example.test/wayfindr/project/issues/1',
+            'sync_status' => 'linked',
+        ])
+        ->assertSessionHas('status', 'ticket_detail.flash.external_link_added');
+
+    $this->actingAs($agent)
+        ->get($from)
+        ->assertOk()
+        ->assertSee('Externe Verknüpfung hinzugefügt.')
+        ->assertDontSee('External link added.');
 });
 
 test('a reply template says what language its body is in', function (): void {

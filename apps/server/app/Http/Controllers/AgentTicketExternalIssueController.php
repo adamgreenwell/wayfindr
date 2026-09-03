@@ -33,7 +33,7 @@ class AgentTicketExternalIssueController extends Controller
         $project = $this->providerProjectForTicket($ticket, (int) $validated['site_external_issue_project_id'], 'github');
 
         if (! $project->hasCapability('create_issue')) {
-            return $this->externalIssueError($ticket, 'This GitHub connection cannot create issues.');
+            return $this->externalIssueError($ticket, __('ticket_detail.external.errors.capability', ['provider' => 'GitHub']));
         }
 
         try {
@@ -49,7 +49,7 @@ class AgentTicketExternalIssueController extends Controller
 
             return $this->externalIssueError(
                 $ticket,
-                ExternalIssueFailureGuidance::for('GitHub', $exception->status(), $exception->getMessage()),
+                $this->externalIssueFailureMessage('GitHub', $exception->status(), $exception->getMessage()),
             );
         }
 
@@ -82,7 +82,7 @@ class AgentTicketExternalIssueController extends Controller
 
         return redirect()
             ->back(302, [], route('dashboard'))
-            ->with('status', 'GitHub issue created.');
+            ->with('status', 'ticket_detail.flash.github_created');
     }
 
     public function storeGitlab(Request $request, Ticket $ticket, GitLabIssueCreator $gitlabIssueCreator): RedirectResponse
@@ -99,7 +99,7 @@ class AgentTicketExternalIssueController extends Controller
         $project = $this->providerProjectForTicket($ticket, (int) $validated['site_external_issue_project_id'], 'gitlab');
 
         if (! $project->hasCapability('create_issue')) {
-            return $this->externalIssueError($ticket, 'This GitLab connection cannot create issues.');
+            return $this->externalIssueError($ticket, __('ticket_detail.external.errors.capability', ['provider' => 'GitLab']));
         }
 
         try {
@@ -115,7 +115,7 @@ class AgentTicketExternalIssueController extends Controller
 
             return $this->externalIssueError(
                 $ticket,
-                ExternalIssueFailureGuidance::for('GitLab', $exception->status(), $exception->getMessage()),
+                $this->externalIssueFailureMessage('GitLab', $exception->status(), $exception->getMessage()),
             );
         }
 
@@ -149,7 +149,7 @@ class AgentTicketExternalIssueController extends Controller
 
         return redirect()
             ->back(302, [], route('dashboard'))
-            ->with('status', 'GitLab issue created.');
+            ->with('status', 'ticket_detail.flash.gitlab_created');
     }
 
     public function storeJira(Request $request, Ticket $ticket, JiraIssueCreator $jiraIssueCreator): RedirectResponse
@@ -166,7 +166,7 @@ class AgentTicketExternalIssueController extends Controller
         $project = $this->providerProjectForTicket($ticket, (int) $validated['site_external_issue_project_id'], 'jira');
 
         if (! $project->hasCapability('create_issue')) {
-            return $this->externalIssueError($ticket, 'This Jira connection cannot create issues.');
+            return $this->externalIssueError($ticket, __('ticket_detail.external.errors.capability', ['provider' => 'Jira']));
         }
 
         try {
@@ -182,7 +182,7 @@ class AgentTicketExternalIssueController extends Controller
 
             return $this->externalIssueError(
                 $ticket,
-                ExternalIssueFailureGuidance::for('Jira', $exception->status(), $exception->getMessage()),
+                $this->externalIssueFailureMessage('Jira', $exception->status(), $exception->getMessage()),
             );
         }
 
@@ -216,7 +216,7 @@ class AgentTicketExternalIssueController extends Controller
 
         return redirect()
             ->back(302, [], route('dashboard'))
-            ->with('status', 'Jira issue created.');
+            ->with('status', 'ticket_detail.flash.jira_created');
     }
 
     private function providerProjectForTicket(Ticket $ticket, int $projectId, string $provider): SiteExternalIssueProject
@@ -237,6 +237,16 @@ class AgentTicketExternalIssueController extends Controller
         return redirect()
             ->back(302, [], route('dashboard'))
             ->withErrors(['external_issue' => $message]);
+    }
+
+    private function externalIssueFailureMessage(string $provider, ?int $status, string $fallback): string
+    {
+        $reason = ExternalIssueFailureGuidance::reason($status, $fallback);
+
+        return __('ticket_detail.external.errors.'.$reason, [
+            'provider' => $provider,
+            'status' => $status,
+        ]);
     }
 
     private function authorizeTicketUpdate(User $agent, Ticket $ticket): void

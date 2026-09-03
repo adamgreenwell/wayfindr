@@ -80,15 +80,6 @@ return [
      * spells them.
      */
     'attributes' => [
-        // The four missing ticket fields are deliberate.
-        // `subject`, `description`, `category` and `priority` are validated by
-        // the ticket store/update path, whose route is NOT in
-        // `EXTRACTED_ROUTES` -- so no locale is scoped there, the page renders
-        // `lang="en"`, and an English message is the correct one. They belong
-        // here, and in the German file beside it, on the day that route is
-        // extracted and not before. `lang/de/validation.php` omits the same
-        // four for the same reason.
-        //
         // Every field an Italian page can submit. Without a name here the rule
         // interpolates the column: "Il campo body non può contenere più di 4000
         // caratteri." House terms come from the glossary -- a reply helper is
@@ -112,6 +103,16 @@ return [
         'reply_template' => 'Assistente di risposta',
         'target_agent_id' => 'Destinatario dell\'escalation',
         'resolution_note' => 'Nota di chiusura',
+        'subject' => 'Oggetto',
+        'description' => 'Descrizione',
+        'category' => 'Categoria',
+        'priority' => 'Priorità',
+        'project_key' => 'Chiave del progetto',
+        'external_id' => 'ID esterno',
+        'external_key' => 'Chiave esterna',
+        'url' => 'URL',
+        'sync_status' => 'Stato di sincronizzazione',
+        'site_external_issue_project_id' => 'Progetto esterno',
         'file' => 'File',
         'alert_cadence' => 'Frequenza',
         'alert_mode' => 'Avvisi',

@@ -16,10 +16,9 @@
         @foreach ($transcriptMessages as $transcriptMessage)
             @php
                 $isAgent = $transcriptMessage->sender_type === \App\Models\User::class;
-                // Shared with the ticket page, which is not an extracted route --
-                // there the locale is the install default and these answer in
-                // English, correctly. A shared VIEW may read the catalogue
-                // because it only renders inside a request.
+                // Shared by the translated conversation and ticket pages. A
+                // shared VIEW may read the catalogue because it only renders
+                // inside a request.
                 $senderName = $isAgent
                     ? ($transcriptMessage->sender?->name ?? __('conversations.detail.roles.agent'))
                     : __('conversations.detail.roles.visitor');

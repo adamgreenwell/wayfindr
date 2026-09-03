@@ -4476,7 +4476,7 @@ test('agent can add a provider neutral external link to a ticket', function (): 
             'sync_status' => 'linked',
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'External link added.');
+        ->assertSessionHas('status', 'ticket_detail.flash.external_link_added');
 
     $this->assertDatabaseHas('ticket_external_links', [
         'account_id' => $account->id,
@@ -4542,7 +4542,7 @@ test('agent can remove a provider neutral external link from a ticket', function
         ->from("/dashboard/tickets/{$ticket->id}")
         ->delete("/dashboard/tickets/{$ticket->id}/external-links/{$externalLink->id}")
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'External link removed.');
+        ->assertSessionHas('status', 'ticket_detail.flash.external_link_removed');
 
     $this->assertDatabaseMissing('ticket_external_links', [
         'id' => $externalLink->id,

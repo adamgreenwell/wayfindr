@@ -5,6 +5,30 @@ namespace App\Support\ExternalIssues;
 final class ExternalIssueFailureGuidance
 {
     /**
+     * A stable reason a request-facing controller can translate without
+     * exposing the provider's raw response or teaching this support class
+     * about the current request locale.
+     */
+    public static function reason(?int $status, string $fallback = ''): string
+    {
+        if ($status === null || $status < 400) {
+            return str_contains($fallback, 'request failed before a response was received')
+                ? 'request_failed'
+                : 'configuration';
+        }
+
+        return match (true) {
+            $status === 401 => 'credentials',
+            $status === 403 => 'permissions',
+            $status === 404 => 'project_not_found',
+            $status === 422 => 'issue_rejected',
+            $status === 429 => 'rate_limited',
+            $status >= 500 => 'server_error',
+            default => 'http_error',
+        };
+    }
+
+    /**
      * Map an external-issue creation failure to safe, actionable agent guidance.
      *
      * Only curated, non-sensitive text is returned — never the raw provider

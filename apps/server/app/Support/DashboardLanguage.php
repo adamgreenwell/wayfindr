@@ -116,6 +116,23 @@ final class DashboardLanguage
         'dashboard.profile.password.update',
         'dashboard.conversations.index',
         'dashboard.tickets.index',
+
+        // The ticket workspace and endpoints owned exclusively by it. The
+        // assignee and lifecycle writes are deliberately absent: those are
+        // also submitted from the conversation's linked-ticket panel, so the
+        // middleware resolves their locale from the page they render back to.
+        'dashboard.tickets.show',
+        'dashboard.tickets.update',
+        'dashboard.tickets.notes.store',
+        'dashboard.tickets.labels.store',
+        'dashboard.tickets.labels.destroy',
+        'dashboard.tickets.replies.store',
+        'dashboard.tickets.external-links.store',
+        'dashboard.tickets.external-links.destroy',
+        'dashboard.tickets.external-issues.github.store',
+        'dashboard.tickets.external-issues.gitlab.store',
+        'dashboard.tickets.external-issues.jira.store',
+        'dashboard.tickets.escalations.store',
         'dashboard.conversations.show',
         // The detail page's own endpoints. It replaces its transcript from
         // `messages.index` and posts replies to `messages.store`, and an

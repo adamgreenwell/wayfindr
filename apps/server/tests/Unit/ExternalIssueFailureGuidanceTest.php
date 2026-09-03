@@ -29,3 +29,12 @@ test('reports the raw status for unmapped error codes without leaking detail', f
     expect(ExternalIssueFailureGuidance::for('GitHub', 418, 'fallback'))
         ->toBe('GitHub could not create the issue (status 418).');
 });
+
+test('exposes stable failure reasons for request-facing translation', function (): void {
+    expect(ExternalIssueFailureGuidance::reason(401))->toBe('credentials')
+        ->and(ExternalIssueFailureGuidance::reason(404))->toBe('project_not_found')
+        ->and(ExternalIssueFailureGuidance::reason(422))->toBe('issue_rejected')
+        ->and(ExternalIssueFailureGuidance::reason(503))->toBe('server_error')
+        ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub request failed before a response was received.'))->toBe('request_failed')
+        ->and(ExternalIssueFailureGuidance::reason(null, 'GitHub token is missing.'))->toBe('configuration');
+});

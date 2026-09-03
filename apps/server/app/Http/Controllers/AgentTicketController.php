@@ -16,6 +16,7 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
+use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssues\ExternalIssueCommentFailed;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
@@ -83,13 +84,13 @@ class AgentTicketController extends Controller
             'agent' => $agent,
             'canPostNoteToExternalIssue' => $this->commentableExternalLinks($ticket)->isNotEmpty(),
             'externalIssueProviders' => ExternalIssueProvider::options(),
-            'externalIssueSyncStatuses' => ExternalIssueSyncStatus::options(),
+            'externalIssueSyncStatuses' => $this->translatedOptions('ticket_detail.external.sync_statuses', array_keys(ExternalIssueSyncStatus::options())),
             'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'gitlabIssueProjects' => $this->gitlabIssueProjectsForTicket($ticket),
             'jiraIssueProjects' => $this->jiraIssueProjectsForTicket($ticket),
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
-            'noteTemplates' => AgentNoteTemplate::options(),
+            'noteTemplates' => $this->noteTemplates(),
             'replyTemplates' => $replyTemplateOptions->forAgent($agent),
             'ticketDetailReturnQuery' => $ticketDetailReturnQuery,
             'ticketReturnLink' => $this->ticketReturnLink($ticketReturnQuery),
@@ -97,12 +98,7 @@ class AgentTicketController extends Controller
             'ticketLabelOptions' => $agent->account->ticketLabels()
                 ->orderBy('name')
                 ->get(),
-            'ticketActivity' => $ticket->auditEvents()
-                ->with('actor')
-                ->whereIn('action', $this->visibleActivityActions())
-                ->latest('occurred_at')
-                ->latest('id')
-                ->get(),
+            'ticketActivity' => $this->visibleTicketActivity($ticket),
             'ticketCategories' => TicketCategory::options(),
             'ticketCategoryGuidance' => TicketCategory::options(),
             'ticketPriorities' => TicketPriority::options(),
@@ -769,6 +765,61 @@ class AgentTicketController extends Controller
     }
 
     /**
+     * A filter or select map whose stored value stays stable while its label
+     * follows the reader's request-scoped dashboard language.
+     *
+     * @param  list<string>  $keys
+     * @return array<string, string>
+     */
+    private function translatedOptions(string $catalogue, array $keys): array
+    {
+        $options = [];
+
+        foreach ($keys as $key) {
+            $options[$key] = __($catalogue.'.'.$key);
+        }
+
+        return $options;
+    }
+
+    /**
+     * Only the helper label is dashboard chrome. Its body becomes stored team
+     * content, so the built-in English body stays English and says so rather
+     * than silently becoming whichever language the current agent reads.
+     *
+     * @return array<string, array{label: string, body: string, body_language: string}>
+     */
+    private function noteTemplates(): array
+    {
+        return collect(AgentNoteTemplate::options())
+            ->map(fn (array $template, string $key): array => [
+                ...$template,
+                'label' => __('ticket_detail.notes.templates.'.$key),
+                'body_language' => DashboardLanguage::FALLBACK,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return Collection<int, array{label: string, actor: string, body: string|null, occurred_at: CarbonInterface|null}>
+     */
+    private function visibleTicketActivity(Ticket $ticket): Collection
+    {
+        return $ticket->auditEvents()
+            ->with('actor')
+            ->whereIn('action', $this->visibleActivityActions())
+            ->latest('occurred_at')
+            ->latest('id')
+            ->get()
+            ->map(fn (AuditEvent $activity): array => [
+                'label' => $this->ticketActivityLabel($activity),
+                'actor' => $this->ticketActivityActor($activity),
+                'body' => $this->ticketTimelineBody($activity),
+                'occurred_at' => $activity->occurred_at,
+            ]);
+    }
+
+    /**
      * @return Collection<int, array{label: string, value: string, description: string, tone: string}>
      */
     private function ticketArtifactCoverage(Ticket $ticket): Collection
@@ -783,45 +834,45 @@ class AgentTicketController extends Controller
         return collect([
             [
                 'description' => $ticket->conversation
-                    ? 'Support code and transcript are attached.'
-                    : 'No chat transcript is attached yet.',
-                'label' => 'Conversation',
+                    ? __('ticket_detail.artifacts.conversation_linked')
+                    : __('ticket_detail.artifacts.conversation_unlinked'),
+                'label' => __('ticket_detail.artifacts.conversation'),
                 'tone' => $ticket->conversation ? 'ready' : 'manual',
-                'value' => $ticket->conversation ? 'Linked' : 'Not linked',
+                'value' => $ticket->conversation ? __('ticket_detail.artifacts.linked') : __('ticket_detail.common.not_linked'),
             ],
             [
                 'description' => $ticket->requester
-                    ? 'Safe visitor context can support follow-up.'
-                    : 'No visitor profile is attached yet.',
-                'label' => 'Visitor',
+                    ? __('ticket_detail.artifacts.visitor_linked')
+                    : __('ticket_detail.artifacts.visitor_unlinked'),
+                'label' => __('ticket_detail.artifacts.visitor'),
                 'tone' => $ticket->requester ? 'ready' : 'manual',
-                'value' => $ticket->requester ? 'Linked' : 'Not linked',
+                'value' => $ticket->requester ? __('ticket_detail.artifacts.linked') : __('ticket_detail.common.not_linked'),
             ],
             [
                 'description' => $labelCount > 0
-                    ? 'Queue filters and handoffs can use these labels.'
-                    : 'Add labels when this needs queue-level grouping.',
-                'label' => 'Labels',
+                    ? __('ticket_detail.artifacts.labels_present')
+                    : __('ticket_detail.artifacts.labels_empty'),
+                'label' => __('ticket_detail.artifacts.labels'),
                 'tone' => $labelCount > 0 ? 'ready' : 'manual',
-                'value' => $labelCount.' '.Str::plural('label', $labelCount),
+                'value' => trans_choice('ticket_detail.counts.labels', $labelCount, ['count' => $labelCount]),
             ],
             [
                 'description' => $noteCount > 0
-                    ? 'Private agent context exists for handoff.'
-                    : 'No private handoff context has been captured.',
-                'label' => 'Internal notes',
+                    ? __('ticket_detail.artifacts.notes_present')
+                    : __('ticket_detail.artifacts.notes_empty'),
+                'label' => __('ticket_detail.artifacts.notes'),
                 'tone' => $noteCount > 0 ? 'ready' : 'manual',
-                'value' => $noteCount.' '.Str::plural('note', $noteCount),
+                'value' => trans_choice('ticket_detail.counts.notes', $noteCount, ['count' => $noteCount]),
             ],
             [
                 'description' => $externalLinkCount > 0
-                    ? 'External tracker references are attached.'
-                    : 'Link an external issue when work leaves Wayfindr.',
-                'label' => 'External issues',
+                    ? __('ticket_detail.artifacts.external_present')
+                    : __('ticket_detail.artifacts.external_empty'),
+                'label' => __('ticket_detail.artifacts.external'),
                 'tone' => $externalLinkCount > 0 ? 'ready' : 'manual',
                 'value' => $externalLinkCount > 0
-                    ? $externalLinkCount.' '.Str::plural('link', $externalLinkCount)
-                    : 'Not linked',
+                    ? trans_choice('ticket_detail.counts.links', $externalLinkCount, ['count' => $externalLinkCount])
+                    : __('ticket_detail.common.not_linked'),
             ],
         ]);
     }
@@ -849,13 +900,13 @@ class AgentTicketController extends Controller
     {
         if ($query === []) {
             return [
-                'label' => 'Back to dashboard',
+                'label' => __('ticket_detail.common.back_dashboard'),
                 'href' => route('dashboard'),
             ];
         }
 
         return [
-            'label' => 'Back to ticket queue',
+            'label' => __('ticket_detail.common.back_queue'),
             'href' => route('dashboard.tickets.index', $query),
         ];
     }
@@ -977,9 +1028,9 @@ class AgentTicketController extends Controller
 
             return [
                 'type' => $isAgentMessage ? 'agent-message' : 'visitor-message',
-                'label' => $isAgentMessage ? 'Agent reply' : 'Visitor message',
-                'actor' => $isAgentMessage ? ($message->sender?->name ?? 'Agent') : 'Visitor',
-                'badge' => $isAgentMessage ? 'Customer-visible' : 'Customer message',
+                'label' => $isAgentMessage ? __('ticket_detail.timeline.message.agent_reply') : __('ticket_detail.timeline.message.visitor_message'),
+                'actor' => $isAgentMessage ? ($message->sender?->name ?? __('ticket_detail.common.agent')) : __('ticket_detail.common.visitor'),
+                'badge' => $isAgentMessage ? __('ticket_detail.timeline.message.customer_visible') : __('ticket_detail.timeline.message.customer_message'),
                 'body' => $message->body,
                 'occurred_at' => $message->created_at,
                 'sequence' => $message->id,
@@ -996,9 +1047,11 @@ class AgentTicketController extends Controller
                 'label' => $this->ticketActivityLabel($activity),
                 'actor' => $this->ticketActivityActor($activity),
                 'badge' => match ($activity->action) {
-                    'ticket.note_added' => 'Internal',
-                    'ticket.external_comment_received' => 'From '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
-                    default => 'Ticket activity',
+                    'ticket.note_added' => __('ticket_detail.timeline.message.internal'),
+                    'ticket.external_comment_received' => __('ticket_detail.timeline.message.from_provider', [
+                        'provider' => ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
+                    ]),
+                    default => __('ticket_detail.timeline.message.ticket_activity'),
                 },
                 'body' => $this->ticketTimelineBody($activity),
                 'occurred_at' => $activity->occurred_at,
@@ -1041,10 +1094,10 @@ class AgentTicketController extends Controller
     private function ticketTimelineFilters(): array
     {
         return [
-            'all' => 'All events',
-            'conversation' => 'Customer-visible',
-            'internal_notes' => 'Internal notes',
-            'ticket_activity' => 'Ticket activity',
+            'all' => __('ticket_detail.timeline.filters.all'),
+            'conversation' => __('ticket_detail.timeline.filters.conversation'),
+            'internal_notes' => __('ticket_detail.timeline.filters.internal_notes'),
+            'ticket_activity' => __('ticket_detail.timeline.filters.ticket_activity'),
         ];
     }
 
@@ -1071,20 +1124,20 @@ class AgentTicketController extends Controller
     private function ticketTimelineEmptyMessage(string $filter): string
     {
         return match ($filter) {
-            'conversation' => 'No customer-visible timeline events yet.',
-            'internal_notes' => 'No internal note timeline events yet.',
-            'ticket_activity' => 'No ticket activity timeline events yet.',
-            default => 'No ticket timeline events yet.',
+            'conversation' => __('ticket_detail.timeline.empty.conversation'),
+            'internal_notes' => __('ticket_detail.timeline.empty.internal_notes'),
+            'ticket_activity' => __('ticket_detail.timeline.empty.ticket_activity'),
+            default => __('ticket_detail.timeline.empty.all'),
         };
     }
 
     private function ticketTimelineEmptyDescription(string $filter): string
     {
         return match ($filter) {
-            'conversation' => 'Visitor messages and agent replies will appear here once this ticket is linked to an active conversation.',
-            'internal_notes' => 'Private handoff notes will appear here after an agent records context for the team.',
-            'ticket_activity' => 'Status, assignment, label, and external-link changes will appear here as the ticket moves.',
-            default => 'Conversation replies, internal notes, and ticket updates will appear here as this ticket gets worked.',
+            'conversation' => __('ticket_detail.timeline.empty_detail.conversation'),
+            'internal_notes' => __('ticket_detail.timeline.empty_detail.internal_notes'),
+            'ticket_activity' => __('ticket_detail.timeline.empty_detail.ticket_activity'),
+            default => __('ticket_detail.timeline.empty_detail.all'),
         };
     }
 
@@ -1101,19 +1154,19 @@ class AgentTicketController extends Controller
 
         return collect([
             [
-                'label' => 'Conversation',
-                'value' => $conversationCount.' '.Str::plural('item', $conversationCount),
-                'description' => 'Visitor messages and customer-visible replies.',
+                'label' => __('ticket_detail.timeline.summary.conversation'),
+                'value' => trans_choice('ticket_detail.counts.items', $conversationCount, ['count' => $conversationCount]),
+                'description' => __('ticket_detail.timeline.summary.conversation_detail'),
             ],
             [
-                'label' => 'Internal notes',
-                'value' => $internalNoteCount.' '.Str::plural('note', $internalNoteCount),
-                'description' => 'Private agent context for handoff.',
+                'label' => __('ticket_detail.timeline.summary.notes'),
+                'value' => trans_choice('ticket_detail.counts.notes', $internalNoteCount, ['count' => $internalNoteCount]),
+                'description' => __('ticket_detail.timeline.summary.notes_detail'),
             ],
             [
-                'label' => 'Ticket activity',
-                'value' => $ticketActivityCount.' '.Str::plural('update', $ticketActivityCount),
-                'description' => 'Status, assignment, label, and integration events.',
+                'label' => __('ticket_detail.timeline.summary.activity'),
+                'value' => trans_choice('ticket_detail.counts.updates', $ticketActivityCount, ['count' => $ticketActivityCount]),
+                'description' => __('ticket_detail.timeline.summary.activity_detail'),
             ],
         ]);
     }
@@ -1151,9 +1204,9 @@ class AgentTicketController extends Controller
 
         $statusCounts = $externalLinks->countBy('sync_status');
         $statusItems = collect(ExternalIssueSyncStatus::options())
-            ->map(fn (string $label, string $status): array => [
+            ->map(fn (string $_label, string $status): array => [
                 'key' => $status,
-                'label' => $label,
+                'label' => __('ticket_detail.external.sync_statuses.'.$status),
                 'count' => (int) ($statusCounts[$status] ?? 0),
             ])
             ->values();
@@ -1197,10 +1250,10 @@ class AgentTicketController extends Controller
 
         return [
             'label' => match (true) {
-                $failedCount > 0 || $failedEvents->isNotEmpty() => 'Needs attention',
-                $externalLinks->isEmpty() => 'No external links',
-                $pendingCount > 0 => 'Sync pending',
-                default => 'Healthy',
+                $failedCount > 0 || $failedEvents->isNotEmpty() => __('ticket_detail.external.health.attention'),
+                $externalLinks->isEmpty() => __('ticket_detail.external.health.none'),
+                $pendingCount > 0 => __('ticket_detail.external.health.pending'),
+                default => __('ticket_detail.external.health.healthy'),
             },
             'tone' => match (true) {
                 $failedCount > 0 || $failedEvents->isNotEmpty() => 'attention',
@@ -1291,7 +1344,7 @@ class AgentTicketController extends Controller
         }
 
         return [
-            'label' => 'Retry '.ExternalIssueProvider::label($provider).' issue',
+            'label' => __('ticket_detail.external.retry', ['provider' => ExternalIssueProvider::label($provider)]),
             'route' => route($routeName, $ticket),
             'site_external_issue_project_id' => $project->id,
         ];
@@ -1338,28 +1391,67 @@ class AgentTicketController extends Controller
 
         return [
             'label' => match (true) {
-                $mappedCount === 0 => 'Not configured',
-                $readyCount > 0 => 'Ready to create',
-                default => 'Setup needed',
+                $mappedCount === 0 => __('ticket_detail.external.handoff.not_configured'),
+                $readyCount > 0 => __('ticket_detail.external.handoff.ready'),
+                default => __('ticket_detail.external.handoff.setup'),
             },
             'tone' => match (true) {
                 $readyCount > 0 => 'ready',
                 $mappedCount === 0 => 'manual',
                 default => 'attention',
             },
-            'summary' => $readyCount.' handoff-ready '.Str::plural('project', $readyCount),
+            'summary' => trans_choice('ticket_detail.counts.handoff_projects', $readyCount, ['count' => $readyCount]),
             'detail' => match (true) {
-                $mappedCount === 0 => 'Map external issue routing in site settings before creating issues from tickets.',
-                $readyCount > 0 => 'Create an external issue only when another tracker owns part of the follow-up.',
-                default => 'Manual references can still be attached when another tracker already has an issue.',
+                $mappedCount === 0 => __('ticket_detail.external.handoff.map'),
+                $readyCount > 0 => __('ticket_detail.external.handoff.create'),
+                default => __('ticket_detail.external.handoff.manual'),
             },
             'projects' => $projects
                 ->map(fn (SiteExternalIssueProject $project): array => [
-                    'provider_name' => $project->providerConnection?->name ?? 'External tracker',
+                    'provider_name' => $project->providerConnection?->name ?? __('ticket_detail.common.external_tracker'),
                     'provider_label' => $project->providerLabel(),
                     'project_key' => $project->project_key,
-                    'state' => $project->issueCreationHandoffState(),
+                    'state' => $this->ticketExternalIssueProjectState($project),
                 ]),
+        ];
+    }
+
+    /**
+     * Translate model state at the request boundary. The model itself remains
+     * English because it is also safe to call from jobs and console commands.
+     *
+     * @return array{label: string, detail: string, tone: string}
+     */
+    private function ticketExternalIssueProjectState(SiteExternalIssueProject $project): array
+    {
+        if (! $project->providerConnection?->is_enabled) {
+            return [
+                'label' => __('ticket_detail.external.handoff.blocked'),
+                'detail' => __('ticket_detail.external.handoff.disabled'),
+                'tone' => 'attention',
+            ];
+        }
+
+        if (! $project->hasSupportedIssueCreationProvider()) {
+            return [
+                'label' => __('ticket_detail.external.handoff.link_only'),
+                'detail' => __('ticket_detail.external.handoff.unsupported'),
+                'tone' => 'manual',
+            ];
+        }
+
+        if ($project->supportsIssueCreationHandoff()) {
+            return [
+                'label' => __('ticket_detail.external.handoff.handoff_ready'),
+                'detail' => __('ticket_detail.external.handoff.can_create'),
+                'tone' => 'ready',
+            ];
+        }
+
+        return [
+            'label' => __('ticket_detail.external.handoff.link_only'),
+            'detail' => __('ticket_detail.external.handoff.not_enabled'),
+            'tone' => 'manual',
         ];
     }
 
@@ -1386,7 +1478,7 @@ class AgentTicketController extends Controller
 
         return [
             'has_visitor' => $requester !== null,
-            'anonymous_id' => $requester?->anonymous_id ?? 'Not linked',
+            'anonymous_id' => $requester?->anonymous_id ?? __('ticket_detail.common.not_linked'),
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id),
             'last_seen_at' => $requester?->last_seen_at,
             'last_page_url' => $this->contextString($visitorContext['last_page_url'] ?? null)
@@ -1510,39 +1602,56 @@ class AgentTicketController extends Controller
 
     private function ticketActivityLabel(object $activity): string
     {
+        $provider = ExternalIssueProvider::label(data_get($activity->metadata, 'provider'));
+        $reference = data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? '';
+
         return match ($activity->action) {
             'ticket.created' => data_get($activity->metadata, 'source') === 'conversation' && data_get($activity->metadata, 'support_code')
-                ? 'Ticket created from conversation '.data_get($activity->metadata, 'support_code')
-                : 'Ticket created',
-            'ticket.closed' => 'Ticket closed',
-            'ticket.pending' => 'Ticket marked pending',
-            'ticket.reopened' => 'Ticket reopened',
-            'ticket.unheld' => 'Ticket taken off hold',
-            'ticket.visitor_replied' => 'Visitor replied',
-            'ticket.label_added' => 'Label added: '.data_get($activity->metadata, 'label_name'),
-            'ticket.label_removed' => 'Label removed: '.data_get($activity->metadata, 'label_name'),
-            'ticket.note_added' => 'Internal note',
-            'ticket.external_link_created' => 'External link added: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
-            'ticket.external_issue_created' => ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' issue created: '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
-            'ticket.external_link_removed' => 'External link removed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' '.(data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id') ?? ''),
-            'ticket.external_sync_failed' => 'External sync failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
-            'ticket.external_comment_posted' => 'Note posted to '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' issue '.(data_get($activity->metadata, 'external_key') ?? ''),
-            'ticket.external_comment_failed' => 'External comment failed: '.ExternalIssueProvider::label(data_get($activity->metadata, 'provider')),
-            'ticket.external_comment_received' => ExternalIssueProvider::label(data_get($activity->metadata, 'provider')).' comment received'.(filled(data_get($activity->metadata, 'author')) ? ' from '.data_get($activity->metadata, 'author') : ''),
-            'ticket.assignee_updated' => 'Assignee changed from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
-            'ticket.escalated' => 'Ticket escalated from '.(data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned').' to '.(data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned'),
+                ? __('ticket_detail.activity.created_from', ['code' => data_get($activity->metadata, 'support_code')])
+                : __('ticket_detail.activity.created'),
+            'ticket.closed' => __('ticket_detail.activity.closed'),
+            'ticket.pending' => __('ticket_detail.activity.pending'),
+            'ticket.reopened' => __('ticket_detail.activity.reopened'),
+            'ticket.unheld' => __('ticket_detail.activity.unheld'),
+            'ticket.visitor_replied' => __('ticket_detail.activity.visitor_replied'),
+            'ticket.label_added' => __('ticket_detail.activity.label_added', ['label' => data_get($activity->metadata, 'label_name')]),
+            'ticket.label_removed' => __('ticket_detail.activity.label_removed', ['label' => data_get($activity->metadata, 'label_name')]),
+            'ticket.note_added' => __('ticket_detail.activity.note'),
+            'ticket.reply_sent' => __('ticket_detail.activity.reply_sent'),
+            'ticket.external_link_created' => __('ticket_detail.activity.external_link_added_detail', compact('provider', 'reference')),
+            'ticket.external_issue_created' => __('ticket_detail.activity.external_issue_created_detail', compact('provider', 'reference')),
+            'ticket.external_link_removed' => __('ticket_detail.activity.external_link_removed_detail', compact('provider', 'reference')),
+            'ticket.external_sync_failed' => __('ticket_detail.activity.external_sync_failed_detail', compact('provider')),
+            'ticket.external_comment_posted' => __('ticket_detail.activity.external_comment_posted', compact('provider', 'reference')),
+            'ticket.external_comment_failed' => __('ticket_detail.activity.external_comment_failed', compact('provider')),
+            'ticket.external_comment_received' => filled(data_get($activity->metadata, 'author'))
+                ? __('ticket_detail.activity.external_comment_received_from', [
+                    'provider' => $provider,
+                    'author' => data_get($activity->metadata, 'author'),
+                ])
+                : __('ticket_detail.activity.external_comment_received', compact('provider')),
+            'ticket.assignee_updated' => __('ticket_detail.activity.assignee_changed', [
+                'old' => data_get($activity->metadata, 'old_assignee_name') ?? __('ticket_detail.common.unassigned'),
+                'new' => data_get($activity->metadata, 'new_assignee_name') ?? __('ticket_detail.common.unassigned'),
+            ]),
+            'ticket.escalated' => __('ticket_detail.activity.escalated', [
+                'old' => data_get($activity->metadata, 'old_assignee_name') ?? __('ticket_detail.common.unassigned'),
+                'new' => data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? __('ticket_detail.common.unassigned'),
+            ]),
             'ticket.updated' => $this->ticketUpdatedLabel(data_get($activity->metadata, 'changes', [])),
-            default => ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)),
+            default => __('ticket_detail.activity.unknown', [
+                'action' => ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)),
+            ]),
         };
     }
 
     private function ticketActivityActor(object $activity): string
     {
         if ($activity->actor_type === Visitor::class) {
-            return 'Visitor';
+            return __('ticket_detail.common.visitor');
         }
 
-        return $activity->actor?->name ?? 'System';
+        return $activity->actor?->name ?? __('ticket_detail.common.system');
     }
 
     private function ticketTimelineBody(object $activity): ?string
@@ -1562,24 +1671,51 @@ class AgentTicketController extends Controller
     private function ticketUpdatedLabel(array $changes): string
     {
         if ($changes === []) {
-            return 'Ticket updated';
+            return __('ticket_detail.activity.updated');
         }
 
         return collect($changes)
             ->map(function (array $change, string $field): string {
+                if ($field === 'subject') {
+                    return __('ticket_detail.activity.subject_changed', [
+                        'old' => data_get($change, 'old'),
+                        'new' => data_get($change, 'new'),
+                    ]);
+                }
+
                 if ($field === 'description') {
-                    return 'Description updated';
+                    return __('ticket_detail.activity.description_updated');
                 }
 
                 if ($field === 'category') {
-                    return 'Category changed from '.TicketCategory::label(data_get($change, 'old')).' to '.TicketCategory::label(data_get($change, 'new'));
+                    $old = data_get($change, 'old');
+                    $new = data_get($change, 'new');
+
+                    return __('ticket_detail.activity.category_changed', [
+                        'old' => is_string($old) && array_key_exists($old, TicketCategory::options())
+                            ? __('tickets.categories.'.$old)
+                            : __('tickets.filters.category_uncategorized'),
+                        'new' => is_string($new) && array_key_exists($new, TicketCategory::options())
+                            ? __('tickets.categories.'.$new)
+                            : __('tickets.filters.category_uncategorized'),
+                    ]);
                 }
 
                 if ($field === 'priority') {
-                    return 'Priority changed from '.ucfirst((string) data_get($change, 'old')).' to '.ucfirst((string) data_get($change, 'new'));
+                    $old = (string) data_get($change, 'old');
+                    $new = (string) data_get($change, 'new');
+
+                    return __('ticket_detail.activity.priority_changed', [
+                        'old' => array_key_exists($old, TicketPriority::options()) ? __('tickets.priorities.'.$old) : $old,
+                        'new' => array_key_exists($new, TicketPriority::options()) ? __('tickets.priorities.'.$new) : $new,
+                    ]);
                 }
 
-                return ucfirst($field).' changed from '.data_get($change, 'old').' to '.data_get($change, 'new');
+                return __('ticket_detail.activity.field_changed', [
+                    'field' => ucfirst($field),
+                    'old' => data_get($change, 'old'),
+                    'new' => data_get($change, 'new'),
+                ]);
             })
             ->implode(' ');
     }

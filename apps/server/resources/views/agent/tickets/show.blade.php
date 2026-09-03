@@ -1,7 +1,7 @@
-<x-layouts.app title="Ticket - {{ $ticket->subject }}" :agent="$agent" :account="$account">
-            <x-page-header :title="$ticket->subject" :back-href="$ticketReturnLink['href']" :back-label="$ticketReturnLink['label']">
+<x-layouts.app :title="__('ticket_detail.document_title', ['subject' => $ticket->subject])" title-lang="" :agent="$agent" :account="$account">
+            <x-page-header :title="$ticket->subject" title-lang="" :back-href="$ticketReturnLink['href']" :back-label="$ticketReturnLink['label']">
                 <p class="lede">
-                    Ticket #{{ $ticket->id }}
+                    {{ __('ticket_detail.reference', ['id' => $ticket->id]) }}
                     @if ($ticket->conversation)
                         <span aria-hidden="true">-</span>
                         <x-support-code-reference
@@ -13,9 +13,9 @@
             </x-page-header>
 
             @if (session('status'))
-                {{-- Ticket actions flash a KEY, because `redirect()->back()` can land on
-                     the conversation detail page, which is extracted. This page is not,
-                     so `__()` answers in the install default here -- English, correctly. --}}
+                {{-- Ticket actions flash a key because the same write can land
+                     on this page or the linked conversation panel. Each
+                     destination translates it for its own reader. --}}
                 <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
@@ -26,7 +26,7 @@
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
                     ?? $ticket->requester?->anonymous_id
-                    ?? 'Not linked';
+                    ?? __('ticket_detail.common.not_linked');
                 $hasVisitorContext = $visitorContext['has_visitor']
                     || $visitorContext['last_page_url']
                     || $visitorContext['started_page_url']
@@ -35,29 +35,29 @@
             <section class="section agent-brief" aria-labelledby="ticket-agent-brief-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="ticket-agent-brief-heading">Ticket brief</h2>
-                        <p class="lede">{{ $ticket->subject }}</p>
+                        <h2 id="ticket-agent-brief-heading">{{ __('ticket_detail.brief.heading') }}</h2>
+                        <p class="lede" lang="">{{ $ticket->subject }}</p>
                     </div>
                     <span class="readiness-status" data-status="{{ $ticketReplyVisibility['tone'] }}">
-                        {{ $ticket->attentionLabel() }}
+                        {{ __('tickets.row.'.$ticket->attentionLabelKey()) }}
                     </span>
                 </div>
 
                 <div class="meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label">Owner</span>
-                        <span class="meta-value">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.owner') }}</span>
+                        <span class="meta-value">{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Priority</span>
-                        <span class="meta-value">{{ ucfirst($ticket->priority) }}</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.priority') }}</span>
+                        <span class="meta-value">{{ __('tickets.priorities.'.$ticket->priority) }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Category</span>
-                        <span class="meta-value">{{ $ticket->categoryLabel() }}</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.category') }}</span>
+                        <span class="meta-value">{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Reference</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.reference') }}</span>
                         <span class="meta-value">
                             @if ($ticket->conversation)
                                 <x-support-code-reference
@@ -65,7 +65,7 @@
                                     :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
                                 />
                             @else
-                                Ticket #{{ $ticket->id }}
+                                {{ __('ticket_detail.reference', ['id' => $ticket->id]) }}
                             @endif
                         </span>
                     </div>
@@ -74,71 +74,77 @@
                 @if ($ticket->conversation)
                     <div class="section-form-row">
                         <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
-                            Open conversation
+                            {{ __('ticket_detail.brief.open_conversation') }}
                         </a>
                     </div>
                 @endif
             </section>
             <x-tabs
                 id="ticket-workspace"
-                label="Ticket workspace"
+                :label="__('ticket_detail.tabs.label')"
                 :tabs="[
-                    ['id' => 'work', 'label' => 'Work'],
-                    ['id' => 'conversation', 'label' => 'Conversation', 'badge' => $ticket->conversation?->support_code],
-                    ['id' => 'external', 'label' => 'External'],
-                    ['id' => 'details', 'label' => 'Details'],
-                    ['id' => 'activity', 'label' => 'Activity'],
+                    ['id' => 'work', 'label' => __('ticket_detail.tabs.work')],
+                    ['id' => 'conversation', 'label' => __('ticket_detail.tabs.conversation'), 'badge' => $ticket->conversation?->support_code, 'badge_lang' => ''],
+                    ['id' => 'external', 'label' => __('ticket_detail.tabs.external')],
+                    ['id' => 'details', 'label' => __('ticket_detail.tabs.details')],
+                    ['id' => 'activity', 'label' => __('ticket_detail.tabs.activity')],
                 ]"
             >
                 <x-tab-panel id="work" active>
             <section class="section" aria-labelledby="ticket-work-state-heading">
                 <div class="section-header">
-                    <h2 id="ticket-work-state-heading">Work state</h2>
-                    <span class="lede">{{ $ticket->attentionLabel() }}</span>
+                    <h2 id="ticket-work-state-heading">{{ __('ticket_detail.work.heading') }}</h2>
+                    <span class="lede">{{ __('tickets.row.'.$ticket->attentionLabelKey()) }}</span>
                 </div>
 
                 <div class="meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label">Status</span>
-                        <span class="meta-value">{{ ucfirst($ticket->status) }}</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.status') }}</span>
+                        <span class="meta-value">{{ __('tickets.statuses.'.$ticket->status) }}</span>
                     </div>
                     @if ($ticketLifecycleNote)
                         <div class="meta-item">
-                            <span class="meta-label">Lifecycle note</span>
-                            <span class="meta-value">{{ $ticketLifecycleNote['label'] }}</span>
-                            <span class="lede">{{ $ticketLifecycleNote['body'] }}</span>
+                            <span class="meta-label">{{ __('ticket_detail.work.lifecycle_note') }}</span>
+                            <span class="meta-value">{{ __('tickets.lifecycle.'.$ticketLifecycleNote['label_key']) }}</span>
+                            <span class="lede" lang="">{{ $ticketLifecycleNote['body'] }}</span>
                             <span class="table-note">
-                                {{ $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}
+                                {{ $ticketLifecycleNote['actor_key'] ? __('tickets.row.'.$ticketLifecycleNote['actor_key']) : $ticketLifecycleNote['actor'] }} - {{ $ticketLifecycleNote['occurred_at']->diffForHumans() }}
                             </span>
                         </div>
                     @endif
                     <div class="meta-item">
-                        <span class="meta-label">Timing</span>
-                        <span class="meta-value">{{ $ticketTiming['opened_label'] }}</span>
-                        <span class="lede">{{ $ticketTiming['wait_label'] }}</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.timing') }}</span>
+                        <span class="meta-value">{{ __('tickets.row.opened', ['elapsed' => $ticketTiming['opened_at']->diffForHumans()]) }}</span>
+                        <span class="lede">{{ $ticketTiming['wait_since']
+                            ? __('tickets.row.'.$ticketTiming['wait_key'], [
+                                'elapsed' => $ticketTiming['wait_key'] === 'closed'
+                                    ? $ticketTiming['wait_since']->diffForHumans()
+                                    : $ticket->elapsedWaitFrom($ticketTiming['wait_since']),
+                            ])
+                            : __('tickets.row.'.$ticketTiming['wait_key']) }}</span>
                     </div>
                 </div>
             </section>
 
             @if ($latestTicketEscalation)
                 @php
-                    $escalationActor = $latestTicketEscalation->actor?->name ?? 'An agent';
+                    $escalationActor = $latestTicketEscalation->actor?->name ?? __('ticket_detail.common.agent');
                     $escalationTarget = data_get($latestTicketEscalation->metadata, 'target_agent_name')
                         ?? data_get($latestTicketEscalation->metadata, 'new_assignee_name')
                         ?? $ticket->assignee?->name
-                        ?? 'Unassigned';
+                        ?? __('ticket_detail.common.unassigned');
                     $escalationReason = data_get($latestTicketEscalation->metadata, 'reason');
                 @endphp
                 <section class="section" aria-labelledby="ticket-escalation-heading">
                     <div class="section-header">
-                        <h2 id="ticket-escalation-heading">Escalation</h2>
-                        <span class="lede">{{ $ticket->escalationAudienceLabelFor($agent) }}</span>
+                        <h2 id="ticket-escalation-heading">{{ __('ticket_detail.work.escalation') }}</h2>
+                        <span class="lede">{{ __('tickets.row.'.$ticket->escalationAudienceKeyFor($agent)) }}</span>
                     </div>
 
                     <div class="notice-copy">
-                        <p><strong>{{ $escalationActor }} escalated this ticket to {{ $escalationTarget }}</strong></p>
+                        <p><strong>{{ __('ticket_detail.work.escalated', ['actor' => $escalationActor, 'target' => $escalationTarget]) }}</strong></p>
                         @if ($escalationReason)
-                            <p>{{ $escalationReason }}</p>
+                            <p lang="">{{ $escalationReason }}</p>
                         @endif
                     </div>
                 </section>
@@ -146,8 +152,8 @@
 
             <section class="section" aria-labelledby="ticket-actions-heading">
                 <div class="section-header">
-                    <h2 id="ticket-actions-heading">Actions</h2>
-                    <span class="lede">{{ $ticket->assignee?->name ?? 'Unassigned' }}</span>
+                    <h2 id="ticket-actions-heading">{{ __('ticket_detail.actions.heading') }}</h2>
+                    <span class="lede">{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
                 </div>
 
                 @php
@@ -160,9 +166,9 @@
                     @include('agent.tickets.partials.return-query-fields')
 
                     <div class="field">
-                        <label for="assignee_id">Assign ticket</label>
+                        <label for="assignee_id">{{ __('ticket_detail.actions.assign') }}</label>
                         <select id="assignee_id" name="assignee_id">
-                            <option value="">Unassigned</option>
+                            <option value="">{{ __('ticket_detail.common.unassigned') }}</option>
                             @foreach ($accountAgents as $accountAgent)
                                 <option value="{{ $accountAgent->id }}" @selected((int) $ticket->assignee_id === $accountAgent->id)>
                                     {{ $accountAgent->name }}
@@ -174,23 +180,23 @@
                         @enderror
                     </div>
 
-                    <button class="button secondary" type="submit">Assign ticket</button>
+                    <button class="button secondary" type="submit">{{ __('ticket_detail.actions.assign') }}</button>
                 </form>
 
                 <div class="section-form">
-                    <strong>Escalate ticket</strong>
+                    <strong>{{ __('ticket_detail.actions.escalate') }}</strong>
 
                     @if ($escalationAgents->isEmpty())
-                        <p class="empty">No other site agents are available for escalation.</p>
+                        <p class="empty">{{ __('ticket_detail.actions.no_escalation_agents') }}</p>
                     @else
                         <form method="POST" action="{{ route('dashboard.tickets.escalations.store', $ticket) }}">
                             @csrf
                             @include('agent.tickets.partials.return-query-fields')
 
                             <div class="field">
-                                <label for="target_agent_id">Escalate to</label>
+                                <label for="target_agent_id">{{ __('ticket_detail.actions.escalate_to') }}</label>
                                 <select id="target_agent_id" name="target_agent_id">
-                                    <option value="">Choose an agent</option>
+                                    <option value="">{{ __('ticket_detail.actions.choose_agent') }}</option>
                                     @foreach ($escalationAgents as $escalationAgent)
                                         <option value="{{ $escalationAgent->id }}" @selected((int) old('target_agent_id') === $escalationAgent->id)>
                                             {{ $escalationAgent->name }}
@@ -203,14 +209,14 @@
                             </div>
 
                             <div class="field">
-                                <label for="escalation_reason">Reason</label>
-                                <textarea id="escalation_reason" name="reason" rows="3" placeholder="Why does this need another set of eyes?">{{ old('reason') }}</textarea>
+                                <label for="escalation_reason">{{ __('ticket_detail.actions.reason') }}</label>
+                                <textarea id="escalation_reason" name="reason" rows="3" placeholder="{{ __('ticket_detail.actions.reason_placeholder') }}" @if (old('reason') !== null) lang="" @endif>{{ old('reason') }}</textarea>
                                 @error('reason')
                                     <p class="field-error">{{ $message }}</p>
                                 @enderror
                             </div>
 
-                            <button class="button" type="submit">Escalate ticket</button>
+                            <button class="button" type="submit">{{ __('ticket_detail.actions.escalate') }}</button>
                         </form>
                     @endif
                 </div>
@@ -220,13 +226,13 @@
                         @csrf
                         @include('agent.tickets.partials.return-query-fields')
                         <div class="field">
-                            <label for="pending_note">Pending note</label>
-                            <textarea id="pending_note" name="pending_note" rows="3" placeholder="What are we waiting on from the customer?">{{ old('pending_note') }}</textarea>
+                            <label for="pending_note">{{ __('ticket_detail.actions.pending_note') }}</label>
+                            <textarea id="pending_note" name="pending_note" rows="3" placeholder="{{ __('ticket_detail.actions.pending_placeholder') }}" @if (old('pending_note') !== null) lang="" @endif>{{ old('pending_note') }}</textarea>
                             @error('pending_note')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
-                        <button class="button secondary" type="submit">Mark pending</button>
+                        <button class="button secondary" type="submit">{{ __('ticket_detail.actions.mark_pending') }}</button>
                     </form>
                 @endif
 
@@ -235,13 +241,13 @@
                         @csrf
                         @include('agent.tickets.partials.return-query-fields')
                         <div class="field">
-                            <label for="reopen_note">Reopen note</label>
-                            <textarea id="reopen_note" name="reopen_note" rows="3" placeholder="What changed or why does this need attention again?">{{ old('reopen_note') }}</textarea>
+                            <label for="reopen_note">{{ __('ticket_detail.actions.reopen_note') }}</label>
+                            <textarea id="reopen_note" name="reopen_note" rows="3" placeholder="{{ __('ticket_detail.actions.reopen_placeholder') }}" @if (old('reopen_note') !== null) lang="" @endif>{{ old('reopen_note') }}</textarea>
                             @error('reopen_note')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
-                        <button class="button secondary" type="submit">Reopen ticket</button>
+                        <button class="button secondary" type="submit">{{ __('ticket_detail.actions.reopen') }}</button>
                     </form>
                 @endif
 
@@ -250,36 +256,36 @@
                         @csrf
                         @include('agent.tickets.partials.return-query-fields')
                         <div class="field">
-                            <label for="resolution_note">Resolution note</label>
-                            <textarea id="resolution_note" name="resolution_note" rows="3" placeholder="What changed, what was confirmed, or why this can be closed.">{{ old('resolution_note') }}</textarea>
+                            <label for="resolution_note">{{ __('ticket_detail.actions.resolution_note') }}</label>
+                            <textarea id="resolution_note" name="resolution_note" rows="3" placeholder="{{ __('ticket_detail.actions.resolution_placeholder') }}" @if (old('resolution_note') !== null) lang="" @endif>{{ old('resolution_note') }}</textarea>
                             @error('resolution_note')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
-                        <button class="button secondary" type="submit">Close ticket</button>
+                        <button class="button secondary" type="submit">{{ __('ticket_detail.actions.close') }}</button>
                     </form>
                 @endif
             </section>
 
             <section class="section" aria-labelledby="ticket-notes-heading">
                 <div class="section-header">
-                    <h2 id="ticket-notes-heading">Internal notes</h2>
-                    <span class="lede">{{ $ticket->auditEvents->count() }} total</span>
+                    <h2 id="ticket-notes-heading">{{ __('ticket_detail.notes.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('ticket_detail.counts.total', $ticket->auditEvents->count(), ['count' => $ticket->auditEvents->count()]) }}</span>
                 </div>
 
                 <div class="message-list">
                     @forelse ($ticket->auditEvents as $note)
                         <article class="message-card agent-message">
                             <div class="message-meta">
-                                <strong>{{ $note->actor?->name ?? 'Unknown agent' }}</strong>
+                                <strong>{{ $note->actor?->name ?? __('ticket_detail.common.unknown_agent') }}</strong>
                                 <span>{{ $note->occurred_at->diffForHumans() }}</span>
                             </div>
-                            <p>{{ data_get($note->metadata, 'body') }}</p>
+                            <p lang="">{{ data_get($note->metadata, 'body') }}</p>
                         </article>
                     @empty
                         <div class="empty-state">
-                            <strong>No internal notes yet.</strong>
-                            <p class="lede">Use notes for private handoff context, not customer-visible replies.</p>
+                            <strong>{{ __('ticket_detail.notes.empty') }}</strong>
+                            <p class="lede">{{ __('ticket_detail.notes.empty_detail') }}</p>
                         </div>
                     @endforelse
                 </div>
@@ -295,13 +301,14 @@
                         @include('agent.tickets.partials.return-query-fields')
 
                         <div class="field">
-                            <label for="note_template">Note helper</label>
+                            <label for="note_template">{{ __('ticket_detail.notes.helper') }}</label>
                             <select id="note_template" name="note_template" data-template-picker data-target="#body">
-                                <option value="">Write a custom note</option>
+                                <option value="">{{ __('ticket_detail.notes.custom') }}</option>
                                 @foreach ($noteTemplates as $noteTemplateKey => $noteTemplate)
                                     <option
                                         value="{{ $noteTemplateKey }}"
                                         data-body="{{ $noteTemplate['body'] }}"
+                                        data-body-lang="{{ str_replace('_', '-', $noteTemplate['body_language']) }}"
                                         @selected($selectedNoteTemplate === $noteTemplateKey)
                                     >
                                         {{ $noteTemplate['label'] }}
@@ -314,8 +321,8 @@
                         </div>
 
                         <div class="field">
-                            <label for="body">Add internal note</label>
-                            <textarea id="body" name="body" rows="4" placeholder="Document follow-up, escalation context, or handoff details.">{{ old('body') }}</textarea>
+                            <label for="body">{{ __('ticket_detail.notes.add_label') }}</label>
+                            <textarea id="body" name="body" rows="4" placeholder="{{ __('ticket_detail.notes.placeholder') }}" lang="">{{ old('body') }}</textarea>
                             @error('body')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
@@ -324,34 +331,34 @@
                         @if ($canPostNoteToExternalIssue)
                             <label class="check-row" for="post_to_external">
                                 <input id="post_to_external" name="post_to_external" type="checkbox" value="1" @checked(old('post_to_external'))>
-                                <span>Also post this note as a comment on the linked external issue</span>
+                                <span>{{ __('ticket_detail.notes.post_external') }}</span>
                             </label>
-                            <p class="lede">Notes stay internal by default. Only checked notes leave Wayfindr.</p>
+                            <p class="lede">{{ __('ticket_detail.notes.post_external_detail') }}</p>
                         @endif
 
-                        <button class="button" type="submit">Add note</button>
+                        <button class="button" type="submit">{{ __('ticket_detail.notes.add') }}</button>
                     </form>
 
                     <aside class="reply-assist" aria-labelledby="ticket-note-assist-heading">
-                        <h3 id="ticket-note-assist-heading">Note assist</h3>
+                        <h3 id="ticket-note-assist-heading">{{ __('ticket_detail.notes.assist') }}</h3>
 
                         <div class="reply-template-preview" data-template-preview>
                             <div data-template-preview-empty @if ($selectedNoteTemplate !== '') hidden @endif>
-                                <strong>No note helper selected</strong>
-                                <p class="lede">Custom notes stay fully agent-written.</p>
+                                <strong>{{ __('ticket_detail.notes.no_helper') }}</strong>
+                                <p class="lede">{{ __('ticket_detail.notes.custom_detail') }}</p>
                             </div>
 
                             @foreach ($noteTemplates as $noteTemplateKey => $noteTemplate)
                                 <article data-template-preview-item="{{ $noteTemplateKey }}" @if ($selectedNoteTemplate !== $noteTemplateKey) hidden @endif>
                                     <strong>{{ $noteTemplate['label'] }}</strong>
-                                    <p>{{ $noteTemplate['body'] }}</p>
+                                    <p lang="{{ str_replace('_', '-', $noteTemplate['body_language']) }}">{{ $noteTemplate['body'] }}</p>
                                 </article>
                             @endforeach
                         </div>
 
                         <div class="notice-list">
-                            <p>Internal notes are private handoff context for your team, not visitor replies.</p>
-                            <p>Avoid storing sensitive details unless they are necessary for support continuity.</p>
+                            <p>{{ __('ticket_detail.notes.private') }}</p>
+                            <p>{{ __('ticket_detail.notes.sensitive') }}</p>
                         </div>
                     </aside>
                 </div>
@@ -362,26 +369,26 @@
             @if ($ticket->conversation)
                 <section class="section" aria-labelledby="linked-conversation-heading">
                     <div class="section-header">
-                        <h2 id="linked-conversation-heading">Linked conversation</h2>
-                        <span class="lede">{{ ucfirst($ticket->conversation->status) }}</span>
+                        <h2 id="linked-conversation-heading">{{ __('ticket_detail.conversation.heading') }}</h2>
+                        <span class="lede">{{ __('tickets.statuses.'.$ticket->conversation->status) }}</span>
                     </div>
 
                     <div class="notice-copy">
-                        <p>{{ $ticket->conversation->subject ?? 'Untitled conversation' }}</p>
+                        <p>@if (filled($ticket->conversation->subject))<span lang="">{{ $ticket->conversation->subject }}</span>@else{{ __('ticket_detail.conversation.untitled') }}@endif</p>
                         <p>
                             <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
-                                View linked conversation
+                                {{ __('ticket_detail.conversation.view') }}
                             </a>
                         </p>
                     </div>
 
                     <div class="section-header">
-                        <strong>Recent conversation messages</strong>
-                        <span class="lede">{{ $linkedConversationMessages->count() }} shown</span>
+                        <strong>{{ __('ticket_detail.conversation.recent') }}</strong>
+                        <span class="lede">{{ trans_choice('ticket_detail.counts.shown', $linkedConversationMessages->count(), ['count' => $linkedConversationMessages->count()]) }}</span>
                     </div>
 
                     @include('agent.conversations.partials.message-list', [
-                        'emptyMessage' => 'No conversation messages yet.',
+                        'emptyMessage' => __('ticket_detail.conversation.empty'),
                         'transcriptMessages' => $linkedConversationMessages,
                         'supportCode' => $linkedConversationSupportCode,
                         'transcriptSiteColor' => $ticket->site->resolvedColor()->cssVariable(),
@@ -405,13 +412,15 @@
                             @include('agent.tickets.partials.return-query-fields')
 
                             <div class="field">
-                                <label for="reply_template">Reply helper</label>
+                                <label for="reply_template">{{ __('ticket_detail.conversation.reply_helper') }}</label>
                                 <select id="reply_template" name="reply_template" data-reply-template data-template-picker data-target="#message">
-                                    <option value="">Write a custom reply</option>
+                                    <option value="">{{ __('ticket_detail.conversation.custom_reply') }}</option>
                                     @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
                                         <option
                                             value="{{ $replyTemplateKey }}"
                                             data-body="{{ $replyTemplate['body'] }}"
+                                            data-body-lang="{{ str_replace('_', '-', $replyTemplate['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}"
+                                            @isset($replyTemplate['label_language']) lang="{{ $replyTemplate['label_language'] }}" @endisset
                                             @selected($selectedReplyTemplate === $replyTemplateKey)
                                         >
                                             {{ $replyTemplate['label'] }}
@@ -424,17 +433,18 @@
                             </div>
 
                             <div class="field">
-                                <label for="message">Visitor reply</label>
+                                <label for="message">{{ __('ticket_detail.conversation.visitor_reply') }}</label>
                                 <textarea
                                     id="message"
                                     name="message"
                                     rows="4"
-                                    placeholder="Send a reply to the visitor."
+                                    placeholder="{{ __('ticket_detail.conversation.reply_placeholder') }}"
                                     aria-describedby="ticket-reply-shortcut-help"
                                     data-reply-body
                                     data-shortcut-submit
+                                    lang=""
                                 >{{ old('message') }}</textarea>
-                                <p id="ticket-reply-shortcut-help" class="sr-only">Command or Control plus Enter sends this visitor reply.</p>
+                                <p id="ticket-reply-shortcut-help" class="sr-only">{{ __('ticket_detail.conversation.shortcut') }}</p>
                                 @error('message')
                                     <p class="field-error">{{ $message }}</p>
                                 @enderror
@@ -442,29 +452,29 @@
 
                             <p class="sr-only" data-reply-status aria-live="polite"></p>
 
-                            <button class="button" type="submit" data-reply-submit>Send visitor reply</button>
+                            <button class="button" type="submit" data-reply-submit>{{ __('ticket_detail.conversation.send') }}</button>
                         </form>
 
                         <aside class="reply-assist" aria-labelledby="ticket-reply-assist-heading">
-                            <h3 id="ticket-reply-assist-heading">Reply assist</h3>
+                            <h3 id="ticket-reply-assist-heading">{{ __('ticket_detail.conversation.assist') }}</h3>
 
                             <div class="reply-template-preview" data-template-preview>
                                 <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
-                                    <strong>Writing this one yourself</strong>
-                                    <p class="lede">Reply helpers offer a starting point you can edit. Wayfindr never writes a reply for you.</p>
+                                    <strong>{{ __('ticket_detail.conversation.writing') }}</strong>
+                                    <p class="lede">{{ __('ticket_detail.conversation.writing_detail') }}</p>
                                 </div>
 
                                 @foreach ($replyTemplates as $replyTemplateKey => $replyTemplate)
                                     <article data-template-preview-item="{{ $replyTemplateKey }}" @if ($selectedReplyTemplate !== $replyTemplateKey) hidden @endif>
-                                        <strong>{{ $replyTemplate['label'] }}</strong>
-                                        <p>{{ $replyTemplate['body'] }}</p>
+                                        <strong @isset($replyTemplate['label_language']) lang="{{ $replyTemplate['label_language'] }}" @endisset>{{ $replyTemplate['label'] }}</strong>
+                                        <p lang="{{ str_replace('_', '-', $replyTemplate['body_language'] ?? \App\Support\DashboardLanguage::FALLBACK) }}">{{ $replyTemplate['body'] }}</p>
                                     </article>
                                 @endforeach
                             </div>
 
                             <div class="notice-list">
-                                <p>Keep sensitive details out of visitor replies unless the visitor supplied them here.</p>
-                                <p>Use ticket replies when the customer should see the update; use internal notes for private handoff context.</p>
+                                <p>{{ __('ticket_detail.conversation.sensitive') }}</p>
+                                <p>{{ __('ticket_detail.conversation.use') }}</p>
                             </div>
                         </aside>
                     </div>
@@ -475,45 +485,45 @@
                 <x-tab-panel id="external">
             <section class="section" aria-labelledby="external-links-heading">
                 <div class="section-header">
-                    <h2 id="external-links-heading">External links</h2>
-                    <span class="lede">{{ $ticketExternalIssueHealth['total'] }} total</span>
+                    <h2 id="external-links-heading">{{ __('ticket_detail.external.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('ticket_detail.counts.total', $ticketExternalIssueHealth['total'], ['count' => $ticketExternalIssueHealth['total']]) }}</span>
                 </div>
 
                 <x-details-disclosure
                     id="ticket-external-handoff-readiness"
-                    :summary="'Handoff readiness — '.$ticketExternalIssueHandoffReadiness['label']"
+                    :summary="__('ticket_detail.external.handoff_summary', ['state' => $ticketExternalIssueHandoffReadiness['label']])"
                     aria-labelledby="ticket-external-handoff-readiness-heading"
                 >
                     <div class="section-header">
-                        <h2 id="ticket-external-handoff-readiness-heading">External handoff readiness</h2>
+                        <h2 id="ticket-external-handoff-readiness-heading">{{ __('ticket_detail.external.handoff_heading') }}</h2>
                         <span class="readiness-status" data-status="{{ $ticketExternalIssueHandoffReadiness['tone'] }}">{{ $ticketExternalIssueHandoffReadiness['label'] }}</span>
                     </div>
 
                     <div class="meta-grid">
                         <div class="meta-item">
-                            <span class="meta-label">Issue creation</span>
+                            <span class="meta-label">{{ __('ticket_detail.external.issue_creation') }}</span>
                             <span class="meta-value">{{ $ticketExternalIssueHandoffReadiness['summary'] }}</span>
                             <span class="lede">{{ $ticketExternalIssueHandoffReadiness['detail'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Data boundary</span>
-                            <span class="meta-value">Safe summary only</span>
-                            <span class="lede">No raw transcripts, cobrowse snapshots, visitor identifiers, or internal notes are exported by default.</span>
+                            <span class="meta-label">{{ __('ticket_detail.external.data_boundary') }}</span>
+                            <span class="meta-value">{{ __('ticket_detail.external.safe_summary') }}</span>
+                            <span class="lede">{{ __('ticket_detail.external.boundary_detail') }}</span>
                         </div>
                     </div>
 
                     @if ($ticketExternalIssueHandoffReadiness['projects']->isEmpty())
-                        <p class="empty">No external issue project is mapped for this site yet.</p>
+                        <p class="empty">{{ __('ticket_detail.external.no_projects') }}</p>
                     @else
                         <div class="message-list">
                             @foreach ($ticketExternalIssueHandoffReadiness['projects'] as $project)
                                 <article class="message-card">
                                     <div class="message-meta">
-                                        <strong>{{ $project['provider_name'] }}</strong>
-                                        <span>{{ $project['provider_label'] }}</span>
+                                        <strong lang="">{{ $project['provider_name'] }}</strong>
+                                        <span lang="">{{ $project['provider_label'] }}</span>
                                     </div>
                                     <p>
-                                        <span>{{ $project['project_key'] }}</span>
+                                        <span lang="">{{ $project['project_key'] }}</span>
                                         <span class="readiness-status" data-status="{{ $project['state']['tone'] }}">{{ $project['state']['label'] }}</span>
                                     </p>
                                     <p class="lede">{{ $project['state']['detail'] }}</p>
@@ -525,11 +535,11 @@
 
                 <x-details-disclosure
                     id="ticket-external-issue-health"
-                    :summary="'Issue sync health — '.$ticketExternalIssueHealth['label']"
+                    :summary="__('ticket_detail.external.health_summary', ['state' => $ticketExternalIssueHealth['label']])"
                     aria-labelledby="ticket-external-issue-health-heading"
                 >
                     <div class="section-header">
-                        <h2 id="ticket-external-issue-health-heading">External issue health</h2>
+                        <h2 id="ticket-external-issue-health-heading">{{ __('ticket_detail.external.health_heading') }}</h2>
                         <span class="readiness-status" data-status="{{ $ticketExternalIssueHealth['tone'] }}">{{ $ticketExternalIssueHealth['label'] }}</span>
                     </div>
 
@@ -537,11 +547,11 @@
                         @foreach ($ticketExternalIssueHealth['status_counts'] as $statusCount)
                             <div class="meta-item">
                                 <span class="meta-label">{{ $statusCount['label'] }}</span>
-                                <span class="meta-value">{{ $statusCount['count'] }} {{ strtolower($statusCount['label']) }}</span>
+                                <span class="meta-value">{{ trans_choice('ticket_detail.counts.status', $statusCount['count'], ['count' => $statusCount['count'], 'status' => mb_strtolower($statusCount['label'])]) }}</span>
                             </div>
                         @endforeach
                         <div class="meta-item">
-                            <span class="meta-label">Last external attempt</span>
+                            <span class="meta-label">{{ __('ticket_detail.external.last_attempt') }}</span>
                             <span class="meta-value">{{ $ticketExternalIssueHealth['latest_attempt']['label'] }}</span>
                             <span class="lede">{{ $ticketExternalIssueHealth['latest_attempt']['body'] }}</span>
                             @if ($ticketExternalIssueHealth['latest_attempt']['occurred_at'])
@@ -551,33 +561,33 @@
                     </div>
 
                     @if ($ticketExternalIssueHealth['total'] === 0 && $ticketExternalIssueHealth['failures']->isEmpty())
-                        <p class="empty">No external issues linked to this ticket yet.</p>
+                        <p class="empty">{{ __('ticket_detail.external.none') }}</p>
                     @elseif ($ticketExternalIssueHealth['failures']->isEmpty())
-                        <p class="empty">External issue links are not reporting failures for this ticket.</p>
+                        <p class="empty">{{ __('ticket_detail.external.healthy') }}</p>
                     @else
                         <div class="timeline-list">
                             @foreach ($ticketExternalIssueHealth['failures'] as $failure)
                                 <article class="timeline-item internal-note">
                                     <div class="timeline-content">
-                                        <strong>{{ $loop->first ? 'Last failure' : 'Earlier failure' }}</strong>
-                                        <p class="message-body">{{ $failure['provider'] }} could not sync {{ $failure['project_key'] }}.</p>
+                                        <strong>{{ $loop->first ? __('ticket_detail.external.last_failure') : __('ticket_detail.external.earlier_failure') }}</strong>
+                                        <p class="message-body">{{ __('ticket_detail.external.sync_failed', ['provider' => $failure['provider'], 'project' => $failure['project_key']]) }}</p>
                                         <div class="timeline-meta">
                                             @if ($failure['occurred_at'])
                                                 <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
                                             @endif
-                                            <span>Provider details withheld</span>
+                                            <span>{{ __('ticket_detail.external.details_withheld') }}</span>
                                         </div>
                                         @if ($failure['retry'])
                                             <form class="compact-form external-issue-retry-form" method="POST" action="{{ $failure['retry']['route'] }}">
                                                 @csrf
                                                 <input type="hidden" name="site_external_issue_project_id" value="{{ $failure['retry']['site_external_issue_project_id'] }}">
                                                 <button class="button secondary" type="submit">{{ $failure['retry']['label'] }}</button>
-                                                <span class="lede">Retry uses the current site project mapping and the conservative export payload.</span>
+                                                <span class="lede">{{ __('ticket_detail.external.retry_detail') }}</span>
                                             </form>
                                         @else
                                             <p class="lede">
-                                                <strong>Retry unavailable</strong><br>
-                                                Check the site external issue settings before retrying.
+                                                <strong>{{ __('ticket_detail.external.retry_unavailable') }}</strong><br>
+                                                {{ __('ticket_detail.external.retry_unavailable_detail') }}
                                             </p>
                                         @endif
                                     </div>
@@ -589,8 +599,8 @@
 
                 @if ($githubIssueProjects->isNotEmpty() || $gitlabIssueProjects->isNotEmpty() || $jiraIssueProjects->isNotEmpty())
                     <div class="section-form">
-                        <strong>External issue actions</strong>
-                        <p class="lede">Create a conservative external issue from this ticket without exporting transcripts, cobrowse snapshots, or internal notes.</p>
+                        <strong>{{ __('ticket_detail.external.actions') }}</strong>
+                        <p class="lede">{{ __('ticket_detail.external.actions_detail') }}</p>
 
                         @error('external_issue')
                             <p class="field-error">{{ $message }}</p>
@@ -598,35 +608,35 @@
 
                         <div class="external-issue-export-preview" data-external-issue-export-preview>
                             <div class="notice-copy notice-copy-bordered">
-                                <p><strong>External issue export preview</strong></p>
-                                <p>Review the scoped payload before sending this ticket to another tracker.</p>
+                                <p><strong>{{ __('ticket_detail.external.preview') }}</strong></p>
+                                <p>{{ __('ticket_detail.external.preview_detail') }}</p>
                             </div>
 
                             <div class="meta-grid">
                                 <div class="meta-item">
-                                    <span class="meta-label">Issue title</span>
-                                    <span class="meta-value">{{ $externalIssueExportPreview['title'] }}</span>
+                                    <span class="meta-label">{{ __('ticket_detail.external.issue_title') }}</span>
+                                    <span class="meta-value" lang="">{{ $externalIssueExportPreview['title'] }}</span>
                                 </div>
                                 <div class="meta-item">
-                                    <span class="meta-label">Data boundary</span>
-                                    <span class="meta-value">Safe summary only</span>
-                                    <span class="lede">No raw transcripts, cobrowse snapshots, or internal notes by default.</span>
+                                    <span class="meta-label">{{ __('ticket_detail.external.data_boundary') }}</span>
+                                    <span class="meta-value">{{ __('ticket_detail.external.safe_summary') }}</span>
+                                    <span class="lede">{{ __('ticket_detail.external.preview_boundary_detail') }}</span>
                                 </div>
                             </div>
 
                             <div class="section-header">
-                                <strong>Summary sent to external trackers</strong>
-                                <span class="lede">Provider credentials and raw errors stay out of this payload.</span>
+                                <strong>{{ __('ticket_detail.external.summary_sent') }}</strong>
+                                <span class="lede">{{ __('ticket_detail.external.summary_detail') }}</span>
                             </div>
-                            <pre class="code-block"><code>{{ $externalIssueExportPreview['body'] }}</code></pre>
+                            <pre class="code-block"><code lang="">{{ $externalIssueExportPreview['body'] }}</code></pre>
                         </div>
 
                         @foreach ($githubIssueProjects as $githubIssueProject)
                             <form method="POST" action="{{ route('dashboard.tickets.external-issues.github.store', $ticket) }}">
                                 @csrf
                                 <input type="hidden" name="site_external_issue_project_id" value="{{ $githubIssueProject->id }}">
-                                <button class="button" type="submit">Create GitHub issue</button>
-                                <span class="lede">{{ $githubIssueProject->project_key }}</span>
+                                <button class="button" type="submit">{{ __('ticket_detail.external.create_github') }}</button>
+                                <span class="lede" lang="">{{ $githubIssueProject->project_key }}</span>
                             </form>
                         @endforeach
 
@@ -634,8 +644,8 @@
                             <form method="POST" action="{{ route('dashboard.tickets.external-issues.gitlab.store', $ticket) }}">
                                 @csrf
                                 <input type="hidden" name="site_external_issue_project_id" value="{{ $gitlabIssueProject->id }}">
-                                <button class="button" type="submit">Create GitLab issue</button>
-                                <span class="lede">{{ $gitlabIssueProject->project_key }}</span>
+                                <button class="button" type="submit">{{ __('ticket_detail.external.create_gitlab') }}</button>
+                                <span class="lede" lang="">{{ $gitlabIssueProject->project_key }}</span>
                             </form>
                         @endforeach
 
@@ -643,8 +653,8 @@
                             <form method="POST" action="{{ route('dashboard.tickets.external-issues.jira.store', $ticket) }}">
                                 @csrf
                                 <input type="hidden" name="site_external_issue_project_id" value="{{ $jiraIssueProject->id }}">
-                                <button class="button" type="submit">Create Jira issue</button>
-                                <span class="lede">{{ $jiraIssueProject->project_key }}</span>
+                                <button class="button" type="submit">{{ __('ticket_detail.external.create_jira') }}</button>
+                                <span class="lede" lang="">{{ $jiraIssueProject->project_key }}</span>
                             </form>
                         @endforeach
                     </div>
@@ -654,25 +664,30 @@
                     @forelse ($ticket->externalLinks as $externalLink)
                         <article class="message-card">
                             <div class="message-meta">
-                                <strong>{{ $externalLink->providerLabel() }}</strong>
-                                <span>{{ $externalLink->syncStatusLabel() }}</span>
+                                <strong lang="">{{ $externalLink->providerLabel() }}</strong>
+                                @php
+                                    $externalIssueSyncStatus = $externalIssueSyncStatuses[$externalLink->sync_status] ?? null;
+                                @endphp
+                                <span @if ($externalIssueSyncStatus === null) lang="" @endif>{{ $externalIssueSyncStatus ?? $externalLink->syncStatusLabel() }}</span>
                             </div>
                             <p>
-                                <span>{{ $externalLink->external_key ?? $externalLink->external_id ?? 'External record' }}</span>
-                                <span class="lede">{{ $externalLink->project_key }}</span>
+                                <span lang="">{{ $externalLink->external_key ?? $externalLink->external_id ?? __('ticket_detail.common.external_record') }}</span>
+                                <span class="lede" lang="">{{ $externalLink->project_key }}</span>
                             </p>
                             @php
                                 $externalState = data_get($externalLink->metadata, 'external_state');
-                                $externalStateLabel = $externalState === 'closed' ? 'closed' : 'open';
+                                $externalStateLabel = $externalState === 'closed'
+                                    ? __('ticket_detail.external.provider_state_closed')
+                                    : __('ticket_detail.external.provider_state_open');
                                 $externalSyncedAt = $externalLink->last_synced_at
-                                    ? ', synced '.$externalLink->last_synced_at->diffForHumans()
+                                    ? __('ticket_detail.external.provider_synced', ['elapsed' => $externalLink->last_synced_at->diffForHumans()])
                                     : '';
                             @endphp
                             @if ($externalState)
-                                <p class="lede">Provider issue is <strong>{{ $externalStateLabel }}</strong>{{ $externalSyncedAt }}.</p>
+                                <p class="lede">{{ __('ticket_detail.external.provider_state', ['state' => $externalStateLabel, 'sync' => $externalSyncedAt]) }}</p>
                             @endif
                             <p>
-                                <a class="text-link" href="{{ $externalLink->url }}" rel="noopener noreferrer" target="_blank">
+                                <a class="text-link" lang="" href="{{ $externalLink->url }}" rel="noopener noreferrer" target="_blank">
                                     {{ $externalLink->url }}
                                 </a>
                             </p>
@@ -680,33 +695,33 @@
                             <form method="POST" action="{{ route('dashboard.tickets.external-links.destroy', [$ticket, $externalLink]) }}">
                                 @csrf
                                 @method('DELETE')
-                                <button class="button secondary" type="submit">Remove external link</button>
+                                <button class="button secondary" type="submit">{{ __('ticket_detail.external.remove') }}</button>
                             </form>
                         </article>
                     @empty
                         <div class="empty-state">
-                            <strong>No external issue links yet.</strong>
-                            <p class="lede">Attach an external reference only when another tracker owns part of the follow-up. Wayfindr can stay the source of truth when it does not.</p>
+                            <strong>{{ __('ticket_detail.external.empty') }}</strong>
+                            <p class="lede">{{ __('ticket_detail.external.empty_detail') }}</p>
                         </div>
                     @endforelse
                 </div>
 
                 <div class="notice-copy notice-copy-bordered">
-                    <p><strong>Manual external reference</strong></p>
-                    <p>Attach an existing issue only when another tracker owns part of the follow-up.</p>
-                    <p>Use stable issue URLs, project keys, and issue IDs so teammates can find the handoff later.</p>
-                    <p>Keep raw visitor data, transcripts, cobrowse snapshots, and internal notes in Wayfindr unless an agent deliberately summarizes them.</p>
-                    <p>Manual references do not push data to the provider.</p>
+                    <p><strong>{{ __('ticket_detail.external.manual') }}</strong></p>
+                    <p>{{ __('ticket_detail.external.manual_owner') }}</p>
+                    <p>{{ __('ticket_detail.external.manual_stable') }}</p>
+                    <p>{{ __('ticket_detail.external.manual_boundary') }}</p>
+                    <p>{{ __('ticket_detail.external.manual_no_push') }}</p>
                 </div>
 
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.external-links.store', $ticket) }}">
                     @csrf
 
                     <div class="field">
-                        <label for="provider">Provider</label>
+                        <label for="provider">{{ __('ticket_detail.external.provider') }}</label>
                         <select id="provider" name="provider">
                             @foreach ($externalIssueProviders as $value => $label)
-                                <option value="{{ $value }}" @selected(old('provider', 'github') === $value)>
+                                <option lang="" value="{{ $value }}" @selected(old('provider', 'github') === $value)>
                                     {{ $label }}
                                 </option>
                             @endforeach
@@ -717,39 +732,39 @@
                     </div>
 
                     <div class="field">
-                        <label for="project_key">Project or repository</label>
-                        <input id="project_key" name="project_key" type="text" value="{{ old('project_key') }}" placeholder="owner/repository, group/project, or project key">
+                        <label for="project_key">{{ __('ticket_detail.external.project') }}</label>
+                        <input id="project_key" name="project_key" type="text" value="{{ old('project_key') }}" placeholder="{{ __('ticket_detail.external.project_placeholder') }}" lang="">
                         @error('project_key')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
                     </div>
 
                     <div class="field">
-                        <label for="external_id">External ID</label>
-                        <input id="external_id" name="external_id" type="text" value="{{ old('external_id') }}" placeholder="123">
+                        <label for="external_id">{{ __('ticket_detail.external.external_id') }}</label>
+                        <input id="external_id" name="external_id" type="text" value="{{ old('external_id') }}" placeholder="123" lang="">
                         @error('external_id')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
                     </div>
 
                     <div class="field">
-                        <label for="external_key">External key</label>
-                        <input id="external_key" name="external_key" type="text" value="{{ old('external_key') }}" placeholder="#123 or PROJ-123">
+                        <label for="external_key">{{ __('ticket_detail.external.external_key') }}</label>
+                        <input id="external_key" name="external_key" type="text" value="{{ old('external_key') }}" placeholder="#123 or PROJ-123" lang="">
                         @error('external_key')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
                     </div>
 
                     <div class="field">
-                        <label for="url">URL</label>
-                        <input id="url" name="url" type="url" value="{{ old('url') }}" placeholder="https://example.test/issues/123">
+                        <label for="url">{{ __('ticket_detail.external.url') }}</label>
+                        <input id="url" name="url" type="url" value="{{ old('url') }}" placeholder="https://example.test/issues/123" lang="">
                         @error('url')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
                     </div>
 
                     <div class="field">
-                        <label for="sync_status">Sync status</label>
+                        <label for="sync_status">{{ __('ticket_detail.external.sync_status') }}</label>
                         <select id="sync_status" name="sync_status">
                             @foreach ($externalIssueSyncStatuses as $value => $label)
                                 <option value="{{ $value }}" @selected(old('sync_status', 'linked') === $value)>
@@ -762,7 +777,7 @@
                         @enderror
                     </div>
 
-                    <button class="button" type="submit">Add external link</button>
+                    <button class="button" type="submit">{{ __('ticket_detail.external.add') }}</button>
                 </form>
             </section>
                 </x-tab-panel>
@@ -770,30 +785,32 @@
                 <x-tab-panel id="details">
             <section class="section" aria-labelledby="ticket-reference-heading">
                 <div class="section-header">
-                    <h2 id="ticket-reference-heading">Support reference</h2>
+                    <h2 id="ticket-reference-heading">{{ __('ticket_detail.details.support_reference') }}</h2>
                     <div class="section-actions">
                         @if ($ticket->requester)
-                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $ticket->requester) }}">Open visitor profile</a>
+                            <a class="button secondary" href="{{ route('dashboard.visitors.show', $ticket->requester) }}">{{ __('ticket_detail.details.open_visitor') }}</a>
                         @endif
                     </div>
                 </div>
 
                 <div class="meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label">Ticket reference</span>
+                        <span class="meta-label">{{ __('ticket_detail.details.ticket_reference') }}</span>
                         <span class="meta-value">
                             <span class="support-reference">
-                                <code>Ticket #{{ $ticket->id }}</code>
+                                <code>{{ __('ticket_detail.reference', ['id' => $ticket->id]) }}</code>
                                 <x-copy-value-button
-                                    :value="'Ticket #'.$ticket->id"
-                                    :aria-label="'Copy ticket reference Ticket #'.$ticket->id"
-                                    title="Copy ticket reference"
+                                    :value="__('ticket_detail.reference', ['id' => $ticket->id])"
+                                    :label="__('support.copy')"
+                                    :success-label="__('support.copied')"
+                                    :aria-label="__('ticket_detail.details.copy_reference_aria', ['reference' => __('ticket_detail.reference', ['id' => $ticket->id])])"
+                                    :title="__('ticket_detail.details.copy_reference')"
                                 />
                             </span>
                         </span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Support code</span>
+                        <span class="meta-label">{{ __('ticket_detail.details.support_code') }}</span>
                         <span class="meta-value">
                             @if ($ticket->conversation)
                                 <x-support-code-reference
@@ -801,42 +818,42 @@
                                     :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
                                 />
                             @else
-                                No linked conversation
+                                {{ __('ticket_detail.common.no_linked_conversation') }}
                             @endif
                         </span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Site</span>
-                        <span class="meta-value">{{ $ticket->site->name }}</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.site') }}</span>
+                        <span class="meta-value" lang="">{{ $ticket->site->name }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Requester</span>
-                        <span class="meta-value">{{ $requesterReference }}</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.requester') }}</span>
+                        <span class="meta-value" lang="">{{ $requesterReference }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Latest visitor page</span>
+                        <span class="meta-label">{{ __('ticket_detail.details.latest_page') }}</span>
                         <span class="meta-value">
                             @if ($visitorContext['last_page_url'])
-                                <a class="text-link" href="{{ $visitorContext['last_page_url'] }}" target="_blank" rel="noreferrer">
+                                <a class="text-link" lang="" href="{{ $visitorContext['last_page_url'] }}" target="_blank" rel="noreferrer">
                                     {{ $visitorContext['last_page_url'] }}
                                 </a>
                             @else
-                                Not reported
+                                {{ __('ticket_detail.common.not_reported') }}
                             @endif
                         </span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Created</span>
+                        <span class="meta-label">{{ __('ticket_detail.common.created') }}</span>
                         <span class="meta-value">{{ $ticket->created_at->diffForHumans() }}</span>
-                        <span class="lede">Updated {{ $ticket->updated_at->diffForHumans() }}@if ($ticket->closed_at) · Closed {{ $ticket->closed_at->diffForHumans() }}@endif</span>
+                        <span class="lede">{{ __('ticket_detail.common.updated', ['elapsed' => $ticket->updated_at->diffForHumans()]) }}@if ($ticket->closed_at) · {{ __('ticket_detail.common.closed', ['elapsed' => $ticket->closed_at->diffForHumans()]) }}@endif</span>
                     </div>
                 </div>
             </section>
 
             <section class="section" aria-labelledby="ticket-labels-heading">
                 <div class="section-header">
-                    <h2 id="ticket-labels-heading">Labels</h2>
-                    <span class="lede">{{ $ticket->labels->count() }} total</span>
+                    <h2 id="ticket-labels-heading">{{ __('ticket_detail.details.labels') }}</h2>
+                    <span class="lede">{{ trans_choice('ticket_detail.counts.total', $ticket->labels->count(), ['count' => $ticket->labels->count()]) }}</span>
                 </div>
 
                 <div class="message-list">
@@ -848,13 +865,13 @@
                                     @csrf
                                     @method('DELETE')
                                     @include('agent.tickets.partials.return-query-fields')
-                                    <button class="button secondary" type="submit">Remove label</button>
+                                    <button class="button secondary" type="submit">{{ __('ticket_detail.details.remove_label') }}</button>
                                 </form>
                             </div>
                         </article>
                     @empty
                         <div class="empty-state">
-                            <strong>No labels on this ticket yet.</strong>
+                            <strong>{{ __('ticket_detail.details.no_labels') }}</strong>
                         </div>
                     @endforelse
                 </div>
@@ -864,8 +881,8 @@
                     @include('agent.tickets.partials.return-query-fields')
 
                     <div class="field">
-                        <label for="label_name">Add label</label>
-                        <input id="label_name" name="label_name" type="text" value="{{ old('label_name') }}" list="ticket-label-options" placeholder="needs-dev, vip, wordpress">
+                        <label for="label_name">{{ __('ticket_detail.details.add_label') }}</label>
+                        <input id="label_name" name="label_name" type="text" value="{{ old('label_name') }}" list="ticket-label-options" placeholder="needs-dev, vip, wordpress" lang="">
                         <datalist id="ticket-label-options">
                             @foreach ($ticketLabelOptions as $labelOption)
                                 <option value="{{ $labelOption->name }}"></option>
@@ -876,14 +893,14 @@
                         @enderror
                     </div>
 
-                    <button class="button" type="submit">Add label</button>
+                    <button class="button" type="submit">{{ __('ticket_detail.details.add_label') }}</button>
                 </form>
             </section>
 
             <section class="section" aria-labelledby="ticket-details-heading">
                 <div class="section-header">
-                    <h2 id="ticket-details-heading">Ticket details</h2>
-                    <span class="lede">{{ ucfirst($ticket->priority) }}</span>
+                    <h2 id="ticket-details-heading">{{ __('ticket_detail.details.ticket') }}</h2>
+                    <span class="lede">{{ __('tickets.priorities.'.$ticket->priority) }}</span>
                 </div>
 
                 <form class="section-form" method="POST" action="{{ route('dashboard.tickets.update', $ticket) }}">
@@ -892,20 +909,20 @@
                     @include('agent.tickets.partials.return-query-fields')
 
                     <div class="field">
-                        <label for="subject">Subject</label>
-                        <input id="subject" name="subject" type="text" value="{{ old('subject', $ticket->subject) }}">
+                        <label for="subject">{{ __('ticket_detail.details.subject') }}</label>
+                        <input id="subject" name="subject" type="text" value="{{ old('subject', $ticket->subject) }}" lang="">
                         @error('subject')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
                     </div>
 
                     <div class="field">
-                        <label for="category">Category</label>
+                        <label for="category">{{ __('ticket_detail.common.category') }}</label>
                         <select id="category" name="category">
-                            <option value="">Uncategorized</option>
+                            <option value="">{{ __('tickets.filters.category_uncategorized') }}</option>
                             @foreach ($ticketCategories as $value => $category)
                                 <option value="{{ $value }}" @selected(old('category', $ticket->category) === $value)>
-                                    {{ $category['label'] }}
+                                    {{ __('tickets.categories.'.$value) }}
                                 </option>
                             @endforeach
                         </select>
@@ -916,11 +933,11 @@
                     </div>
 
                     <div class="field">
-                        <label for="priority">Priority</label>
+                        <label for="priority">{{ __('ticket_detail.common.priority') }}</label>
                         <select id="priority" name="priority">
                             @foreach ($ticketPriorities as $value => $priority)
                                 <option value="{{ $value }}" @selected(old('priority', $ticket->priority) === $value)>
-                                    {{ $priority['label'] }}
+                                    {{ __('tickets.priorities.'.$value) }}
                                 </option>
                             @endforeach
                         </select>
@@ -931,14 +948,14 @@
                     </div>
 
                     <div class="field">
-                        <label for="description">Description</label>
-                        <textarea id="description" name="description" rows="6">{{ old('description', $ticket->description) }}</textarea>
+                        <label for="description">{{ __('ticket_detail.details.description') }}</label>
+                        <textarea id="description" name="description" rows="6" lang="">{{ old('description', $ticket->description) }}</textarea>
                         @error('description')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
                     </div>
 
-                    <button class="button" type="submit">Save ticket</button>
+                    <button class="button" type="submit">{{ __('ticket_detail.details.save') }}</button>
                 </form>
             </section>
 
@@ -948,63 +965,63 @@
             @if ($hasVisitorContext)
                 <section class="section" aria-labelledby="ticket-visitor-context-heading">
                     <div class="section-header">
-                        <h2 id="ticket-visitor-context-heading">Visitor at a glance</h2>
-                        <span class="lede">Safe context only</span>
+                        <h2 id="ticket-visitor-context-heading">{{ __('ticket_detail.visitor_context.heading') }}</h2>
+                        <span class="lede">{{ __('ticket_detail.visitor_context.safe') }}</span>
                     </div>
 
                     <div class="meta-grid">
                         <div class="meta-item">
-                            <span class="meta-label">Visitor</span>
-                            <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
+                            <span class="meta-label">{{ __('ticket_detail.visitor_context.visitor') }}</span>
+                            <span class="meta-value" lang="">{{ $visitorContext['anonymous_id'] }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Host visitor ID</span>
-                            <span class="meta-value">{{ $visitorContext['external_id'] ?? 'Not provided' }}</span>
+                            <span class="meta-label">{{ __('ticket_detail.visitor_context.host_id') }}</span>
+                            @if ($visitorContext['external_id'])<span class="meta-value" lang="">{{ $visitorContext['external_id'] }}</span>@else<span class="meta-value">{{ __('ticket_detail.common.not_provided') }}</span>@endif
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Last seen</span>
-                            <span class="meta-value">{{ $visitorContext['last_seen_at']?->diffForHumans() ?? 'Not reported' }}</span>
+                            <span class="meta-label">{{ __('ticket_detail.visitor_context.last_seen') }}</span>
+                            <span class="meta-value">{{ $visitorContext['last_seen_at']?->diffForHumans() ?? __('ticket_detail.common.not_reported') }}</span>
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Latest page</span>
-                            <span class="meta-value">{{ $visitorContext['last_page_url'] ?? 'Not reported' }}</span>
+                            <span class="meta-label">{{ __('ticket_detail.visitor_context.latest_page') }}</span>
+                            @if ($visitorContext['last_page_url'])<span class="meta-value" lang="">{{ $visitorContext['last_page_url'] }}</span>@else<span class="meta-value">{{ __('ticket_detail.common.not_reported') }}</span>@endif
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">Entry page</span>
-                            <span class="meta-value">{{ $visitorContext['started_page_url'] ?? 'Not reported' }}</span>
+                            <span class="meta-label">{{ __('ticket_detail.visitor_context.entry_page') }}</span>
+                            @if ($visitorContext['started_page_url'])<span class="meta-value" lang="">{{ $visitorContext['started_page_url'] }}</span>@else<span class="meta-value">{{ __('ticket_detail.common.not_reported') }}</span>@endif
                         </div>
                         <div class="meta-item">
-                            <span class="meta-label">History on this site</span>
-                            <span class="meta-value">{{ $priorSupportRecordCount }} {{ \Illuminate\Support\Str::plural('record', $priorSupportRecordCount) }}</span>
+                            <span class="meta-label">{{ __('ticket_detail.visitor_context.history') }}</span>
+                            <span class="meta-value">{{ trans_choice('ticket_detail.counts.records', $priorSupportRecordCount, ['count' => $priorSupportRecordCount]) }}</span>
                         </div>
                     </div>
 
                     <div class="notice-copy notice-copy-bordered">
-                        <p><strong>Data boundary</strong></p>
-                        <p>Use this context to answer the current request. Do not collect, export, or infer extra visitor data without consent.</p>
+                        <p><strong>{{ __('ticket_detail.visitor_context.boundary') }}</strong></p>
+                        <p>{{ __('ticket_detail.visitor_context.boundary_detail') }}</p>
                     </div>
 
                     <div class="section-header">
-                        <strong>Host context</strong>
-                        <span class="lede">{{ count($visitorContext['host_context']) }} fields</span>
+                        <strong>{{ __('ticket_detail.visitor_context.host_context') }}</strong>
+                        <span class="lede">{{ trans_choice('ticket_detail.counts.fields', count($visitorContext['host_context']), ['count' => count($visitorContext['host_context'])]) }}</span>
                     </div>
 
                     @if ($visitorContext['host_context'] === [])
-                        <p class="empty">No host-provided context was captured.</p>
+                        <p class="empty">{{ __('ticket_detail.visitor_context.host_empty') }}</p>
                     @else
                         <div class="table-wrap">
                             <table>
                                 <thead>
                                     <tr>
-                                        <th scope="col">Field</th>
-                                        <th scope="col">Value</th>
+                                        <th scope="col">{{ __('ticket_detail.visitor_context.field') }}</th>
+                                        <th scope="col">{{ __('ticket_detail.visitor_context.value') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach ($visitorContext['host_context'] as $field => $value)
                                         <tr>
-                                            <td>{{ $field }}</td>
-                                            <td>{{ $value }}</td>
+                                            <td lang="">{{ $field }}</td>
+                                            <td lang="">{{ $value }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -1013,25 +1030,25 @@
                     @endif
 
                     <div class="section-header">
-                        <strong>Prior support records</strong>
-                        <span class="lede">{{ $priorSupportRecordCount }} previous</span>
+                        <strong>{{ __('ticket_detail.visitor_context.prior') }}</strong>
+                        <span class="lede">{{ trans_choice('ticket_detail.counts.previous', $priorSupportRecordCount, ['count' => $priorSupportRecordCount]) }}</span>
                     </div>
 
                     @if ($priorVisitorConversations->isEmpty() && $priorVisitorTickets->isEmpty())
-                        <p class="empty">No prior support records for this visitor on this site.</p>
+                        <p class="empty">{{ __('ticket_detail.visitor_context.prior_empty') }}</p>
                     @else
                         <div class="timeline-list">
                             @foreach ($priorVisitorConversations as $priorConversation)
                                 <article class="timeline-item">
                                     <div class="timeline-content">
                                         <a class="text-link" href="{{ route('dashboard.conversations.show', $priorConversation->support_code) }}">
-                                            {{ $priorConversation->subject ?? 'Untitled conversation' }}
+                                            @if (filled($priorConversation->subject))<span lang="">{{ $priorConversation->subject }}</span>@else{{ __('ticket_detail.conversation.untitled') }}@endif
                                         </a>
                                         <div class="timeline-meta">
-                                            <span>{{ $priorConversation->support_code }}</span>
-                                            <span>{{ ucfirst($priorConversation->status) }}</span>
-                                            <span>Owner: {{ $priorConversation->assignedAgent?->name ?? 'Unassigned' }}</span>
-                                            <span>Last activity: {{ $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans() }}</span>
+                                            <span lang="">{{ $priorConversation->support_code }}</span>
+                                            <span>{{ __('tickets.statuses.'.$priorConversation->status) }}</span>
+                                            <span>{{ __('ticket_detail.visitor_context.owner', ['owner' => $priorConversation->assignedAgent?->name ?? __('ticket_detail.common.unassigned')]) }}</span>
+                                            <span>{{ __('ticket_detail.visitor_context.last_activity', ['elapsed' => $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans()]) }}</span>
                                         </div>
                                     </div>
                                 </article>
@@ -1041,18 +1058,18 @@
                                 <article class="timeline-item">
                                     <div class="timeline-content">
                                         <a class="text-link" href="{{ route('dashboard.tickets.show', $priorTicket) }}">
-                                            {{ $priorTicket->subject }}
+                                            <span lang="">{{ $priorTicket->subject }}</span>
                                         </a>
                                         <div class="timeline-meta">
-                                            <span>Ticket #{{ $priorTicket->id }}</span>
-                                            <span>{{ ucfirst($priorTicket->status) }}</span>
-                                            <span>Owner: {{ $priorTicket->assignee?->name ?? 'Unassigned' }}</span>
+                                            <span>{{ __('ticket_detail.reference', ['id' => $priorTicket->id]) }}</span>
+                                            <span>{{ __('tickets.statuses.'.$priorTicket->status) }}</span>
+                                            <span>{{ __('ticket_detail.visitor_context.owner', ['owner' => $priorTicket->assignee?->name ?? __('ticket_detail.common.unassigned')]) }}</span>
                                             @if ($priorTicket->conversation)
                                                 <a class="text-link" href="{{ route('dashboard.conversations.show', $priorTicket->conversation->support_code) }}">
                                                     {{ $priorTicket->conversation->support_code }}
                                                 </a>
                                             @else
-                                                <span>No linked conversation</span>
+                                                <span>{{ __('ticket_detail.common.not_linked') }}</span>
                                             @endif
                                         </div>
                                     </div>
@@ -1067,12 +1084,12 @@
                 <x-tab-panel id="activity">
             <section class="section" aria-labelledby="ticket-timeline-heading">
                 <div class="section-header">
-                    <h2 id="ticket-timeline-heading">Timeline</h2>
+                    <h2 id="ticket-timeline-heading">{{ __('ticket_detail.timeline.heading') }}</h2>
                     <span class="lede">
                         @if ($ticketTimelineFilter === 'all')
-                            {{ $ticketTimelineTotalCount }} events
+                            {{ trans_choice('ticket_detail.counts.events', $ticketTimelineTotalCount, ['count' => $ticketTimelineTotalCount]) }}
                         @else
-                            {{ $ticketTimeline->count() }} of {{ $ticketTimelineTotalCount }} events
+                            {{ trans_choice('ticket_detail.counts.events_of', $ticketTimeline->count(), ['count' => $ticketTimeline->count(), 'total' => $ticketTimelineTotalCount]) }}
                         @endif
                     </span>
                 </div>
@@ -1087,10 +1104,10 @@
                     @endforeach
                 </div>
 
-                <div class="filter-summary" aria-label="Timeline filters">
+                <div class="filter-summary" aria-label="{{ __('ticket_detail.timeline.filters_region') }}">
                     <div>
-                        <strong>Timeline visibility</strong>
-                        <p class="lede">Narrow the ticket history without hiding the full summary above.</p>
+                        <strong>{{ __('ticket_detail.timeline.visibility') }}</strong>
+                        <p class="lede">{{ __('ticket_detail.timeline.visibility_detail') }}</p>
                     </div>
                     <div class="filter-chips">
                         @foreach ($ticketTimelineFilters as $timelineFilterValue => $timelineFilterLabel)
@@ -1125,7 +1142,7 @@
                                     <span>{{ $timelineItem['badge'] }}</span>
                                 </div>
                                 @if ($timelineItem['body'])
-                                    <p class="message-body">{{ $timelineItem['body'] }}</p>
+                                    <p class="message-body" lang="">{{ $timelineItem['body'] }}</p>
                                 @endif
                             </div>
                         </article>
@@ -1140,8 +1157,8 @@
 
             <section class="section" aria-labelledby="ticket-activity-heading">
                 <div class="section-header">
-                    <h2 id="ticket-activity-heading">Activity</h2>
-                    <span class="lede">{{ $ticketActivity->count() }} total</span>
+                    <h2 id="ticket-activity-heading">{{ __('ticket_detail.activity.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('ticket_detail.counts.total', $ticketActivity->count(), ['count' => $ticketActivity->count()]) }}</span>
                 </div>
 
                 <div class="message-list">
@@ -1149,116 +1166,19 @@
                         <article class="message-card">
                             <div class="message-meta">
                                 <strong>
-                                    @if ($activity->actor_type === \App\Models\Visitor::class)
-                                        Visitor
-                                    @else
-                                        {{ $activity->actor?->name ?? 'System' }}
-                                    @endif
+                                    {{ $activity['actor'] }}
                                 </strong>
-                                <span>{{ $activity->occurred_at->diffForHumans() }}</span>
+                                <span>{{ $activity['occurred_at']?->diffForHumans() }}</span>
                             </div>
-                            <p>
-                                @switch($activity->action)
-                                    @case('ticket.created')
-                                        @if (data_get($activity->metadata, 'source') === 'conversation' && data_get($activity->metadata, 'support_code'))
-                                            <span>Ticket created from conversation {{ data_get($activity->metadata, 'support_code') }}</span>
-                                        @else
-                                            <span>Ticket created</span>
-                                        @endif
-                                        @break
-
-                                    @case('ticket.closed')
-                                        Ticket closed
-                                        @break
-
-                                    @case('ticket.pending')
-                                        Ticket marked pending
-                                        @break
-
-                                    @case('ticket.reopened')
-                                        Ticket reopened
-                                        @break
-
-                                    @case('ticket.unheld')
-                                        Ticket taken off hold
-                                        @break
-
-                                    @case('ticket.note_added')
-                                        Internal note added
-                                        @break
-
-                                    @case('ticket.reply_sent')
-                                        Visitor reply sent
-                                        @break
-
-                                    @case('ticket.external_link_created')
-                                        External link added
-                                        @break
-
-                                    @case('ticket.external_issue_created')
-                                        {{ \App\Support\ExternalIssueProvider::label(data_get($activity->metadata, 'provider')) }} issue created
-                                        @break
-
-                                    @case('ticket.external_link_removed')
-                                        External link removed
-                                        @break
-
-                                    @case('ticket.external_sync_failed')
-                                        External sync failed
-                                        @break
-
-                                    @case('ticket.visitor_replied')
-                                        Visitor replied
-                                        @break
-
-                                    @case('ticket.assignee_updated')
-                                        Assignee changed from {{ data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned' }} to {{ data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned' }}
-                                        @break
-
-                                    @case('ticket.escalated')
-                                        Ticket escalated from {{ data_get($activity->metadata, 'old_assignee_name') ?? 'Unassigned' }} to {{ data_get($activity->metadata, 'target_agent_name') ?? data_get($activity->metadata, 'new_assignee_name') ?? 'Unassigned' }}
-                                        @break
-
-                                    @case('ticket.label_added')
-                                        Label added: {{ data_get($activity->metadata, 'label_name') }}
-                                        @break
-
-                                    @case('ticket.label_removed')
-                                        Label removed: {{ data_get($activity->metadata, 'label_name') }}
-                                        @break
-
-                                    @case('ticket.updated')
-                                        @foreach (data_get($activity->metadata, 'changes', []) as $field => $change)
-                                            @if ($field === 'description')
-                                                <span>Description updated</span>@if (! $loop->last)<br>@endif
-                                            @elseif ($field === 'category')
-                                                <span>Category changed from {{ \App\Support\TicketCategory::label(data_get($change, 'old')) }} to {{ \App\Support\TicketCategory::label(data_get($change, 'new')) }}</span>@if (! $loop->last)<br>@endif
-                                            @elseif ($field === 'priority')
-                                                <span>Priority changed from {{ ucfirst(data_get($change, 'old')) }} to {{ ucfirst(data_get($change, 'new')) }}</span>@if (! $loop->last)<br>@endif
-                                            @else
-                                                <span>{{ ucfirst($field) }} changed from {{ data_get($change, 'old') }} to {{ data_get($change, 'new') }}</span>@if (! $loop->last)<br>@endif
-                                            @endif
-                                        @endforeach
-                                        @break
-
-                                    @default
-                                        {{ ucfirst(str_replace(['ticket.', '_'], ['', ' '], $activity->action)) }}
-                                @endswitch
-                            </p>
-                            @php
-                                $activityBody = data_get($activity->metadata, 'resolution_note')
-                                    ?? data_get($activity->metadata, 'pending_note')
-                                    ?? data_get($activity->metadata, 'reopen_note')
-                                    ?? data_get($activity->metadata, 'reason');
-                            @endphp
-                            @if ($activityBody)
-                                <p class="message-body">{{ $activityBody }}</p>
+                            <p>{{ $activity['label'] }}</p>
+                            @if ($activity['body'])
+                                <p class="message-body" lang="">{{ $activity['body'] }}</p>
                             @endif
                         </article>
                     @empty
                         <div class="empty-state">
-                            <strong>No ticket activity yet.</strong>
-                            <p class="lede">Lifecycle, assignment, label, reply, and external-link updates will appear here once the team works the ticket.</p>
+                            <strong>{{ __('ticket_detail.activity.empty') }}</strong>
+                            <p class="lede">{{ __('ticket_detail.activity.empty_detail') }}</p>
                         </div>
                     @endforelse
                 </div>

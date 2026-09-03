@@ -123,7 +123,7 @@ test('agent can create a conservative Jira issue from a mapped ticket', function
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'Jira issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.jira_created');
 
     Http::assertSent(function (HttpClientRequest $request) use ($ticket): bool {
         $payload = $request->data();
@@ -191,7 +191,7 @@ test('a colon-free credential targets Server/Data Center: bearer auth, REST v2, 
         ->post("/dashboard/tickets/{$fixture['ticket']->id}/external-issues/jira", [
             'site_external_issue_project_id' => $fixture['project']->id,
         ])
-        ->assertSessionHas('status', 'Jira issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.jira_created');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         $description = data_get($request->data(), 'fields.description');

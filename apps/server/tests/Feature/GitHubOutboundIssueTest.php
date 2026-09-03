@@ -44,7 +44,7 @@ test('agent can create a conservative GitHub issue from a mapped ticket', functi
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'GitHub issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.github_created');
 
     Http::assertSent(function (HttpClientRequest $request) use ($ticket): bool {
         $payload = $request->data();
@@ -164,7 +164,7 @@ test('GitHub issue exports omit conversation generated ticket descriptions', fun
             'site_external_issue_project_id' => $project->id,
         ])
         ->assertRedirect("/dashboard/tickets/{$ticket->id}")
-        ->assertSessionHas('status', 'GitHub issue created.');
+        ->assertSessionHas('status', 'ticket_detail.flash.github_created');
 
     Http::assertSent(function (HttpClientRequest $request): bool {
         $body = (string) data_get($request->data(), 'body');
