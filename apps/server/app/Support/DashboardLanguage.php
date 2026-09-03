@@ -95,6 +95,8 @@ final class DashboardLanguage
         'operator.settings.backups.update',
         'operator.settings.backups.test',
         'operator.settings.backups.run',
+        'operator.settings.backups.restore',
+        'operator.settings.backups.restore.run',
 
         'dashboard.profile.show',
         'dashboard.profile.update',

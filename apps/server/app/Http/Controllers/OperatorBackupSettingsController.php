@@ -360,13 +360,16 @@ class OperatorBackupSettingsController extends Controller
             $path = $backups->resolveLocalArchivePath($requested);
 
             if ($path === null) {
-                $preflightError = 'That archive is no longer available on the local disk. Pick one from the list.';
+                $preflightError = ['key' => 'operator.backups.restore.preflight.unavailable'];
             } else {
                 try {
                     $preflight = $restores->preflight($path);
                     $selected = $requested;
                 } catch (Throwable $exception) {
-                    $preflightError = 'Could not read that archive: '.$exception->getMessage();
+                    $preflightError = [
+                        'key' => 'operator.backups.restore.preflight.read_failed',
+                        'parameters' => ['message' => $exception->getMessage()],
+                    ];
                 }
             }
         }
@@ -396,7 +399,10 @@ class OperatorBackupSettingsController extends Controller
         if (! $this->restoreIsDurable()) {
             return redirect()
                 ->route('operator.settings.backups.restore')
-                ->with('error', 'operator.backups.flash.restore_unavailable');
+                ->with('error', [
+                    'key' => 'operator.backups.flash.restore_unavailable',
+                    'parameters' => ['command' => 'php artisan wayfindr:restore'],
+                ]);
         }
 
         $archive = trim((string) $request->input('archive', ''));
@@ -404,19 +410,22 @@ class OperatorBackupSettingsController extends Controller
         $expectedName = trim((string) config('app.name'));
 
         $errors = [];
+        $errorDetail = null;
 
         if ($path === null) {
-            $errors['archive'] = 'Choose an archive from the list.';
+            $errors['archive'] = __('operator.backups.restore.validation.archive');
         }
 
         // A typed instance name is the deliberate friction: it forces the
         // operator to name what they are about to overwrite.
         if ($expectedName === '' || trim((string) $request->input('confirm_name')) !== $expectedName) {
-            $errors['confirm_name'] = 'Type the exact instance name to confirm: '.($expectedName !== '' ? $expectedName : '(APP_NAME is not set)');
+            $errors['confirm_name'] = $expectedName === ''
+                ? __('operator.backups.restore.validation.confirm_name_unset')
+                : __('operator.backups.restore.validation.confirm_name_mismatch');
         }
 
         if ($request->input('acknowledge') !== '1') {
-            $errors['acknowledge'] = 'You must acknowledge that restoring erases all current data.';
+            $errors['acknowledge'] = __('operator.backups.restore.validation.acknowledge');
         }
 
         // The app enters maintenance mode for the restore, but it cannot stop the
@@ -426,7 +435,7 @@ class OperatorBackupSettingsController extends Controller
         // long-running requests in flight), the part of the CLI quiescing
         // procedure the app cannot do itself.
         if ($request->input('workers_stopped') !== '1') {
-            $errors['workers_stopped'] = 'Quiesce writes first — stop the background queue and scheduler workers and ensure no long-running uploads are in progress — then confirm. The restore cannot do this for you.';
+            $errors['workers_stopped'] = __('operator.backups.restore.validation.workers_stopped');
         }
 
         // Re-run the read-only preflight at submit time (the archive may have been
@@ -437,14 +446,21 @@ class OperatorBackupSettingsController extends Controller
             try {
                 $restores->preflight($path);
             } catch (Throwable $exception) {
-                $errors['archive'] = 'This archive could not be read: '.$exception->getMessage();
+                $errors['archive'] = __('operator.backups.restore.validation.archive_unreadable');
+                $errorDetail = $exception->getMessage();
             }
         }
 
         if ($errors !== []) {
-            return redirect()
+            $response = redirect()
                 ->route('operator.settings.backups.restore', $path !== null ? ['archive' => $archive] : [])
                 ->withErrors($errors);
+
+            if ($errorDetail !== null) {
+                $response->with('restore_error_detail', $errorDetail);
+            }
+
+            return $response;
         }
 
         // Claim the single pending-restore slot atomically BEFORE enqueueing, so a
@@ -621,7 +637,7 @@ class OperatorBackupSettingsController extends Controller
      * each survive the database reload and be shared between the web process and
      * the worker. Empty = safe to offer the in-GUI restore.
      *
-     * @return list<string>
+     * @return list<array{key: string, parameters: array<string, string>}>
      */
     private function restoreDurabilityIssues(): array
     {
@@ -629,13 +645,25 @@ class OperatorBackupSettingsController extends Controller
 
         $queueDriver = (string) config('queue.connections.backups.driver');
         if (! in_array($queueDriver, self::RESTORE_SAFE_QUEUE_DRIVERS, true)) {
-            $issues[] = 'The backup queue must be Redis (set BACKUP_QUEUE_DRIVER=redis); it is currently the "'.$queueDriver.'" driver, whose jobs would not survive the database being rebuilt.';
+            $issues[] = [
+                'key' => 'operator.backups.restore.durability.queue',
+                'parameters' => [
+                    'setting' => 'BACKUP_QUEUE_DRIVER=redis',
+                    'driver' => $queueDriver,
+                ],
+            ];
         }
 
         $cacheStore = (string) config('cache.default');
         $cacheDriver = (string) config("cache.stores.{$cacheStore}.driver");
         if (! in_array($cacheDriver, $this->restoreSafeCacheDrivers(), true)) {
-            $issues[] = 'The cache must be a shared, non-database store such as Redis (CACHE_STORE); it is currently the "'.$cacheDriver.'" driver, so the restore status and lock would not survive the rebuild or be shared with the worker.';
+            $issues[] = [
+                'key' => 'operator.backups.restore.durability.cache',
+                'parameters' => [
+                    'setting' => 'CACHE_STORE',
+                    'driver' => $cacheDriver,
+                ],
+            ];
         }
 
         return array_merge($issues, $this->maintenanceDurabilityIssues());
@@ -646,7 +674,7 @@ class OperatorBackupSettingsController extends Controller
      * to every app process — otherwise `artisan down` would lift mid-restore and
      * let web traffic resume while attachments are still being rebuilt.
      *
-     * @return list<string>
+     * @return list<array{key: string, parameters: array<string, string>}>
      */
     private function maintenanceDurabilityIssues(): array
     {
@@ -660,7 +688,13 @@ class OperatorBackupSettingsController extends Controller
             $storeDriver = (string) config("cache.stores.{$store}.driver");
 
             if (! in_array($storeDriver, $this->restoreSafeCacheDrivers(), true)) {
-                return ['The maintenance-mode cache store must be a shared, non-database store such as Redis (APP_MAINTENANCE_STORE); it is currently the "'.$storeDriver.'" driver.'];
+                return [[
+                    'key' => 'operator.backups.restore.durability.maintenance_cache',
+                    'parameters' => [
+                        'setting' => 'APP_MAINTENANCE_STORE',
+                        'driver' => $storeDriver,
+                    ],
+                ]];
             }
 
             return [];
@@ -672,13 +706,19 @@ class OperatorBackupSettingsController extends Controller
         // shared storage (the shipped compose sets this).
         if ($driver === 'file') {
             if (! (bool) config('wayfindr.backup.restore_file_maintenance_shared', false)) {
-                return ['Maintenance mode uses the file driver, whose marker is only visible across processes when the web and worker share storage. Set WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED=true only if they do (the shipped compose does), or switch to a Redis-backed maintenance store.'];
+                return [[
+                    'key' => 'operator.backups.restore.durability.maintenance_file',
+                    'parameters' => ['setting' => 'WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED=true'],
+                ]];
             }
 
             return [];
         }
 
-        return ['The maintenance-mode driver "'.$driver.'" is not supported for the in-GUI restore; use the file driver on shared storage, or a Redis-backed cache store.'];
+        return [[
+            'key' => 'operator.backups.restore.durability.maintenance_driver',
+            'parameters' => ['driver' => $driver],
+        ]];
     }
 
     /** @return list<string> */
