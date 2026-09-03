@@ -1,9 +1,18 @@
 @props([
     'label',
     'subjectChange' => null,
+    'labelChange' => null,
 ])
 
-@if ($subjectChange)
+@if ($labelChange)
+    @php
+        // Label names belong to the account, not the dashboard catalogue.
+        // Escape the name before giving it an explicit unknown-language span
+        // inside the translated activity sentence.
+        $labelName = '<span lang="">'.e($labelChange['name']).'</span>';
+    @endphp
+    {!! __('ticket_detail.activity.label_'.$labelChange['action'], ['label' => $labelName]) !!}@if (filled($label)) {{ ' '.$label }}@endif
+@elseif ($subjectChange)
     @php
         // The sentence belongs to the dashboard catalogue; its old and new
         // subjects belong to whoever authored them. Escape those values before

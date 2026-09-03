@@ -801,7 +801,7 @@ class AgentTicketController extends Controller
     }
 
     /**
-     * @return Collection<int, array{label: string, subject_change: array{old: string, new: string}|null, actor: string, body: string|null, occurred_at: CarbonInterface|null}>
+     * @return Collection<int, array{label: string, subject_change: array{old: string, new: string}|null, label_change: array{action: string, name: string}|null, actor: string, body: string|null, occurred_at: CarbonInterface|null}>
      */
     private function visibleTicketActivity(Ticket $ticket): Collection
     {
@@ -814,6 +814,7 @@ class AgentTicketController extends Controller
             ->map(fn (AuditEvent $activity): array => [
                 'label' => $this->ticketActivityLabel($activity),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
+                'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
                 'body' => $this->ticketTimelineBody($activity),
                 'occurred_at' => $activity->occurred_at,
@@ -1047,6 +1048,7 @@ class AgentTicketController extends Controller
                 'type' => in_array($activity->action, ['ticket.note_added', 'ticket.external_comment_received'], true) ? 'internal-note' : 'ticket-activity',
                 'label' => $this->ticketActivityLabel($activity),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
+                'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
                 'badge' => match ($activity->action) {
                     'ticket.note_added' => __('ticket_detail.timeline.message.internal'),
@@ -1616,8 +1618,7 @@ class AgentTicketController extends Controller
             'ticket.reopened' => __('ticket_detail.activity.reopened'),
             'ticket.unheld' => __('ticket_detail.activity.unheld'),
             'ticket.visitor_replied' => __('ticket_detail.activity.visitor_replied'),
-            'ticket.label_added' => __('ticket_detail.activity.label_added', ['label' => data_get($activity->metadata, 'label_name')]),
-            'ticket.label_removed' => __('ticket_detail.activity.label_removed', ['label' => data_get($activity->metadata, 'label_name')]),
+            'ticket.label_added', 'ticket.label_removed' => '',
             'ticket.note_added' => __('ticket_detail.activity.note'),
             'ticket.reply_sent' => __('ticket_detail.activity.reply_sent'),
             'ticket.external_link_created' => __('ticket_detail.activity.external_link_added_detail', compact('provider', 'reference')),
@@ -1692,6 +1693,30 @@ class AgentTicketController extends Controller
         return [
             'old' => (string) data_get($change, 'old'),
             'new' => (string) data_get($change, 'new'),
+        ];
+    }
+
+    /**
+     * Label names are account-authored content. Keep the name structured until
+     * Blade can mark it as unknown-language inside the translated sentence.
+     *
+     * @return array{action: string, name: string}|null
+     */
+    private function ticketActivityLabelChange(object $activity): ?array
+    {
+        $action = match ($activity->action) {
+            'ticket.label_added' => 'added',
+            'ticket.label_removed' => 'removed',
+            default => null,
+        };
+
+        if ($action === null) {
+            return null;
+        }
+
+        return [
+            'action' => $action,
+            'name' => (string) data_get($activity->metadata, 'label_name'),
         ];
     }
 

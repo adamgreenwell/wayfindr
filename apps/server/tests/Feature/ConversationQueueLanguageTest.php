@@ -3505,6 +3505,53 @@ test('authored subject changes keep their own language boundary in ticket activi
         ->and($html)->toContain('geändert');
 });
 
+test('authored label names keep their own language boundary in ticket activity', function (): void {
+    $world = conversationQueueLanguageWorld();
+    $conversation = Conversation::query()->firstOrFail();
+    $ticket = Ticket::factory()
+        ->for($world['account'])
+        ->for($world['site'])
+        ->for($conversation)
+        ->for($conversation->visitor, 'requester')
+        ->create(['subject' => 'Label test']);
+    $agent = $world['agents']['de'];
+
+    AuditEvent::query()->create([
+        'account_id' => $world['account']->id,
+        'site_id' => $world['site']->id,
+        'actor_type' => $agent->getMorphClass(),
+        'actor_id' => $agent->id,
+        'subject_type' => $ticket->getMorphClass(),
+        'subject_id' => $ticket->id,
+        'action' => 'ticket.label_added',
+        'metadata' => ['label_name' => 'Billing & Rückgabe'],
+        'occurred_at' => now(),
+    ]);
+
+    AuditEvent::query()->create([
+        'account_id' => $world['account']->id,
+        'site_id' => $world['site']->id,
+        'actor_type' => $agent->getMorphClass(),
+        'actor_id' => $agent->id,
+        'subject_type' => $ticket->getMorphClass(),
+        'subject_id' => $ticket->id,
+        'action' => 'ticket.label_removed',
+        'metadata' => ['label_name' => 'VIP & Rücksendung'],
+        'occurred_at' => now()->addSecond(),
+    ]);
+
+    $html = (string) $this->actingAs($agent)
+        ->get(route('dashboard.tickets.show', $ticket))
+        ->assertOk()
+        ->getContent();
+
+    // The event appears in both the unified timeline and the activity tab.
+    expect(substr_count($html, '<span lang="">Billing &amp; Rückgabe</span>'))->toBe(2)
+        ->and(substr_count($html, '<span lang="">VIP &amp; Rücksendung</span>'))->toBe(2)
+        ->and(substr_count($html, 'Label hinzugefügt:'))->toBe(2)
+        ->and(substr_count($html, 'Label entfernt:'))->toBe(2);
+});
+
 test('a reply template says what language its body is in', function (): void {
     // The body is what the VISITOR receives, not chrome. A built-in is English
     // and says so. A managed one is written by the account in whatever language

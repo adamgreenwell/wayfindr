@@ -1134,7 +1134,7 @@
                         <article class="timeline-item {{ $timelineItem['type'] }}">
                             <div class="timeline-content">
                                 <div class="message-meta">
-                                    <strong><x-ticket-activity-label :label="$timelineItem['label']" :subject-change="$timelineItem['subject_change'] ?? null" /></strong>
+                                    <strong><x-ticket-activity-label :label="$timelineItem['label']" :subject-change="$timelineItem['subject_change'] ?? null" :label-change="$timelineItem['label_change'] ?? null" /></strong>
                                     <span>{{ $timelineItem['occurred_at']?->diffForHumans() }}</span>
                                 </div>
                                 <div class="timeline-meta">
@@ -1170,7 +1170,7 @@
                                 </strong>
                                 <span>{{ $activity['occurred_at']?->diffForHumans() }}</span>
                             </div>
-                            <p><x-ticket-activity-label :label="$activity['label']" :subject-change="$activity['subject_change']" /></p>
+                            <p><x-ticket-activity-label :label="$activity['label']" :subject-change="$activity['subject_change']" :label-change="$activity['label_change']" /></p>
                             @if ($activity['body'])
                                 <p class="message-body" lang="">{{ $activity['body'] }}</p>
                             @endif
