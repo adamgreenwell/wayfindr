@@ -155,7 +155,7 @@ return [
 
     'satisfaction' => [
         'heading' => 'Se è stato utile',
-        'summary' => '{1} :answered risposta su :closed chiusura|[0,*] :answered risposte su :closed chiusure',
+        'summary' => '{1} Risposte: :answered su :closed chiusura|[0,*] Risposte: :answered su :closed chiusure',
         'no_closes' => 'In questo periodo non è stata chiusa alcuna conversazione, quindi non è stato chiesto nulla a nessuno.',
         'no_answers_before' => 'In questo periodo nessuno ha risposto. Non è un punteggio negativo: è l’assenza di un punteggio, e le due cose non vanno confuse. Se i suoi siti non pongono la domanda, attivi il prompt sotto',
         'setting' => 'Chiedere com’è andata',

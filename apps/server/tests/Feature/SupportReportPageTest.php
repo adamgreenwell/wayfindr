@@ -200,6 +200,18 @@ test('a removed agent is described in the dashboard language', function (): void
         ->and($fallback->hasAttribute('lang'))->toBeFalse('translated interface copy was marked as authored data');
 });
 
+test('the Italian satisfaction summary inflects closes independently of answers', function (int $closes, int $answers, string $expected): void {
+    app()->setLocale('it');
+
+    expect(trans_choice('reports.satisfaction.summary', $closes, [
+        'answered' => $answers,
+        'closed' => $closes,
+    ]))->toBe($expected);
+})->with([
+    'no answers to one close' => [1, 0, 'Risposte: 0 su 1 chiusura'],
+    'one answer to two closes' => [2, 1, 'Risposte: 1 su 2 chiusure'],
+]);
+
 test('an empty closed series is explained rather than left to be guessed at', function (): void {
     $world = reportPageWorld();
 
