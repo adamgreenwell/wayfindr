@@ -66,7 +66,11 @@ custom role; it does not mint a broader built-in Agent. `manage_integrations`
 lets a role manage API credentials, but each token ability is also capped by
 the issuer's support permissions: `read` requires both `view_conversations` and
 `manage_tickets`, while `write` requires the conversation view, reply, and
-management permissions plus ticket management and assignment.
+management permissions plus ticket management and assignment. Issuance
+reauthorizes that ceiling under the account lock. Webhook subscriptions follow
+the same split: conversation events require `view_conversations`, ticket events
+require `manage_tickets`, and delivery logs and retries honor the viewer's
+current event permissions.
 
 ## Site Access Boundary
 

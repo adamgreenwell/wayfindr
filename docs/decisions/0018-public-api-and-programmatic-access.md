@@ -235,6 +235,8 @@ it and records `conversation.reopened`, with the token — and `integration` —
 the actor. Ticket creation, status changes and assignment changes are likewise
 audited against the token rather than its issuer. Assigning a ticket still
 alerts the assigned agent; the notification names the integration that did it.
+An assignment target must currently be able to manage tickets at that site, so
+an integration cannot hand work to a settings-only or conversation-only role.
 
 ### Every POST carries a short-lived idempotency key
 

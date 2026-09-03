@@ -26,6 +26,13 @@ An endpoint may subscribe to:
 - `ticket.created`; and
 - `ticket.closed`.
 
+The creator must currently be allowed to view conversations before subscribing
+to either conversation event, and must be allowed to manage tickets before
+subscribing to either ticket event. Endpoint creation reauthorizes those event
+permissions under the account lock. Delivery-log visibility and manual retries
+apply the same current event boundary, so `manage_integrations` alone cannot
+turn a thin identifier event into a support-data export channel.
+
 Every payload contains only a stable delivery UUID, event name, monotonically
 increasing sequence for that endpoint, occurrence time, site id, resource type,
 and the resource identifier needed to read it through API v1. A conversation is
@@ -126,9 +133,9 @@ all purged reaches nothing. No role implicitly creates an account-wide future
 grant. Purging a site also deletes its delivery rows, including pending work and
 bounded response samples, before the recovery scheduler can queue them.
 
-The delivery log follows the viewing administrator's current site scope. A row
-for a site they no longer support is omitted, and guessing its numeric database
-key cannot trigger a manual retry.
+The delivery log follows the viewing administrator's current site and event
+scope. A row for a site or support domain they no longer hold is omitted, and
+guessing its numeric database key cannot trigger a manual retry.
 
 ## Consequences
 
