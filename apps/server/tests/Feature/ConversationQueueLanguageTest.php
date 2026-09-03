@@ -1626,6 +1626,7 @@ test('no English is rendered as German on any extracted surface', function (): v
             'site_state' => 'all',
         ]),
         route('dashboard.sites.create'),
+        route('dashboard.sites.tester', $world['site']),
         route('dashboard.conversations.index'),
         route('dashboard.conversations.index', ['conversation_filter' => 'closed']),
         route('dashboard.conversations.index', ['conversation_filter' => 'assigned_to_me']),

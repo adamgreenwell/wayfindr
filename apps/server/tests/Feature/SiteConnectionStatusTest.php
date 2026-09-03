@@ -156,7 +156,7 @@ test('agents can open a hosted tester page for sites they support', function ():
     $this->actingAs($agent)
         ->get("/dashboard/sites/{$site->id}/tester")
         ->assertOk()
-        ->assertSee('Wayfindr Public Site tester')
+        ->assertSee('<span lang="">Wayfindr Public Site</span> tester', false)
         ->assertSee('Test surface')
         ->assertSee('Verification run')
         ->assertSee('Sample page')
