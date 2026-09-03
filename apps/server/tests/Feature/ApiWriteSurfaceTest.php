@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationReadReceiptUpdated;
@@ -11,6 +12,7 @@ use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationReplyDelivery;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -777,6 +779,29 @@ test('ticket updates refuse archived records, foreign assignees, and empty chang
 
     $this->patchJson('/api/v1/tickets/'.$ticket->id, ['status' => 'pending'], apiWriteHeaders($world, null))
         ->assertNotFound();
+});
+
+test('ticket updates refuse assignees who cannot manage tickets', function (): void {
+    $world = apiWriteWorld();
+    $settingsRole = CustomRole::factory()->for($world['account'])->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $ineligibleAssignee = User::factory()->for($world['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $settingsRole->id,
+    ]);
+    $ticket = Ticket::factory()->for($world['account'])->for($world['site'])->create([
+        'assignee_id' => null,
+    ]);
+
+    $this->patchJson('/api/v1/tickets/'.$ticket->id, [
+        'assignee_id' => $ineligibleAssignee->id,
+    ], apiWriteHeaders($world, null))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('assignee_id');
+
+    expect($ticket->fresh()->assignee_id)->toBeNull()
+        ->and($ticket->auditEvents()->where('action', 'ticket.assignee_updated')->exists())->toBeFalse();
 });
 
 test('expired idempotency receipts are pruned without touching live ones', function (): void {

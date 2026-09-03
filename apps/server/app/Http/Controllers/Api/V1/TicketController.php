@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AccountPermission;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Site;
@@ -252,7 +253,9 @@ class TicketController extends Controller
                         ->whereKey($nextAssigneeId)
                         ->first();
 
-                    if ($newAssignee === null || ! $site->supportsAgent($newAssignee)) {
+                    if ($newAssignee === null
+                        || ! $site->supportsAgent($newAssignee)
+                        || ! $newAssignee->hasAccountPermission(AccountPermission::ManageTickets)) {
                         $this->invalidReference('assignee_id');
                     }
                 }
