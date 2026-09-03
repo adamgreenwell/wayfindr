@@ -3304,11 +3304,11 @@ test('a subject of "0" is a subject, not a missing one', function (): void {
     expect($unknown)->toContain('0');
 });
 
-test('the draft stops claiming the template language once the agent types', function (): void {
+test('every template-backed draft stops claiming the template language once the agent types', function (): void {
     // Choosing an English helper marks the textarea English so the inserted
     // text is announced correctly. The moment the agent edits it the words are
-    // theirs, and a German reply typed over an English template was still being
-    // read with English pronunciation.
+    // theirs. This belongs to the picker target rather than the reply form so
+    // it covers both reply composers and the ticket's internal-note helper.
     //
     // Source-level: the announcement walker strips <script> before it looks at
     // anything, so no rendered page can show this.
@@ -3318,20 +3318,27 @@ test('the draft stops claiming the template language once the agent types', func
 
     $stripped = (string) preg_replace('#//[^\n]*#', '', $composer);
 
-    // The input handler, closed at ITS OWN indentation. Closing on a shallower
-    // `});` swallowed the rest of the script, which contains an unrelated
-    // setAttribute('lang', '') on an attachment chip -- so deleting the reset
-    // under test left this passing.
+    // The target input handler, closed at ITS OWN indentation. Closing on a
+    // shallower `});` can swallow an unrelated language reset later in the
+    // script and leave this passing when the template reset is gone.
     $matched = preg_match(
-        "/body\.addEventListener\('input', function \(\) \{(.*?)\n                \}\);/s",
+        "/templateTarget\.addEventListener\('input', function \(\) \{(.*?)\n                \}\);/s",
         $stripped,
         $handler
     );
 
-    expect($matched)->toBe(1, 'the composer input handler moved; this no longer reads it');
+    expect($matched)->toBe(1, 'the template-target input handler moved; this no longer reads it');
 
     $this->assertStringContainsString("setAttribute('lang', '')", $handler[1],
-        'editing a draft leaves the template language on the textarea');
+        'editing a template-backed draft leaves the template language on its target');
+
+    $ticketWorkspace = (string) file_get_contents(resource_path('views/agent/tickets/show.blade.php'));
+
+    $this->assertStringContainsString(
+        'name="note_template" data-template-picker data-target="#body"',
+        $ticketWorkspace,
+        'the internal-note helper is not wired to the template-target language reset'
+    );
 });
 
 test('a write answers in the language of the page it renders back to', function (): void {
