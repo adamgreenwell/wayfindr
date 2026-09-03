@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Auth;
 
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
 use BaconQrCode\Renderer\GDLibRenderer;
@@ -110,12 +111,18 @@ final class TwoFactorAuthentication
 
             $recoveryCodes = $locked->two_factor_recovery_codes ?? [];
 
-            foreach ($recoveryCodes as $index => $hash) {
-                if (! is_string($hash) || ! Hash::check($normalisedCode, $hash)) {
-                    continue;
-                }
+            $matchingIndex = null;
 
-                unset($recoveryCodes[$index]);
+            // Always check the complete, fixed-size set so the response time
+            // does not reveal which recovery-code slot matched.
+            foreach ($recoveryCodes as $index => $hash) {
+                if (is_string($hash) && Hash::check($normalisedCode, $hash)) {
+                    $matchingIndex ??= $index;
+                }
+            }
+
+            if ($matchingIndex !== null) {
+                unset($recoveryCodes[$matchingIndex]);
                 $locked->forceFill([
                     'two_factor_recovery_codes' => array_values($recoveryCodes),
                 ])->save();
@@ -154,11 +161,22 @@ final class TwoFactorAuthentication
         });
     }
 
-    public function disable(User $user): void
+    public function disable(User $user): bool
     {
-        DB::transaction(function () use ($user): void {
+        return DB::transaction(function () use ($user): bool {
+            // User first, then account: the policy writer takes the same order.
+            // This keeps a concurrent policy enable from racing a disable
+            // without serialising every account member's sign-in on one row.
             $locked = User::query()->lockForUpdate()->findOrFail($user->getKey());
-            abort_unless($locked->hasTwoFactorAuthentication(), 409);
+            $account = Account::query()->lockForUpdate()->findOrFail($locked->account_id);
+
+            if ($account->requires_two_factor) {
+                return false;
+            }
+
+            if (! $locked->hasTwoFactorAuthentication()) {
+                return false;
+            }
 
             $locked->forceFill([
                 'two_factor_secret' => null,
@@ -169,6 +187,8 @@ final class TwoFactorAuthentication
 
             $this->audit($locked, 'agent.two_factor_disabled');
             $user->refresh();
+
+            return true;
         });
     }
 

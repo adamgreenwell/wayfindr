@@ -210,6 +210,118 @@
         </form>
     </section>
 
+    <section class="section" aria-labelledby="two-factor-heading">
+        <div class="section-header">
+            <h2 id="two-factor-heading">{{ __('two_factor.profile.heading') }}</h2>
+            <span class="lede">
+                {{ $agent->hasTwoFactorAuthentication() ? __('two_factor.profile.enabled') : __('two_factor.profile.disabled') }}
+            </span>
+        </div>
+
+        @if ($account->requires_two_factor)
+            <div class="notice-copy notice-copy-bordered">
+                <p><strong>{{ __('two_factor.profile.required_heading') }}</strong></p>
+                <p>{{ __('two_factor.profile.required_help') }}</p>
+            </div>
+        @endif
+
+        @if ($twoFactorRecoveryCodes)
+            <div class="notice-copy notice-copy-bordered" aria-labelledby="recovery-codes-heading">
+                <p><strong id="recovery-codes-heading">{{ __('two_factor.profile.recovery_heading') }}</strong></p>
+                <p>{{ __('two_factor.profile.recovery_once') }}</p>
+                <pre class="code-block"><code>@foreach ($twoFactorRecoveryCodes as $recoveryCode){{ $recoveryCode }}
+@endforeach</code></pre>
+            </div>
+        @endif
+
+        @if ($twoFactorPendingSecret && $twoFactorQrCode)
+            <div class="notice-copy">
+                <p>{{ __('two_factor.profile.scan_help') }}</p>
+                <img src="{{ $twoFactorQrCode }}" width="280" height="280" alt="{{ __('two_factor.profile.qr_alt') }}">
+                <p>{{ __('two_factor.profile.manual_key') }}</p>
+                <pre class="code-block"><code>{{ $twoFactorPendingSecret }}</code></pre>
+            </div>
+
+            <form class="section-form" method="POST" action="{{ route('dashboard.profile.two-factor.confirm') }}">
+                @csrf
+                @method('PUT')
+                <div class="field">
+                    <label for="two_factor_confirmation_code">{{ __('two_factor.profile.confirm_code') }}</label>
+                    <input id="two_factor_confirmation_code" name="one_time_code" inputmode="numeric" autocomplete="one-time-code" required>
+                    @error('one_time_code', 'twoFactorConfirm')
+                        <p class="field-error">{{ $message }}</p>
+                    @enderror
+                </div>
+                <button class="button" type="submit">{{ __('two_factor.profile.confirm') }}</button>
+            </form>
+
+            <form method="POST" action="{{ route('dashboard.profile.two-factor.cancel') }}">
+                @csrf
+                @method('DELETE')
+                <button class="button secondary" type="submit">{{ __('two_factor.profile.cancel') }}</button>
+            </form>
+        @elseif ($agent->hasTwoFactorAuthentication())
+            <p class="field-help">{{ __('two_factor.profile.enabled_help') }}</p>
+
+            <form class="section-form" method="POST" action="{{ route('dashboard.profile.two-factor.recovery-codes.regenerate') }}">
+                @csrf
+                <input type="text" name="username" value="{{ $agent->email }}" autocomplete="username" hidden readonly>
+                <div class="field">
+                    <label for="recovery_current_password">{{ __('two_factor.profile.current_password') }}</label>
+                    <input id="recovery_current_password" name="current_password" type="password" autocomplete="current-password" required>
+                    @error('current_password', 'twoFactorRecovery')
+                        <p class="field-error">{{ $message }}</p>
+                    @enderror
+                </div>
+                <div class="field">
+                    <label for="recovery_one_time_code">{{ __('two_factor.profile.current_code') }}</label>
+                    <input id="recovery_one_time_code" name="one_time_code" autocomplete="one-time-code" required>
+                    @error('one_time_code', 'twoFactorRecovery')
+                        <p class="field-error">{{ $message }}</p>
+                    @enderror
+                </div>
+                <button class="button secondary" type="submit">{{ __('two_factor.profile.regenerate') }}</button>
+            </form>
+
+            @unless ($account->requires_two_factor)
+                <form class="section-form" method="POST" action="{{ route('dashboard.profile.two-factor.disable') }}">
+                    @csrf
+                    @method('DELETE')
+                    <input type="text" name="username" value="{{ $agent->email }}" autocomplete="username" hidden readonly>
+                    <div class="field">
+                        <label for="disable_current_password">{{ __('two_factor.profile.current_password') }}</label>
+                        <input id="disable_current_password" name="current_password" type="password" autocomplete="current-password" required>
+                        @error('current_password', 'twoFactorDisable')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+                    <div class="field">
+                        <label for="disable_one_time_code">{{ __('two_factor.profile.current_code') }}</label>
+                        <input id="disable_one_time_code" name="one_time_code" autocomplete="one-time-code" required>
+                        @error('one_time_code', 'twoFactorDisable')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+                    <button class="button secondary" type="submit">{{ __('two_factor.profile.disable') }}</button>
+                </form>
+            @endunless
+        @else
+            <p class="field-help">{{ __('two_factor.profile.disabled_help') }}</p>
+            <form class="section-form" method="POST" action="{{ route('dashboard.profile.two-factor.start') }}">
+                @csrf
+                <input type="text" name="username" value="{{ $agent->email }}" autocomplete="username" hidden readonly>
+                <div class="field">
+                    <label for="two_factor_current_password">{{ __('two_factor.profile.current_password') }}</label>
+                    <input id="two_factor_current_password" name="current_password" type="password" autocomplete="current-password" required>
+                    @error('current_password', 'twoFactorStart')
+                        <p class="field-error">{{ $message }}</p>
+                    @enderror
+                </div>
+                <button class="button" type="submit">{{ __('two_factor.profile.start') }}</button>
+            </form>
+        @endif
+    </section>
+
     <section class="section" aria-labelledby="password-update-heading">
         <div class="section-header">
             <h2 id="password-update-heading">{{ __('profile.password.heading') }}</h2>

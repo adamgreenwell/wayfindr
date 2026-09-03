@@ -339,6 +339,13 @@
                         <span class="management-action">{{ __('account.management.actions.open') }}</span>
                     </a>
                     @if ($canManageAccountSettings)
+                        <a class="management-link" href="{{ route('dashboard.account.security.show') }}">
+                            <span>
+                                <strong>{{ __('two_factor.policy.link_label') }}</strong>
+                                <span class="lede">{{ __('two_factor.policy.link_detail') }}</span>
+                            </span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
+                        </a>
                         <a class="management-link" href="{{ route('dashboard.account.articles.index') }}">
                             <span>
                                 <strong>{{ __('account.management.items.articles.label') }}</strong>

@@ -5,21 +5,24 @@ namespace App\Http\Controllers;
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Auth\TwoFactorAuthentication;
 use App\Support\DashboardLanguage;
 use App\Support\DashboardTimezone;
 use App\Support\OperatorReadiness;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class AgentProfileController extends Controller
 {
-    public function show(Request $request, OperatorReadiness $readiness): View
+    public function show(Request $request, OperatorReadiness $readiness, TwoFactorAuthentication $twoFactor): View
     {
         $agent = $request->user();
 
@@ -28,6 +31,7 @@ class AgentProfileController extends Controller
         $account = $agent->account()->firstOrFail();
         $mailReadiness = collect($readiness->summary()['checks'])
             ->firstWhere('key', 'mail_transport');
+        $pendingSecret = $this->pendingTwoFactorSecret($request);
 
         return view('agent.profile.show', [
             'agent' => $agent,
@@ -44,7 +48,45 @@ class AgentProfileController extends Controller
             'digestDeliveryStatus' => $agent->alertDigestDeliveryStatus(),
             'mailReadiness' => $mailReadiness,
             'alertReadiness' => $this->alertReadiness($agent, $mailReadiness),
+            'twoFactorPendingSecret' => $pendingSecret,
+            'twoFactorQrCode' => $pendingSecret ? $twoFactor->qrCodeDataUri($agent, $pendingSecret) : null,
+            'twoFactorRecoveryCodes' => $this->pullRecoveryCodes($request),
         ]);
+    }
+
+    /** @return list<string> */
+    private function pullRecoveryCodes(Request $request): array
+    {
+        $encrypted = $request->session()->pull(AgentProfileTwoFactorController::RECOVERY_CODES_SESSION_KEY);
+
+        if (! is_string($encrypted)) {
+            return [];
+        }
+
+        try {
+            $codes = json_decode(Crypt::decryptString($encrypted), true, flags: JSON_THROW_ON_ERROR);
+
+            return is_array($codes) ? array_values(array_filter($codes, 'is_string')) : [];
+        } catch (DecryptException|\JsonException) {
+            return [];
+        }
+    }
+
+    private function pendingTwoFactorSecret(Request $request): ?string
+    {
+        $encrypted = $request->session()->get(AgentProfileTwoFactorController::ENROLMENT_SESSION_KEY);
+
+        if (! is_string($encrypted)) {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString($encrypted);
+        } catch (DecryptException) {
+            $request->session()->forget(AgentProfileTwoFactorController::ENROLMENT_SESSION_KEY);
+
+            return null;
+        }
     }
 
     public function update(Request $request): RedirectResponse

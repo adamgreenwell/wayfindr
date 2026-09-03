@@ -115,6 +115,20 @@ class AppServiceProvider extends ServiceProvider
             'password-reset-submit-ip:'.$request->ip()
         ));
 
+        RateLimiter::for('two-factor-challenge', fn (Request $request): array => [
+            Limit::perMinute(5)->by('two-factor-challenge-ip:'.$request->ip()),
+            Limit::perHour(25)->by('two-factor-challenge-user:'.(string) data_get(
+                $request->session()->get('auth.two_factor_challenge'),
+                'user_id',
+                'missing',
+            )),
+        ]);
+
+        RateLimiter::for('two-factor-confirmation', fn (Request $request): array => [
+            Limit::perMinute(5)->by('two-factor-confirmation-user:'.(string) $request->user()?->getAuthIdentifier()),
+            Limit::perMinute(15)->by('two-factor-confirmation-ip:'.$request->ip()),
+        ]);
+
         RateLimiter::for(
             'widget-bootstrap',
             fn (Request $request): Limit => $this->widgetLimit($request, 'bootstrap_per_minute', 'bootstrap')

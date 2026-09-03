@@ -28,7 +28,10 @@ class SessionController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+        // A remembered session is issued only after the second factor. Doing
+        // it here would leave a persistent login cookie behind while the user
+        // is still on the challenge screen.
+        if (! Auth::attempt($credentials, false)) {
             throw ValidationException::withMessages([
                 'email' => __('auth.failed'),
             ]);
@@ -42,7 +45,28 @@ class SessionController extends Controller
             ]);
         }
 
+        $agent = $request->user();
         $request->session()->regenerate();
+
+        if ($agent?->hasTwoFactorAuthentication()) {
+            $request->session()->put(TwoFactorChallengeController::SESSION_KEY, [
+                'user_id' => $agent->getKey(),
+                'remember' => $request->boolean('remember'),
+                'started_at' => now()->timestamp,
+            ]);
+
+            // Clear only this provisional session. A normal logout rotates the
+            // user's remember token and would let somebody who knows only the
+            // password invalidate remembered sessions on every other device
+            // without ever completing the second factor.
+            Auth::guard('web')->logoutCurrentDevice();
+
+            return redirect()->route('two-factor.challenge');
+        }
+
+        if ($agent?->account?->requires_two_factor) {
+            return redirect()->route('dashboard.profile.show');
+        }
 
         return redirect()->intended(route('dashboard'));
     }
