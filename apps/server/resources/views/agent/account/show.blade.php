@@ -1,79 +1,75 @@
-<x-layouts.app title="Account" :agent="$agent" :account="$account">
-            <x-page-header title="Account" subtitle="Your role, team roster, and visible support scope.">
+<x-layouts.app :title="__('account.document_title')" :agent="$agent" :account="$account">
+            @php
+                $unknownLanguage = static fn (mixed $value, string $element = 'span'): string => '<'.$element.' lang="">'.e((string) $value).'</'.$element.'>';
+            @endphp
+
+            <x-page-header :title="__('account.title')" :subtitle="__('account.subtitle')">
                 <x-slot:actions>
-                    <span class="lede">{{ $agents->count() }} {{ \Illuminate\Support\Str::plural('agent', $agents->count()) }}</span>
+                    <span class="lede">{{ trans_choice('account.agent_count', $agents->count(), ['count' => \App\Support\ReaderNumber::count($agents->count())]) }}</span>
                 </x-slot:actions>
             </x-page-header>
 
             @if (session('status'))
-                <p class="status-message">{{ session('status') }}</p>
+                <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
             @if (session('created_agent_email') && session('created_agent_password'))
                 <section class="section" aria-labelledby="temporary-password-heading">
                     <div class="section-header">
-                        <h2 id="temporary-password-heading">Temporary password</h2>
-                        <span class="lede">{{ session('created_agent_email') }}</span>
+                        <h2 id="temporary-password-heading">{{ __('account.temporary_password.heading') }}</h2>
+                        <span class="lede" lang="">{{ session('created_agent_email') }}</span>
                     </div>
                     <div class="notice-copy">
-                        <p>Share this password securely. It is shown once and should be changed by the agent after sign-in.</p>
+                        <p>{{ __('account.temporary_password.help') }}</p>
                     </div>
-                    <pre class="code-block"><code>{{ session('created_agent_password') }}</code></pre>
+                    <pre class="code-block"><code lang="">{{ session('created_agent_password') }}</code></pre>
                 </section>
             @endif
 
             @php
                 $accountMapItems = [
                     [
-                        'label' => 'Account boundary',
-                        'detail' => 'Role, site count, visible scope, and support assignments.',
+                        'key' => 'account',
                         'href' => '#account-context-heading',
                     ],
                     [
-                        'label' => 'Role boundary',
-                        'detail' => 'How account authority differs from site-level access.',
+                        'key' => 'role',
                         'href' => '#role-boundary-heading',
                     ],
                     [
-                        'label' => 'Site access',
-                        'detail' => 'Which support sites and queues are visible to the roster.',
+                        'key' => 'sites',
                         'href' => '#site-access-matrix',
                     ],
                 ];
 
                 if ($canViewExternalIssueReadiness && $externalIssueReadiness) {
                     $accountMapItems[] = [
-                        'label' => 'External issue readiness',
-                        'detail' => 'Provider routing health for ticket handoff.',
+                        'key' => 'external',
                         'href' => '#external-issue-readiness-heading',
                     ];
                 }
 
                 $accountMapItems[] = [
-                    'label' => 'Account activity',
-                    'detail' => 'Recent account access, roster, and support-scope changes.',
+                    'key' => 'activity',
                     'href' => '#account-activity-heading',
                 ];
 
                 if ($canCreateAgents) {
                     $accountMapItems[] = [
-                        'label' => 'Add agent',
-                        'detail' => 'Invite a teammate with a generated temporary password.',
+                        'key' => 'add_agent',
                         'href' => '#add-agent-heading',
                     ];
                 }
 
                 if ($canViewAlertDelivery && $agentAlertReadinessSummary) {
                     $accountMapItems[] = [
-                        'label' => 'Team alert readiness',
-                        'detail' => 'Whether your active agents can actually receive notifications.',
+                        'key' => 'alerts',
                         'href' => '#team-alert-readiness-heading',
                     ];
                 }
 
                 $accountMapItems[] = [
-                    'label' => 'Agents',
-                    'detail' => 'Roster, role, support scope, workload, and delivery state.',
+                    'key' => 'agents',
                     'href' => '#agents',
                 ];
             @endphp
@@ -81,18 +77,18 @@
             <section class="section" aria-labelledby="account-map-heading">
                 <div class="section-header">
                     <div>
-                        <h2 id="account-map-heading">Account map</h2>
+                        <h2 id="account-map-heading">{{ __('account.map.heading') }}</h2>
                     </div>
-                    <span class="lede">{{ count($accountMapItems) }} {{ \Illuminate\Support\Str::plural('section', count($accountMapItems)) }}</span>
+                    <span class="lede">{{ trans_choice('account.map.count', count($accountMapItems), ['count' => \App\Support\ReaderNumber::count(count($accountMapItems))]) }}</span>
                 </div>
                 <div class="management-list">
                     @foreach ($accountMapItems as $accountMapItem)
                         <a class="management-link" href="{{ $accountMapItem['href'] }}">
                             <span>
-                                <strong>{{ $accountMapItem['label'] }}</strong>
-                                <span class="lede">{{ $accountMapItem['detail'] }}</span>
+                                <strong>{{ __('account.map.items.'.$accountMapItem['key'].'.label') }}</strong>
+                                <span class="lede">{{ __('account.map.items.'.$accountMapItem['key'].'.detail') }}</span>
                             </span>
-                            <span class="management-action">Open</span>
+                            <span class="management-action">{{ __('account.map.open') }}</span>
                         </a>
                     @endforeach
                 </div>
@@ -100,58 +96,58 @@
 
             <section class="section" aria-labelledby="account-context-heading">
                 <div class="section-header">
-                    <h2 id="account-context-heading">{{ $account->name }}</h2>
-                    <span class="lede">Account boundary</span>
+                    <h2 id="account-context-heading" lang="">{{ $account->name }}</h2>
+                    <span class="lede">{{ __('account.context.boundary') }}</span>
                 </div>
                 <div class="meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label">Your role</span>
-                        <span class="meta-value">{{ $roleLabels[$agent->account_role?->value] ?? 'Agent' }}</span>
+                        <span class="meta-label">{{ __('account.context.your_role') }}</span>
+                        <span class="meta-value">{{ $roleLabels[$agent->account_role?->value] ?? __('profile.roles.agent') }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Sites</span>
-                        <span class="meta-value">{{ $siteCount }} {{ \Illuminate\Support\Str::plural('site', $siteCount) }}</span>
+                        <span class="meta-label">{{ __('account.context.sites') }}</span>
+                        <span class="meta-value">{{ trans_choice('account.context.site_count', $siteCount, ['count' => \App\Support\ReaderNumber::count($siteCount)]) }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Visible to you</span>
-                        <span class="meta-value">{{ $visibleSiteCount }} {{ \Illuminate\Support\Str::plural('site', $visibleSiteCount) }}</span>
+                        <span class="meta-label">{{ __('account.context.visible') }}</span>
+                        <span class="meta-value">{{ trans_choice('account.context.site_count', $visibleSiteCount, ['count' => \App\Support\ReaderNumber::count($visibleSiteCount)]) }}</span>
                     </div>
                     <div class="meta-item">
-                        <span class="meta-label">Support assignments</span>
-                        <span class="meta-value">{{ $supportAssignmentCount }} {{ \Illuminate\Support\Str::plural('support assignment', $supportAssignmentCount) }}</span>
+                        <span class="meta-label">{{ __('account.context.assignments') }}</span>
+                        <span class="meta-value">{{ trans_choice('account.context.assignment_count', $supportAssignmentCount, ['count' => \App\Support\ReaderNumber::count($supportAssignmentCount)]) }}</span>
                     </div>
                 </div>
             </section>
 
             <section class="section" aria-labelledby="role-boundary-heading">
                 <div class="section-header">
-                    <h2 id="role-boundary-heading">Role boundary</h2>
-                    <span class="lede">{{ $canManageRoles ? 'Owner controls enabled' : 'Read-only for your role' }}</span>
+                    <h2 id="role-boundary-heading">{{ __('account.role_boundary.heading') }}</h2>
+                    <span class="lede">{{ $canManageRoles ? __('account.role_boundary.owner_enabled') : __('account.role_boundary.read_only') }}</span>
                 </div>
                 <div class="notice-copy">
-                    <p>Account roles describe authority. Site access still decides which support queues an agent can work.</p>
-                    <p>Role changes are limited to account owners. Owners cannot change their own role here, and every role change is audited.</p>
-                    <p>Owners and admins can suspend access without deleting account history. Admins can only suspend agents; owners can manage any other same-account user.</p>
+                    <p>{{ __('account.role_boundary.authority') }}</p>
+                    <p>{{ __('account.role_boundary.changes') }}</p>
+                    <p>{{ __('account.role_boundary.suspension') }}</p>
                 </div>
             </section>
 
             <section id="site-access-matrix" class="section" aria-labelledby="site-access-matrix-heading">
                 <div class="section-header">
-                    <h2 id="site-access-matrix-heading">Site access matrix</h2>
-                    <span class="lede">{{ $visibleSites->count() }} visible {{ \Illuminate\Support\Str::plural('site', $visibleSites->count()) }}</span>
+                    <h2 id="site-access-matrix-heading">{{ __('account.site_access.heading') }}</h2>
+                    <span class="lede">{{ trans_choice('account.site_access.visible_count', $visibleSites->count(), ['count' => \App\Support\ReaderNumber::count($visibleSites->count())]) }}</span>
                 </div>
 
                 @if ($visibleSites->isEmpty())
-                    <p class="empty">No support sites are visible to your account yet.</p>
+                    <p class="empty">{{ __('account.site_access.empty') }}</p>
                 @else
                     <div class="table-wrap">
                         <table>
                             <thead>
                                 <tr>
-                                    <th scope="col">Site</th>
-                                    <th scope="col">Access model</th>
-                                    <th scope="col">Active support agents</th>
-                                    <th scope="col">Manage</th>
+                                    <th scope="col">{{ __('account.site_access.columns.site') }}</th>
+                                    <th scope="col">{{ __('account.site_access.columns.model') }}</th>
+                                    <th scope="col">{{ __('account.site_access.columns.agents') }}</th>
+                                    <th scope="col">{{ __('account.site_access.columns.manage') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -161,31 +157,35 @@
                                     @endphp
                                     <tr>
                                         <td>
-                                            <strong>{{ $site->name }}</strong>
-                                            <span class="lede">{{ $site->domain ?? 'Domain not set' }}</span>
-                                        </td>
-                                        <td>
-                                            @if ($assignedAgents->isEmpty())
-                                                Account-wide fallback
+                                            <strong lang="">{{ $site->name }}</strong>
+                                            @if ($site->domain)
+                                                <span class="lede" lang="">{{ $site->domain }}</span>
                                             @else
-                                                Explicit access
+                                                <span class="lede">{{ __('account.site_access.domain_missing') }}</span>
                                             @endif
                                         </td>
                                         <td>
                                             @if ($assignedAgents->isEmpty())
-                                                <strong>All active account agents</strong>
-                                                <span class="lede">{{ $activeAgentCount }} eligible until assignments are saved</span>
+                                                {{ __('account.site_access.fallback') }}
                                             @else
-                                                <strong>{{ $assignedAgents->count() }} assigned active {{ \Illuminate\Support\Str::plural('agent', $assignedAgents->count()) }}</strong>
+                                                {{ __('account.site_access.explicit') }}
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if ($assignedAgents->isEmpty())
+                                                <strong>{{ __('account.site_access.all_active') }}</strong>
+                                                <span class="lede">{{ __('account.site_access.eligible', ['count' => \App\Support\ReaderNumber::count($activeAgentCount)]) }}</span>
+                                            @else
+                                                <strong>{{ trans_choice('account.site_access.assigned', $assignedAgents->count(), ['count' => \App\Support\ReaderNumber::count($assignedAgents->count())]) }}</strong>
                                                 <span class="lede">
-                                                    {{ $assignedAgents
-                                                        ->map(fn ($supportAgent) => $supportAgent->name.' ('.($roleLabels[$supportAgent->account_role?->value] ?? 'Agent').')')
-                                                        ->join(', ') }}
+                                                    @foreach ($assignedAgents as $supportAgent)
+                                                        <span lang="">{{ $supportAgent->name }}</span> ({{ $roleLabels[$supportAgent->account_role?->value] ?? __('profile.roles.agent') }})@if (! $loop->last), @endif
+                                                    @endforeach
                                                 </span>
                                             @endif
                                         </td>
                                         <td>
-                                            <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">Manage access</a>
+                                            <a class="text-link" href="{{ route('dashboard.sites.show', $site) }}">{{ __('account.site_access.manage') }}</a>
                                         </td>
                                     </tr>
                                 @endforeach
@@ -199,7 +199,7 @@
                 <section class="section" aria-labelledby="external-issue-readiness-heading">
                     <div class="section-header">
                         <div>
-                            <h2 id="external-issue-readiness-heading">External issue readiness</h2>
+                            <h2 id="external-issue-readiness-heading">{{ __('account.external.heading') }}</h2>
                             <p class="lede">{{ $externalIssueReadiness['detail'] }}</p>
                         </div>
                         <span class="readiness-status" data-status="{{ $externalIssueReadiness['tone'] }}">
@@ -214,7 +214,7 @@
                                 <span class="meta-value">{{ $metric['value'] }}</span>
                                 <span class="lede">
                                     <span class="readiness-status" data-status="{{ $metric['tone'] }}">
-                                        {{ ucfirst($metric['tone']) }}
+                                        {{ __('account.external.tones.'.$metric['tone']) }}
                                     </span>
                                 </span>
                                 @if (! empty($metric['href']) && ! empty($metric['action']))
@@ -227,42 +227,42 @@
                     </div>
 
                     @if ($externalIssueReadiness['projects']->isEmpty())
-                        <p class="empty">No external issue projects are mapped yet.</p>
+                        <p class="empty">{{ __('account.external.projects.empty') }}</p>
                     @else
                         <div class="table-wrap">
                             <table>
                                 <thead>
                                     <tr>
-                                        <th scope="col">Site</th>
-                                        <th scope="col">Provider</th>
-                                        <th scope="col">Project</th>
-                                        <th scope="col">Capabilities</th>
-                                        <th scope="col">External issue handoff</th>
-                                        <th scope="col">Manage</th>
+                                        <th scope="col">{{ __('account.external.projects.columns.site') }}</th>
+                                        <th scope="col">{{ __('account.external.projects.columns.provider') }}</th>
+                                        <th scope="col">{{ __('account.external.projects.columns.project') }}</th>
+                                        <th scope="col">{{ __('account.external.projects.columns.capabilities') }}</th>
+                                        <th scope="col">{{ __('account.external.projects.columns.handoff') }}</th>
+                                        <th scope="col">{{ __('account.external.projects.columns.manage') }}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach ($externalIssueReadiness['projects'] as $project)
                                         <tr>
                                             <td>
-                                                <strong>{{ $project['site'] }}</strong>
-                                                <span class="lede">{{ $project['enabled'] ? 'Connection enabled' : 'Connection disabled' }}</span>
+                                                <strong @if ($project['site_language'] === '') lang="" @endif>{{ $project['site'] }}</strong>
+                                                <span class="lede">{{ $project['enabled'] ? __('account.external.projects.connection_enabled') : __('account.external.projects.connection_disabled') }}</span>
                                             </td>
                                             <td>
-                                                <strong>{{ $project['connection'] }}</strong>
-                                                <span class="lede">{{ $project['provider'] }}</span>
+                                                <strong @if ($project['connection_language'] === '') lang="" @endif>{{ $project['connection'] }}</strong>
+                                                <span class="lede" @if ($project['provider_language'] === '') lang="" @endif>{{ $project['provider'] }}</span>
                                             </td>
                                             <td>
-                                                <strong>{{ $project['project_key'] }}</strong>
+                                                <strong lang="">{{ $project['project_key'] }}</strong>
                                                 @if ($project['project_name'])
-                                                    <span class="lede">{{ $project['project_name'] }}</span>
+                                                    <span class="lede" lang="">{{ $project['project_name'] }}</span>
                                                 @endif
                                             </td>
                                             <td>
                                                 @forelse ($project['capabilities'] as $capability)
                                                     <span>{{ $capability }}</span>@if (! $loop->last)<br>@endif
                                                 @empty
-                                                    <span>Link only</span>
+                                                    <span>{{ __('account.external.projects.link_only') }}</span>
                                                 @endforelse
                                             </td>
                                             <td>
@@ -272,7 +272,7 @@
                                                 <span class="lede">{{ $project['handoff']['detail'] }}</span>
                                             </td>
                                             <td>
-                                                <a class="text-link" href="{{ $project['href'] }}">Manage routing</a>
+                                                <a class="text-link" href="{{ $project['href'] }}">{{ __('account.external.projects.manage') }}</a>
                                             </td>
                                         </tr>
                                     @endforeach
@@ -282,22 +282,33 @@
                     @endif
 
                     @if ($externalIssueReadiness['recent_failures']->isEmpty())
-                        <p class="empty">No recent external sync failures for this account.</p>
+                        <p class="empty">{{ __('account.external.failures.empty') }}</p>
                     @else
                         <div class="timeline-list">
                             @foreach ($externalIssueReadiness['recent_failures'] as $failure)
+                                @php
+                                    $failureProvider = $failure['provider_language'] === ''
+                                        ? $unknownLanguage($failure['provider'])
+                                        : e($failure['provider']);
+                                    $failureProject = $failure['project_language'] === ''
+                                        ? $unknownLanguage($failure['project_key'])
+                                        : e($failure['project_key']);
+                                @endphp
                                 <article class="timeline-item internal-note">
                                     <div class="timeline-content">
-                                        <strong>{{ $loop->first ? 'Last external sync failure' : 'Earlier external sync failure' }}</strong>
-                                        <p class="message-body">{{ $failure['provider'] }} could not sync {{ $failure['project_key'] }}.</p>
+                                        <strong>{{ $loop->first ? __('account.external.failures.last') : __('account.external.failures.earlier') }}</strong>
+                                        <p class="message-body">{!! __('account.external.failures.body', [
+                                            'provider' => $failureProvider,
+                                            'project' => $failureProject,
+                                        ]) !!}</p>
                                         <div class="timeline-meta">
                                             @if ($failure['status'])
-                                                <span>{{ $failure['status'] }}</span>
+                                                <span>{!! __('account.external.failures.status', ['status' => $unknownLanguage($failure['status'])]) !!}</span>
                                             @endif
                                             @if ($failure['occurred_at'])
                                                 <span>{{ $failure['occurred_at']->diffForHumans() }}</span>
                                             @endif
-                                            <span>Provider details withheld</span>
+                                            <span>{{ __('account.external.failures.details_withheld') }}</span>
                                         </div>
                                     </div>
                                 </article>
@@ -309,66 +320,66 @@
 
             <section class="section" aria-labelledby="account-management-heading">
                 <div class="section-header">
-                    <h2 id="account-management-heading">Management</h2>
-                    <span class="lede">Account-wide settings</span>
+                    <h2 id="account-management-heading">{{ __('account.management.heading') }}</h2>
+                    <span class="lede">{{ __('account.management.lede') }}</span>
                 </div>
                 <div class="management-list">
                     <a class="management-link" href="{{ route('dashboard.account.integrations') }}">
                         <span>
-                            <strong>Integrations</strong>
-                            <span class="lede">External issue providers and where each site hands tickets off.</span>
+                            <strong>{{ __('account.management.items.integrations.label') }}</strong>
+                            <span class="lede">{{ __('account.management.items.integrations.detail') }}</span>
                         </span>
-                        <span class="management-action">{{ $canManageAccountSettings ? 'Manage' : 'View' }}</span>
+                        <span class="management-action">{{ $canManageAccountSettings ? __('account.management.actions.manage') : __('account.management.actions.view') }}</span>
                     </a>
                     <a class="management-link" href="{{ route('dashboard.sites.index') }}">
                         <span>
-                            <strong>Sites</strong>
-                            <span class="lede">Connected sites, widget install health, and per-site settings.</span>
+                            <strong>{{ __('account.management.items.sites.label') }}</strong>
+                            <span class="lede">{{ __('account.management.items.sites.detail') }}</span>
                         </span>
-                        <span class="management-action">Open</span>
+                        <span class="management-action">{{ __('account.management.actions.open') }}</span>
                     </a>
                     @if ($canManageAccountSettings)
                         <a class="management-link" href="{{ route('dashboard.account.articles.index') }}">
                             <span>
-                                <strong>Articles</strong>
-                                <span class="lede">Answers a visitor can search for themselves, before they ask.</span>
+                                <strong>{{ __('account.management.items.articles.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.articles.detail') }}</span>
                             </span>
-                            <span class="management-action">Manage</span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
                         <a class="management-link" href="{{ route('dashboard.account.reply-templates.index') }}">
                             <span>
-                                <strong>Reply templates</strong>
-                                <span class="lede">Saved replies agents can insert into conversations.</span>
+                                <strong>{{ __('account.management.items.replies.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.replies.detail') }}</span>
                             </span>
-                            <span class="management-action">Manage</span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
                         <a class="management-link" href="{{ route('dashboard.account.labels.index') }}">
                             <span>
-                                <strong>Ticket labels</strong>
-                                <span class="lede">Shared labels for organizing and filtering tickets.</span>
+                                <strong>{{ __('account.management.items.labels.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.labels.detail') }}</span>
                             </span>
-                            <span class="management-action">Manage</span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
                         <a class="management-link" href="{{ route('dashboard.account.audit.index') }}">
                             <span>
-                                <strong>Audit log</strong>
-                                <span class="lede">Search account activity and export safe audit records.</span>
+                                <strong>{{ __('account.management.items.audit.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.audit.detail') }}</span>
                             </span>
-                            <span class="management-action">Open</span>
+                            <span class="management-action">{{ __('account.management.actions.open') }}</span>
                         </a>
                         <a class="management-link" href="{{ route('dashboard.account.api-tokens.index') }}">
                             <span>
-                                <strong>API tokens</strong>
-                                <span class="lede">Programmatic read access to this account, for integrations you or somebody else builds.</span>
+                                <strong>{{ __('account.management.items.tokens.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.tokens.detail') }}</span>
                             </span>
-                            <span class="management-action">Manage</span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
                         <a class="management-link" href="{{ route('dashboard.account.break-glass.index') }}">
                             <span>
-                                <strong>Operator access</strong>
-                                <span class="lede">Requests from platform operators to see this account's support data.</span>
+                                <strong>{{ __('account.management.items.operator_access.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.operator_access.detail') }}</span>
                             </span>
-                            <span class="management-action">Review</span>
+                            <span class="management-action">{{ __('account.management.actions.review') }}</span>
                         </a>
                     @endif
                 </div>
@@ -376,16 +387,16 @@
 
             <section class="section" aria-labelledby="data-responsibility-heading">
                 <div class="section-header">
-                    <h2 id="data-responsibility-heading">Data responsibility</h2>
-                    <span class="lede">{{ $dataResponsibility['label'] }}</span>
+                    <h2 id="data-responsibility-heading">{{ __('account.data_responsibility.heading') }}</h2>
+                    <span class="lede">{{ __('account.data_responsibility.label') }}</span>
                 </div>
 
                 <div class="notice-copy">
-                    <p>{{ $dataResponsibility['message'] }}</p>
-                    <p>{{ $dataResponsibility['guidance'] }}</p>
+                    <p>{{ __('account.data_responsibility.message') }}</p>
+                    <p>{{ __('account.data_responsibility.guidance') }}</p>
                     <p>
                         <a class="text-link" href="{{ $dataResponsibility['docs_url'] }}" target="_blank" rel="noreferrer">
-                            Review the data responsibility docs
+                            {{ __('account.data_responsibility.docs') }}
                         </a>
                     </p>
                 </div>
@@ -393,16 +404,16 @@
 
             <section class="section" aria-labelledby="account-activity-heading">
                 <div class="section-header">
-                    <h2 id="account-activity-heading">Recent account activity</h2>
+                    <h2 id="account-activity-heading">{{ __('account.activity.heading') }}</h2>
                     <div class="section-actions">
-                        <span class="lede">{{ $accountActivity->count() }} shown</span>
+                        <span class="lede">{{ __('account.activity.shown', ['count' => \App\Support\ReaderNumber::count($accountActivity->count())]) }}</span>
                         @if ($canViewAudit)
-                            <a class="button secondary" href="{{ route('dashboard.account.audit.index') }}">View audit log</a>
+                            <a class="button secondary" href="{{ route('dashboard.account.audit.index') }}">{{ __('account.activity.view_audit') }}</a>
                         @endif
                     </div>
                 </div>
                 @if ($accountActivity->isEmpty())
-                    <p class="empty">No account activity yet.</p>
+                    <p class="empty">{{ __('account.activity.empty') }}</p>
                 @else
                     <div class="timeline-list">
                         @foreach ($accountActivity as $activity)
@@ -413,9 +424,9 @@
                                         <span>{{ $activity['occurred_at']?->diffForHumans() }}</span>
                                     </div>
                                     <div class="timeline-meta">
-                                        <span>{{ $activity['actor'] }}</span>
-                                        <span>{{ $activity['subject'] }}</span>
-                                        <span>Account access</span>
+                                        <span @if ($activity['actor_language'] === '') lang="" @endif>{{ $activity['actor'] }}</span>
+                                        <span @if ($activity['subject_language'] === '') lang="" @endif>{{ $activity['subject'] }}</span>
+                                        <span>{{ __('account.activity.scope') }}</span>
                                     </div>
                                     <p class="message-body">{{ $activity['body'] }}</p>
                                 </div>
@@ -428,21 +439,21 @@
             @if ($canCreateAgents)
                 <section class="section" aria-labelledby="add-agent-heading">
                     <div class="section-header">
-                        <h2 id="add-agent-heading">Add agent</h2>
-                        <span class="lede">New agents start with the Agent role</span>
+                        <h2 id="add-agent-heading">{{ __('account.create.heading') }}</h2>
+                        <span class="lede">{{ __('account.create.lede') }}</span>
                     </div>
                     <form class="section-form" method="POST" action="{{ route('dashboard.account.agents.store') }}">
                         @csrf
                         <div class="field">
-                            <label for="agent-name">Name</label>
-                            <input id="agent-name" name="name" value="{{ old('name') }}" autocomplete="name" required>
+                            <label for="agent-name">{{ __('account.create.name') }}</label>
+                            <input id="agent-name" name="name" value="{{ old('name') }}" @if (filled(old('name'))) lang="" @endif autocomplete="name" required>
                             @error('name')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
                         <div class="field">
-                            <label for="agent-email">Email</label>
-                            <input id="agent-email" type="email" name="email" value="{{ old('email') }}" autocomplete="email" required>
+                            <label for="agent-email">{{ __('account.create.email') }}</label>
+                            <input id="agent-email" type="email" name="email" value="{{ old('email') }}" @if (filled(old('email'))) lang="" @endif autocomplete="email" required>
                             @error('email')
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
@@ -455,14 +466,14 @@
                                 value="1"
                                 @checked(old('send_welcome_email'))
                             >
-                            <span>Email the welcome message and temporary password</span>
+                            <span>{{ __('account.create.welcome') }}</span>
                         </label>
                         @error('send_welcome_email')
                             <p class="field-error">{{ $message }}</p>
                         @enderror
-                        <p class="field-help">A temporary password will be generated. Site access follows the current account-wide fallback until you scope agents on each site.</p>
-                        <p class="field-help">Use the email option after outbound mail is configured. The password is still shown once here as a fallback.</p>
-                        <button class="button" type="submit">Create agent</button>
+                        <p class="field-help">{{ __('account.create.password_help') }}</p>
+                        <p class="field-help">{{ __('account.create.email_help') }}</p>
+                        <button class="button" type="submit">{{ __('account.create.submit') }}</button>
                     </form>
                 </section>
             @endif
@@ -471,7 +482,7 @@
                 <section class="section" aria-labelledby="team-alert-readiness-heading">
                     <div class="section-header">
                         <div>
-                            <h2 id="team-alert-readiness-heading">Team alert readiness</h2>
+                            <h2 id="team-alert-readiness-heading">{{ __('account.team_alert.heading') }}</h2>
                             <p class="lede">{{ $agentAlertReadinessSummary['detail'] }}</p>
                         </div>
                         <div class="section-actions">
@@ -487,7 +498,7 @@
                                 <span class="meta-value">{{ $metric['value'] }}</span>
                                 <span class="lede">
                                     <span class="readiness-status" data-status="{{ $metric['tone'] }}">
-                                        {{ ucfirst($metric['tone']) }}
+                                        {{ __('account.external.tones.'.$metric['tone']) }}
                                     </span>
                                 </span>
                             </div>
@@ -498,27 +509,27 @@
 
             <section id="agents" class="section" aria-labelledby="agents-heading">
                 <div class="section-header">
-                    <h2 id="agents-heading">Agents</h2>
-                    <span class="lede">{{ $agents->count() }} total</span>
+                    <h2 id="agents-heading">{{ __('account.agents.heading') }}</h2>
+                    <span class="lede">{{ __('account.agents.total', ['count' => \App\Support\ReaderNumber::count($agents->count())]) }}</span>
                 </div>
                 <div class="table-wrap">
                     <table>
                         <thead>
                             <tr>
-                                <th scope="col">Agent</th>
-                                <th scope="col">Status</th>
-                                <th scope="col">Role</th>
+                                <th scope="col">{{ __('account.agents.columns.agent') }}</th>
+                                <th scope="col">{{ __('account.agents.columns.status') }}</th>
+                                <th scope="col">{{ __('account.agents.columns.role') }}</th>
                                 @if ($canViewAlertDelivery)
-                                    <th scope="col">Alert delivery</th>
+                                    <th scope="col">{{ __('account.agents.columns.alerts') }}</th>
                                 @endif
                                 @if ($canManageRoles)
-                                    <th scope="col">Manage role</th>
+                                    <th scope="col">{{ __('account.agents.columns.manage_role') }}</th>
                                 @endif
                                 @if ($canManageAgentAccess)
-                                    <th scope="col">Manage access</th>
+                                    <th scope="col">{{ __('account.agents.columns.manage_access') }}</th>
                                 @endif
-                                <th scope="col">Support scope</th>
-                                <th scope="col">Workload</th>
+                                <th scope="col">{{ __('account.agents.columns.scope') }}</th>
+                                <th scope="col">{{ __('account.agents.columns.workload') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -535,19 +546,23 @@
                                         'fallbackSites' => collect(),
                                     ];
                                     $alertDeliverySummary = $agentAlertDeliverySummaries[$accountAgent->id] ?? [
-                                        'primary' => 'Unknown',
+                                        'primary' => __('account.agents.unknown_alerts'),
                                         'lines' => [
-                                            ['text' => 'Alert delivery state is unavailable.'],
+                                            ['text' => __('account.agents.alerts_unavailable')],
                                         ],
                                     ];
                                     $explicitSites = $supportScope['explicitSites'];
                                     $fallbackSites = $supportScope['fallbackSites'];
-                                    $siteScopePreview = function ($sites): string {
+                                    $siteScopePreview = function ($sites) use ($unknownLanguage): string {
                                         $names = $sites->pluck('name');
-                                        $preview = $names->take(2)->join(', ');
+                                        $preview = $names->take(2)
+                                            ->map(fn (string $name): string => $unknownLanguage($name))
+                                            ->join(', ');
 
                                         if ($names->count() > 2) {
-                                            $preview .= ' + '.($names->count() - 2).' more';
+                                            $preview .= ' '.e(__('account.agents.more', [
+                                                'count' => \App\Support\ReaderNumber::count($names->count() - 2),
+                                            ]));
                                         }
 
                                         return $preview;
@@ -555,11 +570,11 @@
                                 @endphp
                                 <tr>
                                     <td>
-                                        <strong>{{ $accountAgent->name }}</strong>
-                                        <span class="lede">{{ $accountAgent->email }}</span>
+                                        <strong id="account-agent-{{ $accountAgent->id }}-name" lang="">{{ $accountAgent->name }}</strong>
+                                        <span class="lede" lang="">{{ $accountAgent->email }}</span>
                                     </td>
-                                    <td>{{ $accountAgent->isDeactivated() ? 'Deactivated' : 'Active' }}</td>
-                                    <td>{{ $roleLabels[$accountAgent->account_role?->value] ?? 'Agent' }}</td>
+                                    <td>{{ $accountAgent->isDeactivated() ? __('account.agents.status.deactivated') : __('account.agents.status.active') }}</td>
+                                    <td>{{ $roleLabels[$accountAgent->account_role?->value] ?? __('profile.roles.agent') }}</td>
                                     @if ($canViewAlertDelivery)
                                         <td>
                                             <strong>{{ $alertDeliverySummary['primary'] }}</strong>
@@ -577,18 +592,18 @@
                                     @if ($canManageRoles)
                                         <td>
                                             @if ($accountAgent->is($agent))
-                                                <span class="lede">Current user</span>
+                                                <span class="lede">{{ __('account.agents.current_user') }}</span>
                                             @else
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.agents.role.update', $accountAgent) }}">
                                                     @csrf
                                                     @method('PUT')
-                                                    <label class="sr-only" for="account-role-{{ $accountAgent->id }}">Manage role for {{ $accountAgent->name }}</label>
+                                                    <label class="sr-only" for="account-role-{{ $accountAgent->id }}">{{ __('account.agents.columns.manage_role') }} <span lang="">{{ $accountAgent->name }}</span></label>
                                                     <select id="account-role-{{ $accountAgent->id }}" name="account_role">
                                                         @foreach ($roleOptions as $roleValue => $roleLabel)
                                                             <option value="{{ $roleValue }}" @selected($accountAgent->account_role?->value === $roleValue)>{{ $roleLabel }}</option>
                                                         @endforeach
                                                     </select>
-                                                    <button class="button secondary" type="submit">Save role</button>
+                                                    <button class="button secondary" type="submit">{{ __('account.agents.save_role') }}</button>
                                                 </form>
                                             @endif
                                         </td>
@@ -596,47 +611,47 @@
                                     @if ($canManageAgentAccess)
                                         <td>
                                             @if ($accountAgent->is($agent))
-                                                <span class="lede">Current user</span>
+                                                <span class="lede">{{ __('account.agents.current_user') }}</span>
                                             @elseif (! $canManageThisAgentAccess)
-                                                <span class="lede">Owner only</span>
+                                                <span class="lede">{{ __('account.agents.owner_only') }}</span>
                                             @elseif ($accountAgent->isDeactivated())
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.agents.reactivate', $accountAgent) }}">
                                                     @csrf
-                                                    <button class="button secondary" type="submit">Reactivate</button>
+                                                    <button class="button secondary" type="submit">{{ __('account.agents.reactivate') }}</button>
                                                 </form>
                                             @else
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.agents.deactivate', $accountAgent) }}">
                                                     @csrf
-                                                    <button class="button danger" type="submit">Deactivate</button>
+                                                    <button class="button danger" type="submit">{{ __('account.agents.deactivate') }}</button>
                                                 </form>
                                             @endif
                                         </td>
                                     @endif
                                     <td>
                                         @if ($explicitSites->isEmpty() && $fallbackSites->isEmpty())
-                                            <span class="lede">No active support scope</span>
+                                            <span class="lede">{{ __('account.agents.no_scope') }}</span>
                                         @else
                                             @if ($explicitSites->isNotEmpty())
-                                                <strong>{{ $explicitSites->count() }} explicit {{ \Illuminate\Support\Str::plural('site', $explicitSites->count()) }}</strong>
-                                                <span class="lede">Explicit: {{ $siteScopePreview($explicitSites) }}</span>
+                                                <strong>{{ trans_choice('account.agents.explicit_count', $explicitSites->count(), ['count' => \App\Support\ReaderNumber::count($explicitSites->count())]) }}</strong>
+                                                <span class="lede">{!! __('account.agents.explicit', ['sites' => $siteScopePreview($explicitSites)]) !!}</span>
                                             @endif
                                             @if ($fallbackSites->isNotEmpty())
-                                                <strong>{{ $fallbackSites->count() }} fallback {{ \Illuminate\Support\Str::plural('site', $fallbackSites->count()) }}</strong>
-                                                <span class="lede">Fallback: {{ $siteScopePreview($fallbackSites) }}</span>
+                                                <strong>{{ trans_choice('account.agents.fallback_count', $fallbackSites->count(), ['count' => \App\Support\ReaderNumber::count($fallbackSites->count())]) }}</strong>
+                                                <span class="lede">{!! __('account.agents.fallback', ['sites' => $siteScopePreview($fallbackSites)]) !!}</span>
                                             @endif
-                                            <a class="table-note text-link" href="#site-access-matrix">Review site access</a>
+                                            <a class="table-note text-link" href="#site-access-matrix">{{ __('account.agents.review_access') }}</a>
                                         @endif
                                     </td>
                                     <td>
                                         @if ($hasVisibleOpenWork)
                                             @if ($visibleOpenConversationCount > 0)
-                                                <strong>{{ $visibleOpenConversationCount }} {{ \Illuminate\Support\Str::plural('open conversation', $visibleOpenConversationCount) }}</strong>
+                                                <strong>{{ trans_choice('account.agents.open_conversations', $visibleOpenConversationCount, ['count' => \App\Support\ReaderNumber::count($visibleOpenConversationCount)]) }}</strong>
                                             @endif
                                             @if ($visibleOpenTicketCount > 0)
-                                                <span class="lede">{{ $visibleOpenTicketCount }} {{ \Illuminate\Support\Str::plural('open ticket', $visibleOpenTicketCount) }}</span>
+                                                <span class="lede">{{ trans_choice('account.agents.open_tickets', $visibleOpenTicketCount, ['count' => \App\Support\ReaderNumber::count($visibleOpenTicketCount)]) }}</span>
                                             @endif
                                         @else
-                                            <span class="lede">No assigned open work</span>
+                                            <span class="lede">{{ __('account.agents.no_work') }}</span>
                                         @endif
                                     </td>
                                 </tr>

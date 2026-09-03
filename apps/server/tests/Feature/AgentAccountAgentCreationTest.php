@@ -32,7 +32,7 @@ test('owners and admins can create a new default agent from the account page', f
 
     $response
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent created. Share the temporary password securely.')
+        ->assertSessionHas('status', 'account.flash.created')
         ->assertSessionHas('created_agent_email', 'bea@example.test')
         ->assertSessionHas('created_agent_password');
 
@@ -77,7 +77,7 @@ test('owners and admins can email the generated welcome credentials when creatin
 
     $response
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent created and welcome email sent.')
+        ->assertSessionHas('status', 'account.flash.created_and_welcome_sent')
         ->assertSessionHas('created_agent_email', 'bea@example.test')
         ->assertSessionHas('created_agent_password');
 
@@ -130,7 +130,7 @@ test('agent creation keeps the temporary password fallback when welcome email de
 
     $response
         ->assertRedirect('/dashboard/account')
-        ->assertSessionHas('status', 'Agent created, but the welcome email could not be sent. Share the temporary password securely.')
+        ->assertSessionHas('status', 'account.flash.created_welcome_failed')
         ->assertSessionHas('created_agent_email', 'bea@example.test')
         ->assertSessionHas('created_agent_password');
 
@@ -227,3 +227,47 @@ test('account agent creation rejects emails already used by another account', fu
     expect(User::query()->where('email', 'bea@example.test')->count())->toBe(1)
         ->and(AuditEvent::query()->where('action', 'agent.created')->exists())->toBeFalse();
 });
+
+test('agent creation validation and completion answer in the account page language', function (string $locale, string $validation, string $flash, string $temporaryPassword): void {
+    $account = Account::factory()->create(['name' => 'Datenpunkt Account']);
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => $locale,
+    ]);
+    Mail::fake();
+
+    $this->actingAs($owner)
+        ->from(route('dashboard.account.show'))
+        ->post(route('dashboard.account.agents.store'), [
+            'name' => 'Bea Datenpunkt',
+            'email' => 'not-an-email',
+        ])
+        ->assertRedirect(route('dashboard.account.show'))
+        ->assertSessionHasErrors('email');
+
+    expect((string) session('errors')->first('email'))->toBe($validation);
+
+    $this->actingAs($owner)
+        ->followingRedirects()
+        ->post(route('dashboard.account.agents.store'), [
+            'name' => 'Bea Datenpunkt',
+            'email' => 'bea@datenpunkt.example',
+        ])
+        ->assertOk()
+        ->assertSee($flash)
+        ->assertSee($temporaryPassword)
+        ->assertDontSee('Agent created. Share the temporary password securely.');
+})->with([
+    'German' => [
+        'de',
+        'E-Mail-Adresse muss eine gültige E-Mail-Adresse sein.',
+        'Agent erstellt. Teilen Sie das temporäre Passwort sicher.',
+        'Temporäres Passwort',
+    ],
+    'Italian' => [
+        'it',
+        'Il campo Indirizzo email deve contenere un indirizzo email valido.',
+        'Agente creato. Condivida la password temporanea in modo sicuro.',
+        'Password temporanea',
+    ],
+]);

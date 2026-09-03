@@ -10,14 +10,15 @@ use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Support\AccountAlertReadiness;
+use App\Support\ExternalIssueCapability;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
+use App\Support\ReaderNumber;
 use App\Support\TicketExternalIssueState;
 use App\Support\UnattendedConversationAlertCollector;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Str;
 use Illuminate\View\View;
 
 class AgentAccountController extends Controller
@@ -122,8 +123,11 @@ class AgentAccountController extends Controller
      *     metrics: array<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>,
      *     projects: Collection<int, array{
      *         site: string,
+     *         site_language: string|null,
      *         provider: string,
+     *         provider_language: string|null,
      *         connection: string,
+     *         connection_language: string|null,
      *         project_key: string,
      *         project_name: string|null,
      *         capabilities: list<string>,
@@ -131,7 +135,14 @@ class AgentAccountController extends Controller
      *         href: string,
      *         enabled: bool
      *     }>,
-     *     recent_failures: Collection<int, array{provider: string, project_key: string, status: string|null, occurred_at: Carbon|null}>
+     *     recent_failures: Collection<int, array{
+     *         provider: string,
+     *         provider_language: string|null,
+     *         project_key: string,
+     *         project_language: string|null,
+     *         status: mixed,
+     *         occurred_at: Carbon|null
+     *     }>
      * }
      */
     private function externalIssueReadiness(Account $account, array $visibleSiteIds): array
@@ -175,57 +186,61 @@ class AgentAccountController extends Controller
         $failedQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::FAILED] ?? 0);
         $pendingQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::PENDING] ?? 0);
 
-        [$label, $tone, $detail] = match (true) {
+        [$state, $tone, $detail] = match (true) {
             $connections->isEmpty() => [
-                'Not configured',
+                'not_configured',
                 'manual',
-                'Add a provider connection when tickets need to leave Wayfindr.',
+                'no_connections',
             ],
             $projects->isEmpty() => [
-                'Not configured',
+                'not_configured',
                 'manual',
-                'Map at least one site project before tickets can leave Wayfindr.',
+                'no_projects',
             ],
             $disabledCount > 0 || $failedCount > 0 => [
-                'Needs attention',
+                'needs_attention',
                 'attention',
-                'Review disabled connections or failed syncs before relying on external handoff.',
+                'attention',
             ],
             $pendingCount > 0 => [
-                'Sync pending',
+                'sync_pending',
                 'manual',
-                'Some external links are still waiting for confirmation.',
+                'pending',
             ],
             default => [
-                'Ready',
                 'ready',
-                'External issue routing has mapped projects and no failed syncs.',
+                'ready',
+                'ready',
             ],
         };
 
         return [
-            'label' => $label,
+            'label' => __('account.external.states.'.$state),
             'tone' => $tone,
-            'detail' => $detail,
+            'detail' => __('account.external.details.'.$detail),
             'metrics' => [
                 [
-                    'label' => 'Provider connections',
-                    'value' => $this->countLabel($connections->count(), 'provider connection'),
+                    'label' => __('account.external.metrics.connections'),
+                    'value' => trans_choice('account.external.metrics.connection_count', $connections->count(), [
+                        'count' => ReaderNumber::count($connections->count()),
+                    ]),
                     'tone' => $connections->isEmpty() ? 'manual' : 'ready',
                 ],
                 [
-                    'label' => 'Mapped projects',
-                    'value' => $this->countLabel($projects->count(), 'mapped project'),
+                    'label' => __('account.external.metrics.projects'),
+                    'value' => trans_choice('account.external.metrics.project_count', $projects->count(), [
+                        'count' => ReaderNumber::count($projects->count()),
+                    ]),
                     'tone' => $projects->isEmpty() ? 'manual' : 'ready',
                 ],
                 [
-                    'label' => 'Disabled',
-                    'value' => $this->countLabel($disabledCount, 'disabled', 'disabled'),
+                    'label' => __('account.external.metrics.disabled'),
+                    'value' => __('account.external.metrics.disabled_count', ['count' => ReaderNumber::count($disabledCount)]),
                     'tone' => $disabledCount > 0 ? 'attention' : 'ready',
                 ],
                 [
-                    'label' => 'Sync failed',
-                    'value' => $this->countLabel($failedCount, 'sync failed', 'sync failed'),
+                    'label' => __('account.external.metrics.failed'),
+                    'value' => __('account.external.metrics.failed_count', ['count' => ReaderNumber::count($failedCount)]),
                     'tone' => $failedCount > 0 ? 'attention' : 'ready',
                     'href' => $failedQueueCount > 0
                         ? route('dashboard.tickets.index', [
@@ -233,11 +248,11 @@ class AgentAccountController extends Controller
                             'ticket_external' => 'failed',
                         ])
                         : null,
-                    'action' => 'Review failed tickets',
+                    'action' => __('account.external.metrics.review_failed'),
                 ],
                 [
-                    'label' => 'Sync pending',
-                    'value' => $this->countLabel($pendingCount, 'sync pending', 'sync pending'),
+                    'label' => __('account.external.metrics.pending'),
+                    'value' => __('account.external.metrics.pending_count', ['count' => ReaderNumber::count($pendingCount)]),
                     'tone' => $pendingCount > 0 ? 'manual' : 'ready',
                     'href' => $pendingQueueCount > 0
                         ? route('dashboard.tickets.index', [
@@ -245,45 +260,86 @@ class AgentAccountController extends Controller
                             'ticket_external' => 'pending',
                         ])
                         : null,
-                    'action' => 'Review pending tickets',
+                    'action' => __('account.external.metrics.review_pending'),
                 ],
             ],
-            'projects' => $projects->map(fn (SiteExternalIssueProject $project): array => [
-                'site' => $project->site?->name ?? 'Unknown site',
-                'provider' => $project->providerLabel(),
-                'connection' => $project->providerConnection?->name ?? $project->providerLabel(),
-                'project_key' => $project->project_key,
-                'project_name' => $project->project_name,
-                'capabilities' => $project->capabilityLabels(),
-                'handoff' => $project->issueCreationHandoffState(),
-                'href' => $project->site
-                    ? route('dashboard.sites.show', $project->site).'#external-issue-routing-heading'
-                    : route('dashboard.sites.index'),
-                'enabled' => (bool) $project->providerConnection?->is_enabled,
-            ]),
+            'projects' => $projects->map(function (SiteExternalIssueProject $project): array {
+                $provider = $this->providerParts($project->providerConnection?->provider);
+
+                return [
+                    'site' => $project->site?->name ?? __('account.external.projects.unknown_site'),
+                    'site_language' => $project->site ? '' : null,
+                    'provider' => $provider['label'],
+                    'provider_language' => $provider['language'],
+                    'connection' => $project->providerConnection?->name ?? $provider['label'],
+                    'connection_language' => $project->providerConnection ? '' : $provider['language'],
+                    'project_key' => $project->project_key,
+                    'project_name' => $project->project_name,
+                    'capabilities' => collect(ExternalIssueCapability::values())
+                        ->filter(fn (string $capability): bool => $project->hasCapability($capability))
+                        ->map(fn (string $capability): string => __('integrations.capabilities.labels.'.$capability))
+                        ->values()
+                        ->all(),
+                    'handoff' => $this->issueCreationHandoffParts($project),
+                    'href' => $project->site
+                        ? route('dashboard.sites.show', $project->site).'#external-issue-routing-heading'
+                        : route('dashboard.sites.index'),
+                    'enabled' => (bool) $project->providerConnection?->is_enabled,
+                ];
+            }),
             'recent_failures' => $visibleFailureEvents()
                 ->latest('occurred_at')
                 ->latest('id')
                 ->limit(3)
                 ->get()
-                ->map(fn (AuditEvent $event): array => [
-                    'provider' => ExternalIssueProvider::label(data_get($event->metadata, 'provider')),
-                    'project_key' => (string) (data_get($event->metadata, 'project_key') ?? 'Unknown project'),
-                    'status' => data_get($event->metadata, 'status')
-                        ? 'Status '.data_get($event->metadata, 'status')
-                        : null,
-                    'occurred_at' => $event->occurred_at,
-                ]),
+                ->map(function (AuditEvent $event): array {
+                    $provider = $this->providerParts(data_get($event->metadata, 'provider'));
+
+                    return [
+                        'provider' => $provider['label'],
+                        'provider_language' => $provider['language'],
+                        'project_key' => (string) (data_get($event->metadata, 'project_key') ?? __('account.external.failures.unknown_project')),
+                        'project_language' => data_get($event->metadata, 'project_key') !== null ? '' : null,
+                        'status' => data_get($event->metadata, 'status'),
+                        'occurred_at' => $event->occurred_at,
+                    ];
+                }),
         ];
     }
 
-    private function countLabel(int $count, string $singular, ?string $plural = null): string
+    /** @return array{label: string, language: string|null} */
+    private function providerParts(mixed $provider): array
     {
-        if ($plural !== null) {
-            return $count.' '.($count === 1 ? $singular : $plural);
+        if (is_string($provider) && in_array($provider, ['github', 'gitlab', 'bitbucket', 'jira'], true)) {
+            return [
+                'label' => ExternalIssueProvider::label($provider),
+                'language' => '',
+            ];
         }
 
-        return $count.' '.Str::plural($singular, $count);
+        return [
+            'label' => $provider === 'other'
+                ? __('integrations.providers.other')
+                : __('integrations.providers.external_tracker'),
+            'language' => null,
+        ];
+    }
+
+    /** @return array{label: string, detail: string, tone: string} */
+    private function issueCreationHandoffParts(SiteExternalIssueProject $project): array
+    {
+        [$state, $tone] = match (true) {
+            ! $project->providerConnection?->is_enabled => ['blocked', 'attention'],
+            ! $project->hasSupportedIssueCreationProvider() => ['unsupported', 'manual'],
+            $project->supportsIssueCreationHandoff() => ['ready', 'ready'],
+            default => ['disabled', 'manual'],
+        };
+
+        return [
+            'label' => __('account.external.handoff.'.$state.'.label'),
+            'detail' => __('account.external.handoff.'.$state.'.detail'),
+            'tone' => $tone,
+        ];
     }
 
     /**
@@ -293,18 +349,18 @@ class AgentAccountController extends Controller
     {
         if ($accountAgent->isDeactivated()) {
             return [
-                'primary' => 'Deactivated',
+                'primary' => __('account.agents.alert_delivery.deactivated'),
                 'lines' => [
-                    ['text' => 'Alert delivery is paused while access is suspended.'],
+                    ['text' => __('account.agents.alert_delivery.deactivated_detail')],
                 ],
             ];
         }
 
         if ($accountAgent->alertMode() === User::ALERT_MODE_QUIET) {
             return [
-                'primary' => 'Quiet mode',
+                'primary' => __('account.agents.alert_delivery.quiet_mode'),
                 'lines' => [
-                    ['text' => 'New dashboard and email alerts are paused.'],
+                    ['text' => __('account.agents.alert_delivery.quiet_detail')],
                 ],
             ];
         }
@@ -313,7 +369,7 @@ class AgentAccountController extends Controller
 
         if (! $accountAgent->alertEmailEnabled()) {
             return [
-                'primary' => 'Email off',
+                'primary' => __('account.agents.alert_delivery.email_off'),
                 'lines' => [
                     ['text' => $scopeLabel, 'tone' => 'manual'],
                     ['text' => $scopeDetail],
@@ -335,31 +391,35 @@ class AgentAccountController extends Controller
             ];
 
             if ($digestDeliveryStatus['last_attempted_at']) {
-                $lines[] = ['text' => 'Last attempt '.$digestDeliveryStatus['last_attempted_at']->diffForHumans()];
+                $lines[] = ['text' => __('account.agents.alert_delivery.last_attempt', [
+                    'elapsed' => $digestDeliveryStatus['last_attempted_at']->diffForHumans(),
+                ])];
             }
 
             return [
-                'primary' => 'Digest',
+                'primary' => __('account.agents.alert_delivery.digest_delivery'),
                 'lines' => $lines,
             ];
         }
 
         if ($accountAgent->alertCadence() === User::ALERT_CADENCE_UNATTENDED) {
             return [
-                'primary' => 'Unattended only',
+                'primary' => __('account.agents.alert_delivery.unattended'),
                 'lines' => [
                     ['text' => $scopeLabel, 'tone' => 'ready'],
-                    ['text' => sprintf('Email only when a visitor message waits unseen for %d minutes.', UnattendedConversationAlertCollector::THRESHOLD_MINUTES)],
+                    ['text' => __('account.agents.alert_delivery.unattended_detail', [
+                        'minutes' => ReaderNumber::count(UnattendedConversationAlertCollector::THRESHOLD_MINUTES),
+                    ])],
                     ['text' => $scopeDetail],
                 ],
             ];
         }
 
         return [
-            'primary' => 'Immediate',
+            'primary' => __('account.agents.alert_delivery.immediate'),
             'lines' => [
                 ['text' => $scopeLabel, 'tone' => 'ready'],
-                ['text' => 'Email alerts as they happen.'],
+                ['text' => __('account.agents.alert_delivery.immediate_detail')],
                 ['text' => $scopeDetail],
             ],
         ];
@@ -372,19 +432,19 @@ class AgentAccountController extends Controller
     {
         if ($accountAgent->alertMode() === User::ALERT_MODE_ASSIGNED) {
             return [
-                'Assigned-only',
-                'Dashboard alerts only for assigned conversations and tickets.',
+                __('account.agents.alert_delivery.assigned_only'),
+                __('account.agents.alert_delivery.assigned_detail'),
             ];
         }
 
         return [
-            'All support work',
-            'Dashboard alerts can come from any site work this agent can support.',
+            __('account.agents.alert_delivery.all'),
+            __('account.agents.alert_delivery.all_detail'),
         ];
     }
 
     /**
-     * @return Collection<int, array{label: string, actor: string, subject: string, body: string, occurred_at: Carbon|null}>
+     * @return Collection<int, array{label: string, actor: string, actor_language: string|null, subject: string, subject_language: string|null, body: string, occurred_at: Carbon|null}>
      */
     private function accountActivityItems(Account $account, array $visibleSiteIds): Collection
     {
@@ -409,7 +469,9 @@ class AgentAccountController extends Controller
             ->map(fn (AuditEvent $event): array => [
                 'label' => $this->accountActivityLabel($event),
                 'actor' => $this->accountActivityActor($event),
+                'actor_language' => $event->actor instanceof User ? '' : null,
                 'subject' => $this->accountActivitySubject($event),
+                'subject_language' => $event->subject instanceof User || $event->subject instanceof Site ? '' : null,
                 'body' => $this->accountActivityBody($event),
                 'occurred_at' => $event->occurred_at,
             ]);
@@ -433,13 +495,13 @@ class AgentAccountController extends Controller
     private function accountActivityLabel(AuditEvent $event): string
     {
         return match ($event->action) {
-            'agent.created' => 'Agent created',
-            'agent.deactivated' => 'Agent deactivated',
-            'agent.password_updated' => 'Password changed',
-            'agent.reactivated' => 'Agent reactivated',
-            'agent.role_changed' => 'Agent role changed',
-            'site_access.updated' => 'Site access updated',
-            default => 'Account activity',
+            'agent.created' => __('account.activity.labels.agent_created'),
+            'agent.deactivated' => __('account.activity.labels.agent_deactivated'),
+            'agent.password_updated' => __('account.activity.labels.password_changed'),
+            'agent.reactivated' => __('account.activity.labels.agent_reactivated'),
+            'agent.role_changed' => __('account.activity.labels.role_changed'),
+            'site_access.updated' => __('account.activity.labels.site_access'),
+            default => __('account.activity.labels.default'),
         };
     }
 
@@ -449,7 +511,7 @@ class AgentAccountController extends Controller
             return $event->actor->name;
         }
 
-        return 'System';
+        return __('account.activity.system');
     }
 
     private function accountActivitySubject(AuditEvent $event): string
@@ -462,19 +524,19 @@ class AgentAccountController extends Controller
             return $event->subject->name;
         }
 
-        return 'Account';
+        return __('account.activity.account');
     }
 
     private function accountActivityBody(AuditEvent $event): string
     {
         return match ($event->action) {
-            'agent.created' => 'Created agent account',
-            'agent.deactivated' => 'Suspended agent access',
-            'agent.password_updated' => 'Changed password',
-            'agent.reactivated' => 'Restored agent access',
+            'agent.created' => __('account.activity.bodies.agent_created'),
+            'agent.deactivated' => __('account.activity.bodies.agent_deactivated'),
+            'agent.password_updated' => __('account.activity.bodies.password_changed'),
+            'agent.reactivated' => __('account.activity.bodies.agent_reactivated'),
             'agent.role_changed' => $this->accountRoleChangeBody($event),
-            'site_access.updated' => 'Updated support access',
-            default => 'Recorded account activity',
+            'site_access.updated' => __('account.activity.bodies.site_access'),
+            default => __('account.activity.bodies.default'),
         };
     }
 
@@ -484,15 +546,15 @@ class AgentAccountController extends Controller
         $newRole = data_get($event->metadata, 'new_role');
         $roleLabels = $this->roleLabels();
 
-        if (is_string($oldRole) && is_string($newRole)) {
-            return sprintf(
-                'Changed role from %s to %s',
-                $roleLabels[$oldRole] ?? str($oldRole)->headline()->toString(),
-                $roleLabels[$newRole] ?? str($newRole)->headline()->toString(),
-            );
+        if (is_string($oldRole) && is_string($newRole)
+            && isset($roleLabels[$oldRole], $roleLabels[$newRole])) {
+            return __('account.activity.bodies.role_changed', [
+                'old' => $roleLabels[$oldRole],
+                'new' => $roleLabels[$newRole],
+            ]);
         }
 
-        return 'Changed account role';
+        return __('account.activity.bodies.role_changed_unknown');
     }
 
     /**
@@ -501,9 +563,9 @@ class AgentAccountController extends Controller
     private function roleLabels(): array
     {
         return [
-            AccountRole::Owner->value => 'Owner',
-            AccountRole::Admin->value => 'Admin',
-            AccountRole::Agent->value => 'Agent',
+            AccountRole::Owner->value => __('profile.roles.owner'),
+            AccountRole::Admin->value => __('profile.roles.admin'),
+            AccountRole::Agent->value => __('profile.roles.agent'),
         ];
     }
 }

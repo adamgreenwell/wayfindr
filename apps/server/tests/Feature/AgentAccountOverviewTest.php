@@ -220,8 +220,10 @@ test('agent roster summarizes explicit and fallback site scope', function (): vo
         ->assertSeeInOrder([
             'Bea Builder',
             'bea@example.test',
-            'Explicit: VIP Portal',
-            'Fallback: Public Docs',
+            'Explicit:',
+            'VIP Portal',
+            'Fallback:',
+            'Public Docs',
         ])
         ->assertSeeInOrder([
             'Doug Dormant',
@@ -257,9 +259,15 @@ test('agent roster keeps multi-site support scope summaries scannable', function
         ->assertSeeInOrder([
             'Bea Builder',
             '3 explicit sites',
-            'Explicit: Alpha Docs, Beta Store + 1 more',
+            'Explicit:',
+            'Alpha Docs',
+            'Beta Store',
+            '+ 1 more',
             '3 fallback sites',
-            'Fallback: Knowledge Base, Marketing Site + 1 more',
+            'Fallback:',
+            'Knowledge Base',
+            'Marketing Site',
+            '+ 1 more',
             'Review site access',
         ])
         ->assertSee(route('dashboard.sites.show', $explicitSites->first()), false);
@@ -539,7 +547,8 @@ test('account admins can inspect external issue readiness without raw provider d
         ->assertSee('Status Portal')
         ->assertSee('acme/status')
         ->assertSee('Last external sync failure')
-        ->assertSee('Status 503')
+        ->assertSee('Status')
+        ->assertSee('503')
         ->assertSee(route('dashboard.sites.show', $site), false)
         ->assertSee(route('dashboard.sites.show', $secondSite), false)
         ->assertDontSee('ghp_account_secret')
@@ -705,7 +714,8 @@ test('account external issue readiness counts audit only sync failures', functio
         ->assertSee('Needs attention')
         ->assertSee('1 sync failed')
         ->assertSee('Last external sync failure')
-        ->assertSee('Status 502')
+        ->assertSee('Status')
+        ->assertSee('502')
         ->assertDontSee('raw provider exception should stay hidden');
 });
 
@@ -1223,3 +1233,133 @@ test('account overview explains when there is no account activity yet', function
         ->assertSee('Recent account activity')
         ->assertSee('No account activity yet.');
 });
+
+test('account overview follows the reader language through populated management states', function (string $locale, array $copy): void {
+    $account = Account::factory()->create(['name' => 'Datenpunkt Account']);
+    $owner = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => $locale,
+        'name' => 'Ada Datenpunkt',
+        'email' => 'ada@datenpunkt.example',
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'name' => 'Bea Datenpunkt',
+        'email' => 'bea@datenpunkt.example',
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Datenpunkt Docs',
+        'domain' => 'docs.datenpunkt.example',
+    ]);
+    $site->supportAgents()->attach([$owner->id, $agent->id]);
+
+    $connection = ExternalIssueProviderConnection::factory()->for($account)->create([
+        'provider' => 'github',
+        'name' => 'Datenpunkt GitHub',
+    ]);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create([
+            'project_key' => 'datenpunkt/project',
+            'project_name' => 'Datenpunkt Project',
+        ]);
+
+    AuditEvent::factory()->for($account)->for($site)->create([
+        'action' => 'ticket.external_sync_failed',
+        'metadata' => [
+            'provider' => 'github',
+            'project_key' => 'datenpunkt/project',
+            'status' => 503,
+            'message' => 'Provider secret must not render.',
+        ],
+        'occurred_at' => now()->subMinutes(3),
+    ]);
+    AuditEvent::factory()->for($account)->create([
+        'actor_type' => $owner->getMorphClass(),
+        'actor_id' => $owner->id,
+        'subject_type' => $agent->getMorphClass(),
+        'subject_id' => $agent->id,
+        'action' => 'agent.role_changed',
+        'metadata' => [
+            'old_role' => AccountRole::Agent->value,
+            'new_role' => AccountRole::Admin->value,
+        ],
+        'occurred_at' => now()->subMinute(),
+    ]);
+
+    $response = $this->actingAs($owner)->get(route('dashboard.account.show'));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($copy['map'])
+        ->assertSee($copy['sites'])
+        ->assertSee($copy['external'])
+        ->assertSee($copy['attention'])
+        ->assertSee($copy['handoff'])
+        ->assertSee($copy['activity'])
+        ->assertSee($copy['role_change'])
+        ->assertSee($copy['create'])
+        ->assertSee($copy['alerts'])
+        ->assertSee($copy['workload'])
+        ->assertDontSee('Account map')
+        ->assertDontSee('Site access matrix')
+        ->assertDontSee('External issue readiness')
+        ->assertDontSee('Recent account activity')
+        ->assertDontSee('Add agent')
+        ->assertDontSee('Team alert readiness')
+        ->assertDontSee('Provider secret must not render.');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach ([
+        'Datenpunkt Account',
+        'Datenpunkt Docs',
+        'docs.datenpunkt.example',
+        'Datenpunkt GitHub',
+        'GitHub',
+        'datenpunkt/project',
+        'Datenpunkt Project',
+        '503',
+        'Ada Datenpunkt',
+        'ada@datenpunkt.example',
+        'Bea Datenpunkt',
+        'bea@datenpunkt.example',
+    ] as $value) {
+        expect($xpath->query('//*[@lang="" and normalize-space(.)="'.$value.'"]')->length)
+            ->toBeGreaterThan(0, "{$value} is not marked as language-neutral account data");
+    }
+
+    $heading = $xpath->query('//*[@id="account-map-heading"]')->item(0);
+
+    expect($heading)->toBeInstanceOf(DOMElement::class)
+        ->and($heading->hasAttribute('lang'))->toBeFalse('translated account copy was reset to an unknown language');
+})->with([
+    'German' => ['de', [
+        'map' => 'Kontoübersicht',
+        'sites' => 'Matrix für Website-Zugriff',
+        'external' => 'Bereitschaft für externe Issues',
+        'attention' => 'Erfordert Aufmerksamkeit',
+        'handoff' => 'Übergabe bereit',
+        'activity' => 'Letzte Kontoaktivität',
+        'role_change' => 'Rolle von Agent zu Administrator geändert',
+        'create' => 'Agent hinzufügen',
+        'alerts' => 'Benachrichtigungsbereitschaft des Teams',
+        'workload' => 'Arbeitslast',
+    ]],
+    'Italian' => ['it', [
+        'map' => 'Mappa dell’account',
+        'sites' => 'Matrice di accesso ai siti',
+        'external' => 'Prontezza delle segnalazioni esterne',
+        'attention' => 'Richiede attenzione',
+        'handoff' => 'Passaggio pronto',
+        'activity' => 'Attività recente dell’account',
+        'role_change' => 'Ruolo modificato da Agente a Admin',
+        'create' => 'Aggiungi agente',
+        'alerts' => 'Prontezza degli avvisi del team',
+        'workload' => 'Carico di lavoro',
+    ]],
+]);

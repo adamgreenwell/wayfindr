@@ -148,6 +148,16 @@ final class DashboardLanguage
         'dashboard.external-issue-provider-connections.webhook-secret.update',
         'dashboard.external-issue-provider-connections.capabilities.update',
 
+        // The account overview and its roster actions. The page combines
+        // role/access boundaries, readiness summaries, recent activity and
+        // team management; extracting only the GET would put English
+        // validation or lifecycle results back into the translated page.
+        'dashboard.account.show',
+        'dashboard.account.agents.store',
+        'dashboard.account.agents.role.update',
+        'dashboard.account.agents.deactivate',
+        'dashboard.account.agents.reactivate',
+
         // The live-visitors board. Most of this page's copy is rendered by its
         // SCRIPT rather than by Blade, which is why it needed no new mechanism
         // and does need the render audit to open it with the board populated.

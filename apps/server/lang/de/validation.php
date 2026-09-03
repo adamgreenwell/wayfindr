@@ -123,5 +123,9 @@ return [
         'credential_token' => 'Token oder Zugangsdaten',
         'webhook_secret' => 'Webhook-Geheimnis',
         'capabilities' => 'Verbindungsfunktionen',
+
+        // The account roster page.
+        'account_role' => 'Kontorolle',
+        'send_welcome_email' => 'Willkommens-E-Mail',
     ],
 ];

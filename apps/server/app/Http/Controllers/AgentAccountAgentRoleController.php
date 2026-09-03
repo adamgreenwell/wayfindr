@@ -21,6 +21,6 @@ class AgentAccountAgentRoleController extends Controller
 
         return redirect()
             ->route('dashboard.account.show')
-            ->with('status', 'Agent role updated.');
+            ->with('status', 'account.flash.role_updated');
     }
 }
