@@ -43,6 +43,7 @@ class UpdateAgentAccess
     public function reactivate(User $actor, User $target): User
     {
         return DB::transaction(function () use ($actor, $target): User {
+            $this->siteManagerCoverage->lockAccount((int) $target->account_id);
             [$actor, $target] = $this->lockedUsers($actor, $target);
 
             Gate::forUser($actor)->authorize('reactivate', $target);

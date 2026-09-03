@@ -43,7 +43,10 @@ class UserPolicy
         }
 
         return $user->isOwner()
-            || ($target->account_role === AccountRole::Agent && $target->custom_role_id === null);
+            || ($target->account_role === AccountRole::Agent && $target->custom_role_id === null)
+            || ($user->custom_role_id !== null
+                && $target->custom_role_id !== null
+                && (int) $user->custom_role_id === (int) $target->custom_role_id);
     }
 
     private function sameAccount(User $user, User $target): bool

@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CustomRole;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -114,6 +116,50 @@ test('agent access changes stay inside the current account', function (): void {
 
     expect($outsideAgent->fresh()->deactivated_at)->toBeNull()
         ->and(AuditEvent::query()->where('action', 'agent.deactivated')->exists())->toBeFalse();
+});
+
+test('custom agent managers can suspend teammates in the same role but not another custom role', function (): void {
+    $account = Account::factory()->create();
+    $managerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageAgents->value],
+    ]);
+    $otherRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewAudit->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $managerRole->id,
+    ]);
+    $teammate = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $managerRole->id,
+    ]);
+    $other = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $otherRole->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee(route('dashboard.account.agents.deactivate', $teammate), false)
+        ->assertDontSee(route('dashboard.account.agents.deactivate', $other), false);
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.agents.deactivate', $teammate))
+        ->assertRedirect(route('dashboard.account.show'));
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.agents.reactivate', $teammate))
+        ->assertRedirect(route('dashboard.account.show'));
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.agents.deactivate', $other))
+        ->assertForbidden();
+
+    expect($teammate->fresh()->isDeactivated())->toBeFalse()
+        ->and($other->fresh()->isDeactivated())->toBeFalse()
+        ->and(AuditEvent::query()->whereIn('action', ['agent.deactivated', 'agent.reactivated'])->count())->toBe(2);
 });
 
 test('owners cannot deactivate themselves', function (): void {

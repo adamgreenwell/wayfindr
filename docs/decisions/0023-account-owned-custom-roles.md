@@ -33,7 +33,8 @@ one while it is assigned.
 A custom role with `manage_agents` may create teammates, but those accounts are
 created in the issuer's same custom role. The credential handoff therefore
 cannot be used to mint a built-in Agent login with broader support or site
-creation authority.
+creation authority. That manager may suspend or restore same-role teammates,
+but cannot cross into another custom role.
 
 ### Permissions answer what; site access still answers where
 

@@ -48,7 +48,7 @@ final class AgentAccountCustomRoleController extends Controller
 
         try {
             $role = DB::transaction(function () use ($actor, $attributes): CustomRole {
-                $this->siteManagerCoverage->lockAccount((int) $actor->account_id);
+                $actor = $this->lockedRoleManager($actor);
                 $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key']);
                 $role = CustomRole::query()->create([
                     'account_id' => $actor->account_id,
@@ -78,7 +78,7 @@ final class AgentAccountCustomRoleController extends Controller
 
         try {
             DB::transaction(function () use ($actor, $customRole, $attributes): void {
-                $this->siteManagerCoverage->lockAccount((int) $actor->account_id);
+                $actor = $this->lockedRoleManager($actor);
                 $role = $this->roleForActor($actor, $customRole, true);
                 $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key'], (int) $role->id);
                 $this->siteManagerCoverage->ensureRolePermissionsCanChange($role, $attributes['permissions']);
@@ -107,6 +107,7 @@ final class AgentAccountCustomRoleController extends Controller
         $this->authorizeRoleManagement($actor);
 
         DB::transaction(function () use ($actor, $customRole): void {
+            $actor = $this->lockedRoleManager($actor);
             $role = $this->roleForActor($actor, $customRole, true);
 
             if ($role->users()->exists()) {
@@ -214,6 +215,23 @@ final class AgentAccountCustomRoleController extends Controller
     private function authorizeRoleManagement(User $actor): void
     {
         abort_unless($actor->hasAccountPermission(AccountPermission::ManageRoles), 403);
+    }
+
+    private function lockedRoleManager(User $actor): User
+    {
+        $accountId = (int) $actor->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+
+        $lockedActor = User::query()
+            ->whereKey($actor->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->first();
+
+        abort_unless($lockedActor instanceof User, 403);
+        $this->authorizeRoleManagement($lockedActor);
+
+        return $lockedActor;
     }
 
     /** @return array<string, list<AccountPermission>> */

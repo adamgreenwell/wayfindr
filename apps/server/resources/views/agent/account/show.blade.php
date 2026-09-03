@@ -562,7 +562,11 @@
                                     $hasVisibleOpenWork = $visibleOpenConversationCount > 0 || $visibleOpenTicketCount > 0;
                                     $canManageThisAgentAccess = $canManageAgentAccess
                                         && ! $accountAgent->is($agent)
-                                        && ($agent->isOwner() || ($accountAgent->account_role === \App\Enums\AccountRole::Agent && $accountAgent->custom_role_id === null));
+                                        && ($agent->isOwner()
+                                            || ($accountAgent->account_role === \App\Enums\AccountRole::Agent && $accountAgent->custom_role_id === null)
+                                            || ($agent->custom_role_id !== null
+                                                && $accountAgent->custom_role_id !== null
+                                                && (int) $agent->custom_role_id === (int) $accountAgent->custom_role_id));
                                     $supportScope = $agentSupportScopes[$accountAgent->id] ?? [
                                         'explicitSites' => collect(),
                                         'fallbackSites' => collect(),

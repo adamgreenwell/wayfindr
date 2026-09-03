@@ -112,6 +112,37 @@ test('permission dependencies are enforced and role names are unique within an a
     expect(CustomRole::query()->count())->toBe(1);
 });
 
+test('custom role mutations reauthorize a stale owner after acquiring the account lock', function (string $action): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create([
+        'name' => 'Original role',
+        'name_key' => 'original role',
+    ]);
+
+    $this->actingAs($owner);
+
+    // Keep the authenticated object stale to model a request that passed its
+    // first authorization check immediately before another owner demoted it.
+    User::query()->whereKey($owner->id)->update(['account_role' => AccountRole::Admin->value]);
+
+    $response = match ($action) {
+        'store' => $this->post(route('dashboard.account.roles.store'), ['name' => 'Late role']),
+        'update' => $this->put(route('dashboard.account.roles.update', $role), ['name' => 'Late rename']),
+        'destroy' => $this->delete(route('dashboard.account.roles.destroy', $role)),
+    };
+
+    $response->assertForbidden();
+
+    expect(CustomRole::query()->count())->toBe(1)
+        ->and($role->fresh()->name)->toBe('Original role')
+        ->and(AuditEvent::query()->whereIn('action', [
+            'custom_role.created',
+            'custom_role.updated',
+            'custom_role.deleted',
+        ])->exists())->toBeFalse();
+})->with(['store', 'update', 'destroy']);
+
 test('owners can assign custom roles and permission changes take effect immediately', function (): void {
     $account = Account::factory()->create();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
