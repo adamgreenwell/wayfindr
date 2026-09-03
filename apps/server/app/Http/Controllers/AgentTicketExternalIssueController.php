@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
@@ -37,7 +38,11 @@ class AgentTicketExternalIssueController extends Controller
         }
 
         try {
-            $createdIssue = $githubIssueCreator->create($project, $ticket);
+            $createdIssue = $githubIssueCreator->create(
+                $project,
+                $ticket,
+                $agent->hasAccountPermission(AccountPermission::ViewConversations),
+            );
         } catch (GitHubIssueCreationFailed $exception) {
             $this->recordActivity($ticket, $agent, 'ticket.external_sync_failed', [
                 'provider' => 'github',
@@ -103,7 +108,11 @@ class AgentTicketExternalIssueController extends Controller
         }
 
         try {
-            $createdIssue = $gitlabIssueCreator->create($project, $ticket);
+            $createdIssue = $gitlabIssueCreator->create(
+                $project,
+                $ticket,
+                $agent->hasAccountPermission(AccountPermission::ViewConversations),
+            );
         } catch (GitLabIssueCreationFailed $exception) {
             $this->recordActivity($ticket, $agent, 'ticket.external_sync_failed', [
                 'provider' => 'gitlab',
@@ -170,7 +179,11 @@ class AgentTicketExternalIssueController extends Controller
         }
 
         try {
-            $createdIssue = $jiraIssueCreator->create($project, $ticket);
+            $createdIssue = $jiraIssueCreator->create(
+                $project,
+                $ticket,
+                $agent->hasAccountPermission(AccountPermission::ViewConversations),
+            );
         } catch (JiraIssueCreationFailed $exception) {
             $this->recordActivity($ticket, $agent, 'ticket.external_sync_failed', [
                 'provider' => 'jira',

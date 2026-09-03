@@ -15,7 +15,7 @@ class JiraIssueCreator
     /**
      * @return array{id: string|null, key: string|null, url: string, title: string|null}
      */
-    public function create(SiteExternalIssueProject $project, Ticket $ticket): array
+    public function create(SiteExternalIssueProject $project, Ticket $ticket, bool $includeConversationReference): array
     {
         $projectKey = trim($project->project_key);
 
@@ -27,7 +27,7 @@ class JiraIssueCreator
         // decides the API: Jira Cloud is REST v3 with an ADF description;
         // Server/Data Center is REST v2 with a plain-text description.
         $isCloud = $this->isCloudCredential($project);
-        $body = $this->exportPreview->forTicket($ticket)['body'];
+        $body = $this->exportPreview->forTicket($ticket, $includeConversationReference)['body'];
 
         try {
             $response = $this->request($project)->post($this->issueEndpoint($project, $isCloud), [

@@ -14,7 +14,7 @@ class GitLabIssueCreator
     /**
      * @return array{id: string|null, iid: string|null, url: string, title: string|null}
      */
-    public function create(SiteExternalIssueProject $project, Ticket $ticket): array
+    public function create(SiteExternalIssueProject $project, Ticket $ticket, bool $includeConversationReference): array
     {
         $connection = $project->providerConnection;
         $token = data_get($connection?->credentials, 'token');
@@ -29,7 +29,7 @@ class GitLabIssueCreator
                 'PRIVATE-TOKEN' => $token,
             ])->post($this->issuesEndpoint($project), [
                 'title' => $ticket->subject,
-                'description' => $this->exportPreview->forTicket($ticket)['body'],
+                'description' => $this->exportPreview->forTicket($ticket, $includeConversationReference)['body'],
             ]);
         } catch (ConnectionException) {
             throw new GitLabIssueCreationFailed('GitLab request failed before a response was received.');

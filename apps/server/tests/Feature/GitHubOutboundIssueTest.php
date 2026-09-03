@@ -1,9 +1,12 @@
 <?php
 
+use App\Enums\AccountPermission;
+use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
@@ -98,6 +101,54 @@ test('agent can create a conservative GitHub issue from a mapped ticket', functi
         ->assertOk()
         ->assertSeeText('GitHub issue created')
         ->assertSee('https://github.com/adamgreenwell/wayfindr/issues/123');
+});
+
+test('ticket only managers omit linked support codes from GitHub previews and exports', function (): void {
+    $fixture = githubOutboundIssueFixture();
+    $role = CustomRole::factory()->for($fixture['account'])->create([
+        'permissions' => [AccountPermission::ManageTickets->value],
+    ]);
+    $ticketManager = User::factory()->for($fixture['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+
+    Http::fake([
+        'https://api.github.com/repos/adamgreenwell/wayfindr/issues' => Http::response([
+            'id' => 988,
+            'number' => 124,
+            'html_url' => 'https://github.com/adamgreenwell/wayfindr/issues/124',
+            'title' => 'Checkout export keeps failing',
+        ], 201),
+    ]);
+
+    $response = $this->actingAs($ticketManager)
+        ->get(route('dashboard.tickets.show', $fixture['ticket']))
+        ->assertOk()
+        ->assertDontSee('WF-GH01');
+
+    preg_match('/<div class="external-issue-export-preview" data-external-issue-export-preview>.*?<\/pre>\s*<\/div>/s', $response->getContent(), $matches);
+
+    expect($matches[0] ?? '')
+        ->not->toBe('')
+        ->not->toContain('Support code');
+
+    $this->actingAs($ticketManager)
+        ->from(route('dashboard.tickets.show', $fixture['ticket']))
+        ->post(route('dashboard.tickets.external-issues.github.store', $fixture['ticket']), [
+            'site_external_issue_project_id' => $fixture['project']->id,
+        ])
+        ->assertSessionHas('status', 'ticket_detail.flash.github_created');
+
+    Http::assertSent(function (HttpClientRequest $request): bool {
+        $body = (string) data_get($request->data(), 'body');
+
+        expect($body)
+            ->not->toContain('Support code')
+            ->not->toContain('WF-GH01');
+
+        return true;
+    });
 });
 
 test('ticket detail previews the conservative GitHub issue export payload', function (): void {

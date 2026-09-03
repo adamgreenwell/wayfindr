@@ -96,7 +96,7 @@ class AgentTicketController extends Controller
                 ->map(fn (string $_label, string $provider): string => $this->ticketExternalIssueProviderLabel($provider))
                 ->all(),
             'externalIssueSyncStatuses' => $this->translatedOptions('ticket_detail.external.sync_statuses', array_keys(ExternalIssueSyncStatus::options())),
-            'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket),
+            'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket, $canViewLinkedConversation),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'gitlabIssueProjects' => $this->gitlabIssueProjectsForTicket($ticket),
             'jiraIssueProjects' => $this->jiraIssueProjectsForTicket($ticket),

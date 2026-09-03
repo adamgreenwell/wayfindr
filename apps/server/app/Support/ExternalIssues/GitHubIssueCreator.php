@@ -14,7 +14,7 @@ class GitHubIssueCreator
     /**
      * @return array{id: string|null, number: string|null, url: string, title: string|null}
      */
-    public function create(SiteExternalIssueProject $project, Ticket $ticket): array
+    public function create(SiteExternalIssueProject $project, Ticket $ticket, bool $includeConversationReference): array
     {
         $connection = $project->providerConnection;
         $token = data_get($connection?->credentials, 'token');
@@ -31,7 +31,7 @@ class GitHubIssueCreator
                 ])
                 ->post($this->issuesEndpoint($project), [
                     'title' => $ticket->subject,
-                    'body' => $this->exportPreview->forTicket($ticket)['body'],
+                    'body' => $this->exportPreview->forTicket($ticket, $includeConversationReference)['body'],
                 ]);
         } catch (ConnectionException) {
             throw new GitHubIssueCreationFailed('GitHub request failed before a response was received.');

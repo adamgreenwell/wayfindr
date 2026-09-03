@@ -20,13 +20,15 @@ class ExternalIssueExportPreview
      *     body: string
      * }
      */
-    public function forTicket(Ticket $ticket): array
+    public function forTicket(Ticket $ticket, bool $includeConversationReference): array
     {
         $ticket->loadMissing(['conversation', 'site']);
 
         $summary = [
             ['label' => 'Ticket', 'value' => "Wayfindr ticket #{$ticket->id}"],
-            ['label' => 'Support code', 'value' => $ticket->conversation?->support_code ?? 'Not linked'],
+            ...($includeConversationReference ? [
+                ['label' => 'Support code', 'value' => $ticket->conversation?->support_code ?? 'Not linked'],
+            ] : []),
             ['label' => 'Site', 'value' => $ticket->site->name],
             ['label' => 'Priority', 'value' => Str::headline($ticket->priority)],
             ['label' => 'Category', 'value' => $ticket->categoryLabel()],
