@@ -307,16 +307,17 @@ it('tells an approver the expiry on their own clock', function () {
 
     $this->actingAs($operator)
         ->post(route('operator.break-glass.approve', $grant))
-        ->assertRedirect();
-
-    $status = session('status');
+        ->assertRedirect()
+        ->assertSessionHas('status', 'operator_break_glass.flash.self_approved');
 
     // A default grant runs an hour: 15:00 UTC, which in Berlin is 17:00 --
     // rendered on an English reader's locale as 5:00 PM, with the zone named.
-    // `toContain` is variadic on strings, so the reason goes in a comment
-    // rather than a second argument -- passed there it becomes another needle.
-    expect($status)->toContain('5:00 PM')
-        ->and(str_contains((string) $status, '3:00 PM'))->toBeFalse();
+    // The POST now carries semantic context rather than pre-rendered prose, so
+    // the redirected GET owns both the reader language and clock.
+    $this->get(route('operator.break-glass.index'))
+        ->assertOk()
+        ->assertSee('5:00 PM CEST')
+        ->assertDontSee('3:00 PM');
 });
 
 /**

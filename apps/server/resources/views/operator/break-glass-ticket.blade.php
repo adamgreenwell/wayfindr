@@ -1,42 +1,53 @@
-<x-layouts.operator title="Operator access — Ticket #{{ $ticket->id }}">
-    <p><a class="text-link" href="{{ route('operator.break-glass.show', $grant) }}">Back to grant</a></p>
-    <h1>Ticket #{{ $ticket->id }} — {{ $ticket->subject }}</h1>
-    <p class="lede">
-        Read-only · {{ $ticket->site?->name }} · access expires {{ $grant->expires_at->diffForHumans() }}.
-    </p>
+<x-layouts.operator :title="__('operator_break_glass.ticket.document_title')">
+    @php
+        $unknownLanguage = static fn (mixed $value): string => '<span lang="">'.e((string) $value).'</span>';
+        $valueHtml = static fn (array $value): string => $value['language'] === ''
+            ? $unknownLanguage($value['label'])
+            : e($value['label']);
+    @endphp
+
+    <p><a class="text-link" href="{{ route('operator.break-glass.show', $grant) }}">{{ __('operator_break_glass.ticket.back') }}</a></p>
+    <h1>{!! __('operator_break_glass.ticket.heading', [
+        'id' => e(\App\Support\ReaderNumber::count($ticket->id)),
+        'subject' => $unknownLanguage($ticket->subject),
+    ]) !!}</h1>
+    <p class="lede">{!! __('operator_break_glass.ticket.summary', [
+        'site' => $unknownLanguage($ticket->site?->name),
+        'elapsed' => e($grant->expires_at->diffForHumans()),
+    ]) !!}</p>
 
     <section class="section" aria-labelledby="break-glass-ticket-heading">
         <div class="section-header">
-            <h2 id="break-glass-ticket-heading">Ticket record</h2>
-            <span class="lede">{{ $ticket->status }}</span>
+            <h2 id="break-glass-ticket-heading">{{ __('operator_break_glass.ticket.record.heading') }}</h2>
+            <span class="lede">{!! $valueHtml($status) !!}</span>
         </div>
 
         <div class="meta-grid">
             <div class="meta-item">
-                <span class="meta-label">Status</span>
-                <span class="meta-value">{{ $ticket->status }}</span>
+                <span class="meta-label">{{ __('operator_break_glass.ticket.record.status') }}</span>
+                <span class="meta-value">{!! $valueHtml($status) !!}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Priority</span>
-                <span class="meta-value">{{ $ticket->priority ?? '—' }}</span>
+                <span class="meta-label">{{ __('operator_break_glass.ticket.record.priority') }}</span>
+                <span class="meta-value">{!! $valueHtml($priority) !!}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Category</span>
-                <span class="meta-value">{{ $ticket->category ?? '—' }}</span>
+                <span class="meta-label">{{ __('operator_break_glass.ticket.record.category') }}</span>
+                <span class="meta-value">{!! $valueHtml($category) !!}</span>
             </div>
             <div class="meta-item">
-                <span class="meta-label">Opened</span>
+                <span class="meta-label">{{ __('operator_break_glass.ticket.record.opened') }}</span>
                 <span class="meta-value">{{ \App\Support\ReaderClock::dateTime($ticket->created_at) }}</span>
             </div>
             @if ($ticket->conversation)
                 <div class="meta-item">
-                    <span class="meta-label">Conversation</span>
+                    <span class="meta-label">{{ __('operator_break_glass.ticket.record.conversation') }}</span>
                     <span class="meta-value">
                         @if ($grant->coversConversation($ticket->conversation))
-                            <a class="text-link" href="{{ route('operator.break-glass.conversations.show', [$grant, $ticket->conversation]) }}">{{ $ticket->conversation->support_code }}</a>
+                            <a class="text-link" lang="" href="{{ route('operator.break-glass.conversations.show', [$grant, $ticket->conversation]) }}">{{ $ticket->conversation->support_code }}</a>
                         @else
                             {{-- An uncovered conversation is never NAMED, only acknowledged. --}}
-                            (out of scope)
+                            {{ __('operator_break_glass.ticket.record.out_of_scope') }}
                         @endif
                     </span>
                 </div>
@@ -45,7 +56,7 @@
 
         @if (filled($ticket->description))
             <div class="notice-copy">
-                <p>{{ $ticket->description }}</p>
+                <p lang="">{{ $ticket->description }}</p>
             </div>
         @endif
     </section>

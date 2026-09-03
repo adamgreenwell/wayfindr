@@ -1,21 +1,22 @@
 # The language the dashboard speaks
 
 Status: **in progress.** The plumbing is shipped, and
-`DashboardLanguage::EXTRACTED_ROUTES` names **63 routes — 26 of them pages** a
+`DashboardLanguage::EXTRACTED_ROUTES` names **70 routes — 30 of them pages** a
 reader can open, the rest the write and partial endpoints those pages call. The
 extracted surfaces are the app shell, the agent profile, the conversation queue
 and detail, the ticket queue, reply templates, ticket labels, articles, API
 tokens, the account audit, account-side operator access, account integrations,
 the account overview and team roster, the live-visitors board, the visitor
-directory and profile, and the operator's dashboard, guided-setup, language-and-region,
-scanning, mail, attachment-storage, backup-configuration, backup-history, and
-backup-restore pages.
+directory and profile, and the operator's dashboard, guided setup, break-glass
+request and read-only viewers, language-and-region, scanning, mail,
+attachment-storage, backup-configuration, backup-history, and backup-restore
+pages.
 
 That list is the one the guards read, and counting it is the only honest way to
 answer how far this has got: counting *views* that call `__()` overstates it,
-because a page is not extracted until its endpoints are. The operator
-break-glass request and read-only viewer flow is the last operator-owned surface
-still outside the extracted slice. The rest is going view by view.
+because a page is not extracted until its endpoints are. All operator-owned
+surfaces are now inside the extracted slice. The remaining dashboard routes are
+still going view by view.
 
 The account audit draws a deliberate line between its screen and its download.
 The screen's action labels, counts, and timestamps follow the agent's language

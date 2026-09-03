@@ -1,34 +1,59 @@
-<x-layouts.operator title="Operator access — {{ $conversation->support_code }}">
-    <p><a class="text-link" href="{{ route('operator.break-glass.show', $grant) }}">Back to grant</a></p>
-    <h1>{{ $conversation->support_code }}</h1>
-    <p class="lede">
-        Read-only transcript · {{ $conversation->site?->name }} · access expires {{ $grant->expires_at->diffForHumans() }}.
-    </p>
+<x-layouts.operator :title="__('operator_break_glass.conversation.document_title')">
+    @php
+        $unknownLanguage = static fn (mixed $value): string => '<span lang="">'.e((string) $value).'</span>';
+        $valueHtml = static fn (array $value): string => $value['language'] === ''
+            ? $unknownLanguage($value['label'])
+            : e($value['label']);
+        $senderHtml = static function (array $sender) use ($unknownLanguage): string {
+            if ($sender['key'] === 'agent' && $sender['name'] !== null) {
+                return __('operator_break_glass.conversation.senders.agent', ['name' => $unknownLanguage($sender['name'])]);
+            }
+
+            return e(__('operator_break_glass.conversation.senders.'.$sender['key']));
+        };
+        $scanHtml = static fn (?string $status): string => $status === null || $status === ''
+            ? e(__('operator_break_glass.values.not_available'))
+            : $unknownLanguage($status);
+    @endphp
+
+    <p><a class="text-link" href="{{ route('operator.break-glass.show', $grant) }}">{{ __('operator_break_glass.conversation.back') }}</a></p>
+    <h1 lang="">{{ $conversation->support_code }}</h1>
+    <p class="lede">{!! __('operator_break_glass.conversation.summary', [
+        'site' => $unknownLanguage($conversation->site?->name),
+        'elapsed' => e($grant->expires_at->diffForHumans()),
+    ]) !!}</p>
 
     <section class="section" aria-labelledby="break-glass-transcript-heading">
         <div class="section-header">
-            <h2 id="break-glass-transcript-heading">Transcript</h2>
-            <span class="lede">{{ $messages->count() }} {{ \Illuminate\Support\Str::plural('message', $messages->count()) }}</span>
+            <h2 id="break-glass-transcript-heading">{{ __('operator_break_glass.conversation.transcript.heading') }}</h2>
+            <span class="lede">{{ trans_choice('operator_break_glass.conversation.transcript.count', $messages->count(), ['count' => \App\Support\ReaderNumber::count($messages->count())]) }}</span>
         </div>
 
         @if ($messages->isEmpty())
             <div class="notice-copy">
-                <p>No messages in this conversation.</p>
+                <p>{{ __('operator_break_glass.conversation.transcript.empty') }}</p>
             </div>
         @else
             <div class="management-list">
                 @foreach ($messages as $message)
                     <div class="management-link">
                         <span>
-                            <strong>{{ $senderLabels[$message->id] }} · {{ \App\Support\ReaderClock::dateTime($message->created_at) }}</strong>
+                            <strong>{!! __('operator_break_glass.conversation.transcript.message_heading', [
+                                'sender' => $senderHtml($senders[$message->id]),
+                                'time' => e(\App\Support\ReaderClock::dateTime($message->created_at)),
+                            ]) !!}</strong>
                             @if (filled($message->body))
-                                <span class="lede">{{ $message->body }}</span>
+                                <span class="lede" lang="">{{ $message->body }}</span>
                             @endif
                             @foreach ($attachmentsByMessage[$message->id] as $attachment)
                                 <span class="lede">
-                                    Attachment: {{ $attachment->original_filename }}
-                                    ({{ $attachment->mime_type }}, {{ \App\Support\ReaderNumber::decimal($attachment->size_bytes / 1024, 1) }} KB, scan: {{ $attachment->scan_status ?? 'n/a' }})
-                                    — names and sizes only; operator access never opens a file.
+                                    {!! __('operator_break_glass.conversation.attachment.summary', [
+                                        'filename' => $unknownLanguage($attachment->original_filename),
+                                        'mime' => $unknownLanguage($attachment->mime_type),
+                                        'size' => e(\App\Support\ReaderNumber::decimal($attachment->size_bytes / 1024, 1)),
+                                        'scan' => $scanHtml($attachment->scan_status),
+                                    ]) !!}
+                                    — {{ __('operator_break_glass.conversation.attachment.boundary') }}
                                 </span>
                             @endforeach
                         </span>
@@ -41,8 +66,8 @@
     @if ($tickets->isNotEmpty())
         <section class="section" aria-labelledby="break-glass-conversation-tickets-heading">
             <div class="section-header">
-                <h2 id="break-glass-conversation-tickets-heading">Tickets from this conversation</h2>
-                <span class="lede">{{ $tickets->count() }} linked</span>
+                <h2 id="break-glass-conversation-tickets-heading">{{ __('operator_break_glass.conversation.tickets.heading') }}</h2>
+                <span class="lede">{{ trans_choice('operator_break_glass.conversation.tickets.count', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}</span>
             </div>
             <div class="management-list">
                 {{-- References only: the subject renders on the ticket page,
@@ -50,10 +75,10 @@
                 @foreach ($tickets as $ticket)
                     <a class="management-link" href="{{ route('operator.break-glass.tickets.show', [$grant, $ticket]) }}">
                         <span>
-                            <strong>Ticket #{{ $ticket->id }}</strong>
-                            <span class="lede">{{ $ticket->status }}</span>
+                            <strong>{{ __('operator_break_glass.ticket.reference', ['id' => \App\Support\ReaderNumber::count($ticket->id)]) }}</strong>
+                            <span class="lede">{!! $valueHtml($ticketStatuses[$ticket->id]) !!}</span>
                         </span>
-                        <span class="management-action">View</span>
+                        <span class="management-action">{{ __('operator_break_glass.conversation.tickets.view') }}</span>
                     </a>
                 @endforeach
             </div>

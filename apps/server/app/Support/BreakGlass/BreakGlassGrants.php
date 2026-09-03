@@ -86,7 +86,11 @@ class BreakGlassGrants
         return DB::transaction(function () use ($grant, $approver): BreakGlassGrant {
             $locked = BreakGlassGrant::query()->whereKey($grant->getKey())->lockForUpdate()->firstOrFail();
 
-            abort_unless($locked->status === BreakGlassGrant::STATUS_REQUESTED, 409, 'This grant is not awaiting approval.');
+            abort_unless(
+                $locked->status === BreakGlassGrant::STATUS_REQUESTED,
+                409,
+                __('operator_break_glass.errors.not_awaiting_approval'),
+            );
 
             $selfApproval = (int) $approver->id === (int) $locked->requester_id;
 
@@ -100,13 +104,13 @@ class BreakGlassGrants
                         && ! $approver->isDeactivated()
                         && $approver->isAdmin(),
                     403,
-                    'Self-approval requires owner or admin standing on the target account.',
+                    __('operator_break_glass.errors.self_approval_requires_standing'),
                 );
 
                 abort_if(
                     $this->eligibleApprovers($locked)->isNotEmpty(),
                     403,
-                    'This account has an owner or admin, so they decide. Your request is waiting with them.',
+                    __('operator_break_glass.errors.account_decides'),
                 );
             } else {
                 abort_unless($this->isEligibleApprover($locked, $approver), 403);
@@ -133,7 +137,11 @@ class BreakGlassGrants
         return DB::transaction(function () use ($grant, $approver): BreakGlassGrant {
             $locked = BreakGlassGrant::query()->whereKey($grant->getKey())->lockForUpdate()->firstOrFail();
 
-            abort_unless($locked->status === BreakGlassGrant::STATUS_REQUESTED, 409, 'This grant is not awaiting approval.');
+            abort_unless(
+                $locked->status === BreakGlassGrant::STATUS_REQUESTED,
+                409,
+                __('operator_break_glass.errors.not_awaiting_approval'),
+            );
             abort_unless($this->isEligibleApprover($locked, $approver), 403);
 
             $locked->forceFill([
@@ -158,7 +166,11 @@ class BreakGlassGrants
         return DB::transaction(function () use ($grant, $actor): BreakGlassGrant {
             $locked = BreakGlassGrant::query()->whereKey($grant->getKey())->lockForUpdate()->firstOrFail();
 
-            abort_unless($locked->status === BreakGlassGrant::STATUS_ACTIVE, 409, 'Only an active grant can be closed.');
+            abort_unless(
+                $locked->status === BreakGlassGrant::STATUS_ACTIVE,
+                409,
+                __('operator_break_glass.errors.only_active_can_close'),
+            );
             abort_unless(
                 (int) $actor->id === (int) $locked->requester_id || $this->isEligibleApprover($locked, $actor),
                 403,

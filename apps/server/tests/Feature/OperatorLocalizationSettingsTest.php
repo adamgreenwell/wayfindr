@@ -310,7 +310,7 @@ test('localization validation and completion answer in the operator language', f
     ],
 ]);
 
-test('operator pages outside the extracted slice remain wholly English', function (): void {
+test('the operator break-glass page follows the operator language', function (): void {
     $operator = User::factory()->for(Account::factory())->create([
         'platform_role' => 'operator',
         'locale' => 'de',
@@ -319,11 +319,11 @@ test('operator pages outside the extracted slice remain wholly English', functio
     $this->actingAs($operator)
         ->get(route('operator.break-glass.index'))
         ->assertOk()
-        ->assertSee('<html lang="en">', false)
-        ->assertSee('aria-label="Operator sections"', false)
-        ->assertSee('Setup checklist')
-        ->assertDontSee('Betreiberbereiche')
-        ->assertDontSee('Einrichtungscheckliste');
+        ->assertSee('<html lang="de">', false)
+        ->assertSee('aria-label="Betreiberbereiche"', false)
+        ->assertSee('Einrichtungscheckliste')
+        ->assertSee('Zugriff anfordern')
+        ->assertDontSee('Request access');
 });
 
 test('nobody but a platform operator can read or change it', function (): void {

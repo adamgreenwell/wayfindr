@@ -80,7 +80,7 @@ return [
      * spells them.
      */
     'attributes' => [
-        // Twenty-two entries, and the four missing ones are deliberate.
+        // The four missing ticket fields are deliberate.
         // `subject`, `description`, `category` and `priority` are validated by
         // the ticket store/update path, whose route is NOT in
         // `EXTRACTED_ROUTES` -- so no locale is scoped there, the page renders
@@ -103,6 +103,11 @@ return [
         'pending_note' => 'Nota di attesa',
         'post_to_external' => 'Pubblicazione nel problema collegato',
         'reason' => 'Motivo',
+        'scope_type' => 'Ambito dell’accesso',
+        'account_id' => 'Account',
+        'site_id' => 'Sito',
+        'support_code' => 'Codice di supporto',
+        'requested_minutes' => 'Durata dell’accesso',
         'reopen_note' => 'Nota di riapertura',
         'reply_template' => 'Assistente di risposta',
         'target_agent_id' => 'Destinatario dell\'escalation',

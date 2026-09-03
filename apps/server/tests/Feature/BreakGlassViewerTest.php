@@ -143,12 +143,15 @@ test('another operator cannot use someone else\'s grant', function (): void {
 
 test('an overdue or closed grant opens nothing, live', function (): void {
     $w = breakGlassViewerWorld();
+    $w['operator']->forceFill(['locale' => 'de'])->save();
 
     $w['grant']->forceFill(['expires_at' => now()->subMinute()])->save();
 
-    $this->actingAs($w['operator'])
+    $this->actingAs($w['operator']->fresh())
         ->get(route('operator.break-glass.show', $w['grant']))
-        ->assertForbidden();
+        ->assertForbidden()
+        ->assertSee('Diese Zugriffsfreigabe ist nicht aktiv.')
+        ->assertDontSee('This grant is not active.');
 
     $w['grant']->forceFill(['status' => BreakGlassGrant::STATUS_CLOSED, 'expires_at' => now()->addHour()])->save();
 
@@ -364,4 +367,115 @@ test('a non-operator cannot reach any viewer route', function (): void {
     $this->actingAs($admin)
         ->get(route('operator.break-glass.show', $w['grant']))
         ->assertForbidden();
+});
+
+test('the read-only operator viewers localize product copy and mark customer content language neutral', function (): void {
+    $w = breakGlassViewerWorld();
+    $w['account']->forceFill(['name' => 'Datenpunkt Konto'])->save();
+    $w['site']->forceFill(['name' => 'Datenpunkt Portal'])->save();
+    $w['operator']->forceFill(['locale' => 'de', 'timezone' => 'Europe/Berlin'])->save();
+
+    $agent = User::factory()->for($w['account'])->create(['name' => 'Ada Datenpunkt']);
+    $message = ConversationMessage::factory()->for($w['conversation'])->create([
+        'sender_type' => User::class,
+        'sender_id' => $agent->id,
+        'body' => 'Datenpunkt agent reply',
+    ]);
+    ConversationMessageAttachment::factory()->create([
+        'conversation_message_id' => $message->id,
+        'conversation_id' => $w['conversation']->id,
+        'account_id' => $w['account']->id,
+        'site_id' => $w['site']->id,
+        'original_filename' => 'datenpunkt-report.txt',
+        'mime_type' => 'text/datenpunkt',
+        'scan_status' => 'datenpunkt-clean',
+    ]);
+    $ticket = Ticket::factory()
+        ->for($w['account'])
+        ->for($w['site'])
+        ->for($w['conversation'])
+        ->create([
+            'subject' => 'Datenpunkt ticket subject',
+            'description' => 'Datenpunkt ticket description',
+            'status' => 'pending',
+            'priority' => 'high',
+            'category' => 'bug',
+        ]);
+
+    $operator = $w['operator']->fresh();
+    $overview = $this->actingAs($operator)
+        ->get(route('operator.break-glass.show', $w['grant']))
+        ->assertOk()
+        ->assertSee('<html lang="de">', false)
+        ->assertSee('Nur lesender Zugriff bis')
+        ->assertSee('Unterhaltungen')
+        ->assertSee('Protokoll anzeigen')
+        ->assertSeeInOrder(['Tickets', 'Wartend', 'geöffnet'])
+        ->assertDontSee('Read-only access until')
+        ->assertDontSee('View transcript');
+
+    $conversation = $this->actingAs($operator)
+        ->get(route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]))
+        ->assertOk()
+        ->assertSee('Nur lesendes Protokoll')
+        ->assertSee('Besucher')
+        ->assertSeeInOrder(['Ada Datenpunkt', '(Agent)'])
+        ->assertSee('Anhang:')
+        ->assertSee('der Betreiberzugriff öffnet niemals eine Datei.')
+        ->assertSee('Tickets aus dieser Unterhaltung')
+        ->assertDontSee('Read-only transcript')
+        ->assertDontSee('names and sizes only');
+
+    foreach ([$overview, $conversation] as $response) {
+        $document = new DOMDocument;
+        $document->loadHTML((string) $response->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+        $xpath = new DOMXPath($document);
+
+        expect($xpath->query('//*[@lang="" and contains(normalize-space(.), "Datenpunkt")]')?->length)
+            ->toBeGreaterThan(0, 'customer content is not marked as language neutral');
+    }
+
+    $w['operator']->forceFill(['locale' => 'it', 'timezone' => 'Europe/Rome'])->save();
+
+    $ticketPage = $this->actingAs($w['operator']->fresh())
+        ->get(route('operator.break-glass.tickets.show', [$w['grant'], $ticket]))
+        ->assertOk()
+        ->assertSee('<html lang="it">', false)
+        ->assertSee('Scheda del ticket')
+        ->assertSee('Sola lettura')
+        ->assertSee('In sospeso')
+        ->assertSee('Alto')
+        ->assertSee('Bug')
+        ->assertSee('Datenpunkt ticket subject')
+        ->assertSee('Datenpunkt ticket description')
+        ->assertDontSee('Ticket record')
+        ->assertDontSee('Read-only');
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $ticketPage->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    foreach (['Datenpunkt ticket subject', 'Datenpunkt ticket description', 'Datenpunkt Portal'] as $value) {
+        expect($xpath->query('//*[@lang="" and normalize-space(.)="'.$value.'"]')?->length)
+            ->toBeGreaterThan(0, "{$value} is not marked as language-neutral customer content");
+    }
+
+    $ticket->forceFill([
+        'status' => 'datenpunkt-future-status',
+        'priority' => 'datenpunkt-future-priority',
+        'category' => 'datenpunkt-future-category',
+    ])->save();
+
+    $unknownValues = $this->actingAs($w['operator']->fresh())
+        ->get(route('operator.break-glass.tickets.show', [$w['grant'], $ticket]))
+        ->assertOk()
+        ->getContent();
+    $document = new DOMDocument;
+    $document->loadHTML((string) $unknownValues, LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    foreach (['datenpunkt-future-status', 'datenpunkt-future-priority', 'datenpunkt-future-category'] as $value) {
+        expect($xpath->query('//span[@lang="" and normalize-space(.)="'.$value.'"]')?->length)
+            ->toBeGreaterThan(0, "{$value} is not marked as language-neutral unknown data");
+    }
 });

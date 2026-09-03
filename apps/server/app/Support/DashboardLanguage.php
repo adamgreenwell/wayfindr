@@ -76,11 +76,21 @@ final class DashboardLanguage
      */
     public const EXTRACTED_ROUTES = [
         // The operator-console rollout now covers the dashboard, onboarding,
-        // and settings surfaces listed here. The shared shell uses the same
-        // catalogue but stays English on every operator route not yet listed,
+        // break-glass, and settings surfaces listed here. The shared shell uses
+        // the same catalogue but stays English on every route not yet listed,
         // preserving the one-language-per-document boundary during rollout.
         'operator.dashboard',
         'operator.onboarding',
+        // The platform side of break-glass: one request page, three read-only
+        // viewers, and the writes whose validation or lifecycle result renders
+        // back onto the request page.
+        'operator.break-glass.index',
+        'operator.break-glass.store',
+        'operator.break-glass.approve',
+        'operator.break-glass.close',
+        'operator.break-glass.show',
+        'operator.break-glass.conversations.show',
+        'operator.break-glass.tickets.show',
         'operator.settings.localization.edit',
         'operator.settings.localization.update',
         'operator.settings.scanning.edit',
