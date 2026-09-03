@@ -191,6 +191,13 @@ The command prints the mailer, SMTP host, sender, and recipient without
 printing SMTP credentials. If the provider is still sandboxed, send to a
 verified recipient until the sending domain is approved for normal delivery.
 
+Outbound webhooks use the same default queue worker and one-minute scheduler.
+The application host also needs direct HTTPS egress to each subscriber. Wayfindr
+does not follow redirects or use an environment proxy for these requests, and a
+destination that resolves to any private or reserved address is refused. The
+account delivery log is the smoke-test surface: it shows the thin payload,
+attempt count, latest bounded response, retry state, and terminal failures.
+
 Generate the app key from the Laravel application directory:
 
 ```bash

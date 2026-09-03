@@ -25,7 +25,7 @@ The product has moved past a spine. It now includes:
   and an agent-selectable dashboard language in English, German and Italian on
   the surfaces extracted so far: the profile pages, conversation queue and
   detail, ticket queue, live-visitors board, visitor directory and profile,
-  reply templates, ticket labels, articles, and API tokens.
+  reply templates, ticket labels, articles, API tokens, and outbound webhooks.
 
   **Much of the rest is still English**: the home page, Alerts, Reports, site
   settings, ticket detail, the account overview, Integrations, Operator access,
