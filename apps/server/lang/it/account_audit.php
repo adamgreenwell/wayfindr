@@ -52,6 +52,7 @@ return [
     'references' => [
         'visitor' => 'Visitatore',
         'system' => 'Sistema',
+        'integration' => 'Integrazione',
         'operator_access' => 'Accesso del gestore:',
         'operator_access_conversation' => 'Accesso del gestore: Conversazione',
         'operator_access_conversation_deleted' => 'Accesso del gestore: Conversazione eliminata',

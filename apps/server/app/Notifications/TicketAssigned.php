@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Models\ApiToken;
 use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -15,7 +16,7 @@ class TicketAssigned extends Notification implements ShouldQueue
 
     public function __construct(
         private readonly Ticket $ticket,
-        private readonly User $assignedBy,
+        private readonly User|ApiToken $assignedBy,
     ) {
         $this->ticket->loadMissing(['site']);
     }
@@ -51,7 +52,7 @@ class TicketAssigned extends Notification implements ShouldQueue
     {
         return (new MailMessage)
             ->subject('Wayfindr ticket assigned: '.$this->ticket->subject)
-            ->line($this->assignedBy->name.' assigned you a ticket on '.$this->ticket->site->name.'.')
+            ->line($this->assignmentActorName().' assigned you a ticket on '.$this->ticket->site->name.'.')
             ->line('Ticket: #'.$this->ticket->id)
             ->line('Priority: '.ucfirst($this->ticket->priority))
             ->action('Open ticket', route('dashboard.tickets.show', $this->ticket));
@@ -70,8 +71,15 @@ class TicketAssigned extends Notification implements ShouldQueue
             'subject' => $this->ticket->subject,
             'priority' => $this->ticket->priority,
             'site_name' => $this->ticket->site->name,
-            'assigned_by_name' => $this->assignedBy->name,
+            'assigned_by_name' => $this->assignmentActorName(),
             'url' => route('dashboard.tickets.show', $this->ticket, false),
         ];
+    }
+
+    private function assignmentActorName(): string
+    {
+        return $this->assignedBy instanceof ApiToken
+            ? 'Integration “'.$this->assignedBy->name.'”'
+            : $this->assignedBy->name;
     }
 }

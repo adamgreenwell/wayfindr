@@ -100,6 +100,7 @@ return [
         'senders' => [
             'visitor' => 'Visitatore',
             'agent' => ':name (agente)',
+            'integration' => ':name (integrazione)',
             'system' => 'Sistema',
         ],
         'attachment' => [

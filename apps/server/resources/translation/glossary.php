@@ -90,6 +90,11 @@ return [
             'System',
             'Scanner',
             'Transport',
+            // The standard German product/technical term for a connected
+            // system. `Schnittstelle` would mean the interface itself, not the
+            // credential-backed actor shown in these support records.
+            'Integration',
+            'Integration · :name',
             ':count ms',
             'Status: :value',
             'Label: :value',

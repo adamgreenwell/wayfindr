@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 /**
- * Sends an agent's reply on to a visitor who arrived by email.
+ * Sends a support-side reply on to a visitor who arrived by email.
  *
  * Only for conversations that came in that way. A visitor sitting in the widget
  * is already being told in the widget, and mailing them as well would be the

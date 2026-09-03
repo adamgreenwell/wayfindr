@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Support\Str;
 
 /**
- * A credential that reads an account's support data without a person attached.
+ * A credential that accesses an account's support data without a person attached.
  *
  * Hand-rolled rather than Sanctum, per ADR 0018: what is written here is a
  * hashed lookup and an expiry check, not cryptography. Password hashing,
@@ -30,8 +30,11 @@ class ApiToken extends Model
     /** Reads the whole read surface. Deny-by-default: nothing else is implied. */
     public const ABILITY_READ = 'read';
 
+    /** Changes the deliberately narrow write surface. Never implied by read. */
+    public const ABILITY_WRITE = 'write';
+
     /** @var list<string> */
-    public const ABILITIES = [self::ABILITY_READ];
+    public const ABILITIES = [self::ABILITY_READ, self::ABILITY_WRITE];
 
     /**
      * Recognisable at a glance and to a secret scanner. A credential that

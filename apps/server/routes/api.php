@@ -124,26 +124,38 @@ Route::post('/integrations/jira/webhook/{connection}', JiraWebhookController::cl
 | posting inbound -- internal surfaces that happen to be reachable over HTTP,
 | and deliberately NOT frozen by this version.
 |
-| Read-only for now. Writes and outbound webhooks follow separately, and stay
-| narrower than the dashboard.
+| Reads and the deliberately narrow write surface are public. Outbound
+| webhooks follow separately.
 |
 */
 Route::prefix('v1')
     // The per-token limit only. Failed authentication is bounded inside the
-    // middleware, because middleware priority sorts this one ahead of any
-    // throttle placed before it.
-    ->middleware([AuthenticateApiToken::class.':'.ApiToken::ABILITY_READ, 'throttle:api-token'])
+    // authentication middleware, because middleware priority sorts it ahead
+    // of any throttle placed before it.
+    ->middleware('throttle:api-token')
     ->name('api.v1.')
     ->group(function (): void {
-        Route::get('/me', ApiTokenController::class)->name('me');
+        Route::middleware(AuthenticateApiToken::class.':'.ApiToken::ABILITY_READ)
+            ->group(function (): void {
+                Route::get('/me', ApiTokenController::class)->name('me');
 
-        Route::get('/conversations', [ApiConversationController::class, 'index'])->name('conversations.index');
-        Route::get('/conversations/{supportCode}', [ApiConversationController::class, 'show'])->name('conversations.show');
-        Route::get('/conversations/{supportCode}/messages', [ApiConversationController::class, 'messages'])->name('conversations.messages');
+                Route::get('/conversations', [ApiConversationController::class, 'index'])->name('conversations.index');
+                Route::get('/conversations/{supportCode}', [ApiConversationController::class, 'show'])->name('conversations.show');
+                Route::get('/conversations/{supportCode}/messages', [ApiConversationController::class, 'messages'])->name('conversations.messages');
 
-        Route::get('/tickets', [ApiTicketController::class, 'index'])->name('tickets.index');
-        Route::get('/tickets/{ticket}', [ApiTicketController::class, 'show'])->whereNumber('ticket')->name('tickets.show');
+                Route::get('/tickets', [ApiTicketController::class, 'index'])->name('tickets.index');
+                Route::get('/tickets/{ticket}', [ApiTicketController::class, 'show'])->whereNumber('ticket')->name('tickets.show');
 
-        Route::get('/visitors', [ApiVisitorController::class, 'index'])->name('visitors.index');
-        Route::get('/visitors/{visitor}', [ApiVisitorController::class, 'show'])->whereNumber('visitor')->name('visitors.show');
+                Route::get('/visitors', [ApiVisitorController::class, 'index'])->name('visitors.index');
+                Route::get('/visitors/{visitor}', [ApiVisitorController::class, 'show'])->whereNumber('visitor')->name('visitors.show');
+            });
+
+        Route::middleware(AuthenticateApiToken::class.':'.ApiToken::ABILITY_WRITE)
+            ->group(function (): void {
+                Route::post('/conversations', [ApiConversationController::class, 'store'])->name('conversations.store');
+                Route::post('/conversations/{supportCode}/messages', [ApiConversationController::class, 'storeMessage'])->name('conversations.messages.store');
+
+                Route::post('/tickets', [ApiTicketController::class, 'store'])->name('tickets.store');
+                Route::patch('/tickets/{ticket}', [ApiTicketController::class, 'update'])->whereNumber('ticket')->name('tickets.update');
+            });
     });

@@ -84,6 +84,24 @@ test('a token issued with no abilities can authenticate and read nothing', funct
     $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->assertStatus(403);
 });
 
+test('an admin grants write independently from read', function (): void {
+    $w = tokenAdmin();
+
+    $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('Open conversations, post messages, and create or transition tickets');
+
+    $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Write-only bridge',
+            'abilities' => ['write'],
+        ])
+        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+
+    expect(ApiToken::query()->sole()->abilities)->toBe(['write']);
+});
+
 test('a site restriction cannot name a site the issuing agent cannot see', function (): void {
     // Otherwise restricting a token becomes a way to reach a site the agent is
     // not assigned to.

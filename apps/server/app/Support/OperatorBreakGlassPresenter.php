@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Models\ApiToken;
 use App\Models\BreakGlassGrant;
 use App\Models\User;
 use App\Models\Visitor;
@@ -129,6 +130,7 @@ final class OperatorBreakGlassPresenter
         return match (true) {
             $sender instanceof Visitor => ['key' => 'visitor', 'name' => null],
             $sender instanceof User => ['key' => 'agent', 'name' => $sender->name],
+            $sender instanceof ApiToken => ['key' => 'integration', 'name' => $sender->name],
             default => ['key' => 'system', 'name' => null],
         };
     }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
+use App\Models\ApiToken;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -1050,9 +1051,11 @@ class AgentConversationController extends Controller
                     return null;
                 }
 
-                $senderName = $message->sender_type === User::class
-                    ? ($message->sender?->name ?? 'Agent')
-                    : __('conversations.detail.visitor_actor', [], DashboardLanguage::forStoredContent());
+                $senderName = match ($message->sender_type) {
+                    User::class => $message->sender?->name ?? 'Agent',
+                    ApiToken::class => 'Integration “'.($message->sender?->name ?? 'API').'”',
+                    default => __('conversations.detail.visitor_actor', [], DashboardLanguage::forStoredContent()),
+                };
 
                 return $senderName.': '.$body;
             })

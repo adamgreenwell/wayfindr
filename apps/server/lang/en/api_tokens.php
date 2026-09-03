@@ -48,7 +48,7 @@ return [
         'heading' => 'Copy this now',
         'once' => 'Shown once',
         'hashed' => 'This is the only time this token is shown. Wayfindr stores a hash of it, not the token itself, so it cannot be recovered — if you lose it, revoke it and issue another.',
-        'send_as' => 'Send it as :header. Treat it like a password: anyone holding it can read this account’s conversations and tickets.',
+        'send_as' => 'Send it as :header. Treat it like a password: anyone holding it can use every ability you grant below.',
     ],
 
     'list' => [
@@ -82,6 +82,7 @@ return [
 
     'abilities' => [
         'read' => 'Read',
+        'write' => 'Write',
     ],
 
     'last_used' => [
@@ -97,13 +98,14 @@ return [
 
     'create' => [
         'heading' => 'Issue a token',
-        'read_only' => 'Read-only for now',
+        'read_only' => 'Read and write are separate',
         'name_label' => 'What is it for',
         'name_placeholder' => 'Reporting sync',
         'name_help' => 'Written for whoever finds this row in a year and has to decide whether it is still needed.',
         'abilities_label' => 'What it may do',
         'ability_read' => 'Read conversations, messages, tickets and visitors',
-        'abilities_help' => 'Writing is not offered yet. When it is, it will be a separate ability rather than implied by this one.',
+        'ability_write' => 'Open conversations, post messages, and create or transition tickets',
+        'abilities_help' => 'Each ability stands alone. Write does not grant read, and read never grants write.',
         'expires_label' => 'Expires after',
         'expires_help' => 'Days. Left empty the token never expires, which means it stops being anybody’s job to notice it.',
         'sites_label' => 'Restrict to sites',
@@ -115,6 +117,6 @@ return [
         'submit' => 'Issue token',
     ],
 
-    'accountability' => 'A token has no person behind it, so a read made with one cannot answer :who read it the way a dashboard read can. That is why a token is limited by what it can reach rather than by who is holding it — and why an operator access grant never widens one.',
+    'accountability' => 'A token has no person behind it, so a read made with one cannot answer :who read it the way a dashboard read can. Writes are attributed to the token, never to the person who issued it. That is why a token is limited by what it can reach — and why an operator access grant never widens one.',
     'accountability_who' => 'who',
 ];

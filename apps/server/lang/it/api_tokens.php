@@ -47,7 +47,7 @@ return [
         'heading' => 'Lo copi ora',
         'once' => 'Mostrato una sola volta',
         'hashed' => 'Questa è l’unica volta in cui questo token viene mostrato. Wayfindr ne memorizza un hash, non il token stesso, quindi non può essere recuperato — se lo perde, lo revochi e ne emetta un altro.',
-        'send_as' => 'Lo invii come :header. Lo tratti come una password: chiunque lo possieda può leggere le conversazioni e i ticket di questo account.',
+        'send_as' => 'Lo invii come :header. Lo tratti come una password: chiunque lo possieda può usare ogni autorizzazione concessa qui sotto.',
     ],
 
     'list' => [
@@ -75,6 +75,7 @@ return [
 
     'abilities' => [
         'read' => 'Lettura',
+        'write' => 'Scrittura',
     ],
 
     'last_used' => [
@@ -90,13 +91,14 @@ return [
 
     'create' => [
         'heading' => 'Emetti un token',
-        'read_only' => 'Per ora solo lettura',
+        'read_only' => 'Lettura e scrittura sono separate',
         'name_label' => 'A cosa serve',
         'name_placeholder' => 'Sincronizzazione report',
         'name_help' => 'Scritto per chi troverà questa riga fra un anno e dovrà decidere se serve ancora.',
         'abilities_label' => 'Cosa può fare',
         'ability_read' => 'Leggere conversazioni, messaggi, ticket e visitatori',
-        'abilities_help' => 'La scrittura non è ancora offerta. Quando lo sarà, sarà un’autorizzazione separata e non implicita in questa.',
+        'ability_write' => 'Aprire conversazioni, inviare messaggi e creare o modificare lo stato dei ticket',
+        'abilities_help' => 'Ogni autorizzazione è indipendente. La scrittura non concede la lettura e la lettura non concede mai la scrittura.',
         'expires_label' => 'Scade dopo',
         'expires_help' => 'Giorni. Se lasciato vuoto il token non scade mai, il che significa che non è più compito di nessuno accorgersene.',
         'sites_label' => 'Limita ai siti',
@@ -105,6 +107,6 @@ return [
         'submit' => 'Emetti token',
     ],
 
-    'accountability' => 'Dietro un token non c’è una persona, quindi una lettura effettuata con esso non può rispondere a :who ha letto, come invece può fare una lettura dalla dashboard. Per questo un token è limitato da ciò che può raggiungere anziché da chi lo detiene — e per questo una concessione di accesso del gestore non lo amplia mai.',
+    'accountability' => 'Dietro un token non c’è una persona, quindi una lettura effettuata con esso non può rispondere a :who ha letto, come invece può fare una lettura dalla dashboard. Le scritture sono attribuite al token, mai alla persona che lo ha emesso. Per questo un token è limitato da ciò che può raggiungere — e per questo una concessione di accesso del gestore non lo amplia mai.',
     'accountability_who' => 'chi',
 ];

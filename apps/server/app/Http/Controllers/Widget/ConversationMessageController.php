@@ -6,6 +6,7 @@ use App\Events\ConversationMessageCreated;
 use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationReadReceiptUpdated;
 use App\Http\Controllers\Controller;
+use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\User;
@@ -46,7 +47,7 @@ class ConversationMessageController extends Controller
         }
 
         $messages = $conversation->messages()
-            ->with(['sender', 'attachments'])
+            ->with(['sender', 'attachments', 'conversation.site'])
             ->orderBy('created_at')
             ->orderBy('id')
             ->get()
@@ -314,6 +315,13 @@ class ConversationMessageController extends Controller
             return [
                 'kind' => 'agent',
                 'name' => $message->sender?->name ?? 'Agent',
+            ];
+        }
+
+        if ($message->sender_type === ApiToken::class) {
+            return [
+                'kind' => 'agent',
+                'name' => $message->conversation?->site?->name ?? 'Support',
             ];
         }
 

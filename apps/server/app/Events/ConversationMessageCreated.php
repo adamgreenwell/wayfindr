@@ -3,6 +3,7 @@
 namespace App\Events;
 
 use App\Events\Concerns\NotBroadcastForArchivedSites;
+use App\Models\ApiToken;
 use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
@@ -76,6 +77,16 @@ class ConversationMessageCreated implements ShouldBroadcastNow
             return [
                 'kind' => 'agent',
                 'name' => $this->message->sender?->name ?? 'Agent',
+            ];
+        }
+
+        if ($this->message->sender_type === ApiToken::class) {
+            return [
+                // Support-side to the visitor, but deliberately not called an
+                // agent in storage or reporting. The site's own name is safe
+                // visitor-facing copy; an internal token name is not.
+                'kind' => 'agent',
+                'name' => $this->message->conversation?->site?->name ?? 'Support',
             ];
         }
 

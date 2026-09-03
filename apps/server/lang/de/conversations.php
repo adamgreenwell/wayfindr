@@ -180,6 +180,7 @@ return [
 
         'roles' => [
             'agent' => 'Agent',
+            'integration' => 'Integration',
             'visitor' => 'Besucher',
         ],
 

@@ -191,6 +191,10 @@
                         <input type="checkbox" id="api_token_read" name="abilities[]" value="read" checked>
                         {{ __('api_tokens.create.ability_read') }}
                     </label>
+                    <label for="api_token_write">
+                        <input type="checkbox" id="api_token_write" name="abilities[]" value="write">
+                        {{ __('api_tokens.create.ability_write') }}
+                    </label>
                     <p class="field-help">{{ __('api_tokens.create.abilities_help') }}</p>
                 </div>
 
