@@ -41,8 +41,9 @@ Every discovery, token, key, and user-info request uses Wayfindr's guarded HTTP
 client. HTTPS is required. Literal and DNS-resolved loopback, private,
 link-local, multicast, documentation, reserved, and otherwise non-public
 addresses are refused for every outbound request, including endpoints learned
-from discovery and redirects. Redirects are handled one hop at a time and
-revalidated. Self-hosters who need a private identity provider must expose a
+from discovery. Server-side redirects are refused rather than followed; the
+browser authorization destination is validated separately. Self-hosters who
+need a private identity provider must expose a
 publicly resolvable HTTPS endpoint; there is no account-controlled bypass.
 
 ### Federation identifies; it does not provision or authorize

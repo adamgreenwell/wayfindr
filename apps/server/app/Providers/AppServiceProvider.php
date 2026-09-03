@@ -14,6 +14,8 @@ use App\Policies\AlertPolicy;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
+use App\Support\Auth\Oidc\OidcClient;
+use App\Support\Auth\Oidc\SocialiteOidcClient;
 use App\Support\Backup\DatabaseDumper;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\PostgresDatabaseDumper;
@@ -52,6 +54,7 @@ class AppServiceProvider extends ServiceProvider
         // fakes so archive assembly and restore logic run without a live server.
         $this->app->bind(DatabaseDumper::class, PostgresDatabaseDumper::class);
         $this->app->bind(DatabaseRestorer::class, PostgresDatabaseRestorer::class);
+        $this->app->bind(OidcClient::class, SocialiteOidcClient::class);
 
         // Select the attachment malware scanner from config. An unset/null
         // driver is accept-with-defense-in-depth; 'clamav' scans every upload
@@ -128,6 +131,19 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(5)->by('two-factor-confirmation-user:'.(string) $request->user()?->getAuthIdentifier()),
             Limit::perMinute(15)->by('two-factor-confirmation-ip:'.$request->ip()),
         ]);
+
+        RateLimiter::for('oidc-redirect', fn (Request $request): array => [
+            Limit::perMinute(10)->by('oidc-redirect-ip:'.$request->ip()),
+            Limit::perMinutes(15, 20)->by(
+                'oidc-redirect-account-source:'
+                .Str::lower((string) $request->input('account_slug'))
+                .'|'.$request->ip()
+            ),
+        ]);
+
+        RateLimiter::for('oidc-callback', fn (Request $request): Limit => Limit::perMinute(20)->by(
+            'oidc-callback-ip:'.$request->ip()
+        ));
 
         RateLimiter::for(
             'widget-bootstrap',
