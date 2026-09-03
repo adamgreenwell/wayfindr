@@ -34,13 +34,18 @@ final class AgentAccountOidcConnectionController extends Controller
 
         $issuerUrl = trim($validated['issuer_url']);
         $issuerParts = parse_url($issuerUrl);
+        $isEnabled = (bool) ($validated['is_enabled'] ?? false);
 
         try {
             if (! is_array($issuerParts) || isset($issuerParts['query'])) {
                 throw new InvalidArgumentException('OIDC issuers cannot contain a query.');
             }
 
-            $httpClients->assertAllowed($issuerUrl);
+            $httpClients->assertValidHttpsUrl($issuerUrl);
+
+            if ($isEnabled) {
+                $httpClients->assertAllowed($issuerUrl);
+            }
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages([
                 'issuer_url' => __('oidc.settings.public_https_required'),
@@ -49,7 +54,7 @@ final class AgentAccountOidcConnectionController extends Controller
 
         $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
 
-        DB::transaction(function () use ($agent, $validated, $issuerUrl, $credentialFingerprint): void {
+        DB::transaction(function () use ($agent, $validated, $issuerUrl, $isEnabled, $credentialFingerprint): void {
             $lockedAgent = User::query()->lockForUpdate()->findOrFail($agent->id);
 
             abort_unless(
@@ -81,7 +86,7 @@ final class AgentAccountOidcConnectionController extends Controller
                 'name' => trim($validated['name']),
                 'issuer_url' => $issuerUrl,
                 'client_id' => trim($validated['client_id']),
-                'is_enabled' => (bool) ($validated['is_enabled'] ?? false),
+                'is_enabled' => $isEnabled,
             ];
             $identityLinksCleared = 0;
 

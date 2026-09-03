@@ -56,4 +56,9 @@ final readonly class OidcHttpClientFactory
     {
         $this->destination->inspect($url);
     }
+
+    public function assertValidHttpsUrl(string $url): void
+    {
+        $this->destination->assertValidHttpsUrl($url);
+    }
 }

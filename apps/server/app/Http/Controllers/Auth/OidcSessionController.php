@@ -213,7 +213,7 @@ final class OidcSessionController extends Controller
                 }
 
                 if (! $wasLinked) {
-                    $this->audit($user, $identity, 'agent.oidc_identity_linked');
+                    $this->audit($user, $identity, $lockedConnection, 'agent.oidc_identity_linked');
                 }
 
                 return ['user' => $user, 'identity' => $identity];
@@ -244,7 +244,7 @@ final class OidcSessionController extends Controller
         return $matches->count() === 1 ? $matches->first() : null;
     }
 
-    private function audit(User $user, OidcIdentity $identity, string $action): void
+    private function audit(User $user, OidcIdentity $identity, OidcConnection $connection, string $action): void
     {
         AuditEvent::query()->create([
             'account_id' => $user->account_id,
@@ -253,7 +253,7 @@ final class OidcSessionController extends Controller
             'subject_type' => $identity->getMorphClass(),
             'subject_id' => $identity->id,
             'action' => $action,
-            'metadata' => [],
+            'metadata' => ['oidc_provider_name' => $connection->name],
             'occurred_at' => now(),
         ]);
     }

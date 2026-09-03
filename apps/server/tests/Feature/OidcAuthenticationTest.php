@@ -221,6 +221,36 @@ test('OIDC settings require account administration and a public HTTPS issuer', f
     expect(OidcConnection::query()->count())->toBe(0);
 });
 
+test('an unreachable OIDC provider can be disabled but not enabled', function (): void {
+    $world = oidcWorld();
+    app()->instance(
+        OutboundWebhookDestination::class,
+        new OutboundWebhookDestination(fn (): array => []),
+    );
+
+    $settings = [
+        'name' => $world['connection']->name,
+        'issuer_url' => $world['connection']->issuer_url,
+        'client_id' => $world['connection']->client_id,
+        'client_secret' => '',
+    ];
+
+    $this->actingAs($world['admin'])
+        ->put(route('dashboard.account.security.oidc.update'), $settings)
+        ->assertRedirect(route('dashboard.account.security.show'))
+        ->assertSessionHasNoErrors();
+
+    expect($world['connection']->fresh()->is_enabled)->toBeFalse();
+
+    $this->actingAs($world['admin'])
+        ->from(route('dashboard.account.security.show'))
+        ->put(route('dashboard.account.security.oidc.update'), [...$settings, 'is_enabled' => '1'])
+        ->assertRedirect(route('dashboard.account.security.show'))
+        ->assertSessionHasErrors('issuer_url');
+
+    expect($world['connection']->fresh()->is_enabled)->toBeFalse();
+});
+
 test('the OIDC HTTP client rejects private endpoints and pins every public request', function (): void {
     $blocked = new OidcHttpClientFactory(new OutboundWebhookDestination(fn (): array => ['10.0.0.5']));
     expect(fn () => $blocked->assertAllowed('https://id.example.com'))->toThrow(InvalidArgumentException::class);
@@ -355,6 +385,7 @@ test('OIDC start keeps protocol state in the session and unknown accounts fail g
 
 test('a verified provider identity links only to an existing same-account user', function (): void {
     $world = oidcWorld();
+    $world['connection']->update(['name' => 'Original SSO']);
     $user = User::factory()->for($world['account'])->create(['email' => 'Agent@Example.com']);
     $other = User::factory()->for(Account::factory())->create(['email' => 'other@example.com']);
     $world['client']->nextUser = new OidcUser('subject-123', 'agent@example.com', true);
@@ -374,6 +405,14 @@ test('a verified provider identity links only to an existing same-account user',
         ->and(OidcIdentity::query()->where('user_id', $other->id)->exists())->toBeFalse()
         ->and(AuditEvent::query()->where('action', 'agent.oidc_identity_linked')->count())->toBe(1)
         ->and(AuditEvent::query()->where('action', 'agent.oidc_signed_in')->count())->toBe(1);
+    expect(AuditEvent::query()
+        ->whereIn('action', ['agent.oidc_identity_linked', 'agent.oidc_signed_in'])
+        ->orderBy('id')
+        ->pluck('metadata')
+        ->all())->toBe([
+            ['oidc_provider_name' => 'Original SSO'],
+            ['oidc_provider_name' => 'Original SSO'],
+        ]);
     expect(session()->has(OidcSessionController::SESSION_KEY))->toBeFalse()
         ->and(session()->has('state'))->toBeFalse()
         ->and(session()->has('code_verifier'))->toBeFalse()
@@ -384,7 +423,30 @@ test('a verified provider identity links only to an existing same-account user',
         ->assertOk()
         ->assertSee('Single sign-on identity linked')
         ->assertSee('Signed in with single sign-on')
-        ->assertSee('Single sign-on identity');
+        ->assertSee('Single sign-on identity')
+        ->assertSee('Original SSO');
+
+    $this->actingAs($world['admin'])->put(route('dashboard.account.security.oidc.update'), [
+        'name' => 'Replacement SSO',
+        'issuer_url' => 'https://replacement.example.com',
+        'client_id' => $world['connection']->client_id,
+        'client_secret' => '',
+    ])->assertRedirect(route('dashboard.account.security.show'));
+
+    expect(OidcIdentity::query()->count())->toBe(0);
+
+    $this->actingAs($world['admin'])
+        ->get(route('dashboard.account.audit.index', ['audit_search' => 'Original SSO']))
+        ->assertOk()
+        ->assertSee('2 shown')
+        ->assertSee('Original SSO')
+        ->assertDontSee('Replacement SSO');
+
+    $csv = $this->actingAs($world['admin'])
+        ->get(route('dashboard.account.audit.export', ['audit_search' => 'Original SSO']))
+        ->streamedContent();
+
+    expect(substr_count($csv, 'Single sign-on identity (Original SSO)'))->toBe(2);
 });
 
 test('a linked subject remains authoritative when its provider email changes', function (): void {

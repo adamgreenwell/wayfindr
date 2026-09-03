@@ -73,7 +73,7 @@ final class OidcSignInRecorder
                 'subject_type' => $identity->getMorphClass(),
                 'subject_id' => $identity->id,
                 'action' => 'agent.oidc_signed_in',
-                'metadata' => [],
+                'metadata' => ['oidc_provider_name' => $connection->name],
                 'occurred_at' => now(),
             ]);
 

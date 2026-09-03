@@ -289,6 +289,7 @@ class AgentAccountAuditController extends Controller
                             ->whereLike('name', $searchPattern))
                         ->orWhereHasMorph('subject', [OidcIdentity::class], fn (Builder $query) => $query
                             ->whereHas('connection', fn (Builder $query) => $query->whereLike('name', $searchPattern)))
+                        ->orWhereLike('metadata->oidc_provider_name', $searchPattern)
                         ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
                             ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)))
                         // Break-glass subjects surface their reference-safe
@@ -413,12 +414,10 @@ class AgentAccountAuditController extends Controller
             ];
         }
 
-        if ($event->subject instanceof OidcIdentity) {
-            $event->subject->loadMissing('connection');
-
+        if ($this->isOidcIdentitySubject($event)) {
             return [
                 'prefix' => __('account_audit.references.oidc_identity'),
-                'value' => $event->subject->connection?->name,
+                'value' => $this->oidcProviderName($event),
             ];
         }
 
@@ -562,10 +561,10 @@ class AgentAccountAuditController extends Controller
             return 'Single sign-on provider '.$event->subject->name;
         }
 
-        if ($event->subject instanceof OidcIdentity) {
-            $event->subject->loadMissing('connection');
+        if ($this->isOidcIdentitySubject($event)) {
+            $providerName = $this->oidcProviderName($event);
 
-            return 'Single sign-on identity'.($event->subject->connection ? ' ('.$event->subject->connection->name.')' : '');
+            return 'Single sign-on identity'.($providerName !== null ? ' ('.$providerName.')' : '');
         }
 
         if ($event->subject instanceof Conversation) {
@@ -583,6 +582,26 @@ class AgentAccountAuditController extends Controller
         }
 
         return 'Account';
+    }
+
+    private function isOidcIdentitySubject(AuditEvent $event): bool
+    {
+        return $event->subject instanceof OidcIdentity
+            || $event->subject_type === (new OidcIdentity)->getMorphClass();
+    }
+
+    private function oidcProviderName(AuditEvent $event): ?string
+    {
+        if ($event->subject instanceof OidcIdentity) {
+            $event->subject->loadMissing('connection');
+        }
+
+        $name = $event->subject instanceof OidcIdentity
+            ? $event->subject->connection?->name
+            : null;
+        $name ??= data_get($event->metadata, 'oidc_provider_name');
+
+        return is_string($name) && trim($name) !== '' ? $name : null;
     }
 
     private function visitorLabel(Visitor $visitor): string
