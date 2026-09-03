@@ -419,7 +419,16 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
     $operator = User::factory()->for($account)->create([
         'name' => 'Betreiber Datenpunkt',
         'platform_role' => 'operator',
+        'locale' => 'de',
     ]);
+    $operators = [
+        'de' => $operator,
+        'en' => User::factory()->for($account)->create([
+            'name' => 'Operator Datenpunkt',
+            'platform_role' => 'operator',
+            'locale' => 'en',
+        ]),
+    ];
 
     if ($first !== null) {
         BreakGlassGrant::factory()
@@ -459,7 +468,23 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         // screen, and the cognate list has a guard that notices when one of its
         // entries stops appearing.
         'admins' => $admins,
+        'operators' => $operators,
     ];
+}
+
+function conversationQueueLanguageReaderForUrl(array $world, string $url, string $locale): User
+{
+    $path = (string) parse_url($url, PHP_URL_PATH);
+
+    if (str_starts_with($path, '/operator')) {
+        return $world['operators'][$locale];
+    }
+
+    if (str_starts_with($path, '/dashboard/account')) {
+        return $world['admins'][$locale];
+    }
+
+    return $world['agents'][$locale];
 }
 
 /**
@@ -1585,6 +1610,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
+        route('operator.settings.localization.edit'),
         route('dashboard.account.audit.index', [
             'audit_action' => 'site_access.updated',
             'audit_search' => 'Datenpunkt',
@@ -1656,14 +1682,9 @@ test('no English is rendered as German on any extracted surface', function (): v
     }
 
     foreach ($states as $url) {
-        // Account management needs the role, everything else must be checked
-        // WITHOUT it -- an admin sees controls a plain agent does not, and
-        // auditing only the admin view would leave the ordinary one unchecked.
-        $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
-
         $leaks = conversationQueueLanguageEnglishLeaks(
-            (string) $this->actingAs($admin ? $world['admins']['de'] : $agent)->get($url)->assertOk()->getContent(),
-            (string) $this->actingAs($world[$admin ? 'admins' : 'agents']['en'])->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs(conversationQueueLanguageReaderForUrl($world, $url, 'de'))->get($url)->assertOk()->getContent(),
+            (string) $this->actingAs(conversationQueueLanguageReaderForUrl($world, $url, 'en'))->get($url)->assertOk()->getContent(),
         );
 
         expect($leaks)->toBe([], "announced as German but never translated, at {$url}");
@@ -2036,8 +2057,7 @@ test('every extracted page translates its document title', function (): void {
     $conversation = Conversation::query()->firstOrFail();
 
     $titleOf = function (string $url, string $locale) use ($world): string {
-        $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
-        $reader = $world[$admin ? 'admins' : 'agents'][$locale];
+        $reader = conversationQueueLanguageReaderForUrl($world, $url, $locale);
         $html = (string) $this->actingAs($reader)->get($url)->assertOk()->getContent();
 
         preg_match('#<title>(.*?)</title>#is', $html, $found);
@@ -2053,6 +2073,7 @@ test('every extracted page translates its document title', function (): void {
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
+        route('operator.settings.localization.edit'),
     ];
 
     foreach ($urls as $url) {
@@ -3813,13 +3834,13 @@ test('no unreplaced placeholder ever reaches the page', function (): void {
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
+        route('operator.settings.localization.edit'),
     ];
 
     foreach (['de', 'en'] as $locale) {
         foreach ($states as $url) {
-            $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
             $text = conversationQueueLanguageVisibleText(
-                (string) $this->actingAs($world[$admin ? 'admins' : 'agents'][$locale])
+                (string) $this->actingAs(conversationQueueLanguageReaderForUrl($world, $url, $locale))
                     ->get($url)
                     ->assertOk()
                     ->getContent()
@@ -3888,6 +3909,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
         route('dashboard.account.break-glass.index'),
         route('dashboard.account.integrations'),
         route('dashboard.account.show'),
+        route('operator.settings.localization.edit'),
         route('dashboard.account.audit.index', ['audit_search' => 'zzzz']),
     ];
 
@@ -3899,8 +3921,7 @@ test('no raw catalogue key ever reaches the page', function (): void {
 
     foreach (['de', 'en'] as $locale) {
         foreach ($states as $url) {
-            $admin = str_contains((string) parse_url($url, PHP_URL_PATH), '/dashboard/account/');
-            $html = (string) $this->actingAs($world[$admin ? 'admins' : 'agents'][$locale])
+            $html = (string) $this->actingAs(conversationQueueLanguageReaderForUrl($world, $url, $locale))
                 ->get($url)
                 ->assertOk()
                 ->getContent();

@@ -165,10 +165,14 @@ test('the page offers every language and zone, and is reachable from the console
     $this->actingAs($operator)
         ->get(route('operator.settings.localization.edit'))
         ->assertOk()
+        // The application container is shared across test requests, so the
+        // boot-time config override still carries this test's English env
+        // default. The locale-specific render below proves the translated
+        // page; this assertion is about the selected install value.
         ->assertSee('Language and region')
         ->assertSee('value="de" selected', escape: false)
         ->assertSee('value="Europe/Berlin" selected', escape: false)
-        ->assertSee('<optgroup label="Europe">', escape: false);
+        ->assertSee('<optgroup lang="" label="Europe">', escape: false);
 
     // Discoverable, not just addressable: an operator who does not know the URL
     // has to be able to find it.
@@ -176,6 +180,150 @@ test('the page offers every language and zone, and is reachable from the console
         ->get(route('operator.dashboard'))
         ->assertOk()
         ->assertSee(route('operator.settings.localization.edit'), escape: false);
+});
+
+test('the language and region page follows the operator language', function (string $locale, array $copy): void {
+    $account = Account::factory()->create(['name' => 'Datenpunkt Account']);
+    $operator = User::factory()->for($account)->create([
+        'platform_role' => 'operator',
+        'locale' => $locale,
+        'name' => 'Olive Datenpunkt',
+    ]);
+
+    $response = $this->actingAs($operator)->get(route('operator.settings.localization.edit'));
+
+    $response->assertOk()
+        ->assertSee('<html lang="'.$locale.'">', false)
+        ->assertSee($copy['title'])
+        ->assertSee($copy['subtitle'])
+        ->assertSee($copy['defaults'])
+        ->assertSee($copy['language_help'])
+        ->assertSee($copy['timezone_help'])
+        ->assertSee($copy['save'])
+        ->assertSee($copy['sections_label'])
+        ->assertSee($copy['console'])
+        ->assertSee($copy['back_to_console'])
+        ->assertDontSee('What the dashboard reads in for anyone who has not chosen for themselves.')
+        ->assertDontSee('Install defaults')
+        ->assertDontSee('Save language and region');
+
+    $this->actingAs($operator)
+        ->get(route('operator.settings.localization.edit', ['from' => 'onboarding']))
+        ->assertOk()
+        ->assertSee($copy['back_to_setup']);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach (DashboardLanguage::SUPPORTED as $code => $label) {
+        $option = $xpath->query('//select[@id="language"]/option[@value="'.$code.'"]')->item(0);
+
+        expect($option)->toBeInstanceOf(DOMElement::class)
+            ->and($option->getAttribute('lang'))->toBe($code)
+            ->and(trim($option->textContent))->toBe($label);
+    }
+
+    $zone = $xpath->query('//select[@id="timezone"]/optgroup[@label="Europe"]/option[@value="Europe/Berlin"]')->item(0);
+    $region = $xpath->query('//select[@id="timezone"]/optgroup[@label="Europe"]')->item(0);
+    $heading = $xpath->query('//*[@id="localization-config-heading"]')->item(0);
+
+    expect($zone)->toBeInstanceOf(DOMElement::class)
+        ->and($zone->hasAttribute('lang'))->toBeTrue()
+        ->and($zone->getAttribute('lang'))->toBe('')
+        ->and($region)->toBeInstanceOf(DOMElement::class)
+        ->and($region->hasAttribute('lang'))->toBeTrue()
+        ->and($region->getAttribute('lang'))->toBe('')
+        ->and($heading)->toBeInstanceOf(DOMElement::class)
+        ->and($heading->hasAttribute('lang'))->toBeFalse();
+
+    foreach (['Olive Datenpunkt', 'Datenpunkt Account'] as $value) {
+        expect($xpath->query('//*[@lang="" and normalize-space(.)="'.$value.'"]')->length)
+            ->toBeGreaterThan(0, "{$value} is not marked as language-neutral shell data");
+    }
+})->with([
+    'German' => ['de', [
+        'title' => 'Sprache und Region',
+        'subtitle' => 'Die Sprache des Dashboards für alle, die selbst keine ausgewählt haben.',
+        'defaults' => 'Installationsstandards',
+        'language_help' => 'Gilt für das Agenten-Dashboard.',
+        'timezone_help' => 'Uhrzeiten und Berichtstage werden nach der eingestellten Zeitzone angezeigt.',
+        'save' => 'Sprache und Region speichern',
+        'sections_label' => 'Betreiberbereiche',
+        'console' => 'Konsole',
+        'back_to_console' => 'Zurück zur Betreiberkonsole',
+        'back_to_setup' => 'Zurück zur Einrichtungscheckliste',
+    ]],
+    'Italian' => ['it', [
+        'title' => 'Lingua e area geografica',
+        'subtitle' => 'La lingua usata dalla dashboard per chi non ne ha scelta una.',
+        'defaults' => 'Impostazioni predefinite dell’installazione',
+        'language_help' => 'Si applica alla dashboard degli agenti.',
+        'timezone_help' => 'Gli orari e i giorni dei report seguono questo fuso.',
+        'save' => 'Salva lingua e area geografica',
+        'sections_label' => 'Sezioni del gestore',
+        'console' => 'Pannello di controllo',
+        'back_to_console' => 'Torna alla console del gestore',
+        'back_to_setup' => 'Torna alla checklist di configurazione',
+    ]],
+]);
+
+test('localization validation and completion answer in the operator language', function (string $locale, string $languageError, string $timezoneError, string $flash): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => 'operator',
+        'locale' => $locale,
+    ]);
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.localization.edit'))
+        ->post(route('operator.settings.localization.update'), [
+            'language' => 'kl',
+            'timezone' => 'Mars/Olympus_Mons',
+        ])
+        ->assertRedirect(route('operator.settings.localization.edit'))
+        ->assertSessionHasErrors(['language', 'timezone']);
+
+    expect((string) session('errors')->first('language'))->toBe($languageError)
+        ->and((string) session('errors')->first('timezone'))->toBe($timezoneError);
+
+    $this->actingAs($operator)
+        ->followingRedirects()
+        ->post(route('operator.settings.localization.update'), [
+            'language' => $locale,
+            'timezone' => 'Europe/Berlin',
+        ])
+        ->assertOk()
+        ->assertSee($flash)
+        ->assertDontSee('Language and region saved. Agents who have not chosen their own now read this.');
+})->with([
+    'German' => [
+        'de',
+        'Der gewählte Wert für Sprache ist ungültig.',
+        'Der gewählte Wert für Zeitzone ist ungültig.',
+        'Sprache und Region gespeichert. Agenten ohne eigene Auswahl lesen das Dashboard jetzt so.',
+    ],
+    'Italian' => [
+        'it',
+        'Il valore selezionato per Lingua non è valido.',
+        'Il valore selezionato per Fuso orario non è valido.',
+        'Lingua e area geografica salvate. Gli agenti che non hanno effettuato una scelta ora leggono la dashboard in questo modo.',
+    ],
+]);
+
+test('operator pages outside the extracted slice remain wholly English', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => 'operator',
+        'locale' => 'de',
+    ]);
+
+    $this->actingAs($operator)
+        ->get(route('operator.settings.mail.edit'))
+        ->assertOk()
+        ->assertSee('<html lang="en">', false)
+        ->assertSee('aria-label="Operator sections"', false)
+        ->assertSee('Setup checklist')
+        ->assertDontSee('Betreiberbereiche')
+        ->assertDontSee('Einrichtungscheckliste');
 });
 
 test('nobody but a platform operator can read or change it', function (): void {

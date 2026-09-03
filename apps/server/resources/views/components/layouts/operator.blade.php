@@ -9,14 +9,14 @@
     $operatorAccount = $operatorAgent?->account;
 
     $operatorSections = [
-        ['label' => 'Console', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.dashboard')],
-        ['label' => 'Setup checklist', 'href' => route('operator.onboarding'), 'active' => request()->routeIs('operator.onboarding')],
-        ['label' => 'Mail', 'href' => route('operator.settings.mail.edit'), 'active' => request()->routeIs('operator.settings.mail.*')],
-        ['label' => 'Storage', 'href' => route('operator.settings.storage.edit'), 'active' => request()->routeIs('operator.settings.storage.*')],
-        ['label' => 'Scanning', 'href' => route('operator.settings.scanning.edit'), 'active' => request()->routeIs('operator.settings.scanning.*')],
-        ['label' => 'Backups', 'href' => route('operator.settings.backups.edit'), 'active' => request()->routeIs('operator.settings.backups.*')],
-        ['label' => 'Language and region', 'href' => route('operator.settings.localization.edit'), 'active' => request()->routeIs('operator.settings.localization.*')],
-        ['label' => 'Operator access', 'href' => route('operator.break-glass.index'), 'active' => request()->routeIs('operator.break-glass.*')],
+        ['label' => __('operator.shell.sections.console'), 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.dashboard')],
+        ['label' => __('operator.shell.sections.onboarding'), 'href' => route('operator.onboarding'), 'active' => request()->routeIs('operator.onboarding')],
+        ['label' => __('operator.shell.sections.mail'), 'href' => route('operator.settings.mail.edit'), 'active' => request()->routeIs('operator.settings.mail.*')],
+        ['label' => __('operator.shell.sections.storage'), 'href' => route('operator.settings.storage.edit'), 'active' => request()->routeIs('operator.settings.storage.*')],
+        ['label' => __('operator.shell.sections.scanning'), 'href' => route('operator.settings.scanning.edit'), 'active' => request()->routeIs('operator.settings.scanning.*')],
+        ['label' => __('operator.shell.sections.backups'), 'href' => route('operator.settings.backups.edit'), 'active' => request()->routeIs('operator.settings.backups.*')],
+        ['label' => __('operator.shell.sections.localization'), 'href' => route('operator.settings.localization.edit'), 'active' => request()->routeIs('operator.settings.localization.*')],
+        ['label' => __('operator.shell.sections.operator_access'), 'href' => route('operator.break-glass.index'), 'active' => request()->routeIs('operator.break-glass.*')],
     ];
 @endphp
 
@@ -30,8 +30,8 @@
              sections work in the platforms this direction came from. The rail
              says which part of the product you are in; this says which part of
              the operator console. --}}
-        <nav class="wf-context-nav" aria-label="Operator sections">
-            <p class="wf-context-heading">Operator</p>
+        <nav class="wf-context-nav" aria-label="{{ __('operator.shell.sections_label') }}">
+            <p class="wf-context-heading">{{ __('operator.shell.heading') }}</p>
 
             @foreach ($operatorSections as $section)
                 <a

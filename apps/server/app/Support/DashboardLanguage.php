@@ -75,6 +75,13 @@ final class DashboardLanguage
      * a validation failure.
      */
     public const EXTRACTED_ROUTES = [
+        // The first operator-console slice starts with the page where the
+        // install language is chosen. The operator shell uses the same
+        // catalogue but stays English on every operator route not yet listed,
+        // preserving the one-language-per-document boundary during rollout.
+        'operator.settings.localization.edit',
+        'operator.settings.localization.update',
+
         'dashboard.profile.show',
         'dashboard.profile.update',
         'dashboard.profile.alerts.update',

@@ -54,7 +54,9 @@ class OperatorLocalizationSettingsController extends Controller
             // INSTALL-WIDE clock to a zone nobody picked.
             'timezoneChoices' => DashboardTimezone::choices(old('timezone', $timezone)),
             'backUrl' => $from === 'onboarding' ? route('operator.onboarding') : route('operator.dashboard'),
-            'backLabel' => $from === 'onboarding' ? 'Back to setup checklist' : 'Back to operator console',
+            'backLabel' => $from === 'onboarding'
+                ? __('operator.shell.back_to_setup')
+                : __('operator.shell.back_to_console'),
             'returnTo' => $from,
         ]);
     }
@@ -91,7 +93,7 @@ class OperatorLocalizationSettingsController extends Controller
 
         return redirect()
             ->route('operator.settings.localization.edit', $this->returnParams($request))
-            ->with('status', 'Language and region saved. Agents who have not chosen their own now read this.');
+            ->with('status', 'operator.localization.flash.saved');
     }
 
     private function returnContext(Request $request): ?string
