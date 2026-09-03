@@ -12,9 +12,12 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\SitePurge;
 use App\Support\Webhooks\OutboundWebhookDestination;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\Psr7\Response as PsrResponse;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request as HttpClientRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schedule;
@@ -178,7 +181,8 @@ test('events honor subscription and site scope', function (): void {
 });
 
 test('delivery signs the exact thin body and records subscriber acceptance', function (): void {
-    Http::fake(['https://hooks.example.test/*' => Http::response('accepted', 202)]);
+    $http = new MockHandler([new PsrResponse(202, [], 'accepted')]);
+    Http::globalOptions(['handler' => $http]);
     $destination = allowWebhookDns();
     $world = outboundWebhookWorld();
     $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create([
@@ -188,15 +192,14 @@ test('delivery signs the exact thin body and records subscriber acceptance', fun
 
     (new DeliverOutboundWebhook($delivery->id))->handle($destination);
 
-    Http::assertSent(function (HttpClientRequest $request) use ($delivery): bool {
-        $body = json_encode($delivery->payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    $request = $http->getLastRequest();
+    $body = json_encode($delivery->payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
-        return (string) $request->url() === 'https://hooks.example.test/wayfindr'
-            && $request->body() === $body
-            && $request->header('X-Wayfindr-Event') === [$delivery->event]
-            && $request->header('X-Wayfindr-Delivery') === [$delivery->public_id]
-            && $request->header('X-Wayfindr-Signature') === ['sha256='.hash_hmac('sha256', $body, 'whsec_test_secret')];
-    });
+    expect((string) $request?->getUri())->toBe('https://hooks.example.test/wayfindr')
+        ->and((string) $request?->getBody())->toBe($body)
+        ->and($request?->getHeader('X-Wayfindr-Event'))->toBe([$delivery->event])
+        ->and($request?->getHeader('X-Wayfindr-Delivery'))->toBe([$delivery->public_id])
+        ->and($request?->getHeader('X-Wayfindr-Signature'))->toBe(['sha256='.hash_hmac('sha256', $body, 'whsec_test_secret')]);
 
     $delivery->refresh();
 
@@ -208,7 +211,8 @@ test('delivery signs the exact thin body and records subscriber acceptance', fun
 });
 
 test('subscriber failure is retryable and worker exhaustion becomes visible', function (): void {
-    Http::fake(['https://hooks.example.test/*' => Http::response('temporarily unavailable', 503)]);
+    $http = new MockHandler([new PsrResponse(503, [], 'temporarily unavailable')]);
+    Http::globalOptions(['handler' => $http]);
     $destination = allowWebhookDns();
     $world = outboundWebhookWorld();
     $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create();
@@ -228,6 +232,25 @@ test('subscriber failure is retryable and worker exhaustion becomes visible', fu
     expect($delivery->fresh()->failed_at)->not->toBeNull();
 });
 
+test('subscriber response bodies are bounded while the transport writes them', function (): void {
+    $http = new MockHandler([new PsrResponse(204, [], str_repeat('a', 1024 * 1024))]);
+    Http::globalOptions(['handler' => $http]);
+    $destination = allowWebhookDns();
+    $world = outboundWebhookWorld();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create();
+    $delivery = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+    ]);
+
+    (new DeliverOutboundWebhook($delivery->id))->handle($destination);
+
+    $sink = $http->getLastOptions()['sink'] ?? null;
+
+    expect($sink)->not->toBeNull()
+        ->and($sink->getSize())->toBe(4096)
+        ->and(strlen((string) $delivery->fresh()->response_body))->toBe(4096);
+});
+
 test('destination checks reject internal and mixed DNS answers and pin a public answer', function (): void {
     expect((new OutboundWebhookDestination(fn (): array => ['127.0.0.1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
         ->and((new OutboundWebhookDestination(fn (): array => ['::1']))->isAllowed('https://hooks.example.test'))->toBeFalse()
@@ -239,11 +262,85 @@ test('destination checks reject internal and mixed DNS answers and pin a public 
         ->and((new OutboundWebhookDestination(fn (): array => ['8.8.8.8']))->isAllowed('https://user:pass@hooks.example.test'))->toBeFalse()
         ->and((new OutboundWebhookDestination(fn (): array => ['8.8.8.8']))->isAllowed('https://hooks.example.test./wayfindr'))->toBeFalse();
 
-    $inspected = (new OutboundWebhookDestination(fn (): array => ['8.8.8.8']))
+    $inspected = (new OutboundWebhookDestination(fn (): array => ['8.8.8.8', '2001:4860:4860::8888', '1.1.1.1']))
         ->inspect('https://hooks.example.test:8443/path');
 
-    expect($inspected['curl'][CURLOPT_RESOLVE])->toBe(['hooks.example.test:8443:8.8.8.8'])
+    expect($inspected['ips'])->toBe(['1.1.1.1', '2001:4860:4860::8888', '8.8.8.8'])
+        ->and($inspected['curl'][CURLOPT_RESOLVE])->toBe(['hooks.example.test:8443:1.1.1.1,[2001:4860:4860::8888],8.8.8.8'])
         ->and($inspected['curl'][CURLOPT_NOPROXY])->toBe('*');
+});
+
+test('purging a site deletes its delivery data before recovery can send it', function (): void {
+    Queue::fake();
+    $world = outboundWebhookWorld();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create();
+    $endpoint->sites()->attach($world['site']);
+    $delivery = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+        'response_body' => 'subscriber detail that must be purged',
+    ]);
+
+    app(SitePurge::class)->purge($world['site'], $world['admin']);
+    $this->artisan('wayfindr:queue-outbound-webhooks')->assertSuccessful();
+
+    expect(OutboundWebhookDelivery::query()->whereKey($delivery->id)->exists())->toBeFalse()
+        ->and($endpoint->fresh()->sites()->exists())->toBeFalse();
+    Queue::assertNothingPushed();
+});
+
+test('dashboard ticket creation rolls back when its webhook outbox cannot be written', function (): void {
+    $world = outboundWebhookWorld();
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create([
+        'support_code' => 'WF-TICKET-ATOMIC',
+    ]);
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create([
+        'events' => [OutboundWebhookEndpoint::EVENT_TICKET_CREATED],
+        'next_sequence' => 1,
+    ]);
+    $endpoint->sites()->attach($world['site']);
+    OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+        'sequence' => 1,
+    ]);
+
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->actingAs($world['admin'])->post(
+        route('dashboard.conversations.tickets.store', $conversation->support_code),
+    ))->toThrow(QueryException::class);
+
+    expect(Ticket::query()->where('conversation_id', $conversation->id)->exists())->toBeFalse();
+});
+
+test('dashboard ticket replies roll back when their webhook outbox cannot be written', function (): void {
+    $world = outboundWebhookWorld();
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create([
+        'support_code' => 'WF-REPLY-ATOMIC',
+        'status' => 'closed',
+        'closed_at' => now(),
+    ]);
+    $ticket = Ticket::factory()->for($world['account'])->for($world['site'])->for($conversation)->for($visitor, 'requester')->create();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create([
+        'events' => [OutboundWebhookEndpoint::EVENT_CONVERSATION_MESSAGE_CREATED],
+        'next_sequence' => 1,
+    ]);
+    $endpoint->sites()->attach($world['site']);
+    OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+        'sequence' => 1,
+    ]);
+
+    $this->withoutExceptionHandling();
+
+    expect(fn () => $this->actingAs($world['admin'])->post(
+        route('dashboard.tickets.replies.store', $ticket),
+        ['message' => 'This must not commit without its outbox.'],
+    ))->toThrow(QueryException::class);
+
+    expect($conversation->messages()->exists())->toBeFalse()
+        ->and($conversation->fresh()->status)->toBe('closed');
 });
 
 test('disabling keeps history, cancels pending rows, and stops new events', function (): void {

@@ -24,11 +24,13 @@ Run Composer, Artisan, queue, scheduler, and Reverb commands from
 
 Minimum runtime:
 
-- PHP 8.4 or newer, with `ext-intl`. It is declared in
-  `apps/server/composer.json`, so `composer install` refuses an environment
-  without it rather than letting one reach production — most distributions ship
-  it as `php8.4-intl` and the official PHP images include it. Wayfindr uses it
-  to compare hostnames in one representation: an operator configures the domain
+- PHP 8.4 or newer, with `ext-curl` (libcurl 7.59.0 or newer) and `ext-intl`.
+  Both are declared in `apps/server/composer.json`, so `composer install` refuses an environment
+  without them rather than letting one reach production — most distributions ship
+  them as `php8.4-curl` and `php8.4-intl`, and the official image includes both.
+  Outbound webhooks use cURL's pinned multi-address resolution to prevent DNS
+  rebinding without discarding healthy A/AAAA fallback addresses. Wayfindr uses
+  `ext-intl` to compare hostnames in one representation: an operator configures the domain
   they own (`bücher.example`) and browsers report its Punycode form
   (`xn--bcher-kva.example`), and without normalisation those read as different
   sites, so every page address on such a site is silently discarded.

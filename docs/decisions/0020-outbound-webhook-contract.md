@@ -67,8 +67,10 @@ same pending row later.
 The queue retries with bounded backoff. After five worker attempts the delivery
 is marked failed rather than retried forever. The account page shows the exact
 thin payload, attempt count, latest HTTP status and a bounded encrypted response
-sample. An administrator may explicitly retry a terminal failure. Disabling an
-endpoint cancels pending rows and prevents new ones while retaining its history.
+sample. The response is capped while the transport receives it, before it can
+consume unbounded worker memory or disk. An administrator may explicitly retry
+a terminal failure. Disabling an endpoint cancels pending rows and prevents new
+ones while retaining its history.
 
 ### Signing covers the exact bytes sent
 
@@ -89,11 +91,12 @@ Endpoints require HTTPS and reject credentials and fragments. The host must
 resolve, and **every** address in its answer set must be public. This is checked
 when an endpoint is saved and again before every attempt.
 
-The delivery check pins cURL to one verified address while retaining the
-hostname for TLS SNI and certificate validation. Redirects and environment
-proxies are disabled. Re-resolving only at validation time would leave a DNS
-rebinding window; checking without pinning would leave a second lookup between
-the decision and the connection.
+The delivery check pins cURL to the complete verified address set while
+retaining the hostname for TLS SNI and certificate validation. cURL may fall
+back among those addresses but cannot perform another lookup. Redirects and
+environment proxies are disabled. Re-resolving only at validation time would
+leave a DNS rebinding window; checking without pinning would leave a second
+lookup between the decision and the connection.
 
 ### Site scope follows the API-token ceiling
 
@@ -101,7 +104,8 @@ Every endpoint is pinned to the sites its creating administrator may see at
 creation. Selecting sites can narrow that list; it cannot widen it. A site
 created later is not added automatically, and an endpoint whose named sites are
 all purged reaches nothing. No role implicitly creates an account-wide future
-grant.
+grant. Purging a site also deletes its delivery rows, including pending work and
+bounded response samples, before the recovery scheduler can queue them.
 
 The delivery log follows the viewing administrator's current site scope. A row
 for a site they no longer support is omitted, and guessing its numeric database

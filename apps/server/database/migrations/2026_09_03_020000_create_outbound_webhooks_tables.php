@@ -57,7 +57,10 @@ return new class extends Migration
                 ->references('id')
                 ->on('outbound_webhook_endpoints')
                 ->cascadeOnDelete();
-            $table->foreignId('site_id')->nullable()->constrained()->nullOnDelete();
+            // Site purge is the deletion boundary for every record beneath a
+            // site. Keeping a delivery would retain its payload/response and
+            // could let the recovery scheduler send it after the purge.
+            $table->foreignId('site_id')->constrained()->cascadeOnDelete();
             $table->string('event');
             $table->unsignedBigInteger('sequence');
             $table->json('payload');

@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Models\OutboundWebhookDelivery;
 use App\Support\Webhooks\OutboundWebhookDestination;
+use GuzzleHttp\Psr7\FnStream;
+use GuzzleHttp\Psr7\Utils;
 use Illuminate\Bus\Queueable;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -26,6 +28,8 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
     public int $timeout = 30;
 
     public int $uniqueFor = 7200;
+
+    private const MAX_RESPONSE_BODY_BYTES = 4096;
 
     public function __construct(private readonly int $deliveryId) {}
 
@@ -97,6 +101,22 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
                 JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
             );
             $signature = 'sha256='.hash_hmac('sha256', $body, $delivery->endpoint->secret);
+            $responseBodyBuffer = Utils::streamFor('');
+            $responseSink = FnStream::decorate($responseBodyBuffer, [
+                // cURL requires the callback to report the whole chunk as
+                // consumed. Retain only the diagnostic prefix and discard the
+                // rest during transfer so a subscriber cannot fill worker
+                // memory or disk before the later display cap runs.
+                'write' => static function (string $chunk) use ($responseBodyBuffer): int {
+                    $remaining = self::MAX_RESPONSE_BODY_BYTES - ($responseBodyBuffer->getSize() ?? 0);
+
+                    if ($remaining > 0) {
+                        $responseBodyBuffer->write(substr($chunk, 0, $remaining));
+                    }
+
+                    return strlen($chunk);
+                },
+            ]);
 
             $response = Http::withOptions([
                 'allow_redirects' => false,
@@ -104,6 +124,7 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
                 // resolve this name after the public-address check above.
                 'proxy' => '',
                 'curl' => $inspected['curl'],
+                'sink' => $responseSink,
             ])
                 ->connectTimeout(5)
                 ->timeout(15)
@@ -116,7 +137,8 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
                 ->withBody($body, 'application/json')
                 ->post($inspected['url']);
 
-            $responseBody = self::boundedResponseBody($response->body());
+            $responseBodyBuffer->rewind();
+            $responseBody = self::boundedResponseBody($responseBodyBuffer->getContents());
 
             if (! $response->successful()) {
                 $delivery->forceFill([
@@ -169,6 +191,6 @@ class DeliverOutboundWebhook implements ShouldBeUnique, ShouldQueue
         // Subscriber bodies are diagnostic only. Invalid bytes are replaced
         // and the stored/displayed sample is capped so a peer cannot grow the
         // delivery log without bound.
-        return mb_strcut(mb_scrub($body, 'UTF-8'), 0, 4096, 'UTF-8');
+        return mb_strcut(mb_scrub($body, 'UTF-8'), 0, self::MAX_RESPONSE_BODY_BYTES, 'UTF-8');
     }
 }

@@ -79,7 +79,7 @@ final class OutboundWebhookDestination
     }
 
     /**
-     * @return array{url: string, host: string, port: int, ip: string, curl: array<int, mixed>}
+     * @return array{url: string, host: string, port: int, ips: list<string>, curl: array<int, mixed>}
      */
     public function inspect(string $url): array
     {
@@ -134,18 +134,21 @@ final class OutboundWebhookDestination
         }
 
         sort($ips, SORT_STRING);
-        $ip = $ips[0];
         $curl = [CURLOPT_NOPROXY => '*'];
 
         // IP literals already name their destination. Hostnames are pinned to
-        // the verified answer while retaining their hostname for TLS SNI and
-        // certificate verification.
+        // every verified answer while retaining their hostname for TLS SNI
+        // and certificate verification. libcurl can then fall back across a
+        // healthy A/AAAA set without performing another, rebindable lookup.
         if (filter_var($host, FILTER_VALIDATE_IP) === false) {
-            $resolvedIp = str_contains($ip, ':') ? '['.$ip.']' : $ip;
-            $curl[CURLOPT_RESOLVE] = [$host.':'.$port.':'.$resolvedIp];
+            $resolvedIps = array_map(
+                static fn (string $ip): string => str_contains($ip, ':') ? '['.$ip.']' : $ip,
+                $ips,
+            );
+            $curl[CURLOPT_RESOLVE] = [$host.':'.$port.':'.implode(',', $resolvedIps)];
         }
 
-        return compact('url', 'host', 'port', 'ip', 'curl');
+        return compact('url', 'host', 'port', 'ips', 'curl');
     }
 
     public function isAllowed(string $url): bool

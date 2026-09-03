@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\OutboundWebhookDelivery;
 use App\Models\OutboundWebhookEndpoint;
+use App\Models\Site;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -19,7 +20,11 @@ class OutboundWebhookDeliveryFactory extends Factory
         return [
             'public_id' => $publicId,
             'outbound_webhook_endpoint_id' => OutboundWebhookEndpoint::factory(),
-            'site_id' => null,
+            'site_id' => function (array $attributes): int {
+                $endpoint = OutboundWebhookEndpoint::query()->findOrFail($attributes['outbound_webhook_endpoint_id']);
+
+                return Site::factory()->for($endpoint->account)->create()->id;
+            },
             'event' => OutboundWebhookEndpoint::EVENT_TICKET_CREATED,
             'sequence' => 1,
             'payload' => [
