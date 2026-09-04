@@ -213,11 +213,12 @@ final class SlaClockManager
     public function evaluate(int $clockId, CarbonInterface $at, bool $recordWarning = true): array
     {
         return DB::transaction(function () use ($at, $clockId, $recordWarning): array {
-            $candidate = SlaClock::query()->select(['id', 'site_id'])->findOrFail($clockId);
+            $candidate = SlaClock::query()->select(['id', 'account_id', 'site_id'])->findOrFail($clockId);
             // Calendar mutations lock the site before advancing its clock
-            // rows. The minute evaluator takes the same site-then-clock order,
-            // so it cannot project beyond an uncommitted schedule boundary
-            // under whichever calendar happened to be visible first.
+            // rows. The minute evaluator takes the same account-site-clock
+            // order, so it cannot project beyond an uncommitted schedule
+            // boundary under whichever calendar happened to be visible first.
+            $this->lockAccountPolicy((int) $candidate->account_id);
             $site = Site::query()->whereKey($candidate->site_id)->lockForUpdate()->firstOrFail();
             $clock = SlaClock::query()->with('subject')->lockForUpdate()->findOrFail($clockId);
             $clock->setRelation('site', $site);
@@ -396,15 +397,46 @@ final class SlaClockManager
 
     private function satisfy(Model $subject, string $metric, CarbonInterface $at): void
     {
-        $subject->slaClocks()
-            ->where('metric', $metric)
-            ->whereNull('satisfied_at')
-            ->whereNull('cancelled_at')
-            ->with('site')
-            ->orderBy('id')
-            ->get()
-            ->each(function (SlaClock $clock) use ($at): void {
-                $this->advance($clock, $at);
+        $this->settle($subject, $metric, $at, satisfied: true);
+    }
+
+    private function cancel(Model $subject, string $metric, CarbonInterface $at): void
+    {
+        $this->settle($subject, $metric, $at, satisfied: false);
+    }
+
+    /** Lock, advance, and finish active clocks without exposing a stale write seam. */
+    private function settle(Model $subject, string $metric, CarbonInterface $at, bool $satisfied): void
+    {
+        DB::transaction(function () use ($at, $metric, $satisfied, $subject): void {
+            $subject->loadMissing('site');
+            $site = $subject->getRelation('site');
+
+            if (! $site instanceof Site) {
+                return;
+            }
+
+            $this->lockAccountPolicy((int) $site->account_id);
+            $site = Site::query()->whereKey($site->id)->lockForUpdate()->firstOrFail();
+            $clocks = $subject->slaClocks()
+                ->where('metric', $metric)
+                ->whereNull('satisfied_at')
+                ->whereNull('cancelled_at')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            $clocks->each(function (SlaClock $clock) use ($at, $satisfied, $site): void {
+                $clock->setRelation('site', $site);
+                $this->advanceUsingSite($clock, $site, $at);
+
+                if (! $satisfied) {
+                    $this->recordBreachIfCrossed($clock, $at);
+                    $clock->forceFill(['cancelled_at' => CarbonImmutable::instance($at)])->save();
+
+                    return;
+                }
+
                 $attributes = ['satisfied_at' => CarbonImmutable::instance($at)];
 
                 if ($clock->elapsed_seconds > $clock->target_seconds && $clock->breached_at === null) {
@@ -415,22 +447,7 @@ final class SlaClockManager
 
                 $clock->forceFill($attributes)->save();
             });
-    }
-
-    private function cancel(Model $subject, string $metric, CarbonInterface $at): void
-    {
-        $subject->slaClocks()
-            ->where('metric', $metric)
-            ->whereNull('satisfied_at')
-            ->whereNull('cancelled_at')
-            ->with('site')
-            ->orderBy('id')
-            ->get()
-            ->each(function (SlaClock $clock) use ($at): void {
-                $this->advance($clock, $at);
-                $this->recordBreachIfCrossed($clock, $at);
-                $clock->forceFill(['cancelled_at' => CarbonImmutable::instance($at)])->save();
-            });
+        });
     }
 
     private function reconcileSubject(Model $subject, CarbonInterface $at): void

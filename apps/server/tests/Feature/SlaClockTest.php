@@ -124,13 +124,54 @@ test('SLA evaluation locks the site before advancing its clock', function (): vo
 
     $queries = collect(DB::getQueryLog())->pluck('query')->values();
     DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
     $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
         && str_contains($query, 'for update'));
     $clockLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sla_clocks"')
         && str_contains($query, 'for update'));
 
-    expect($siteLock)->toBeInt()
+    expect($accountLock)->toBeInt()
+        ->and($siteLock)->toBeInt()
         ->and($clockLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($siteLock)
+        ->and($siteLock)->toBeLessThan($clockLock);
+});
+
+test('reply settlement locks the account and site before its active SLA clock', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account']);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(15)->minutes();
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $world['agent']->id,
+    ]);
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+        && str_contains($query, 'for update'));
+    $clockLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sla_clocks"')
+        && str_contains($query, 'for update'));
+
+    expect($conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole()->satisfied_at)
+        ->not->toBeNull()
+        ->and($accountLock)->toBeInt()
+        ->and($siteLock)->toBeInt()
+        ->and($clockLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($siteLock)
         ->and($siteLock)->toBeLessThan($clockLock);
 });
 
