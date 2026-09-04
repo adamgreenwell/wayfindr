@@ -218,6 +218,47 @@ test('rule forms reject incompatible vocabulary and cross-account references', f
     expect(AutomationRule::query()->count())->toBe(0);
 });
 
+test('enabled action targets must cover every site the rule can match', function (string $actionType): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $target = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $otherAgent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $coveredSite = Site::factory()->for($account)->create();
+    $uncoveredSite = Site::factory()->for($account)->create();
+    $coveredSite->supportAgents()->sync([$target->id]);
+    $uncoveredSite->supportAgents()->sync([$otherAgent->id]);
+    $actions = [[
+        'type' => $actionType,
+        'text_value' => '',
+        'select_value' => 'agent:'.$target->id,
+    ]];
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.automation-rules.create'))
+        ->post(route('dashboard.account.automation-rules.store'), automationRulePayload([
+            'is_enabled' => '1',
+            'actions' => $actions,
+        ]))
+        ->assertRedirect(route('dashboard.account.automation-rules.create'))
+        ->assertSessionHasErrors('actions.0.select_value');
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.account.automation-rules.store'), automationRulePayload([
+            'name' => 'Route covered site work',
+            'is_enabled' => '1',
+            'conditions' => [[
+                'field' => 'site_id',
+                'operator' => 'equals',
+                'text_value' => '',
+                'select_value' => 'site:'.$coveredSite->id,
+            ]],
+            'actions' => $actions,
+        ]))
+        ->assertRedirect();
+
+    expect(AutomationRule::query()->sole()->is_enabled)->toBeTrue();
+})->with(['assign_agent', 'notify_agent']);
+
 test('preview evaluates a saved draft without changing work or recording an execution', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);

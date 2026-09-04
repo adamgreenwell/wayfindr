@@ -294,13 +294,52 @@ final class AutomationRuleForm
                     && (! $isEnabled
                         || ($agent->hasAccountPermission($workPermission)
                             && ($type !== AutomationRuleActionType::NotifyAgent
-                                || $agent->hasAccountPermission(AccountPermission::ViewAlerts))));
+                                || $agent->hasAccountPermission(AccountPermission::ViewAlerts))
+                            && $this->agentCoversMatchingSites($account, $agent, $conditions)));
 
                 if (! $canAct) {
                     $this->invalidReference("actions.{$index}.select_value");
                 }
             }
         }
+    }
+
+    /** @param list<array{field: string, operator: string, value: mixed}> $conditions */
+    private function agentCoversMatchingSites(Account $account, User $agent, array $conditions): bool
+    {
+        $siteConditions = collect($conditions)
+            ->filter(fn (array $condition): bool => $condition['field'] === AutomationRuleConditionField::SiteId->value);
+        $includedSiteIds = $siteConditions
+            ->where('operator', AutomationRuleConditionOperator::Equals->value)
+            ->pluck('value')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+        $excludedSiteIds = $siteConditions
+            ->where('operator', AutomationRuleConditionOperator::NotEquals->value)
+            ->pluck('value')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($includedSiteIds->count() > 1
+            || ($includedSiteIds->isNotEmpty() && $excludedSiteIds->contains($includedSiteIds->first()))) {
+            return true;
+        }
+
+        $possibleSites = $account->sites();
+
+        if ($includedSiteIds->isNotEmpty()) {
+            $possibleSites->where('sites.id', $includedSiteIds->first());
+        } elseif ($excludedSiteIds->isNotEmpty()) {
+            $possibleSites->whereNotIn('sites.id', $excludedSiteIds->all());
+        }
+
+        $visibleSiteIds = $account->sites()
+            ->visibleToAgentIncludingArchived($agent)
+            ->select('sites.id');
+
+        return ! $possibleSites->whereNotIn('sites.id', $visibleSiteIds)->exists();
     }
 
     private function invalidReference(string $path): never
