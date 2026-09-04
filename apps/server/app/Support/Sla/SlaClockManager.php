@@ -129,9 +129,12 @@ final class SlaClockManager
             ->where('site_id', $site->id)
             ->whereNull('satisfied_at')
             ->whereNull('cancelled_at')
-            ->with('site')
+            ->select('id')
             ->lazyById(250)
-            ->each(fn (SlaClock $clock) => $this->advance($clock, $at));
+            // Calendar and archive mutations are also historical boundaries.
+            // Persist a crossed breach before the new site state can pause or
+            // reinterpret the clock; alert delivery remains scheduler-owned.
+            ->each(fn (SlaClock $clock) => $this->evaluate((int) $clock->id, $at, recordWarning: false));
     }
 
     /** Resume clocks at the restoration boundary without charging archived time. */

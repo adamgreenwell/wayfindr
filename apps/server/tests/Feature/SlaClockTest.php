@@ -651,6 +651,32 @@ test('archiving pauses active SLA clocks until the site is restored', function (
     Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
 });
 
+test('archiving records a breach crossed before the site paused', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(11)->minutes();
+    $archivedAt = now();
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.sites.archive', $world['site']))
+        ->assertRedirect(route('dashboard.sites.show', $world['site']));
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+
+    expect($world['site']->fresh()->archived_at)->not->toBeNull()
+        ->and($clock->elapsed_seconds)->toBe(11 * 60)
+        ->and($clock->breached_at)->not->toBeNull()
+        ->and($clock->breached_at?->getTimestamp())->toBe($archivedAt->getTimestamp());
+
+    $this->travel(30)->minutes();
+    Artisan::call('wayfindr:evaluate-sla-clocks');
+
+    expect($clock->fresh()->breached_at?->getTimestamp())->toBe($archivedAt->getTimestamp());
+});
+
 test('direct updates to archived work do not count paused time', function (): void {
     $world = slaWorld(['enabled' => false]);
     configureNormalSla($world['account'], response: 10, resolution: 10);
