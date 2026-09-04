@@ -102,7 +102,12 @@ class ConversationController extends Controller
             // the exclusive lock, so a revocation waits for the readers in flight
             // and blocks the ones after it. Readers exclude the writer; they do not
             // exclude each other.
-            $current = Site::query()->whereKey($site->getKey())->sharedLock()->first() ?? $site;
+            $current = Site::query()->servable()->whereKey($site->getKey())->sharedLock()->first();
+
+            // Archive may have won the account lock after the public-key
+            // lookup above. Decide from the locked row rather than falling
+            // back to the stale pre-transaction site.
+            abort_unless($current, 404, 'Site not found.');
             $storePageUrl = SitePresenceReporting::for($current)->pageUrls;
 
             $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();

@@ -74,10 +74,12 @@ test('widget conversation creation locks the account before the site', function 
         && str_contains($query, 'for update'));
     $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
         && str_contains($query, 'for share'));
+    $siteLockQuery = $siteLock === false ? null : $queries->get($siteLock);
 
     expect($accountLock)->toBeInt()
         ->and($siteLock)->toBeInt()
-        ->and($accountLock)->toBeLessThan($siteLock);
+        ->and($accountLock)->toBeLessThan($siteLock)
+        ->and($siteLockQuery)->toContain('"archived_at" is null');
 });
 
 test('a required field is enforced by the server, not the widget', function (): void {
