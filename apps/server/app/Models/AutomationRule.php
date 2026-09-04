@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Casts\OrderedJsonList;
 use App\Enums\AutomationRuleEvent;
+use App\Support\Automation\AutomationRuleDefinition;
 use Database\Factories\AutomationRuleFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -25,6 +26,15 @@ class AutomationRule extends Model
 {
     /** @use HasFactory<AutomationRuleFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::saving(fn (self $rule) => AutomationRuleDefinition::assertValid(
+            $rule->eventEnum(),
+            $rule->conditions,
+            $rule->actions,
+        ));
+    }
 
     protected function casts(): array
     {
