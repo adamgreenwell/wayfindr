@@ -164,6 +164,7 @@ return [
         'already_labeled' => 'Label already present',
         'quiet_mode' => 'Agent uses quiet alert mode',
         'private_ticket_note' => 'Private ticket note recorded',
+        'target_unavailable' => 'Target agent is no longer available for this work',
     ],
     'result_change' => ':before to :after',
     'result_already' => 'Already :value',

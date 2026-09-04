@@ -95,6 +95,7 @@ return [
     'result_details' => [
         'already_assigned' => 'Già assegnato a questo agente', 'already_labeled' => 'Etichetta già presente',
         'quiet_mode' => 'L’agente usa la modalità silenziosa', 'private_ticket_note' => 'Nota privata del ticket registrata',
+        'target_unavailable' => 'L’agente di destinazione non è più disponibile per questo lavoro',
     ],
     'result_change' => 'da :before a :after', 'result_already' => 'Già :value',
     'condition_sentence' => ':field — :operator — :value', 'action_sentence' => ':action con valore :value', 'result_sentence' => ':action: :status (:detail)',

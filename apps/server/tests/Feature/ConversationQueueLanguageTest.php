@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\Article;
 use App\Models\AuditEvent;
+use App\Models\AutomationRule;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -1604,6 +1605,12 @@ test('no English is rendered as German on any extracted surface', function (): v
 
     $ticketWorkspace = conversationQueueLanguageTicketStates($world, $conversation);
     conversationQueueLanguageIntegrationStates($world);
+    $automationRule = AutomationRule::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt priority rule',
+        'event' => 'ticket.created',
+        'conditions' => [['field' => 'subject', 'operator' => 'contains', 'value' => 'Datenpunkt']],
+        'actions' => [['type' => 'set_priority', 'value' => 'urgent']],
+    ]);
 
     // Alerts need populated states for BOTH readers. Comparing a populated
     // German page with an empty English page would let untranslated card copy
@@ -1674,6 +1681,9 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'cobrowse']),
         route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'tab' => 'references']),
         route('dashboard.account.reply-templates.index'),
+        route('dashboard.account.automation-rules.index'),
+        route('dashboard.account.automation-rules.create'),
+        route('dashboard.account.automation-rules.edit', $automationRule),
         route('dashboard.account.labels.index'),
         route('dashboard.account.api-tokens.index'),
         route('dashboard.account.audit.index'),

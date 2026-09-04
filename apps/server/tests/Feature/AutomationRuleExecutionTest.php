@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AutomationExecutionStatus;
 use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationMessageCreated;
@@ -10,6 +11,7 @@ use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\TicketLabel;
@@ -310,12 +312,60 @@ test('a failed action rolls back its sequence records the failure and lets the n
         ->and($executions[0]->automation_rule_id)->toBe($failedRule->id)
         ->and($executions[0]->status)->toBe('failed')
         ->and($executions[0]->action_results)->toBe([])
-        ->and($executions[0]->error_message)->toContain('cannot access this automation subject')
+        ->and($executions[0]->error_message)->toContain('not available to this automation rule')
         ->and($executions[1]->automation_rule_id)->toBe($survivingRule->id)
         ->and($executions[1]->status)->toBe('succeeded');
 
     Notification::assertNotSentTo($notifiedAgent, AutomationRuleMatched::class);
 });
+
+test('stale action targets become explicit no-ops without rolling back the sequence', function (string $revocation): void {
+    Notification::fake();
+
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ManageTickets->value,
+            AccountPermission::ViewAlerts->value,
+        ],
+    ]);
+    $target = User::factory()->for($account)->create([
+        'custom_role_id' => $role->id,
+    ]);
+    $remainingAgent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->sync([$target->id, $remainingAgent->id]);
+    AutomationRule::factory()->for($account)->enabled()->create([
+        'event' => AutomationRuleEvent::TicketCreated,
+        'actions' => [
+            ['type' => 'set_priority', 'value' => 'urgent'],
+            ['type' => 'assign_agent', 'value' => $target->id],
+            ['type' => 'notify_agent', 'value' => $target->id],
+        ],
+    ]);
+
+    match ($revocation) {
+        'deactivated' => $target->forceFill(['deactivated_at' => now()])->save(),
+        'permissions' => $role->forceFill(['permissions' => []])->save(),
+        'site_access' => $site->supportAgents()->sync([$remainingAgent->id]),
+    };
+
+    $ticket = dispatchTicketCreatedAutomation(Ticket::factory()->for($account)->for($site)->create([
+        'priority' => 'normal',
+    ]));
+    $execution = AutomationRuleExecution::query()->sole();
+
+    expect($ticket->priority)->toBe('urgent')
+        ->and($ticket->assignee_id)->toBeNull()
+        ->and($execution->status)->toBe('succeeded')
+        ->and($execution->action_results)->toBe([
+            ['type' => 'set_priority', 'status' => 'applied', 'detail' => 'normal->urgent'],
+            ['type' => 'assign_agent', 'status' => 'noop', 'detail' => 'target_unavailable'],
+            ['type' => 'notify_agent', 'status' => 'noop', 'detail' => 'target_unavailable'],
+        ]);
+
+    Notification::assertNothingSent();
+})->with(['deactivated', 'permissions', 'site_access']);
 
 test('a ticket updated rule cannot recursively trigger itself', function (): void {
     $account = Account::factory()->create();

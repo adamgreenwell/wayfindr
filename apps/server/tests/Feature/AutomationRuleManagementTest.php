@@ -418,7 +418,7 @@ test('execution history remains readable after its rule is deleted', function ()
         ->assertSee('Urgent exports')
         ->assertSee('Ticket #'.$ticket->id)
         ->assertSee('Subject Contains “export”')
-        ->assertSee('Set priority — Applied (normal to urgent)');
+        ->assertSee('Set priority — Applied (Normal to Urgent)');
 
     $this->actingAs($admin)
         ->delete(route('dashboard.account.automation-rules.destroy', $rule))
@@ -430,8 +430,62 @@ test('execution history remains readable after its rule is deleted', function ()
         ->get(route('dashboard.account.automation-rules.index'))
         ->assertOk()
         ->assertSee('Urgent exports')
-        ->assertSee('Set priority — Applied (normal to urgent)');
+        ->assertSee('Set priority — Applied (Normal to Urgent)');
 });
+
+test('execution history translates changed priority and status values', function (string $locale, array $expected): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => $locale,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->for($conversation)->for($visitor, 'requester')->create();
+    $rule = AutomationRule::factory()->for($account)->create([
+        'event' => 'ticket.created',
+        'actions' => [
+            ['type' => 'set_priority', 'value' => 'urgent'],
+            ['type' => 'set_status', 'value' => 'closed'],
+        ],
+    ]);
+    AutomationRuleExecution::query()->create([
+        'account_id' => $account->id,
+        'automation_rule_id' => $rule->id,
+        'subject_type' => $ticket->getMorphClass(),
+        'subject_id' => $ticket->id,
+        'rule_name' => $rule->name,
+        'event' => $rule->event,
+        'status' => AutomationExecutionStatus::Succeeded,
+        'conditions' => [],
+        'actions' => $rule->actions,
+        'action_results' => [
+            ['type' => 'set_priority', 'status' => 'applied', 'detail' => 'normal->urgent'],
+            ['type' => 'set_status', 'status' => 'applied', 'detail' => 'open->closed'],
+        ],
+        'metadata' => ['message_id' => null],
+        'started_at' => now()->subSecond(),
+        'completed_at' => now(),
+    ]);
+
+    $response = $this->actingAs($admin)->get(route('dashboard.account.automation-rules.index'));
+
+    $response->assertOk();
+
+    foreach ($expected as $sentence) {
+        $response->assertSee($sentence);
+    }
+})->with([
+    'German' => ['de', [
+        'Priorität setzen: Ausgeführt; Normal zu Dringend',
+        'Status setzen: Ausgeführt; Offen zu Geschlossen',
+    ]],
+    'Italian' => ['it', [
+        'Imposta priorità: Applicata (da Normale a Urgente)',
+        'Imposta stato: Applicata (da Aperto a Chiuso)',
+    ]],
+]);
 
 test('labels referenced by automation rules cannot be deleted out from under them', function (): void {
     $account = Account::factory()->create();

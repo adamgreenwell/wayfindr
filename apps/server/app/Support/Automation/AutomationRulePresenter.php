@@ -54,12 +54,14 @@ final class AutomationRulePresenter
     }
 
     /** @param array{type: string, status: string, detail: string} $result */
-    public function result(array $result, array $references): string
+    public function result(array $result, AutomationRuleEvent|string $event, array $references): string
     {
+        $type = AutomationRuleActionType::from($result['type']);
+
         return __('automation_rules.result_sentence', [
-            'action' => __('automation_rules.actions.'.$result['type']),
+            'action' => __('automation_rules.actions.'.$type->value),
             'status' => __('automation_rules.result_statuses.'.$result['status']),
-            'detail' => $this->resultDetail($result['detail'], $references),
+            'detail' => $this->resultDetail($type, $event, $result['detail'], $references),
         ]);
     }
 
@@ -127,8 +129,12 @@ final class AutomationRulePresenter
             : __('conversations.detail.statuses.'.$value);
     }
 
-    private function resultDetail(string $detail, array $references): string
-    {
+    private function resultDetail(
+        AutomationRuleActionType $type,
+        AutomationRuleEvent|string $event,
+        string $detail,
+        array $references,
+    ): string {
         if (str_starts_with($detail, 'agent:')) {
             return $references[$detail] ?? __('automation_rules.values.removed_id', ['id' => substr($detail, 6)]);
         }
@@ -140,13 +146,30 @@ final class AutomationRulePresenter
         if (str_contains($detail, '->')) {
             [$before, $after] = explode('->', $detail, 2);
 
-            return __('automation_rules.result_change', ['before' => $before, 'after' => $after]);
+            return __('automation_rules.result_change', [
+                'before' => $this->resultValue($type, $event, $before),
+                'after' => $this->resultValue($type, $event, $after),
+            ]);
         }
 
         if (str_starts_with($detail, 'already:')) {
-            return __('automation_rules.result_already', ['value' => substr($detail, 8)]);
+            return __('automation_rules.result_already', [
+                'value' => $this->resultValue($type, $event, substr($detail, 8)),
+            ]);
         }
 
         return __('automation_rules.result_details.'.$detail);
+    }
+
+    private function resultValue(
+        AutomationRuleActionType $type,
+        AutomationRuleEvent|string $event,
+        string $value,
+    ): string {
+        return match ($type) {
+            AutomationRuleActionType::SetPriority => __('tickets.priorities.'.$value),
+            AutomationRuleActionType::SetStatus => $this->status($value, $event),
+            default => $value,
+        };
     }
 }

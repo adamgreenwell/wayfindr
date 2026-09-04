@@ -96,6 +96,7 @@ return [
     'result_details' => [
         'already_assigned' => 'Bereits diesem Agenten zugewiesen', 'already_labeled' => 'Label bereits vorhanden',
         'quiet_mode' => 'Agent verwendet den stillen Benachrichtigungsmodus', 'private_ticket_note' => 'Private Ticketnotiz gespeichert',
+        'target_unavailable' => 'Zielagent ist für diesen Vorgang nicht mehr verfügbar',
     ],
     'result_change' => ':before zu :after', 'result_already' => 'Bereits :value',
     'condition_sentence' => ':field – :operator – :value', 'action_sentence' => ':action mit Wert :value', 'result_sentence' => ':action: :status; :detail',

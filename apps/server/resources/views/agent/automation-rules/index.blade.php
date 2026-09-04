@@ -143,7 +143,7 @@
                                                 <strong>{{ __('automation_rules.executions.results') }}</strong>
                                                 <ol class="automation-definition-list">
                                                     @foreach ($execution->action_results as $result)
-                                                        <li>{{ $presenter->result($result, $referenceLabels) }}</li>
+                                                        <li>{{ $presenter->result($result, $execution->event, $referenceLabels) }}</li>
                                                     @endforeach
                                                 </ol>
                                             </div>
