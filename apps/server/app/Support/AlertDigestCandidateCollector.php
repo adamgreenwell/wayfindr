@@ -186,9 +186,8 @@ class AlertDigestCandidateCollector
         // A digest is a current-work summary. A warning whose work has since
         // completed, or whose clock has since breached, is durable history in
         // the alert centre but no longer something to interrupt email with.
-        if (! $clock->isActive()
-            || ($stage === 'warning' && $clock->breached_at !== null)
-            || ($stage === 'breach' && $clock->breached_at === null)
+        if (! is_string($stage)
+            || ! $clock->alertStageIsCurrent($stage)
             || ! $this->slaAlertRouting->routesTo($clock, $agent)) {
             return null;
         }
