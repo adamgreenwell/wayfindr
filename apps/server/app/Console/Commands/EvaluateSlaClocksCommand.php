@@ -2,16 +2,12 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\AccountPermission;
-use App\Models\Conversation;
 use App\Models\SlaClock;
-use App\Models\Ticket;
-use App\Models\User;
 use App\Notifications\SlaDeadlineAlert;
+use App\Support\Sla\SlaAlertRouting;
 use App\Support\Sla\SlaClockManager;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -21,7 +17,7 @@ class EvaluateSlaClocksCommand extends Command
 
     protected $description = 'Advance active SLA clocks and notify eligible agents when a deadline approaches or breaches.';
 
-    public function handle(SlaClockManager $manager): int
+    public function handle(SlaClockManager $manager, SlaAlertRouting $routing): int
     {
         $evaluated = 0;
         $alerts = 0;
@@ -33,7 +29,7 @@ class EvaluateSlaClocksCommand extends Command
             ->whereNull('satisfied_at')
             ->whereNull('cancelled_at')
             ->lazyById(250)
-            ->each(function (SlaClock $candidate) use ($at, &$alerts, &$evaluated, &$failed, $manager): void {
+            ->each(function (SlaClock $candidate) use ($at, &$alerts, &$evaluated, &$failed, $manager, $routing): void {
                 $clockId = (int) $candidate->id;
                 $evaluated++;
 
@@ -57,7 +53,7 @@ class EvaluateSlaClocksCommand extends Command
                     return;
                 }
 
-                foreach ($this->recipients($clock) as $agent) {
+                foreach ($routing->recipients($clock) as $agent) {
                     try {
                         $agent->notify(new SlaDeadlineAlert($clock, $stage));
                         $alerts++;
@@ -76,48 +72,5 @@ class EvaluateSlaClocksCommand extends Command
         $this->line("SLA evaluation complete. Clocks evaluated: {$evaluated}. Alerts queued: {$alerts}. Failed: {$failed}.");
 
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
-    }
-
-    /** @return Collection<int, User> */
-    private function recipients(SlaClock $clock): Collection
-    {
-        $subject = $clock->subject;
-        $site = $clock->site;
-        $assignedId = $subject instanceof Ticket ? $subject->assignee_id : $subject->assigned_agent_id;
-
-        if ($assignedId) {
-            $assigned = $site->account->agents()->whereKey($assignedId)->first();
-
-            if ($assigned && $site->supportsAgent($assigned)) {
-                return $this->eligibleRecipient($assigned, $subject)
-                    ? collect([$assigned])
-                    : collect();
-            }
-        }
-
-        $query = $site->hasExplicitSupportAgents()
-            ? $site->eligibleSupportAgents()
-            : $site->account->agents();
-
-        return $query->get()
-            ->filter(fn (User $agent): bool => $this->eligibleRecipient($agent, $subject))
-            ->values();
-    }
-
-    private function eligibleRecipient(User $agent, Conversation|Ticket $subject): bool
-    {
-        if ($agent->isDeactivated()) {
-            return false;
-        }
-
-        if ($subject instanceof Conversation) {
-            return $agent->shouldReceiveConversationAlert($subject);
-        }
-
-        return $agent->hasAccountPermission(AccountPermission::ViewAlerts)
-            && $agent->hasAccountPermission(AccountPermission::ManageTickets)
-            && $agent->alertMode() !== User::ALERT_MODE_QUIET
-            && ($agent->alertMode() !== User::ALERT_MODE_ASSIGNED
-                || (int) $subject->assignee_id === $agent->id);
     }
 }

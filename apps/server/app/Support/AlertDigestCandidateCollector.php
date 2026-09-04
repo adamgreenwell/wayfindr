@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
+use App\Support\Sla\SlaAlertRouting;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Notifications\DatabaseNotification;
@@ -18,6 +19,8 @@ use Illuminate\Support\Facades\Gate;
 class AlertDigestCandidateCollector
 {
     public const DIGEST_QUEUED_AT_KEY = 'digest_queued_at';
+
+    public function __construct(private readonly SlaAlertRouting $slaAlertRouting) {}
 
     /**
      * @return Collection<int, array{
@@ -185,7 +188,8 @@ class AlertDigestCandidateCollector
         // the alert centre but no longer something to interrupt email with.
         if (! $clock->isActive()
             || ($stage === 'warning' && $clock->breached_at !== null)
-            || ($stage === 'breach' && $clock->breached_at === null)) {
+            || ($stage === 'breach' && $clock->breached_at === null)
+            || ! $this->slaAlertRouting->routesTo($clock, $agent)) {
             return null;
         }
 

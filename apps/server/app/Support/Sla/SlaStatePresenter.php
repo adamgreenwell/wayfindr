@@ -19,8 +19,14 @@ final class SlaStatePresenter
         $at = CarbonImmutable::instance($at ?? now());
         $subject->loadMissing(['site', 'slaClocks']);
 
-        return $subject->slaClocks
-            ->whereNull('cancelled_at')
+        $clocks = $subject->slaClocks->whereNull('cancelled_at');
+
+        if ($subject->getAttribute('status') !== 'closed') {
+            $clocks = $clocks->reject(fn (SlaClock $clock): bool => $clock->metric === SlaClock::METRIC_RESOLUTION
+                && ! $clock->isActive());
+        }
+
+        return $clocks
             ->sortByDesc('id')
             ->unique('metric')
             ->map(fn (SlaClock $clock): array => $this->present($clock, $at))

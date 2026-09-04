@@ -265,6 +265,37 @@ test('digest candidates drop SLA alerts whose work no longer needs action', func
     expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
 });
 
+test('digest candidates recheck current SLA assignment routing', function (): void {
+    $account = Account::factory()->create();
+    $agent = digestAgent($account, [
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ASSIGNED,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+        ],
+    ]);
+    $replacement = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->for($agent, 'assignee')->create();
+    $clock = $ticket->slaClocks()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'metric' => SlaClock::METRIC_RESOLUTION,
+        'priority' => 'normal',
+        'target_seconds' => 600,
+        'warning_seconds' => 480,
+        'elapsed_seconds' => 480,
+        'started_at' => now()->subMinutes(8),
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ]);
+    $agent->notify(new SlaDeadlineAlert($clock, 'warning'));
+
+    $ticket->forceFill(['assignee_id' => $replacement->id])->save();
+
+    expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
+});
+
 function digestAgent(Account $account, array $overrides = []): User
 {
     return User::factory()->for($account)->create(array_replace_recursive([

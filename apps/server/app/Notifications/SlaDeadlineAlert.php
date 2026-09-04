@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\Sla\SlaAlertRouting;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -50,7 +51,8 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
         return $recipient instanceof User
             && $clock?->subject !== null
             && $recipient->wantsImmediateAlertEmail()
-            && Gate::forUser($recipient)->allows('view', $clock->subject);
+            && Gate::forUser($recipient)->allows('view', $clock->subject)
+            && app(SlaAlertRouting::class)->routesTo($clock, $recipient);
     }
 
     public function toMail(object $notifiable): MailMessage

@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\Sla\SlaClockManager;
+use App\Support\Sla\SlaStatePresenter;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -116,6 +117,25 @@ test('a reopen starts a new resolution episode without rewriting the old one', f
         ->and($clocks[1]->elapsed_seconds)->toBe(0);
 });
 
+test('reopened work without an active target does not present an old resolution episode as current', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    $policy = configureNormalSla($world['account']);
+    $ticket = Ticket::factory()->for($world['account'])->for($world['site'])->create();
+
+    $ticket->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
+    $policy->delete();
+    $ticket->forceFill(['status' => 'open', 'closed_at' => null])->save();
+
+    expect($ticket->slaClocks()->count())->toBe(1)
+        ->and($ticket->slaClocks()->whereNull('satisfied_at')->whereNull('cancelled_at')->count())->toBe(0)
+        ->and(app(SlaStatePresenter::class)->all($ticket->fresh()))->toBeEmpty();
+
+    $this->actingAs($world['agent'])
+        ->get(route('dashboard.tickets.index'))
+        ->assertOk()
+        ->assertDontSee('Resolution: Met');
+});
+
 test('the evaluator warns once and breaches once', function (): void {
     Notification::fake();
     $world = slaWorld(['enabled' => false]);
@@ -182,6 +202,40 @@ test('assigned-only agents do not receive SLA alerts for unassigned tickets', fu
 
     Notification::assertSentTo($world['agent'], SlaDeadlineAlert::class);
     Notification::assertNotSentTo($assignedOnly, SlaDeadlineAlert::class);
+});
+
+test('queued SLA mail rechecks assignment and quiet mode before delivery', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ASSIGNED,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+    $replacement = User::factory()->for($world['account'])->create();
+    $world['site']->supportAgents()->attach($replacement);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create([
+        'assigned_agent_id' => $world['agent']->id,
+    ]);
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $notification = new SlaDeadlineAlert($clock, 'warning');
+
+    $conversation->forceFill(['assigned_agent_id' => $replacement->id])->save();
+    expect($notification->shouldSend($world['agent'], 'mail'))->toBeFalse();
+
+    $conversation->forceFill(['assigned_agent_id' => $world['agent']->id])->save();
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_QUIET,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+
+    expect($notification->shouldSend($world['agent'], 'mail'))->toBeFalse();
 });
 
 test('advancing before an hours edit preserves time already counted', function (): void {
