@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
 use App\Events\ConversationMessageCreated;
+use App\Jobs\DeliverTicketExternalComment;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
@@ -11,6 +12,7 @@ use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
+use App\Models\TicketExternalCommentDelivery;
 use App\Models\TicketExternalLink;
 use App\Models\TicketLabel;
 use App\Models\User;
@@ -20,13 +22,7 @@ use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
 use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueProvider;
-use App\Support\ExternalIssues\ExternalIssueCommentFailed;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
-use App\Support\ExternalIssues\GitHubIssueCommenter;
-use App\Support\ExternalIssues\GitLabIssueCommenter;
-use App\Support\ExternalIssues\InboundCommentSync;
-use App\Support\ExternalIssues\IssueCommenter;
-use App\Support\ExternalIssues\JiraIssueCommenter;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\Sites\SiteManagerCoverage;
@@ -179,29 +175,47 @@ class AgentTicketController extends Controller
         }
 
         $postToExternal = $request->boolean('post_to_external');
-        [$agent, $ticket, $status] = DB::transaction(function () use ($agent, $body, $metadata, $postToExternal, $ticket): array {
+        [$agent, $ticket, $deliveryIds] = DB::transaction(function () use ($agent, $body, $metadata, $postToExternal, $ticket): array {
             [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'addNote');
-            $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
-
-            $status = 'tickets.flash.note_added';
+            $note = $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
+            $deliveryIds = [];
 
             // Internal notes stay internal unless the agent explicitly opts to
-            // relay this one. Keep the provider calls inside the same account
-            // lock as the fresh authorization: a concurrent role revocation
-            // then lands either wholly before this note or wholly after its
-            // selected external side effects.
+            // relay this one. The durable intent is committed under the same
+            // account lock as the fresh authorization. Provider HTTP runs only
+            // afterwards, so an accepted remote comment can never be rolled
+            // back into a retryable local request.
             if ($postToExternal) {
-                $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body);
-
-                if ($relay['failed'] > 0) {
-                    $status = 'tickets.flash.note_added_not_posted';
-                } elseif ($relay['posted'] > 0) {
-                    $status = 'tickets.flash.note_added_posted';
+                foreach ($this->commentableExternalLinks($ticket) as $target) {
+                    $delivery = TicketExternalCommentDelivery::query()->create([
+                        'public_id' => (string) Str::uuid(),
+                        'account_id' => $ticket->account_id,
+                        'site_id' => $ticket->site_id,
+                        'ticket_id' => $ticket->id,
+                        'ticket_external_link_id' => $target['link']->id,
+                        'provider_connection_id' => $target['connection']->id,
+                        'actor_id' => $agent->id,
+                        'note_audit_event_id' => $note->id,
+                        'body' => $body,
+                    ]);
+                    $deliveryIds[] = $delivery->id;
                 }
             }
 
-            return [$agent, $ticket, $status];
+            return [$agent, $ticket, $deliveryIds];
         });
+
+        $outcomes = collect($deliveryIds)
+            ->map(fn (int $deliveryId): string => DeliverTicketExternalComment::processNow($deliveryId));
+        $status = 'tickets.flash.note_added';
+
+        if ($outcomes->contains(DeliverTicketExternalComment::OUTCOME_FAILED)) {
+            $status = 'tickets.flash.note_added_not_posted';
+        } elseif ($outcomes->contains(DeliverTicketExternalComment::OUTCOME_PENDING)) {
+            $status = 'tickets.flash.note_added_queued';
+        } elseif ($outcomes->contains(DeliverTicketExternalComment::OUTCOME_POSTED)) {
+            $status = 'tickets.flash.note_added_posted';
+        }
 
         return $this->redirectAfterUpdate($ticket, $request, $status);
     }
@@ -254,77 +268,6 @@ class AgentTicketController extends Controller
             })
             ->filter()
             ->values();
-    }
-
-    /**
-     * @return array{posted: int, failed: int}
-     */
-    private function relayNoteToExternalIssues(Ticket $ticket, User $agent, string $body): array
-    {
-        $posted = 0;
-        $failed = 0;
-
-        foreach ($this->commentableExternalLinks($ticket) as $target) {
-            /** @var TicketExternalLink $link */
-            $link = $target['link'];
-            /** @var ExternalIssueProviderConnection $connection */
-            $connection = $target['connection'];
-
-            $commenter = $this->commenterFor($link->provider);
-
-            if ($commenter === null) {
-                continue;
-            }
-
-            try {
-                $result = $commenter->comment($connection, $link, $body);
-
-                $posted++;
-
-                // Remember the comment we just created so the inbound webhook
-                // does not echo our own comment back onto the ticket as a note.
-                $this->markCommentSynced($link, $result['id'] ?? null);
-
-                // The note body is already recorded on the note_added event; the
-                // relay event stays content-free provenance.
-                $this->recordActivity($ticket, $agent, 'ticket.external_comment_posted', [
-                    'external_link_id' => $link->id,
-                    'provider' => $link->provider,
-                    'external_key' => $link->external_key,
-                    'url' => $result['url'] ?? $link->url,
-                ]);
-            } catch (ExternalIssueCommentFailed $exception) {
-                $failed++;
-
-                $this->recordActivity($ticket, $agent, 'ticket.external_comment_failed', [
-                    'external_link_id' => $link->id,
-                    'provider' => $link->provider,
-                    'status' => $exception->status(),
-                    'message' => Str::limit($exception->getMessage(), 300),
-                ]);
-            }
-        }
-
-        return ['posted' => $posted, 'failed' => $failed];
-    }
-
-    private function commenterFor(string $provider): ?IssueCommenter
-    {
-        return match ($provider) {
-            'github' => app(GitHubIssueCommenter::class),
-            'gitlab' => app(GitLabIssueCommenter::class),
-            'jira' => app(JiraIssueCommenter::class),
-            default => null,
-        };
-    }
-
-    private function markCommentSynced(TicketExternalLink $link, ?string $commentId): void
-    {
-        if ($commentId === null || trim($commentId) === '') {
-            return;
-        }
-
-        app(InboundCommentSync::class)->remember($link, $commentId);
     }
 
     public function storeLabel(Request $request, Ticket $ticket): RedirectResponse
@@ -2169,9 +2112,9 @@ class AgentTicketController extends Controller
         });
     }
 
-    private function recordActivity(Ticket $ticket, User $agent, string $action, array $metadata = []): void
+    private function recordActivity(Ticket $ticket, User $agent, string $action, array $metadata = []): AuditEvent
     {
-        $ticket->auditEvents()->create([
+        return $ticket->auditEvents()->create([
             'account_id' => $ticket->account_id,
             'site_id' => $ticket->site_id,
             'actor_type' => User::class,

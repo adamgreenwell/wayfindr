@@ -373,6 +373,7 @@ return [
         'label_removed' => 'Ticket-Label entfernt.',
         'marked_pending' => 'Ticket als wartend markiert.',
         'note_added' => 'Notiz hinzugefügt.',
+        'note_added_queued' => 'Notiz hinzugefügt. Der Kommentar für das verknüpfte Issue wurde zur Zustellung vorgemerkt.',
         'note_added_posted' => 'Notiz hinzugefügt und im verknüpften Issue veröffentlicht.',
         'note_added_not_posted' => 'Notiz hinzugefügt, aber der externe Kommentar konnte nicht veröffentlicht werden. Siehe Ticket-Aktivität.',
         'reopened' => 'Ticket wieder geöffnet.',

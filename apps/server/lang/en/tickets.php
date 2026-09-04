@@ -380,6 +380,7 @@ return [
         'label_removed' => 'Ticket label removed.',
         'marked_pending' => 'Ticket marked pending.',
         'note_added' => 'Ticket note added.',
+        'note_added_queued' => 'Ticket note added. The linked issue comment is queued for delivery.',
         'note_added_posted' => 'Ticket note added and posted to the linked issue.',
         'note_added_not_posted' => 'Ticket note added, but the external comment could not be posted. See ticket activity.',
         'reopened' => 'Ticket reopened.',
