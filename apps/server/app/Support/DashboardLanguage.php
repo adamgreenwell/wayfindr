@@ -208,6 +208,17 @@ final class DashboardLanguage
         'dashboard.account.reply-templates.update',
         'dashboard.account.reply-templates.archive',
 
+        // Automation management is one translated workflow: the list and
+        // execution log, the ordered rule form, and every write that can send
+        // validation or preview feedback back to that form.
+        'dashboard.account.automation-rules.index',
+        'dashboard.account.automation-rules.create',
+        'dashboard.account.automation-rules.store',
+        'dashboard.account.automation-rules.edit',
+        'dashboard.account.automation-rules.update',
+        'dashboard.account.automation-rules.preview',
+        'dashboard.account.automation-rules.destroy',
+
         // The account ticket-labels page. Reached from the ticket queue, which
         // is extracted, and it links straight back there -- so English here put
         // two languages either side of one click.

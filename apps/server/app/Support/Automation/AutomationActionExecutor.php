@@ -55,6 +55,11 @@ final readonly class AutomationActionExecutor
     private function assignAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): array
     {
         $agent = $this->eligibleAgent($rule, $subject, $agentId);
+
+        if (! $agent instanceof User) {
+            return $this->result(AutomationRuleActionType::AssignAgent, 'noop', 'target_unavailable');
+        }
+
         $currentId = $subject instanceof Ticket ? $subject->assignee_id : $subject->assigned_agent_id;
 
         if ((int) $currentId === (int) $agent->id) {
@@ -152,8 +157,8 @@ final readonly class AutomationActionExecutor
     {
         $agent = $this->eligibleAgent($rule, $subject, $agentId);
 
-        if (! $agent->hasAccountPermission(AccountPermission::ViewAlerts)) {
-            throw new InvalidArgumentException("Agent {$agentId} cannot receive automation notifications.");
+        if (! $agent instanceof User || ! $agent->hasAccountPermission(AccountPermission::ViewAlerts)) {
+            return $this->result(AutomationRuleActionType::NotifyAgent, 'noop', 'target_unavailable');
         }
 
         if ($agent->alertMode() === User::ALERT_MODE_QUIET) {
@@ -198,14 +203,17 @@ final readonly class AutomationActionExecutor
         return $this->result(AutomationRuleActionType::PostInternalNote, 'applied', 'private_ticket_note');
     }
 
-    private function eligibleAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): User
+    private function eligibleAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): ?User
     {
         $agent = User::query()
             ->with('customRole')
             ->whereKey($agentId)
-            ->where('account_id', $rule->account_id)
-            ->whereNull('deactivated_at')
             ->first();
+
+        if ($agent instanceof User && (int) $agent->account_id !== (int) $rule->account_id) {
+            throw new InvalidArgumentException("Agent {$agentId} is not available to this automation rule.");
+        }
+
         $permission = $subject instanceof Ticket
             ? AccountPermission::ManageTickets
             : AccountPermission::ViewConversations;
@@ -214,7 +222,7 @@ final readonly class AutomationActionExecutor
         if (! $agent instanceof User
             || ! $agent->hasAccountPermission($permission)
             || $subject->site?->supportsAgent($agent) !== true) {
-            throw new InvalidArgumentException("Agent {$agentId} cannot access this automation subject.");
+            return null;
         }
 
         return $agent;

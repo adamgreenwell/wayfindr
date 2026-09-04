@@ -16,6 +16,7 @@ use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAccountSlaPolicyController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentArticleController;
+use App\Http\Controllers\AgentAutomationRuleController;
 use App\Http\Controllers\AgentConversationAttachmentController;
 use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentConversationQueueController;
@@ -215,6 +216,24 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.account.reply-templates.update');
     Route::post('/dashboard/account/reply-templates/{replyTemplate}/archive', [AgentReplyTemplateController::class, 'archive'])
         ->name('dashboard.account.reply-templates.archive');
+    Route::get('/dashboard/account/automation-rules', [AgentAutomationRuleController::class, 'index'])
+        ->name('dashboard.account.automation-rules.index');
+    Route::get('/dashboard/account/automation-rules/new', [AgentAutomationRuleController::class, 'create'])
+        ->name('dashboard.account.automation-rules.create');
+    Route::post('/dashboard/account/automation-rules', [AgentAutomationRuleController::class, 'store'])
+        ->name('dashboard.account.automation-rules.store');
+    Route::get('/dashboard/account/automation-rules/{automationRule}/edit', [AgentAutomationRuleController::class, 'edit'])
+        ->whereNumber('automationRule')
+        ->name('dashboard.account.automation-rules.edit');
+    Route::put('/dashboard/account/automation-rules/{automationRule}', [AgentAutomationRuleController::class, 'update'])
+        ->whereNumber('automationRule')
+        ->name('dashboard.account.automation-rules.update');
+    Route::post('/dashboard/account/automation-rules/{automationRule}/preview', [AgentAutomationRuleController::class, 'preview'])
+        ->whereNumber('automationRule')
+        ->name('dashboard.account.automation-rules.preview');
+    Route::delete('/dashboard/account/automation-rules/{automationRule}', [AgentAutomationRuleController::class, 'destroy'])
+        ->whereNumber('automationRule')
+        ->name('dashboard.account.automation-rules.destroy');
     // Readiness is an instance report about mail, queues, storage and
     // scanning -- an operator's job, not an account's. This route predates the
     // operator console and served the same report to account admins, who then

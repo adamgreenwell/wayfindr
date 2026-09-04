@@ -1,0 +1,116 @@
+<?php
+
+return [
+    'title' => 'Regole di automazione',
+    'subtitle' => 'Esegua una sequenza piccola ed esplicita di azioni di assistenza quando il lavoro dell’account corrisponde.',
+    'back' => 'Torna all’account',
+    'status' => ['enabled' => 'Attiva', 'draft' => 'Bozza'],
+    'flash' => [
+        'created' => 'Bozza della regola di automazione creata.',
+        'updated' => 'Regola di automazione salvata.',
+        'deleted' => 'Regola di automazione eliminata. La cronologia delle esecuzioni resta disponibile.',
+        'previewed' => 'Anteprima completata senza modificare il lavoro di assistenza.',
+    ],
+    'safety' => [
+        'heading' => 'Sicurezza dell’automazione', 'lede' => 'Modifiche al lavoro di assistenza per tutto l’account',
+        'drafts' => 'Le nuove regole iniziano come bozze. Salvi e provi una regola sul lavoro recente prima di attivarla.',
+        'order' => 'I numeri di esecuzione più bassi vengono elaborati per primi. Condizioni e azioni procedono dall’alto verso il basso.',
+        'visitor' => 'Queste azioni non inviano messaggi visibili ai visitatori. Le note interne restano private per il team di assistenza.',
+    ],
+    'list' => [
+        'heading' => 'Regole', 'count' => '{0} Nessuna regola|{1} :count regola|[2,*] :count regole',
+        'rule' => 'Regola', 'event' => 'Evento', 'definition' => 'Definizione', 'order' => 'Ordine di esecuzione',
+        'status' => 'Stato', 'manage' => 'Gestisci', 'edit' => 'Modifica',
+        'condition_count' => '{0} Ogni evento|{1} :count condizione|[2,*] :count condizioni',
+        'action_count' => '{1} :count azione|[2,*] :count azioni',
+    ],
+    'empty' => [
+        'heading' => 'Ancora nessuna regola di automazione.',
+        'body' => 'Crei una bozza disattivata, definisca le azioni e la provi sul lavoro di assistenza recente.',
+        'action' => 'Crea la prima regola',
+    ],
+    'create' => [
+        'title' => 'Crea regola di automazione',
+        'subtitle' => 'Inizi con una bozza disattivata e la provi prima che entri nel flusso di assistenza attivo.',
+        'action' => 'Crea regola', 'submit' => 'Crea bozza',
+    ],
+    'edit' => [
+        'title' => 'Modifica regola di automazione', 'title_named' => 'Modifica :name',
+        'subtitle' => 'Salvi la definizione ordinata, provi la versione salvata e la attivi quando il risultato è corretto.',
+        'back' => 'Torna alle regole di automazione', 'save' => 'Salva regola',
+    ],
+    'fields' => [
+        'name' => 'Nome della regola', 'name_help' => 'Usi un nome che spieghi il risultato desiderato.',
+        'event' => 'Quando accade questo', 'event_help' => 'L’evento stabilisce quali condizioni e azioni sono disponibili.',
+        'position' => 'Ordine di esecuzione', 'position_help' => 'I numeri più bassi vengono eseguiti per primi; a parità vale l’ordine di creazione.',
+        'condition_field' => 'Campo', 'comparison' => 'Confronto', 'action_type' => 'Azione', 'value' => 'Valore',
+        'internal_note' => 'Nota privata', 'enabled' => 'Attiva questa regola',
+        'enabled_help' => 'Le regole attive agiscono sui nuovi eventi corrispondenti. L’anteprima usa la regola salvata senza modificare nulla.',
+    ],
+    'builder' => [
+        'heading' => 'Definizione della regola', 'lede' => 'Un evento, tutte le condizioni elencate, poi ogni azione in ordine.',
+        'conditions' => 'Condizioni', 'conditions_help' => 'Ogni condizione deve corrispondere. Senza condizioni, ogni occorrenza dell’evento corrisponde.',
+        'actions' => 'Azioni', 'actions_help' => 'Le azioni vengono eseguite dall’alto verso il basso. Una regola può contenerne fino a dieci.',
+        'add_condition' => 'Aggiungi condizione', 'remove_condition' => 'Rimuovi condizione',
+        'add_action' => 'Aggiungi azione', 'remove_action' => 'Rimuovi azione', 'move_up' => 'Sposta su', 'move_down' => 'Sposta giù',
+    ],
+    'events' => [
+        'conversation_created' => 'Conversazione creata',
+        'conversation_visitor_message_created' => 'Messaggio del visitatore ricevuto',
+        'ticket_created' => 'Ticket creato', 'ticket_updated' => 'Ticket aggiornato',
+    ],
+    'condition_fields' => [
+        'subject' => 'Oggetto', 'description' => 'Descrizione', 'status' => 'Stato', 'priority' => 'Priorità',
+        'category' => 'Categoria', 'site_id' => 'Sito', 'assignee_id' => 'Assegnatario', 'message_body' => 'Messaggio del visitatore',
+    ],
+    'operators' => ['equals' => 'È uguale a', 'not_equals' => 'Non è uguale a', 'contains' => 'Contiene', 'not_contains' => 'Non contiene'],
+    'actions' => [
+        'assign_agent' => 'Assegna agente', 'add_label' => 'Aggiungi etichetta', 'set_priority' => 'Imposta priorità',
+        'set_status' => 'Imposta stato', 'notify_agent' => 'Notifica agente', 'post_internal_note' => 'Pubblica nota interna',
+    ],
+    'value_groups' => ['sites' => 'Siti', 'agents' => 'Agenti', 'labels' => 'Etichette dei ticket', 'priorities' => 'Priorità', 'statuses' => 'Stati', 'categories' => 'Categorie'],
+    'values' => [
+        'choose' => 'Scelga un valore', 'unassigned' => 'Non assegnato', 'deactivated' => 'Disattivato', 'uncategorized' => 'Senza categoria',
+        'none' => 'Nessuno', 'removed_id' => 'Elemento rimosso n. :id',
+        'every_event' => 'Nessuna condizione: ogni occorrenza di questo evento corrisponde.',
+    ],
+    'preview' => [
+        'heading' => 'Anteprima di prova',
+        'lede' => 'Valuta l’ultima definizione salvata sul lavoro recente. Non esegue azioni, avvisi, note o modifiche al ciclo di vita.',
+        'no_changes' => 'Nessuna modifica',
+        'no_subjects' => 'Non vede lavoro recente compatibile. Per un’anteprima serve anche il relativo permesso per conversazioni o ticket.',
+        'subject' => 'Lavoro di assistenza recente', 'choose' => 'Scelga il lavoro da provare', 'run' => 'Esegui anteprima',
+        'result' => 'Risultato dell’anteprima', 'matched' => 'Corrisponderebbe', 'not_matched' => 'Non corrisponderebbe',
+        'condition_matched' => 'Corrisponde:', 'condition_not_matched' => 'Non corrisponde:', 'actual' => 'Valore effettivo: :value',
+        'would_run' => 'Azioni che verrebbero eseguite', 'no_actions' => 'Nessuna azione verrebbe eseguita perché non tutte le condizioni corrispondono.',
+    ],
+    'executions' => [
+        'heading' => 'Registro delle esecuzioni', 'lede' => 'Risultati permanenti delle regole corrispondenti, inclusi errori e azioni senza modifiche.',
+        'empty' => 'Nessuna regola di automazione è stata ancora eseguita.', 'when' => 'Completata', 'rule' => 'Snapshot della regola',
+        'work' => 'Lavoro di assistenza', 'outcome' => 'Esito', 'details' => 'Dettagli', 'open_details' => 'Apri dettagli dell’esecuzione',
+        'conditions' => 'Condizioni corrispondenti', 'actions' => 'Azioni pianificate', 'results' => 'Risultati delle azioni', 'error' => 'Dettaglio dell’errore',
+    ],
+    'execution_statuses' => ['succeeded' => 'Riuscita', 'failed' => 'Non riuscita'],
+    'result_statuses' => ['applied' => 'Applicata', 'noop' => 'Nessuna modifica necessaria', 'queued' => 'In coda'],
+    'result_details' => [
+        'already_assigned' => 'Già assegnato a questo agente', 'already_labeled' => 'Etichetta già presente',
+        'quiet_mode' => 'L’agente usa la modalità silenziosa', 'private_ticket_note' => 'Nota privata del ticket registrata',
+        'target_unavailable' => 'L’agente di destinazione non è più disponibile per questo lavoro',
+    ],
+    'result_change' => 'da :before a :after', 'result_already' => 'Già :value',
+    'condition_sentence' => ':field — :operator — :value', 'action_sentence' => ':action con valore :value', 'result_sentence' => ':action: :status (:detail)',
+    'subjects' => [
+        'ticket' => 'Ticket n. :id — :subject', 'conversation' => 'Conversazione :code — :subject', 'message' => ':subject — «:excerpt»',
+        'removed' => 'Lavoro di assistenza rimosso n. :id', 'restricted' => 'Lavoro di assistenza riservato',
+    ],
+    'delete' => [
+        'heading' => 'Elimina regola',
+        'lede' => 'La regola scompare, ma le istantanee delle esecuzioni restano nel registro affinché le modifiche precedenti siano spiegabili.',
+        'action' => 'Elimina regola',
+    ],
+    'validation' => [
+        'heading' => 'Verifica della definizione della regola', 'choice' => 'Scelga un valore dal gruppo corrispondente.',
+        'reference' => 'L’elemento dell’account non è disponibile o non dispone dell’accesso richiesto da questa azione.',
+        'definition' => 'Questa definizione della regola non è valida: :detail', 'duplicate' => 'Esiste già una regola con questo nome.',
+    ],
+];

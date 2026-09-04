@@ -69,6 +69,7 @@ return [
     'validation' => [
         'duplicate' => 'That label already exists for this account.',
         'in_use' => 'Remove this label from tickets before deleting it.',
+        'in_use_automation' => 'Remove this label from every automation rule before deleting it.',
         'empty' => 'Use at least one letter or number for the label.',
         'reserved' => 'That label name is reserved for ticket filtering.',
     ],
