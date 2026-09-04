@@ -23,6 +23,7 @@
     <p class="realtime-note" data-visitor-typing aria-live="polite" {{ $conversation->visitorTypingState() === 'typing' ? '' : 'hidden' }}>{{ __('conversations.detail.reply.typing') }}</p>
 </section>
 
+@if ($canReply)
 <section class="section" aria-labelledby="reply-heading">
     <div class="section-header">
         <h2 id="reply-heading">{{ __('conversations.detail.reply.heading') }}</h2>
@@ -169,3 +170,4 @@
 </section>
 
 @include('agent.partials.reply-composer-script')
+@endif

@@ -99,6 +99,7 @@ return [
         'ability_read' => 'Leggere conversazioni, messaggi, ticket e visitatori',
         'ability_write' => 'Aprire conversazioni, inviare messaggi e creare o modificare lo stato dei ticket',
         'abilities_help' => 'Ogni autorizzazione è indipendente. La scrittura non concede la lettura e la lettura non concede mai la scrittura.',
+        'abilities_limited' => 'Le autorizzazioni che il suo ruolo non può esercitare non sono disponibili.',
         'expires_label' => 'Scade dopo',
         'expires_help' => 'Giorni. Se lasciato vuoto il token non scade mai, il che significa che non è più compito di nessuno accorgersene.',
         'sites_label' => 'Limita ai siti',

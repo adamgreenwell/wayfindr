@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -171,6 +173,100 @@ test('an agent cannot see, issue or revoke tokens', function (): void {
 
     expect(ApiToken::query()->count())->toBe(1)
         ->and($token->fresh()->revoked_at)->toBeNull();
+});
+
+test('a custom integration manager cannot issue API abilities broader than their support permissions', function (string $ability): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageIntegrations->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('Abilities your role cannot perform are unavailable.')
+        ->assertSeeInOrder([
+            'id="api_token_read"',
+            'disabled>',
+            'Read conversations, messages, tickets and visitors',
+            'id="api_token_write"',
+            'disabled>',
+        ], false);
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Privilege bridge',
+            'abilities' => [$ability],
+        ])
+        ->assertForbidden();
+
+    expect(ApiToken::query()->count())->toBe(0);
+})->with([
+    'read' => [ApiToken::ABILITY_READ],
+    'write' => [ApiToken::ABILITY_WRITE],
+]);
+
+test('a custom integration manager may issue a read token when they hold every bundled read permission', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ManageIntegrations->value,
+            AccountPermission::ViewConversations->value,
+            AccountPermission::ManageTickets->value,
+        ],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Bounded reporting',
+            'abilities' => [ApiToken::ABILITY_READ],
+        ])
+        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+
+    expect(ApiToken::query()->sole()->abilities)->toBe([ApiToken::ABILITY_READ]);
+});
+
+test('token issuance reauthorizes custom role abilities under the account lock', function (): void {
+    $account = Account::factory()->create();
+    $issuerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ManageIntegrations->value,
+            AccountPermission::ViewConversations->value,
+            AccountPermission::ManageTickets->value,
+        ],
+    ]);
+    $settingsRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageIntegrations->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $issuerRole->id,
+    ]);
+    Site::factory()->for($account)->create();
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk();
+
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $settingsRole->id]);
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.api-tokens.store'), [
+            'name' => 'Stale privilege bridge',
+            'abilities' => [ApiToken::ABILITY_READ],
+        ])
+        ->assertForbidden();
+
+    expect(ApiToken::query()->count())->toBe(0)
+        ->and(AuditEvent::query()->where('action', 'api_token.created')->exists())->toBeFalse();
 });
 
 test('an admin cannot revoke another account token, and is not told it exists', function (): void {

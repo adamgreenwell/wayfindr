@@ -202,14 +202,20 @@
                 <div class="field">
                     <label for="api_token_abilities">{{ __('api_tokens.create.abilities_label') }}</label>
                     <label for="api_token_read">
-                        <input type="checkbox" id="api_token_read" name="abilities[]" value="read" checked>
+                        <input type="checkbox" id="api_token_read" name="abilities[]" value="read"
+                            @checked(in_array(\App\Models\ApiToken::ABILITY_READ, $grantableAbilities, true))
+                            @disabled(! in_array(\App\Models\ApiToken::ABILITY_READ, $grantableAbilities, true))>
                         {{ __('api_tokens.create.ability_read') }}
                     </label>
                     <label for="api_token_write">
-                        <input type="checkbox" id="api_token_write" name="abilities[]" value="write">
+                        <input type="checkbox" id="api_token_write" name="abilities[]" value="write"
+                            @disabled(! in_array(\App\Models\ApiToken::ABILITY_WRITE, $grantableAbilities, true))>
                         {{ __('api_tokens.create.ability_write') }}
                     </label>
                     <p class="field-help">{{ __('api_tokens.create.abilities_help') }}</p>
+                    @if (count($grantableAbilities) < count(\App\Models\ApiToken::ABILITIES))
+                        <p class="field-help">{{ __('api_tokens.create.abilities_limited') }}</p>
+                    @endif
                 </div>
 
                 <div class="field">
@@ -336,11 +342,11 @@
 
             <div class="field">
                 <label for="webhook_events">{{ __('outbound_webhooks.create.events_label') }}</label>
-                @foreach (\App\Models\OutboundWebhookEndpoint::EVENTS as $event)
+                @foreach ($grantableWebhookEvents as $event)
                     <label for="webhook_event_{{ str_replace('.', '_', $event) }}">
                         <input type="checkbox" id="webhook_event_{{ str_replace('.', '_', $event) }}"
                             name="webhook[events][]" value="{{ $event }}"
-                            @checked(in_array($event, old('webhook.events', \App\Models\OutboundWebhookEndpoint::EVENTS), true))>
+                            @checked(in_array($event, old('webhook.events', $grantableWebhookEvents), true))>
                         {{ __('outbound_webhooks.events.'.str_replace('.', '_', $event)) }}
                     </label>
                 @endforeach

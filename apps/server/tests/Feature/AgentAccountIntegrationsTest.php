@@ -8,7 +8,10 @@
 // connections stays admin-only. Site pages cross-link here instead of
 // embedding the account-scoped form.
 
+use App\Enums\AccountPermission;
+use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\User;
@@ -640,6 +643,56 @@ test('an admin can update saved connection capabilities without replacing creden
     ])->and(data_get($connection->credentials, 'token'))->toBe('gh_token')
         ->and(data_get($connection->credentials, 'webhook_secret'))->toBe('whsec');
 });
+
+test('provider connection mutations reauthorize the integration manager under the account lock', function (string $action): void {
+    $account = Account::factory()->create();
+    $integrationRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageIntegrations->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $integrationRole->id,
+    ]);
+    $connection = ExternalIssueProviderConnection::factory()->for($account)->create([
+        'credentials' => ['token' => 'original-token', 'webhook_secret' => 'original-secret'],
+        'capabilities' => ['create_issue' => true, 'add_comment' => false, 'sync_status' => false],
+    ]);
+
+    $this->actingAs($manager);
+
+    // Model a permission revocation after the request's first authorization
+    // check by keeping the authenticated object on its stale custom role.
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $response = match ($action) {
+        'store' => $this->post(route('dashboard.external-issue-provider-connections.store'), [
+            'provider' => 'github',
+            'name' => 'Stale provider write',
+            'credential_token' => 'late-token',
+            'capabilities' => ['create_issue'],
+        ]),
+        'webhook secret' => $this->put(route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection), [
+            'webhook_secret' => 'late-secret',
+        ]),
+        'capabilities' => $this->put(route('dashboard.external-issue-provider-connections.capabilities.update', $connection), [
+            'capabilities' => ['create_issue', 'add_comment'],
+        ]),
+    };
+
+    $response->assertForbidden();
+
+    expect(ExternalIssueProviderConnection::query()->count())->toBe(1)
+        ->and($connection->fresh()->credentials)->toBe([
+            'token' => 'original-token',
+            'webhook_secret' => 'original-secret',
+        ])
+        ->and($connection->fresh()->capabilities)->toBe([
+            'create_issue' => true,
+            'add_comment' => false,
+            'sync_status' => false,
+        ]);
+})->with(['store', 'webhook secret', 'capabilities']);
 
 test('a non-admin cannot update saved connection capabilities', function (): void {
     $fixture = integrationsAccount();

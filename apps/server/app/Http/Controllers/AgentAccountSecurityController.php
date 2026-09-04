@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
@@ -19,7 +20,7 @@ final class AgentAccountSecurityController extends Controller
     public function show(Request $request): View
     {
         $agent = $request->user();
-        abort_unless($agent?->account_id && $agent->isAdmin(), 403);
+        abort_unless($agent?->account_id && $agent->hasAccountPermission(AccountPermission::ManageSecurity), 403);
 
         $account = $agent->account()->firstOrFail();
         $activeAgents = $account->agents()->whereNull('deactivated_at');
@@ -38,7 +39,7 @@ final class AgentAccountSecurityController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $agent = $request->user();
-        abort_unless($agent?->account_id && $agent->isAdmin(), 403);
+        abort_unless($agent?->account_id && $agent->hasAccountPermission(AccountPermission::ManageSecurity), 403);
 
         $request->validate([
             'requires_two_factor' => ['nullable', 'boolean'],
@@ -47,20 +48,19 @@ final class AgentAccountSecurityController extends Controller
         $credentialFingerprint = PendingTwoFactorChallenge::credentialFingerprint($agent);
 
         DB::transaction(function () use ($agent, $required, $credentialFingerprint): void {
+            $account = Account::query()->lockForUpdate()->findOrFail($agent->account_id);
             $lockedAgent = User::query()->lockForUpdate()->findOrFail($agent->id);
 
             abort_unless(
                 ! $lockedAgent->isDeactivated()
-                && $lockedAgent->isAdmin()
-                && (int) $lockedAgent->account_id === (int) $agent->account_id
+                && $lockedAgent->hasAccountPermission(AccountPermission::ManageSecurity)
+                && (int) $lockedAgent->account_id === (int) $account->id
                 && hash_equals(
                     $credentialFingerprint,
                     PendingTwoFactorChallenge::credentialFingerprint($lockedAgent),
                 ),
                 403,
             );
-
-            $account = Account::query()->lockForUpdate()->findOrFail($lockedAgent->account_id);
 
             if ($required && ! $lockedAgent->hasTwoFactorAuthentication()) {
                 throw ValidationException::withMessages([

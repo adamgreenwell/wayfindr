@@ -4,9 +4,11 @@
 // is live, EVERY agent of the account sees it on the dashboard — prominence is
 // the control that makes self-approval honest. Quiet accounts see nothing.
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\BreakGlassGrant;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -46,6 +48,56 @@ test('every agent sees an active grant on the dashboard; admins get the review a
         ->assertSee('Platform operator access is active')
         ->assertSee('Review or revoke');
 });
+
+test('management only roles retain the active grant banner after the dashboard redirects', function (array $permissions, string $destination): void {
+    $w = breakGlassTransparencyWorld();
+    $role = CustomRole::factory()->for($w['account'])->create(['permissions' => $permissions]);
+    $w['agent']->forceFill(['custom_role_id' => $role->id])->save();
+    BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->create(['self_approved' => true]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard'))
+        ->assertRedirect(route($destination));
+
+    $this->get(route($destination))
+        ->assertOk()
+        ->assertSee('Platform operator access is active')
+        ->assertSee('self-approved');
+})->with([
+    'account management destination' => [
+        [AccountPermission::ManagePrivacySettings->value],
+        'dashboard.account.show',
+    ],
+    'reporting destination' => [
+        [AccountPermission::ViewReports->value],
+        'dashboard.reports.index',
+    ],
+]);
+
+test('the active grant banner follows a redirected management reader language', function (string $locale, string $title, string $selfApproved): void {
+    $w = breakGlassTransparencyWorld();
+    $role = CustomRole::factory()->for($w['account'])->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $w['agent']->forceFill([
+        'custom_role_id' => $role->id,
+        'locale' => $locale,
+    ])->save();
+    BreakGlassGrant::factory()
+        ->activeFor($w['account'], $w['operator'])
+        ->create(['self_approved' => true]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee($title)
+        ->assertSee($selfApproved);
+})->with([
+    'German' => ['de', 'Plattformbetreiberzugriff ist aktiv', 'selbst genehmigt'],
+    'Italian' => ['it', 'L’accesso del gestore della piattaforma è attivo', 'autoapprovato'],
+]);
 
 test('a quiet account sees no banner', function (): void {
     $w = breakGlassTransparencyWorld();

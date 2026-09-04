@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
+use App\Support\Conversations\ConversationWriteAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -28,6 +29,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class AgentConversationAttachmentController extends Controller
 {
+    public function __construct(
+        private readonly ConversationWriteAuthorization $conversationWriteAuthorization,
+    ) {}
+
     public function store(
         Request $request,
         string $supportCode,
@@ -54,7 +59,12 @@ class AgentConversationAttachmentController extends Controller
         ]);
 
         try {
-            $attachment = $uploads->store($conversation, $request->file('file'), $agent);
+            $attachment = $uploads->store(
+                $conversation,
+                $request->file('file'),
+                $agent,
+                fn (User $agent, Conversation $conversation): array => $this->conversationWriteAuthorization->lock($agent, $conversation, 'reply'),
+            );
         } catch (AttachmentRejected $rejected) {
             // No locale: `SetDashboardLocale` has already put the agent's
             // language in place for this route.
@@ -130,6 +140,7 @@ class AgentConversationAttachmentController extends Controller
         // still unbound) or 404s (a send bound it first) rather than deleting a
         // just-sent attachment.
         DB::transaction(function () use ($conversation, $attachment, $agent): void {
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'reply');
             $record = ConversationMessageAttachment::query()
                 ->forConversation($conversation)
                 ->whereKey($attachment)

@@ -49,6 +49,7 @@ return [
         'authority' => 'I ruoli dell’account descrivono l’autorità. L’accesso al sito decide comunque quali code di supporto può gestire un agente.',
         'changes' => 'Le modifiche dei ruoli sono riservate ai titolari dell’account. I titolari non possono cambiare qui il proprio ruolo e ogni modifica viene registrata.',
         'suspension' => 'Titolari e amministratori possono sospendere l’accesso senza eliminare la cronologia dell’account. Gli amministratori possono sospendere solo gli agenti; i titolari possono gestire qualsiasi altra persona dello stesso account.',
+        'manage_custom_roles' => 'Gestisci ruoli personalizzati',
     ],
     'site_access' => [
         'heading' => 'Matrice di accesso ai siti', 'visible_count' => '{1} :count sito visibile|[2,*] :count siti visibili',
@@ -65,8 +66,10 @@ return [
             'no_connections' => 'Aggiunga una connessione provider quando i ticket devono uscire da Wayfindr.',
             'no_projects' => 'Associ almeno un progetto a un sito prima che i ticket possano uscire da Wayfindr.',
             'attention' => 'Controlli le connessioni disabilitate o le sincronizzazioni non riuscite prima di fare affidamento sul passaggio esterno.',
+            'disabled_connections' => 'Controlli le connessioni provider disabilitate prima di fare affidamento sul passaggio esterno.',
             'pending' => 'Alcuni collegamenti esterni attendono ancora conferma.',
             'ready' => 'L’instradamento delle segnalazioni esterne ha progetti associati e nessuna sincronizzazione non riuscita.',
+            'configured' => 'Le connessioni provider e i progetti associati sono configurati per il passaggio esterno.',
         ],
         'tones' => ['ready' => 'Pronto', 'manual' => 'Manuale', 'attention' => 'Attenzione'],
         'metrics' => [
@@ -128,7 +131,7 @@ return [
         ],
     ],
     'create' => [
-        'heading' => 'Aggiungi agente', 'lede' => 'I nuovi agenti iniziano con il ruolo Agente', 'name' => 'Nome', 'email' => 'Email',
+        'heading' => 'Aggiungi agente', 'lede' => 'I nuovi agenti iniziano con il ruolo :role', 'name' => 'Nome', 'email' => 'Email',
         'welcome' => 'Invia per email il messaggio di benvenuto e la password temporanea',
         'password_help' => 'Verrà generata una password temporanea. L’accesso ai siti segue l’attuale accesso predefinito dell’account finché non limita gli agenti su ciascun sito.',
         'email_help' => 'Usi l’opzione email dopo aver configurato la posta in uscita. Come alternativa, la password viene comunque mostrata qui una sola volta.',

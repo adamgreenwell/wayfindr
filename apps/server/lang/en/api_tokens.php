@@ -104,6 +104,7 @@ return [
         'ability_read' => 'Read conversations, messages, tickets and visitors',
         'ability_write' => 'Open conversations, post messages, and create or transition tickets',
         'abilities_help' => 'Each ability stands alone. Write does not grant read, and read never grants write.',
+        'abilities_limited' => 'Abilities your role cannot perform are unavailable.',
         'expires_label' => 'Expires after',
         'expires_help' => 'Days. Left empty the token never expires, which means it stops being anybody’s job to notice it.',
         'sites_label' => 'Restrict to sites',

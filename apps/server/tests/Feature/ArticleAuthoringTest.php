@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\Article;
+use App\Models\CustomRole;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -116,6 +118,48 @@ test('a plain agent cannot write what the whole desk says', function (): void {
 
     expect(Article::query()->count())->toBe(1);
 });
+
+test('article mutations reauthorize a stale custom role under the account lock', function (string $action): void {
+    $account = Account::factory()->create();
+    $knowledgeRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageKnowledge->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $knowledgeRole->id,
+    ]);
+    $article = Article::factory()->for($account)->create([
+        'title' => 'Original title',
+        'body' => 'Original body.',
+    ]);
+
+    $this->actingAs($manager);
+    expect($manager->hasAccountPermission(AccountPermission::ManageKnowledge))->toBeTrue();
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $response = match ($action) {
+        'create' => $this->post(route('dashboard.account.articles.store'), [
+            'title' => 'Late article',
+            'body' => 'This write must not land.',
+        ]),
+        'update' => $this->put(route('dashboard.account.articles.update', $article), [
+            'title' => 'Late title',
+            'body' => 'This update must not land.',
+        ]),
+        'publish' => $this->post(route('dashboard.account.articles.publish', $article)),
+        'delete' => $this->delete(route('dashboard.account.articles.destroy', $article)),
+    };
+
+    $action === 'create'
+        ? $response->assertForbidden()
+        : $response->assertNotFound();
+
+    expect(Article::query()->count())->toBe(1)
+        ->and($article->fresh()->title)->toBe('Original title')
+        ->and($article->fresh()->body)->toBe('Original body.')
+        ->and($article->fresh()->isPublished())->toBeFalse();
+})->with(['create', 'update', 'publish', 'delete']);
 
 test('the list puts drafts first whatever the database thinks of nulls', function (): void {
     // Where NULLs sort is a driver difference, and the suite runs SQLite while

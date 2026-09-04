@@ -1,12 +1,14 @@
 <?php
 
 use App\Broadcasting\ConversationChannel;
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -14,6 +16,7 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
@@ -169,6 +172,68 @@ test('site index summarizes active support coverage for explicitly assigned site
         ->assertSee('Ada Active')
         ->assertSee('Mara Mentor')
         ->assertDontSee('Gabe Gone');
+});
+
+test('settings only site viewers do not receive visitor URLs or support workload data', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $privacyManager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Private support site']);
+    $site->supportAgents()->attach($privacyManager);
+    $visitor = Visitor::factory()->for($site)->create([
+        'last_seen_at' => now()->subMinutes(5),
+        'metadata' => ['last_page_url' => 'https://private.example.test/customer-record/secret'],
+    ]);
+    Conversation::factory()->for($site)->for($visitor)->create(['status' => 'open']);
+    $ticket = Ticket::factory()->for($account)->for($site)->create(['status' => 'open']);
+    AuditEvent::factory()->for($account)->for($site)->for($ticket, 'subject')->create([
+        'action' => 'ticket.external_sync_failed',
+        'metadata' => [
+            'provider' => 'github',
+            'project_key' => 'private/ticket-project',
+        ],
+    ]);
+
+    $this->actingAs($privacyManager)
+        ->get(route('dashboard.sites.index'))
+        ->assertOk()
+        ->assertSee('Private support site')
+        ->assertSee('Seen 5 minutes ago')
+        ->assertDontSee('https://private.example.test/customer-record/secret')
+        ->assertDontSee('1 open conversation')
+        ->assertDontSee('1 open ticket')
+        ->assertDontSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
+        ->assertDontSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $siteResponse = $this->actingAs($privacyManager)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Privacy')
+        ->assertDontSee('https://private.example.test/customer-record/secret')
+        ->assertDontSee('1 open conversation')
+        ->assertDontSee('1 open ticket')
+        ->assertDontSee('External issue readiness')
+        ->assertDontSee('External issue health')
+        ->assertDontSee('private/ticket-project')
+        ->assertDontSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
+        ->assertDontSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false);
+
+    $queryEvidence = collect(DB::getQueryLog())
+        ->map(fn (array $query): string => $query['query'].' '.json_encode($query['bindings'], JSON_THROW_ON_ERROR))
+        ->implode("\n");
+    DB::disableQueryLog();
+
+    expect($siteResponse->isOk())->toBeTrue()
+        ->and($queryEvidence)->not->toContain('ticket_external_links')
+        ->and($queryEvidence)->not->toContain('ticket.external_sync_failed');
 });
 
 test('site index summarizes visible workload without exposing restricted sites', function (): void {
@@ -807,6 +872,38 @@ test('account admins can manage support agents assigned to a site', function ():
         ]);
 });
 
+test('site access updates reauthorize a stale custom manager after acquiring the account lock', function (): void {
+    $account = Account::factory()->create();
+    $managerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageSiteAccess->value],
+    ]);
+    $readerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $managerRole->id,
+    ]);
+    $replacement = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach([$owner->id, $manager->id]);
+
+    $this->actingAs($manager);
+
+    // Keep the authenticated model stale to represent an owner changing the
+    // role while this request waits for the shared account lock.
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $readerRole->id]);
+
+    $this->put(route('dashboard.sites.support-agents.update', $site), [
+        'support_agent_ids' => [$owner->id, $replacement->id],
+    ])->assertForbidden();
+
+    expect($site->fresh()->supportAgents()->pluck('users.id')->sort()->values()->all())
+        ->toBe(collect([$owner->id, $manager->id])->sort()->values()->all())
+        ->and(AuditEvent::query()->where('action', 'site_access.updated')->exists())->toBeFalse();
+});
+
 test('plain agents can see site access context but cannot manage it', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
@@ -835,6 +932,32 @@ test('plain agents can see site access context but cannot manage it', function (
 
     expect($site->fresh()->eligibleSupportAgents()->pluck('users.id')->sort()->values()->all())
         ->toBe([$agent->id, $teammate->id]);
+});
+
+test('site access rosters display custom role names', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create([
+        'name' => 'Escalation captain',
+        'permissions' => [AccountPermission::ManageKnowledge->value],
+    ]);
+    $customAgent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $plainAgent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach([$owner->id, $customAgent->id, $plainAgent->id]);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Escalation captain');
+
+    $this->actingAs($plainAgent)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('Escalation captain');
 });
 
 test('site detail summarizes support load for the selected site only', function (): void {

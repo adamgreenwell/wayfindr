@@ -65,7 +65,9 @@
                                              their words and not the agent's language. The
                                              `Visitor 41` fallback is ours and is not marked. --}}
                                         <a href="{{ $visitor['profile_url'] }}">@if ($visitor['name'] ?? $visitor['email'])<span lang="">{{ $visitor['name'] ?? $visitor['email'] }}</span>@else{{ __('sites_live.board.unnamed', ['id' => $visitor['id']]) }}@endif</a>
-                                        <span class="lede">{{ trans_choice('sites_live.board.conversations', $visitor['conversations_count'], ['count' => \App\Support\ReaderNumber::count($visitor['conversations_count'])]) }}</span>
+                                        @if ($canViewConversationCounts)
+                                            <span class="lede" data-live-conversation-count data-count="{{ $visitor['conversations_count'] }}">{{ trans_choice('sites_live.board.conversations', $visitor['conversations_count'], ['count' => \App\Support\ReaderNumber::count($visitor['conversations_count'])]) }}</span>
+                                        @endif
                                     @else
                                         {{-- No link: there is nothing on the other side of it yet, and
                                              a name we were never told is not one to invent. --}}
@@ -127,6 +129,7 @@
                 }
 
                 var labels = @json($presenceLabels);
+                var showConversationCounts = Boolean(config.showConversationCounts);
 
                 // Copy for the script, from the same catalogue the markup above
                 // used. `@json(__(...))` is the pattern the reply composer
@@ -364,12 +367,16 @@
                             who.appendChild(document.createTextNode(link.textContent));
                         }
 
-                        var count = document.createElement('span');
-                        var total = Number(visitor.conversations_count) || 0;
+                        if (showConversationCounts && Object.prototype.hasOwnProperty.call(visitor, 'conversations_count')) {
+                            var count = document.createElement('span');
+                            var total = Number(visitor.conversations_count) || 0;
 
-                        count.className = 'lede';
-                        count.textContent = conversationsLabel(total);
-                        who.appendChild(count);
+                            count.className = 'lede';
+                            count.setAttribute('data-live-conversation-count', '');
+                            count.dataset.count = String(total);
+                            count.textContent = conversationsLabel(total);
+                            who.appendChild(count);
+                        }
                     } else {
                         var stranger = document.createElement('span');
 
@@ -410,6 +417,9 @@
                     }
 
                     var existing = rows.querySelector('[data-visitor-id="' + CSS.escape(String(visitor.id)) + '"]');
+                    var needsConversationCountResync = showConversationCounts
+                        && visitor.made_contact
+                        && !Object.prototype.hasOwnProperty.call(visitor, 'conversations_count');
 
                     // An older event about somebody already on the board is
                     // dropped.
@@ -427,6 +437,25 @@
                     // the writes they describe, not by their arrival.
                     if (existing && !isNewerThanRow(existing, visitor)) {
                         return;
+                    }
+
+                    // The shared socket payload cannot contain a conversation
+                    // count because ticket-only subscribers use the same
+                    // channel. Preserve an authorized reader's private
+                    // snapshot value while replacing an existing row. The
+                    // coalesced resync below refreshes that value and supplies
+                    // one for a new contacted visitor without putting private
+                    // support totals onto the shared socket channel.
+                    if (showConversationCounts
+                        && existing
+                        && !Object.prototype.hasOwnProperty.call(visitor, 'conversations_count')) {
+                        var existingCount = existing.querySelector('[data-live-conversation-count]');
+
+                        if (existingCount) {
+                            visitor = Object.assign({}, visitor, {
+                                conversations_count: Number(existingCount.dataset.count) || 0
+                            });
+                        }
                     }
 
                     var fresh = buildRow(visitor);
@@ -485,6 +514,10 @@
                     }
 
                     refreshCount();
+
+                    if (needsConversationCountResync) {
+                        scheduleConversationCountResync();
+                    }
                 }
 
                 // This site has stopped collecting, and nothing about a visitor
@@ -620,6 +653,15 @@
                  * the same template.
                  */
                 function resyncBoard() {
+                    if (showConversationCounts) {
+                        lastConversationCountResyncAt = Date.now();
+
+                        if (conversationCountResyncTimer) {
+                            window.clearTimeout(conversationCountResyncTimer);
+                            conversationCountResyncTimer = null;
+                        }
+                    }
+
                     // Events that land while the snapshot is being fetched are
                     // NEWER than it. Replacing the rows wholesale would then
                     // overwrite them with older state -- and that is the likely
@@ -783,6 +825,29 @@
                 // Orders overlapping snapshots, so only the newest is applied.
                 var resyncSequence = 0;
 
+                // The shared presence event deliberately carries no private
+                // conversation totals. Count-authorized boards re-read their
+                // permission-scoped snapshot after such an event, coalescing a
+                // burst of heartbeats so a busy site cannot create one page
+                // request per visitor update.
+                var conversationCountResyncTimer = null;
+                var lastConversationCountResyncAt = 0;
+                var CONVERSATION_COUNT_RESYNC_INTERVAL_MS = 10000;
+
+                function scheduleConversationCountResync() {
+                    if (!showConversationCounts || conversationCountResyncTimer) {
+                        return;
+                    }
+
+                    var elapsed = Date.now() - lastConversationCountResyncAt;
+                    var wait = Math.max(0, CONVERSATION_COUNT_RESYNC_INTERVAL_MS - elapsed);
+
+                    conversationCountResyncTimer = window.setTimeout(function () {
+                        conversationCountResyncTimer = null;
+                        resyncBoard();
+                    }, wait);
+                }
+
                 // Which socket is in service. A callback from an older one is
                 // answering about a connection nobody is using.
                 var socketGeneration = 0;
@@ -860,7 +925,7 @@
                     }, every * 1000);
                 }
 
-                function authorize(activeSocket, socketId) {
+                function authorization(socketId, channelName) {
                     var token = document.querySelector('meta[name="csrf-token"]');
 
                     return fetch(config.authEndpoint, {
@@ -873,55 +938,97 @@
                         },
                         body: new URLSearchParams({
                             socket_id: socketId,
-                            channel_name: config.channelName,
+                            channel_name: channelName,
                         }),
                     }).then(function (response) {
                         if (!response.ok) {
-                            throw new Error('auth');
+                            var failure = new Error('auth');
+
+                            failure.status = response.status;
+                            throw failure;
                         }
 
                         return response.json();
-                    }).then(function (data) {
-                        activeSocket.send(JSON.stringify({
-                            event: 'pusher:subscribe',
-                            data: { auth: data.auth, channel: config.channelName },
-                        }));
+                    });
+                }
 
-                        reconnectDelay = 1000;
+                function subscribe(activeSocket, channelName, authorization) {
+                    var data = { auth: authorization.auth, channel: channelName };
 
-                        if (statusEl) {
-                            statusEl.textContent = copy.live;
-                        }
+                    if (authorization.channel_data) {
+                        data.channel_data = authorization.channel_data;
+                    }
 
-                        // NOT resynced here. Authorization succeeding only
-                        // means the subscribe frame has been sent; Reverb has
-                        // not yet confirmed it, so a snapshot taken now still
-                        // has a window on the far side of it. The resync waits
-                        // for `pusher_internal:subscription_succeeded`.
-                    }).catch(function () {
-                        // Only the socket still in service may react.
+                    activeSocket.send(JSON.stringify({
+                        event: 'pusher:subscribe',
+                        data: data,
+                    }));
+                }
+
+                function authorizationFailed(activeSocket, error) {
+                    if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                        return;
+                    }
+
+                    // An authenticated socket refused by the content channel
+                    // has lost access. Reload so the ordinary route boundary
+                    // clears the visitor rows already on screen.
+                    if (error && error.status === 403) {
+                        window.location.reload();
+
+                        return;
+                    }
+
+                    if (statusEl) {
+                        statusEl.textContent = copy.reconnecting;
+                    }
+
+                    try {
+                        activeSocket.close();
+                    } catch (closeError) {
+                        // Closing is best effort; the reconnect is what matters.
+                    }
+
+                    scheduleReconnect();
+                }
+
+                function authorizeIdentity(activeSocket, socketId) {
+                    activeSocket.wayfindrSocketId = socketId;
+
+                    authorization(socketId, config.identityChannelName).then(function (data) {
                         if (activeSocket.wayfindrGeneration !== socketGeneration) {
                             return;
                         }
 
-                        if (statusEl) {
-                            statusEl.textContent = copy.reconnecting;
-                        }
-
-                        // A failed authorization leaves the socket HEALTHY and
-                        // unsubscribed, so no close event ever fires and the
-                        // reconnect that only the close handler schedules never
-                        // runs. The board would then sit there, connected to
-                        // nothing, for the rest of the session -- looking
-                        // exactly like a quiet afternoon.
-                        try {
-                            activeSocket.close();
-                        } catch (error) {
-                            // Closing is best effort; the reconnect is what matters.
-                        }
-
-                        scheduleReconnect();
+                        subscribe(activeSocket, config.identityChannelName, data);
+                    }).catch(function (error) {
+                        authorizationFailed(activeSocket, error);
                     });
+                }
+
+                function authorizeBoard(activeSocket) {
+                    authorization(activeSocket.wayfindrSocketId, config.channelName).then(function (data) {
+                        if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                            return;
+                        }
+
+                        subscribe(activeSocket, config.channelName, data);
+                    }).catch(function (error) {
+                        authorizationFailed(activeSocket, error);
+                    });
+                }
+
+                function boardSubscriptionReady() {
+                    reconnectDelay = 1000;
+
+                    if (statusEl) {
+                        statusEl.textContent = copy.live;
+                    }
+
+                    // Reverb does not replay events. Refresh only after it has
+                    // confirmed the content subscription, so the snapshot's
+                    // buffered-event window starts on the safe side of it.
+                    resyncBoard();
                 }
 
                 function handleSocketMessage(message) {
@@ -975,7 +1082,7 @@
                         }
 
                         startKeepalive(message.target, established.activity_timeout);
-                        authorize(message.target, established.socket_id);
+                        authorizeIdentity(message.target, established.socket_id);
 
                         return;
                     }
@@ -987,7 +1094,11 @@
                     // this frame is gone -- and after a reconnect that gap is
                     // however long the socket was down.
                     if (event.event === 'pusher_internal:subscription_succeeded') {
-                        resyncBoard();
+                        if (event.channel === config.identityChannelName) {
+                            authorizeBoard(message.target);
+                        } else if (event.channel === config.channelName) {
+                            boardSubscriptionReady();
+                        }
 
                         return;
                     }

@@ -63,7 +63,8 @@ replayed when an endpoint is added.
 
 ## Getting a token
 
-**Account → API and webhooks → Issue a token.** Admins only.
+**Account → API and webhooks → Issue a token.** Requires the
+`manage_integrations` account permission.
 
 The token is shown **once**, immediately after creation. Wayfindr stores a
 SHA-256 hash of it, not the token, so it cannot be recovered or resent — if you
@@ -88,6 +89,14 @@ Two settings on the form are worth spending a moment on:
 Read and write are separate abilities. Neither implies the other. A reporting
 export normally needs only `read`; an integration that opens work or changes a
 ticket needs `write`; a two-way integration needs both.
+
+Managing integrations does not itself grant support-data access. The `read`
+ability is available only when the issuer can view conversations and manage
+tickets. Because the coarse `write` ability can open and reply to conversations
+as well as change and assign tickets, issuing it also requires the matching
+conversation view, reply, and management permissions plus ticket management
+and assignment. An unavailable ability is disabled in the form and rejected if
+submitted directly.
 
 A token can never reach further than the person issuing it. If you do not
 support every site on the account, a token you issue is pinned to the sites you

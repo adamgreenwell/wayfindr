@@ -48,6 +48,7 @@ return [
         'authority' => 'Kontorollen beschreiben Berechtigungen. Der Website-Zugriff entscheidet weiterhin, welche Support-Warteschlangen ein Agent bearbeiten kann.',
         'changes' => 'Rollenänderungen sind Kontoinhabern vorbehalten. Inhaber können hier ihre eigene Rolle nicht ändern, und jede Rollenänderung wird protokolliert.',
         'suspension' => 'Inhaber und Administratoren können den Zugriff sperren, ohne den Kontoverlauf zu löschen. Administratoren können nur Agenten sperren; Inhaber können alle anderen Personen desselben Kontos verwalten.',
+        'manage_custom_roles' => 'Benutzerdefinierte Rollen verwalten',
     ],
     'site_access' => [
         'heading' => 'Matrix für Website-Zugriff',
@@ -69,8 +70,10 @@ return [
             'no_connections' => 'Fügen Sie eine Anbieter-Verbindung hinzu, wenn Tickets Wayfindr verlassen sollen.',
             'no_projects' => 'Ordnen Sie mindestens ein Website-Projekt zu, bevor Tickets Wayfindr verlassen können.',
             'attention' => 'Prüfen Sie deaktivierte Verbindungen oder fehlgeschlagene Abgleiche, bevor Sie sich auf die externe Übergabe verlassen.',
+            'disabled_connections' => 'Prüfen Sie deaktivierte Anbieter-Verbindungen, bevor Sie sich auf die externe Übergabe verlassen.',
             'pending' => 'Einige externe Verknüpfungen warten noch auf Bestätigung.',
             'ready' => 'Für externe Issue-Routen sind Projekte zugeordnet und keine Abgleiche fehlgeschlagen.',
+            'configured' => 'Anbieter-Verbindungen und zugeordnete Projekte sind für die externe Übergabe eingerichtet.',
         ],
         'tones' => ['ready' => 'Bereit', 'manual' => 'Manuell', 'attention' => 'Achtung'],
         'metrics' => [
@@ -154,7 +157,7 @@ return [
     ],
     'create' => [
         'heading' => 'Agent hinzufügen',
-        'lede' => 'Neue Agenten beginnen mit der Rolle Agent',
+        'lede' => 'Neue Agenten beginnen mit der Rolle :role',
         'name' => 'Name',
         'email' => 'E-Mail',
         'welcome' => 'Willkommensnachricht und temporäres Passwort per E-Mail senden',

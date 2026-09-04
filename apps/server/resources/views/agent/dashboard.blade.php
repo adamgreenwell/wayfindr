@@ -1,57 +1,42 @@
 <x-layouts.app title="Agent Dashboard" :agent="$agent" :account="$account">
             <x-page-header title="Dashboard" />
 
-            @if ($activeBreakGlassGrants->isNotEmpty())
-                <section class="section break-glass-banner" aria-labelledby="operator-access-banner-heading">
-                    <div class="section-header">
-                        <h2 id="operator-access-banner-heading">Platform operator access is active</h2>
-                        @if ($agent->isAdmin())
-                            <a class="button secondary" href="{{ route('dashboard.account.break-glass.index') }}">Review or revoke</a>
-                        @endif
-                    </div>
-                    <div class="notice-copy">
-                        @foreach ($activeBreakGlassGrants as $grant)
-                            <p>
-                                {{ $grant->requester?->name ?? 'A former operator' }} has read-only access to
-                                {{ lcfirst($grant->scopeLabel()) }} until {{ \App\Support\ReaderClock::timeWithZone($grant->expires_at) }}
-                                ({{ $grant->expires_at->diffForHumans() }}){{ $grant->self_approved ? ' — self-approved' : '' }}.
-                            </p>
-                        @endforeach
-                    </div>
-                </section>
-            @endif
-
             <section class="section" aria-labelledby="support-queues-heading">
                 <div class="section-header">
                     <h2 id="support-queues-heading">Support queues</h2>
                 </div>
 
                 <div class="management-list">
-                    <a class="management-link" href="{{ route('dashboard.conversations.index') }}">
-                        <span>
-                            <strong>Conversations</strong>
-                            <span class="lede">
-                                {{ $supportQueues['open_conversations_count'] }} open
-                                · {{ $supportQueues['new_activity_conversations_count'] }} {{ $supportQueues['new_activity_conversations_count'] === 1 ? 'needs' : 'need' }} attention
-                                · {{ $supportQueues['cobrowse_attention_conversations_count'] === 1 ? '1 cobrowse session needs attention' : $supportQueues['cobrowse_attention_conversations_count'].' cobrowse sessions need attention' }}
+                    @if ($canViewConversations)
+                        <a class="management-link" href="{{ route('dashboard.conversations.index') }}">
+                            <span>
+                                <strong>Conversations</strong>
+                                <span class="lede">
+                                    {{ $supportQueues['open_conversations_count'] }} open
+                                    · {{ $supportQueues['new_activity_conversations_count'] }} {{ $supportQueues['new_activity_conversations_count'] === 1 ? 'needs' : 'need' }} attention
+                                    · {{ $supportQueues['cobrowse_attention_conversations_count'] === 1 ? '1 cobrowse session needs attention' : $supportQueues['cobrowse_attention_conversations_count'].' cobrowse sessions need attention' }}
+                                </span>
                             </span>
-                        </span>
-                        <span class="management-action">Open queue</span>
-                    </a>
-                    <a class="management-link" href="{{ route('dashboard.tickets.index') }}">
-                        <span>
-                            <strong>Tickets</strong>
-                            <span class="lede">
-                                {{ $supportQueues['open_tickets_count'] }} open
-                                · {{ $supportQueues['unassigned_tickets_count'] }} unassigned
+                            <span class="management-action">Open queue</span>
+                        </a>
+                    @endif
+                    @if ($canManageTickets)
+                        <a class="management-link" href="{{ route('dashboard.tickets.index') }}">
+                            <span>
+                                <strong>Tickets</strong>
+                                <span class="lede">
+                                    {{ $supportQueues['open_tickets_count'] }} open
+                                    · {{ $supportQueues['unassigned_tickets_count'] }} unassigned
+                                </span>
                             </span>
-                        </span>
-                        <span class="management-action">Open queue</span>
-                    </a>
+                            <span class="management-action">Open queue</span>
+                        </a>
+                    @endif
                 </div>
             </section>
 
-            <section class="section" aria-labelledby="conversation-next-steps-heading">
+            @if ($canViewConversations && $conversationNextSteps)
+                <section class="section" aria-labelledby="conversation-next-steps-heading">
                 <div class="section-header">
                     <div>
                         <h2 id="conversation-next-steps-heading">Conversation next steps</h2>
@@ -80,9 +65,11 @@
                         @endforeach
                     </div>
                 @endif
-            </section>
+                </section>
+            @endif
 
-            <section class="section" aria-labelledby="ticket-next-steps-heading">
+            @if ($canManageTickets && $ticketNextSteps)
+                <section class="section" aria-labelledby="ticket-next-steps-heading">
                 <div class="section-header">
                     <div>
                         <h2 id="ticket-next-steps-heading">Ticket next steps</h2>
@@ -111,7 +98,8 @@
                         @endforeach
                     </div>
                 @endif
-            </section>
+                </section>
+            @endif
 
             <section class="section" aria-labelledby="visitor-support-readiness-heading">
                 <div class="section-header">

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -35,6 +36,11 @@ class AgentVisitorController extends Controller
     public function index(Request $request): View
     {
         $agent = $request->user();
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        abort_unless($agent->hasAnyAccountPermission(
+            AccountPermission::ViewConversations,
+            AccountPermission::ManageTickets,
+        ), 403);
         $account = $agent->account()->firstOrFail();
 
         // Read before narrowing, exactly as the search and site filters below
@@ -88,9 +94,11 @@ class AgentVisitorController extends Controller
                 ->orWhereLike('anonymous_id', $pattern));
         }
 
-        $visitors = $query
-            ->withCount('conversations')
-            ->orderByRaw('last_seen_at is null')
+        if ($canViewConversations) {
+            $query->withCount('conversations');
+        }
+
+        $visitors = $query->orderByRaw('last_seen_at is null')
             ->latest('last_seen_at')
             ->latest('id')
             ->paginate(25)
@@ -107,6 +115,7 @@ class AgentVisitorController extends Controller
         return view('agent.visitors.index', [
             'account' => $account,
             'agent' => $agent,
+            'canViewConversations' => $canViewConversations,
             'listsBrowsers' => $listsBrowsers,
             'presence' => $presence,
             'search' => $search,
@@ -123,15 +132,34 @@ class AgentVisitorController extends Controller
         abort_unless(Gate::forUser($agent)->allows('view', $visitor), 404);
 
         $visitor->loadMissing('site.account');
-        $conversations = $this->visitorConversations($visitor);
-        $tickets = $this->visitorTickets($visitor);
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canReplyToConversations = $agent->hasAccountPermission(AccountPermission::ReplyToConversations);
+        $canAssignTickets = $agent->hasAccountPermission(AccountPermission::AssignTickets);
+        $conversations = $canViewConversations ? $this->visitorConversations($visitor) : collect();
+        $tickets = $canManageTickets
+            ? $this->visitorTickets($visitor, $canViewConversations)
+            : collect();
 
         return view('agent.visitors.show', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
+            'canManageTickets' => $canManageTickets,
+            'canViewConversations' => $canViewConversations,
             'conversations' => $conversations,
-            'supportSnapshot' => $this->supportSnapshot($visitor),
-            'supportReferences' => $this->supportReferences($visitor, $tickets, $visitorContextSanitizer),
+            'supportSnapshot' => $this->supportSnapshot(
+                $visitor,
+                $canViewConversations,
+                $canManageTickets,
+                $canReplyToConversations,
+                $canAssignTickets,
+            ),
+            'supportReferences' => $this->supportReferences(
+                $visitor,
+                $tickets,
+                $visitorContextSanitizer,
+                $canViewConversations,
+            ),
             'tickets' => $tickets,
             'visitor' => $visitor,
             'visitorContext' => $this->visitorContext($visitor, $visitorContextSanitizer),
@@ -157,10 +185,17 @@ class AgentVisitorController extends Controller
     /**
      * @return Collection<int, Ticket>
      */
-    private function visitorTickets(Visitor $visitor): Collection
+    private function visitorTickets(Visitor $visitor, bool $canViewConversations): Collection
     {
+        $relations = ['assignee'];
+
+        if ($canViewConversations) {
+            $relations[] = 'conversation.latestMessage';
+            $relations[] = 'conversation.latestNonIntegrationMessage';
+        }
+
         return Ticket::query()
-            ->with(['assignee', 'conversation.latestMessage', 'conversation.latestNonIntegrationMessage'])
+            ->with($relations)
             ->where('account_id', $visitor->site->account_id)
             ->where('site_id', $visitor->site_id)
             ->where('requester_id', $visitor->id)
@@ -192,12 +227,18 @@ class AgentVisitorController extends Controller
      * @param  Collection<int, Ticket>  $tickets
      * @return array{visitor_reference: string, host_visitor_id: string|null, latest_conversation: Conversation|null, latest_ticket: Ticket|null}
      */
-    private function supportReferences(Visitor $visitor, Collection $tickets, VisitorContextSanitizer $visitorContextSanitizer): array
-    {
+    private function supportReferences(
+        Visitor $visitor,
+        Collection $tickets,
+        VisitorContextSanitizer $visitorContextSanitizer,
+        bool $canViewConversations,
+    ): array {
         return [
             'visitor_reference' => $visitor->anonymous_id,
             'host_visitor_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id),
-            'latest_conversation' => $this->latestConversationReference($visitor),
+            'latest_conversation' => $canViewConversations
+                ? $this->latestConversationReference($visitor)
+                : null,
             'latest_ticket' => $tickets->first(),
         ];
     }
@@ -205,10 +246,19 @@ class AgentVisitorController extends Controller
     /**
      * @return array{active_conversation_label: string, active_ticket_label: string, next_action: array{body: string, cta: string|null, href: string|null, title: string}, status_label: string, tone: string}
      */
-    private function supportSnapshot(Visitor $visitor): array
-    {
-        $activeConversations = $this->activeConversationCandidates($visitor);
-        $activeTickets = $this->activeTicketCandidates($visitor);
+    private function supportSnapshot(
+        Visitor $visitor,
+        bool $canViewConversations,
+        bool $canManageTickets,
+        bool $canReplyToConversations,
+        bool $canAssignTickets,
+    ): array {
+        $activeConversations = $canViewConversations
+            ? $this->activeConversationCandidates($visitor)
+            : collect();
+        $activeTickets = $canManageTickets
+            ? $this->activeTicketCandidates($visitor)
+            : collect();
 
         return [
             'active_conversation_label' => trans_choice('visitors.counts.active_conversations', $activeConversations->count(), [
@@ -217,7 +267,12 @@ class AgentVisitorController extends Controller
             'active_ticket_label' => trans_choice('visitors.counts.active_tickets', $activeTickets->count(), [
                 'count' => ReaderNumber::count($activeTickets->count()),
             ]),
-            ...$this->supportSnapshotAction($activeConversations, $activeTickets),
+            ...$this->supportSnapshotAction(
+                $activeConversations,
+                $activeTickets,
+                $canReplyToConversations,
+                $canAssignTickets,
+            ),
         ];
     }
 
@@ -226,10 +281,16 @@ class AgentVisitorController extends Controller
      * @param  Collection<int, Ticket>  $tickets
      * @return array{next_action: array{body: string, cta: string|null, href: string|null, title: string}, status_label: string, tone: string}
      */
-    private function supportSnapshotAction(Collection $conversations, Collection $tickets): array
-    {
-        $conversationNeedingReply = $conversations->first(fn (Conversation $conversation): bool => $conversation->latestMessage !== null
-            && $conversation->attentionState() === 'needs_reply');
+    private function supportSnapshotAction(
+        Collection $conversations,
+        Collection $tickets,
+        bool $canReplyToConversations,
+        bool $canAssignTickets,
+    ): array {
+        $conversationNeedingReply = $canReplyToConversations
+            ? $conversations->first(fn (Conversation $conversation): bool => $conversation->latestMessage !== null
+                && $conversation->attentionState() === 'needs_reply')
+            : null;
 
         if ($conversationNeedingReply) {
             return [
@@ -245,7 +306,14 @@ class AgentVisitorController extends Controller
         }
 
         $ticketNeedingAction = $tickets
-            ->filter(fn (Ticket $ticket): bool => in_array($ticket->attentionState(), ['needs_reply', 'needs_owner', 'needs_agent'], true))
+            ->filter(function (Ticket $ticket) use ($canReplyToConversations, $canAssignTickets): bool {
+                return match ($ticket->attentionState()) {
+                    'needs_reply' => $canReplyToConversations,
+                    'needs_owner' => $canAssignTickets,
+                    'needs_agent' => true,
+                    default => false,
+                };
+            })
             ->sortBy(fn (Ticket $ticket): int => $ticket->attentionSortRank())
             ->first();
 

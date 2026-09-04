@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
@@ -103,6 +105,44 @@ test('account admins can map a site to an external provider project', function (
         ->assertSee('Create issues')
         ->assertDontSee('Sync status');
 });
+
+test('site project mapping mutations reauthorize a stale custom role under the account lock', function (string $action): void {
+    $account = Account::factory()->create();
+    $integrationRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageIntegrations->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $integrationRole->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach($manager);
+    $connection = ExternalIssueProviderConnection::factory()->for($account)->create();
+    $mapping = SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create(['project_key' => 'existing/project']);
+
+    $this->actingAs($manager);
+    expect($manager->hasAccountPermission(AccountPermission::ManageIntegrations))->toBeTrue();
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $response = match ($action) {
+        'store' => $this->post(route('dashboard.sites.external-issue-projects.store', $site), [
+            'external_issue_provider_connection_id' => $connection->id,
+            'project_key' => 'late/project',
+        ]),
+        'destroy' => $this->delete(route('dashboard.sites.external-issue-projects.destroy', [$site, $mapping])),
+    };
+
+    $response->assertNotFound();
+
+    $this->assertDatabaseCount('site_external_issue_projects', 1);
+    $this->assertDatabaseHas('site_external_issue_projects', ['id' => $mapping->id]);
+    $this->assertDatabaseCount('audit_events', 0);
+})->with(['store', 'destroy']);
 
 test('site project mappings reject provider connections from another account', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);

@@ -42,7 +42,9 @@
             @php
                 $latestVisitor = $site->latestVisitor;
                 $lastSeenAt = $latestVisitor?->last_seen_at;
-                $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
+                $lastPageUrl = $canViewSupportWork
+                    ? data_get($latestVisitor?->metadata, 'last_page_url')
+                    : null;
                 $installAttentionSiteUrl = $site->domain ? 'https://'.$site->domain : null;
                 $installAttentionGuidance = [
                     'key' => $lastSeenAt ? 'site_settings.setup.stale' : 'site_settings.setup.not_installed',
@@ -63,9 +65,18 @@
                     ->all();
                 $siteMapSections = [
                     ['label' => __('site_settings.map.sections.readiness'), 'href' => '#site-support-readiness-heading'],
-                    ['label' => __('site_settings.map.sections.load'), 'href' => '#site-support-load-heading'],
-                    ['label' => __('site_settings.map.sections.external_readiness'), 'href' => '#site-external-issue-readiness-heading'],
                 ];
+
+                if ($canManageTickets) {
+                    $siteMapSections[] = ['label' => __('site_settings.map.sections.external_readiness'), 'href' => '#site-external-issue-readiness-heading'];
+                }
+
+                if ($canViewSupportWork) {
+                    array_splice($siteMapSections, 1, 0, [[
+                        'label' => __('site_settings.map.sections.load'),
+                        'href' => '#site-support-load-heading',
+                    ]]);
+                }
 
                 if ($installHealth['needs_attention']) {
                     $siteMapSections[] = ['label' => __('site_settings.map.sections.setup'), 'href' => '#setup-attention-heading'];
@@ -136,7 +147,8 @@
                 </div>
             </section>
 
-            <section class="section" aria-labelledby="site-support-load-heading">
+            @if ($canViewSupportWork)
+                <section class="section" aria-labelledby="site-support-load-heading">
                 <div class="section-header">
                     <div>
                         <h2 id="site-support-load-heading">{{ __('site_settings.load.heading') }}</h2>
@@ -155,9 +167,11 @@
                         </div>
                     @endforeach
                 </div>
-            </section>
+                </section>
+            @endif
 
-            <section class="section" aria-labelledby="site-external-issue-readiness-heading">
+            @if ($canManageTickets)
+                <section class="section" aria-labelledby="site-external-issue-readiness-heading">
                 <div class="section-header">
                     <div>
                         <h2 id="site-external-issue-readiness-heading">{{ __('site_settings.external.heading') }}</h2>
@@ -208,7 +222,8 @@
                         @endforeach
                     </div>
                 @endif
-            </section>
+                </section>
+            @endif
 
             @if ($installHealth['needs_attention'])
                 <section class="section" aria-labelledby="setup-attention-heading">
@@ -268,14 +283,16 @@
                             @endif
                         </span>
                     </div>
-                    <div class="meta-item">
-                        <span class="meta-label">{{ __('site_settings.site.last_page') }}</span>
-                        @if ($lastPageUrl)
-                            <span class="meta-value" lang="">{{ $lastPageUrl }}</span>
-                        @else
-                            <span class="meta-value">{{ __('site_settings.common.not_reported') }}</span>
-                        @endif
-                    </div>
+                    @if ($canViewSupportWork)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ __('site_settings.site.last_page') }}</span>
+                            @if ($lastPageUrl)
+                                <span class="meta-value" lang="">{{ $lastPageUrl }}</span>
+                            @else
+                                <span class="meta-value">{{ __('site_settings.common.not_reported') }}</span>
+                            @endif
+                        </div>
+                    @endif
                     <div class="meta-item">
                         <span class="meta-label">{{ __('site_settings.site.lab') }}</span>
                         <a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">{{ __('site_settings.common.open_tester') }}</a>
@@ -354,10 +371,12 @@
                     <p>{{ $installVerification['message'] }}</p>
                     <p>{{ $installVerification['guidance'] }}</p>
 
-                    @if ($lastPageUrl)
-                        <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: <span lang="">{{ $lastPageUrl }}</span></p>
-                    @else
-                        <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: {{ __('site_settings.verification.not_reported') }}</p>
+                    @if ($canViewSupportWork)
+                        @if ($lastPageUrl)
+                            <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: <span lang="">{{ $lastPageUrl }}</span></p>
+                        @else
+                            <p><strong>{{ __('site_settings.verification.last_page') }}</strong>: {{ __('site_settings.verification.not_reported') }}</p>
+                        @endif
                     @endif
                 </div>
 
@@ -414,7 +433,7 @@
                 </div>
             </section>
 
-            @if ($agent->isAdmin() || $agent->isPlatformOperator())
+            @if ($agent->hasAccountPermission(\App\Enums\AccountPermission::ManageSites) || $agent->isPlatformOperator())
                 <x-operator-smoke-path :smoke-path="$operatorSmokePath" />
             @endif
 
@@ -467,7 +486,7 @@
                                                 <label for="support_agent_{{ $accountAgent->id }}" lang="">{{ $accountAgent->name }}</label>
                                             </td>
                                             <td lang="">{{ $accountAgent->email }}</td>
-                                            <td>{{ __('site_settings.common.roles.'.($accountAgent->account_role?->value ?? 'agent')) }}</td>
+                                            <td @if ($accountAgent->customRole) lang="" @endif>{{ $accountAgent->customRole?->name ?? __('site_settings.common.roles.'.($accountAgent->account_role?->value ?? 'agent')) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -505,7 +524,7 @@
                                         <tr>
                                             <td lang="">{{ $supportAgent->name }}</td>
                                             <td lang="">{{ $supportAgent->email }}</td>
-                                            <td>{{ __('site_settings.common.roles.'.($supportAgent->account_role?->value ?? 'agent')) }}</td>
+                                            <td @if ($supportAgent->customRole) lang="" @endif>{{ $supportAgent->customRole?->name ?? __('site_settings.common.roles.'.($supportAgent->account_role?->value ?? 'agent')) }}</td>
                                         </tr>
                                     @endforeach
                                 </tbody>
@@ -642,7 +661,8 @@
                     </div>
                 @endif
 
-                <div id="external-issue-health" aria-labelledby="external-issue-health-heading">
+                @if ($canManageTickets)
+                    <div id="external-issue-health" aria-labelledby="external-issue-health-heading">
                     <div class="section-header">
                         <h2 id="external-issue-health-heading">{{ __('site_settings.external.health_heading') }}</h2>
                         <span class="readiness-status" data-status="{{ $externalIssueHealth['tone'] }}">{{ $externalIssueHealth['label'] }}</span>
@@ -680,7 +700,8 @@
                             @endforeach
                         </div>
                     @endif
-                </div>
+                    </div>
+                @endif
 
                 <div class="section-header">
                     <strong>{{ __('site_settings.external.routing.connections') }}</strong>
@@ -1244,14 +1265,11 @@
                     </div>
                 @endif
 
-                {{-- Outside the permission branch above, because the board and
-                     this link answer to different permissions. Changing the
-                     SETTING is an owner-and-admin decision; using the board is
-                     open to any agent who can view the site, which is what the
-                     route and the broadcast channel both authorise. Keeping the
-                     only link inside the admin half left the agents it was
-                     built for with no way to reach it. --}}
-                @if ($presenceEnabled)
+                {{-- Outside the privacy-settings branch because operating the
+                     live board and changing its collection settings answer to
+                     different permissions. The link follows the same support
+                     permission as the route and broadcast channel. --}}
+                @if ($presenceEnabled && $canViewLiveBoard)
                     <p class="field-help">
                         {!! __('site_settings.presence.board_help', ['board' => '<a href="'.e(route('dashboard.sites.live', $site)).'">'.e(__('site_settings.presence.board')).'</a>']) !!}
                     </p>

@@ -27,6 +27,7 @@ class AgentProfileController extends Controller
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
+        $agent->loadMissing('customRole');
 
         $account = $agent->account()->firstOrFail();
         $mailReadiness = collect($readiness->summary()['checks'])
@@ -37,6 +38,7 @@ class AgentProfileController extends Controller
             'agent' => $agent,
             'account' => $account,
             'roleLabels' => [
+                ...($agent->customRole ? ['custom:'.$agent->customRole->id => $agent->customRole->name] : []),
                 AccountRole::Owner->value => __('profile.roles.owner'),
                 AccountRole::Admin->value => __('profile.roles.admin'),
                 AccountRole::Agent->value => __('profile.roles.agent'),

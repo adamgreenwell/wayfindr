@@ -10,7 +10,7 @@
     <section class="section" aria-labelledby="profile-context-heading">
         <div class="section-header">
             <h2 id="profile-context-heading">{{ $agent->name }}</h2>
-            <span class="lede">{{ $roleLabels[$agent->account_role?->value] ?? __('profile.roles.agent') }}</span>
+            <span class="lede" @if ($agent->customRole) lang="" @endif>{{ $roleLabels[$agent->roleAssignmentKey()] ?? __('profile.roles.agent') }}</span>
         </div>
 
         <div class="meta-grid">
@@ -24,7 +24,7 @@
             </div>
             <div class="meta-item">
                 <span class="meta-label">{{ __('profile.context.role') }}</span>
-                <span class="meta-value">{{ $roleLabels[$agent->account_role?->value] ?? __('profile.roles.agent') }}</span>
+                <span class="meta-value" @if ($agent->customRole) lang="" @endif>{{ $roleLabels[$agent->roleAssignmentKey()] ?? __('profile.roles.agent') }}</span>
             </div>
             <div class="meta-item">
                 <span class="meta-label">{{ __('profile.context.member_since') }}</span>

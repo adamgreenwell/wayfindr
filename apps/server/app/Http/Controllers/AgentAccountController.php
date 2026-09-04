@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
@@ -28,6 +29,7 @@ class AgentAccountController extends Controller
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
+        $agent->loadMissing('customRole');
 
         $account = $agent->account()->firstOrFail();
         $visibleSiteIds = $account->sites()
@@ -35,17 +37,30 @@ class AgentAccountController extends Controller
             ->pluck('sites.id')
             ->map(fn (int|string $siteId): int => (int) $siteId)
             ->all();
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $workloadCounts = [];
 
-        $agents = $account->agents()
-            ->withCount([
-                'assignedConversations as visible_open_conversations_count' => fn ($query) => $query
-                    ->where('status', 'open')
-                    ->whereIn('site_id', $visibleSiteIds),
-                'assignedTickets as visible_open_tickets_count' => fn ($query) => $query
-                    ->where('account_id', $account->id)
-                    ->where('status', 'open')
-                    ->whereIn('site_id', $visibleSiteIds),
-            ])
+        if ($canViewConversations) {
+            $workloadCounts['assignedConversations as visible_open_conversations_count'] = fn ($query) => $query
+                ->where('status', 'open')
+                ->whereIn('site_id', $visibleSiteIds);
+        }
+
+        if ($canManageTickets) {
+            $workloadCounts['assignedTickets as visible_open_tickets_count'] = fn ($query) => $query
+                ->where('account_id', $account->id)
+                ->where('status', 'open')
+                ->whereIn('site_id', $visibleSiteIds);
+        }
+
+        $agentsQuery = $account->agents()->with('customRole');
+
+        if ($workloadCounts !== []) {
+            $agentsQuery->withCount($workloadCounts);
+        }
+
+        $agents = $agentsQuery
             ->orderByRaw(
                 'case account_role when ? then 0 when ? then 1 else 2 end',
                 [AccountRole::Owner->value, AccountRole::Admin->value],
@@ -57,6 +72,7 @@ class AgentAccountController extends Controller
         $visibleSites = $account->sites()
             ->visibleToAgent($agent)
             ->with(['supportAgents' => fn ($query) => $query
+                ->with('customRole')
                 ->where('users.account_id', $account->id)
                 ->whereNull('users.deactivated_at')
                 ->orderByRaw(
@@ -86,7 +102,7 @@ class AgentAccountController extends Controller
             'account' => $account,
             'accountActivity' => $this->accountActivityItems($account, $visibleSiteIds),
             'agent' => $agent,
-            'agentAlertReadinessSummary' => $agent->isAdmin()
+            'agentAlertReadinessSummary' => $agent->hasAccountPermission(AccountPermission::ManageAgents)
                 ? app(AccountAlertReadiness::class)->summarize($agents)
                 : null,
             'agentAlertDeliverySummaries' => $agents->mapWithKeys(fn (User $accountAgent): array => [
@@ -95,18 +111,42 @@ class AgentAccountController extends Controller
             'agents' => $agents,
             'agentSupportScopes' => $agentSupportScopes,
             'activeAgentCount' => $agents->reject->isDeactivated()->count(),
-            'canCreateAgents' => $agent->isAdmin(),
-            'canViewExternalIssueReadiness' => $agent->isAdmin(),
-            'canViewAlertDelivery' => $agent->isAdmin(),
-            'canManageAccountSettings' => $agent->isAdmin(),
-            'canManageAgentAccess' => $agent->isAdmin(),
-            'canManageRoles' => $agent->isOwner(),
-            'canViewAudit' => $agent->isAdmin(),
-            'externalIssueReadiness' => $agent->isAdmin()
-                ? $this->externalIssueReadiness($account, $visibleSiteIds)
+            'canCreateAgents' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'newAgentRoleLabel' => $agent->custom_role_id !== null
+                ? ($agent->customRole?->name ?? __('profile.roles.agent'))
+                : __('profile.roles.agent'),
+            'canViewExternalIssueReadiness' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
+            'canViewAlertDelivery' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'canManageAgentAccess' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'canManageIntegrations' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
+            'canManageKnowledge' => $agent->hasAccountPermission(AccountPermission::ManageKnowledge),
+            'canManageOperatorAccess' => $agent->hasAccountPermission(AccountPermission::ManageOperatorAccess),
+            'canManageRoles' => $agent->hasAccountPermission(AccountPermission::ManageRoles),
+            'canManageSecurity' => $agent->hasAccountPermission(AccountPermission::ManageSecurity),
+            'canManageTickets' => $canManageTickets,
+            'canViewConversations' => $canViewConversations,
+            'canViewSites' => $agent->hasAnyAccountPermission(
+                AccountPermission::ManageSites,
+                AccountPermission::ManageSiteAccess,
+                AccountPermission::ManagePrivacySettings,
+                AccountPermission::ManageIntegrations,
+                AccountPermission::ViewAudit,
+                AccountPermission::ViewConversations,
+                AccountPermission::ManageTickets,
+            ),
+            'canViewAudit' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
+            'externalIssueReadiness' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations)
+                ? $this->externalIssueReadiness($account, $visibleSiteIds, $canManageTickets)
                 : null,
             'roleLabels' => $this->roleLabels(),
-            'roleOptions' => $this->roleLabels(),
+            'roleOptions' => [
+                ...$this->roleLabels(),
+                ...$account->customRoles()
+                    ->orderBy('name')
+                    ->get()
+                    ->mapWithKeys(fn ($role): array => ['custom:'.$role->id => $role->name])
+                    ->all(),
+            ],
             'siteCount' => $account->sites()->count(),
             'supportAssignmentCount' => $agentSupportScopes
                 ->sum(fn (array $scope): int => $scope['explicitSites']->count()),
@@ -145,7 +185,7 @@ class AgentAccountController extends Controller
      *     }>
      * }
      */
-    private function externalIssueReadiness(Account $account, array $visibleSiteIds): array
+    private function externalIssueReadiness(Account $account, array $visibleSiteIds, bool $canManageTickets): array
     {
         $connections = $account->externalIssueProviderConnections()
             ->where(function ($query) use ($visibleSiteIds): void {
@@ -161,30 +201,104 @@ class AgentAccountController extends Controller
             ->get()
             ->sortBy(fn (SiteExternalIssueProject $project): string => ($project->site?->name ?? '').' '.$project->project_key)
             ->values();
-        $statusCounts = $account->ticketExternalLinks()
-            ->whereIn('site_id', $visibleSiteIds)
-            ->selectRaw('sync_status, count(*) as aggregate')
-            ->groupBy('sync_status')
-            ->pluck('aggregate', 'sync_status');
-        $queueStateCounts = TicketExternalIssueState::countsForQuery(
-            Ticket::query()
-                ->where('account_id', $account->id)
-                ->whereIn('site_id', $visibleSiteIds)
-        );
-        $visibleFailureEvents = fn () => $account->auditEvents()
-            ->where('action', 'ticket.external_sync_failed')
-            ->whereIn('site_id', $visibleSiteIds);
-
         $disabledCount = $connections
             ->where('is_enabled', false)
             ->count();
-        $failedCount = max(
-            (int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0),
-            $visibleFailureEvents()->count(),
-        );
-        $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
-        $failedQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::FAILED] ?? 0);
-        $pendingQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::PENDING] ?? 0);
+        $failedCount = 0;
+        $pendingCount = 0;
+        $failedQueueCount = 0;
+        $pendingQueueCount = 0;
+        $recentFailures = collect();
+
+        if ($canManageTickets) {
+            $statusCounts = $account->ticketExternalLinks()
+                ->whereIn('site_id', $visibleSiteIds)
+                ->selectRaw('sync_status, count(*) as aggregate')
+                ->groupBy('sync_status')
+                ->pluck('aggregate', 'sync_status');
+            $queueStateCounts = TicketExternalIssueState::countsForQuery(
+                Ticket::query()
+                    ->where('account_id', $account->id)
+                    ->whereIn('site_id', $visibleSiteIds)
+            );
+            $visibleFailureEvents = fn () => $account->auditEvents()
+                ->where('action', 'ticket.external_sync_failed')
+                ->whereIn('site_id', $visibleSiteIds);
+
+            $failedCount = max(
+                (int) ($statusCounts[ExternalIssueSyncStatus::FAILED] ?? 0),
+                $visibleFailureEvents()->count(),
+            );
+            $pendingCount = (int) ($statusCounts[ExternalIssueSyncStatus::PENDING] ?? 0);
+            $failedQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::FAILED] ?? 0);
+            $pendingQueueCount = (int) ($queueStateCounts[TicketExternalIssueState::PENDING] ?? 0);
+            $recentFailures = $visibleFailureEvents()
+                ->latest('occurred_at')
+                ->latest('id')
+                ->limit(3)
+                ->get()
+                ->map(function (AuditEvent $event): array {
+                    $provider = $this->providerParts(data_get($event->metadata, 'provider'));
+
+                    return [
+                        'provider' => $provider['label'],
+                        'provider_language' => $provider['language'],
+                        'project_key' => (string) (data_get($event->metadata, 'project_key') ?? __('account.external.failures.unknown_project')),
+                        'project_language' => data_get($event->metadata, 'project_key') !== null ? '' : null,
+                        'status' => data_get($event->metadata, 'status'),
+                        'occurred_at' => $event->occurred_at,
+                    ];
+                });
+        }
+
+        $metrics = [
+            [
+                'label' => __('account.external.metrics.connections'),
+                'value' => trans_choice('account.external.metrics.connection_count', $connections->count(), [
+                    'count' => ReaderNumber::count($connections->count()),
+                ]),
+                'tone' => $connections->isEmpty() ? 'manual' : 'ready',
+            ],
+            [
+                'label' => __('account.external.metrics.projects'),
+                'value' => trans_choice('account.external.metrics.project_count', $projects->count(), [
+                    'count' => ReaderNumber::count($projects->count()),
+                ]),
+                'tone' => $projects->isEmpty() ? 'manual' : 'ready',
+            ],
+            [
+                'label' => __('account.external.metrics.disabled'),
+                'value' => __('account.external.metrics.disabled_count', ['count' => ReaderNumber::count($disabledCount)]),
+                'tone' => $disabledCount > 0 ? 'attention' : 'ready',
+            ],
+        ];
+
+        if ($canManageTickets) {
+            $metrics[] = [
+                'label' => __('account.external.metrics.failed'),
+                'value' => __('account.external.metrics.failed_count', ['count' => ReaderNumber::count($failedCount)]),
+                'tone' => $failedCount > 0 ? 'attention' : 'ready',
+                'href' => $failedQueueCount > 0
+                    ? route('dashboard.tickets.index', [
+                        'ticket_status' => 'all',
+                        'ticket_external' => 'failed',
+                    ])
+                    : null,
+                'action' => __('account.external.metrics.review_failed'),
+            ];
+            $metrics[] = [
+                'label' => __('account.external.metrics.pending'),
+                'value' => __('account.external.metrics.pending_count', ['count' => ReaderNumber::count($pendingCount)]),
+                'tone' => $pendingCount > 0 ? 'manual' : 'ready',
+                'href' => $pendingQueueCount > 0
+                    ? route('dashboard.tickets.index', [
+                        'ticket_status' => 'all',
+                        'ticket_external' => 'pending',
+                    ])
+                    : null,
+                'action' => __('account.external.metrics.review_pending'),
+            ];
+        }
 
         [$state, $tone, $detail] = match (true) {
             $connections->isEmpty() => [
@@ -200,7 +314,7 @@ class AgentAccountController extends Controller
             $disabledCount > 0 || $failedCount > 0 => [
                 'needs_attention',
                 'attention',
-                'attention',
+                $canManageTickets ? 'attention' : 'disabled_connections',
             ],
             $pendingCount > 0 => [
                 'sync_pending',
@@ -210,7 +324,7 @@ class AgentAccountController extends Controller
             default => [
                 'ready',
                 'ready',
-                'ready',
+                $canManageTickets ? 'ready' : 'configured',
             ],
         };
 
@@ -218,51 +332,7 @@ class AgentAccountController extends Controller
             'label' => __('account.external.states.'.$state),
             'tone' => $tone,
             'detail' => __('account.external.details.'.$detail),
-            'metrics' => [
-                [
-                    'label' => __('account.external.metrics.connections'),
-                    'value' => trans_choice('account.external.metrics.connection_count', $connections->count(), [
-                        'count' => ReaderNumber::count($connections->count()),
-                    ]),
-                    'tone' => $connections->isEmpty() ? 'manual' : 'ready',
-                ],
-                [
-                    'label' => __('account.external.metrics.projects'),
-                    'value' => trans_choice('account.external.metrics.project_count', $projects->count(), [
-                        'count' => ReaderNumber::count($projects->count()),
-                    ]),
-                    'tone' => $projects->isEmpty() ? 'manual' : 'ready',
-                ],
-                [
-                    'label' => __('account.external.metrics.disabled'),
-                    'value' => __('account.external.metrics.disabled_count', ['count' => ReaderNumber::count($disabledCount)]),
-                    'tone' => $disabledCount > 0 ? 'attention' : 'ready',
-                ],
-                [
-                    'label' => __('account.external.metrics.failed'),
-                    'value' => __('account.external.metrics.failed_count', ['count' => ReaderNumber::count($failedCount)]),
-                    'tone' => $failedCount > 0 ? 'attention' : 'ready',
-                    'href' => $failedQueueCount > 0
-                        ? route('dashboard.tickets.index', [
-                            'ticket_status' => 'all',
-                            'ticket_external' => 'failed',
-                        ])
-                        : null,
-                    'action' => __('account.external.metrics.review_failed'),
-                ],
-                [
-                    'label' => __('account.external.metrics.pending'),
-                    'value' => __('account.external.metrics.pending_count', ['count' => ReaderNumber::count($pendingCount)]),
-                    'tone' => $pendingCount > 0 ? 'manual' : 'ready',
-                    'href' => $pendingQueueCount > 0
-                        ? route('dashboard.tickets.index', [
-                            'ticket_status' => 'all',
-                            'ticket_external' => 'pending',
-                        ])
-                        : null,
-                    'action' => __('account.external.metrics.review_pending'),
-                ],
-            ],
+            'metrics' => $metrics,
             'projects' => $projects->map(function (SiteExternalIssueProject $project): array {
                 $provider = $this->providerParts($project->providerConnection?->provider);
 
@@ -287,23 +357,7 @@ class AgentAccountController extends Controller
                     'enabled' => (bool) $project->providerConnection?->is_enabled,
                 ];
             }),
-            'recent_failures' => $visibleFailureEvents()
-                ->latest('occurred_at')
-                ->latest('id')
-                ->limit(3)
-                ->get()
-                ->map(function (AuditEvent $event): array {
-                    $provider = $this->providerParts(data_get($event->metadata, 'provider'));
-
-                    return [
-                        'provider' => $provider['label'],
-                        'provider_language' => $provider['language'],
-                        'project_key' => (string) (data_get($event->metadata, 'project_key') ?? __('account.external.failures.unknown_project')),
-                        'project_language' => data_get($event->metadata, 'project_key') !== null ? '' : null,
-                        'status' => data_get($event->metadata, 'status'),
-                        'occurred_at' => $event->occurred_at,
-                    ];
-                }),
+            'recent_failures' => $recentFailures,
         ];
     }
 
@@ -544,7 +598,16 @@ class AgentAccountController extends Controller
     {
         $oldRole = data_get($event->metadata, 'old_role');
         $newRole = data_get($event->metadata, 'new_role');
+        $oldRoleName = data_get($event->metadata, 'old_role_name');
+        $newRoleName = data_get($event->metadata, 'new_role_name');
         $roleLabels = $this->roleLabels();
+
+        if (is_string($oldRoleName) && is_string($newRoleName)) {
+            return __('account.activity.bodies.role_changed', [
+                'old' => $roleLabels[$oldRoleName] ?? $oldRoleName,
+                'new' => $roleLabels[$newRoleName] ?? $newRoleName,
+            ]);
+        }
 
         if (is_string($oldRole) && is_string($newRole)
             && isset($roleLabels[$oldRole], $roleLabels[$newRole])) {

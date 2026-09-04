@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\AccountRole;
+use App\Enums\AccountPermission;
 use App\Enums\SiteColor;
 use App\Models\Account;
 use App\Models\AuditEvent;
@@ -11,6 +11,7 @@ use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\AgentRealtimeSessions;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorDashboardPresenter;
@@ -20,6 +21,7 @@ use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
@@ -42,50 +44,87 @@ use Illuminate\View\View;
 
 class AgentSiteController extends Controller
 {
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AgentRealtimeSessions $agentRealtimeSessions,
+    ) {}
+
     public function index(Request $request): View
     {
         $agent = $request->user();
+        abort_unless($agent->hasAnyAccountPermission(
+            AccountPermission::ManageSites,
+            AccountPermission::ManageSiteAccess,
+            AccountPermission::ManagePrivacySettings,
+            AccountPermission::ManageIntegrations,
+            AccountPermission::ViewAudit,
+            AccountPermission::ViewConversations,
+            AccountPermission::ManageTickets,
+        ), 403);
         $account = $this->account($request);
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canViewSupportWork = $canViewConversations || $canManageTickets;
+        $workloadCounts = [
+            'supportAgents as support_agents_count' => fn ($query) => $query
+                ->where('users.account_id', $account->id)
+                ->whereNull('users.deactivated_at'),
+        ];
+
+        if ($canViewConversations) {
+            $workloadCounts['conversations as open_conversations_count'] = fn ($query) => $query
+                ->where('status', 'open');
+        }
+
+        if ($canManageTickets) {
+            $workloadCounts['tickets as open_tickets_count'] = fn ($query) => $query
+                ->where('status', 'open');
+            $workloadCounts['tickets as pending_tickets_count'] = fn ($query) => $query
+                ->where('status', 'pending');
+        }
+
         $sites = $account->sites()
             ->visibleToAgentIncludingArchived($agent)
-            ->with('latestVisitor')
             ->with([
+                'latestVisitor' => function ($query) use ($canViewSupportWork): void {
+                    if (! $canViewSupportWork) {
+                        // Install recency is site diagnostics; visitor
+                        // metadata is support data. Keep the former without
+                        // selecting page URLs for a settings-only role.
+                        $query->select(['visitors.id', 'visitors.site_id', 'visitors.last_seen_at']);
+                    }
+                },
                 'supportAgents' => fn ($query) => $query
                     ->where('users.account_id', $account->id)
                     ->whereNull('users.deactivated_at')
                     ->orderBy('name')
                     ->orderBy('email'),
             ])
-            ->withCount([
-                'conversations as open_conversations_count' => fn ($query) => $query
-                    ->where('status', 'open'),
-                'supportAgents as support_agents_count' => fn ($query) => $query
-                    ->where('users.account_id', $account->id)
-                    ->whereNull('users.deactivated_at'),
-                'tickets as open_tickets_count' => fn ($query) => $query
-                    ->where('status', 'open'),
-                'tickets as pending_tickets_count' => fn ($query) => $query
-                    ->where('status', 'pending'),
-            ])
+            ->withCount($workloadCounts)
             ->orderBy('name')
             ->get();
         // Always describes sites still in service, whichever state the operator is
         // browsing: an archived site has no install to fix and no support work to
         // chase, so counting it here would nag about a site deliberately retired.
         $siteOperationsSnapshot = $this->siteOperationsSnapshot(
-            $sites->reject(fn (Site $site): bool => $site->isArchived())->values()
+            $sites->reject(fn (Site $site): bool => $site->isArchived())->values(),
+            $canViewConversations && $canManageTickets,
         );
         $siteInstallHealth = $sites
             ->mapWithKeys(fn (Site $site): array => [
                 $site->id => $this->localizedSiteInstallHealth($site->latestVisitor),
             ])
             ->all();
-        [$sites, $siteFilters] = $this->filteredSites($sites, $request);
+        [$sites, $siteFilters] = $this->filteredSites($sites, $request, $canViewSupportWork);
 
         return view('agent.sites.index', [
             'account' => $account,
             'agent' => $agent,
-            'siteEmptyState' => $this->siteEmptyState($siteFilters),
+            'canCreateSite' => $agent->canCreateAccountSite(),
+            'canManageTickets' => $canManageTickets,
+            'canViewConversations' => $canViewConversations,
+            'canViewSupportWork' => $canViewSupportWork,
+            'siteEmptyState' => $this->siteEmptyState($siteFilters, $agent->canCreateAccountSite()),
             'siteFilters' => $siteFilters,
             'siteInstallHealth' => $siteInstallHealth,
             'siteOperationsSnapshot' => $siteOperationsSnapshot,
@@ -96,6 +135,7 @@ class AgentSiteController extends Controller
 
     public function create(Request $request): View
     {
+        abort_unless($request->user()->canCreateAccountSite(), 403);
         $account = $this->account($request);
 
         return view('agent.sites.create', [
@@ -106,6 +146,7 @@ class AgentSiteController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        abort_unless($request->user()->canCreateAccountSite(), 403);
         $account = $this->account($request);
 
         $validated = $request->validate(
@@ -120,19 +161,31 @@ class AgentSiteController extends Controller
             ],
         );
 
-        $site = $account->sites()->create([
-            'name' => trim($validated['name']),
-            'domain' => $this->normalizeDomain($validated['domain'] ?? null),
-            // Assigned rather than defaulted, so a desk's sites stay tellable
-            // apart on sight from the moment the second one is created.
-            'color' => Site::nextColorForAccount((int) $account->id),
-            'public_key' => $this->publicKey(),
-            'settings' => [
-                'mask_selectors' => [],
-            ],
-        ]);
+        $site = DB::transaction(function () use ($account, $request, $validated): Site {
+            $this->siteManagerCoverage->lockAccount((int) $account->id);
+            $actor = User::query()
+                ->whereKey($request->user()->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
+            abort_unless($actor?->canCreateAccountSite(), 403);
 
-        $site->supportAgents()->syncWithoutDetaching($request->user()->id);
+            $site = $account->sites()->create([
+                'name' => trim($validated['name']),
+                'domain' => $this->normalizeDomain($validated['domain'] ?? null),
+                // Assigned rather than defaulted, so a desk's sites stay tellable
+                // apart on sight from the moment the second one is created.
+                'color' => Site::nextColorForAccount((int) $account->id),
+                'public_key' => $this->publicKey(),
+                'settings' => [
+                    'mask_selectors' => [],
+                ],
+            ]);
+
+            $site->supportAgents()->syncWithoutDetaching($actor->id);
+
+            return $site;
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -144,12 +197,18 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
 
         $agent = $request->user();
-        $site->loadMissing([
-            'externalIssueProjects.providerConnection',
-            'latestVisitor',
-        ]);
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canViewSupportWork = $canViewConversations || $canManageTickets;
+        $site->loadMissing('externalIssueProjects.providerConnection');
+
+        $site->setRelation('latestVisitor', $site->latestVisitor()
+            ->when(! $canViewSupportWork, fn ($query) => $query
+                ->select(['visitors.id', 'visitors.site_id', 'visitors.last_seen_at']))
+            ->first());
         $account = $agent->account()->firstOrFail();
         $accountAgents = $account->agents()
+            ->with('customRole')
             ->whereNull('deactivated_at')
             ->orderBy('name')
             ->orderBy('email')
@@ -170,7 +229,7 @@ class AgentSiteController extends Controller
         $supportAgentIds = $this->eligibleSupportAgentIds($site);
         $maskSelectors = $this->maskSelectors($site);
         $maskTerms = $this->maskTerms($site);
-        $externalIssueHealth = $this->externalIssueHealth($site);
+        $externalIssueHealth = $canManageTickets ? $this->externalIssueHealth($site) : null;
         $installHealth = $this->localizedSiteInstallHealth($site->latestVisitor);
         $installHostDiagnostic = $this->localizedSiteInstallHostDiagnostic($site->latestVisitor, $site->domain);
 
@@ -178,11 +237,14 @@ class AgentSiteController extends Controller
             'account' => $account,
             'accountAgents' => $accountAgents,
             'agent' => $agent,
-            'canViewSiteActivity' => $agent->isAdmin(),
+            'canViewSiteActivity' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
+            'canManageTickets' => $canManageTickets,
+            'canViewSupportWork' => $canViewSupportWork,
             'canManageIntegrations' => Gate::forUser($agent)->allows('manageIntegrations', $site),
             'canManageSiteAccess' => Gate::forUser($agent)->allows('manageAccess', $site),
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
             'canUpdateSite' => Gate::forUser($agent)->allows('update', $site),
+            'canViewLiveBoard' => Gate::forUser($agent)->allows('viewLiveBoard', $site),
             'dataResponsibility' => $this->localizedDataResponsibility(),
             'appearance' => WidgetAppearance::for($site),
             'availability' => SiteAvailability::for($site),
@@ -216,7 +278,7 @@ class AgentSiteController extends Controller
             'operatorSmokePath' => OperatorDashboardPresenter::readiness($readiness->summary())['smoke_path'],
             'site' => $site,
             'siteActivity' => $this->siteActivityItems($site, $agent),
-            'siteActivityAuditUrl' => $agent->isAdmin()
+            'siteActivityAuditUrl' => $agent->hasAccountPermission(AccountPermission::ViewAudit)
                 ? route('dashboard.account.audit.index', [
                     'audit_action' => 'site_access.updated',
                     'audit_site' => $site->id,
@@ -224,7 +286,13 @@ class AgentSiteController extends Controller
                 : null,
             'siteExternalIssueProjects' => $site->externalIssueProjects,
             'siteHasExplicitSupportAgents' => $site->hasExplicitSupportAgents(),
-            'siteSupportLoad' => $this->siteSupportLoad($site, $supportAgentIds, $accountAgents->count()),
+            'siteSupportLoad' => $this->siteSupportLoad(
+                $site,
+                $supportAgentIds,
+                $accountAgents->count(),
+                $canViewConversations,
+                $canManageTickets,
+            ),
             'siteSupportReadiness' => $this->siteSupportReadiness($site, $supportAgentIds, $maskSelectors, $externalIssueHealth),
             'siteStatusFeedback' => $this->siteShowStatusFeedback($request->session()->get('status')),
             'supportAgentIds' => $supportAgentIds,
@@ -252,7 +320,7 @@ class AgentSiteController extends Controller
      */
     private function siteActivityItems(Site $site, User $agent): Collection
     {
-        if (! $agent->isAdmin()) {
+        if (! $agent->hasAccountPermission(AccountPermission::ViewAudit)) {
             return collect();
         }
 
@@ -278,37 +346,50 @@ class AgentSiteController extends Controller
      * @param  array<int, int>  $supportAgentIds
      * @return Collection<int, array{label: string, value: string, detail: string, href: string, action: string}>
      */
-    private function siteSupportLoad(Site $site, array $supportAgentIds, int $accountAgentCount): Collection
-    {
-        $openConversationCount = $site->conversations()
-            ->where('status', 'open')
-            ->count();
-        $openTicketCount = $site->tickets()
-            ->where('status', 'open')
-            ->count();
-        $pendingTicketCount = $site->tickets()
-            ->where('status', 'pending')
-            ->count();
+    private function siteSupportLoad(
+        Site $site,
+        array $supportAgentIds,
+        int $accountAgentCount,
+        bool $canViewConversations,
+        bool $canManageTickets,
+    ): Collection {
+        if (! $canViewConversations && ! $canManageTickets) {
+            return collect();
+        }
+
         $supportAgentCount = $site->hasExplicitSupportAgents()
             ? count($supportAgentIds)
             : $accountAgentCount;
+        $items = collect();
 
-        return collect([
-            [
+        if ($canViewConversations) {
+            $openConversationCount = $site->conversations()
+                ->where('status', 'open')
+                ->count();
+            $items->push([
                 'label' => __('site_settings.load.conversations.label'),
                 'value' => trans_choice('site_settings.load.conversations.count', $openConversationCount, ['count' => ReaderNumber::count($openConversationCount)]),
                 'detail' => __('site_settings.load.conversations.detail'),
                 'href' => route('dashboard.conversations.index', ['conversation_site' => $site->id]),
                 'action' => __('site_settings.load.conversations.action'),
-            ],
-            [
+            ]);
+        }
+
+        if ($canManageTickets) {
+            $openTicketCount = $site->tickets()
+                ->where('status', 'open')
+                ->count();
+            $pendingTicketCount = $site->tickets()
+                ->where('status', 'pending')
+                ->count();
+            $items->push([
                 'label' => __('site_settings.load.open_tickets.label'),
                 'value' => trans_choice('site_settings.load.open_tickets.count', $openTicketCount, ['count' => ReaderNumber::count($openTicketCount)]),
                 'detail' => __('site_settings.load.open_tickets.detail'),
                 'href' => route('dashboard.tickets.index', ['ticket_site' => $site->id]),
                 'action' => __('site_settings.load.open_tickets.action'),
-            ],
-            [
+            ]);
+            $items->push([
                 'label' => __('site_settings.load.pending_tickets.label'),
                 'value' => trans_choice('site_settings.load.pending_tickets.count', $pendingTicketCount, ['count' => ReaderNumber::count($pendingTicketCount)]),
                 'detail' => __('site_settings.load.pending_tickets.detail'),
@@ -317,32 +398,32 @@ class AgentSiteController extends Controller
                     'ticket_site' => $site->id,
                 ]),
                 'action' => __('site_settings.load.pending_tickets.action'),
-            ],
-            [
-                'label' => __('site_settings.load.coverage.label'),
-                'value' => trans_choice('site_settings.load.coverage.count', $supportAgentCount, ['count' => ReaderNumber::count($supportAgentCount)]),
-                'detail' => $site->hasExplicitSupportAgents()
-                    ? __('site_settings.load.coverage.explicit')
-                    : __('site_settings.load.coverage.fallback'),
-                'href' => route('dashboard.sites.show', $site).'#support-access-heading',
-                'action' => __('site_settings.load.coverage.action'),
-            ],
+            ]);
+        }
+
+        return $items->push([
+            'label' => __('site_settings.load.coverage.label'),
+            'value' => trans_choice('site_settings.load.coverage.count', $supportAgentCount, ['count' => ReaderNumber::count($supportAgentCount)]),
+            'detail' => $site->hasExplicitSupportAgents()
+                ? __('site_settings.load.coverage.explicit')
+                : __('site_settings.load.coverage.fallback'),
+            'href' => route('dashboard.sites.show', $site).'#support-access-heading',
+            'action' => __('site_settings.load.coverage.action'),
         ]);
     }
 
     /**
      * @param  array<int, int>  $supportAgentIds
      * @param  array<int, string>  $maskSelectors
-     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int, value: string}>, recent_failures: Collection<int, array{body_feedback: array<string, mixed>, status: string|null, occurred_at: Carbon|null}>}  $externalIssueHealth
+     * @param  array{label: string, tone: string, detail: string, metrics: Collection<int, array{label: string, value: string, tone: string, href?: string|null, action?: string}>, status_counts: Collection<int, array{key: string, label: string, count: int, value: string}>, recent_failures: Collection<int, array{body_feedback: array<string, mixed>, status: string|null, occurred_at: Carbon|null}>}|null  $externalIssueHealth
      * @return Collection<int, array{label: string, value: string, tone: string, detail: string, href: string, action: string}>
      */
-    private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, array $externalIssueHealth): Collection
+    private function siteSupportReadiness(Site $site, array $supportAgentIds, array $maskSelectors, ?array $externalIssueHealth): Collection
     {
         $installHealth = $this->localizedSiteInstallHealth($site->latestVisitor);
         $explicitSupport = $site->hasExplicitSupportAgents();
-        $handoffProjectCount = $this->externalIssueHandoffProjectCount($site);
 
-        return collect([
+        $items = collect([
             [
                 'label' => __('site_settings.readiness.items.install.label'),
                 'value' => $installHealth['label'],
@@ -377,7 +458,11 @@ class AgentSiteController extends Controller
                 'href' => route('dashboard.sites.show', $site).'#privacy-settings-heading',
                 'action' => __('site_settings.readiness.items.privacy.action'),
             ],
-            [
+        ]);
+
+        if ($externalIssueHealth !== null) {
+            $handoffProjectCount = $this->externalIssueHandoffProjectCount($site);
+            $items->push([
                 'label' => __('site_settings.readiness.items.external.label'),
                 'value' => $handoffProjectCount > 0
                     ? trans_choice('site_settings.readiness.items.external.mapped', $handoffProjectCount, ['count' => ReaderNumber::count($handoffProjectCount)])
@@ -388,8 +473,10 @@ class AgentSiteController extends Controller
                     : __('site_settings.readiness.items.external.none_detail'),
                 'href' => route('dashboard.sites.show', $site).'#external-issue-routing-heading',
                 'action' => __('site_settings.readiness.items.external.action'),
-            ],
-        ]);
+            ]);
+        }
+
+        return $items;
     }
 
     private function externalIssueHandoffProjectCount(Site $site): int
@@ -615,11 +702,15 @@ class AgentSiteController extends Controller
             'mask_terms' => ['nullable', 'string', 'max:4000'],
         ]);
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
-            $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
-            $settings['mask_terms'] = $this->parseMaskTerms($validated['mask_terms'] ?? '');
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'updatePrivacy');
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($validated): array {
+                $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
+                $settings['mask_terms'] = $this->parseMaskTerms($validated['mask_terms'] ?? '');
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -682,13 +773,17 @@ class AgentSiteController extends Controller
             'rating_intro' => ['nullable', 'string', 'max:160'],
         ]);
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
-            $settings['rating'] = [
-                'enabled' => (bool) ($validated['rating_enabled'] ?? false),
-                'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
-            ];
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($validated): array {
+                $settings['rating'] = [
+                    'enabled' => (bool) ($validated['rating_enabled'] ?? false),
+                    'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
+                ];
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -713,13 +808,17 @@ class AgentSiteController extends Controller
             $fields[$field] = $validated['intake_fields'][$field] ?? SiteIntake::OFF;
         }
 
-        $settings = $site->mutateSettings(function (array $settings) use ($fields, $validated): array {
-            $settings['intake'] = [
-                'fields' => $fields,
-                'intro' => trim((string) ($validated['intake_intro'] ?? '')) ?: null,
-            ];
+        DB::transaction(function () use ($fields, $request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($fields, $validated): array {
+                $settings['intake'] = [
+                    'fields' => $fields,
+                    'intro' => trim((string) ($validated['intake_intro'] ?? '')) ?: null,
+                ];
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -738,9 +837,10 @@ class AgentSiteController extends Controller
      */
     public function live(Request $request, Site $site): View
     {
-        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'viewLiveBoard', $site, 404);
 
         $agent = $request->user();
+        abort_unless($agent instanceof User, 403);
 
         // Read as of NOW, not as of route binding.
         //
@@ -753,9 +853,10 @@ class AgentSiteController extends Controller
         $site = Site::query()->whereKey($site->getKey())->first() ?? $site;
 
         $reporting = SitePresenceReporting::for($site);
+        $canViewConversationCounts = $agent?->hasAccountPermission(AccountPermission::ViewConversations) ?? false;
 
         $snapshot = $reporting->enabled && ! $site->isArchived()
-            ? LiveVisitorBoard::snapshotFor($site)
+            ? LiveVisitorBoard::snapshotFor($site, $canViewConversationCounts)
             : ['visitors' => collect(), 'total' => 0];
 
         return view('agent.sites.live', [
@@ -780,8 +881,9 @@ class AgentSiteController extends Controller
             // face value.
             'presentCount' => $snapshot['total'],
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            'canViewConversationCounts' => $canViewConversationCounts,
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
-            'realtime' => $this->presenceRealtimeConfig($site),
+            'realtime' => $this->presenceRealtimeConfig($site, $agent, $canViewConversationCounts),
             // Words for the script, chosen here. The socket carries a state
             // and this page picks the sentence, which is the same rule the
             // conversation presence payload follows: a payload broadcast to
@@ -806,7 +908,7 @@ class AgentSiteController extends Controller
      *
      * @return array<string, mixed>|null
      */
-    private function presenceRealtimeConfig(Site $site): ?array
+    private function presenceRealtimeConfig(Site $site, User $agent, bool $showConversationCounts): ?array
     {
         // An archived site has no board to subscribe to: SitePresenceChannel
         // queries `servable()` and refuses every authorization. Handing the
@@ -844,11 +946,13 @@ class AgentSiteController extends Controller
             'appKey' => (string) $key,
             'authEndpoint' => url('/broadcasting/auth'),
             'channelName' => 'private-sites.'.$site->id.'.presence',
+            'identityChannelName' => 'presence-agents.'.$agent->id,
             'host' => (string) $host,
             'port' => (string) $port,
             'scheme' => (string) $scheme,
             'eventName' => 'visitor.presence.updated',
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            'showConversationCounts' => $showConversationCounts,
             // How many rows the server will ever render. The board needs it to
             // know whether its own row count is the whole truth: at or below
             // this, every visitor counted is on the page and a departure really
@@ -888,20 +992,24 @@ class AgentSiteController extends Controller
         // already on its way then creates -- and no other settings form can
         // save its stale copy of this column afterwards and put the revoked
         // value back.
-        $site->mutateSettings(function (array $settings) use ($site, $enabled, $pageUrls, &$removed): array {
-            $settings['presence'] = ['enabled' => $enabled, 'page_urls' => $pageUrls];
+        DB::transaction(function () use ($request, $site, $enabled, $pageUrls, &$removed): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'updatePrivacy');
 
-            // Switching presence off is a revocation, so the rows it collected
-            // go. Leaving them to age out over thirty days would mean the
-            // visitor directory still listing people who never made contact on
-            // a site whose operator has just said not to watch them. Only rows
-            // this feature created and nobody has since been in touch through:
-            // somebody who arrived as a heartbeat and later wrote in stays.
-            if (! $enabled) {
-                $removed = $this->forgetPresenceOnlyVisitors($site);
-            }
+            $site->mutateSettings(function (array $settings) use ($site, $enabled, $pageUrls, &$removed): array {
+                $settings['presence'] = ['enabled' => $enabled, 'page_urls' => $pageUrls];
 
-            return $settings;
+                // Switching presence off is a revocation, so the rows it collected
+                // go. Leaving them to age out over thirty days would mean the
+                // visitor directory still listing people who never made contact on
+                // a site whose operator has just said not to watch them. Only rows
+                // this feature created and nobody has since been in touch through:
+                // somebody who arrived as a heartbeat and later wrote in stays.
+                if (! $enabled) {
+                    $removed = $this->forgetPresenceOnlyVisitors($site);
+                }
+
+                return $settings;
+            });
         });
 
         // Addresses go whenever the switch is off, not only while presence is
@@ -1066,12 +1174,16 @@ class AgentSiteController extends Controller
             'widget_locale' => ['nullable', 'string', Rule::in(array_keys(WidgetLanguage::SUPPORTED))],
         ]);
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
-            // Null rather than an empty string, so "not configured" is one value
-            // and the widget can tell it from a language it does not carry.
-            $settings['locale'] = WidgetLanguage::sanitize($validated['widget_locale'] ?? null);
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($validated): array {
+                // Null rather than an empty string, so "not configured" is one value
+                // and the widget can tell it from a language it does not carry.
+                $settings['locale'] = WidgetLanguage::sanitize($validated['widget_locale'] ?? null);
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -1123,20 +1235,24 @@ class AgentSiteController extends Controller
                 : null;
         }
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated, $weekdays): array {
-            $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
+        DB::transaction(function () use ($request, $site, $validated, $weekdays): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            $settings['availability'] = [
-                'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
-                'timezone' => $validated['availability_timezone'],
-                'weekdays' => $weekdays,
-                'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,
-                // Preserved rather than rewritten: editing the schedule is not the
-                // same action as reopening a desk somebody closed early.
-                'closed_until' => $availability['closed_until'] ?? null,
-            ];
+            $site->mutateSettings(function (array $settings) use ($validated, $weekdays): array {
+                $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
 
-            return $settings;
+                $settings['availability'] = [
+                    'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
+                    'timezone' => $validated['availability_timezone'],
+                    'weekdays' => $weekdays,
+                    'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,
+                    // Preserved rather than rewritten: editing the schedule is not the
+                    // same action as reopening a desk somebody closed early.
+                    'closed_until' => $availability['closed_until'] ?? null,
+                ];
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -1162,30 +1278,33 @@ class AgentSiteController extends Controller
             'closure' => ['required', 'string', Rule::in(SiteAvailability::CLOSURES)],
         ]);
 
-        $endsAt = SiteAvailability::closureEndsAt($site, $validated['closure']);
+        $status = DB::transaction(function () use ($request, $site, $validated): string|array {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+            $endsAt = SiteAvailability::closureEndsAt($site, $validated['closure']);
 
-        if ($endsAt === null) {
-            return redirect()
-                ->route('dashboard.sites.show', $site)
-                ->with('status', 'site_settings.flash.desk_left_open');
-        }
+            if ($endsAt === null) {
+                return 'site_settings.flash.desk_left_open';
+            }
 
-        $this->storeClosure($site, $endsAt->toIso8601String());
+            $this->storeClosure($site, $endsAt->toIso8601String());
 
-        // Report when the desk is BACK, which is not always when the close
-        // expires: one ending outside opening hours hands back to the schedule
-        // rather than to that moment. "Rest of today" ends at closing time, so
-        // it is outside hours by definition and the two always differ.
-        $reopens = SiteAvailability::for($site)->opensAt;
+            // Report when the desk is BACK, which is not always when the close
+            // expires: one ending outside opening hours hands back to the schedule
+            // rather than to that moment. "Rest of today" ends at closing time, so
+            // it is outside hours by definition and the two always differ.
+            $reopens = SiteAvailability::for($site)->opensAt;
 
-        return redirect()
-            ->route('dashboard.sites.show', $site)
-            ->with('status', $reopens === null
+            return $reopens === null
                 ? 'site_settings.flash.desk_closed_no_return'
                 : [
                     'key' => 'site_settings.flash.desk_closed_return',
                     'reopens_at' => $reopens->toIso8601String(),
-                ]);
+                ];
+        });
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', $status);
     }
 
     /**
@@ -1196,7 +1315,10 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'update', $site);
 
-        $this->storeClosure($site, null);
+        DB::transaction(function () use ($request, $site): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+            $this->storeClosure($site, null);
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -1249,16 +1371,20 @@ class AgentSiteController extends Controller
         // are two addresses to the database and one to every mail server.
         $address = strtolower(trim((string) ($validated['inbound_address'] ?? '')));
 
-        if ($address !== '' && Site::query()
-            ->whereKeyNot($site->getKey())
-            ->whereRaw('LOWER(inbound_address) = ?', [$address])
-            ->exists()) {
-            throw ValidationException::withMessages([
-                'inbound_address' => __('site_settings.validation.inbound_unique'),
-            ]);
-        }
+        DB::transaction(function () use ($address, $request, $site): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-        $site->forceFill(['inbound_address' => $address === '' ? null : $address])->save();
+            if ($address !== '' && Site::query()
+                ->whereKeyNot($site->getKey())
+                ->whereRaw('LOWER(inbound_address) = ?', [$address])
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'inbound_address' => __('site_settings.validation.inbound_unique'),
+                ]);
+            }
+
+            $site->forceFill(['inbound_address' => $address === '' ? null : $address])->save();
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -1283,16 +1409,19 @@ class AgentSiteController extends Controller
             throw ValidationException::withMessages(['widget_accent' => __('site_settings.validation.widget_accent')]);
         }
 
-        $settings = $site->mutateSettings(function (array $settings) use ($accent, $validated): array {
+        DB::transaction(function () use ($accent, $request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            $settings['appearance'] = [
-                'accent' => $accent === '' ? null : $accent,
-                'position' => $validated['widget_position'],
-                'greeting' => trim((string) ($validated['widget_greeting'] ?? '')) ?: null,
-                'placeholder' => trim((string) ($validated['widget_placeholder'] ?? '')) ?: null,
-            ];
+            $site->mutateSettings(function (array $settings) use ($accent, $validated): array {
+                $settings['appearance'] = [
+                    'accent' => $accent === '' ? null : $accent,
+                    'position' => $validated['widget_position'],
+                    'greeting' => trim((string) ($validated['widget_greeting'] ?? '')) ?: null,
+                    'placeholder' => trim((string) ($validated['widget_placeholder'] ?? '')) ?: null,
+                ];
 
-            return $settings;
+                return $settings;
+            });
         });
 
         return redirect()
@@ -1319,32 +1448,35 @@ class AgentSiteController extends Controller
             'color' => ['sometimes', Rule::enum(SiteColor::class)],
         ]);
 
-        $before = [
-            'name' => $site->name,
-            'domain' => $site->domain,
-            'color' => $site->resolvedColor()->value,
-        ];
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+            $before = [
+                'name' => $site->name,
+                'domain' => $site->domain,
+                'color' => $site->resolvedColor()->value,
+            ];
 
-        $site->forceFill([
-            'name' => trim($validated['name']),
-            'domain' => $this->normalizeDomain($validated['domain'] ?? null),
-            'color' => isset($validated['color'])
-                ? SiteColor::from($validated['color'])
-                : $site->resolvedColor(),
-        ])->save();
+            $site->forceFill([
+                'name' => trim($validated['name']),
+                'domain' => $this->normalizeDomain($validated['domain'] ?? null),
+                'color' => isset($validated['color'])
+                    ? SiteColor::from($validated['color'])
+                    : $site->resolvedColor(),
+            ])->save();
 
-        $after = [
-            'name' => $site->name,
-            'domain' => $site->domain,
-            'color' => $site->resolvedColor()->value,
-        ];
+            $after = [
+                'name' => $site->name,
+                'domain' => $site->domain,
+                'color' => $site->resolvedColor()->value,
+            ];
 
-        if ($before !== $after) {
-            $this->recordSiteAudit($site, $request->user(), 'site.details_updated', [
-                'before' => $before,
-                'after' => $after,
-            ]);
-        }
+            if ($before !== $after) {
+                $this->recordSiteAudit($site, $actor, 'site.details_updated', [
+                    'before' => $before,
+                    'after' => $after,
+                ]);
+            }
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -1363,24 +1495,28 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'archive', $site);
 
-        if ($site->isArchived()) {
-            return redirect()
-                ->route('dashboard.sites.show', $site)
-                ->with('status', 'site_settings.flash.already_archived');
-        }
+        $status = DB::transaction(function () use ($request, $site): string {
+            [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'archive');
 
-        $site->forceFill(['archived_at' => now()])->save();
+            if ($site->isArchived()) {
+                return 'site_settings.flash.already_archived';
+            }
 
-        // Record the scale of what just stopped serving: an operator reading
-        // this later wants to know whether a live site was taken down.
-        $this->recordSiteAudit($site, $request->user(), 'site.archived', [
-            'conversations' => $site->conversations()->count(),
-            'tickets' => $site->tickets()->count(),
-        ]);
+            $site->forceFill(['archived_at' => now()])->save();
+
+            // Record the scale of what just stopped serving: an operator reading
+            // this later wants to know whether a live site was taken down.
+            $this->recordSiteAudit($site, $actor, 'site.archived', [
+                'conversations' => $site->conversations()->count(),
+                'tickets' => $site->tickets()->count(),
+            ]);
+
+            return 'site_settings.flash.archived';
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'site_settings.flash.archived');
+            ->with('status', $status);
     }
 
     public function unarchive(Request $request, Site $site): RedirectResponse
@@ -1388,19 +1524,23 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'archive', $site);
 
-        if (! $site->isArchived()) {
-            return redirect()
-                ->route('dashboard.sites.show', $site)
-                ->with('status', 'site_settings.flash.not_archived');
-        }
+        $status = DB::transaction(function () use ($request, $site): string {
+            [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'archive');
 
-        $site->forceFill(['archived_at' => null])->save();
+            if (! $site->isArchived()) {
+                return 'site_settings.flash.not_archived';
+            }
 
-        $this->recordSiteAudit($site, $request->user(), 'site.unarchived', []);
+            $site->forceFill(['archived_at' => null])->save();
+
+            $this->recordSiteAudit($site, $actor, 'site.unarchived', []);
+
+            return 'site_settings.flash.restored';
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'site_settings.flash.restored');
+            ->with('status', $status);
     }
 
     /**
@@ -1429,7 +1569,11 @@ class AgentSiteController extends Controller
                 ->withErrors(['confirm_name' => __('site_settings.validation.purge_name')]);
         }
 
-        $summary = $purge->purge($site, $request->user());
+        $summary = $purge->purgeAuthorized(
+            $site,
+            $request->user(),
+            $request->string('confirm_name')->trim()->value(),
+        );
 
         return redirect()
             ->route('dashboard.sites.index')
@@ -1503,20 +1647,53 @@ class AgentSiteController extends Controller
             'support_agent_ids.*.in' => __('site_settings.validation.support_account'),
         ]);
 
-        $beforeAgentIds = $this->eligibleSupportAgentIds($site);
         $afterAgentIds = $this->normalizeAgentIds($validated['support_agent_ids']);
 
-        if (! $this->hasAssignedSiteManager($site, $afterAgentIds)) {
-            throw ValidationException::withMessages([
-                'support_agent_ids' => __('site_settings.validation.support_manager'),
-            ]);
-        }
+        $removedAgentIds = DB::transaction(function () use ($request, $site, $afterAgentIds): array {
+            $this->siteManagerCoverage->lockAccount((int) $site->account_id);
+            $actor = User::query()
+                ->whereKey($request->user()->id)
+                ->where('account_id', $site->account_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            abort_unless(Gate::forUser($actor)->allows('view', $site), 404);
+            abort_unless(Gate::forUser($actor)->allows('manageAccess', $site), 403);
 
-        $site->supportAgents()->sync($afterAgentIds);
+            $currentAccountAgentIds = $site->account()
+                ->firstOrFail()
+                ->agents()
+                ->whereNull('deactivated_at')
+                ->pluck('users.id')
+                ->map(fn (int|string $id): int => (int) $id)
+                ->all();
 
-        if ($beforeAgentIds !== $afterAgentIds) {
-            $this->recordSiteAccessChange($site, $request->user(), $beforeAgentIds, $afterAgentIds);
-        }
+            if (array_diff($afterAgentIds, $currentAccountAgentIds) !== []) {
+                throw ValidationException::withMessages([
+                    'support_agent_ids' => __('site_settings.validation.support_account'),
+                ]);
+            }
+
+            $beforeAgentIds = $this->eligibleSupportAgentIds($site);
+
+            if (! $this->hasAssignedSiteManager($site, $afterAgentIds)) {
+                throw ValidationException::withMessages([
+                    'support_agent_ids' => __('site_settings.validation.support_manager'),
+                ]);
+            }
+
+            $site->supportAgents()->sync($afterAgentIds);
+
+            if ($beforeAgentIds !== $afterAgentIds) {
+                $this->recordSiteAccessChange($site, $actor, $beforeAgentIds, $afterAgentIds);
+            }
+
+            $removedAgentIds = array_values(array_diff($beforeAgentIds, $afterAgentIds));
+            $this->agentRealtimeSessions->requestMany($removedAgentIds);
+
+            return $removedAgentIds;
+        });
+
+        $this->agentRealtimeSessions->disconnectMany($removedAgentIds);
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -1528,6 +1705,28 @@ class AgentSiteController extends Controller
         $agent = $request->user();
 
         abort_unless($agent && Gate::forUser($agent)->allows($ability, $site), $status);
+    }
+
+    /** @return array{0: User, 1: Site} */
+    private function lockedSiteManagerAndSite(User $actor, Site $site, string $ability): array
+    {
+        $accountId = (int) $site->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $actor = User::query()
+            ->whereKey($actor->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $site = Site::query()
+            ->whereKey($site->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        abort_unless(Gate::forUser($actor)->allows('view', $site), 404);
+        abort_unless(Gate::forUser($actor)->allows($ability, $site), 403);
+
+        return [$actor, $site];
     }
 
     /**
@@ -1543,7 +1742,7 @@ class AgentSiteController extends Controller
         };
     }
 
-    private function filteredSites(Collection $sites, Request $request): array
+    private function filteredSites(Collection $sites, Request $request, bool $canViewSupportWork): array
     {
         $stateOptions = [
             'active' => __('sites.index.filters.options.state.active_sites'),
@@ -1574,10 +1773,12 @@ class AgentSiteController extends Controller
             'live' => __('sites.index.filters.options.install.live'),
         ];
         $search = trim($this->stringQuery($request, 'site_search'));
-        $workload = $this->normalizeSiteFilter(
-            $this->stringQuery($request, 'site_workload', 'all'),
-            array_keys($workloadOptions),
-        );
+        $workload = $canViewSupportWork
+            ? $this->normalizeSiteFilter(
+                $this->stringQuery($request, 'site_workload', 'all'),
+                array_keys($workloadOptions),
+            )
+            : 'all';
         $install = $this->normalizeSiteFilter(
             $this->stringQuery($request, 'site_install', 'all'),
             array_keys($installOptions),
@@ -1657,15 +1858,9 @@ class AgentSiteController extends Controller
      * @param  Collection<int, Site>  $sites
      * @return list<array{label: string, value: string, detail: string, href: string|null, action: string|null}>
      */
-    private function siteOperationsSnapshot(Collection $sites): array
+    private function siteOperationsSnapshot(Collection $sites, bool $canViewCombinedWorkload): array
     {
         $visibleCount = $sites->count();
-        $activeSiteCount = $sites
-            ->filter(fn (Site $site): bool => $this->siteHasActiveWorkload($site))
-            ->count();
-        $openConversationCount = $sites->sum(fn (Site $site): int => (int) $site->open_conversations_count);
-        $openTicketCount = $sites->sum(fn (Site $site): int => (int) $site->open_tickets_count);
-        $pendingTicketCount = $sites->sum(fn (Site $site): int => (int) $site->pending_tickets_count);
         $installAttentionCount = $sites
             ->filter(fn (Site $site): bool => SiteInstallHealth::fromVisitor($site->latestVisitor)['needs_attention'])
             ->count();
@@ -1674,7 +1869,7 @@ class AgentSiteController extends Controller
             ->count();
         $fallbackAccessCount = max(0, $visibleCount - $explicitAccessCount);
 
-        return [
+        $snapshot = collect([
             [
                 'label' => __('sites.index.snapshot.visible.label'),
                 'value' => trans_choice('sites.index.snapshot.visible.value', $visibleCount, [
@@ -1684,7 +1879,16 @@ class AgentSiteController extends Controller
                 'href' => route('dashboard.sites.index'),
                 'action' => __('sites.index.snapshot.visible.action'),
             ],
-            [
+        ]);
+
+        if ($canViewCombinedWorkload) {
+            $activeSiteCount = $sites
+                ->filter(fn (Site $site): bool => $this->siteHasActiveWorkload($site))
+                ->count();
+            $openConversationCount = $sites->sum(fn (Site $site): int => (int) $site->open_conversations_count);
+            $openTicketCount = $sites->sum(fn (Site $site): int => (int) $site->open_tickets_count);
+            $pendingTicketCount = $sites->sum(fn (Site $site): int => (int) $site->pending_tickets_count);
+            $snapshot->push([
                 'label' => __('sites.index.snapshot.workload.label'),
                 'value' => trans_choice('sites.index.snapshot.workload.value', $activeSiteCount, [
                     'count' => ReaderNumber::count($activeSiteCount),
@@ -1696,17 +1900,19 @@ class AgentSiteController extends Controller
                 ]),
                 'href' => route('dashboard.sites.index', ['site_workload' => 'active']),
                 'action' => __('sites.index.snapshot.workload.action'),
-            ],
-            [
-                'label' => __('sites.index.snapshot.install.label'),
-                'value' => trans_choice('sites.index.snapshot.install.value', $installAttentionCount, [
-                    'count' => ReaderNumber::count($installAttentionCount),
-                ]),
-                'detail' => __('sites.index.snapshot.install.detail'),
-                'href' => route('dashboard.sites.index', ['site_install' => 'needs_attention']),
-                'action' => __('sites.index.snapshot.install.action'),
-            ],
-            [
+            ]);
+        }
+
+        return $snapshot->push([
+            'label' => __('sites.index.snapshot.install.label'),
+            'value' => trans_choice('sites.index.snapshot.install.value', $installAttentionCount, [
+                'count' => ReaderNumber::count($installAttentionCount),
+            ]),
+            'detail' => __('sites.index.snapshot.install.detail'),
+            'href' => route('dashboard.sites.index', ['site_install' => 'needs_attention']),
+            'action' => __('sites.index.snapshot.install.action'),
+        ])
+            ->push([
                 'label' => __('sites.index.snapshot.access.label'),
                 'value' => trans_choice('sites.index.snapshot.access.value', $explicitAccessCount, [
                     'count' => ReaderNumber::count($explicitAccessCount),
@@ -1716,19 +1922,21 @@ class AgentSiteController extends Controller
                 ]),
                 'href' => null,
                 'action' => null,
-            ],
-        ];
+            ])
+            ->all();
     }
 
     /**
      * @param  array{search: string, workload: string, install: string, state: string, workload_options: array<string, string>, install_options: array<string, string>, state_options: array<string, string>, active: list<array{label: string, value: string, value_is_authored: bool}>, has_active_filters: bool, visible_count: int, result_count: int, summary_label: string}  $siteFilters
      * @return array{heading: array{key: string, parameters: array<string, string>}, detail: string, actions: list<array{label: string, url: string}>}
      */
-    private function siteEmptyState(array $siteFilters): array
+    private function siteEmptyState(array $siteFilters, bool $canCreateSite): array
     {
         $actions = $siteFilters['has_active_filters']
             ? [['label' => __('sites.index.empty.actions.clear_all'), 'url' => route('dashboard.sites.index')]]
-            : [['label' => __('sites.add_site'), 'url' => route('dashboard.sites.create')]];
+            : ($canCreateSite
+                ? [['label' => __('sites.add_site'), 'url' => route('dashboard.sites.create')]]
+                : []);
 
         if ($siteFilters['search'] !== '') {
             array_unshift($actions, [
@@ -2145,11 +2353,9 @@ class AgentSiteController extends Controller
             ->agents()
             ->whereIn('users.id', $agentIds)
             ->whereNull('deactivated_at')
-            ->whereIn('account_role', [
-                AccountRole::Owner->value,
-                AccountRole::Admin->value,
-            ])
-            ->exists();
+            ->with('customRole')
+            ->get()
+            ->contains(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageSiteAccess));
     }
 
     /**

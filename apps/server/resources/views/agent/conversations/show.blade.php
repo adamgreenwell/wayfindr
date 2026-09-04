@@ -102,15 +102,16 @@
                     </div>
                 </div>
 
-                <div class="section-form-row">
-                    @if (! $conversation->assigned_agent_id)
+                @if ($canUpdateConversation)
+                    <div class="section-form-row">
+                    @if (! $conversation->assigned_agent_id && $canClaimConversation)
                         <form class="section-form" method="POST" action="{{ route('dashboard.conversations.claim', $conversation->support_code) }}">
                             @csrf
                             @include('agent.conversations.partials.return-query-fields')
 
                             <button class="button" type="submit">{{ __('conversations.detail.ticket.claim') }}</button>
                         </form>
-                    @elseif ($conversation->assigned_agent_id === $agent->id)
+                    @elseif ($conversation->assigned_agent_id === $agent->id && $canReleaseConversation)
                         <form class="section-form" method="POST" action="{{ route('dashboard.conversations.release', $conversation->support_code) }}">
                             @csrf
                             @include('agent.conversations.partials.return-query-fields')
@@ -127,7 +128,8 @@
                             {{ $conversation->status === 'closed' ? __('conversations.detail.context.reopen') : __('conversations.detail.context.close') }}
                         </button>
                     </form>
-                </div>
+                    </div>
+                @endif
             </section>
                 </x-tab-panel>
 
@@ -162,14 +164,14 @@
                     </div>
                 @endif
 
-                @if (in_array($cobrowseConsent['status'], ['unavailable', 'revoked', 'ended'], true))
+                @if ($canRequestCobrowse && in_array($cobrowseConsent['status'], ['unavailable', 'revoked', 'ended'], true))
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.cobrowse.request', $conversation->support_code) }}">
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
 
                         <button class="button" type="submit">{{ __('conversations.detail.cobrowse.request') }}</button>
                     </form>
-                @elseif (in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
+                @elseif ($canEndCobrowse && in_array($cobrowseConsent['status'], ['pending', 'granted'], true))
                     @if ($cobrowseConsent['status'] === 'granted')
                         @php
                             $resyncStatus = $cobrowseConsent['resync_request']['status'] ?? null;
@@ -882,18 +884,20 @@
                                         <span>{{ __('conversations.detail.context.owner_label', ['name' => $priorConversation->assignedAgent?->name ?? __('conversations.detail.context.unassigned')]) }}</span>
                                         <span>{{ __('conversations.detail.context.last_activity_label', ['elapsed' => $priorConversation->last_message_at?->diffForHumans() ?? $priorConversation->created_at->diffForHumans()]) }}</span>
                                     </div>
-                                    <div class="timeline-meta">
-                                        <strong>{{ __('conversations.detail.ticket.heading') }}</strong>
-                                        @forelse ($priorConversation->tickets as $ticket)
-                                            <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
-                                                <span lang="">{{ $ticket->subject }}</span>
-                                            </a>
-                                            {{-- A TICKET status, from the ticket catalogue rather than this one. --}}
-                                            <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>
-                                        @empty
-                                            <span>{{ __('conversations.detail.ticket.none') }}</span>
-                                        @endforelse
-                                    </div>
+                                    @if ($canCreateTicket)
+                                        <div class="timeline-meta">
+                                            <strong>{{ __('conversations.detail.ticket.heading') }}</strong>
+                                            @forelse ($priorConversation->tickets as $ticket)
+                                                <a class="text-link" href="{{ route('dashboard.tickets.show', $ticket) }}">
+                                                    <span lang="">{{ $ticket->subject }}</span>
+                                                </a>
+                                                {{-- A TICKET status, from the ticket catalogue rather than this one. --}}
+                                                <span>{{ __('tickets.statuses.'.$ticket->status) }}</span>
+                                            @empty
+                                                <span>{{ __('conversations.detail.ticket.none') }}</span>
+                                            @endforelse
+                                        </div>
+                                    @endif
                                 </div>
                             </article>
                         @endforeach
@@ -909,7 +913,7 @@
                     <span class="lede">{{ $tickets->isEmpty() ? __('conversations.detail.tabs.not_created') : trans_choice('conversations.detail.tabs.linked_badge', $tickets->count(), ['count' => $tickets->count()]) }}</span>
                 </div>
 
-                @if ($tickets->isEmpty())
+                @if ($canCreateTicket && $tickets->isEmpty())
                     <form class="section-form" method="POST" action="{{ route('dashboard.conversations.tickets.store', $conversation->support_code) }}">
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
@@ -943,8 +947,10 @@
 
                         <button class="button" type="submit">{{ __('conversations.detail.ticket.create') }}</button>
                     </form>
-                @else
+                @elseif ($tickets->isNotEmpty())
                     @include('agent.conversations.partials.linked-ticket-work')
+                @else
+                    <p class="empty">{{ __('conversations.detail.ticket.none') }}</p>
                 @endif
             </section>
                 </x-tab-panel>
@@ -1908,23 +1914,29 @@
                     }, every * 1000);
                 }
 
-                function subscribe(activeSocket, auth) {
+                function subscribe(activeSocket, channelName, authorization) {
+                    var data = {
+                        auth: authorization.auth,
+                        channel: channelName
+                    };
+
+                    if (authorization.channel_data) {
+                        data.channel_data = authorization.channel_data;
+                    }
+
                     activeSocket.send(JSON.stringify({
                         event: 'pusher:subscribe',
-                        data: {
-                            auth: auth,
-                            channel: config.channelName
-                        }
+                        data: data
                     }));
                 }
 
-                function authorize(activeSocket, socketId) {
+                function authorization(socketId, channelName) {
                     var body = new URLSearchParams();
 
                     body.set('socket_id', socketId);
-                    body.set('channel_name', config.channelName);
+                    body.set('channel_name', channelName);
 
-                    fetch(config.authEndpoint, {
+                    return fetch(config.authEndpoint, {
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: {
@@ -1936,63 +1948,88 @@
                     })
                         .then(function (response) {
                             if (!response.ok) {
-                                throw new Error('Broadcast authorization failed.');
+                                var failure = new Error('Broadcast authorization failed.');
+
+                                failure.status = response.status;
+                                throw failure;
                             }
 
                             return response.json();
-                        })
-                        .then(function (data) {
-                            // Only the socket still in service may react -- the same
-                            // rule the failure path takes, and for a sharper reason
-                            // here: this token is bound to the socket_id that ASKED
-                            // for it. Sending it down a replacement is a subscribe
-                            // Reverb rejects, and the page would announce it was
-                            // listening on a channel it had just been refused.
-                            if (activeSocket.wayfindrGeneration !== socketGeneration) {
-                                return;
-                            }
-
-                            subscribe(activeSocket, data.auth);
-                            setStatus(realtimeLabels.cobrowseRealtime.listening, 'listening');
-                            reconnectDelay = 1000;
-
-                            // Catch up the transcript on every successful subscribe,
-                            // including the first: a visitor message posted between
-                            // the server render and this subscription is not replayed
-                            // by Reverb, so it would otherwise stay invisible.
-                            refreshTranscript();
-
-                            // The cobrowse preview is server-rendered fresh on load
-                            // and has its own recovery paths, so it only needs a
-                            // resync after an actual drop.
-                            if (hasConnectedOnce && hasCobrowseTargets) {
-                                refreshCobrowsePreview();
-                            }
-
-                            hasConnectedOnce = true;
-                        })
-                        .catch(function () {
-                            // Only the socket still in service may react.
-                            if (activeSocket.wayfindrGeneration !== socketGeneration) {
-                                return;
-                            }
-
-                            setStatus(realtimeLabels.cobrowseRealtime.failed, 'warning');
-
-                            // A failed authorization leaves the socket HEALTHY and
-                            // unsubscribed, so no close event ever fires and the
-                            // reconnect that only the close handler schedules never
-                            // runs. The page would sit connected to nothing for the
-                            // rest of the session, looking exactly like a quiet
-                            // conversation.
-                            try {
-                                activeSocket.close();
-                            } catch (error) {
-                                // Closing is best effort; the reconnect is what matters.
-                            }
-
-                            scheduleReconnect();
                         });
+                }
+
+                function authorizationFailed(activeSocket, error) {
+                    // Only the socket still in service may react.
+                    if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                        return;
+                    }
+
+                    // The identity subscription succeeded, so a refusal of
+                    // the content channel is an access revocation, not a
+                    // network fault. Reloading clears the already-rendered
+                    // transcript and lets the ordinary route boundary take
+                    // over.
+                    if (error && error.status === 403) {
+                        window.location.reload();
+
+                        return;
+                    }
+
+                    setStatus(realtimeLabels.cobrowseRealtime.failed, 'warning');
+
+                    try {
+                        activeSocket.close();
+                    } catch (closeError) {
+                        // Closing is best effort; the reconnect is what matters.
+                    }
+
+                    scheduleReconnect();
+                }
+
+                function authorizeIdentity(activeSocket, socketId) {
+                    activeSocket.wayfindrSocketId = socketId;
+
+                    authorization(socketId, config.identityChannelName)
+                        .then(function (data) {
+                            if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                                return;
+                            }
+
+                            subscribe(activeSocket, config.identityChannelName, data);
+                        })
+                        .catch(function (error) {
+                            authorizationFailed(activeSocket, error);
+                        });
+                }
+
+                function authorizeConversation(activeSocket) {
+                    authorization(activeSocket.wayfindrSocketId, config.channelName)
+                        .then(function (data) {
+                            if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                                return;
+                            }
+
+                            subscribe(activeSocket, config.channelName, data);
+                        })
+                        .catch(function (error) {
+                            authorizationFailed(activeSocket, error);
+                        });
+                }
+
+                function conversationSubscriptionReady() {
+                    setStatus(realtimeLabels.cobrowseRealtime.listening, 'listening');
+                    reconnectDelay = 1000;
+
+                    // Catch up the transcript after Reverb confirms the
+                    // subscription. Anything posted between the server render
+                    // and this acknowledgement is not replayed.
+                    refreshTranscript();
+
+                    if (hasConnectedOnce && hasCobrowseTargets) {
+                        refreshCobrowsePreview();
+                    }
+
+                    hasConnectedOnce = true;
                 }
 
                 var socketScheme = config.scheme === 'https' ? 'wss' : 'ws';
@@ -2064,7 +2101,17 @@
                         var established = parsePayload(event.data);
 
                         startKeepalive(message.target, established.activity_timeout);
-                        authorize(message.target, established.socket_id);
+                        authorizeIdentity(message.target, established.socket_id);
+
+                        return;
+                    }
+
+                    if (event.event === 'pusher_internal:subscription_succeeded') {
+                        if (event.channel === config.identityChannelName) {
+                            authorizeConversation(message.target);
+                        } else if (event.channel === config.channelName) {
+                            conversationSubscriptionReady();
+                        }
 
                         return;
                     }

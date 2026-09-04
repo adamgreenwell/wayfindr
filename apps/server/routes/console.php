@@ -46,6 +46,16 @@ Schedule::command('wayfindr:queue-outbound-webhooks')
     ->withoutOverlapping()
     ->description('Recover durable outbound webhooks whose queue handoff did not complete.');
 
+Schedule::command('wayfindr:queue-agent-realtime-evictions')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->description('Recover agent realtime evictions whose queue handoff did not complete.');
+
+Schedule::command('wayfindr:queue-ticket-external-comments')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->description('Recover durable external ticket comments whose initial handoff did not complete.');
+
 // Daily rather than only at deploy time, because the deploy's own sweep cannot
 // be the last word. `$ACTIVATE_RELEASE()` stops NEW requests reaching the old
 // release; it does not cancel requests already executing, and one of those is

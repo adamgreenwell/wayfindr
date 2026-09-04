@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\ConversationMessageCreated;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\ReplyTemplate;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -139,6 +141,48 @@ test('reply template management stays inside account admin boundaries', function
         'name' => 'Other account helper',
     ]);
 });
+
+test('reply template mutations reauthorize a stale custom role under the account lock', function (string $action): void {
+    $account = Account::factory()->create();
+    $knowledgeRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageKnowledge->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $knowledgeRole->id,
+    ]);
+    $template = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Original helper',
+        'body' => 'Original reply body.',
+        'is_active' => true,
+    ]);
+
+    $this->actingAs($manager);
+    expect($manager->hasAccountPermission(AccountPermission::ManageKnowledge))->toBeTrue();
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $response = match ($action) {
+        'create' => $this->post(route('dashboard.account.reply-templates.store'), [
+            'name' => 'Late helper',
+            'body' => 'This write must not land.',
+        ]),
+        'update' => $this->put(route('dashboard.account.reply-templates.update', $template), [
+            'name' => 'Late rename',
+            'body' => 'This update must not land.',
+        ]),
+        'archive' => $this->post(route('dashboard.account.reply-templates.archive', $template)),
+    };
+
+    $action === 'create'
+        ? $response->assertForbidden()
+        : $response->assertNotFound();
+
+    expect(ReplyTemplate::query()->count())->toBe(1)
+        ->and($template->fresh()->name)->toBe('Original helper')
+        ->and($template->fresh()->body)->toBe('Original reply body.')
+        ->and($template->fresh()->is_active)->toBeTrue();
+})->with(['create', 'update', 'archive']);
 
 test('reply template management rejects blank trimmed input', function (): void {
     $admin = User::factory()->for(Account::factory())->create([

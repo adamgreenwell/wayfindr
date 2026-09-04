@@ -2,19 +2,25 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\ReplyTemplate;
+use App\Models\User;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AgentReplyTemplateController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function index(Request $request): View
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageKnowledge), 403);
 
         $account = $agent->account()->firstOrFail();
 
@@ -32,11 +38,16 @@ class AgentReplyTemplateController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->isAdmin(), 403);
+        abort_unless($agent?->hasAccountPermission(AccountPermission::ManageKnowledge), 403);
 
         $account = $agent->account()->firstOrFail();
+        $input = $this->validatedTemplateInput($request);
 
-        $account->replyTemplates()->create($this->validatedTemplateInput($request));
+        DB::transaction(function () use ($agent, $account, $input): void {
+            $this->lockedKnowledgeManager($agent, (int) $account->id, 403);
+
+            $account->replyTemplates()->create($input);
+        });
 
         return redirect()
             ->route('dashboard.account.reply-templates.index')
@@ -48,8 +59,15 @@ class AgentReplyTemplateController extends Controller
         $agent = $request->user();
 
         $this->authorizeManageReplyTemplate($agent, $replyTemplate);
+        $input = $this->validatedTemplateInput($request);
 
-        $replyTemplate->forceFill($this->validatedTemplateInput($request))->save();
+        DB::transaction(function () use ($agent, $replyTemplate, $input): void {
+            $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $replyTemplate->account_id);
+            $replyTemplate = $this->lockedReplyTemplate($replyTemplate);
+            $this->authorizeManageReplyTemplate($lockedAgent, $replyTemplate);
+
+            $replyTemplate->forceFill($input)->save();
+        });
 
         return redirect()
             ->route('dashboard.account.reply-templates.index')
@@ -62,9 +80,15 @@ class AgentReplyTemplateController extends Controller
 
         $this->authorizeManageReplyTemplate($agent, $replyTemplate);
 
-        $replyTemplate->forceFill([
-            'is_active' => false,
-        ])->save();
+        DB::transaction(function () use ($agent, $replyTemplate): void {
+            $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $replyTemplate->account_id);
+            $replyTemplate = $this->lockedReplyTemplate($replyTemplate);
+            $this->authorizeManageReplyTemplate($lockedAgent, $replyTemplate);
+
+            $replyTemplate->forceFill([
+                'is_active' => false,
+            ])->save();
+        });
 
         return redirect()
             ->route('dashboard.account.reply-templates.index')
@@ -74,11 +98,37 @@ class AgentReplyTemplateController extends Controller
     private function authorizeManageReplyTemplate(mixed $agent, ReplyTemplate $replyTemplate): void
     {
         abort_unless(
-            $agent?->isAdmin()
+            $agent?->hasAccountPermission(AccountPermission::ManageKnowledge)
             && $agent->account_id !== null
             && (int) $agent->account_id === (int) $replyTemplate->account_id,
             404,
         );
+    }
+
+    private function lockedKnowledgeManager(User $agent, int $accountId, int $failureStatus = 404): User
+    {
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $lockedAgent = User::query()
+            ->whereKey($agent->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->first();
+
+        abort_unless(
+            $lockedAgent?->hasAccountPermission(AccountPermission::ManageKnowledge),
+            $failureStatus,
+        );
+
+        return $lockedAgent;
+    }
+
+    private function lockedReplyTemplate(ReplyTemplate $replyTemplate): ReplyTemplate
+    {
+        return ReplyTemplate::query()
+            ->whereKey($replyTemplate->id)
+            ->where('account_id', $replyTemplate->account_id)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 
     /**

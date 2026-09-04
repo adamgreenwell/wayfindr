@@ -4,7 +4,10 @@ namespace App\Actions;
 
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
+use App\Models\CustomRole;
 use App\Models\User;
+use App\Support\AgentRealtimeSessions;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -14,24 +17,40 @@ use Illuminate\Validation\ValidationException;
 
 class UpdateAgentRole
 {
-    public function handle(User $actor, User $target, AccountRole $role): User
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AgentRealtimeSessions $agentRealtimeSessions,
+    ) {}
+
+    public function handle(User $actor, User $target, AccountRole|CustomRole $role): User
     {
-        return DB::transaction(function () use ($actor, $target, $role): User {
+        [$target, $changed] = DB::transaction(function () use ($actor, $target, $role): array {
+            $this->siteManagerCoverage->lockAccount((int) $target->account_id);
             $users = $this->lockUsers($actor, $target);
             $actor = $this->lockedUser($users, $actor);
             $target = $this->lockedUser($users, $target);
+            $role = $this->lockedRole($role, $target);
 
             Gate::forUser($actor)->authorize('updateRole', $target);
             $this->preventLastOwnerRemoval($target, $role);
             $this->preventSelfChange($actor, $target);
 
+            $target->loadMissing('customRole');
             $oldRole = $target->account_role;
+            $oldCustomRole = $target->customRole;
+            $newAccountRole = $role instanceof CustomRole ? AccountRole::Agent : $role;
+            $newCustomRoleId = $role instanceof CustomRole ? $role->id : null;
 
-            if ($oldRole === $role) {
-                return $target;
+            if ($oldRole === $newAccountRole && (int) $target->custom_role_id === (int) $newCustomRoleId) {
+                return [$target, false];
             }
 
-            $target->forceFill(['account_role' => $role])->save();
+            $this->siteManagerCoverage->ensureAgentRoleCanChange($target, $role);
+
+            $target->forceFill([
+                'account_role' => $newAccountRole,
+                'custom_role_id' => $newCustomRoleId,
+            ])->save();
 
             AuditEvent::query()->create([
                 'account_id' => $target->account_id,
@@ -41,14 +60,43 @@ class UpdateAgentRole
                 'subject_id' => $target->id,
                 'action' => 'agent.role_changed',
                 'metadata' => [
-                    'old_role' => $oldRole->value,
-                    'new_role' => $role->value,
+                    'old_role' => $oldCustomRole ? 'custom:'.$oldCustomRole->id : $oldRole->value,
+                    'old_role_name' => $oldCustomRole?->name ?? $oldRole->value,
+                    'new_role' => $role instanceof CustomRole ? 'custom:'.$role->id : $role->value,
+                    'new_role_name' => $role instanceof CustomRole ? $role->name : $role->value,
                 ],
                 'occurred_at' => now(),
             ]);
 
-            return $target->refresh();
+            $this->agentRealtimeSessions->requestMany([$target->id]);
+
+            return [$target->refresh(), true];
         });
+
+        if ($changed) {
+            $this->agentRealtimeSessions->disconnectMany([$target->id]);
+        }
+
+        return $target;
+    }
+
+    private function lockedRole(AccountRole|CustomRole $role, User $target): AccountRole|CustomRole
+    {
+        if ($role instanceof AccountRole) {
+            return $role;
+        }
+
+        $lockedRole = CustomRole::query()
+            ->whereKey($role->id)
+            ->where('account_id', $target->account_id)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $lockedRole instanceof CustomRole) {
+            throw (new ModelNotFoundException)->setModel(CustomRole::class, [$role->id]);
+        }
+
+        return $lockedRole;
     }
 
     /**
@@ -91,7 +139,7 @@ class UpdateAgentRole
         }
     }
 
-    private function preventLastOwnerRemoval(User $target, AccountRole $role): void
+    private function preventLastOwnerRemoval(User $target, AccountRole|CustomRole $role): void
     {
         if ($target->account_role !== AccountRole::Owner || $role === AccountRole::Owner) {
             return;

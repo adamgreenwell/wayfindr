@@ -2,15 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Events\ConversationMessageCreated;
+use App\Jobs\DeliverTicketExternalComment;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
-use App\Models\ConversationMessage;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
+use App\Models\TicketExternalCommentDelivery;
 use App\Models\TicketExternalLink;
 use App\Models\TicketLabel;
 use App\Models\User;
@@ -20,15 +22,10 @@ use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
 use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueProvider;
-use App\Support\ExternalIssues\ExternalIssueCommentFailed;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
-use App\Support\ExternalIssues\GitHubIssueCommenter;
-use App\Support\ExternalIssues\GitLabIssueCommenter;
-use App\Support\ExternalIssues\InboundCommentSync;
-use App\Support\ExternalIssues\IssueCommenter;
-use App\Support\ExternalIssues\JiraIssueCommenter;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
 use App\Support\TicketPriority;
@@ -49,12 +46,16 @@ class AgentTicketController extends Controller
     /** Providers with an IssueCommenter implementation for outbound note relay. */
     private const COMMENT_PROVIDERS = ['github', 'gitlab', 'jira'];
 
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview): View
     {
         $agent = $request->user();
 
         $this->authorizeTicketAbility($agent, 'view', $ticket);
         $this->markTicketAssignmentNotificationsRead($agent, $ticket);
+        $canViewLinkedConversation = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canReplyToLinkedConversation = Gate::forUser($agent)->allows('reply', $ticket);
         $ticket->loadMissing('site');
         $ticket->load([
             'assignee',
@@ -78,34 +79,43 @@ class AgentTicketController extends Controller
         $ticketReturnQuery = $this->ticketQueueReturnQuery($request);
         $ticketDetailReturnQuery = $this->ticketDetailReturnQuery($request);
         $ticketTimelineFilter = $this->ticketTimelineFilter($request);
-        $fullTicketTimeline = $this->ticketTimeline($ticket);
+        $canViewTicketDescription = $canViewLinkedConversation
+            || ! $ticket->hasConversationDerivedDescription();
+        $fullTicketTimeline = $this->ticketTimeline($ticket, $canViewLinkedConversation);
         $ticketTimeline = $this->filteredTicketTimeline($fullTicketTimeline, $ticketTimelineFilter);
 
         return view('agent.tickets.show', [
             'account' => $agent->account()->firstOrFail(),
             'accountAgents' => $this->supportAgentsForSite($ticket->site),
             'agent' => $agent,
+            'canAssignTickets' => Gate::forUser($agent)->allows('assign', $ticket),
+            'canReplyToLinkedConversation' => $canReplyToLinkedConversation,
+            'canViewLinkedConversation' => $canViewLinkedConversation,
+            'canViewTicketDescription' => $canViewTicketDescription,
             'canPostNoteToExternalIssue' => $this->commentableExternalLinks($ticket)->isNotEmpty(),
             'externalIssueProviders' => collect(ExternalIssueProvider::options())
                 ->map(fn (string $_label, string $provider): string => $this->ticketExternalIssueProviderLabel($provider))
                 ->all(),
             'externalIssueSyncStatuses' => $this->translatedOptions('ticket_detail.external.sync_statuses', array_keys(ExternalIssueSyncStatus::options())),
-            'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket),
+            'externalIssueExportPreview' => $externalIssueExportPreview->forTicket($ticket, $canViewLinkedConversation),
             'githubIssueProjects' => $this->githubIssueProjectsForTicket($ticket),
             'gitlabIssueProjects' => $this->gitlabIssueProjectsForTicket($ticket),
             'jiraIssueProjects' => $this->jiraIssueProjectsForTicket($ticket),
             'latestTicketEscalation' => $ticket->latestRecentEscalationEvent(),
             'noteTemplates' => $this->noteTemplates(),
-            'replyTemplates' => $replyTemplateOptions->forAgent($agent),
+            'replyTemplates' => $canReplyToLinkedConversation
+                ? $replyTemplateOptions->forAgent($agent)
+                : collect(),
             'ticketDetailReturnQuery' => $ticketDetailReturnQuery,
             'ticketReturnLink' => $this->ticketReturnLink($ticketReturnQuery),
             'ticketReturnQuery' => $ticketReturnQuery,
             'ticketLabelOptions' => $agent->account->ticketLabels()
                 ->orderBy('name')
                 ->get(),
-            'ticketActivity' => $this->visibleTicketActivity($ticket),
+            'ticketActivity' => $this->visibleTicketActivity($ticket, $canViewLinkedConversation),
             'ticketCategories' => TicketCategory::options(),
             'ticketCategoryGuidance' => TicketCategory::options(),
+            'ticketDescription' => $canViewTicketDescription ? $ticket->description : null,
             'ticketPriorities' => TicketPriority::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
             'ticket' => $ticket,
@@ -113,10 +123,14 @@ class AgentTicketController extends Controller
             'ticketExternalIssueHandoffReadiness' => $this->ticketExternalIssueHandoffReadiness($ticket),
             'ticketExternalIssueHealth' => $this->ticketExternalIssueHealth($ticket),
             'visitorContext' => $this->visitorContext($ticket, $visitorContextSanitizer),
-            'priorVisitorConversations' => $this->priorVisitorConversations($ticket),
-            'priorVisitorTickets' => $this->priorVisitorTickets($ticket),
-            'linkedConversationMessages' => $this->linkedConversationMessages($ticket),
-            'linkedConversationSupportCode' => $ticket->conversation?->support_code,
+            'priorVisitorConversations' => $canViewLinkedConversation
+                ? $this->priorVisitorConversations($ticket)
+                : collect(),
+            'priorVisitorTickets' => $this->priorVisitorTickets($ticket, $canViewLinkedConversation),
+            'linkedConversationMessages' => $this->linkedConversationMessages($ticket, $canViewLinkedConversation),
+            'linkedConversationSupportCode' => $canViewLinkedConversation
+                ? $ticket->conversation?->support_code
+                : null,
             'ticketTimelineEmptyDescription' => $this->ticketTimelineEmptyDescription($ticketTimelineFilter),
             'ticketTimelineEmptyMessage' => $this->ticketTimelineEmptyMessage($ticketTimelineFilter),
             'ticketTimelineFilter' => $ticketTimelineFilter,
@@ -160,21 +174,47 @@ class AgentTicketController extends Controller
             $metadata['note_template'] = $selectedTemplate;
         }
 
-        $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
+        $postToExternal = $request->boolean('post_to_external');
+        [$agent, $ticket, $deliveryIds] = DB::transaction(function () use ($agent, $body, $metadata, $postToExternal, $ticket): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'addNote');
+            $note = $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
+            $deliveryIds = [];
 
+            // Internal notes stay internal unless the agent explicitly opts to
+            // relay this one. The durable intent is committed under the same
+            // account lock as the fresh authorization. Provider HTTP runs only
+            // afterwards, so an accepted remote comment can never be rolled
+            // back into a retryable local request.
+            if ($postToExternal) {
+                foreach ($this->commentableExternalLinks($ticket) as $target) {
+                    $delivery = TicketExternalCommentDelivery::query()->create([
+                        'public_id' => (string) Str::uuid(),
+                        'account_id' => $ticket->account_id,
+                        'site_id' => $ticket->site_id,
+                        'ticket_id' => $ticket->id,
+                        'ticket_external_link_id' => $target['link']->id,
+                        'provider_connection_id' => $target['connection']->id,
+                        'actor_id' => $agent->id,
+                        'note_audit_event_id' => $note->id,
+                        'body' => $body,
+                    ]);
+                    $deliveryIds[] = $delivery->id;
+                }
+            }
+
+            return [$agent, $ticket, $deliveryIds];
+        });
+
+        $outcomes = collect($deliveryIds)
+            ->map(fn (int $deliveryId): string => DeliverTicketExternalComment::processNow($deliveryId));
         $status = 'tickets.flash.note_added';
 
-        // Internal notes stay internal unless the agent explicitly opts to relay
-        // this one to the linked external issue (conservative-by-default per the
-        // external-integrations stance).
-        if ($request->boolean('post_to_external')) {
-            $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body);
-
-            if ($relay['failed'] > 0) {
-                $status = 'tickets.flash.note_added_not_posted';
-            } elseif ($relay['posted'] > 0) {
-                $status = 'tickets.flash.note_added_posted';
-            }
+        if ($outcomes->contains(DeliverTicketExternalComment::OUTCOME_FAILED)) {
+            $status = 'tickets.flash.note_added_not_posted';
+        } elseif ($outcomes->contains(DeliverTicketExternalComment::OUTCOME_PENDING)) {
+            $status = 'tickets.flash.note_added_queued';
+        } elseif ($outcomes->contains(DeliverTicketExternalComment::OUTCOME_POSTED)) {
+            $status = 'tickets.flash.note_added_posted';
         }
 
         return $this->redirectAfterUpdate($ticket, $request, $status);
@@ -230,77 +270,6 @@ class AgentTicketController extends Controller
             ->values();
     }
 
-    /**
-     * @return array{posted: int, failed: int}
-     */
-    private function relayNoteToExternalIssues(Ticket $ticket, User $agent, string $body): array
-    {
-        $posted = 0;
-        $failed = 0;
-
-        foreach ($this->commentableExternalLinks($ticket) as $target) {
-            /** @var TicketExternalLink $link */
-            $link = $target['link'];
-            /** @var ExternalIssueProviderConnection $connection */
-            $connection = $target['connection'];
-
-            $commenter = $this->commenterFor($link->provider);
-
-            if ($commenter === null) {
-                continue;
-            }
-
-            try {
-                $result = $commenter->comment($connection, $link, $body);
-
-                $posted++;
-
-                // Remember the comment we just created so the inbound webhook
-                // does not echo our own comment back onto the ticket as a note.
-                $this->markCommentSynced($link, $result['id'] ?? null);
-
-                // The note body is already recorded on the note_added event; the
-                // relay event stays content-free provenance.
-                $this->recordActivity($ticket, $agent, 'ticket.external_comment_posted', [
-                    'external_link_id' => $link->id,
-                    'provider' => $link->provider,
-                    'external_key' => $link->external_key,
-                    'url' => $result['url'] ?? $link->url,
-                ]);
-            } catch (ExternalIssueCommentFailed $exception) {
-                $failed++;
-
-                $this->recordActivity($ticket, $agent, 'ticket.external_comment_failed', [
-                    'external_link_id' => $link->id,
-                    'provider' => $link->provider,
-                    'status' => $exception->status(),
-                    'message' => Str::limit($exception->getMessage(), 300),
-                ]);
-            }
-        }
-
-        return ['posted' => $posted, 'failed' => $failed];
-    }
-
-    private function commenterFor(string $provider): ?IssueCommenter
-    {
-        return match ($provider) {
-            'github' => app(GitHubIssueCommenter::class),
-            'gitlab' => app(GitLabIssueCommenter::class),
-            'jira' => app(JiraIssueCommenter::class),
-            default => null,
-        };
-    }
-
-    private function markCommentSynced(TicketExternalLink $link, ?string $commentId): void
-    {
-        if ($commentId === null || trim($commentId) === '') {
-            return;
-        }
-
-        app(InboundCommentSync::class)->remember($link, $commentId);
-    }
-
     public function storeLabel(Request $request, Ticket $ticket): RedirectResponse
     {
         $agent = $request->user();
@@ -326,20 +295,25 @@ class AgentTicketController extends Controller
             ]);
         }
 
-        $label = TicketLabel::firstOrCreate([
-            'account_id' => $ticket->account_id,
-            'slug' => $slug,
-        ], [
-            'name' => $name,
-        ]);
+        [$agent, $ticket] = DB::transaction(function () use ($agent, $name, $slug, $ticket): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'update');
+            $label = TicketLabel::firstOrCreate([
+                'account_id' => $ticket->account_id,
+                'slug' => $slug,
+            ], [
+                'name' => $name,
+            ]);
 
-        $ticket->labels()->syncWithoutDetaching([$label->id]);
+            $ticket->labels()->syncWithoutDetaching([$label->id]);
 
-        $this->recordActivity($ticket, $agent, 'ticket.label_added', [
-            'label_id' => $label->id,
-            'label_name' => $label->name,
-            'label_slug' => $label->slug,
-        ]);
+            $this->recordActivity($ticket, $agent, 'ticket.label_added', [
+                'label_id' => $label->id,
+                'label_name' => $label->name,
+                'label_slug' => $label->slug,
+            ]);
+
+            return [$agent, $ticket];
+        });
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.label_added');
     }
@@ -350,19 +324,25 @@ class AgentTicketController extends Controller
 
         $this->authorizeTicketAbility($agent, 'update', $ticket);
 
-        abort_unless(
-            (int) $ticketLabel->account_id === (int) $ticket->account_id
-            && $ticket->labels()->whereKey($ticketLabel->id)->exists(),
-            404,
-        );
+        [$agent, $ticket] = DB::transaction(function () use ($agent, $ticket, $ticketLabel): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'update');
+            $ticketLabel = TicketLabel::query()
+                ->whereKey($ticketLabel->id)
+                ->where('account_id', $ticket->account_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            abort_unless($ticket->labels()->whereKey($ticketLabel->id)->exists(), 404);
 
-        $ticket->labels()->detach($ticketLabel->id);
+            $ticket->labels()->detach($ticketLabel->id);
 
-        $this->recordActivity($ticket, $agent, 'ticket.label_removed', [
-            'label_id' => $ticketLabel->id,
-            'label_name' => $ticketLabel->name,
-            'label_slug' => $ticketLabel->slug,
-        ]);
+            $this->recordActivity($ticket, $agent, 'ticket.label_removed', [
+                'label_id' => $ticketLabel->id,
+                'label_name' => $ticketLabel->name,
+                'label_slug' => $ticketLabel->slug,
+            ]);
+
+            return [$agent, $ticket];
+        });
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.label_removed');
     }
@@ -405,7 +385,6 @@ class AgentTicketController extends Controller
             ]);
         }
 
-        $conversation = $ticket->conversation;
         $metadata = [
             'source' => 'ticket',
             'ticket_id' => $ticket->id,
@@ -418,7 +397,15 @@ class AgentTicketController extends Controller
             ];
         }
 
-        $message = DB::transaction(function () use ($conversation, $ticket, $agent, $body, $metadata, $resolvedTemplate): ConversationMessage {
+        [$message, $agent, $conversation, $ticket] = DB::transaction(function () use ($ticket, $agent, $body, $metadata, $resolvedTemplate): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'reply');
+            $conversation = Conversation::query()
+                ->whereKey($ticket->conversation_id)
+                ->where('site_id', $ticket->site_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $canManageConversation = $agent->hasAccountPermission(AccountPermission::ManageConversations);
+
             // ConversationMessageObserver creates the webhook outbox rows
             // during this insert. Keep the reply, conversation state and
             // delivery handoff atomic even when the queue is unavailable.
@@ -431,9 +418,9 @@ class AgentTicketController extends Controller
             ]);
 
             $conversation->forceFill([
-                'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
-                'status' => 'open',
-                'closed_at' => null,
+                'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
+                'status' => $canManageConversation ? 'open' : $conversation->status,
+                'closed_at' => $canManageConversation ? null : $conversation->closed_at,
                 'last_message_at' => $message->created_at,
             ])->save();
 
@@ -451,7 +438,7 @@ class AgentTicketController extends Controller
 
             $this->recordActivity($ticket, $agent, 'ticket.reply_sent', $activityMetadata);
 
-            return $message;
+            return [$message, $agent, $conversation, $ticket];
         });
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);
@@ -492,21 +479,26 @@ class AgentTicketController extends Controller
             'priority' => ['required', Rule::in(TicketPriority::values())],
         ]);
 
-        $changes = $this->ticketFieldChanges($ticket, $validated);
+        [$agent, $ticket] = DB::transaction(function () use ($agent, $ticket, $validated): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'update');
+            $changes = $this->ticketFieldChanges($ticket, $validated);
 
-        if (array_key_exists('description', $changes)) {
-            $validated['metadata'] = array_replace($ticket->metadata ?? [], [
-                'description_source' => 'agent_summary',
-            ]);
-        }
+            if (array_key_exists('description', $changes)) {
+                $validated['metadata'] = array_replace($ticket->metadata ?? [], [
+                    'description_source' => 'agent_summary',
+                ]);
+            }
 
-        $ticket->forceFill($validated)->save();
+            $ticket->forceFill($validated)->save();
 
-        if ($changes !== []) {
-            $this->recordActivity($ticket, $agent, 'ticket.updated', [
-                'changes' => $changes,
-            ]);
-        }
+            if ($changes !== []) {
+                $this->recordActivity($ticket, $agent, 'ticket.updated', [
+                    'changes' => $changes,
+                ]);
+            }
+
+            return [$agent, $ticket];
+        });
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.updated');
     }
@@ -526,8 +518,9 @@ class AgentTicketController extends Controller
 
         $this->transitionTicketStatus(
             $ticket,
+            $agent,
             fn (): array => ['status' => 'pending', 'closed_at' => null],
-            function (string $previousStatus) use ($ticket, $agent, $metadata): void {
+            function (string $previousStatus, Ticket $ticket, User $agent) use ($metadata): void {
 
                 // Leaving `closed` is a REOPEN, whichever button did it. The form is
                 // only offered for open tickets, so this is a stale or crafted submit
@@ -564,6 +557,7 @@ class AgentTicketController extends Controller
 
         $this->transitionTicketStatus(
             $ticket,
+            $agent,
             // A ticket already closed keeps the moment it was actually closed.
             fn (string $previous, Ticket $locked): array => [
                 'status' => 'closed',
@@ -575,7 +569,7 @@ class AgentTicketController extends Controller
             // reopen between them, which makes one resolution contribute two
             // durations to the report and inflates every close count derived
             // from the log.
-            function (string $previous) use ($ticket, $agent, $resolutionNote): void {
+            function (string $previous, Ticket $ticket, User $agent) use ($resolutionNote): void {
                 if ($previous === 'closed') {
                     return;
                 }
@@ -606,8 +600,9 @@ class AgentTicketController extends Controller
 
         $this->transitionTicketStatus(
             $ticket,
+            $agent,
             fn (): array => ['status' => 'open', 'closed_at' => null],
-            function (string $previousStatus) use ($ticket, $agent, $reopenNote): void {
+            function (string $previousStatus, Ticket $ticket, User $agent) use ($reopenNote): void {
 
                 // The same control reopens a CLOSED ticket and un-holds a PENDING one,
                 // and only the first is a reopen. `open -> pending -> reopen -> close`
@@ -654,40 +649,35 @@ class AgentTicketController extends Controller
             ],
         ]);
 
-        $ticket->loadMissing(['assignee', 'site']);
-        $oldAssigneeId = $ticket->assignee_id;
-        $oldAssigneeName = $ticket->assignee?->name;
         $newAssigneeId = $validated['assignee_id'] ?? null;
-        $newAssignee = $newAssigneeId
-            ? $agent->account->agents()->whereKey($newAssigneeId)->first()
-            : null;
+        [$agent, $ticket, $newAssignee, $oldAssigneeId] = DB::transaction(function () use ($agent, $newAssigneeId, $ticket): array {
+            [$agent, $ticket, $newAssignee] = $this->lockedTicketAssignment(
+                $agent,
+                $ticket,
+                $newAssigneeId,
+                'assignee_id',
+            );
+            $ticket->loadMissing('assignee');
+            $oldAssigneeId = $ticket->assignee_id;
+            $oldAssigneeName = $ticket->assignee?->name;
 
-        if ($newAssignee && ! $ticket->site->supportsAgent($newAssignee)) {
-            throw ValidationException::withMessages([
-                'assignee_id' => __('tickets.errors.assignee_not_on_site'),
+            $ticket->forceFill(['assignee_id' => $newAssigneeId])->save();
+
+            $this->recordActivity($ticket, $agent, 'ticket.assignee_updated', [
+                'old_assignee_name' => $oldAssigneeName,
+                'new_assignee_name' => $newAssignee?->name,
             ]);
-        }
 
-        $newAssigneeName = $newAssignee?->name;
-
-        $ticket->forceFill([
-            'assignee_id' => $newAssigneeId,
-        ])->save();
-
-        $this->recordActivity($ticket, $agent, 'ticket.assignee_updated', [
-            'old_assignee_name' => $oldAssigneeName,
-            'new_assignee_name' => $newAssigneeName,
-        ]);
-
-        $freshTicket = $ticket->fresh() ?? $ticket;
+            return [$agent, $ticket, $newAssignee, $oldAssigneeId];
+        });
 
         if (
             $newAssignee
             && $newAssignee->isNot($agent)
             && $newAssignee->id !== $oldAssigneeId
-            && $newAssignee->shouldReceiveTicketAssignmentAlert($freshTicket)
+            && $newAssignee->shouldReceiveTicketAssignmentAlert($ticket)
         ) {
-            $newAssignee->notify(new TicketAssigned($freshTicket, $agent));
+            $newAssignee->notify(new TicketAssigned($ticket, $agent));
         }
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.assignee_updated');
@@ -708,50 +698,48 @@ class AgentTicketController extends Controller
             'reason' => ['nullable', 'string', 'max:4000'],
         ]);
 
-        $ticket->loadMissing(['assignee', 'site']);
-        $oldAssigneeId = $ticket->assignee_id;
-        $oldAssigneeName = $ticket->assignee?->name;
-        $targetAgent = $agent->account->agents()
-            ->whereKey($validated['target_agent_id'])
-            ->first();
-
-        if (! $targetAgent || ! $ticket->site->supportsAgent($targetAgent)) {
-            throw ValidationException::withMessages([
-                'target_agent_id' => __('tickets.errors.assignee_not_on_site'),
-            ]);
-        }
-
-        if ($targetAgent->is($agent)) {
-            throw ValidationException::withMessages([
-                'target_agent_id' => __('tickets.errors.escalate_other_agent'),
-            ]);
-        }
-
-        $ticket->forceFill([
-            'assignee_id' => $targetAgent->id,
-        ])->save();
-
         $reason = trim((string) ($validated['reason'] ?? ''));
-        $metadata = [
-            'old_assignee_id' => $oldAssigneeId,
-            'old_assignee_name' => $oldAssigneeName,
-            'new_assignee_id' => $targetAgent->id,
-            'new_assignee_name' => $targetAgent->name,
-            'target_agent_id' => $targetAgent->id,
-            'target_agent_name' => $targetAgent->name,
-            'target_had_site_access' => true,
-        ];
+        [$agent, $ticket, $targetAgent] = DB::transaction(function () use ($agent, $reason, $ticket, $validated): array {
+            [$agent, $ticket, $targetAgent] = $this->lockedTicketAssignment(
+                $agent,
+                $ticket,
+                (int) $validated['target_agent_id'],
+                'target_agent_id',
+            );
+            abort_unless($targetAgent instanceof User, 404);
 
-        if ($reason !== '') {
-            $metadata['reason'] = $reason;
-        }
+            if ($targetAgent->is($agent)) {
+                throw ValidationException::withMessages([
+                    'target_agent_id' => __('tickets.errors.escalate_other_agent'),
+                ]);
+            }
 
-        $this->recordActivity($ticket, $agent, 'ticket.escalated', $metadata);
+            $ticket->loadMissing('assignee');
+            $oldAssigneeId = $ticket->assignee_id;
+            $oldAssigneeName = $ticket->assignee?->name;
+            $ticket->forceFill(['assignee_id' => $targetAgent->id])->save();
 
-        $freshTicket = $ticket->fresh() ?? $ticket;
+            $metadata = [
+                'old_assignee_id' => $oldAssigneeId,
+                'old_assignee_name' => $oldAssigneeName,
+                'new_assignee_id' => $targetAgent->id,
+                'new_assignee_name' => $targetAgent->name,
+                'target_agent_id' => $targetAgent->id,
+                'target_agent_name' => $targetAgent->name,
+                'target_had_site_access' => true,
+            ];
 
-        if ($targetAgent->shouldReceiveTicketAssignmentAlert($freshTicket)) {
-            $targetAgent->notify(new TicketAssigned($freshTicket, $agent));
+            if ($reason !== '') {
+                $metadata['reason'] = $reason;
+            }
+
+            $this->recordActivity($ticket, $agent, 'ticket.escalated', $metadata);
+
+            return [$agent, $ticket, $targetAgent];
+        });
+
+        if ($targetAgent->shouldReceiveTicketAssignmentAlert($ticket)) {
+            $targetAgent->notify(new TicketAssigned($ticket, $agent));
         }
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.escalated');
@@ -762,18 +750,95 @@ class AgentTicketController extends Controller
         abort_unless(Gate::forUser($agent)->allows($ability, $ticket), 404);
     }
 
+    /** @return array{0: User, 1: Ticket} */
+    private function lockedTicketActor(User $agent, Ticket $ticket, string $ability): array
+    {
+        $accountId = (int) $ticket->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $agent = User::query()
+            ->whereKey($agent->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $ticket = Ticket::query()
+            ->with('site')
+            ->whereKey($ticket->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $this->authorizeTicketAbility($agent, $ability, $ticket);
+
+        return [$agent, $ticket];
+    }
+
+    /** @return array{0: User, 1: Ticket, 2: User|null} */
+    private function lockedTicketAssignment(User $agent, Ticket $ticket, ?int $targetAgentId, string $field): array
+    {
+        $accountId = (int) $ticket->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $userIds = collect([$agent->id, $targetAgentId])
+            ->filter(fn (?int $id): bool => $id !== null)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+        $users = User::query()
+            ->where('account_id', $accountId)
+            ->whereKey($userIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+        $agent = $users->get($agent->id);
+        abort_unless($agent instanceof User, 404);
+
+        $site = Site::query()
+            ->whereKey($ticket->site_id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $ticket = Ticket::query()
+            ->whereKey($ticket->id)
+            ->where('account_id', $accountId)
+            ->where('site_id', $site->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $ticket->setRelation('site', $site);
+
+        $this->authorizeTicketAbility($agent, 'assign', $ticket);
+
+        $targetAgent = $targetAgentId === null ? null : $users->get($targetAgentId);
+
+        if ($targetAgentId !== null && (! $targetAgent instanceof User
+            || ! $site->supportsAgent($targetAgent)
+            || ! $targetAgent->hasAccountPermission(AccountPermission::ManageTickets))) {
+            throw ValidationException::withMessages([
+                $field => __('tickets.errors.assignee_not_on_site'),
+            ]);
+        }
+
+        return [$agent, $ticket, $targetAgent];
+    }
+
     private function supportAgentsForSite(Site $site): Collection
     {
         $supportAgents = $site->eligibleSupportAgents()
+            ->with('customRole')
             ->orderBy('name')
-            ->get();
+            ->get()
+            ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageTickets))
+            ->values();
 
         return $supportAgents->isNotEmpty()
             ? $supportAgents
             : $site->account->agents()
                 ->whereNull('deactivated_at')
+                ->with('customRole')
                 ->orderBy('name')
-                ->get();
+                ->get()
+                ->filter(fn (User $user): bool => $user->hasAccountPermission(AccountPermission::ManageTickets))
+                ->values();
     }
 
     /**
@@ -853,7 +918,7 @@ class AgentTicketController extends Controller
     /**
      * @return Collection<int, array{label: string, label_feedback: array<string, mixed>|null, subject_change: array{old: string, new: string}|null, label_change: array{action: string, name: string}|null, actor: string, actor_is_authored: bool, body: string|null, occurred_at: CarbonInterface|null}>
      */
-    private function visibleTicketActivity(Ticket $ticket): Collection
+    private function visibleTicketActivity(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
         return $ticket->auditEvents()
             ->with('actor')
@@ -863,7 +928,7 @@ class AgentTicketController extends Controller
             ->get()
             ->map(fn (AuditEvent $activity): array => [
                 'label' => $this->ticketActivityLabel($activity),
-                'label_feedback' => $this->ticketActivityLabelFeedback($activity),
+                'label_feedback' => $this->ticketActivityLabelFeedback($activity, $canViewLinkedConversation),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
@@ -1055,9 +1120,9 @@ class AgentTicketController extends Controller
             ->markAsRead();
     }
 
-    private function linkedConversationMessages(Ticket $ticket): Collection
+    private function linkedConversationMessages(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
-        if (! $ticket->conversation) {
+        if (! $canViewLinkedConversation || ! $ticket->conversation) {
             return collect();
         }
 
@@ -1071,9 +1136,9 @@ class AgentTicketController extends Controller
             ->values();
     }
 
-    private function ticketTimeline(Ticket $ticket): Collection
+    private function ticketTimeline(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
-        $conversationMessages = $ticket->conversation
+        $conversationMessages = $canViewLinkedConversation && $ticket->conversation
             ? $ticket->conversation->messages()->with('sender')->get()
             : collect();
 
@@ -1111,7 +1176,7 @@ class AgentTicketController extends Controller
             ->map(fn ($activity): array => [
                 'type' => in_array($activity->action, ['ticket.note_added', 'ticket.external_comment_received'], true) ? 'internal-note' : 'ticket-activity',
                 'label' => $this->ticketActivityLabel($activity),
-                'label_feedback' => $this->ticketActivityLabelFeedback($activity),
+                'label_feedback' => $this->ticketActivityLabelFeedback($activity, $canViewLinkedConversation),
                 'subject_change' => $this->ticketActivitySubjectChange($activity),
                 'label_change' => $this->ticketActivityLabelChange($activity),
                 'actor' => $this->ticketActivityActor($activity),
@@ -1608,14 +1673,20 @@ class AgentTicketController extends Controller
     /**
      * @return Collection<int, Ticket>
      */
-    private function priorVisitorTickets(Ticket $ticket): Collection
+    private function priorVisitorTickets(Ticket $ticket, bool $canViewLinkedConversation): Collection
     {
         if (! $ticket->requester_id) {
             return collect();
         }
 
+        $relations = ['assignee'];
+
+        if ($canViewLinkedConversation) {
+            $relations[] = 'conversation';
+        }
+
         return Ticket::query()
-            ->with(['assignee', 'conversation'])
+            ->with($relations)
             ->where('account_id', $ticket->account_id)
             ->where('site_id', $ticket->site_id)
             ->where('requester_id', $ticket->requester_id)
@@ -1730,13 +1801,14 @@ class AgentTicketController extends Controller
      *
      * @return array{key: string, parameters: array<string, string>, localized_parameters: array<string, string>}|null
      */
-    private function ticketActivityLabelFeedback(object $activity): ?array
+    private function ticketActivityLabelFeedback(object $activity, bool $canViewLinkedConversation): ?array
     {
         $providerValue = data_get($activity->metadata, 'provider');
         $provider = is_string($providerValue) ? $providerValue : null;
         $reference = data_get($activity->metadata, 'external_key') ?? data_get($activity->metadata, 'external_id');
 
-        if ($activity->action === 'ticket.created'
+        if ($canViewLinkedConversation
+            && $activity->action === 'ticket.created'
             && data_get($activity->metadata, 'source') === 'conversation'
             && filled(data_get($activity->metadata, 'support_code'))) {
             return $this->translatedFeedback(
@@ -1978,6 +2050,10 @@ class AgentTicketController extends Controller
         $changes = [];
 
         foreach (['subject', 'description', 'category', 'priority'] as $field) {
+            if (! array_key_exists($field, $validated)) {
+                continue;
+            }
+
             $oldValue = $ticket->{$field};
             $newValue = $validated[$field] ?? null;
 
@@ -2008,20 +2084,20 @@ class AgentTicketController extends Controller
      * in front of you.
      *
      * @param  callable(string, Ticket): array<string, mixed>  $attributes  What to write, given the LOCKED previous status.
-     * @param  callable(string): void  $record  What to log, given the same.
+     * @param  callable(string, Ticket, User): void  $record  What to log, given the same.
      */
-    private function transitionTicketStatus(Ticket $ticket, callable $attributes, callable $record): void
+    private function transitionTicketStatus(Ticket $ticket, User $agent, callable $attributes, callable $record): void
     {
-        DB::transaction(function () use ($ticket, $attributes, $record): void {
-            $locked = Ticket::query()->whereKey($ticket->getKey())->lockForUpdate()->first();
-            $previousStatus = (string) ($locked?->status ?? $ticket->status);
+        DB::transaction(function () use ($ticket, $agent, $attributes, $record): void {
+            [$agent, $locked] = $this->lockedTicketActor($agent, $ticket, 'updateStatus');
+            $previousStatus = (string) $locked->status;
 
             // Written through the LOCKED instance, not the one this request
             // loaded before it waited. Eloquent diffs against the attributes it
             // originally read, so a reopen that loaded "open" and then queued
             // behind a close would find "open" unchanged, omit status from the
             // update, and leave the row closed while recording a reopen.
-            $target = $locked ?? $ticket;
+            $target = $locked;
 
             $target->forceFill($attributes($previousStatus, $target))->save();
 
@@ -2032,13 +2108,13 @@ class AgentTicketController extends Controller
             // logging afterwards lets the next writer take the lock and insert
             // its event first -- a reopen before the close that preceded it,
             // for a ticket that ended up open.
-            $record($previousStatus);
+            $record($previousStatus, $target, $agent);
         });
     }
 
-    private function recordActivity(Ticket $ticket, User $agent, string $action, array $metadata = []): void
+    private function recordActivity(Ticket $ticket, User $agent, string $action, array $metadata = []): AuditEvent
     {
-        $ticket->auditEvents()->create([
+        return $ticket->auditEvents()->create([
             'account_id' => $ticket->account_id,
             'site_id' => $ticket->site_id,
             'actor_type' => User::class,

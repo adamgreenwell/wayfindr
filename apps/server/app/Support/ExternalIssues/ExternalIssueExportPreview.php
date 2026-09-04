@@ -20,13 +20,15 @@ class ExternalIssueExportPreview
      *     body: string
      * }
      */
-    public function forTicket(Ticket $ticket): array
+    public function forTicket(Ticket $ticket, bool $includeConversationReference): array
     {
         $ticket->loadMissing(['conversation', 'site']);
 
         $summary = [
             ['label' => 'Ticket', 'value' => "Wayfindr ticket #{$ticket->id}"],
-            ['label' => 'Support code', 'value' => $ticket->conversation?->support_code ?? 'Not linked'],
+            ...($includeConversationReference ? [
+                ['label' => 'Support code', 'value' => $ticket->conversation?->support_code ?? 'Not linked'],
+            ] : []),
             ['label' => 'Site', 'value' => $ticket->site->name],
             ['label' => 'Priority', 'value' => Str::headline($ticket->priority)],
             ['label' => 'Category', 'value' => $ticket->categoryLabel()],
@@ -76,35 +78,10 @@ class ExternalIssueExportPreview
     {
         $description = trim((string) $ticket->description);
 
-        if ($this->shouldOmitDescription($ticket, $description)) {
+        if ($ticket->hasConversationDerivedDescription()) {
             return self::OMITTED_CONVERSATION_DESCRIPTION;
         }
 
         return $description === '' ? 'No description provided.' : $description;
-    }
-
-    private function shouldOmitDescription(Ticket $ticket, string $description): bool
-    {
-        if ($description === '') {
-            return false;
-        }
-
-        $descriptionSource = data_get($ticket->metadata, 'description_source');
-
-        if ($descriptionSource === 'agent_summary') {
-            return false;
-        }
-
-        if ($descriptionSource === 'conversation_transcript') {
-            return true;
-        }
-
-        return data_get($ticket->metadata, 'source') === 'conversation'
-            && $this->looksLikeConversationTranscript($description);
-    }
-
-    private function looksLikeConversationTranscript(string $description): bool
-    {
-        return preg_match('/(?:^|\R)(?:Visitor|Agent|[A-Z][\p{L}\p{M}\p{N} .\'-]{1,80}):\s+\S/u', $description) === 1;
     }
 }

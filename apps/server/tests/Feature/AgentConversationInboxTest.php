@@ -6152,6 +6152,7 @@ test('agent conversation page exposes live cobrowse update readiness when reverb
         ->assertSee('conversation.cobrowse.updated')
         ->assertSee('conversation.typing.updated')
         ->assertSee('private-conversations.WF-LIVECOBROWSE')
+        ->assertSee('presence-agents.'.$agent->id)
         ->assertSee('"appKey":"reverb-key"', false)
         ->assertSee('"host":"wayfindr.test"', false);
 });
@@ -8229,23 +8230,26 @@ test('a failed subscribe does not leave the agent page connected to nothing', fu
     // session, looking exactly like a quiet conversation.
     $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
 
-    $authorize = Str::before(Str::after($source, 'function authorize(activeSocket, socketId) {'), "\n                function ");
+    $authorizationFlow = Str::before(
+        Str::after($source, 'function authorizationFailed(activeSocket, error) {'),
+        'var socketScheme',
+    );
 
     test()->assertStringContainsString(
-        'config.authEndpoint',
-        $authorize,
-        'the slice is not authorize()',
+        'activeSocket.wayfindrGeneration !== socketGeneration',
+        $authorizationFlow,
+        'the slice is not the authorization flow',
     );
 
     test()->assertStringContainsString(
         'activeSocket.close();',
-        $authorize,
+        $authorizationFlow,
         'a failed subscribe leaves a healthy socket that will never be replaced',
     );
 
     test()->assertStringContainsString(
         'scheduleReconnect();',
-        $authorize,
+        $authorizationFlow,
         'a failed subscribe never reconnects',
     );
 
@@ -8254,23 +8258,39 @@ test('a failed subscribe does not leave the agent page connected to nothing', fu
     // beside the healthy one. BOTH callbacks, not just the failure: a
     // successful one is the sharper case, because the token it is holding is
     // bound to the socket_id that asked for it.
-    expect(substr_count($authorize, 'activeSocket.wayfindrGeneration !== socketGeneration'))
-        ->toBe(2, 'only one of the two authorization callbacks checks it is still current');
+    expect(substr_count($authorizationFlow, 'activeSocket.wayfindrGeneration !== socketGeneration'))
+        ->toBe(3, 'an authorization callback does not check that its socket is still current');
 
     // The subscribe goes down the socket that was AUTHORISED, never the global
     // successor -- Reverb rejects a token bound to a different socket_id, and
     // the page would announce it was listening on a channel it had been refused.
     test()->assertStringContainsString(
-        'subscribe(activeSocket, data.auth);',
-        $authorize,
+        'subscribe(activeSocket, config.channelName, data);',
+        $authorizationFlow,
         'the subscription is sent on whichever socket happens to be current',
     );
 
     test()->assertStringNotContainsString(
         'subscribe(socket,',
-        $authorize,
+        $authorizationFlow,
         'the subscription is still sent on the global socket',
     );
+
+    expect($authorizationFlow)
+        ->toContain('authorization(socketId, config.identityChannelName)')
+        ->toContain('authorization(activeSocket.wayfindrSocketId, config.channelName)')
+        ->toContain('window.location.reload();');
+
+    $handler = Str::before(
+        Str::after($source, 'function handleSocketMessage(message) {'),
+        'function connect()',
+    );
+
+    expect($handler)
+        ->toContain('event.channel === config.identityChannelName')
+        ->toContain('authorizeConversation(message.target)')
+        ->toContain('event.channel === config.channelName')
+        ->toContain('conversationSubscriptionReady();');
 });
 
 test('a close event from a replaced agent socket cannot open another', function (): void {

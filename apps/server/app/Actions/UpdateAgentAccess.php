@@ -5,6 +5,8 @@ namespace App\Actions;
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\AgentRealtimeSessions;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -13,30 +15,46 @@ use Illuminate\Validation\ValidationException;
 
 class UpdateAgentAccess
 {
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AgentRealtimeSessions $agentRealtimeSessions,
+    ) {}
+
     public function deactivate(User $actor, User $target): User
     {
-        return DB::transaction(function () use ($actor, $target): User {
+        [$target, $changed] = DB::transaction(function () use ($actor, $target): array {
+            $this->siteManagerCoverage->lockAccount((int) $target->account_id);
             [$actor, $target] = $this->lockedUsers($actor, $target);
 
             Gate::forUser($actor)->authorize('deactivate', $target);
 
             if ($target->isDeactivated()) {
-                return $target;
+                return [$target, false];
             }
 
             $this->preventLastActiveOwnerDeactivation($target);
+            $target->loadMissing('customRole');
+            $this->siteManagerCoverage->ensureAgentCanDeactivate($target);
 
             $target->forceFill(['deactivated_at' => now()])->save();
 
             $this->recordAuditEvent($actor, $target, 'agent.deactivated');
+            $this->agentRealtimeSessions->requestMany([$target->id]);
 
-            return $target->refresh();
+            return [$target->refresh(), true];
         });
+
+        if ($changed) {
+            $this->agentRealtimeSessions->disconnectMany([$target->id]);
+        }
+
+        return $target;
     }
 
     public function reactivate(User $actor, User $target): User
     {
         return DB::transaction(function () use ($actor, $target): User {
+            $this->siteManagerCoverage->lockAccount((int) $target->account_id);
             [$actor, $target] = $this->lockedUsers($actor, $target);
 
             Gate::forUser($actor)->authorize('reactivate', $target);

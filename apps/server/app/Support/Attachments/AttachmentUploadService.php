@@ -8,6 +8,7 @@ use App\Models\OperatorSetting;
 use App\Models\Site;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Settings\OperatorSettings;
+use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +29,10 @@ class AttachmentUploadService
 {
     public function __construct(private readonly AttachmentScanner $scanner) {}
 
-    public function store(Conversation $conversation, UploadedFile $file, Model $uploader): ConversationMessageAttachment
+    /**
+     * @param  (Closure(Model, Conversation): array{0: Model, 1: Conversation})|null  $authorizeWrite
+     */
+    public function store(Conversation $conversation, UploadedFile $file, Model $uploader, ?Closure $authorizeWrite = null): ConversationMessageAttachment
     {
         $conversation->loadMissing('site');
         $site = $conversation->site;
@@ -79,8 +83,20 @@ class AttachmentUploadService
         $storageKey = Str::lower((string) Str::ulid()).'/'.Str::lower((string) Str::ulid());
 
         return DB::transaction(function () use (
-            $conversation, $site, $file, $uploader, $sizeBytes, $mimeType, $checksum, $filename, $storageKey, $maxConversationBytes, $diskName
+            $conversation, $site, $file, $uploader, $sizeBytes, $mimeType, $checksum, $filename, $storageKey, $maxConversationBytes, $diskName, $authorizeWrite
         ): ConversationMessageAttachment {
+            // Scanning deliberately finishes before this callback. Rejected
+            // scans write security audit events and throw; wrapping them in the
+            // storage transaction would roll those records back. Successful
+            // scans reauthorize immediately before any binary or row persists.
+            if ($authorizeWrite !== null) {
+                [$uploader, $conversation] = $authorizeWrite($uploader, $conversation);
+                $conversation->loadMissing('site');
+                $site = $conversation->site;
+
+                abort_unless($site, 404);
+            }
+
             // Serialize concurrent uploads to this conversation so the cap check
             // and the insert are atomic — without the lock, two uploads could
             // both read the old total and both push it over the limit.

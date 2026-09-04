@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\BreakGlassGrant;
 use App\Models\Conversation;
@@ -55,7 +56,7 @@ class OperatorBreakGlassController extends Controller
 
                 $canSelfApprove = $approvers->isEmpty()
                     && (int) $operator->account_id === (int) $grant->account_id
-                    && $operator->isAdmin();
+                    && $operator->hasAccountPermission(AccountPermission::ManageOperatorAccess);
 
                 return [$grant->id => [
                     'can_self_approve' => $canSelfApprove,

@@ -2768,25 +2768,47 @@
 <body>
     @if ($agent && $account)
         @php
-            $workItems = [
-                ['label' => __('nav.items.dashboard'), 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')],
-                ['label' => __('nav.items.conversations'), 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')],
-                ['label' => __('nav.items.tickets'), 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')],
-                ['label' => __('nav.items.alerts'), 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')],
-                ['label' => __('nav.items.visitors'), 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')],
-            ];
+            $workItems = [];
+
+            if ($agent->hasAnyAccountPermission(\App\Enums\AccountPermission::ViewConversations, \App\Enums\AccountPermission::ManageTickets)) {
+                $workItems[] = ['label' => __('nav.items.dashboard'), 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')];
+                $workItems[] = ['label' => __('nav.items.visitors'), 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')];
+            }
+
+            if ($agent->hasAccountPermission(\App\Enums\AccountPermission::ViewConversations)) {
+                $workItems[] = ['label' => __('nav.items.conversations'), 'icon' => 'conversations', 'href' => route('dashboard.conversations.index'), 'active' => request()->routeIs('dashboard.conversations.*')];
+            }
+
+            if ($agent->hasAccountPermission(\App\Enums\AccountPermission::ManageTickets)) {
+                $workItems[] = ['label' => __('nav.items.tickets'), 'icon' => 'tickets', 'href' => route('dashboard.tickets.index'), 'active' => request()->routeIs('dashboard.tickets.*')];
+            }
+
+            if ($agent->hasAccountPermission(\App\Enums\AccountPermission::ViewAlerts)) {
+                $workItems[] = ['label' => __('nav.items.alerts'), 'icon' => 'alerts', 'href' => route('dashboard.alerts.index'), 'active' => request()->routeIs('dashboard.alerts.*')];
+            }
 
             // Reporting is account-wide by nature -- it aggregates across every
-            // site an agent can see -- so it is admin-only, matching the audit
-            // page whose records it reads.
-            if ($agent->isAdmin()) {
+            // site an agent can see -- so it requires the account-wide report
+            // permission, separate from support queue access.
+            if ($agent->hasAccountPermission(\App\Enums\AccountPermission::ViewReports)) {
                 $workItems[] = ['label' => __('nav.items.reports'), 'icon' => 'reports', 'href' => route('dashboard.reports.index'), 'active' => request()->routeIs('dashboard.reports.*')];
             }
 
-            $manageItems = [
-                ['label' => __('nav.items.sites'), 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')],
-                ['label' => __('nav.items.account'), 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')],
-            ];
+            $manageItems = [];
+
+            if ($agent->hasAnyAccountPermission(
+                \App\Enums\AccountPermission::ManageSites,
+                \App\Enums\AccountPermission::ManageSiteAccess,
+                \App\Enums\AccountPermission::ManagePrivacySettings,
+                \App\Enums\AccountPermission::ManageIntegrations,
+                \App\Enums\AccountPermission::ViewAudit,
+                \App\Enums\AccountPermission::ViewConversations,
+                \App\Enums\AccountPermission::ManageTickets,
+            )) {
+                $manageItems[] = ['label' => __('nav.items.sites'), 'icon' => 'sites', 'href' => route('dashboard.sites.index'), 'active' => request()->routeIs('dashboard.sites.*')];
+            }
+
+            $manageItems[] = ['label' => __('nav.items.account'), 'icon' => 'account', 'href' => route('dashboard.account.show'), 'active' => request()->routeIs('dashboard.account.*')];
 
             if ($agent->isPlatformOperator()) {
                 $manageItems[] = ['label' => __('nav.items.operator'), 'icon' => 'operator', 'href' => route('operator.dashboard'), 'active' => request()->routeIs('operator.*')];
@@ -2868,6 +2890,8 @@
                 </header>
 
                 <main class="page">
+                    <x-active-break-glass-banner :agent="$agent" :account="$account" />
+
                     @if (session('support_code_lookup_result'))
                         <p class="status-message">{{ session('support_code_lookup_result') }}</p>
                     @endif

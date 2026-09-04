@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\User;
 use App\Support\UnattendedConversationAlertCollector;
 use Illuminate\Contracts\View\View;
@@ -23,7 +24,7 @@ class AgentAlertController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent->account_id, 403);
+        abort_unless($agent->account_id && $agent->hasAccountPermission(AccountPermission::ViewAlerts), 403);
 
         $alertFilter = $request->query('alert_filter') === 'unread' ? 'unread' : 'all';
         $alertKind = $this->normalizedAlertKind($request->query('alert_kind'));
@@ -86,6 +87,7 @@ class AgentAlertController extends Controller
     public function markAllRead(Request $request): RedirectResponse
     {
         $agent = $request->user();
+        abort_unless($agent->hasAccountPermission(AccountPermission::ViewAlerts), 403);
         $alertKind = $this->normalizedAlertKind($request->input('alert_kind'));
         $alertSearch = $this->normalizedAlertSearch($request->input('alert_search'));
 

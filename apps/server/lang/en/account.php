@@ -53,6 +53,7 @@ return [
         'authority' => 'Account roles describe authority. Site access still decides which support queues an agent can work.',
         'changes' => 'Role changes are limited to account owners. Owners cannot change their own role here, and every role change is audited.',
         'suspension' => 'Owners and admins can suspend access without deleting account history. Admins can only suspend agents; owners can manage any other same-account user.',
+        'manage_custom_roles' => 'Manage custom roles',
     ],
 
     'site_access' => [
@@ -86,8 +87,10 @@ return [
             'no_connections' => 'Add a provider connection when tickets need to leave Wayfindr.',
             'no_projects' => 'Map at least one site project before tickets can leave Wayfindr.',
             'attention' => 'Review disabled connections or failed syncs before relying on external handoff.',
+            'disabled_connections' => 'Review disabled provider connections before relying on external handoff.',
             'pending' => 'Some external links are still waiting for confirmation.',
             'ready' => 'External issue routing has mapped projects and no failed syncs.',
+            'configured' => 'Provider connections and mapped projects are configured for external handoff.',
         ],
         'tones' => [
             'ready' => 'Ready',
@@ -196,7 +199,7 @@ return [
 
     'create' => [
         'heading' => 'Add agent',
-        'lede' => 'New agents start with the Agent role',
+        'lede' => 'New agents start with the :role role',
         'name' => 'Name',
         'email' => 'Email',
         'welcome' => 'Email the welcome message and temporary password',

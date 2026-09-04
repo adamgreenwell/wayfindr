@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AccountPermission;
 use App\Models\BreakGlassGrant;
 use App\Models\User;
 use App\Support\BreakGlass\BreakGlassGrants;
@@ -13,7 +14,8 @@ use Illuminate\Http\Request;
 use Throwable;
 
 /**
- * The account side of break-glass (ADR 0008, slice 2): owners/admins review,
+ * The account side of break-glass (ADR 0008, slice 2): account members with
+ * manage-operator-access permission review,
  * approve, deny, and revoke platform-operator access requests that touch
  * their account. Lifecycle rules live in the BreakGlassGrants service.
  */
@@ -257,7 +259,7 @@ class AgentAccountBreakGlassController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->account_id && $agent->isAdmin(), 403);
+        abort_unless($agent?->account_id && $agent->hasAccountPermission(AccountPermission::ManageOperatorAccess), 403);
 
         return $agent;
     }

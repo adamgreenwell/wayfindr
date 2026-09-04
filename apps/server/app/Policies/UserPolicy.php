@@ -2,6 +2,7 @@
 
 namespace App\Policies;
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\User;
 
@@ -11,7 +12,7 @@ class UserPolicy
     {
         return ! $user->isDeactivated()
             && $user->account_id !== null
-            && $user->isAdmin();
+            && $user->hasAccountPermission(AccountPermission::ManageAgents);
     }
 
     public function updateRole(User $user, User $target): bool
@@ -33,7 +34,7 @@ class UserPolicy
 
     private function manageAccess(User $user, User $target): bool
     {
-        if ($user->isDeactivated() || ! $user->isAdmin() || ! $this->sameAccount($user, $target)) {
+        if (! $user->hasAccountPermission(AccountPermission::ManageAgents) || ! $this->sameAccount($user, $target)) {
             return false;
         }
 
@@ -41,7 +42,13 @@ class UserPolicy
             return false;
         }
 
-        return $user->isOwner() || $target->account_role === AccountRole::Agent;
+        return $user->isOwner()
+            || ($user->account_role === AccountRole::Admin
+                && $user->custom_role_id === null
+                && $target->account_role === AccountRole::Agent)
+            || ($user->custom_role_id !== null
+                && $target->custom_role_id !== null
+                && (int) $user->custom_role_id === (int) $target->custom_role_id);
     }
 
     private function sameAccount(User $user, User $target): bool

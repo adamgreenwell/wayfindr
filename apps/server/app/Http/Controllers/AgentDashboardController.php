@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BreakGlassGrant;
+use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -19,6 +19,13 @@ class AgentDashboardController extends Controller
 {
     public function __invoke(Request $request, RealtimeHealth $realtimeHealth, VisitorSupportReadiness $visitorSupportReadiness, CobrowseAttentionFinder $cobrowseAttentionFinder): View|RedirectResponse
     {
+        $agent = $request->user();
+        if (! $agent->hasAnyAccountPermission(AccountPermission::ViewConversations, AccountPermission::ManageTickets)) {
+            return $agent->hasAccountPermission(AccountPermission::ViewReports)
+                ? redirect()->route('dashboard.reports.index')
+                : redirect()->route('dashboard.account.show');
+        }
+
         if ($redirect = $this->legacyQueueRedirect($request)) {
             return $redirect;
         }
@@ -28,27 +35,22 @@ class AgentDashboardController extends Controller
         // their own surfaces — Account is the management hub (#555).
         [$agent, $account, $sites] = $this->dashboardContext($request);
         $realtimeHealthSummary = $realtimeHealth->summary();
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
 
         return view('agent.dashboard', [
             'account' => $account,
             'agent' => $agent,
-            // Transparency is prominent while access is live (ADR 0008): any
-            // agent of the account sees an active break-glass grant here, not
-            // just admins on the operator-access page.
-            'activeBreakGlassGrants' => BreakGlassGrant::query()
-                ->where('account_id', $account->id)
-                ->active()
-                ->with('requester')
-                ->orderBy('expires_at')
-                ->get(),
-            'conversationNextSteps' => $this->conversationNextSteps($agent),
-            'supportQueues' => $this->supportQueues($agent, $cobrowseAttentionFinder),
-            'ticketNextSteps' => $this->ticketNextSteps($agent),
+            'canManageTickets' => $canManageTickets,
+            'canViewConversations' => $canViewConversations,
+            'conversationNextSteps' => $canViewConversations ? $this->conversationNextSteps($agent) : null,
+            'supportQueues' => $this->supportQueues($agent, $cobrowseAttentionFinder, $canViewConversations, $canManageTickets),
+            'ticketNextSteps' => $canManageTickets ? $this->ticketNextSteps($agent) : null,
             'visitorSupportReadiness' => $visitorSupportReadiness->summary(
                 sites: $sites,
                 realtimeHealth: $realtimeHealthSummary,
                 canViewReadiness: $agent->isPlatformOperator(),
-                canManagePrivacy: $agent->isAdmin(),
+                canManagePrivacy: $agent->hasAccountPermission(AccountPermission::ManagePrivacySettings),
             ),
         ]);
     }
@@ -81,25 +83,29 @@ class AgentDashboardController extends Controller
      *     unassigned_tickets_count: int
      * }
      */
-    private function supportQueues(User $agent, CobrowseAttentionFinder $cobrowseAttentionFinder): array
+    private function supportQueues(User $agent, CobrowseAttentionFinder $cobrowseAttentionFinder, bool $canViewConversations, bool $canManageTickets): array
     {
-        $visibleOpenConversations = Conversation::query()
-            ->where('status', 'open')
-            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent));
+        $visibleOpenConversations = $canViewConversations
+            ? Conversation::query()
+                ->where('status', 'open')
+                ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            : null;
 
-        $visibleOpenTickets = Ticket::query()
-            ->where('status', 'open')
-            ->where('account_id', $agent->account_id)
-            ->whereHas('site', fn ($query) => $query->visibleToAgent($agent));
+        $visibleOpenTickets = $canManageTickets
+            ? Ticket::query()
+                ->where('status', 'open')
+                ->where('account_id', $agent->account_id)
+                ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
+            : null;
 
         return [
-            'open_conversations_count' => (clone $visibleOpenConversations)->count(),
-            'new_activity_conversations_count' => (clone $visibleOpenConversations)->withNewActivityFor($agent)->count(),
-            'cobrowse_attention_conversations_count' => $cobrowseAttentionFinder->count(
-                (clone $visibleOpenConversations)->withActiveCobrowseSession()
-            ),
-            'open_tickets_count' => (clone $visibleOpenTickets)->count(),
-            'unassigned_tickets_count' => (clone $visibleOpenTickets)->whereNull('assignee_id')->count(),
+            'open_conversations_count' => $visibleOpenConversations ? (clone $visibleOpenConversations)->count() : null,
+            'new_activity_conversations_count' => $visibleOpenConversations ? (clone $visibleOpenConversations)->withNewActivityFor($agent)->count() : null,
+            'cobrowse_attention_conversations_count' => $visibleOpenConversations
+                ? $cobrowseAttentionFinder->count((clone $visibleOpenConversations)->withActiveCobrowseSession())
+                : null,
+            'open_tickets_count' => $visibleOpenTickets ? (clone $visibleOpenTickets)->count() : null,
+            'unassigned_tickets_count' => $visibleOpenTickets ? (clone $visibleOpenTickets)->whereNull('assignee_id')->count() : null,
         ];
     }
 

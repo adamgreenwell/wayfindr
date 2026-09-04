@@ -24,20 +24,27 @@ final class SerializeAgentBroadcastAuthorization
         }
 
         return DB::transaction(function () use ($request, $next, $agent): Response {
-            // User then account matches the account-policy writer. Holding
-            // both locks through the controller response makes the signed
-            // authorization linearizable with password resets, deactivation,
-            // and account-wide required-2FA changes.
-            $lockedAgent = User::query()->lockForUpdate()->find($agent->id);
+            // Account then user matches every account-policy writer. Holding
+            // both locks through the controller response keeps the signed
+            // authorization linearizable with role changes, password resets,
+            // deactivation, and account-wide required-2FA changes without an
+            // inverse lock order that can deadlock those writes.
+            $account = Account::query()->lockForUpdate()->find($agent->account_id);
+
+            if (! $account instanceof Account) {
+                abort(403);
+            }
+
+            $lockedAgent = User::query()
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->find($agent->id);
 
             if (! $lockedAgent instanceof User || $lockedAgent->isDeactivated()) {
                 $this->logout($request);
             }
 
-            $account = Account::query()->lockForUpdate()->find($lockedAgent->account_id);
-
-            if (! $account instanceof Account
-                || ($account->requires_two_factor && ! $lockedAgent->hasTwoFactorAuthentication())) {
+            if ($account->requires_two_factor && ! $lockedAgent->hasTwoFactorAuthentication()) {
                 abort(403);
             }
 

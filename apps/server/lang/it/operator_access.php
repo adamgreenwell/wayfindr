@@ -18,6 +18,14 @@ return [
     'subtitle' => 'Quando un gestore della piattaforma deve vedere i dati di supporto di questo account, deve farne richiesta. Approvi, rifiuti o termini qui l’accesso.',
     'back' => 'Torna all’account',
 
+    'banner' => [
+        'title' => 'L’accesso del gestore della piattaforma è attivo',
+        'review' => 'Controlla o revoca',
+        'former_operator' => 'Un ex gestore',
+        'grant' => ':requester ha accesso in sola lettura a :scope fino alle :until (:elapsed):self_approved.',
+        'self_approved' => ' — autoapprovato',
+    ],
+
     'counts' => [
         'active' => '{1} :count concessione attiva|[2,*] :count concessioni attive',
         'pending' => '{1} :count richiesta in attesa|[2,*] :count richieste in attesa',

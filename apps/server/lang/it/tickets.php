@@ -360,6 +360,7 @@ return [
         'label_removed' => 'Etichetta del ticket rimossa.',
         'marked_pending' => 'Ticket contrassegnato come in sospeso.',
         'note_added' => 'Nota al ticket aggiunta.',
+        'note_added_queued' => 'Nota al ticket aggiunta. Il commento per la segnalazione collegata è in coda per la consegna.',
         'note_added_posted' => 'Nota al ticket aggiunta e pubblicata sulla segnalazione collegata.',
         'note_added_not_posted' => 'Nota al ticket aggiunta, ma il commento esterno non può essere pubblicato. Consulti l\'attività del ticket.',
         'reopened' => 'Ticket riaperto.',

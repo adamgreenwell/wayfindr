@@ -357,7 +357,9 @@ test('audit search finds break-glass events by their surfaced label', function (
     $this->actingAs($admin)
         ->get(route('dashboard.account.audit.index', ['audit_search' => 'WF-ZZZZZZZZ']))
         ->assertOk()
-        ->assertDontSee($w['conversation']->support_code);
+        // The global transparency banner still names the active scope; the
+        // unmatched audit result itself must be absent.
+        ->assertDontSee('Operator access: Conversation');
 });
 
 test('a non-operator cannot reach any viewer route', function (): void {

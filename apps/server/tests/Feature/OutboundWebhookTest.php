@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Jobs\DeliverOutboundWebhook;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\OutboundWebhookDelivery;
 use App\Models\OutboundWebhookEndpoint;
 use App\Models\Site;
@@ -100,6 +102,107 @@ test('an endpoint is pinned to the issuer current site ceiling and never widens'
     expect($endpoint->restricts_sites)->toBeTrue()
         ->and($endpoint->sites()->pluck('sites.id')->all())->toBe([$world['site']->id])
         ->and($endpoint->sites()->whereKey($later->id)->exists())->toBeFalse();
+});
+
+test('custom integration managers can export only events from their granted support domains', function (): void {
+    Queue::fake();
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ManageIntegrations->value,
+            AccountPermission::ViewConversations->value,
+        ],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $existingEndpoint = OutboundWebhookEndpoint::factory()->for($account)->create([
+        'events' => [OutboundWebhookEndpoint::EVENT_TICKET_CREATED],
+    ]);
+    $existingEndpoint->sites()->attach($site);
+    $ticketDelivery = OutboundWebhookDelivery::factory()->for($existingEndpoint, 'endpoint')->create([
+        'site_id' => $site->id,
+        'event' => OutboundWebhookEndpoint::EVENT_TICKET_CREATED,
+        'failed_at' => now(),
+    ]);
+    allowWebhookDns();
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk()
+        ->assertSee('value="conversation.opened"', false)
+        ->assertSee('value="conversation.message.created"', false)
+        ->assertDontSee('value="ticket.created"', false)
+        ->assertDontSee('value="ticket.closed"', false)
+        ->assertDontSee($ticketDelivery->public_id);
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.outbound-webhooks.store'), [
+            'webhook' => [
+                'name' => 'Ticket exfiltration',
+                'url' => 'https://hooks.example.test/tickets',
+                'events' => [OutboundWebhookEndpoint::EVENT_TICKET_CREATED],
+            ],
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.outbound-webhooks.retry', $ticketDelivery))
+        ->assertNotFound();
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.outbound-webhooks.store'), [
+            'webhook' => [
+                'name' => 'Conversation listener',
+                'url' => 'https://hooks.example.test/conversations',
+                'events' => [OutboundWebhookEndpoint::EVENT_CONVERSATION_OPENED],
+            ],
+        ])
+        ->assertRedirect(route('dashboard.account.api-tokens.index'));
+
+    $created = OutboundWebhookEndpoint::query()->where('created_by_id', $manager->id)->sole();
+
+    expect($created->events)->toBe([OutboundWebhookEndpoint::EVENT_CONVERSATION_OPENED]);
+    Queue::assertNothingPushed();
+});
+
+test('webhook creation reauthorizes custom integration permissions under the account lock', function (): void {
+    $account = Account::factory()->create();
+    $publisherRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ManageIntegrations->value,
+            AccountPermission::ViewConversations->value,
+        ],
+    ]);
+    $settingsRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageIntegrations->value],
+    ]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $publisherRole->id,
+    ]);
+    Site::factory()->for($account)->create();
+    allowWebhookDns();
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.account.api-tokens.index'))
+        ->assertOk();
+
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $settingsRole->id]);
+
+    $this->actingAs($manager)
+        ->post(route('dashboard.account.outbound-webhooks.store'), [
+            'webhook' => [
+                'name' => 'Stale publisher',
+                'url' => 'https://hooks.example.test/stale',
+                'events' => [OutboundWebhookEndpoint::EVENT_CONVERSATION_OPENED],
+            ],
+        ])
+        ->assertForbidden();
+
+    expect(OutboundWebhookEndpoint::query()->count())->toBe(0);
 });
 
 test('endpoint creation refuses destinations that resolve inside the host network', function (): void {

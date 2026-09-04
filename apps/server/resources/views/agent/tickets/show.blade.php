@@ -2,7 +2,7 @@
             <x-page-header :title="$ticket->subject" title-lang="" :back-href="$ticketReturnLink['href']" :back-label="$ticketReturnLink['label']">
                 <p class="lede">
                     {{ __('ticket_detail.reference', ['id' => $ticket->id]) }}
-                    @if ($ticket->conversation)
+                    @if ($canViewLinkedConversation && $ticket->conversation)
                         <span aria-hidden="true">-</span>
                         <x-support-code-reference
                             :code="$ticket->conversation->support_code"
@@ -21,7 +21,9 @@
 
             @php
                 $ticketTiming = $ticket->queueTimingContext();
-                $ticketReplyVisibility = $ticket->replyVisibility();
+                $ticketReplyVisibility = $canViewLinkedConversation
+                    ? $ticket->replyVisibility()
+                    : ['tone' => 'manual'];
                 $ticketLifecycleNote = $ticket->latestLifecycleNote();
                 $requesterReference = $ticket->requester?->email
                     ?? $ticket->requester?->name
@@ -62,7 +64,7 @@
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.common.reference') }}</span>
                         <span class="meta-value">
-                            @if ($ticket->conversation)
+                            @if ($canViewLinkedConversation && $ticket->conversation)
                                 <x-support-code-reference
                                     :code="$ticket->conversation->support_code"
                                     :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
@@ -74,7 +76,7 @@
                     </div>
                 </div>
 
-                @if ($ticket->conversation)
+                @if ($canViewLinkedConversation && $ticket->conversation)
                     <div class="section-form-row">
                         <a class="button secondary" href="{{ route('dashboard.conversations.show', $ticket->conversation->support_code) }}">
                             {{ __('ticket_detail.brief.open_conversation') }}
@@ -82,16 +84,31 @@
                     </div>
                 @endif
             </section>
-            <x-tabs
-                id="ticket-workspace"
-                :label="__('ticket_detail.tabs.label')"
-                :tabs="[
+            @php
+                $ticketWorkspaceTabs = [
                     ['id' => 'work', 'label' => __('ticket_detail.tabs.work')],
-                    ['id' => 'conversation', 'label' => __('ticket_detail.tabs.conversation'), 'badge' => $ticket->conversation?->support_code, 'badge_lang' => ''],
+                ];
+
+                if ($canViewLinkedConversation) {
+                    $ticketWorkspaceTabs[] = [
+                        'id' => 'conversation',
+                        'label' => __('ticket_detail.tabs.conversation'),
+                        'badge' => $ticket->conversation?->support_code,
+                        'badge_lang' => '',
+                    ];
+                }
+
+                $ticketWorkspaceTabs = [
+                    ...$ticketWorkspaceTabs,
                     ['id' => 'external', 'label' => __('ticket_detail.tabs.external')],
                     ['id' => 'details', 'label' => __('ticket_detail.tabs.details')],
                     ['id' => 'activity', 'label' => __('ticket_detail.tabs.activity')],
-                ]"
+                ];
+            @endphp
+            <x-tabs
+                id="ticket-workspace"
+                :label="__('ticket_detail.tabs.label')"
+                :tabs="$ticketWorkspaceTabs"
             >
                 <x-tab-panel id="work" active>
             <section class="section" aria-labelledby="ticket-work-state-heading">
@@ -179,6 +196,7 @@
                     <span class="lede" @if ($ticket->assignee?->name !== null) lang="" @endif>{{ $ticket->assignee?->name ?? __('ticket_detail.common.unassigned') }}</span>
                 </div>
 
+                @if ($canAssignTickets)
                 @php
                     $escalationAgents = $accountAgents->reject(fn ($accountAgent) => $accountAgent->is($agent))->values();
                 @endphp
@@ -243,6 +261,7 @@
                         </form>
                     @endif
                 </div>
+                @endif
 
                 @if ($ticket->status === 'open')
                     <form class="section-form" method="POST" action="{{ route('dashboard.tickets.pending', $ticket) }}">
@@ -388,6 +407,7 @@
             </section>
                 </x-tab-panel>
 
+            @if ($canViewLinkedConversation)
                 <x-tab-panel id="conversation">
             @if ($ticket->conversation)
                 <section class="section" aria-labelledby="linked-conversation-heading">
@@ -417,6 +437,7 @@
                         'transcriptSiteColor' => $ticket->site->resolvedColor()->cssVariable(),
                     ])
 
+                    @if ($canReplyToLinkedConversation)
                     @php
                         $oldReplyTemplate = old('reply_template', '');
                         $selectedReplyTemplate = is_string($oldReplyTemplate) ? $oldReplyTemplate : '';
@@ -501,9 +522,11 @@
                             </div>
                         </aside>
                     </div>
+                    @endif
                 </section>
             @endif
                 </x-tab-panel>
+            @endif
 
                 <x-tab-panel id="external">
             <section class="section" aria-labelledby="external-links-heading">
@@ -835,7 +858,7 @@
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.details.support_code') }}</span>
                         <span class="meta-value">
-                            @if ($ticket->conversation)
+                            @if ($canViewLinkedConversation && $ticket->conversation)
                                 <x-support-code-reference
                                     :code="$ticket->conversation->support_code"
                                     :href="route('dashboard.conversations.show', $ticket->conversation->support_code)"
@@ -970,13 +993,15 @@
                         @enderror
                     </div>
 
-                    <div class="field">
-                        <label for="description">{{ __('ticket_detail.details.description') }}</label>
-                        <textarea id="description" name="description" rows="6" lang="">{{ old('description', $ticket->description) }}</textarea>
-                        @error('description')
-                            <p class="field-error">{{ $message }}</p>
-                        @enderror
-                    </div>
+                    @if ($canViewTicketDescription)
+                        <div class="field">
+                            <label for="description">{{ __('ticket_detail.details.description') }}</label>
+                            <textarea id="description" name="description" rows="6" lang="">{{ old('description', $ticketDescription) }}</textarea>
+                            @error('description')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+                    @endif
 
                     <button class="button" type="submit">{{ __('ticket_detail.details.save') }}</button>
                 </form>
@@ -1095,7 +1120,7 @@
                                                 'parameters' => $priorTicket->assignee?->name !== null ? ['owner' => $priorTicket->assignee->name] : [],
                                                 'localized_parameters' => $priorTicket->assignee?->name === null ? ['owner' => __('ticket_detail.common.unassigned')] : [],
                                             ]" /></span>
-                                            @if ($priorTicket->conversation)
+                                            @if ($canViewLinkedConversation && $priorTicket->conversation)
                                                 <a class="text-link" href="{{ route('dashboard.conversations.show', $priorTicket->conversation->support_code) }}">
                                                     <span lang="">{{ $priorTicket->conversation->support_code }}</span>
                                                 </a>

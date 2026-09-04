@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
@@ -337,6 +339,37 @@ test('agent roster summarizes visible assigned workload without leaking restrict
         ->assertDontSee('Restricted Store');
 });
 
+test('account roster hides support workloads from settings only custom roles', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $privacyManager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $teammate = User::factory()->for($account)->create(['name' => 'Private workload owner']);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach([$privacyManager->id, $teammate->id]);
+    $visitor = Visitor::factory()->for($site)->create();
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $teammate->id,
+        'status' => 'open',
+    ]);
+    Ticket::factory()->for($account)->for($site)->create([
+        'assignee_id' => $teammate->id,
+        'status' => 'open',
+    ]);
+
+    $this->actingAs($privacyManager)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee('Private workload owner')
+        ->assertDontSee('Workload')
+        ->assertDontSee('1 open conversation')
+        ->assertDontSee('1 open ticket');
+});
+
 test('account overview shows agent alert digest delivery status without raw provider errors', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
@@ -585,6 +618,59 @@ test('regular agents do not see account wide external issue readiness', function
         ->assertDontSee('External issue readiness')
         ->assertDontSee('Engineering GitHub')
         ->assertDontSee('acme/private-ops-repo');
+});
+
+test('integration only roles see provider readiness without ticket derived metrics', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageIntegrations->value],
+    ]);
+    $integrationManager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Visible integration site']);
+    $connection = ExternalIssueProviderConnection::factory()->for($account)->create([
+        'name' => 'Visible provider connection',
+    ]);
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create(['project_key' => 'visible/provider-project']);
+    TicketExternalLink::factory()->for($account)->for($site)->create([
+        'sync_status' => 'sync_failed',
+    ]);
+    TicketExternalLink::factory()->for($account)->for($site)->create([
+        'sync_status' => 'sync_pending',
+    ]);
+    AuditEvent::factory()->for($account)->for($site)->create([
+        'action' => 'ticket.external_sync_failed',
+        'metadata' => [
+            'provider' => 'github',
+            'project_key' => 'hidden/ticket-project',
+            'status' => 503,
+        ],
+    ]);
+
+    $this->actingAs($integrationManager)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee('External issue readiness')
+        ->assertSee('Visible provider connection')
+        ->assertSee('visible/provider-project')
+        ->assertSee('Provider connections and mapped projects are configured for external handoff.')
+        ->assertDontSee('1 sync failed')
+        ->assertDontSee('1 sync pending')
+        ->assertDontSee('no failed syncs')
+        ->assertDontSee('Last external sync failure')
+        ->assertDontSee('No recent external sync failures for this account.')
+        ->assertDontSee('hidden/ticket-project')
+        ->assertDontSee('Status 503')
+        ->assertDontSee(route('dashboard.tickets.index', [
+            'ticket_status' => 'all',
+            'ticket_external' => 'failed',
+        ]));
 });
 
 test('account external issue readiness follows visible site scope', function (): void {

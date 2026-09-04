@@ -12,11 +12,11 @@ An account is the tenant boundary. Sites, agents, tickets, conversations, audit 
 
 An agent is a Laravel user attached to one account. Agents can sign in, view the agent dashboard, reply to conversations, request cobrowse consent, and work tickets when they have access to the relevant site.
 
-The starter RBAC implementation stores account authority on `users.account_role` while Wayfindr still supports one account per user. A dedicated membership model can replace this when multi-account users become a real product need.
+The RBAC implementation keeps the lockout-safe Owner/Admin/Agent defaults on `users.account_role`. A user may instead reference one account-owned custom role. A dedicated membership model can replace this when multi-account users become a real product need.
 
-Owners and admins can create new agents from the account overview. New dashboard-created agents start with the `agent` role and receive a generated temporary password that is shown once. When outbound mail is configured, the creator can also send the agent a welcome email with the sign-in URL and temporary password; the one-time password display remains the fallback. Agents can use the profile screen to update their display name, replace a temporary password after sign-in, and choose whether alerts should cover all supported sites, only assigned work, or quiet mode.
+Owners, admins, and custom roles with `manage_agents` can create new agents from the account overview. Agents created by a built-in owner or admin start with the built-in `agent` role; agents created by a custom-role manager inherit that manager's custom role so the new login cannot outrank its issuer. Each receives a generated temporary password that is shown once. When outbound mail is configured, the creator can also send the agent a welcome email with the sign-in URL and temporary password; the one-time password display remains the fallback. Agents can use the profile screen to update their display name, replace a temporary password after sign-in, and choose whether alerts should cover all supported sites, only assigned work, or quiet mode.
 
-Agents can be deactivated without deleting their historical messages, tickets, assignments, or audit records. Deactivated agents cannot log in, and existing dashboard sessions are signed out before protected routes continue. Owners can deactivate or reactivate another same-account user. Admins can deactivate or reactivate non-owner agents, but cannot manage owner or admin access.
+Agents can be deactivated without deleting their historical messages, tickets, assignments, or audit records. Deactivated agents cannot log in, and existing dashboard sessions are signed out before protected routes continue. Owners can deactivate or reactivate another same-account user. Admins can deactivate or reactivate non-owner agents, but cannot manage owner or admin access. A custom role with `manage_agents` can manage built-in agents and teammates in that same custom role, but not a user assigned to another custom role.
 
 Deactivation is also enforced at the support policy layer. Stale site assignments, ticket assignments, conversation assignments, and unread alerts should not keep a deactivated agent authorized after their account access is suspended.
 
@@ -36,7 +36,9 @@ Deactivated agents are not assignable from site access management. Stale histori
 
 ## Account Roles
 
-Account roles are about authority, not queue membership. The starter role helpers are implemented on `users.account_role`; owners can change another same-account agent's role from the account overview. The working RBAC map lives in [RBAC Waypoints](rbac-waypoints.md).
+Account roles are about authority, not queue membership. Owners can create named custom roles from the account overview, select only the permissions each role needs, and assign a built-in or custom role to another same-account user. The working RBAC map lives in [RBAC Waypoints](rbac-waypoints.md).
+
+Account owners can change another same-account agent from either a built-in role to a custom role or back again. Role changes start owner-only; custom roles do not make that authority delegable.
 
 The first roles are:
 
@@ -44,10 +46,7 @@ The first roles are:
 - `admin`: can manage agents, sites, site access, privacy settings, and support operations for sites they can access, but may not own billing, account transfer controls, or role ownership.
 - `agent`: can work assigned support queues, reply to visitors, create and update tickets, request cobrowse consent, and manage their own alert workflow.
 
-Possible later roles:
-
-- `billing`: can manage billing and plan details without support queue access.
-- `viewer`: can view reports or support history without participating in conversations.
+Custom roles are deny-by-default and account-owned. They can combine team, support, knowledge, settings, reporting, and audit permissions, but cannot receive `manage_roles`, ownership, platform-operator authority, or destructive site purge. Editing a custom role takes effect immediately for its assigned users. An assigned role cannot be deleted, and role creation, editing, deletion, and assignment are audited with the role name retained in history.
 
 ## Platform Operators
 
@@ -59,12 +58,12 @@ See [Platform Operator Boundary](platform-operator-boundary.md) for the product 
 
 ## Guardrails
 
-- Site access should land before broad role management.
+- Site access remains separate from role permissions: permissions answer what a person can do, and site assignments answer where support data is visible.
 - RBAC should be implemented through Laravel policies and gates instead of scattered controller conditionals.
 - Role checks should build on explicit account membership and site access, not replace them.
 - Platform operator authority should stay separate from account roles and must not bypass site access in account support workflows.
-- New agents should start as `agent`; `UserPolicy` keeps dashboard agent creation limited to active owners and admins.
-- Role changes start owner-only, with same-account boundaries in `UserPolicy`, plus self-change denial, last-owner protection, and audit events behind the dashboard role controls.
+- New agents created by built-in owners and admins start as `agent`. A custom-role holder with `manage_agents` creates teammates in that same custom role, keeping the generated login within the issuer's authority; `UserPolicy` rejects everybody without `manage_agents`.
+- Built-in and custom role changes remain owner-only, with same-account boundaries in `UserPolicy`, plus self-change denial, last-owner protection, and audit events behind the dashboard role controls.
 - Agent password changes are self-service from the profile screen and should be audited without exposing password material.
 - Agent deactivation should preserve history, block sign-in, clear stale dashboard sessions, deny self-deactivation, stay inside the account through `UserPolicy`, and create audit events for deactivation/reactivation.
 - Account activity visibility should stay metadata-only and access-focused until Wayfindr has a deliberate audit export/search workflow.
@@ -82,4 +81,4 @@ See [Platform Operator Boundary](platform-operator-boundary.md) for the product 
 
 - Should future invitation flows ask for site assignments during agent creation?
 - Should WordPress and future integrations expose site-agent assignment hints during install?
-- Should account roles be stored as a simple enum on account membership, or should Wayfindr introduce a dedicated membership model before hosted multi-tenant plans?
+- Which identity-provider claims should map to existing role keys during just-in-time provisioning, and what should happen when a claim no longer matches?

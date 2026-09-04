@@ -65,6 +65,23 @@ test('an admin who is not the owner cannot purge a site', function (): void {
     $this->assertDatabaseHas('sites', ['id' => $site->id]);
 });
 
+test('a site purge reauthorizes a stale owner under the account lock', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = purgeableSite($account);
+
+    $this->actingAs($owner);
+    expect($owner->isOwner())->toBeTrue();
+    User::query()->whereKey($owner->id)->update(['account_role' => AccountRole::Admin]);
+
+    $this->delete("/dashboard/sites/{$site->id}", ['confirm_name' => 'Doomed Site'])
+        ->assertForbidden();
+
+    $this->assertDatabaseHas('sites', ['id' => $site->id]);
+    $this->assertDatabaseHas('conversations', ['site_id' => $site->id]);
+    $this->assertDatabaseMissing('audit_events', ['action' => 'site.purged']);
+});
+
 test('purging destroys the site, its records and its attachment binaries', function (): void {
     Storage::fake('attachments');
 

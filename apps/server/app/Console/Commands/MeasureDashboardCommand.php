@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -932,13 +933,11 @@ final class MeasureDashboardCommand extends Command
         // and the export is the one report path whose cost is not bounded by
         // what a screen can show.
         //
-        // ADMIN ONLY, because `AgentReportController` aborts 403 for anyone
-        // else -- and a 403 fails the whole run, since a page that did not
-        // render is not a measurement. Adding them unconditionally broke
-        // `--email` against an ordinary agent, which was a supported way to
-        // measure before this. An agent who cannot open the reports simply does
-        // not measure them.
-        if ($agent->isAdmin()) {
+        // REPORT PERMISSION ONLY, because `AgentReportController` aborts 403
+        // for anyone else -- and a 403 fails the whole run, since a page that
+        // did not render is not a measurement. An agent who cannot open the
+        // reports simply does not measure them.
+        if ($agent->hasAccountPermission(AccountPermission::ViewReports)) {
             $targets['Reports (7 days)'] = '/dashboard/reports?report_days=7';
             $targets['Reports (90 days)'] = '/dashboard/reports?report_days=90';
             $targets['Reports export (90 days)'] = '/dashboard/reports/export?report_days=90';

@@ -81,6 +81,10 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow
         return ['visitor' => LiveVisitorBoard::row(
             $this->visitor,
             $current !== null && SitePresenceReporting::for($current)->pageUrls,
+            // This channel is shared by conversation and ticket roles. A
+            // broadcast cannot tailor a payload per subscriber, so support
+            // history totals stay in permission-scoped page snapshots only.
+            false,
         )];
     }
 

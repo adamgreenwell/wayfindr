@@ -1,10 +1,12 @@
 <?php
 
 use App\Broadcasting\SitePresenceChannel;
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\VisitorPresenceUpdated;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -150,6 +152,78 @@ test('an agent can open the board for their own site', function (): void {
         ->assertSee('https://shop.test/pricing');
 });
 
+test('a settings-only custom role cannot read or subscribe to the live board', function (): void {
+    $f = boardFixture();
+    $role = CustomRole::factory()->for($f['account'])->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $agent = User::factory()->for($f['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $f['site']->supportAgents()->attach($agent);
+    presentVisitor($f['site'], 'anon-private', [
+        'name' => 'Private visitor',
+        'email' => 'private@example.test',
+        'presence_only' => false,
+    ]);
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.show', $f['site']))
+        ->assertOk()
+        ->assertDontSee(route('dashboard.sites.live', $f['site']), false);
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertNotFound()
+        ->assertDontSee('Private visitor')
+        ->assertDontSee('private@example.test');
+
+    expect((new SitePresenceChannel)->join($agent, $f['site']->id))->toBeFalse();
+
+    $role->forceFill(['permissions' => [AccountPermission::ViewConversations->value]])->save();
+    $agent = $agent->fresh();
+
+    test()->actingAs($agent)
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('Private visitor');
+
+    expect((new SitePresenceChannel)->join($agent, $f['site']->id))->toBeTrue();
+});
+
+test('a ticket-only role can use the live board without seeing conversation totals', function (): void {
+    $f = boardFixture();
+    $role = CustomRole::factory()->for($f['account'])->create([
+        'permissions' => [AccountPermission::ManageTickets->value],
+    ]);
+    $agent = User::factory()->for($f['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $f['site']->supportAgents()->attach($agent);
+    $visitor = presentVisitor($f['site'], 'anon-ticket-board', [
+        'name' => 'Dana Ticket',
+        'presence_only' => false,
+    ]);
+    Conversation::factory()->for($f['site'])->for($visitor)->create();
+
+    $response = test()->actingAs($agent)
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('Dana Ticket')
+        ->assertDontSee('data-live-conversation-count', false);
+
+    $row = $response->viewData('visitors')->firstOrFail();
+    $snapshotRow = LiveVisitorBoard::snapshotFor($f['site'], false)['visitors']->firstOrFail();
+    $broadcastRow = (new VisitorPresenceUpdated($f['site'], $visitor->fresh()))->broadcastWith()['visitor'];
+
+    expect(array_key_exists('conversations_count', $row))->toBeFalse()
+        ->and(array_key_exists('conversations_count', $snapshotRow))->toBeFalse()
+        ->and(array_key_exists('conversations_count', $broadcastRow))->toBeFalse()
+        ->and((new SitePresenceChannel)->join($agent, $f['site']->id))->toBeTrue();
+});
+
 test('a site that does not watch says so instead of showing an empty board', function (): void {
     // An operator looking at nothing deserves to know whether nobody is here or
     // nothing is being recorded.
@@ -263,7 +337,8 @@ test('the board subscribes when the install runs realtime', function (): void {
     // The CLIENT host, not the internal one a browser cannot resolve.
     $response->assertSee('realtime.shop.test', false)
         ->assertDontSee('reverb.internal', false)
-        ->assertSee('private-sites.'.$f['site']->id.'.presence', false);
+        ->assertSee('private-sites.'.$f['site']->id.'.presence', false)
+        ->assertSee('presence-agents.'.$f['agent']->id, false);
 });
 
 test('an install without realtime says the list is a snapshot', function (): void {
@@ -355,22 +430,22 @@ test('the board recovers from a failed subscription', function (): void {
     // the artifact under test.
     $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
 
-    $authorize = Str::before(
-        Str::after($source, 'function authorize(activeSocket, socketId) {'),
-        'function handleSocketMessage',
+    $failure = Str::before(
+        Str::after($source, 'function authorizationFailed(activeSocket, error) {'),
+        'function authorizeIdentity',
     );
 
     // The slice is proven before anything is asserted about it -- `.catch(`
     // appears several times in this script, and a slice that grabbed the wrong
     // one would assert over the wrong code and pass.
     test()->assertStringContainsString(
-        'pusher:subscribe',
-        $authorize,
-        'the slice is not the authorize function',
+        'activeSocket.wayfindrGeneration !== socketGeneration',
+        $failure,
+        'the slice is not the authorization failure handler',
     );
 
-    expect($authorize)->toContain('scheduleReconnect();')
-        ->and($authorize)->toContain('activeSocket.close();');
+    expect($failure)->toContain('scheduleReconnect();')
+        ->and($failure)->toContain('activeSocket.close();');
 });
 
 test('a refreshed row moves to the newest-first position', function (): void {
@@ -389,6 +464,30 @@ test('a refreshed row moves to the newest-first position', function (): void {
 
     expect($apply)->toContain('existing.remove()')
         ->and($apply)->not->toContain('existing.replaceWith');
+});
+
+test('count-authorized boards refresh private conversation totals after shared updates', function (): void {
+    // Presence is broadcast on one site channel whose ticket-only subscribers
+    // must not receive conversation totals. A conversation-authorized reader
+    // therefore refreshes those private counts from the ordinary gated page,
+    // with burst coalescing so heartbeats do not become one request each.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+    $apply = Str::before(Str::after($source, 'function applyVisitor(visitor) {'), 'function dropDeparted');
+    $schedule = Str::before(
+        Str::after($source, 'function scheduleConversationCountResync() {'),
+        '// Which socket is in service',
+    );
+
+    test()->assertStringContainsString(
+        "!Object.prototype.hasOwnProperty.call(visitor, 'conversations_count')",
+        $apply,
+        'the count-free shared update is not detected',
+    );
+
+    expect($apply)->toContain('scheduleConversationCountResync();')
+        ->and($schedule)->toContain('conversationCountResyncTimer')
+        ->and($schedule)->toContain('CONVERSATION_COUNT_RESYNC_INTERVAL_MS')
+        ->and($schedule)->toContain('resyncBoard();');
 });
 
 test('an archived site does not open a socket it cannot subscribe to', function (): void {
@@ -430,15 +529,15 @@ test('the board resyncs whenever it subscribes', function (): void {
     // reconnect that gap is however long the socket was down.
     $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
 
-    $authorize = Str::before(
-        Str::after($source, 'function authorize(activeSocket, socketId) {'),
+    $ready = Str::before(
+        Str::after($source, 'function boardSubscriptionReady() {'),
         'function handleSocketMessage',
     );
 
     test()->assertStringContainsString(
-        'pusher:subscribe',
-        $authorize,
-        'the slice is not the authorize function',
+        'resyncBoard();',
+        $ready,
+        'the slice is not the confirmed-subscription handler',
     );
 
     // The resync hangs off the SUBSCRIPTION CONFIRMATION, not the
@@ -455,9 +554,10 @@ test('the board resyncs whenever it subscribes', function (): void {
         'the slice is not the socket message handler',
     );
 
-    expect($handler)->toContain('resyncBoard();')
+    expect($handler)->toContain('boardSubscriptionReady();')
         ->and($source)->toContain('function resyncBoard()')
-        ->and($authorize)->not->toContain('resyncBoard();');
+        ->and($source)->toContain('event.channel === config.identityChannelName')
+        ->and($source)->toContain('authorizeBoard(message.target)');
 });
 
 test('an open board does not keep showing revoked visitors', function (): void {

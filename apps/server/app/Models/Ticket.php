@@ -63,6 +63,47 @@ class Ticket extends Model
         ];
     }
 
+    public function hasConversationDerivedDescription(): bool
+    {
+        if (trim((string) $this->description) === '') {
+            return false;
+        }
+
+        $descriptionSource = data_get($this->metadata, 'description_source');
+
+        if ($descriptionSource === 'agent_summary') {
+            return false;
+        }
+
+        return $descriptionSource === 'conversation_transcript'
+            || data_get($this->metadata, 'source') === 'conversation';
+    }
+
+    /**
+     * Match the stored half of hasConversationDerivedDescription() so a
+     * ticket-only search cannot reveal text that its result page would hide.
+     */
+    public function scopeWhereDescriptionIsNotConversationDerived(Builder $query): Builder
+    {
+        return $query->where(function (Builder $query): void {
+            $query
+                ->where('metadata->description_source', 'agent_summary')
+                ->orWhere(function (Builder $query): void {
+                    $query
+                        ->where(function (Builder $query): void {
+                            $query
+                                ->whereNull('metadata->description_source')
+                                ->orWhere('metadata->description_source', '!=', 'conversation_transcript');
+                        })
+                        ->where(function (Builder $query): void {
+                            $query
+                                ->whereNull('metadata->source')
+                                ->orWhere('metadata->source', '!=', 'conversation');
+                        });
+                });
+        });
+    }
+
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);

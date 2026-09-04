@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\AccountPermission;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Site;
@@ -14,6 +15,7 @@ use App\Support\Api\ApiIdempotency;
 use App\Support\Api\ApiScope;
 use App\Support\Api\V1\Payload;
 use App\Support\DatabaseKey;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\TicketPriority;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
@@ -29,6 +31,8 @@ use Throwable;
  */
 class TicketController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function store(Request $request, ApiIdempotency $idempotency): JsonResponse
     {
         $scope = ApiScope::fromRequest($request);
@@ -201,6 +205,7 @@ class TicketController extends Controller
             &$newAssignee,
             &$assigneeChanged,
         ): Ticket {
+            $this->siteManagerCoverage->lockAccount($scope->accountId());
             $token = ApiToken::query()
                 ->whereKey($scope->token->getKey())
                 ->lockForUpdate()
@@ -214,6 +219,19 @@ class TicketController extends Controller
                 throw new HttpResponseException(response()->json([
                     'message' => 'That API token is not valid.',
                 ], 401));
+            }
+
+            $requestedAssigneeId = array_key_exists('assignee_id', $validated)
+                && $validated['assignee_id'] !== null
+                    ? (int) $validated['assignee_id']
+                    : null;
+
+            if ($requestedAssigneeId !== null) {
+                $newAssignee = User::query()
+                    ->where('account_id', $scope->accountId())
+                    ->whereKey($requestedAssigneeId)
+                    ->lockForUpdate()
+                    ->first();
             }
 
             $site = Site::query()->whereKey($candidate->site_id)->sharedLock()->first();
@@ -247,12 +265,9 @@ class TicketController extends Controller
                 $nextAssigneeId = $validated['assignee_id'] === null ? null : (int) $validated['assignee_id'];
 
                 if ($nextAssigneeId !== null) {
-                    $newAssignee = User::query()
-                        ->where('account_id', $scope->accountId())
-                        ->whereKey($nextAssigneeId)
-                        ->first();
-
-                    if ($newAssignee === null || ! $site->supportsAgent($newAssignee)) {
+                    if ($newAssignee === null
+                        || ! $site->supportsAgent($newAssignee)
+                        || ! $newAssignee->hasAccountPermission(AccountPermission::ManageTickets)) {
                         $this->invalidReference('assignee_id');
                     }
                 }

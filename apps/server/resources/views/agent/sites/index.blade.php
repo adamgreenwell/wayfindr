@@ -2,7 +2,9 @@
     <x-page-header :title="__('sites.title')" :subtitle="__('sites.subtitle')">
         <x-slot:actions>
             <span class="lede">{{ $siteFilters['summary_label'] }}</span>
-            <a class="button secondary" href="{{ route('dashboard.sites.create') }}">{{ __('sites.add_site') }}</a>
+            @if ($canCreateSite)
+                <a class="button secondary" href="{{ route('dashboard.sites.create') }}">{{ __('sites.add_site') }}</a>
+            @endif
         </x-slot:actions>
     </x-page-header>
 
@@ -64,10 +66,11 @@
             </div>
 
             @foreach ([
-                ['id' => 'site_workload', 'label' => __('sites.index.filters.workload'), 'options' => $siteFilters['workload_options'], 'selected' => $siteFilters['workload']],
+                ['id' => 'site_workload', 'label' => __('sites.index.filters.workload'), 'options' => $siteFilters['workload_options'], 'selected' => $siteFilters['workload'], 'requires_support' => true],
                 ['id' => 'site_install', 'label' => __('sites.index.filters.install_health'), 'options' => $siteFilters['install_options'], 'selected' => $siteFilters['install']],
                 ['id' => 'site_state', 'label' => __('sites.index.filters.state'), 'options' => $siteFilters['state_options'], 'selected' => $siteFilters['state']],
             ] as $siteSelectFilter)
+                @continue(($siteSelectFilter['requires_support'] ?? false) && ! $canViewSupportWork)
                 <div class="wf-filter">
                     <label for="{{ $siteSelectFilter['id'] }}">{{ $siteSelectFilter['label'] }}</label>
                     <select id="{{ $siteSelectFilter['id'] }}" name="{{ $siteSelectFilter['id'] }}">
@@ -128,10 +131,14 @@
                     <thead>
                         <tr>
                             <th scope="col">{{ __('sites.index.list.columns.site') }}</th>
-                            <th scope="col">{{ __('sites.index.list.columns.workload') }}</th>
+                            @if ($canViewSupportWork)
+                                <th scope="col">{{ __('sites.index.list.columns.workload') }}</th>
+                            @endif
                             <th scope="col">{{ __('sites.index.list.columns.access') }}</th>
                             <th scope="col">{{ __('sites.index.list.columns.install_health') }}</th>
-                            <th scope="col">{{ __('sites.index.list.columns.last_page') }}</th>
+                            @if ($canViewSupportWork)
+                                <th scope="col">{{ __('sites.index.list.columns.last_page') }}</th>
+                            @endif
                         </tr>
                     </thead>
                     <tbody>
@@ -139,11 +146,14 @@
                             @php
                                 $latestVisitor = $site->latestVisitor;
                                 $installHealth = $siteInstallHealth[$site->id];
-                                $lastPageUrl = data_get($latestVisitor?->metadata, 'last_page_url');
+                                $lastPageUrl = $canViewSupportWork
+                                    ? data_get($latestVisitor?->metadata, 'last_page_url')
+                                    : null;
                                 $openConversationCount = (int) $site->open_conversations_count;
                                 $openTicketCount = (int) $site->open_tickets_count;
                                 $pendingTicketCount = (int) $site->pending_tickets_count;
-                                $hasWorkload = $openConversationCount > 0 || $openTicketCount > 0 || $pendingTicketCount > 0;
+                                $hasWorkload = ($canViewConversations && $openConversationCount > 0)
+                                    || ($canManageTickets && ($openTicketCount > 0 || $pendingTicketCount > 0));
                                 $supportAgentCount = (int) $site->support_agents_count;
                                 $supportAgentNames = $site->supportAgents->pluck('name')->values();
                             @endphp
@@ -162,19 +172,20 @@
                                     </span>
                                     <div class="lede"><a class="text-link" href="{{ route('dashboard.sites.tester', $site) }}">{{ __('sites.index.list.open_tester') }}</a></div>
                                 </td>
-                                <td>
+                                @if ($canViewSupportWork)
+                                    <td>
                                     @if ($hasWorkload)
-                                        @if ($openConversationCount > 0)
+                                        @if ($canViewConversations && $openConversationCount > 0)
                                             <a class="text-link" href="{{ route('dashboard.conversations.index', ['conversation_site' => $site->id]) }}">
                                                 {{ trans_choice('sites.index.counts.open_conversations', $openConversationCount, ['count' => \App\Support\ReaderNumber::count($openConversationCount)]) }}
                                             </a>
                                         @endif
-                                        @if ($openTicketCount > 0)
+                                        @if ($canManageTickets && $openTicketCount > 0)
                                             <a class="table-note text-link" href="{{ route('dashboard.tickets.index', ['ticket_site' => $site->id]) }}">
                                                 {{ trans_choice('sites.index.counts.open_tickets', $openTicketCount, ['count' => \App\Support\ReaderNumber::count($openTicketCount)]) }}
                                             </a>
                                         @endif
-                                        @if ($pendingTicketCount > 0)
+                                        @if ($canManageTickets && $pendingTicketCount > 0)
                                             <a class="table-note text-link" href="{{ route('dashboard.tickets.index', ['ticket_status' => 'pending', 'ticket_site' => $site->id]) }}">
                                                 {{ trans_choice('sites.index.counts.pending_tickets', $pendingTicketCount, ['count' => \App\Support\ReaderNumber::count($pendingTicketCount)]) }}
                                             </a>
@@ -182,7 +193,8 @@
                                     @else
                                         <span class="lede">{{ __('sites.index.workload.none') }}</span>
                                     @endif
-                                </td>
+                                    </td>
+                                @endif
                                 <td>
                                     @if ($supportAgentCount > 0)
                                         <strong>{{ __('sites.index.access.explicit') }}</strong>
@@ -210,13 +222,15 @@
                                         </a>
                                     @endif
                                 </td>
-                                <td>
-                                    @if ($lastPageUrl)
-                                        <span lang="">{{ $lastPageUrl }}</span>
-                                    @else
-                                        {{ __('sites.index.common.not_reported') }}
-                                    @endif
-                                </td>
+                                @if ($canViewSupportWork)
+                                    <td>
+                                        @if ($lastPageUrl)
+                                            <span lang="">{{ $lastPageUrl }}</span>
+                                        @else
+                                            {{ __('sites.index.common.not_reported') }}
+                                        @endif
+                                    </td>
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>

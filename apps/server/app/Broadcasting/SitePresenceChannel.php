@@ -41,6 +41,6 @@ class SitePresenceChannel
             return false;
         }
 
-        return Gate::forUser($agent)->allows('view', $site);
+        return Gate::forUser($agent)->allows('viewLiveBoard', $site);
     }
 }

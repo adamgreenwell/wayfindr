@@ -5,18 +5,24 @@
 // stay internal by default — only a checked note leaves Wayfindr — and the
 // connection must have the add_comment capability. GitHub first.
 
+use App\Jobs\DeliverTicketExternalComment;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\TicketExternalCommentDelivery;
 use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\ExternalIssues\InboundCommentSync;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpClientRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -93,6 +99,153 @@ test('an opted-in note posts to the linked GitHub issue and records the relay', 
 
     expect(AuditEvent::where('action', 'ticket.note_added')->count())->toBe(1)
         ->and(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
+});
+
+test('an external note relay commits durable intent before provider delivery', function (): void {
+    $f = commentRelayFixture();
+    $baseline = DB::transactionLevel();
+    $relayTransactionLevel = null;
+    $durableBeforeHttp = false;
+
+    Http::fake(function () use (&$durableBeforeHttp, &$relayTransactionLevel) {
+        $relayTransactionLevel = DB::transactionLevel();
+        $delivery = TicketExternalCommentDelivery::query()->sole();
+        $durableBeforeHttp = $delivery->started_at !== null
+            && $delivery->attempts === 1
+            && AuditEvent::query()->whereKey($delivery->note_audit_event_id)->exists();
+
+        return Http::response([
+            'id' => 700124,
+            'html_url' => 'https://github.com/acme/widgets/issues/42#issuecomment-2',
+        ], 201);
+    });
+
+    $this->actingAs($f['agent'])
+        ->post(route('dashboard.tickets.notes.store', $f['ticket']), [
+            'body' => 'Keep this relay serialized.',
+            'post_to_external' => '1',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
+
+    $delivery = TicketExternalCommentDelivery::query()->sole();
+
+    expect($relayTransactionLevel)->toBe($baseline)
+        ->and($durableBeforeHttp)->toBeTrue()
+        ->and($delivery->accepted_at)->not->toBeNull()
+        ->and($delivery->delivered_at)->not->toBeNull()
+        ->and($delivery->failed_at)->toBeNull()
+        ->and($delivery->remote_comment_id)->toBe('700124')
+        ->and($delivery->getRawOriginal('body'))->not->toContain('Keep this relay serialized.');
+});
+
+test('an accepted external comment is not resent when local completion fails', function (): void {
+    $f = commentRelayFixture();
+    $commentSync = Mockery::mock(InboundCommentSync::class);
+    $commentSync->shouldReceive('remember')->once()->andThrow(new RuntimeException('database completion failed'));
+    app()->instance(InboundCommentSync::class, $commentSync);
+
+    Http::fake([
+        'https://api.github.com/repos/acme/widgets/issues/42/comments' => Http::response([
+            'id' => 700125,
+            'html_url' => 'https://github.com/acme/widgets/issues/42#issuecomment-3',
+        ], 201),
+    ]);
+
+    $this->actingAs($f['agent'])
+        ->post(route('dashboard.tickets.notes.store', $f['ticket']), [
+            'body' => 'Post this only once.',
+            'post_to_external' => '1',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
+
+    $delivery = TicketExternalCommentDelivery::query()->sole();
+
+    expect($delivery->started_at)->not->toBeNull()
+        ->and($delivery->accepted_at)->not->toBeNull()
+        ->and($delivery->delivered_at)->toBeNull()
+        ->and($delivery->failed_at)->toBeNull();
+
+    Queue::fake();
+
+    $this->artisan('wayfindr:queue-ticket-external-comments')
+        ->expectsOutput('Queued 1 pending external comment delivery.')
+        ->assertExitCode(0);
+
+    Queue::assertPushed(
+        DeliverTicketExternalComment::class,
+        fn (DeliverTicketExternalComment $job): bool => $job->uniqueId() === (string) $delivery->id,
+    );
+
+    app()->instance(InboundCommentSync::class, new InboundCommentSync);
+
+    expect(DeliverTicketExternalComment::processNow($delivery->id))->toBe(DeliverTicketExternalComment::OUTCOME_POSTED)
+        ->and($delivery->fresh()->delivered_at)->not->toBeNull()
+        ->and(data_get($f['link']->fresh()->metadata, 'synced_comment_ids'))->toContain('700125')
+        ->and(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
+
+    Http::assertSentCount(1);
+});
+
+test('a successful relay without a remote id completes without an echo-ledger write', function (): void {
+    $f = commentRelayFixture();
+
+    Http::fake([
+        'https://api.github.com/repos/acme/widgets/issues/42/comments' => Http::response([
+            'html_url' => 'https://github.com/acme/widgets/issues/42#issuecomment-no-id',
+        ], 201),
+    ]);
+
+    $this->actingAs($f['agent'])
+        ->post(route('dashboard.tickets.notes.store', $f['ticket']), [
+            'body' => 'The provider omitted its comment id.',
+            'post_to_external' => '1',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
+
+    $delivery = TicketExternalCommentDelivery::query()->sole();
+
+    expect($delivery->accepted_at)->not->toBeNull()
+        ->and($delivery->delivered_at)->not->toBeNull()
+        ->and($delivery->remote_comment_id)->toBeNull()
+        ->and(data_get($f['link']->fresh()->metadata, 'synced_comment_ids', []))->toBe([])
+        ->and(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
+});
+
+test('the scheduler recovers an external comment intent that was not handed off', function (): void {
+    Queue::fake();
+    $f = commentRelayFixture();
+    $note = $f['ticket']->auditEvents()->create([
+        'account_id' => $f['account']->id,
+        'site_id' => $f['site']->id,
+        'actor_type' => User::class,
+        'actor_id' => $f['agent']->id,
+        'action' => 'ticket.note_added',
+        'metadata' => ['body' => 'Recover this relay.'],
+        'occurred_at' => now(),
+    ]);
+    $delivery = TicketExternalCommentDelivery::query()->create([
+        'public_id' => (string) Str::uuid(),
+        'account_id' => $f['account']->id,
+        'site_id' => $f['site']->id,
+        'ticket_id' => $f['ticket']->id,
+        'ticket_external_link_id' => $f['link']->id,
+        'provider_connection_id' => $f['connection']->id,
+        'actor_id' => $f['agent']->id,
+        'note_audit_event_id' => $note->id,
+        'body' => 'Recover this relay.',
+    ]);
+
+    $this->artisan('wayfindr:queue-ticket-external-comments')
+        ->expectsOutput('Queued 1 pending external comment delivery.')
+        ->assertExitCode(0);
+
+    Queue::assertPushed(
+        DeliverTicketExternalComment::class,
+        fn (DeliverTicketExternalComment $job): bool => $job->uniqueId() === (string) $delivery->id,
+    );
 });
 
 test('an opted-in note posts to the linked GitLab issue as a note', function (): void {

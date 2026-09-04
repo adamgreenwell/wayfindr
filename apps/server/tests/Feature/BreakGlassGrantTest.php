@@ -7,11 +7,13 @@
 // once expired or closed. No UI exists yet; this is the foundation everything
 // else sits on.
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -112,6 +114,30 @@ test('an account admin approves and the grant activates with a stamped expiry', 
         ->and((int) $grant->approved_at->diffInMinutes($grant->expires_at))->toBe(90);
 
     expect(AuditEvent::where('action', 'break_glass.approved')->count())->toBe(1);
+});
+
+test('approval reauthorizes a custom role under the account lock', function (): void {
+    $w = breakGlassWorld();
+    $approverRole = CustomRole::factory()->for($w['account'])->create([
+        'permissions' => [AccountPermission::ManageOperatorAccess->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($w['account'])->create(['permissions' => []]);
+    $approver = User::factory()->for($w['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $approverRole->id,
+    ]);
+    $grant = grants()->request($w['operator'], $w['conversation'], 'Debugging.');
+
+    // Keep the caller's customRole relation stale after the first permission
+    // check, as if an owner reassigned the approver during the request.
+    expect($approver->hasAccountPermission(AccountPermission::ManageOperatorAccess))->toBeTrue();
+    User::query()->whereKey($approver->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    expect(fn () => grants()->approve($grant, $approver))
+        ->toThrow(HttpException::class);
+
+    expect($grant->fresh()->status)->toBe(BreakGlassGrant::STATUS_REQUESTED)
+        ->and(AuditEvent::query()->where('action', 'break_glass.approved')->exists())->toBeFalse();
 });
 
 test('self-approval is refused while another admin exists', function (): void {

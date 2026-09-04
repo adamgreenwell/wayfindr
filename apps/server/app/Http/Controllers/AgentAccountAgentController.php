@@ -4,10 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
 use App\Mail\AgentWelcomeMessage;
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -39,13 +41,34 @@ class AgentAccountAgentController extends Controller
         $welcomeEmailRequested = $request->boolean('send_welcome_email');
         $welcomeEmailSent = false;
 
-        $agent = User::query()->create([
-            'account_id' => $actor->account_id,
-            'account_role' => AccountRole::Agent,
-            'name' => trim($validated['name']),
-            'email' => $validated['email'],
-            'password' => Hash::make($password),
-        ]);
+        [$actor, $agent] = DB::transaction(function () use ($actor, $validated, $password): array {
+            $accountId = (int) $actor->account_id;
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $actor = User::query()
+                ->whereKey($actor->id)
+                ->where('account_id', $accountId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            // Role edits and assignments take the same account-first lock.
+            // Reauthorize after it so a request already in flight cannot copy
+            // a role the creator lost while waiting.
+            Gate::forUser($actor)->authorize('createAccountAgent', User::class);
+
+            $agent = User::query()->create([
+                'account_id' => $actor->account_id,
+                'account_role' => AccountRole::Agent,
+                // A custom-role manager can grow their team without minting a
+                // login that outranks them. Built-in owners/admins keep the legacy
+                // Agent default; custom-role issuers reproduce their own boundary.
+                'custom_role_id' => $actor->custom_role_id,
+                'name' => trim($validated['name']),
+                'email' => $validated['email'],
+                'password' => Hash::make($password),
+            ]);
+
+            return [$actor, $agent];
+        });
 
         if ($welcomeEmailRequested) {
             try {
@@ -72,6 +95,8 @@ class AgentAccountAgentController extends Controller
             'action' => 'agent.created',
             'metadata' => [
                 'role' => AccountRole::Agent->value,
+                'custom_role_id' => $agent->custom_role_id,
+                'custom_role_name' => $agent->customRole?->name,
                 'welcome_email_requested' => $welcomeEmailRequested,
                 'welcome_email_sent' => $welcomeEmailSent,
             ],
