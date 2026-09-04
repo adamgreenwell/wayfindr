@@ -102,6 +102,8 @@ test('clearing a target cancels its active clocks without deleting their history
 });
 
 test('changing a policy preserves a breach crossed under the old target', function (): void {
+    $this->freezeTime();
+
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
     SlaPolicy::factory()->for($account)->create([
