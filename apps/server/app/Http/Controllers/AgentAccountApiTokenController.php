@@ -256,9 +256,19 @@ class AgentAccountApiTokenController extends Controller
         // recording the revocation twice. This account's audit trail is a
         // product feature rather than a debug log, so a duplicate entry is a
         // wrong answer to "who turned this off, and when".
-        $alreadyRevoked = DB::transaction(function () use ($agent, $apiToken): bool {
+        $alreadyRevoked = DB::transaction(function () use ($account, $agent, $apiToken): bool {
+            $this->siteManagerCoverage->lockAccount((int) $account->id);
+            $agent = User::query()
+                ->whereKey($agent->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($agent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
+
             $locked = ApiToken::query()
                 ->whereKey($apiToken->getKey())
+                ->where('account_id', $account->id)
                 ->lockForUpdate()
                 ->first();
 

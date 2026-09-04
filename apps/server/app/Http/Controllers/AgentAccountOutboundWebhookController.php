@@ -114,8 +114,21 @@ class AgentAccountOutboundWebhookController extends Controller
 
         abort_if($endpoint === null || (int) $endpoint->account_id !== (int) $account->id, 404);
 
-        $alreadyDisabled = DB::transaction(function () use ($agent, $endpoint): bool {
-            $locked = OutboundWebhookEndpoint::query()->whereKey($endpoint->id)->lockForUpdate()->first();
+        $alreadyDisabled = DB::transaction(function () use ($account, $agent, $endpoint): bool {
+            $this->siteManagerCoverage->lockAccount((int) $account->id);
+            $agent = User::query()
+                ->whereKey($agent->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($agent?->hasAccountPermission(AccountPermission::ManageIntegrations), 403);
+
+            $locked = OutboundWebhookEndpoint::query()
+                ->whereKey($endpoint->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
 
             if ($locked === null || ! $locked->isEnabled()) {
                 return true;
