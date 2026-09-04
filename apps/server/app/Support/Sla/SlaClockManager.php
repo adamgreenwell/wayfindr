@@ -530,6 +530,11 @@ final class SlaClockManager
             'target_seconds' => $targetSeconds,
             'warning_seconds' => SlaClock::warningSeconds($targetSeconds),
         ])->save();
+
+        // A shorter replacement target can put already-counted time over the
+        // boundary now. Persist that fact at the policy/priority change rather
+        // than waiting for a later scheduler pass to choose its report window.
+        $this->recordBreachIfCrossed($clock, $at);
     }
 
     private function recordBreachIfCrossed(SlaClock $clock, CarbonInterface $at): bool

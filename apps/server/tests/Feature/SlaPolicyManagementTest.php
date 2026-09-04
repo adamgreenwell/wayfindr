@@ -156,6 +156,33 @@ test('changing a policy preserves a breach crossed under the old target', functi
         ->and($clock->target_seconds)->toBe(10 * 60);
 });
 
+test('shortening a policy records the newly crossed breach at the edit time', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    SlaPolicy::factory()->for($account)->create([
+        'priority' => 'normal',
+        'first_response_minutes' => 60,
+        'resolution_minutes' => null,
+    ]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    $this->travel(30)->minutes();
+    $changedAt = now();
+    $this->actingAs($admin)
+        ->put(route('dashboard.account.sla-policies.update'), slaPolicyPayload([
+            'first_response_minutes' => 10,
+        ]))
+        ->assertRedirect(route('dashboard.account.sla-policies.index'));
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->elapsed_seconds)->toBe(30 * 60)
+        ->and($clock->target_seconds)->toBe(10 * 60)
+        ->and($clock->breached_at?->getTimestamp())->toBe($changedAt->getTimestamp())
+        ->and($clock->warned_at?->getTimestamp())->toBe($changedAt->getTimestamp());
+});
+
 test('extending a policy does not consume the future warning at the old threshold', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
