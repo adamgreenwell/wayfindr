@@ -703,7 +703,7 @@ class AgentSiteController extends Controller
         ]);
 
         DB::transaction(function () use ($request, $site, $validated): void {
-            [, $site] = $this->lockedPrivacyManagerAndSite($request->user(), $site);
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'updatePrivacy');
 
             $site->mutateSettings(function (array $settings) use ($validated): array {
                 $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
@@ -773,13 +773,17 @@ class AgentSiteController extends Controller
             'rating_intro' => ['nullable', 'string', 'max:160'],
         ]);
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
-            $settings['rating'] = [
-                'enabled' => (bool) ($validated['rating_enabled'] ?? false),
-                'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
-            ];
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($validated): array {
+                $settings['rating'] = [
+                    'enabled' => (bool) ($validated['rating_enabled'] ?? false),
+                    'intro' => trim((string) ($validated['rating_intro'] ?? '')) ?: null,
+                ];
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -804,13 +808,17 @@ class AgentSiteController extends Controller
             $fields[$field] = $validated['intake_fields'][$field] ?? SiteIntake::OFF;
         }
 
-        $settings = $site->mutateSettings(function (array $settings) use ($fields, $validated): array {
-            $settings['intake'] = [
-                'fields' => $fields,
-                'intro' => trim((string) ($validated['intake_intro'] ?? '')) ?: null,
-            ];
+        DB::transaction(function () use ($fields, $request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($fields, $validated): array {
+                $settings['intake'] = [
+                    'fields' => $fields,
+                    'intro' => trim((string) ($validated['intake_intro'] ?? '')) ?: null,
+                ];
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -985,7 +993,7 @@ class AgentSiteController extends Controller
         // save its stale copy of this column afterwards and put the revoked
         // value back.
         DB::transaction(function () use ($request, $site, $enabled, $pageUrls, &$removed): void {
-            [, $site] = $this->lockedPrivacyManagerAndSite($request->user(), $site);
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'updatePrivacy');
 
             $site->mutateSettings(function (array $settings) use ($site, $enabled, $pageUrls, &$removed): array {
                 $settings['presence'] = ['enabled' => $enabled, 'page_urls' => $pageUrls];
@@ -1166,12 +1174,16 @@ class AgentSiteController extends Controller
             'widget_locale' => ['nullable', 'string', Rule::in(array_keys(WidgetLanguage::SUPPORTED))],
         ]);
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
-            // Null rather than an empty string, so "not configured" is one value
-            // and the widget can tell it from a language it does not carry.
-            $settings['locale'] = WidgetLanguage::sanitize($validated['widget_locale'] ?? null);
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($validated): array {
+                // Null rather than an empty string, so "not configured" is one value
+                // and the widget can tell it from a language it does not carry.
+                $settings['locale'] = WidgetLanguage::sanitize($validated['widget_locale'] ?? null);
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -1223,20 +1235,24 @@ class AgentSiteController extends Controller
                 : null;
         }
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated, $weekdays): array {
-            $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
+        DB::transaction(function () use ($request, $site, $validated, $weekdays): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            $settings['availability'] = [
-                'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
-                'timezone' => $validated['availability_timezone'],
-                'weekdays' => $weekdays,
-                'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,
-                // Preserved rather than rewritten: editing the schedule is not the
-                // same action as reopening a desk somebody closed early.
-                'closed_until' => $availability['closed_until'] ?? null,
-            ];
+            $site->mutateSettings(function (array $settings) use ($validated, $weekdays): array {
+                $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
 
-            return $settings;
+                $settings['availability'] = [
+                    'enabled' => filter_var($validated['availability_enabled'] ?? false, FILTER_VALIDATE_BOOL),
+                    'timezone' => $validated['availability_timezone'],
+                    'weekdays' => $weekdays,
+                    'away_message' => trim((string) ($validated['availability_away_message'] ?? '')) ?: null,
+                    // Preserved rather than rewritten: editing the schedule is not the
+                    // same action as reopening a desk somebody closed early.
+                    'closed_until' => $availability['closed_until'] ?? null,
+                ];
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -1262,30 +1278,33 @@ class AgentSiteController extends Controller
             'closure' => ['required', 'string', Rule::in(SiteAvailability::CLOSURES)],
         ]);
 
-        $endsAt = SiteAvailability::closureEndsAt($site, $validated['closure']);
+        $status = DB::transaction(function () use ($request, $site, $validated): string|array {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+            $endsAt = SiteAvailability::closureEndsAt($site, $validated['closure']);
 
-        if ($endsAt === null) {
-            return redirect()
-                ->route('dashboard.sites.show', $site)
-                ->with('status', 'site_settings.flash.desk_left_open');
-        }
+            if ($endsAt === null) {
+                return 'site_settings.flash.desk_left_open';
+            }
 
-        $this->storeClosure($site, $endsAt->toIso8601String());
+            $this->storeClosure($site, $endsAt->toIso8601String());
 
-        // Report when the desk is BACK, which is not always when the close
-        // expires: one ending outside opening hours hands back to the schedule
-        // rather than to that moment. "Rest of today" ends at closing time, so
-        // it is outside hours by definition and the two always differ.
-        $reopens = SiteAvailability::for($site)->opensAt;
+            // Report when the desk is BACK, which is not always when the close
+            // expires: one ending outside opening hours hands back to the schedule
+            // rather than to that moment. "Rest of today" ends at closing time, so
+            // it is outside hours by definition and the two always differ.
+            $reopens = SiteAvailability::for($site)->opensAt;
 
-        return redirect()
-            ->route('dashboard.sites.show', $site)
-            ->with('status', $reopens === null
+            return $reopens === null
                 ? 'site_settings.flash.desk_closed_no_return'
                 : [
                     'key' => 'site_settings.flash.desk_closed_return',
                     'reopens_at' => $reopens->toIso8601String(),
-                ]);
+                ];
+        });
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', $status);
     }
 
     /**
@@ -1296,7 +1315,10 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'update', $site);
 
-        $this->storeClosure($site, null);
+        DB::transaction(function () use ($request, $site): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+            $this->storeClosure($site, null);
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -1349,16 +1371,20 @@ class AgentSiteController extends Controller
         // are two addresses to the database and one to every mail server.
         $address = strtolower(trim((string) ($validated['inbound_address'] ?? '')));
 
-        if ($address !== '' && Site::query()
-            ->whereKeyNot($site->getKey())
-            ->whereRaw('LOWER(inbound_address) = ?', [$address])
-            ->exists()) {
-            throw ValidationException::withMessages([
-                'inbound_address' => __('site_settings.validation.inbound_unique'),
-            ]);
-        }
+        DB::transaction(function () use ($address, $request, $site): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-        $site->forceFill(['inbound_address' => $address === '' ? null : $address])->save();
+            if ($address !== '' && Site::query()
+                ->whereKeyNot($site->getKey())
+                ->whereRaw('LOWER(inbound_address) = ?', [$address])
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'inbound_address' => __('site_settings.validation.inbound_unique'),
+                ]);
+            }
+
+            $site->forceFill(['inbound_address' => $address === '' ? null : $address])->save();
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -1383,16 +1409,19 @@ class AgentSiteController extends Controller
             throw ValidationException::withMessages(['widget_accent' => __('site_settings.validation.widget_accent')]);
         }
 
-        $settings = $site->mutateSettings(function (array $settings) use ($accent, $validated): array {
+        DB::transaction(function () use ($accent, $request, $site, $validated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
 
-            $settings['appearance'] = [
-                'accent' => $accent === '' ? null : $accent,
-                'position' => $validated['widget_position'],
-                'greeting' => trim((string) ($validated['widget_greeting'] ?? '')) ?: null,
-                'placeholder' => trim((string) ($validated['widget_placeholder'] ?? '')) ?: null,
-            ];
+            $site->mutateSettings(function (array $settings) use ($accent, $validated): array {
+                $settings['appearance'] = [
+                    'accent' => $accent === '' ? null : $accent,
+                    'position' => $validated['widget_position'],
+                    'greeting' => trim((string) ($validated['widget_greeting'] ?? '')) ?: null,
+                    'placeholder' => trim((string) ($validated['widget_placeholder'] ?? '')) ?: null,
+                ];
 
-            return $settings;
+                return $settings;
+            });
         });
 
         return redirect()
@@ -1419,32 +1448,35 @@ class AgentSiteController extends Controller
             'color' => ['sometimes', Rule::enum(SiteColor::class)],
         ]);
 
-        $before = [
-            'name' => $site->name,
-            'domain' => $site->domain,
-            'color' => $site->resolvedColor()->value,
-        ];
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+            $before = [
+                'name' => $site->name,
+                'domain' => $site->domain,
+                'color' => $site->resolvedColor()->value,
+            ];
 
-        $site->forceFill([
-            'name' => trim($validated['name']),
-            'domain' => $this->normalizeDomain($validated['domain'] ?? null),
-            'color' => isset($validated['color'])
-                ? SiteColor::from($validated['color'])
-                : $site->resolvedColor(),
-        ])->save();
+            $site->forceFill([
+                'name' => trim($validated['name']),
+                'domain' => $this->normalizeDomain($validated['domain'] ?? null),
+                'color' => isset($validated['color'])
+                    ? SiteColor::from($validated['color'])
+                    : $site->resolvedColor(),
+            ])->save();
 
-        $after = [
-            'name' => $site->name,
-            'domain' => $site->domain,
-            'color' => $site->resolvedColor()->value,
-        ];
+            $after = [
+                'name' => $site->name,
+                'domain' => $site->domain,
+                'color' => $site->resolvedColor()->value,
+            ];
 
-        if ($before !== $after) {
-            $this->recordSiteAudit($site, $request->user(), 'site.details_updated', [
-                'before' => $before,
-                'after' => $after,
-            ]);
-        }
+            if ($before !== $after) {
+                $this->recordSiteAudit($site, $actor, 'site.details_updated', [
+                    'before' => $before,
+                    'after' => $after,
+                ]);
+            }
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
@@ -1463,24 +1495,28 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'archive', $site);
 
-        if ($site->isArchived()) {
-            return redirect()
-                ->route('dashboard.sites.show', $site)
-                ->with('status', 'site_settings.flash.already_archived');
-        }
+        $status = DB::transaction(function () use ($request, $site): string {
+            [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'archive');
 
-        $site->forceFill(['archived_at' => now()])->save();
+            if ($site->isArchived()) {
+                return 'site_settings.flash.already_archived';
+            }
 
-        // Record the scale of what just stopped serving: an operator reading
-        // this later wants to know whether a live site was taken down.
-        $this->recordSiteAudit($site, $request->user(), 'site.archived', [
-            'conversations' => $site->conversations()->count(),
-            'tickets' => $site->tickets()->count(),
-        ]);
+            $site->forceFill(['archived_at' => now()])->save();
+
+            // Record the scale of what just stopped serving: an operator reading
+            // this later wants to know whether a live site was taken down.
+            $this->recordSiteAudit($site, $actor, 'site.archived', [
+                'conversations' => $site->conversations()->count(),
+                'tickets' => $site->tickets()->count(),
+            ]);
+
+            return 'site_settings.flash.archived';
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'site_settings.flash.archived');
+            ->with('status', $status);
     }
 
     public function unarchive(Request $request, Site $site): RedirectResponse
@@ -1488,19 +1524,23 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'archive', $site);
 
-        if (! $site->isArchived()) {
-            return redirect()
-                ->route('dashboard.sites.show', $site)
-                ->with('status', 'site_settings.flash.not_archived');
-        }
+        $status = DB::transaction(function () use ($request, $site): string {
+            [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'archive');
 
-        $site->forceFill(['archived_at' => null])->save();
+            if (! $site->isArchived()) {
+                return 'site_settings.flash.not_archived';
+            }
 
-        $this->recordSiteAudit($site, $request->user(), 'site.unarchived', []);
+            $site->forceFill(['archived_at' => null])->save();
+
+            $this->recordSiteAudit($site, $actor, 'site.unarchived', []);
+
+            return 'site_settings.flash.restored';
+        });
 
         return redirect()
             ->route('dashboard.sites.show', $site)
-            ->with('status', 'site_settings.flash.restored');
+            ->with('status', $status);
     }
 
     /**
@@ -1664,7 +1704,7 @@ class AgentSiteController extends Controller
     }
 
     /** @return array{0: User, 1: Site} */
-    private function lockedPrivacyManagerAndSite(User $actor, Site $site): array
+    private function lockedSiteManagerAndSite(User $actor, Site $site, string $ability): array
     {
         $accountId = (int) $site->account_id;
         $this->siteManagerCoverage->lockAccount($accountId);
@@ -1680,7 +1720,7 @@ class AgentSiteController extends Controller
             ->firstOrFail();
 
         abort_unless(Gate::forUser($actor)->allows('view', $site), 404);
-        abort_unless(Gate::forUser($actor)->allows('updatePrivacy', $site), 403);
+        abort_unless(Gate::forUser($actor)->allows($ability, $site), 403);
 
         return [$actor, $site];
     }
