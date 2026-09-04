@@ -48,6 +48,15 @@ return [
         'timezone_help' => 'Orari e date in tutta la dashboard sono mostrati in questo fuso, compreso il giorno a cui un report attribuisce un evento.',
         'save' => 'Salva profilo',
     ],
+
+    'routing' => [
+        'heading' => 'Disponibilità per le assegnazioni',
+        'label' => 'Stato per l’assegnazione automatica',
+        'online' => 'Disponibile',
+        'away' => 'Assente',
+        'help' => 'Disponibile consente ai siti abilitati di assegnarle nuovo lavoro finché può riceverne altro. Assente interrompe le nuove assegnazioni automatiche; il lavoro già assegnato resta invariato.',
+        'save' => 'Salva disponibilità',
+    ],
     'readiness' => [
         'heading' => 'Prontezza allerta',
         'lede' => 'Il suo attuale percorso del segnale di supporto',
@@ -122,6 +131,7 @@ return [
         'profile_updated' => 'Profilo aggiornato.',
         'alerts_updated' => 'Preferenze di avviso aggiornate.',
         'password_updated' => 'Password aggiornata.',
+        'routing_status_updated' => 'Disponibilità per le assegnazioni aggiornata.',
     ],
     'password' => [
         'heading' => 'Cambia password',

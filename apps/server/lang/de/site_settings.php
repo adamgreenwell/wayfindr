@@ -24,6 +24,7 @@ return [
         'presence_off_removed_many' => 'Die Live-Anwesenheit von Besuchenden ist deaktiviert. :count Personen ohne Kontakt wurden gelöscht.',
         'language_saved' => 'Widget-Sprache gespeichert.',
         'hours_saved' => 'Supportzeiten gespeichert.',
+        'routing_saved' => 'Einstellungen für automatische Zuweisungen gespeichert.',
         'desk_left_open' => 'Der Support blieb geöffnet.',
         'desk_closed_no_return' => 'Support geschlossen. Der Zeitplan enthält keine nächste Öffnung.',
         'desk_closed_return' => 'Support geschlossen. Der Support ist am :date um :time wieder da.',
@@ -83,6 +84,7 @@ return [
             'verification' => 'Installation prüfen',
             'snippet' => 'Installations-Snippet',
             'access' => 'Support-Zugriff',
+            'automatic_routing' => 'Automatische Zuweisung',
             'activity' => 'Aktivität des Website-Zugriffs',
             'routing' => 'Route für externe Issues',
             'rating' => 'Nach der Erfahrung fragen',
@@ -275,6 +277,17 @@ return [
         'save' => 'Website-Zugriff speichern',
         'all_agents' => 'Alle Supportpersonen des Kontos können diese Website betreuen, bis ein Kontoinhaber oder eine Admin-Person den expliziten Zugriff einrichtet.',
         'restricted' => 'Kontoinhaber und Admin-Personen verwalten den Support-Zugriff der Website.',
+    ],
+
+    'automatic_routing' => [
+        'heading' => 'Automatische Zuweisung',
+        'lede' => 'Verteilen Sie neue Unterhaltungen und Tickets in einer fairen Runde auf das verfügbare Supportteam.',
+        'enabled' => 'Neue Supportarbeit für diese Website automatisch zuweisen',
+        'enabled_help' => 'Aus ist die sichere Voreinstellung. Wenn aktiviert, nehmen nur online verfügbare Personen mit Websitezugriff und der erforderlichen Berechtigung teil.',
+        'capacity' => 'Maximale aktive Unterhaltungen pro Person',
+        'capacity_help' => 'Wer diese Grenze erreicht, wird bei neuen Unterhaltungen übersprungen. Tickets zählen nicht dazu, und manuelle Zuweisungen werden nie verschoben.',
+        'save' => 'Automatische Zuweisung speichern',
+        'restricted' => 'Nur eine Admin-Person des Kontos kann die automatische Zuweisung ändern.',
     ],
 
     'activity' => [

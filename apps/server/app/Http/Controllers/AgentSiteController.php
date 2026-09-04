@@ -17,6 +17,7 @@ use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorDashboardPresenter;
 use App\Support\OperatorReadiness;
 use App\Support\ReaderNumber;
+use App\Support\Routing\SiteRouting;
 use App\Support\SiteInstallHealth;
 use App\Support\SitePurge;
 use App\Support\Sites\SiteAvailability;
@@ -259,6 +260,7 @@ class AgentSiteController extends Controller
             'availabilityWeekdays' => $this->availabilityWeekdaysForForm($site),
             'intake' => SiteIntake::for($site),
             'ratingPrompt' => SiteRatingPrompt::for($site),
+            'routing' => SiteRouting::for($site),
             'widgetLocale' => WidgetLanguage::for($site),
             'widgetLanguages' => WidgetLanguage::options(),
             'externalIssueHealth' => $externalIssueHealth,
@@ -1264,6 +1266,51 @@ class AgentSiteController extends Controller
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', 'site_settings.flash.hours_saved');
+    }
+
+    public function updateRouting(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'routing_enabled' => ['nullable', 'boolean'],
+            'routing_conversation_capacity' => [
+                'required',
+                'integer',
+                'min:1',
+                'max:'.SiteRouting::MAX_CONVERSATION_CAPACITY,
+            ],
+        ]);
+        $enabled = filter_var($validated['routing_enabled'] ?? false, FILTER_VALIDATE_BOOL);
+        $capacity = (int) $validated['routing_conversation_capacity'];
+
+        DB::transaction(function () use ($request, $site, $enabled, $capacity): void {
+            [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+            $before = SiteRouting::for($site);
+
+            $site->mutateSettings(function (array $settings) use ($enabled, $capacity): array {
+                $settings['routing'] = [
+                    'enabled' => $enabled,
+                    'conversation_capacity' => $capacity,
+                ];
+
+                return $settings;
+            });
+
+            if ($before->enabled !== $enabled || $before->conversationCapacity !== $capacity) {
+                $this->recordSiteAudit($site, $actor, 'site.routing_updated', [
+                    'old_enabled' => $before->enabled,
+                    'new_enabled' => $enabled,
+                    'old_conversation_capacity' => $before->conversationCapacity,
+                    'new_conversation_capacity' => $capacity,
+                ]);
+            }
+        });
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with('status', 'site_settings.flash.routing_saved');
     }
 
     /**

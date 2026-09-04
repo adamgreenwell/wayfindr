@@ -17,9 +17,10 @@ class TicketAssigned extends Notification implements ShouldQueue
 
     public function __construct(
         private readonly Ticket $ticket,
-        private readonly User|ApiToken $assignedBy,
+        private readonly User|ApiToken|null $assignedBy,
     ) {
         $this->ticket->loadMissing(['site']);
+        $this->afterCommit();
     }
 
     /**
@@ -100,8 +101,10 @@ class TicketAssigned extends Notification implements ShouldQueue
 
     private function assignmentActorName(): string
     {
-        return $this->assignedBy instanceof ApiToken
-            ? 'Integration “'.$this->assignedBy->name.'”'
-            : $this->assignedBy->name;
+        return match (true) {
+            $this->assignedBy instanceof ApiToken => 'Integration “'.$this->assignedBy->name.'”',
+            $this->assignedBy instanceof User => $this->assignedBy->name,
+            default => 'Wayfindr',
+        };
     }
 }

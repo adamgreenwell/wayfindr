@@ -304,7 +304,9 @@ class TicketController extends Controller
 
                 $this->recordActivity($locked, $token, 'ticket.assignee_updated', [
                     'source' => 'api',
+                    'old_assignee_id' => $oldAssigneeId,
                     'old_assignee_name' => $oldAssigneeName,
+                    'new_assignee_id' => $newAssignee?->id,
                     'new_assignee_name' => $newAssignee?->name,
                 ]);
             }

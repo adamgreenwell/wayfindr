@@ -87,7 +87,7 @@ Site access remains separate from RBAC. It already controls which agents can sup
 
 Owner and admin roles may eventually need elevated views across all sites, but that must be explicit. No future role should accidentally bypass site access because a controller checked only `account_id`.
 
-Built-in owner/admin support queue access still follows site access, and custom roles follow the same boundary. A management view may list sites and assignment metadata for authorized roles, but it must not expose conversation bodies, ticket details, alerts, cobrowse state, or visitor page data unless the person also has support access to that site.
+Built-in owner/admin support queue access still follows site access, and custom roles follow the same boundary. Automatic routing follows it too: an online agent outside an explicit site roster is never a fallback candidate, and custom roles enter only the conversation or ticket rotation their permissions allow. A management view may list sites and assignment metadata for authorized roles, but it must not expose conversation bodies, ticket details, alerts, cobrowse state, or visitor page data unless the person also has support access to that site.
 
 Within that support boundary, mixed visitor and account views query and render conversation history, ticket history, and workload totals independently. A management-only role sees the site and roster metadata needed for its job without inheriting support-volume counts, and a ticket-only or conversation-only role does not receive the other domain's history.
 

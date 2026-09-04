@@ -24,6 +24,7 @@ return [
         'presence_off_removed_many' => 'Live visitor presence is off. :count visitors who never made contact were deleted.',
         'language_saved' => 'Widget language saved.',
         'hours_saved' => 'Support hours saved.',
+        'routing_saved' => 'Automatic assignment settings saved.',
         'desk_left_open' => 'The desk was left open.',
         'desk_closed_no_return' => 'Desk closed. The schedule has no opening to return to.',
         'desk_closed_return' => 'Desk closed. Support is back at :time on :date.',
@@ -83,6 +84,7 @@ return [
             'verification' => 'Install verification',
             'snippet' => 'Install snippet',
             'access' => 'Support access',
+            'automatic_routing' => 'Automatic assignment',
             'activity' => 'Site access activity',
             'routing' => 'External issue routing',
             'rating' => 'Asking how it went',
@@ -275,6 +277,17 @@ return [
         'save' => 'Save site access',
         'all_agents' => 'All account agents can support this site until an owner or admin configures explicit access.',
         'restricted' => 'Account owners and admins manage site support access.',
+    ],
+
+    'automatic_routing' => [
+        'heading' => 'Automatic assignment',
+        'lede' => 'Send new conversations and tickets around the available support roster in a fair rotation.',
+        'enabled' => 'Automatically assign new support work for this site',
+        'enabled_help' => 'Off is the safe default. When on, only online agents with site access and the required permission enter the rotation.',
+        'capacity' => 'Maximum active conversations per agent',
+        'capacity_help' => 'An agent at this ceiling is skipped for new conversations. Tickets do not count toward it, and manual assignments are never moved.',
+        'save' => 'Save automatic assignment',
+        'restricted' => 'Only an account admin can change automatic assignment.',
     ],
 
     'activity' => [

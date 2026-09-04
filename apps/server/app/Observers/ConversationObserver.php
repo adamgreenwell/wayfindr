@@ -3,6 +3,7 @@
 namespace App\Observers;
 
 use App\Models\Conversation;
+use App\Support\Routing\AutomaticAssignmentRouter;
 use App\Support\Sla\SlaClockManager;
 use App\Support\UnattendedConversationAlertCollector;
 use App\Support\Webhooks\OutboundWebhookPublisher;
@@ -12,6 +13,7 @@ class ConversationObserver
     public function created(Conversation $conversation): void
     {
         app(SlaClockManager::class)->startConversation($conversation);
+        app(AutomaticAssignmentRouter::class)->assignConversation($conversation);
         app(OutboundWebhookPublisher::class)->conversationOpened($conversation);
     }
 

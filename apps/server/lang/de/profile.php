@@ -38,6 +38,15 @@ return [
         'save' => 'Profil speichern',
     ],
 
+    'routing' => [
+        'heading' => 'Verfügbarkeit für Zuweisungen',
+        'label' => 'Status für automatische Zuweisungen',
+        'online' => 'Verfügbar',
+        'away' => 'Abwesend',
+        'help' => 'Online erlaubt aktivierten Websites, Ihnen neue Arbeit zuzuweisen, solange Sie Kapazität haben. Abwesend stoppt neue automatische Zuweisungen; bereits zugewiesene Arbeit bleibt bestehen.',
+        'save' => 'Verfügbarkeit speichern',
+    ],
+
     'readiness' => [
         'heading' => 'Bereitschaft für Benachrichtigungen',
         'lede' => 'Ihr aktueller Weg für Support-Signale',
@@ -118,6 +127,7 @@ return [
         'profile_updated' => 'Profil aktualisiert.',
         'alerts_updated' => 'Benachrichtigungseinstellungen aktualisiert.',
         'password_updated' => 'Passwort aktualisiert.',
+        'routing_status_updated' => 'Verfügbarkeit für Zuweisungen aktualisiert.',
     ],
 
     'password' => [

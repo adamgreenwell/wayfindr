@@ -24,6 +24,7 @@ return [
         'presence_off_removed_many' => 'La presenza in tempo reale dei visitatori è disattivata. Sono stati eliminati :count visitatori che non avevano mai preso contatto.',
         'language_saved' => 'Lingua del widget salvata.',
         'hours_saved' => 'Orari di supporto salvati.',
+        'routing_saved' => 'Impostazioni di assegnazione automatica salvate.',
         'desk_left_open' => 'Il supporto è rimasto aperto.',
         'desk_closed_no_return' => 'Supporto chiuso. Il calendario non prevede una prossima apertura.',
         'desk_closed_return' => 'Supporto chiuso. Il supporto tornerà alle :time del :date.',
@@ -83,6 +84,7 @@ return [
             'verification' => 'Verifica dell’installazione',
             'snippet' => 'Snippet di installazione',
             'access' => 'Accesso al supporto',
+            'automatic_routing' => 'Assegnazione automatica',
             'activity' => 'Attività di accesso al sito',
             'routing' => 'Instradamento delle segnalazioni esterne',
             'rating' => 'Chiedere com’è andata',
@@ -275,6 +277,17 @@ return [
         'save' => 'Salva accesso al sito',
         'all_agents' => 'Tutti gli agenti dell’account possono supportare questo sito finché un titolare o amministratore non configura l’accesso esplicito.',
         'restricted' => 'Titolari e amministratori dell’account gestiscono l’accesso al supporto del sito.',
+    ],
+
+    'automatic_routing' => [
+        'heading' => 'Assegnazione automatica',
+        'lede' => 'Distribuisca nuove conversazioni e ticket a rotazione tra gli addetti al supporto disponibili.',
+        'enabled' => 'Assegna automaticamente il nuovo lavoro di supporto per questo sito',
+        'enabled_help' => 'L’impostazione predefinita sicura è disattivata. Quando è attiva, partecipano solo gli addetti online con accesso al sito e l’autorizzazione richiesta.',
+        'capacity' => 'Numero massimo di conversazioni attive per addetto',
+        'capacity_help' => 'Chi raggiunge questo limite viene saltato per le nuove conversazioni. I ticket non contano e le assegnazioni manuali non vengono mai spostate.',
+        'save' => 'Salva assegnazione automatica',
+        'restricted' => 'Solo un amministratore dell’account può modificare l’assegnazione automatica.',
     ],
 
     'activity' => [

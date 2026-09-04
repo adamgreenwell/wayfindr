@@ -21,12 +21,17 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
-#[Fillable(['account_id', 'account_role', 'custom_role_id', 'oidc_provisioned_at', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone'])]
+#[Fillable(['account_id', 'account_role', 'custom_role_id', 'oidc_provisioned_at', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone', 'routing_status', 'routing_status_changed_at'])]
 #[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
+
+    /** @var array<string, mixed> */
+    protected $attributes = [
+        'routing_status' => self::ROUTING_STATUS_AWAY,
+    ];
 
     public const ALERT_MODE_ALL = 'all';
 
@@ -48,6 +53,10 @@ class User extends Authenticatable
 
     public const ALERT_DIGEST_DELIVERY_FAILED = 'failed';
 
+    public const ROUTING_STATUS_AWAY = 'away';
+
+    public const ROUTING_STATUS_ONLINE = 'online';
+
     /**
      * Get the attributes that should be cast.
      *
@@ -67,7 +76,19 @@ class User extends Authenticatable
             'two_factor_recovery_codes' => 'array',
             'two_factor_confirmed_at' => 'datetime',
             'two_factor_last_used_timestep' => 'integer',
+            'routing_status_changed_at' => 'immutable_datetime',
         ];
+    }
+
+    /** @return list<string> */
+    public static function routingStatuses(): array
+    {
+        return [self::ROUTING_STATUS_ONLINE, self::ROUTING_STATUS_AWAY];
+    }
+
+    public function isOnlineForRouting(): bool
+    {
+        return ! $this->isDeactivated() && $this->routing_status === self::ROUTING_STATUS_ONLINE;
     }
 
     public function hasTwoFactorAuthentication(): bool
