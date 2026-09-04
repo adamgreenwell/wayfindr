@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -17,9 +18,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'last_attempted_at',
     'accepted_at',
     'failed_at',
+    'cancelled_at',
 ])]
 class SlaAlertDelivery extends Model
 {
+    public const FAILED_RETRY_AFTER_MINUTES = 60;
+
     protected function casts(): array
     {
         return [
@@ -27,6 +31,7 @@ class SlaAlertDelivery extends Model
             'last_attempted_at' => 'immutable_datetime',
             'accepted_at' => 'immutable_datetime',
             'failed_at' => 'immutable_datetime',
+            'cancelled_at' => 'immutable_datetime',
         ];
     }
 
@@ -38,5 +43,20 @@ class SlaAlertDelivery extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * @param  Builder<self>  $query
+     * @return Builder<self>
+     */
+    public function scopeAwaitingDispatch(Builder $query): Builder
+    {
+        return $query
+            ->whereNull('accepted_at')
+            ->whereNull('cancelled_at')
+            ->where(function (Builder $query): void {
+                $query->whereNull('failed_at')
+                    ->orWhere('failed_at', '<=', now()->subMinutes(self::FAILED_RETRY_AFTER_MINUTES));
+            });
     }
 }

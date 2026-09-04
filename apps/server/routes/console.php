@@ -21,6 +21,11 @@ Schedule::command('wayfindr:evaluate-sla-clocks')
     ->withoutOverlapping()
     ->description('Advance SLA clocks and create approaching-breach or breach alerts.');
 
+Schedule::command('wayfindr:queue-sla-alert-deliveries')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->description('Recover durable SLA alerts whose queue handoff or worker delivery did not complete.');
+
 Schedule::command('wayfindr:expire-idle-cobrowse-sessions')
     ->everyFiveMinutes()
     ->description('End idle cobrowse sessions so abandoned sessions stop reading active and become prunable.');

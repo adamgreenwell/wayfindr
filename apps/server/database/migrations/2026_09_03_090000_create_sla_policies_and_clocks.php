@@ -68,13 +68,14 @@ return new class extends Migration
             $table->timestamp('last_attempted_at')->nullable();
             $table->timestamp('accepted_at')->nullable();
             $table->timestamp('failed_at')->nullable();
+            $table->timestamp('cancelled_at')->nullable();
             $table->timestamps();
 
             $table->unique(
                 ['sla_clock_id', 'stage', 'channel', 'user_id'],
                 'sla_alert_delivery_route_unique',
             );
-            $table->index(['accepted_at', 'failed_at'], 'sla_alert_delivery_pending_index');
+            $table->index(['accepted_at', 'failed_at', 'cancelled_at'], 'sla_alert_delivery_pending_index');
         });
     }
 

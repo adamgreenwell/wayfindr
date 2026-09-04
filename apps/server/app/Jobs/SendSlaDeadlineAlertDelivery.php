@@ -73,7 +73,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                     ->lockForUpdate()
                     ->first();
 
-                if ($delivery === null || $delivery->accepted_at !== null) {
+                if ($delivery === null || $delivery->accepted_at !== null || $delivery->cancelled_at !== null) {
                     return;
                 }
 
@@ -82,7 +82,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 $agent = $delivery->user;
 
                 if ($clock === null || $clock->subject === null || $agent === null) {
-                    $delivery->forceFill(['failed_at' => now()])->save();
+                    $delivery->forceFill(['cancelled_at' => now()])->save();
 
                     return;
                 }
@@ -93,7 +93,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 $notification->id = $delivery->public_id;
 
                 if (! $notification->shouldSend($agent, $delivery->channel)) {
-                    $delivery->forceFill(['failed_at' => now()])->save();
+                    $delivery->forceFill(['cancelled_at' => now()])->save();
 
                     return;
                 }
@@ -102,6 +102,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                     'attempts' => $delivery->attempts + 1,
                     'last_attempted_at' => now(),
                     'failed_at' => null,
+                    'cancelled_at' => null,
                 ])->save();
 
                 // This is deliberately sendNow: the outbox job is already the
@@ -118,6 +119,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
             SlaAlertDelivery::query()
                 ->whereKey($this->deliveryId)
                 ->whereNull('accepted_at')
+                ->whereNull('cancelled_at')
                 ->increment('attempts', 1, [
                     'last_attempted_at' => now(),
                     'failed_at' => now(),
