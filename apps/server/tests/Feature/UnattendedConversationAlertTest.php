@@ -23,6 +23,7 @@ use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
@@ -144,6 +145,39 @@ test('after-hours waiting pauses the unattended threshold until support reopens'
     $this->travelTo(CarbonImmutable::parse('2026-08-31 09:06', 'UTC'));
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
     Mail::assertQueuedCount(1);
+});
+
+test('the unattended sweep locks account before site and conversation', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => ['enabled' => false]]]);
+    createUnattendedWait($agent, $site);
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $candidates = app(UnattendedConversationAlertCollector::class)->forAgent($agent);
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+        && str_contains($query, 'for update'));
+    $conversationLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "conversations"')
+        && str_contains($query, 'for update'));
+
+    expect($candidates)->toHaveCount(1)
+        ->and($accountLock)->toBeInt()
+        ->and($siteLock)->toBeInt()
+        ->and($conversationLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($siteLock)
+        ->and($siteLock)->toBeLessThan($conversationLock);
 });
 
 test('manually reopening a desk does not turn closed time into unattended wait time', function (): void {

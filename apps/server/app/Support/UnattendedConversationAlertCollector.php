@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationReadState;
@@ -313,10 +314,11 @@ class UnattendedConversationAlertCollector
     private function advanceConversation(Conversation $conversation, Site $site, CarbonInterface $at): int
     {
         return DB::transaction(function () use ($at, $conversation, $site): int {
-            // Match the calendar-mutation order: site first, then the waiting
-            // conversation. A scheduler can therefore finish before the edit
-            // boundary or resume after it, but never count through it using an
-            // uncommitted calendar.
+            // Match every calendar and conversation mutation: account, site,
+            // then the waiting conversation. A scheduler can therefore finish
+            // before the edit boundary or resume after it without deadlocking
+            // an agent write whose SLA observer must visit the same site.
+            Account::query()->whereKey($site->account_id)->lockForUpdate()->firstOrFail();
             $currentSite = Site::query()->whereKey($site->id)->lockForUpdate()->first();
 
             if (! $currentSite) {
