@@ -186,7 +186,7 @@ class AgentAlertController extends Controller
 
     private function notificationMatchesFilters(DatabaseNotification $notification, string $alertKind, string $alertSearch): bool
     {
-        if ($alertKind !== 'all' && data_get($notification->data, 'kind') !== self::ALERT_KINDS[$alertKind]) {
+        if (! $this->notificationMatchesKind($notification, $alertKind)) {
             return false;
         }
 
@@ -218,6 +218,12 @@ class AgentAlertController extends Controller
             $notificationKind === 'sla_deadline'
                 && data_get($notificationData, 'subject_kind') === 'conversation'
                 && (! filled($storedSubject) || $storedSubject === 'Untitled conversation') => __('alerts.card.untitled_conversation'),
+            $notificationKind === 'automation_rule_matched'
+                && data_get($notificationData, 'subject_kind') === 'ticket'
+                && ! filled($storedSubject) => __('alerts.card.untitled_ticket'),
+            $notificationKind === 'automation_rule_matched'
+                && data_get($notificationData, 'subject_kind') === 'conversation'
+                && ! filled($storedSubject) => __('alerts.card.untitled_conversation'),
             default => null,
         };
         $siteName = data_get($notificationData, 'site_name');
@@ -258,6 +264,7 @@ class AgentAlertController extends Controller
             $localizedSite,
             data_get($notificationData, 'message_preview'),
             data_get($notificationData, 'assigned_by_name'),
+            data_get($notificationData, 'rule_name'),
             data_get($notificationData, 'visitor_anonymous_id'),
             $metric,
             $localizedMetric,
@@ -290,10 +297,10 @@ class AgentAlertController extends Controller
     private function alertSnapshot(Collection $visibleNotifications, int $visibleUnreadNotificationCount): array
     {
         $conversationAlertCount = $visibleNotifications
-            ->filter(fn (DatabaseNotification $notification): bool => data_get($notification->data, 'kind') === 'conversation_needs_reply')
+            ->filter(fn (DatabaseNotification $notification): bool => $this->notificationMatchesKind($notification, 'conversation'))
             ->count();
         $ticketAlertCount = $visibleNotifications
-            ->filter(fn (DatabaseNotification $notification): bool => data_get($notification->data, 'kind') === 'ticket_assigned')
+            ->filter(fn (DatabaseNotification $notification): bool => $this->notificationMatchesKind($notification, 'ticket'))
             ->count();
         $slaAlertCount = $visibleNotifications
             ->filter(fn (DatabaseNotification $notification): bool => data_get($notification->data, 'kind') === 'sla_deadline')
@@ -516,6 +523,21 @@ class AgentAlertController extends Controller
     private function normalizedAlertKind(mixed $value): string
     {
         return is_string($value) && array_key_exists($value, self::ALERT_KINDS) ? $value : 'all';
+    }
+
+    private function notificationMatchesKind(DatabaseNotification $notification, string $alertKind): bool
+    {
+        if ($alertKind === 'all') {
+            return true;
+        }
+
+        $kind = data_get($notification->data, 'kind');
+
+        if ($kind === 'automation_rule_matched') {
+            return data_get($notification->data, 'subject_kind') === $alertKind;
+        }
+
+        return $kind === self::ALERT_KINDS[$alertKind];
     }
 
     private function normalizedAlertSearch(mixed $value): string

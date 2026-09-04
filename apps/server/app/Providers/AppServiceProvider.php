@@ -16,6 +16,7 @@ use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
 use App\Support\Auth\Oidc\OidcClient;
 use App\Support\Auth\Oidc\SocialiteOidcClient;
+use App\Support\Automation\AutomationExecutionGuard;
 use App\Support\Backup\DatabaseDumper;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\PostgresDatabaseDumper;
@@ -49,6 +50,7 @@ class AppServiceProvider extends ServiceProvider
         // built a fresh registry each time, which made registering a check from
         // anywhere but its own constructor silently do nothing.
         $this->app->singleton(CheckRegistry::class);
+        $this->app->singleton(AutomationExecutionGuard::class);
 
         // Backups dump Postgres with pg_dump and restore with psql; tests bind
         // fakes so archive assembly and restore logic run without a live server.

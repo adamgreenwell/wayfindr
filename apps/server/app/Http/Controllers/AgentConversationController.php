@@ -13,6 +13,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\Attachments\AttachmentBinder;
@@ -1142,7 +1143,7 @@ class AgentConversationController extends Controller
     private function markConversationNotificationsRead(User $agent, Conversation $conversation): void
     {
         $agent->unreadNotifications()
-            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class])
+            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class, AutomationRuleMatched::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversation->id)
             ->each

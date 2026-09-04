@@ -20,6 +20,7 @@ use App\Models\TicketExternalLink;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
@@ -1123,7 +1124,7 @@ class AgentTicketController extends Controller
     private function markTicketAssignmentNotificationsRead(User $agent, Ticket $ticket): void
     {
         $agent->unreadNotifications()
-            ->whereIn('type', [TicketAssigned::class, SlaDeadlineAlert::class])
+            ->whereIn('type', [TicketAssigned::class, SlaDeadlineAlert::class, AutomationRuleMatched::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'ticket_id') === $ticket->id)
             ->each
@@ -1133,7 +1134,7 @@ class AgentTicketController extends Controller
     private function markConversationNotificationsRead(User $agent, Conversation $conversation): void
     {
         $agent->unreadNotifications()
-            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class])
+            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class, AutomationRuleMatched::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversation->id)
             ->each

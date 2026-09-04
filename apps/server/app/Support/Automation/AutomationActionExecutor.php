@@ -1,0 +1,332 @@
+<?php
+
+namespace App\Support\Automation;
+
+use App\Enums\AccountPermission;
+use App\Enums\AutomationRuleActionType;
+use App\Enums\ConversationStatus;
+use App\Enums\TicketStatus;
+use App\Models\AutomationRule;
+use App\Models\Conversation;
+use App\Models\Ticket;
+use App\Models\TicketLabel;
+use App\Models\User;
+use App\Notifications\AutomationRuleMatched;
+use App\Notifications\TicketAssigned;
+use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Routing\AssignmentAuditTrail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
+use Throwable;
+
+final readonly class AutomationActionExecutor
+{
+    public function __construct(
+        private AssignmentAuditTrail $assignmentAuditTrail,
+        private ConversationLifecycleLog $conversationLifecycleLog,
+    ) {}
+
+    /**
+     * @param  list<array{type: string, value: mixed}>  $actions
+     * @return list<array{type: string, status: string, detail: string}>
+     */
+    public function execute(AutomationRule $rule, Ticket|Conversation $subject, array $actions): array
+    {
+        $results = [];
+
+        foreach ($actions as $action) {
+            $type = AutomationRuleActionType::from($action['type']);
+            $results[] = match ($type) {
+                AutomationRuleActionType::AssignAgent => $this->assignAgent($rule, $subject, (int) $action['value']),
+                AutomationRuleActionType::AddLabel => $this->addLabel($rule, $subject, (int) $action['value']),
+                AutomationRuleActionType::SetPriority => $this->setPriority($rule, $subject, (string) $action['value']),
+                AutomationRuleActionType::SetStatus => $this->setStatus($rule, $subject, (string) $action['value']),
+                AutomationRuleActionType::NotifyAgent => $this->notifyAgent($rule, $subject, (int) $action['value']),
+                AutomationRuleActionType::PostInternalNote => $this->postInternalNote($rule, $subject, (string) $action['value']),
+            };
+        }
+
+        return $results;
+    }
+
+    /** @return array{type: string, status: string, detail: string} */
+    private function assignAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): array
+    {
+        $agent = $this->eligibleAgent($rule, $subject, $agentId);
+        $currentId = $subject instanceof Ticket ? $subject->assignee_id : $subject->assigned_agent_id;
+
+        if ((int) $currentId === (int) $agent->id) {
+            return $this->result(AutomationRuleActionType::AssignAgent, 'noop', 'already_assigned');
+        }
+
+        $oldAssignee = $currentId === null
+            ? null
+            : User::query()->whereKey($currentId)->first();
+
+        if ($subject instanceof Ticket) {
+            $subject->forceFill(['assignee_id' => $agent->id])->save();
+            $this->assignmentAuditTrail->ticket($subject, null, $oldAssignee, $agent, 'automation');
+            $this->notifyTicketAssignmentAfterCommit($subject, $agent);
+        } else {
+            $subject->forceFill(['assigned_agent_id' => $agent->id])->save();
+            $this->assignmentAuditTrail->conversation($subject, null, $oldAssignee, $agent, 'automation');
+        }
+
+        return $this->result(AutomationRuleActionType::AssignAgent, 'applied', 'agent:'.$agent->id);
+    }
+
+    /** @return array{type: string, status: string, detail: string} */
+    private function addLabel(AutomationRule $rule, Ticket|Conversation $subject, int $labelId): array
+    {
+        if (! $subject instanceof Ticket) {
+            throw new InvalidArgumentException('Only tickets can receive labels.');
+        }
+
+        $label = TicketLabel::query()
+            ->whereKey($labelId)
+            ->where('account_id', $rule->account_id)
+            ->first();
+
+        if (! $label instanceof TicketLabel) {
+            throw new InvalidArgumentException("Label {$labelId} is not available to this automation rule.");
+        }
+
+        $changes = $subject->labels()->syncWithoutDetaching([$label->id]);
+
+        if ($changes['attached'] === []) {
+            return $this->result(AutomationRuleActionType::AddLabel, 'noop', 'already_labeled');
+        }
+
+        $this->recordTicketActivity($rule, $subject, 'ticket.label_added', [
+            'label_id' => $label->id,
+            'label_name' => $label->name,
+            'label_slug' => $label->slug,
+        ]);
+
+        return $this->result(AutomationRuleActionType::AddLabel, 'applied', 'label:'.$label->id);
+    }
+
+    /** @return array{type: string, status: string, detail: string} */
+    private function setPriority(AutomationRule $rule, Ticket|Conversation $subject, string $priority): array
+    {
+        $previous = (string) $subject->priority;
+
+        if ($previous === $priority) {
+            return $this->result(AutomationRuleActionType::SetPriority, 'noop', 'already:'.$priority);
+        }
+
+        $subject->forceFill(['priority' => $priority])->save();
+
+        if ($subject instanceof Ticket) {
+            $this->recordTicketActivity($rule, $subject, 'ticket.updated', [
+                'changes' => [
+                    'priority' => ['old' => $previous, 'new' => $priority],
+                ],
+            ]);
+        }
+
+        return $this->result(AutomationRuleActionType::SetPriority, 'applied', $previous.'->'.$priority);
+    }
+
+    /** @return array{type: string, status: string, detail: string} */
+    private function setStatus(AutomationRule $rule, Ticket|Conversation $subject, string $status): array
+    {
+        $previous = (string) $subject->status;
+
+        if ($previous === $status) {
+            return $this->result(AutomationRuleActionType::SetStatus, 'noop', 'already:'.$status);
+        }
+
+        if ($subject instanceof Ticket) {
+            $this->setTicketStatus($rule, $subject, TicketStatus::from($status), $previous);
+        } else {
+            $this->setConversationStatus($subject, ConversationStatus::from($status), $previous);
+        }
+
+        return $this->result(AutomationRuleActionType::SetStatus, 'applied', $previous.'->'.$status);
+    }
+
+    /** @return array{type: string, status: string, detail: string} */
+    private function notifyAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): array
+    {
+        $agent = $this->eligibleAgent($rule, $subject, $agentId);
+
+        if (! $agent->hasAccountPermission(AccountPermission::ViewAlerts)) {
+            throw new InvalidArgumentException("Agent {$agentId} cannot receive automation notifications.");
+        }
+
+        if ($agent->alertMode() === User::ALERT_MODE_QUIET) {
+            return $this->result(AutomationRuleActionType::NotifyAgent, 'noop', 'quiet_mode');
+        }
+
+        DB::afterCommit(function () use ($agent, $rule, $subject): void {
+            $recipient = User::query()->whereKey($agent->id)->first();
+            $current = $this->freshSubject($subject);
+
+            if (! $recipient instanceof User
+                || ! $current instanceof Ticket && ! $current instanceof Conversation
+                || ! Gate::forUser($recipient)->allows('view', $current)) {
+                return;
+            }
+
+            try {
+                $recipient->notify(new AutomationRuleMatched($current, (string) $rule->name));
+            } catch (Throwable $exception) {
+                Log::error('Automation completed, but its agent notification failed.', [
+                    'automation_rule_id' => $rule->id,
+                    'subject_type' => $subject->getMorphClass(),
+                    'subject_id' => $subject->id,
+                    'agent_id' => $agent->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
+        });
+
+        return $this->result(AutomationRuleActionType::NotifyAgent, 'queued', 'agent:'.$agent->id);
+    }
+
+    /** @return array{type: string, status: string, detail: string} */
+    private function postInternalNote(AutomationRule $rule, Ticket|Conversation $subject, string $body): array
+    {
+        if (! $subject instanceof Ticket) {
+            throw new InvalidArgumentException('Only tickets can receive internal notes.');
+        }
+
+        $this->recordTicketActivity($rule, $subject, 'ticket.note_added', ['body' => $body]);
+
+        return $this->result(AutomationRuleActionType::PostInternalNote, 'applied', 'private_ticket_note');
+    }
+
+    private function eligibleAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): User
+    {
+        $agent = User::query()
+            ->with('customRole')
+            ->whereKey($agentId)
+            ->where('account_id', $rule->account_id)
+            ->whereNull('deactivated_at')
+            ->first();
+        $permission = $subject instanceof Ticket
+            ? AccountPermission::ManageTickets
+            : AccountPermission::ViewConversations;
+        $subject->loadMissing('site');
+
+        if (! $agent instanceof User
+            || ! $agent->hasAccountPermission($permission)
+            || $subject->site?->supportsAgent($agent) !== true) {
+            throw new InvalidArgumentException("Agent {$agentId} cannot access this automation subject.");
+        }
+
+        return $agent;
+    }
+
+    private function setTicketStatus(
+        AutomationRule $rule,
+        Ticket $ticket,
+        TicketStatus $status,
+        string $previous,
+    ): void {
+        $ticket->forceFill([
+            'status' => $status,
+            'closed_at' => $status === TicketStatus::Closed ? now() : null,
+        ])->save();
+
+        $actions = match ($status) {
+            TicketStatus::Closed => ['ticket.closed'],
+            TicketStatus::Pending => array_values(array_filter([
+                $previous === TicketStatus::Closed->value ? 'ticket.reopened' : null,
+                'ticket.pending',
+            ])),
+            TicketStatus::Open => match ($previous) {
+                TicketStatus::Closed->value => ['ticket.reopened'],
+                TicketStatus::Pending->value => ['ticket.unheld'],
+                default => [],
+            },
+        };
+
+        foreach ($actions as $action) {
+            $this->recordTicketActivity($rule, $ticket, $action);
+        }
+    }
+
+    private function setConversationStatus(
+        Conversation $conversation,
+        ConversationStatus $status,
+        string $previous,
+    ): void {
+        $conversation->forceFill([
+            'status' => $status,
+            'closed_at' => $status === ConversationStatus::Closed ? now() : null,
+        ])->save();
+
+        if ($status === ConversationStatus::Closed) {
+            $this->conversationLifecycleLog->closed($conversation, null, $previous);
+        } else {
+            $this->conversationLifecycleLog->reopened($conversation, null, $previous);
+        }
+    }
+
+    /** @param array<string, mixed> $metadata */
+    private function recordTicketActivity(
+        AutomationRule $rule,
+        Ticket $ticket,
+        string $action,
+        array $metadata = [],
+    ): void {
+        $ticket->auditEvents()->create([
+            'account_id' => $ticket->account_id,
+            'site_id' => $ticket->site_id,
+            'actor_type' => null,
+            'actor_id' => null,
+            'action' => $action,
+            'metadata' => [
+                ...$metadata,
+                'source' => 'automation',
+                'automation_rule_id' => $rule->id,
+            ],
+            'occurred_at' => now(),
+        ]);
+    }
+
+    private function notifyTicketAssignmentAfterCommit(Ticket $ticket, User $agent): void
+    {
+        DB::afterCommit(function () use ($agent, $ticket): void {
+            $recipient = User::query()->whereKey($agent->id)->first();
+            $current = Ticket::query()->with('site')->whereKey($ticket->id)->first();
+
+            if (! $recipient instanceof User
+                || ! $current instanceof Ticket
+                || ! $recipient->shouldReceiveTicketAssignmentAlert($current)) {
+                return;
+            }
+
+            try {
+                $recipient->notify(new TicketAssigned($current, null));
+            } catch (Throwable $exception) {
+                Log::error('Automation assigned a ticket, but its alert failed.', [
+                    'ticket_id' => $ticket->id,
+                    'assignee_id' => $agent->id,
+                    'exception' => $exception->getMessage(),
+                ]);
+            }
+        });
+    }
+
+    private function freshSubject(Ticket|Conversation $subject): Ticket|Conversation|null
+    {
+        return $subject instanceof Ticket
+            ? Ticket::query()->with('site')->whereKey($subject->id)->first()
+            : Conversation::query()->with('site')->whereKey($subject->id)->first();
+    }
+
+    /** @return array{type: string, status: string, detail: string} */
+    private function result(AutomationRuleActionType $type, string $status, string $detail): array
+    {
+        return [
+            'type' => $type->value,
+            'status' => $status,
+            'detail' => $detail,
+        ];
+    }
+}

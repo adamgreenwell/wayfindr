@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
@@ -64,6 +65,18 @@ class AlertPolicy
 
             return $clock?->subject
                 && Gate::forUser($user)->allows('view', $clock->subject);
+        }
+
+        if ($notification->type === AutomationRuleMatched::class) {
+            $subjectId = (int) data_get($notification->data, 'subject_id');
+            $subject = match (data_get($notification->data, 'subject_kind')) {
+                'ticket' => Ticket::query()->with('site')->find($subjectId),
+                'conversation' => Conversation::query()->with('site')->find($subjectId),
+                default => null,
+            };
+
+            return $subject
+                && Gate::forUser($user)->allows('view', $subject);
         }
 
         return false;

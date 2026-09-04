@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'account_id',
@@ -63,6 +64,11 @@ class AutomationRule extends Model
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);
+    }
+
+    public function executions(): HasMany
+    {
+        return $this->hasMany(AutomationRuleExecution::class);
     }
 
     public function scopeEnabled(Builder $query): Builder

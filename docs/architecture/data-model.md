@@ -27,6 +27,11 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `sla_clocks`: persisted business-time consumption and warning, breach,
   satisfaction, or cancellation history for a conversation or ticket target.
 - `ticket_labels`: account-owned labels assignable to tickets.
+- `automation_rules`: disabled-by-default, account-owned event, condition, and
+  action definitions evaluated in a stable order.
+- `automation_rule_executions`: append-style success and failure records with
+  the rule definition snapshot and per-action outcomes. The rule reference may
+  be cleared later without erasing the historical explanation.
 - `reply_templates`: account-owned snippets that help agents answer common
   support questions without changing the ticket model.
 - `ticket_external_links`: provider-neutral records that connect a local
