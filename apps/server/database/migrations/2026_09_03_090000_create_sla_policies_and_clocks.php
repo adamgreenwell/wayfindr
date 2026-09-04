@@ -56,10 +56,31 @@ return new class extends Migration
             $table->index(['site_id', 'satisfied_at', 'cancelled_at']);
             $table->index(['satisfied_at', 'cancelled_at', 'id']);
         });
+
+        Schema::create('sla_alert_deliveries', function (Blueprint $table): void {
+            $table->id();
+            $table->uuid('public_id')->unique();
+            $table->foreignId('sla_clock_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+            $table->string('stage');
+            $table->string('channel');
+            $table->unsignedInteger('attempts')->default(0);
+            $table->timestamp('last_attempted_at')->nullable();
+            $table->timestamp('accepted_at')->nullable();
+            $table->timestamp('failed_at')->nullable();
+            $table->timestamps();
+
+            $table->unique(
+                ['sla_clock_id', 'stage', 'channel', 'user_id'],
+                'sla_alert_delivery_route_unique',
+            );
+            $table->index(['accepted_at', 'failed_at'], 'sla_alert_delivery_pending_index');
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('sla_alert_deliveries');
         Schema::dropIfExists('sla_clocks');
         Schema::dropIfExists('sla_policies');
 

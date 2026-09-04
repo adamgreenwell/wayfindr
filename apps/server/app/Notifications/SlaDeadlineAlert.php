@@ -12,6 +12,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\Gate;
+use Symfony\Component\Mime\Email;
 
 class SlaDeadlineAlert extends Notification implements ShouldQueue
 {
@@ -74,11 +75,21 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
         $data = $this->toArray($notifiable);
         $stage = $this->stage === 'breach' ? 'breached' : 'approaching';
 
-        return (new MailMessage)
+        $message = (new MailMessage)
             ->subject('Wayfindr SLA '.$stage.': '.$data['subject'])
             ->line($data['site_name'].' has support work '.$stage.' its '.$this->metricLabel().' target.')
             ->line('Priority: '.ucfirst((string) $data['priority']))
             ->action($data['subject_kind'] === 'ticket' ? 'Open ticket' : 'Open conversation', url($data['url']));
+
+        if (is_string($this->id) && $this->id !== '') {
+            $host = parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'wayfindr.invalid';
+            $message->withSymfonyMessage(function (Email $email) use ($host): void {
+                $email->getHeaders()->remove('Message-ID');
+                $email->getHeaders()->addIdHeader('Message-ID', $this->id.'@'.$host);
+            });
+        }
+
+        return $message;
     }
 
     /** @return array<string, mixed> */

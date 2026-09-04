@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Models\SlaAlertDelivery;
 use App\Models\SlaClock;
 use App\Models\SlaPolicy;
 use App\Models\Ticket;
@@ -15,6 +16,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Owns every persisted SLA clock transition.
@@ -264,6 +266,22 @@ final class SlaClockManager
 
             $clock->forceFill([$recipientColumn => $ids])->save();
         });
+    }
+
+    /** Persist one stable queue identity before attempting its handoff. */
+    public function alertDelivery(int $clockId, string $stage, string $channel, int $userId): SlaAlertDelivery
+    {
+        $this->alertRecipientColumn($stage, $channel);
+
+        return SlaAlertDelivery::query()->firstOrCreate(
+            [
+                'sla_clock_id' => $clockId,
+                'stage' => $stage,
+                'channel' => $channel,
+                'user_id' => $userId,
+            ],
+            ['public_id' => (string) Str::uuid()],
+        );
     }
 
     public function completeAlertHandoff(int $clockId, string $stage, CarbonInterface $at): void

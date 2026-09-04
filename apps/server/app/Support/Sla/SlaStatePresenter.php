@@ -74,8 +74,8 @@ final class SlaStatePresenter
             ! $active && $breached => 'missed',
             ! $active => 'met',
             $breached => 'breached',
-            $elapsed >= $clock->warning_seconds => 'warning',
             $paused => 'paused',
+            $elapsed >= $clock->warning_seconds => 'warning',
             default => 'on_track',
         };
         $remaining = max(0, $clock->target_seconds - $elapsed);

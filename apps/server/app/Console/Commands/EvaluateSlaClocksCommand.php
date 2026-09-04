@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\SendSlaDeadlineAlertDelivery;
 use App\Models\SlaClock;
 use App\Models\User;
 use App\Notifications\SlaDeadlineAlert;
@@ -74,7 +75,13 @@ class EvaluateSlaClocksCommand extends Command
                                 continue;
                             }
 
-                            $agent->notify($notification);
+                            $delivery = $manager->alertDelivery(
+                                (int) $clock->id,
+                                $stage,
+                                $channel,
+                                (int) $agent->id,
+                            );
+                            SendSlaDeadlineAlertDelivery::dispatchPending((int) $delivery->id, $channel);
 
                             if (! $notification->shouldSend($agent, $channel)) {
                                 continue;

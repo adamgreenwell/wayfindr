@@ -5,6 +5,7 @@ use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Models\SlaAlertDelivery;
 use App\Models\SlaClock;
 use App\Models\SlaPolicy;
 use App\Models\Ticket;
@@ -313,7 +314,7 @@ test('the evaluator retries an alert after its queue handoff fails', function ()
     $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
 
     $this->travel(8)->minutes();
-    Notification::shouldReceive('send')
+    Notification::shouldReceive('sendNow')
         ->once()
         ->andThrow(new RuntimeException('Queue unavailable.'));
 
@@ -346,8 +347,8 @@ test('the evaluator retries only the alert channel whose handoff failed', functi
     $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
 
     $this->travel(8)->minutes();
-    Notification::shouldReceive('send')->once()->ordered()->andReturnNull();
-    Notification::shouldReceive('send')->once()->ordered()->andThrow(new RuntimeException('Mail queue unavailable.'));
+    Notification::shouldReceive('sendNow')->once()->ordered()->andReturnNull();
+    Notification::shouldReceive('sendNow')->once()->ordered()->andThrow(new RuntimeException('Mail queue unavailable.'));
 
     expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(1);
 
@@ -388,7 +389,7 @@ test('the evaluator leaves a handoff pending when delivery-time routing changes'
     ]);
 
     $this->travel(8)->minutes();
-    Notification::shouldReceive('send')
+    Notification::shouldReceive('sendNow')
         ->once()
         ->andReturnUsing(function () use ($conversation, $replacement): void {
             $conversation->forceFill(['assigned_agent_id' => $replacement->id])->saveQuietly();
@@ -406,6 +407,45 @@ test('the evaluator leaves a handoff pending when delivery-time routing changes'
     Notification::assertSentTo($replacement, SlaDeadlineAlert::class);
 
     expect($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $replacement->id])
+        ->and($clock->fresh()->warning_alerted_at)->not->toBeNull();
+});
+
+test('a failed alert checkpoint reuses its accepted outbox delivery', function (): void {
+    Notification::fake();
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $failCheckpoint = true;
+    SlaClock::updating(function (SlaClock $clock) use (&$failCheckpoint): void {
+        if ($failCheckpoint && $clock->isDirty('warning_alerted_user_ids')) {
+            $failCheckpoint = false;
+
+            throw new RuntimeException('Clock checkpoint unavailable.');
+        }
+    });
+
+    $this->travel(8)->minutes();
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(1);
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $delivery = SlaAlertDelivery::query()->sole();
+    expect($delivery->accepted_at)->not->toBeNull()
+        ->and($clock->alertedUserIds('warning'))->toBe([])
+        ->and($clock->warning_alerted_at)->toBeNull();
+    Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
+    Notification::assertSentTo(
+        $world['agent'],
+        SlaDeadlineAlert::class,
+        fn (SlaDeadlineAlert $notification): bool => $notification->id === $delivery->public_id,
+    );
+
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
+    Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
+
+    expect(SlaAlertDelivery::query()->count())->toBe(1)
+        ->and($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $world['agent']->id])
         ->and($clock->fresh()->warning_alerted_at)->not->toBeNull();
 });
 
@@ -649,6 +689,26 @@ test('archiving pauses active SLA clocks until the site is restored', function (
 
     expect($clock->fresh()->elapsed_seconds)->toBe(8 * 60);
     Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
+});
+
+test('a paused clock takes precedence after crossing its warning threshold', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $clock->forceFill([
+        'elapsed_seconds' => $clock->warning_seconds,
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ])->save();
+    $world['site']->forceFill(['archived_at' => now()])->save();
+
+    $state = app(SlaStatePresenter::class)->summary($conversation->fresh());
+
+    expect($state)->not->toBeNull()
+        ->and($state['status'])->toBe('paused')
+        ->and($state['label'])->toBe('Paused');
 });
 
 test('archiving records a breach crossed before the site paused', function (): void {
