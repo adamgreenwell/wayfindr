@@ -180,14 +180,7 @@ final class SlaClockManager
             $this->advance($clock, $at);
             $stage = null;
 
-            if ($clock->isActive() && $clock->elapsed_seconds >= $clock->target_seconds && $clock->breached_at === null) {
-                $clock->forceFill([
-                    // A delayed scheduler may cross both boundaries in one pass.
-                    // Record the warning boundary as crossed, but send only the
-                    // useful present-tense breach alert.
-                    'warned_at' => $clock->warned_at ?? CarbonImmutable::instance($at),
-                    'breached_at' => CarbonImmutable::instance($at),
-                ])->save();
+            if ($this->recordBreachIfCrossed($clock, $at)) {
                 $stage = 'breach';
             } elseif ($recordWarning && $clock->isActive() && $clock->elapsed_seconds >= $clock->warning_seconds && $clock->warned_at === null) {
                 $clock->forceFill(['warned_at' => CarbonImmutable::instance($at)])->save();
@@ -296,17 +289,8 @@ final class SlaClockManager
             ->get()
             ->each(function (SlaClock $clock) use ($at): void {
                 $this->advance($clock, $at);
-                $attributes = ['cancelled_at' => CarbonImmutable::instance($at)];
-
-                if ($clock->elapsed_seconds >= $clock->target_seconds && $clock->breached_at === null) {
-                    // Closing without a response cannot leave a live clock,
-                    // but it also cannot erase a target that was already
-                    // crossed before the scheduler's next minute tick.
-                    $attributes['warned_at'] = $clock->warned_at ?? CarbonImmutable::instance($at);
-                    $attributes['breached_at'] = CarbonImmutable::instance($at);
-                }
-
-                $clock->forceFill($attributes)->save();
+                $this->recordBreachIfCrossed($clock, $at);
+                $clock->forceFill(['cancelled_at' => CarbonImmutable::instance($at)])->save();
             });
     }
 
@@ -329,6 +313,7 @@ final class SlaClockManager
     private function reconcileClock(SlaClock $clock, Model $subject, CarbonInterface $at): void
     {
         $this->advance($clock, $at);
+        $this->recordBreachIfCrossed($clock, $at);
         $priority = (string) ($subject->priority ?: 'normal');
         $policy = SlaPolicy::query()
             ->where('account_id', $clock->account_id)
@@ -348,5 +333,23 @@ final class SlaClockManager
             'target_seconds' => $targetSeconds,
             'warning_seconds' => SlaClock::warningSeconds($targetSeconds),
         ])->save();
+    }
+
+    private function recordBreachIfCrossed(SlaClock $clock, CarbonInterface $at): bool
+    {
+        if (! $clock->isActive() || $clock->elapsed_seconds < $clock->target_seconds || $clock->breached_at !== null) {
+            return false;
+        }
+
+        $clock->forceFill([
+            // A delayed evaluator may cross both boundaries in one pass.
+            // Record the warning boundary as crossed, but send only the useful
+            // present-tense breach alert. Reconciliation uses the same seam so
+            // a longer or disabled replacement target cannot erase history.
+            'warned_at' => $clock->warned_at ?? CarbonImmutable::instance($at),
+            'breached_at' => CarbonImmutable::instance($at),
+        ])->save();
+
+        return true;
     }
 }

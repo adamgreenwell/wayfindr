@@ -334,6 +334,31 @@ test('changing conversation priority applies the matching active targets', funct
         ->toBe(120 * 60);
 });
 
+test('changing priority preserves a breach crossed under the old target', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    SlaPolicy::factory()->for($world['account'])->create([
+        'priority' => 'urgent',
+        'first_response_minutes' => 60,
+        'resolution_minutes' => 120,
+        'effective_at' => now(),
+    ]);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(11)->minutes();
+    $this->actingAs($world['agent'])->put(
+        route('dashboard.conversations.priority.update', $conversation->support_code),
+        ['priority' => 'urgent'],
+    );
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->elapsed_seconds)->toBe(11 * 60)
+        ->and($clock->breached_at)->not->toBeNull()
+        ->and($clock->priority)->toBe('urgent')
+        ->and($clock->target_seconds)->toBe(60 * 60);
+});
+
 test('ticket queues and detail show resolution breaches', function (): void {
     $world = slaWorld(['enabled' => false]);
     configureNormalSla($world['account'], resolution: 10);

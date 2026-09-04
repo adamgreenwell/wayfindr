@@ -65,7 +65,10 @@ metadata rather than transcript or visitor content.
 
 The fixed unattended-conversation alert now uses the same business-time
 calculator. It no longer wakes agents at night for five wall-clock minutes that
-the SLA view correctly calls paused.
+the SLA view correctly calls paused. Each unread waiting episode persists the
+business seconds already consumed before support hours or a manual closure
+changes, so reopening a desk cannot turn its closed interval back into waiting
+time.
 
 ## History
 

@@ -139,6 +139,40 @@ test('after-hours waiting pauses the unattended threshold until support reopens'
     Mail::assertQueuedCount(1);
 });
 
+test('manually reopening a desk does not turn closed time into unattended wait time', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 10:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    createUnattendedWait($agent, $site);
+
+    $this->travel(2)->minutes();
+    $this->actingAs($agent)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'hour'])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    $this->travel(10)->minutes();
+    $this->actingAs($agent)
+        ->delete(route('dashboard.sites.availability.reopen', $site))
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    $notification = $agent->unreadNotifications()->where('type', ConversationNeedsReply::class)->sole();
+    expect(data_get($notification->data, UnattendedConversationAlertCollector::ELAPSED_SECONDS_KEY))->toBe(2 * 60);
+
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertQueuedCount(1);
+});
+
 test('nothing sends once the agent has seen the conversation', function (): void {
     Mail::fake();
 

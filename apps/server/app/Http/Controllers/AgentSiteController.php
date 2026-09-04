@@ -28,6 +28,7 @@ use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\Sla\SlaClockManager;
 use App\Support\TicketExternalIssueState;
+use App\Support\UnattendedConversationAlertCollector;
 use App\Support\Visitors\LiveVisitorBoard;
 use App\Support\Visitors\VisitorPresence;
 use App\Support\WidgetRealtimeConfig;
@@ -1198,7 +1199,7 @@ class AgentSiteController extends Controller
      * Its own method for the same reason updateDetails() is: one form must not
      * be able to blank another's fields by omitting them.
      */
-    public function updateAvailability(Request $request, Site $site, SlaClockManager $slaClocks): RedirectResponse
+    public function updateAvailability(Request $request, Site $site, SlaClockManager $slaClocks, UnattendedConversationAlertCollector $unattendedAlerts): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'update', $site);
@@ -1236,9 +1237,11 @@ class AgentSiteController extends Controller
                 : null;
         }
 
-        DB::transaction(function () use ($request, $site, $slaClocks, $validated, $weekdays): void {
+        DB::transaction(function () use ($request, $site, $slaClocks, $unattendedAlerts, $validated, $weekdays): void {
             [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
-            $slaClocks->advanceSite($site, now());
+            $at = now();
+            $slaClocks->advanceSite($site, $at);
+            $unattendedAlerts->advanceSite($site, $at);
 
             $site->mutateSettings(function (array $settings) use ($validated, $weekdays): array {
                 $availability = is_array($settings['availability'] ?? null) ? $settings['availability'] : [];
@@ -1272,7 +1275,7 @@ class AgentSiteController extends Controller
      * form would mean an operational close required editing hours nobody meant
      * to change.
      */
-    public function closeAvailability(Request $request, Site $site, SlaClockManager $slaClocks): RedirectResponse
+    public function closeAvailability(Request $request, Site $site, SlaClockManager $slaClocks, UnattendedConversationAlertCollector $unattendedAlerts): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'update', $site);
@@ -1281,16 +1284,18 @@ class AgentSiteController extends Controller
             'closure' => ['required', 'string', Rule::in(SiteAvailability::CLOSURES)],
         ]);
 
-        $status = DB::transaction(function () use ($request, $site, $slaClocks, $validated): string|array {
+        $status = DB::transaction(function () use ($request, $site, $slaClocks, $unattendedAlerts, $validated): string|array {
             [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
-            $slaClocks->advanceSite($site, now());
-            $endsAt = SiteAvailability::closureEndsAt($site, $validated['closure']);
+            $at = now();
+            $slaClocks->advanceSite($site, $at);
+            $unattendedAlerts->advanceSite($site, $at);
+            $endsAt = SiteAvailability::closureEndsAt($site, $validated['closure'], $at);
 
             if ($endsAt === null) {
                 return 'site_settings.flash.desk_left_open';
             }
 
-            $this->storeClosure($site, $endsAt->toIso8601String(), now()->toIso8601String());
+            $this->storeClosure($site, $endsAt->toIso8601String(), $at->toIso8601String());
 
             // Report when the desk is BACK, which is not always when the close
             // expires: one ending outside opening hours hands back to the schedule
@@ -1314,14 +1319,16 @@ class AgentSiteController extends Controller
     /**
      * Hand the desk back before the close would have expired.
      */
-    public function reopenAvailability(Request $request, Site $site, SlaClockManager $slaClocks): RedirectResponse
+    public function reopenAvailability(Request $request, Site $site, SlaClockManager $slaClocks, UnattendedConversationAlertCollector $unattendedAlerts): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'update', $site);
 
-        DB::transaction(function () use ($request, $site, $slaClocks): void {
+        DB::transaction(function () use ($request, $site, $slaClocks, $unattendedAlerts): void {
             [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
-            $slaClocks->advanceSite($site, now());
+            $at = now();
+            $slaClocks->advanceSite($site, $at);
+            $unattendedAlerts->advanceSite($site, $at);
             $this->storeClosure($site, null, null);
         });
 

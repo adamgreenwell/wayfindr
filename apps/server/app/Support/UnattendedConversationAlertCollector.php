@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Conversation;
 use App\Models\ConversationReadState;
+use App\Models\Site;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\Sites\SiteAvailability;
@@ -11,6 +12,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -25,6 +27,10 @@ class UnattendedConversationAlertCollector
     public const UNATTENDED_EMAILED_AT_KEY = 'unattended_emailed_at';
 
     public const WAITING_SINCE_KEY = 'unattended_waiting_since';
+
+    public const ELAPSED_SECONDS_KEY = 'unattended_elapsed_seconds';
+
+    public const LAST_COUNTED_AT_KEY = 'unattended_last_counted_at';
 
     public const THRESHOLD_MINUTES = 5;
 
@@ -68,6 +74,41 @@ class UnattendedConversationAlertCollector
     }
 
     /**
+     * Commit waiting time under the site's current calendar before that
+     * calendar or a manual closure changes.
+     */
+    public function advanceSite(Site $site, CarbonInterface $at): void
+    {
+        $conversationIds = Conversation::query()
+            ->where('site_id', $site->id)
+            ->where('status', 'open')
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+        $agentIds = User::query()
+            ->where('account_id', $site->account_id)
+            ->pluck('id')
+            ->all();
+
+        if ($conversationIds === [] || $agentIds === []) {
+            return;
+        }
+
+        DatabaseNotification::query()
+            ->where('type', ConversationNeedsReply::class)
+            ->where('notifiable_type', (new User)->getMorphClass())
+            ->whereIn('notifiable_id', $agentIds)
+            ->whereNull('read_at')
+            ->get()
+            ->filter(fn (DatabaseNotification $notification): bool => in_array(
+                (int) data_get($notification->data, 'conversation_id'),
+                $conversationIds,
+                true,
+            ))
+            ->each(fn (DatabaseNotification $notification) => $this->advanceNotification($notification, $site, $at));
+    }
+
+    /**
      * @return array{
      *     notification_id: string,
      *     reference: string,
@@ -97,18 +138,16 @@ class UnattendedConversationAlertCollector
         // same business-time calculator. A five-minute heuristic that fires at
         // 03:00 while the site is closed would disagree with every SLA state
         // beside it and train agents to ignore both.
-        if (SiteAvailability::elapsedOpenSeconds(
-            $conversation->site,
-            $this->waitingSince($notification),
-            CarbonImmutable::now(),
-        ) < self::THRESHOLD_MINUTES * 60) {
+        $waitingSince = $this->waitingSince($notification);
+
+        if ($this->advanceNotification($notification, $conversation->site, CarbonImmutable::now()) < self::THRESHOLD_MINUTES * 60) {
             return null;
         }
 
         // "Unseen" is account-wide: another agent opening the conversation
         // marks only THEIR notification read, but the wait has been seen —
         // nobody needs the email.
-        if ($this->anyAgentSawSince($conversationId, $this->waitingSince($notification))) {
+        if ($this->anyAgentSawSince($conversationId, $waitingSince)) {
             return null;
         }
 
@@ -117,7 +156,7 @@ class UnattendedConversationAlertCollector
             'reference' => $conversation->support_code,
             'site_name' => $conversation->site?->name ?? 'Unknown site',
             'subject' => $conversation->subject ?? 'Untitled conversation',
-            'waiting_since' => $this->waitingSince($notification)->toISOString(),
+            'waiting_since' => $waitingSince->toISOString(),
             'url' => route('dashboard.conversations.show', $conversation->support_code, false),
         ];
     }
@@ -202,5 +241,46 @@ class UnattendedConversationAlertCollector
         return is_string($stored) && trim($stored) !== ''
             ? CarbonImmutable::parse($stored)
             : CarbonImmutable::parse($notification->created_at);
+    }
+
+    private function advanceNotification(DatabaseNotification $notification, Site $site, CarbonInterface $at): int
+    {
+        return DB::transaction(function () use ($at, $notification, $site): int {
+            $current = DatabaseNotification::query()->lockForUpdate()->find($notification->id);
+
+            if (! $current || $current->read_at !== null) {
+                return 0;
+            }
+
+            $waitingSince = $this->waitingSince($current);
+            $lastCountedAt = $this->lastCountedAt($current, $waitingSince);
+            $elapsed = max(0, (int) data_get($current->data, self::ELAPSED_SECONDS_KEY, 0));
+            $countedAt = CarbonImmutable::instance($at);
+
+            if ($lastCountedAt->lessThan($waitingSince)) {
+                $lastCountedAt = $waitingSince;
+                $elapsed = 0;
+            }
+
+            if ($countedAt->greaterThan($lastCountedAt)) {
+                $elapsed += SiteAvailability::elapsedOpenSeconds($site, $lastCountedAt, $countedAt);
+                $current->forceFill(['data' => [
+                    ...$current->data,
+                    self::ELAPSED_SECONDS_KEY => $elapsed,
+                    self::LAST_COUNTED_AT_KEY => $countedAt->toISOString(),
+                ]])->save();
+            }
+
+            return $elapsed;
+        });
+    }
+
+    private function lastCountedAt(DatabaseNotification $notification, CarbonImmutable $waitingSince): CarbonImmutable
+    {
+        $stored = data_get($notification->data, self::LAST_COUNTED_AT_KEY);
+
+        return is_string($stored) && trim($stored) !== ''
+            ? CarbonImmutable::parse($stored)
+            : $waitingSince;
     }
 }
