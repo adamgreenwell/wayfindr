@@ -388,6 +388,15 @@
                             <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
                     @endif
+                    @if ($canManageAutomations)
+                        <a class="management-link" href="{{ route('dashboard.account.automation-rules.index') }}">
+                            <span>
+                                <strong>{{ __('account.management.items.automations.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.automations.detail') }}</span>
+                            </span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
+                        </a>
+                    @endif
                     @if ($canViewAudit)
                         <a class="management-link" href="{{ route('dashboard.account.audit.index') }}">
                             <span>

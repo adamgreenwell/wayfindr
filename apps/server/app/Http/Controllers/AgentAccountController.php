@@ -118,6 +118,7 @@ class AgentAccountController extends Controller
             'canViewExternalIssueReadiness' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
             'canViewAlertDelivery' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
             'canManageAgentAccess' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
+            'canManageAutomations' => $agent->hasAccountPermission(AccountPermission::ManageAutomations),
             'canManageIntegrations' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
             'canManageKnowledge' => $agent->hasAccountPermission(AccountPermission::ManageKnowledge),
             'canManageOperatorAccess' => $agent->hasAccountPermission(AccountPermission::ManageOperatorAccess),

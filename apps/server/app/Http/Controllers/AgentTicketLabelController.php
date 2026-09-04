@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
+use App\Enums\AutomationRuleActionType;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Support\Sites\SiteManagerCoverage;
@@ -106,6 +107,19 @@ class AgentTicketLabelController extends Controller
             $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $ticketLabel->account_id);
             $ticketLabel = $this->lockedTicketLabel($ticketLabel);
             $this->authorizeManageLabel($lockedAgent, $ticketLabel);
+
+            $usedByAutomation = $ticketLabel->account->automationRules()
+                ->get(['actions'])
+                ->contains(fn ($rule): bool => collect($rule->actions)->contains(
+                    fn (array $action): bool => $action['type'] === AutomationRuleActionType::AddLabel->value
+                        && (int) $action['value'] === (int) $ticketLabel->id,
+                ));
+
+            if ($usedByAutomation) {
+                throw ValidationException::withMessages([
+                    'label' => __('ticket_labels.validation.in_use_automation'),
+                ]);
+            }
 
             if ($ticketLabel->tickets()->exists()) {
                 throw ValidationException::withMessages([

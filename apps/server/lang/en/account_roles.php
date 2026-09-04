@@ -55,6 +55,7 @@ return [
         'request_cobrowse' => ['label' => 'Request cobrowse', 'detail' => 'Start and end visitor-approved cobrowse sessions.'],
         'manage_tickets' => ['label' => 'Manage tickets', 'detail' => 'Read and update tickets on assigned sites.'],
         'assign_tickets' => ['label' => 'Assign tickets', 'detail' => 'Assign visible tickets to teammates.'],
+        'manage_automations' => ['label' => 'Manage automations', 'detail' => 'Create account-wide rules, preview them, and review execution history.'],
         'view_alerts' => ['label' => 'View alerts', 'detail' => 'Read support alerts for visible work.'],
     ],
 ];

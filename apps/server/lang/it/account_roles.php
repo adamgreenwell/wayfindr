@@ -42,6 +42,7 @@ return [
         'request_cobrowse' => ['label' => 'Richiedi cobrowse', 'detail' => 'Avvio e conclusione delle sessioni cobrowse approvate dal visitatore.'],
         'manage_tickets' => ['label' => 'Gestisci ticket', 'detail' => 'Lettura e aggiornamento dei ticket dei siti assegnati.'],
         'assign_tickets' => ['label' => 'Assegna ticket', 'detail' => 'Assegnazione dei ticket visibili ai membri del team.'],
+        'manage_automations' => ['label' => 'Gestisci automazioni', 'detail' => 'Crei regole per tutto l’account, le provi e controlli la cronologia delle esecuzioni.'],
         'view_alerts' => ['label' => 'Visualizza avvisi', 'detail' => 'Lettura degli avvisi di assistenza per il lavoro visibile.'],
     ],
 ];

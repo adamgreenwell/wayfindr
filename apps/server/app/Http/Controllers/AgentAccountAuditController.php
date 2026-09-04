@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
+use App\Models\AutomationRule;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -319,6 +320,7 @@ class AgentAccountAuditController extends Controller
                         ->orWhereHasMorph('subject', [CustomRole::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern))
                         ->orWhereLike('metadata->role_name', $searchPattern)
+                        ->orWhereLike('metadata->name', $searchPattern)
                         ->orWhereLike('metadata->old_role_name', $searchPattern)
                         ->orWhereLike('metadata->new_role_name', $searchPattern)
                         // The token's name and last four are what the subject
@@ -422,6 +424,9 @@ class AgentAccountAuditController extends Controller
             'account.oidc_role_mapping_created' => 'Single sign-on role mapping added',
             'account.oidc_role_mapping_deleted' => 'Single sign-on role mapping removed',
             'account.sla_policies_updated' => 'SLA policies updated',
+            'automation_rule.created' => 'Automation rule created',
+            'automation_rule.updated' => 'Automation rule updated',
+            'automation_rule.deleted' => 'Automation rule deleted',
             'agent.oidc_identity_linked' => 'Single sign-on identity linked',
             'agent.oidc_provisioned' => 'Agent provisioned through single sign-on',
             'agent.oidc_role_mapped' => 'Agent role mapped through single sign-on',
@@ -494,6 +499,15 @@ class AgentAccountAuditController extends Controller
                 'value' => $event->subject instanceof CustomRole
                     ? $event->subject->name
                     : $this->customRoleName($event),
+            ];
+        }
+
+        if ($event->subject instanceof AutomationRule || str_starts_with($event->action, 'automation_rule.')) {
+            return [
+                'prefix' => __('account_audit.references.automation_rule'),
+                'value' => $event->subject instanceof AutomationRule
+                    ? $event->subject->name
+                    : data_get($event->metadata, 'name'),
             ];
         }
 

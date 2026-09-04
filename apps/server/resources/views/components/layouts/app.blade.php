@@ -1784,6 +1784,79 @@
             margin-top: 16px;
         }
 
+        .automation-rule-basics {
+            display: grid;
+            grid-template-columns: minmax(0, 2fr) minmax(220px, 1fr) minmax(120px, 0.5fr);
+            gap: 16px;
+        }
+
+        .automation-rule-basics .field {
+            margin-top: 0;
+        }
+
+        .automation-builder {
+            min-width: 0;
+            margin-top: 24px;
+            border: 0;
+            border-top: 1px solid var(--border);
+            padding: 20px 0 0;
+        }
+
+        .automation-builder > legend {
+            padding: 0 8px 0 0;
+            font-weight: 700;
+        }
+
+        .automation-builder-row {
+            display: grid;
+            grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.8fr) minmax(220px, 1.4fr) auto;
+            align-items: end;
+            gap: 12px;
+            padding: 16px;
+            margin-top: 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--surface-muted);
+        }
+
+        .automation-builder-row .field,
+        .automation-builder-row .button {
+            margin-top: 0;
+        }
+
+        .automation-row-actions {
+            display: grid;
+            gap: 8px;
+        }
+
+        .automation-builder-row textarea {
+            min-height: 76px;
+        }
+
+        .automation-enabled {
+            margin-top: 24px;
+        }
+
+        .automation-preview-result {
+            padding: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .automation-definition-list {
+            margin: 8px 0 0;
+            padding-left: 22px;
+            white-space: normal;
+        }
+
+        .automation-definition-list li + li {
+            margin-top: 6px;
+        }
+
+        .automation-log-details {
+            min-width: 260px;
+            white-space: normal;
+        }
+
         /* The 1px gaps used to be filled by the grid's own background, which
            painted every empty cell of a partial last row as a solid grey void.
            Each item draws its own hairline ring instead: neighbours overlap
@@ -2743,6 +2816,11 @@
             }
 
             .meta-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .automation-rule-basics,
+            .automation-builder-row {
                 grid-template-columns: 1fr;
             }
 

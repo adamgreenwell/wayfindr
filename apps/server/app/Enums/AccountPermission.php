@@ -23,6 +23,7 @@ enum AccountPermission: string
     case RequestCobrowse = 'request_cobrowse';
     case ManageTickets = 'manage_tickets';
     case AssignTickets = 'assign_tickets';
+    case ManageAutomations = 'manage_automations';
     case ViewAlerts = 'view_alerts';
 
     /** @return list<self> */

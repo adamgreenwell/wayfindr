@@ -3043,6 +3043,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'account.create.name = Name',
         'account.agents.columns.agent = Agent',
         'account.agents.columns.status = Status',
+        'automation_rules.list.status = Status',
+        'automation_rules.condition_fields.status = Status',
         'operator.scanning.driver = Scanner',
         'operator.mail.transport = Transport',
         'operator.backups.history.status = Status',

@@ -1,0 +1,116 @@
+<?php
+
+return [
+    'title' => 'Automatisierungsregeln',
+    'subtitle' => 'Eine kleine, eindeutige Folge von Supportaktionen ausführen, wenn Vorgänge im Konto übereinstimmen.',
+    'back' => 'Zurück zum Konto',
+    'status' => ['enabled' => 'Aktiviert', 'draft' => 'Entwurf'],
+    'flash' => [
+        'created' => 'Entwurf der Automatisierungsregel erstellt.',
+        'updated' => 'Automatisierungsregel gespeichert.',
+        'deleted' => 'Automatisierungsregel gelöscht. Ihr Ausführungsverlauf bleibt verfügbar.',
+        'previewed' => 'Vorschau abgeschlossen, ohne Supportvorgänge zu ändern.',
+    ],
+    'safety' => [
+        'heading' => 'Sichere Automatisierung',
+        'lede' => 'Kontoweite Änderungen an Supportvorgängen',
+        'drafts' => 'Neue Regeln beginnen als Entwurf. Speichern und testen Sie eine Regel mit aktuellen Vorgängen, bevor Sie sie aktivieren.',
+        'order' => 'Niedrigere Ausführungsnummern werden zuerst verarbeitet. Bedingungen und Aktionen laufen von oben nach unten.',
+        'visitor' => 'Diese Aktionen senden keine Nachricht an Besucher. Interne Notizen bleiben für das Supportteam privat.',
+    ],
+    'list' => [
+        'heading' => 'Regeln', 'count' => '{0} Keine Regeln|{1} :count Regel|[2,*] :count Regeln',
+        'rule' => 'Regel', 'event' => 'Ereignis', 'definition' => 'Regelaufbau', 'order' => 'Reihenfolge',
+        'status' => 'Status', 'manage' => 'Verwalten', 'edit' => 'Bearbeiten',
+        'condition_count' => '{0} Jedes Ereignis|{1} :count Bedingung|[2,*] :count Bedingungen',
+        'action_count' => '{1} :count Aktion|[2,*] :count Aktionen',
+    ],
+    'empty' => [
+        'heading' => 'Noch keine Automatisierungsregeln.',
+        'body' => 'Erstellen Sie einen deaktivierten Entwurf, legen Sie Aktionen fest und testen Sie die Regel mit aktuellen Supportvorgängen.',
+        'action' => 'Erste Regel erstellen',
+    ],
+    'create' => [
+        'title' => 'Automatisierungsregel erstellen',
+        'subtitle' => 'Beginnen Sie mit einem deaktivierten Entwurf und testen Sie die Regel, bevor sie in den Live-Support eingreift.',
+        'action' => 'Regel erstellen', 'submit' => 'Entwurf erstellen',
+    ],
+    'edit' => [
+        'title' => 'Automatisierungsregel bearbeiten', 'title_named' => ':name bearbeiten',
+        'subtitle' => 'Speichern Sie die geordnete Definition, testen Sie die gespeicherte Version und aktivieren Sie sie, wenn das Ergebnis stimmt.',
+        'back' => 'Zurück zu Automatisierungsregeln', 'save' => 'Regel speichern',
+    ],
+    'fields' => [
+        'name' => 'Regelname', 'name_help' => 'Verwenden Sie einen Namen, der das beabsichtigte Ergebnis erklärt.',
+        'event' => 'Wenn dies geschieht', 'event_help' => 'Das Ereignis bestimmt, welche Bedingungen und Aktionen verfügbar sind.',
+        'position' => 'Reihenfolge', 'position_help' => 'Niedrigere Zahlen laufen zuerst; bei gleichen Zahlen entscheidet die Erstellungsreihenfolge.',
+        'condition_field' => 'Feld', 'comparison' => 'Vergleich', 'action_type' => 'Aktion', 'value' => 'Wert',
+        'internal_note' => 'Private Notiz', 'enabled' => 'Diese Regel aktivieren',
+        'enabled_help' => 'Aktivierte Regeln reagieren auf neue passende Ereignisse. Die Vorschau verwendet die gespeicherte Regel, ohne Änderungen vorzunehmen.',
+    ],
+    'builder' => [
+        'heading' => 'Regeldefinition', 'lede' => 'Ein Ereignis, alle aufgeführten Bedingungen und danach jede Aktion der Reihe nach.',
+        'conditions' => 'Bedingungen', 'conditions_help' => 'Jede Bedingung muss zutreffen. Ohne Bedingungen passt jedes Auftreten des Ereignisses.',
+        'actions' => 'Aktionen', 'actions_help' => 'Aktionen laufen von oben nach unten. Eine Regel kann bis zu zehn enthalten.',
+        'add_condition' => 'Bedingung hinzufügen', 'remove_condition' => 'Bedingung entfernen',
+        'add_action' => 'Aktion hinzufügen', 'remove_action' => 'Aktion entfernen', 'move_up' => 'Nach oben', 'move_down' => 'Nach unten',
+    ],
+    'events' => [
+        'conversation_created' => 'Unterhaltung erstellt',
+        'conversation_visitor_message_created' => 'Besuchernachricht empfangen',
+        'ticket_created' => 'Ticket erstellt', 'ticket_updated' => 'Ticket aktualisiert',
+    ],
+    'condition_fields' => [
+        'subject' => 'Betreff', 'description' => 'Beschreibung', 'status' => 'Status', 'priority' => 'Priorität',
+        'category' => 'Kategorie', 'site_id' => 'Website', 'assignee_id' => 'Zuständige Person', 'message_body' => 'Besuchernachricht',
+    ],
+    'operators' => ['equals' => 'Ist gleich', 'not_equals' => 'Ist nicht gleich', 'contains' => 'Enthält', 'not_contains' => 'Enthält nicht'],
+    'actions' => [
+        'assign_agent' => 'Agent zuweisen', 'add_label' => 'Label hinzufügen', 'set_priority' => 'Priorität setzen',
+        'set_status' => 'Status setzen', 'notify_agent' => 'Agent benachrichtigen', 'post_internal_note' => 'Interne Notiz hinzufügen',
+    ],
+    'value_groups' => ['sites' => 'Websites', 'agents' => 'Agenten', 'labels' => 'Ticket-Labels', 'priorities' => 'Prioritäten', 'statuses' => 'Statuswerte', 'categories' => 'Kategorien'],
+    'values' => [
+        'choose' => 'Wert auswählen', 'unassigned' => 'Nicht zugewiesen', 'deactivated' => 'Deaktiviert', 'uncategorized' => 'Ohne Kategorie',
+        'none' => 'Keiner', 'removed_id' => 'Entfernter Eintrag Nr. :id',
+        'every_event' => 'Keine Bedingungen: Jedes Auftreten dieses Ereignisses passt.',
+    ],
+    'preview' => [
+        'heading' => 'Testvorschau',
+        'lede' => 'Prüft die zuletzt gespeicherte Definition mit aktuellen Vorgängen. Es werden keine Aktionen, Hinweise, Notizen oder Statusänderungen ausgeführt.',
+        'no_changes' => 'Keine Änderungen',
+        'no_subjects' => 'Für Sie sind keine passenden aktuellen Vorgänge sichtbar. Für eine Vorschau ist auch die entsprechende Unterhaltungs- oder Ticketberechtigung erforderlich.',
+        'subject' => 'Aktueller Supportvorgang', 'choose' => 'Vorgang zum Testen auswählen', 'run' => 'Vorschau ausführen',
+        'result' => 'Vorschauergebnis', 'matched' => 'Würde passen', 'not_matched' => 'Würde nicht passen',
+        'condition_matched' => 'Passt:', 'condition_not_matched' => 'Passt nicht:', 'actual' => 'Tatsächlicher Wert: :value',
+        'would_run' => 'Aktionen, die ausgeführt würden', 'no_actions' => 'Es würden keine Aktionen ausgeführt, weil nicht alle Bedingungen passen.',
+    ],
+    'executions' => [
+        'heading' => 'Ausführungsprotokoll', 'lede' => 'Dauerhafte Ergebnisse passender Regeln, einschließlich Fehlern und Aktionen ohne Änderung.',
+        'empty' => 'Es wurden noch keine Automatisierungsregeln ausgeführt.', 'when' => 'Abgeschlossen', 'rule' => 'Regelsnapshot',
+        'work' => 'Supportvorgang', 'outcome' => 'Ergebnis', 'details' => 'Einzelheiten', 'open_details' => 'Ausführungsdetails öffnen',
+        'conditions' => 'Passende Bedingungen', 'actions' => 'Geplante Aktionen', 'results' => 'Aktionsergebnisse', 'error' => 'Fehlerdetail',
+    ],
+    'execution_statuses' => ['succeeded' => 'Erfolgreich', 'failed' => 'Fehlgeschlagen'],
+    'result_statuses' => ['applied' => 'Ausgeführt', 'noop' => 'Keine Änderung nötig', 'queued' => 'Eingereiht'],
+    'result_details' => [
+        'already_assigned' => 'Bereits diesem Agenten zugewiesen', 'already_labeled' => 'Label bereits vorhanden',
+        'quiet_mode' => 'Agent verwendet den stillen Benachrichtigungsmodus', 'private_ticket_note' => 'Private Ticketnotiz gespeichert',
+    ],
+    'result_change' => ':before zu :after', 'result_already' => 'Bereits :value',
+    'condition_sentence' => ':field – :operator – :value', 'action_sentence' => ':action mit Wert :value', 'result_sentence' => ':action: :status; :detail',
+    'subjects' => [
+        'ticket' => 'Ticket Nr. :id — :subject', 'conversation' => 'Unterhaltung :code — :subject', 'message' => ':subject — „:excerpt“',
+        'removed' => 'Entfernter Supportvorgang Nr. :id', 'restricted' => 'Geschützter Supportvorgang',
+    ],
+    'delete' => [
+        'heading' => 'Regel löschen',
+        'lede' => 'Die Regel verschwindet, ihre Ausführungssnapshots bleiben jedoch im Protokoll, damit frühere Änderungen nachvollziehbar bleiben.',
+        'action' => 'Regel löschen',
+    ],
+    'validation' => [
+        'heading' => 'Regeldefinition prüfen', 'choice' => 'Wählen Sie einen Wert aus der passenden Gruppe.',
+        'reference' => 'Dieser Kontoeintrag ist nicht verfügbar oder hat nicht die für diese Aktion erforderliche Berechtigung.',
+        'definition' => 'Diese Regeldefinition ist ungültig: :detail', 'duplicate' => 'Eine Regel mit diesem Namen ist bereits vorhanden.',
+    ],
+];
