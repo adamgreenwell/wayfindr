@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Status: Accepted
+Status: Accepted; provisioning limits extended by ADR 0024
 
 ## Context
 
@@ -92,12 +92,14 @@ callback.
 
 - Existing account members can use a standards-based identity provider without
   duplicating roles or weakening account TOTP.
-- Accounts must create users locally before those users can link through OIDC.
+- This original slice required accounts to create users locally before linking;
+  ADR 0024 adds an owner-enabled, deny-by-default provisioning path.
 - A provider must assert a verified email for the first link; providers without
   that claim need an explicit administrator-led linking design later.
 - Platform operators always retain and use local credentials.
 - Private-network-only identity-provider endpoints are not supported by this
   account-configured flow because preventing server-side request forgery takes
   precedence over that topology.
-- SAML, provisioning, claim-to-role mapping, and custom roles remain open parts
-  of issue #761.
+- SAML remains demand-gated. SCIM and its deprovisioning semantics remain a
+  separate lifecycle decision after ADRs 0023 and 0024 added custom roles,
+  provisioning, and claim-to-role mapping.

@@ -33,6 +33,11 @@ final class CustomRole extends Model
         return $this->hasMany(User::class);
     }
 
+    public function oidcRoleMappings(): HasMany
+    {
+        return $this->hasMany(OidcRoleMapping::class);
+    }
+
     public function hasPermission(AccountPermission $permission): bool
     {
         return in_array($permission->value, $this->permissionValues(), true);

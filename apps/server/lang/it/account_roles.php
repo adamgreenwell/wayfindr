@@ -19,6 +19,7 @@ return [
     'flash' => ['created' => 'Ruolo personalizzato creato.', 'updated' => 'Ruolo personalizzato aggiornato.', 'deleted' => 'Ruolo personalizzato eliminato.'],
     'errors' => [
         'assigned' => 'Sposta ogni persona da questo ruolo prima di eliminarlo.',
+        'oidc_mapped' => 'Rimuova questo ruolo dalle mappature dei claim Single Sign-on prima di eliminarlo.',
         'duplicate' => 'Esiste già un ruolo con questo nome.',
         'reserved' => 'Owner, Admin e Agent sono nomi riservati ai ruoli integrati.',
         'requires' => ':permission richiede :required.',

@@ -10,6 +10,7 @@ use App\Http\Controllers\AgentAccountController;
 use App\Http\Controllers\AgentAccountCustomRoleController;
 use App\Http\Controllers\AgentAccountIntegrationsController;
 use App\Http\Controllers\AgentAccountOidcConnectionController;
+use App\Http\Controllers\AgentAccountOidcProvisioningController;
 use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAlertController;
@@ -133,6 +134,13 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.account.security.update');
     Route::put('/dashboard/account/security/oidc', [AgentAccountOidcConnectionController::class, 'update'])
         ->name('dashboard.account.security.oidc.update');
+    Route::put('/dashboard/account/security/oidc/provisioning', [AgentAccountOidcProvisioningController::class, 'update'])
+        ->name('dashboard.account.security.oidc.provisioning.update');
+    Route::post('/dashboard/account/security/oidc/role-mappings', [AgentAccountOidcProvisioningController::class, 'storeMapping'])
+        ->name('dashboard.account.security.oidc.role-mappings.store');
+    Route::delete('/dashboard/account/security/oidc/role-mappings/{mapping}', [AgentAccountOidcProvisioningController::class, 'destroyMapping'])
+        ->whereNumber('mapping')
+        ->name('dashboard.account.security.oidc.role-mappings.destroy');
     Route::get('/dashboard/account/integrations', [AgentAccountIntegrationsController::class, 'show'])
         ->name('dashboard.account.integrations');
     Route::get('/dashboard/account/api-tokens', [AgentAccountApiTokenController::class, 'index'])

@@ -21,6 +21,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'client_id',
     'client_secret',
     'is_enabled',
+    'role_claim',
+    'jit_provisioning_enabled',
 ])]
 #[Hidden(['client_secret'])]
 final class OidcConnection extends Model
@@ -33,6 +35,7 @@ final class OidcConnection extends Model
         return [
             'client_secret' => 'encrypted',
             'is_enabled' => 'boolean',
+            'jit_provisioning_enabled' => 'boolean',
         ];
     }
 
@@ -44,5 +47,10 @@ final class OidcConnection extends Model
     public function identities(): HasMany
     {
         return $this->hasMany(OidcIdentity::class);
+    }
+
+    public function roleMappings(): HasMany
+    {
+        return $this->hasMany(OidcRoleMapping::class);
     }
 }

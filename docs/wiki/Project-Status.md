@@ -34,11 +34,11 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   and ticket lifecycle changes without pushing support content to the configured
   destination. Deliveries are durable, ordered per endpoint, retried with
   backoff, and visible to admins.
-- **TOTP two-factor authentication**: authenticator enrollment, eight one-time
-  recovery codes, replay-safe and rate-limited login challenges, and an
-  account-wide requirement that admins can enable only after enrolling
-  themselves. OIDC, just-in-time provisioning, and custom roles remain later
-  slices of [#761](https://github.com/adamgreenwell/wayfindr/issues/761).
+- **Account authentication and authorization**: TOTP with recovery codes and
+  an account requirement; OIDC federation; account-owned custom roles; and
+  owner-controlled JIT provisioning with deny-by-default claim mapping. SAML
+  remains demand-gated and SCIM remains a separate lifecycle decision in
+  [#761](https://github.com/adamgreenwell/wayfindr/issues/761).
 - **Support hours, away state and offline capture**, per site and in the site's
   own timezone, with a pre-chat form for sites that need to know who is asking.
 - **Reporting**: conversation and ticket volume, first-response and resolution

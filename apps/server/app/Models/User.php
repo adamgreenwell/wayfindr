@@ -20,7 +20,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Throwable;
 
-#[Fillable(['account_id', 'account_role', 'custom_role_id', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone'])]
+#[Fillable(['account_id', 'account_role', 'custom_role_id', 'oidc_provisioned_at', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone'])]
 #[Hidden(['password', 'remember_token', 'two_factor_secret', 'two_factor_recovery_codes'])]
 class User extends Authenticatable
 {
@@ -59,6 +59,7 @@ class User extends Authenticatable
             'platform_role' => PlatformRole::class,
             'alert_preferences' => 'array',
             'deactivated_at' => 'datetime',
+            'oidc_provisioned_at' => 'immutable_datetime',
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_secret' => 'encrypted',

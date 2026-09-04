@@ -89,6 +89,20 @@ final class AgentAccountOidcConnectionController extends Controller
                 'is_enabled' => $isEnabled,
             ];
             $identityLinksCleared = 0;
+            $roleMappingsCleared = 0;
+            $authorityChanged = $connection === null
+                || $connection->issuer_url !== $issuerUrl
+                || $connection->client_id !== $values['client_id'];
+
+            // Whoever controls the issuer can assert a verified email for an
+            // existing owner. Establishing or replacing that authority is
+            // therefore role administration, even though ordinary secret
+            // rotation and availability remain security-management work.
+            abort_if(
+                $authorityChanged
+                && ! $lockedAgent->hasAccountPermission(AccountPermission::ManageRoles),
+                403,
+            );
 
             if (is_string($replacementSecret) && $replacementSecret !== '') {
                 $values['client_secret'] = $replacementSecret;
@@ -106,8 +120,11 @@ final class AgentAccountOidcConnectionController extends Controller
                 // pairwise per client. Carrying a binding across either
                 // boundary could let the new authority reuse an opaque value
                 // that belonged to somebody else under the old one.
-                if ($connection->issuer_url !== $issuerUrl || $connection->client_id !== $values['client_id']) {
+                if ($authorityChanged) {
                     $identityLinksCleared = $connection->identities()->delete();
+                    $roleMappingsCleared = $connection->roleMappings()->delete();
+                    $values['role_claim'] = null;
+                    $values['jit_provisioning_enabled'] = false;
                 }
 
                 $connection->update($values);
@@ -124,6 +141,7 @@ final class AgentAccountOidcConnectionController extends Controller
                     'enabled' => $connection->is_enabled,
                     'name' => $connection->name,
                     'identity_links_cleared' => $identityLinksCleared,
+                    'role_mappings_cleared' => $roleMappingsCleared,
                 ],
                 'occurred_at' => now(),
             ]);

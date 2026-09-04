@@ -25,6 +25,14 @@ final class AgentAccountSecurityController extends Controller
         $account = $agent->account()->firstOrFail();
         $activeAgents = $account->agents()->whereNull('deactivated_at');
         $enabledCount = (clone $activeAgents)->whereNotNull('two_factor_confirmed_at')->count();
+        $canManageOidcProvisioning = $agent->hasAccountPermission(AccountPermission::ManageRoles);
+        $oidcConnection = $account->oidcConnection()->first();
+
+        if ($canManageOidcProvisioning && $oidcConnection) {
+            $oidcConnection->load(['roleMappings' => fn ($query) => $query
+                ->with('customRole')
+                ->orderBy('claim_value')]);
+        }
 
         return view('agent.account.security', [
             'agent' => $agent,
@@ -32,7 +40,12 @@ final class AgentAccountSecurityController extends Controller
             'activeAgentCount' => (clone $activeAgents)->count(),
             'enabledCount' => $enabledCount,
             'missingCount' => (clone $activeAgents)->whereNull('two_factor_confirmed_at')->count(),
-            'oidcConnection' => $account->oidcConnection()->first(),
+            'oidcConnection' => $oidcConnection,
+            'canManageOidcProvisioning' => $canManageOidcProvisioning,
+            'canManageOidcAuthority' => $canManageOidcProvisioning,
+            'oidcCustomRoles' => $canManageOidcProvisioning
+                ? $account->customRoles()->orderBy('name')->get()
+                : collect(),
         ]);
     }
 

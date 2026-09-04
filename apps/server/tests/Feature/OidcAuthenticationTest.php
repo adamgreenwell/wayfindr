@@ -2,15 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Enums\PlatformRole;
 use App\Http\Controllers\Auth\OidcSessionController;
 use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\CustomRole;
 use App\Models\OidcConnection;
 use App\Models\OidcIdentity;
+use App\Models\OidcRoleMapping;
+use App\Models\Site;
 use App\Models\User;
+use App\Support\AgentRealtimeSessions;
 use App\Support\Auth\Oidc\OidcClient;
 use App\Support\Auth\Oidc\OidcHttpClientFactory;
 use App\Support\Auth\Oidc\OidcUser;
@@ -66,16 +71,17 @@ final class FeatureOidcClient implements OidcClient
     }
 }
 
-/** @return array{account: Account, admin: User, connection: OidcConnection, client: FeatureOidcClient} */
+/** @return array{account: Account, owner: User, admin: User, connection: OidcConnection, client: FeatureOidcClient} */
 function oidcWorld(): array
 {
     $account = Account::factory()->create(['slug' => 'acme-support']);
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
     $connection = OidcConnection::factory()->for($account)->create();
     $client = new FeatureOidcClient;
     app()->instance(OidcClient::class, $client);
 
-    return compact('account', 'admin', 'connection', 'client');
+    return compact('account', 'owner', 'admin', 'connection', 'client');
 }
 
 function startOidcAttempt(OidcConnection $connection): void
@@ -107,15 +113,15 @@ function oidcBase64Url(string $value): string
     return rtrim(strtr(base64_encode($value), '+/', '-_'), '=');
 }
 
-test('an account administrator configures one encrypted OIDC connection', function (): void {
+test('an account owner configures one encrypted OIDC connection', function (): void {
     $account = Account::factory()->create();
-    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
     app()->instance(
         OutboundWebhookDestination::class,
         new OutboundWebhookDestination(fn (): array => ['8.8.8.8']),
     );
 
-    $this->actingAs($admin)->put(route('dashboard.account.security.oidc.update'), [
+    $this->actingAs($owner)->put(route('dashboard.account.security.oidc.update'), [
         'name' => 'Acme Identity',
         'issuer_url' => 'https://id.example.com/',
         'client_id' => 'wayfindr-client',
@@ -131,9 +137,14 @@ test('an account administrator configures one encrypted OIDC connection', functi
         ->and($connection->toArray())->not->toHaveKey('client_secret')
         ->and(DB::table('oidc_connections')->value('client_secret'))->not->toBe('very-secret-value')
         ->and(AuditEvent::query()->where('action', 'account.oidc_connection_updated')->value('metadata'))
-        ->toBe(['enabled' => true, 'name' => 'Acme Identity', 'identity_links_cleared' => 0]);
+        ->toBe([
+            'enabled' => true,
+            'name' => 'Acme Identity',
+            'identity_links_cleared' => 0,
+            'role_mappings_cleared' => 0,
+        ]);
 
-    $this->actingAs($admin)
+    $this->actingAs($owner)
         ->get(route('dashboard.account.security.show'))
         ->assertOk()
         ->assertSee(route('oidc.callback', ['connectionPublicId' => $connection->public_id]))
@@ -146,12 +157,17 @@ test('updating OIDC preserves a blank secret and rotates pending configuration',
     $originalVersion = $world['connection']->configuration_version;
     $linked = User::factory()->for($world['account'])->create();
     OidcIdentity::factory()->for($world['connection'], 'connection')->for($linked)->create();
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create();
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
     app()->instance(
         OutboundWebhookDestination::class,
         new OutboundWebhookDestination(fn (): array => ['1.1.1.1']),
     );
 
-    $this->actingAs($world['admin'])->put(route('dashboard.account.security.oidc.update'), [
+    $this->actingAs($world['owner'])->put(route('dashboard.account.security.oidc.update'), [
         'name' => 'Renamed SSO',
         'issuer_url' => 'https://login.example.com',
         'client_id' => 'new-client',
@@ -162,14 +178,19 @@ test('updating OIDC preserves a blank secret and rotates pending configuration',
     expect($connection->client_secret)->toBe($originalSecret)
         ->and($connection->configuration_version)->not->toBe($originalVersion)
         ->and($connection->is_enabled)->toBeFalse()
+        ->and($connection->role_claim)->toBeNull()
+        ->and($connection->jit_provisioning_enabled)->toBeFalse()
         ->and(OidcIdentity::query()->count())->toBe(0)
-        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['identity_links_cleared'])->toBe(1);
+        ->and(OidcRoleMapping::query()->count())->toBe(0)
+        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['identity_links_cleared'])->toBe(1)
+        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['role_mappings_cleared'])->toBe(1);
 });
 
 test('renaming a provider or rotating only its secret preserves identity bindings', function (): void {
     $world = oidcWorld();
     $linked = User::factory()->for($world['account'])->create();
     $identity = OidcIdentity::factory()->for($world['connection'], 'connection')->for($linked)->create();
+    $mapping = OidcRoleMapping::factory()->for($world['connection'], 'connection')->create();
     app()->instance(
         OutboundWebhookDestination::class,
         new OutboundWebhookDestination(fn (): array => ['1.1.1.1']),
@@ -185,7 +206,110 @@ test('renaming a provider or rotating only its secret preserves identity binding
 
     expect($world['connection']->fresh()->client_secret)->toBe('rotated-secret')
         ->and(OidcIdentity::query()->whereKey($identity->id)->exists())->toBeTrue()
-        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['identity_links_cleared'])->toBe(0);
+        ->and(OidcRoleMapping::query()->whereKey($mapping->id)->exists())->toBeTrue()
+        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['identity_links_cleared'])->toBe(0)
+        ->and(AuditEvent::query()->latest('id')->firstOrFail()->metadata['role_mappings_cleared'])->toBe(0);
+});
+
+test('only an owner can configure deny-by-default OIDC role mappings', function (): void {
+    $world = oidcWorld();
+    $owner = $world['owner'];
+    $customRole = CustomRole::factory()->for($world['account'])->create(['name' => 'Support lead']);
+
+    $this->actingAs($world['admin'])
+        ->get(route('dashboard.account.security.show'))
+        ->assertOk()
+        ->assertDontSee('Just-in-time provisioning');
+    $this->actingAs($world['admin'])
+        ->post(route('dashboard.account.security.oidc.role-mappings.store'), [
+            'claim_value' => 'support',
+            'role_target' => 'built_in:agent',
+        ])
+        ->assertForbidden();
+
+    $this->actingAs($owner)
+        ->post(route('dashboard.account.security.oidc.role-mappings.store'), [
+            'claim_value' => 'support-leads',
+            'role_target' => 'custom:'.$customRole->id,
+        ])
+        ->assertRedirect(route('dashboard.account.security.show'))
+        ->assertSessionHas('status', 'oidc.flash.mapping_created');
+
+    $mapping = OidcRoleMapping::query()->sole();
+    $versionAfterMapping = $world['connection']->fresh()->configuration_version;
+    expect($mapping->claim_value)->toBe('support-leads')
+        ->and($mapping->custom_role_id)->toBe($customRole->id)
+        ->and($mapping->built_in_role)->toBeNull();
+
+    $this->actingAs($owner)
+        ->put(route('dashboard.account.security.oidc.provisioning.update'), [
+            'role_claim' => 'groups',
+            'jit_provisioning_enabled' => '1',
+        ])
+        ->assertRedirect(route('dashboard.account.security.show'))
+        ->assertSessionHas('status', 'oidc.flash.provisioning_updated');
+
+    $connection = $world['connection']->fresh();
+    expect($connection->role_claim)->toBe('groups')
+        ->and($connection->jit_provisioning_enabled)->toBeTrue()
+        ->and($connection->configuration_version)->not->toBe($versionAfterMapping)
+        ->and(AuditEvent::query()->where('action', 'account.oidc_role_mapping_created')->count())->toBe(1)
+        ->and(AuditEvent::query()->where('action', 'account.oidc_provisioning_updated')->count())->toBe(1);
+
+    $this->actingAs($owner)
+        ->get(route('dashboard.account.security.show'))
+        ->assertOk()
+        ->assertSee('Just-in-time provisioning')
+        ->assertSee('support-leads')
+        ->assertSee('Support lead');
+
+    $this->actingAs($owner)
+        ->delete(route('dashboard.account.roles.destroy', $customRole))
+        ->assertSessionHasErrors('role');
+    expect(CustomRole::query()->whereKey($customRole->id)->exists())->toBeTrue();
+
+    $this->actingAs($owner)
+        ->delete(route('dashboard.account.security.oidc.role-mappings.destroy', $mapping))
+        ->assertRedirect(route('dashboard.account.security.show'))
+        ->assertSessionHas('status', 'oidc.flash.mapping_deleted');
+    expect(OidcRoleMapping::query()->count())->toBe(0)
+        ->and(AuditEvent::query()->where('action', 'account.oidc_role_mapping_deleted')->count())->toBe(1);
+});
+
+test('OIDC provisioning rejects owner targets duplicates and enabling without mappings', function (): void {
+    $world = oidcWorld();
+    $owner = $world['owner'];
+
+    $this->actingAs($owner)
+        ->put(route('dashboard.account.security.oidc.provisioning.update'), [
+            'role_claim' => 'groups',
+            'jit_provisioning_enabled' => '1',
+        ])
+        ->assertSessionHasErrors('jit_provisioning_enabled');
+
+    $this->actingAs($owner)
+        ->post(route('dashboard.account.security.oidc.role-mappings.store'), [
+            'claim_value' => 'owners',
+            'role_target' => 'built_in:owner',
+        ])
+        ->assertSessionHasErrors('role_target');
+
+    $this->actingAs($owner)
+        ->post(route('dashboard.account.security.oidc.role-mappings.store'), [
+            'claim_value' => 'support',
+            'role_target' => 'built_in:agent',
+        ])
+        ->assertSessionDoesntHaveErrors();
+
+    $this->actingAs($owner)
+        ->post(route('dashboard.account.security.oidc.role-mappings.store'), [
+            'claim_value' => 'support',
+            'role_target' => 'built_in:admin',
+        ])
+        ->assertSessionHasErrors('claim_value');
+
+    expect(OidcRoleMapping::query()->count())->toBe(1)
+        ->and(OidcRoleMapping::query()->sole()->built_in_role)->toBe(AccountRole::Agent);
 });
 
 test('OIDC settings require account administration and a public HTTPS issuer', function (): void {
@@ -199,13 +323,13 @@ test('OIDC settings require account administration and a public HTTPS issuer', f
         'client_secret' => 'secret',
     ])->assertForbidden();
 
-    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
     app()->instance(
         OutboundWebhookDestination::class,
         new OutboundWebhookDestination(fn (): array => ['127.0.0.1']),
     );
 
-    $this->actingAs($admin)
+    $this->actingAs($owner)
         ->from(route('dashboard.account.security.show'))
         ->put(route('dashboard.account.security.oidc.update'), [
             'name' => 'Internal',
@@ -219,6 +343,47 @@ test('OIDC settings require account administration and a public HTTPS issuer', f
         ->assertSessionMissing('_old_input.client_secret');
 
     expect(OidcConnection::query()->count())->toBe(0);
+});
+
+test('only an owner can establish or replace OIDC authority', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    app()->instance(
+        OutboundWebhookDestination::class,
+        new OutboundWebhookDestination(fn (): array => ['8.8.8.8']),
+    );
+
+    $this->actingAs($admin)->put(route('dashboard.account.security.oidc.update'), [
+        'name' => 'Untrusted authority',
+        'issuer_url' => 'https://attacker.example.com',
+        'client_id' => 'attacker-client',
+        'client_secret' => 'attacker-secret',
+        'is_enabled' => '1',
+    ])->assertForbidden();
+
+    expect(OidcConnection::query()->count())->toBe(0);
+
+    $connection = OidcConnection::factory()->for($account)->create([
+        'issuer_url' => 'https://id.example.com',
+        'client_id' => 'trusted-client',
+    ]);
+
+    $this->actingAs($admin)->put(route('dashboard.account.security.oidc.update'), [
+        'name' => 'Replacement authority',
+        'issuer_url' => 'https://replacement.example.com',
+        'client_id' => 'replacement-client',
+        'client_secret' => 'replacement-secret',
+        'is_enabled' => '1',
+    ])->assertForbidden();
+
+    $connection->refresh();
+    expect($connection->issuer_url)->toBe('https://id.example.com')
+        ->and($connection->client_id)->toBe('trusted-client');
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.security.show'))
+        ->assertOk()
+        ->assertSee('Only an account owner can replace the issuer or client ID.');
 });
 
 test('an unreachable OIDC provider can be disabled but not enabled', function (): void {
@@ -269,11 +434,16 @@ test('the OIDC HTTP client rejects private endpoints and pins every public reque
 test('the production client completes a state nonce PKCE and signed ID token flow', function (): void {
     Cache::flush();
     $account = Account::factory()->create(['slug' => 'production-flow']);
-    $user = User::factory()->for($account)->create(['email' => 'agent@example.com']);
     $connection = OidcConnection::factory()->for($account)->create([
         'issuer_url' => 'https://id.example.com',
         'client_id' => 'production-client',
         'client_secret' => 'production-secret',
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+    OidcRoleMapping::factory()->for($connection, 'connection')->create([
+        'claim_value' => 'wayfindr-agents',
+        'built_in_role' => AccountRole::Agent,
     ]);
     $key = openssl_pkey_new([
         'private_key_bits' => 2048,
@@ -336,6 +506,8 @@ test('the production client completes a state nonce PKCE and signed ID token flo
         'sub' => 'production-subject',
         'email' => 'agent@example.com',
         'email_verified' => true,
+        'name' => 'Production Agent',
+        'groups' => ['wayfindr-agents'],
         'nonce' => $nonce,
         'iat' => now()->timestamp,
         'exp' => now()->addMinutes(5)->timestamp,
@@ -347,12 +519,17 @@ test('the production client completes a state nonce PKCE and signed ID token flo
         'code' => 'authorization-code',
     ]))->assertRedirect(route('dashboard'));
 
+    $user = User::query()->where('email', 'agent@example.com')->sole();
     $this->assertAuthenticatedAs($user);
+    expect($user->name)->toBe('Production Agent')
+        ->and($user->account_role)->toBe(AccountRole::Agent)
+        ->and($user->email_verified_at)->not->toBeNull()
+        ->and($user->oidc_provisioned_at)->not->toBeNull();
     expect(OidcIdentity::query()->where([
         'oidc_connection_id' => $connection->id,
         'user_id' => $user->id,
         'subject' => 'production-subject',
-    ])->exists())->toBeTrue();
+    ])->whereNotNull('provisioned_at')->exists())->toBeTrue();
 
     $tokenRequest = collect($requests)->first(
         fn (array $entry): bool => $entry['request']->getUri()->getPath() === '/token'
@@ -426,7 +603,7 @@ test('a verified provider identity links only to an existing same-account user',
         ->assertSee('Single sign-on identity')
         ->assertSee('Original SSO');
 
-    $this->actingAs($world['admin'])->put(route('dashboard.account.security.oidc.update'), [
+    $this->actingAs($world['owner'])->put(route('dashboard.account.security.oidc.update'), [
         'name' => 'Replacement SSO',
         'issuer_url' => 'https://replacement.example.com',
         'client_id' => $world['connection']->client_id,
@@ -447,6 +624,360 @@ test('a verified provider identity links only to an existing same-account user',
         ->streamedContent();
 
     expect(substr_count($csv, 'Single sign-on identity (Original SSO)'))->toBe(2);
+});
+
+test('JIT provisioning creates a verified user in exactly one mapped custom role', function (): void {
+    $world = oidcWorld();
+    $role = CustomRole::factory()->for($world['account'])->create([
+        'name' => 'Conversation specialist',
+        'name_key' => 'conversation specialist',
+    ]);
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'conversation-team',
+        'built_in_role' => null,
+        'custom_role_id' => $role->id,
+    ]);
+    $world['client']->nextUser = new OidcUser(
+        'jit-subject',
+        'new.agent@example.com',
+        true,
+        'New Agent',
+        ['conversation-team'],
+    );
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+
+    $user = User::query()->where('email', 'new.agent@example.com')->sole();
+    $identity = OidcIdentity::query()->where('user_id', $user->id)->sole();
+    $this->assertAuthenticatedAs($user);
+    expect($user->account_id)->toBe($world['account']->id)
+        ->and($user->name)->toBe('New Agent')
+        ->and($user->account_role)->toBe(AccountRole::Agent)
+        ->and($user->custom_role_id)->toBe($role->id)
+        ->and($user->email_verified_at)->not->toBeNull()
+        ->and($user->oidc_provisioned_at)->not->toBeNull()
+        ->and($identity->provisioned_at)->not->toBeNull()
+        ->and(DB::table('site_user')->where('user_id', $user->id)->count())->toBe(0)
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_provisioned')->count())->toBe(1)
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_identity_linked')->count())->toBe(1)
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_signed_in')->count())->toBe(1);
+});
+
+test('a locally created OIDC user keeps their local role when JIT mappings are enabled', function (): void {
+    $world = oidcWorld();
+    $local = User::factory()->for($world['account'])->create([
+        'email' => 'local-role@example.com',
+        'account_role' => AccountRole::Agent,
+    ]);
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'administrators',
+        'built_in_role' => AccountRole::Admin,
+    ]);
+    $world['client']->nextUser = new OidcUser(
+        'local-subject',
+        'local-role@example.com',
+        true,
+        'Local Agent',
+        ['administrators'],
+    );
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+
+    expect($local->fresh()->account_role)->toBe(AccountRole::Agent)
+        ->and($local->fresh()->oidc_provisioned_at)->toBeNull()
+        ->and(OidcIdentity::query()->where('user_id', $local->id)->sole()->provisioned_at)->toBeNull()
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_provisioned')->count())->toBe(0)
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_role_mapped')->count())->toBe(0);
+});
+
+test('a JIT-managed identity follows a later unambiguous role mapping even after new provisioning is disabled', function (): void {
+    $world = oidcWorld();
+    $firstRole = CustomRole::factory()->for($world['account'])->create([
+        'name' => 'First role',
+        'name_key' => 'first role',
+    ]);
+    $secondRole = CustomRole::factory()->for($world['account'])->create([
+        'name' => 'Second role',
+        'name_key' => 'second role',
+    ]);
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'first-team',
+        'built_in_role' => null,
+        'custom_role_id' => $firstRole->id,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'second-team',
+        'built_in_role' => null,
+        'custom_role_id' => $secondRole->id,
+    ]);
+    $realtime = Mockery::mock(AgentRealtimeSessions::class);
+    $realtime->shouldReceive('requestMany')->once()->with(Mockery::type('array'));
+    $realtime->shouldReceive('disconnectMany')->once()->with(Mockery::type('array'));
+    app()->instance(AgentRealtimeSessions::class, $realtime);
+    $world['client']->nextUser = new OidcUser(
+        'managed-subject',
+        'managed@example.com',
+        true,
+        'Managed Agent',
+        ['first-team'],
+    );
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+    $user = User::query()->where('email', 'managed@example.com')->sole();
+    expect($user->custom_role_id)->toBe($firstRole->id);
+
+    $this->post(route('logout'));
+    $world['connection']->update(['jit_provisioning_enabled' => false]);
+    $world['client']->nextUser = new OidcUser(
+        'managed-subject',
+        'changed@example.com',
+        true,
+        'Managed Agent',
+        ['second-team'],
+    );
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+
+    $user = $user->fresh();
+    expect($user->custom_role_id)->toBe($secondRole->id)
+        ->and($user->email)->toBe('managed@example.com')
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_role_mapped')->count())->toBe(1)
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_role_mapped')->value('metadata'))
+        ->toMatchArray([
+            'old_role' => 'custom:'.$firstRole->id,
+            'role' => 'custom:'.$secondRole->id,
+            'role_name' => 'Second role',
+        ]);
+});
+
+test('JIT provenance survives a cleared provider-subject binding', function (): void {
+    $world = oidcWorld();
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'support',
+        'built_in_role' => AccountRole::Agent,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'administrators',
+        'built_in_role' => AccountRole::Admin,
+    ]);
+    $world['client']->nextUser = new OidcUser(
+        'first-subject',
+        'persistent-jit@example.com',
+        true,
+        'Persistent Agent',
+        ['support'],
+    );
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+    $user = User::query()->where('email', 'persistent-jit@example.com')->sole();
+    $this->post(route('logout'));
+    OidcIdentity::query()->where('user_id', $user->id)->delete();
+
+    $world['client']->nextUser = new OidcUser(
+        'replacement-subject',
+        'persistent-jit@example.com',
+        true,
+        'Persistent Agent',
+        ['administrators'],
+    );
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+
+    expect(User::query()->where('email', 'persistent-jit@example.com')->count())->toBe(1)
+        ->and($user->fresh()->account_role)->toBe(AccountRole::Admin)
+        ->and($user->fresh()->oidc_provisioned_at)->not->toBeNull()
+        ->and(OidcIdentity::query()->where('user_id', $user->id)->sole()->provisioned_at)->not->toBeNull()
+        ->and(OidcIdentity::query()->where('user_id', $user->id)->sole()->subject)->toBe('replacement-subject');
+});
+
+test('OIDC role sync cannot strand an explicitly assigned site without a manager', function (): void {
+    $world = oidcWorld();
+    $managerRole = CustomRole::factory()->for($world['account'])->create([
+        'name' => 'Site manager',
+        'name_key' => 'site manager',
+        'permissions' => [AccountPermission::ManageSiteAccess->value],
+    ]);
+    $user = User::factory()->for($world['account'])->create([
+        'email' => 'site.manager@example.com',
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $managerRole->id,
+    ]);
+    $identity = OidcIdentity::factory()
+        ->for($world['connection'], 'connection')
+        ->for($user)
+        ->create(['subject' => 'site-manager-subject', 'provisioned_at' => now()]);
+    $site = Site::factory()->for($world['account'])->create();
+    $site->supportAgents()->attach($user->id);
+    $world['connection']->update(['role_claim' => 'groups']);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'ordinary-agents',
+        'built_in_role' => AccountRole::Agent,
+    ]);
+    $world['client']->nextUser = new OidcUser(
+        $identity->subject,
+        $user->email,
+        true,
+        $user->name,
+        ['ordinary-agents'],
+    );
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors('account_slug');
+
+    $this->assertGuest();
+    expect($user->fresh()->custom_role_id)->toBe($managerRole->id)
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_role_mapped')->count())->toBe(0);
+});
+
+test('multiple exact claim values remain unambiguous when they map to one role', function (): void {
+    $world = oidcWorld();
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+
+    foreach (['support', 'everyone'] as $claimValue) {
+        OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+            'claim_value' => $claimValue,
+            'built_in_role' => AccountRole::Agent,
+        ]);
+    }
+
+    $world['client']->nextUser = new OidcUser(
+        'multi-match-subject',
+        'multi.match@example.com',
+        true,
+        'Multi Match',
+        ['support', 'everyone'],
+    );
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+
+    expect(User::query()->where('email', 'multi.match@example.com')->sole()->account_role)
+        ->toBe(AccountRole::Agent);
+});
+
+test('missing ambiguous and owner claim mappings fail closed without creating a user', function (
+    array $claimValues,
+    array $mappings,
+): void {
+    $world = oidcWorld();
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+
+    foreach ($mappings as [$claimValue, $role]) {
+        OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+            'claim_value' => $claimValue,
+            'built_in_role' => $role,
+        ]);
+    }
+
+    $world['client']->nextUser = new OidcUser(
+        'rejected-subject',
+        'rejected@example.com',
+        true,
+        'Rejected Agent',
+        $claimValues,
+    );
+    $before = User::query()->count();
+
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors('account_slug');
+
+    $this->assertGuest();
+    expect(User::query()->count())->toBe($before)
+        ->and(OidcIdentity::query()->count())->toBe(0);
+})->with([
+    'missing mapping' => [['unmapped'], [['support', AccountRole::Agent]]],
+    'case-sensitive mismatch' => [['Support'], [['support', AccountRole::Agent]]],
+    'conflicting mappings' => [
+        ['support', 'administrators'],
+        [['support', AccountRole::Agent], ['administrators', AccountRole::Admin]],
+    ],
+    'owner target persisted outside the UI' => [['owners'], [['owners', AccountRole::Owner]]],
+]);
+
+test('a JIT-managed identity with no current mapping is refused without losing local recovery', function (): void {
+    $world = oidcWorld();
+    $world['connection']->update([
+        'role_claim' => 'groups',
+        'jit_provisioning_enabled' => true,
+    ]);
+    OidcRoleMapping::factory()->for($world['connection'], 'connection')->create([
+        'claim_value' => 'support',
+        'built_in_role' => AccountRole::Agent,
+    ]);
+    $world['client']->nextUser = new OidcUser(
+        'recoverable-subject',
+        'recoverable@example.com',
+        true,
+        'Recoverable Agent',
+        ['support'],
+    );
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('dashboard'));
+    $user = User::query()->where('email', 'recoverable@example.com')->sole();
+    $user->update(['password' => Hash::make('local-recovery-password')]);
+    $this->post(route('logout'));
+
+    $world['client']->nextUser = new OidcUser(
+        'recoverable-subject',
+        'recoverable@example.com',
+        true,
+        'Recoverable Agent',
+        ['removed-group'],
+    );
+    startOidcAttempt($world['connection']->fresh());
+    $this->get(route('oidc.callback', ['connectionPublicId' => $world['connection']->public_id]))
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors('account_slug');
+    $this->assertGuest();
+
+    $this->post(route('login.store'), [
+        'email' => 'recoverable@example.com',
+        'password' => 'local-recovery-password',
+    ])->assertRedirect(route('dashboard'));
+
+    $this->assertAuthenticatedAs($user);
+    expect($user->fresh()->deactivated_at)->toBeNull()
+        ->and($user->fresh()->account_role)->toBe(AccountRole::Agent)
+        ->and(AuditEvent::query()->where('action', 'agent.oidc_signed_in')->count())->toBe(1);
 });
 
 test('a linked subject remains authoritative when its provider email changes', function (): void {

@@ -415,7 +415,12 @@ class AgentAccountAuditController extends Controller
             'outbound_webhook.disabled' => 'Outbound webhook disabled',
             'outbound_webhook.delivery_retried' => 'Outbound webhook delivery retried',
             'account.oidc_connection_updated' => 'Single sign-on settings updated',
+            'account.oidc_provisioning_updated' => 'Single sign-on provisioning updated',
+            'account.oidc_role_mapping_created' => 'Single sign-on role mapping added',
+            'account.oidc_role_mapping_deleted' => 'Single sign-on role mapping removed',
             'agent.oidc_identity_linked' => 'Single sign-on identity linked',
+            'agent.oidc_provisioned' => 'Agent provisioned through single sign-on',
+            'agent.oidc_role_mapped' => 'Agent role mapped through single sign-on',
             'agent.oidc_signed_in' => 'Signed in with single sign-on',
             // Without these the default arm headline-cases the raw action
             // and the account reads "Break Glass Resource Viewed" in its

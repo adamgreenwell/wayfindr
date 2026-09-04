@@ -19,6 +19,7 @@ return [
     'flash' => ['created' => 'Benutzerdefinierte Rolle erstellt.', 'updated' => 'Benutzerdefinierte Rolle aktualisiert.', 'deleted' => 'Benutzerdefinierte Rolle gelöscht.'],
     'errors' => [
         'assigned' => 'Weisen Sie alle Personen einer anderen Rolle zu, bevor Sie diese Rolle löschen.',
+        'oidc_mapped' => 'Entfernen Sie diese Rolle vor dem Löschen aus den Single-Sign-on-Claim-Zuordnungen.',
         'duplicate' => 'Eine Rolle mit diesem Namen ist bereits vorhanden.',
         'reserved' => 'Owner, Admin und Agent sind reservierte Namen für integrierte Rollen.',
         'requires' => ':permission erfordert :required.',

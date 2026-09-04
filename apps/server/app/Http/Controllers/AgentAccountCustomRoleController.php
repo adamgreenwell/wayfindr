@@ -134,6 +134,12 @@ final class AgentAccountCustomRoleController extends Controller
                 ]);
             }
 
+            if ($role->oidcRoleMappings()->exists()) {
+                throw ValidationException::withMessages([
+                    'role' => __('account_roles.errors.oidc_mapped'),
+                ]);
+            }
+
             $this->audit($actor, $role, 'custom_role.deleted', [
                 'role_name' => $role->name,
                 'permissions' => $role->permissionValues(),
