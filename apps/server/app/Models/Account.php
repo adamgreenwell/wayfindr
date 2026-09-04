@@ -47,6 +47,11 @@ class Account extends Model
         return $this->hasMany(SlaPolicy::class);
     }
 
+    public function automationRules(): HasMany
+    {
+        return $this->hasMany(AutomationRule::class);
+    }
+
     public function slaClocks(): HasMany
     {
         return $this->hasMany(SlaClock::class);

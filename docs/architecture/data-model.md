@@ -59,6 +59,7 @@ operator-facing data inventory and retention posture.
 ## Design Notes
 
 - Support lifecycle fields stay portable strings in the database, while PHP-backed enums validate every `Conversation` and `Ticket` status or priority model write. Automation rules can therefore persist stable scalar values without accepting typo-only states.
+- Automation rules belong to one account, default to disabled, select a typed event, and keep ordered condition and action lists as JSON. Equal positions are evaluated by row ID so order remains deterministic while an operator is reordering rules.
 - Visitor identity supports both `anonymous_id` and optional host-provided `external_id`. Public widget requests bootstrap a signed visitor token before they can create conversations or read/write visitor messages.
 - Cobrowsing state is separate from conversations because consent, start, end timing, connection telemetry, visitor page state, sanitized page snapshots, and mutation diagnostics need their own lifecycle.
 - Attachments are separate from messages because upload, scan, bind, storage,
