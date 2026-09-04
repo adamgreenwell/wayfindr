@@ -4,13 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
 use App\Models\TicketLabel;
+use App\Models\User;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class AgentTicketLabelController extends Controller
 {
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+
     public function index(Request $request): View
     {
         $agent = $request->user();
@@ -48,13 +53,17 @@ class AgentTicketLabelController extends Controller
         $account = $agent->account()->firstOrFail();
         $label = $this->validatedLabelInput($request);
 
-        if ($this->accountLabelSlugExists((int) $account->id, $label['slug'])) {
-            throw ValidationException::withMessages([
-                'label_name' => __('ticket_labels.validation.duplicate'),
-            ]);
-        }
+        DB::transaction(function () use ($agent, $account, $label): void {
+            $this->lockedKnowledgeManager($agent, (int) $account->id, 403);
 
-        $account->ticketLabels()->create($label);
+            if ($this->accountLabelSlugExists((int) $account->id, $label['slug'])) {
+                throw ValidationException::withMessages([
+                    'label_name' => __('ticket_labels.validation.duplicate'),
+                ]);
+            }
+
+            $account->ticketLabels()->create($label);
+        });
 
         return redirect()
             ->route('dashboard.account.labels.index')
@@ -68,13 +77,19 @@ class AgentTicketLabelController extends Controller
         $this->authorizeManageLabel($agent, $ticketLabel);
         $label = $this->validatedLabelInput($request);
 
-        if ($this->labelSlugExists($ticketLabel, $label['slug'])) {
-            throw ValidationException::withMessages([
-                'label_name' => __('ticket_labels.validation.duplicate'),
-            ]);
-        }
+        DB::transaction(function () use ($agent, $ticketLabel, $label): void {
+            $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $ticketLabel->account_id);
+            $ticketLabel = $this->lockedTicketLabel($ticketLabel);
+            $this->authorizeManageLabel($lockedAgent, $ticketLabel);
 
-        $ticketLabel->forceFill($label)->save();
+            if ($this->labelSlugExists($ticketLabel, $label['slug'])) {
+                throw ValidationException::withMessages([
+                    'label_name' => __('ticket_labels.validation.duplicate'),
+                ]);
+            }
+
+            $ticketLabel->forceFill($label)->save();
+        });
 
         return redirect()
             ->route('dashboard.account.labels.index')
@@ -87,13 +102,19 @@ class AgentTicketLabelController extends Controller
 
         $this->authorizeManageLabel($agent, $ticketLabel);
 
-        if ($ticketLabel->tickets()->exists()) {
-            throw ValidationException::withMessages([
-                'label' => __('ticket_labels.validation.in_use'),
-            ]);
-        }
+        DB::transaction(function () use ($agent, $ticketLabel): void {
+            $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $ticketLabel->account_id);
+            $ticketLabel = $this->lockedTicketLabel($ticketLabel);
+            $this->authorizeManageLabel($lockedAgent, $ticketLabel);
 
-        $ticketLabel->delete();
+            if ($ticketLabel->tickets()->exists()) {
+                throw ValidationException::withMessages([
+                    'label' => __('ticket_labels.validation.in_use'),
+                ]);
+            }
+
+            $ticketLabel->delete();
+        });
 
         return redirect()
             ->route('dashboard.account.labels.index')
@@ -108,6 +129,32 @@ class AgentTicketLabelController extends Controller
             && (int) $agent->account_id === (int) $ticketLabel->account_id,
             404,
         );
+    }
+
+    private function lockedKnowledgeManager(User $agent, int $accountId, int $failureStatus = 404): User
+    {
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $lockedAgent = User::query()
+            ->whereKey($agent->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->first();
+
+        abort_unless(
+            $lockedAgent?->hasAccountPermission(AccountPermission::ManageKnowledge),
+            $failureStatus,
+        );
+
+        return $lockedAgent;
+    }
+
+    private function lockedTicketLabel(TicketLabel $ticketLabel): TicketLabel
+    {
+        return TicketLabel::query()
+            ->whereKey($ticketLabel->id)
+            ->where('account_id', $ticketLabel->account_id)
+            ->lockForUpdate()
+            ->firstOrFail();
     }
 
     /**

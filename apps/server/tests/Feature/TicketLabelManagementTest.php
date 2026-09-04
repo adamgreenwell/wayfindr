@@ -535,6 +535,44 @@ test('ticket label management actions stay inside same account admin boundaries'
     ]);
 });
 
+test('ticket label mutations reauthorize a stale custom role under the account lock', function (string $action): void {
+    $account = Account::factory()->create();
+    $knowledgeRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageKnowledge->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $knowledgeRole->id,
+    ]);
+    $label = TicketLabel::factory()->for($account)->create([
+        'name' => 'Original label',
+        'slug' => 'original-label',
+    ]);
+
+    $this->actingAs($manager);
+    expect($manager->hasAccountPermission(AccountPermission::ManageKnowledge))->toBeTrue();
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $response = match ($action) {
+        'create' => $this->post(route('dashboard.account.labels.store'), [
+            'label_name' => 'Late label',
+        ]),
+        'update' => $this->put(route('dashboard.account.labels.update', $label), [
+            'label_name' => 'Late rename',
+        ]),
+        'delete' => $this->delete(route('dashboard.account.labels.destroy', $label)),
+    };
+
+    $action === 'create'
+        ? $response->assertForbidden()
+        : $response->assertNotFound();
+
+    expect(TicketLabel::query()->count())->toBe(1)
+        ->and($label->fresh()->name)->toBe('Original label')
+        ->and($label->fresh()->slug)->toBe('original-label');
+})->with(['create', 'update', 'delete']);
+
 test('an agent who reads German gets the labels page, counts included, in German', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create([
