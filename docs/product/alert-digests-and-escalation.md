@@ -65,6 +65,7 @@ enabled immediate email delivery:
 - a visitor message on an assigned conversation;
 - a visitor message on an unassigned conversation for agents who support that site;
 - a ticket newly assigned to the agent;
+- an SLA first-response or resolution deadline approaching or breached;
 - an explicit manual escalation to the agent or team;
 - later, high-confidence operational failures that block the support loop.
 
@@ -82,6 +83,7 @@ interrupt the agent as it happens:
 - tickets with stale next-action guidance;
 - site-level counts for open conversations, open tickets, and needs-reply items;
 - gentle reminders for support work that is aging but not escalated.
+- SLA warning and breach alerts still open when the digest is assembled.
 
 Digest content should prefer safe references over raw support content:
 
@@ -161,6 +163,10 @@ ticket timeline entry.
 This closes the first alert-calm foundation. Automatic account-level escalation
 rules remain a separate future product track documented in
 [Account Escalation Policies](account-escalation-policies.md).
+
+SLA alerts are urgency signals without automatic escalation. They respect the
+same current access and delivery rules and are documented in
+[SLA policies](sla-policies.md).
 
 ## Implementation Waypoints
 

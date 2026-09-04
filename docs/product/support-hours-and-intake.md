@@ -68,7 +68,14 @@ visitors are not promised a time.
 
 Editing the schedule does not clear it — reopening a desk somebody closed early
 is a separate decision from changing the hours. The reverse holds too: closing
-early writes only `closed_until` and leaves the schedule untouched.
+early writes only its bounded closure interval and leaves the schedule
+untouched. The interval records both start and end so business-time clocks can
+subtract exactly the segment the desk was manually closed.
+
+Before hours or that closure interval changes, active SLA clocks are advanced
+under the old calendar. The saved elapsed seconds are never recomputed from the
+latest schedule, so moving Tuesday's hours on Wednesday cannot rewrite work
+that happened Tuesday. See [SLA policies](sla-policies.md).
 
 A site with **no** support hours can still be closed. That is arguably where it
 matters most — no schedule configured, somebody simply stepping out — and the
@@ -235,7 +242,8 @@ otherwise chase.
 - **Holiday calendars.** Out of scope.
 - **Per-agent availability.** This is whether the *desk* is open, not who is at
   it. Agent presence belongs with routing.
-- **Pausing SLA outside hours.** Real, and it belongs with SLA policies.
+- **SLA targets.** Implemented separately at account level while reusing these
+  per-site hours; see [SLA policies](sla-policies.md).
 - **Closing the desk as a plain agent.** Closing early needs the same permission
   as setting the hours, which is admin. An agent stepping out cannot currently
   say so themselves. Widening that is a real question and a separate one, since
