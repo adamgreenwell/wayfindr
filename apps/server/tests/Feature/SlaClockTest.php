@@ -768,6 +768,27 @@ test('changing conversation priority applies the matching active targets', funct
         ->toBe(120 * 60);
 });
 
+test('changing priority on a closed unreplied conversation does not restart SLA clocks', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account']);
+    SlaPolicy::factory()->for($world['account'])->create([
+        'priority' => 'urgent',
+        'first_response_minutes' => 15,
+        'resolution_minutes' => 120,
+        'effective_at' => now(),
+    ]);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
+    expect($conversation->slaClocks()->whereNull('satisfied_at')->whereNull('cancelled_at')->count())->toBe(0);
+
+    $conversation->forceFill(['priority' => 'urgent'])->save();
+
+    expect($conversation->slaClocks()->whereNull('satisfied_at')->whereNull('cancelled_at')->count())->toBe(0)
+        ->and($conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->count())->toBe(1);
+});
+
 test('priority reconciliation locks the account before reading its replacement policy', function (): void {
     if (DB::getDriverName() !== 'pgsql') {
         $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');

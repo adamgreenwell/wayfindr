@@ -33,7 +33,8 @@ final class SlaClockManager
             $this->lockAccountPolicy((int) $conversation->site->account_id);
             $start = CarbonImmutable::instance($startedAt ?? $conversation->created_at ?? now());
 
-            if (! $conversation->messages()->where('sender_type', User::class)->exists()) {
+            if ($conversation->status !== 'closed'
+                && ! $conversation->messages()->where('sender_type', User::class)->exists()) {
                 $this->start($conversation, SlaClock::METRIC_FIRST_RESPONSE, $start);
             }
 
