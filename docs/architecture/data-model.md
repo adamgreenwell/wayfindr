@@ -5,10 +5,11 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 ## Core Records
 
 - `accounts`: tenant boundary for a support team.
-- `users`: Laravel users attached to one account with a starter `account_role` of `owner`, `admin`, or `agent`, plus optional `platform_role` instance authority.
+- `users`: Laravel users attached to one account with a starter `account_role` of `owner`, `admin`, or `agent`, optional `platform_role` instance authority, and an explicit online/away routing status for new automatic assignments.
 - Platform/instance operator authority should not be overloaded onto `account_role`. The first scaffold uses `users.platform_role` for explicit operator access while keeping it separate from account support access.
 - `sites`: install targets owned by an account. Each site has a public key used by widgets and integrations.
 - `site_user`: support-agent access for sites. Empty site membership means account-wide fallback for early installs; explicit rows narrow the support queue to assigned agents.
+- `site_routing_states`: one durable row per configured site containing separate last-agent cursors for conversation and ticket round-robin assignment.
 - `visitors`: anonymous or identified people seen on a site.
 - `conversations`: chat/support sessions between a visitor and support agents. Each conversation has a unique support code for later lookup.
 - `conversation_messages`: messages or system events inside a conversation. The sender is polymorphic so visitors, agents, and future system actors can share one message stream.
@@ -74,6 +75,10 @@ operator-facing data inventory and retention posture.
   URL, sync status, last sync time, and metadata separately from the canonical
   Wayfindr ticket lifecycle.
 - Audit actors and subjects are polymorphic so the model can track agent, visitor, conversation, ticket, and cobrowse events without creating a new audit table per feature.
+- Automatic assignment configuration lives in `sites.settings.routing`, while
+  cursor state has its own locked row because operational rotation state should
+  not rewrite the site's whole JSON settings document on every arrival. Agent
+  capacity is counted account-wide from non-closed assigned conversations.
 - Operator settings are database-backed overrides so operators can change
   runtime behavior through reviewed application flows. Browser settings must not
   rewrite `.env`.

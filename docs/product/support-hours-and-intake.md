@@ -240,8 +240,10 @@ otherwise chase.
 ## Not covered here
 
 - **Holiday calendars.** Out of scope.
-- **Per-agent availability.** This is whether the *desk* is open, not who is at
-  it. Agent presence belongs with routing.
+- **Per-agent availability is separate.** This is whether the *desk* is open,
+  not who is at it. Agents now explicitly choose online or away for
+  [automatic assignment](automatic-assignment-and-routing.md); one control does
+  not silently override the other.
 - **SLA targets.** Implemented separately at account level while reusing these
   per-site hours; see [SLA policies](sla-policies.md).
 - **Closing the desk as a plain agent.** Closing early needs the same permission
