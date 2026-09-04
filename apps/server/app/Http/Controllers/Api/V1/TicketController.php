@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Enums\AccountPermission;
 use App\Enums\TicketPriority;
 use App\Enums\TicketStatus;
+use App\Events\TicketCreated;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Site;
@@ -96,6 +97,7 @@ class TicketController extends Controller
                 ]);
 
                 $this->recordActivity($ticket, $token, 'ticket.created', ['source' => 'api']);
+                event(new TicketCreated($ticket));
 
                 return $ticket;
             },

@@ -2,6 +2,7 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationReadReceiptUpdated;
 use App\Jobs\SendConversationReplyDelivery;
@@ -9,6 +10,8 @@ use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\ApiIdempotencyKey;
 use App\Models\ApiToken;
+use App\Models\AutomationRule;
+use App\Models\AutomationRuleExecution;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationReplyDelivery;
@@ -686,6 +689,11 @@ test('one idempotency key cannot be moved to another conversation', function ():
 test('a token creates an idempotent ticket for a visitor in its writable scope', function (): void {
     $world = apiWriteWorld();
     $world['visitor']->forceFill(['presence_only' => true])->save();
+    $rule = AutomationRule::factory()->for($world['account'])->enabled()->create([
+        'name' => 'API ticket intake',
+        'event' => AutomationRuleEvent::TicketCreated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'Created through the public API.']],
+    ]);
     $payload = [
         'site_id' => $world['site']->id,
         'requester_id' => $world['visitor']->id,
@@ -717,11 +725,15 @@ test('a token creates an idempotent ticket for a visitor in its writable scope',
 
     $ticket = Ticket::query()->sole();
     $created = $ticket->auditEvents()->where('action', 'ticket.created')->sole();
+    $automationNote = $ticket->auditEvents()->where('action', 'ticket.note_added')->sole();
+    $execution = AutomationRuleExecution::query()->sole();
 
     expect($ticket->metadata)->toBe(['source' => 'api'])
         ->and($world['visitor']->fresh()->presence_only)->toBeFalse()
         ->and($created->actor_type)->toBe(ApiToken::class)
-        ->and($created->actor_id)->toBe($world['token']->id);
+        ->and($created->actor_id)->toBe($world['token']->id)
+        ->and($created->id)->toBeLessThan($automationNote->id)
+        ->and($execution->automation_rule_id)->toBe($rule->id);
 });
 
 test('ticket creation refuses archived sites and requesters from another site', function (): void {

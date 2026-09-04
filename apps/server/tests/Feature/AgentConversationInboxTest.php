@@ -1,11 +1,14 @@
 <?php
 
+use App\Enums\AutomationRuleEvent;
 use App\Enums\PlatformRole;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationTypingUpdated;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\AutomationRule;
+use App\Models\AutomationRuleExecution;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -4082,6 +4085,11 @@ test('agent can create a ticket from their account conversation', function (): v
         'body' => 'I can help with that.',
         'created_at' => now()->subMinute(),
     ]);
+    $rule = AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Conversation ticket intake',
+        'event' => AutomationRuleEvent::TicketCreated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'Created from a conversation.']],
+    ]);
 
     $this->actingAs($agent)
         ->from('/dashboard/conversations/WF-TICKET1')
@@ -4105,10 +4113,14 @@ test('agent can create a ticket from their account conversation', function (): v
     ]);
 
     $ticket = Ticket::query()->sole();
+    $createdAudit = $ticket->auditEvents()->where('action', 'ticket.created')->sole();
+    $automationNote = $ticket->auditEvents()->where('action', 'ticket.note_added')->sole();
 
     expect($ticket->description)
         ->toContain('Visitor: The checkout button is stuck.')
-        ->toContain('Ada Agent: I can help with that.');
+        ->toContain('Ada Agent: I can help with that.')
+        ->and($createdAudit->id)->toBeLessThan($automationNote->id)
+        ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
 
     expect($ticket->metadata)->toMatchArray([
         'source' => 'conversation',

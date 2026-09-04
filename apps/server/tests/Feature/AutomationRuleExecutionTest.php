@@ -3,6 +3,7 @@
 use App\Enums\AutomationExecutionStatus;
 use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationMessageCreated;
+use App\Events\TicketCreated;
 use App\Models\Account;
 use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
@@ -21,6 +22,23 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
+
+function dispatchTicketCreatedAutomation(Ticket $ticket): Ticket
+{
+    $ticket->auditEvents()->create([
+        'account_id' => $ticket->account_id,
+        'site_id' => $ticket->site_id,
+        'actor_type' => null,
+        'actor_id' => null,
+        'action' => 'ticket.created',
+        'metadata' => ['source' => 'test'],
+        'occurred_at' => now(),
+    ]);
+
+    event(new TicketCreated($ticket));
+
+    return $ticket->fresh();
+}
 
 test('a matching ticket rule executes the six bounded actions in order and records the run', function (): void {
     Notification::fake();
@@ -50,7 +68,8 @@ test('a matching ticket rule executes the six bounded actions in order and recor
         'subject' => 'Billing charged us twice',
         'priority' => 'normal',
         'status' => 'open',
-    ])->fresh();
+    ]);
+    $ticket = dispatchTicketCreatedAutomation($ticket);
 
     expect($ticket->assignee_id)->toBe($assignee->id)
         ->and($ticket->priority)->toBe('urgent')
@@ -187,7 +206,8 @@ test('a failed action rolls back its sequence records the failure and lets the n
 
     $ticket = Ticket::factory()->for($account)->for($site)->create([
         'priority' => 'normal',
-    ])->fresh();
+    ]);
+    $ticket = dispatchTicketCreatedAutomation($ticket);
 
     expect($ticket->priority)->toBe('normal')
         ->and($ticket->assignee_id)->toBeNull()
@@ -238,7 +258,7 @@ test('execution snapshots survive rule deletion', function (): void {
         'actions' => [['type' => 'set_priority', 'value' => 'high']],
     ]);
 
-    Ticket::factory()->for($account)->for($site)->create();
+    dispatchTicketCreatedAutomation(Ticket::factory()->for($account)->for($site)->create());
     $rule->delete();
     $execution = AutomationRuleExecution::query()->sole();
 
@@ -266,6 +286,7 @@ test('automation notifications are visible searchable digestible and hidden afte
     $ticket = Ticket::factory()->for($account)->for($site)->create([
         'subject' => 'Invoice needs a second look',
     ]);
+    $ticket = dispatchTicketCreatedAutomation($ticket);
     $notification = $agent->notifications()->sole();
 
     expect($notification->type)->toBe(AutomationRuleMatched::class)
@@ -311,7 +332,7 @@ test('a notify action honors quiet mode without failing the rule', function (): 
         'actions' => [['type' => 'notify_agent', 'value' => $quietAgent->id]],
     ]);
 
-    Ticket::factory()->for($account)->for($site)->create();
+    dispatchTicketCreatedAutomation(Ticket::factory()->for($account)->for($site)->create());
     $execution = AutomationRuleExecution::query()->sole();
 
     expect($execution->status)->toBe('succeeded')
@@ -321,4 +342,47 @@ test('a notify action honors quiet mode without failing the rule', function (): 
             'detail' => 'quiet_mode',
         ]])
         ->and($quietAgent->notifications()->count())->toBe(0);
+});
+
+test('creation routing cannot run update rules and creation actions follow the creation audit', function (): void {
+    Notification::fake();
+
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create([
+        'settings' => [
+            'routing' => [
+                'enabled' => true,
+                'conversation_capacity' => 5,
+            ],
+        ],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'routing_status' => User::ROUTING_STATUS_ONLINE,
+        'routing_status_changed_at' => now(),
+    ]);
+    $updatedRule = AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Update-only rule',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'This must not run during routing.']],
+    ]);
+    $createdRule = AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Created rule',
+        'event' => AutomationRuleEvent::TicketCreated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'Creation automation ran after its audit.']],
+    ]);
+
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+
+    expect($ticket->fresh()->assignee_id)->toBe($agent->id)
+        ->and(AutomationRuleExecution::query()->exists())->toBeFalse();
+
+    $ticket = dispatchTicketCreatedAutomation($ticket);
+    $createdAudit = $ticket->auditEvents()->where('action', 'ticket.created')->sole();
+    $automationAudit = $ticket->auditEvents()->where('action', 'ticket.note_added')->sole();
+    $execution = AutomationRuleExecution::query()->sole();
+
+    expect($execution->automation_rule_id)->toBe($createdRule->id)
+        ->and($execution->automation_rule_id)->not->toBe($updatedRule->id)
+        ->and($createdAudit->id)->toBeLessThan($automationAudit->id)
+        ->and($automationAudit->metadata['body'])->toBe('Creation automation ran after its audit.');
 });

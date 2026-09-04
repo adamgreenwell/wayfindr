@@ -7,6 +7,7 @@ use App\Enums\ConversationStatus;
 use App\Enums\TicketPriority;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
+use App\Events\TicketCreated;
 use App\Models\ApiToken;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
@@ -789,6 +790,7 @@ class AgentConversationController extends Controller
                 ],
                 'occurred_at' => now(),
             ]);
+            event(new TicketCreated($ticket));
 
             if (! $conversation->assigned_agent_id && Gate::forUser($agent)->allows('claim', $conversation)) {
                 $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();

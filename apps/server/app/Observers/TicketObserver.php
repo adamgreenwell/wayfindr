@@ -4,6 +4,7 @@ namespace App\Observers;
 
 use App\Enums\AutomationRuleEvent;
 use App\Models\Ticket;
+use App\Support\Automation\AutomationExecutionGuard;
 use App\Support\Automation\AutomationRuleEngine;
 use App\Support\Routing\AutomaticAssignmentRouter;
 use App\Support\Sla\SlaClockManager;
@@ -14,9 +15,11 @@ class TicketObserver
     public function created(Ticket $ticket): void
     {
         app(SlaClockManager::class)->startTicket($ticket);
-        app(AutomaticAssignmentRouter::class)->assignTicket($ticket);
+        app(AutomationExecutionGuard::class)->suppress(
+            $ticket,
+            fn () => app(AutomaticAssignmentRouter::class)->assignTicket($ticket),
+        );
         app(OutboundWebhookPublisher::class)->ticketCreated($ticket);
-        app(AutomationRuleEngine::class)->handle(AutomationRuleEvent::TicketCreated, $ticket);
     }
 
     public function updated(Ticket $ticket): void
