@@ -774,6 +774,129 @@
             color: var(--wf-ink);
         }
 
+        .wf-bulk-result {
+            align-items: center;
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--wf-space-3);
+            justify-content: space-between;
+        }
+
+        .wf-bulk-result form {
+            margin: 0;
+        }
+
+        .wf-bulk-toolbar {
+            align-items: center;
+            background: var(--wf-surface-2);
+            border: var(--wf-border) solid var(--wf-rule);
+            border-bottom: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--wf-space-2);
+            padding: var(--wf-space-3);
+        }
+
+        .wf-bulk-toolbar > strong {
+            min-width: 92px;
+        }
+
+        .wf-bulk-toolbar > label:not(.sr-only) {
+            color: var(--wf-muted);
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .wf-bulk-toolbar select {
+            background: var(--wf-surface);
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            color: var(--wf-ink);
+            min-height: 30px;
+            padding: 4px 8px;
+        }
+
+        .wf-queue .wf-queue-select {
+            padding-left: 12px;
+            padding-right: 4px;
+            text-align: center;
+            width: 34px;
+        }
+
+        .wf-queue [data-ticket-bulk-row][data-selected] td {
+            background: color-mix(in srgb, var(--wf-brand) 9%, var(--wf-surface));
+        }
+
+        .wf-bulk-caution {
+            background: var(--wf-surface-2);
+            border-left: 3px solid var(--wf-brand);
+            color: var(--wf-muted);
+            margin: 0 0 var(--wf-space-4);
+            padding: var(--wf-space-3);
+        }
+
+        .wf-bulk-confirm-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--wf-space-2);
+            margin-top: var(--wf-space-4);
+        }
+
+        .wf-bulk-confirm-actions form {
+            margin: 0;
+        }
+
+        @media (max-width: 700px) {
+            .wf-queue.wf-bulk-review-table,
+            .wf-queue.wf-bulk-review-table tbody,
+            .wf-queue.wf-bulk-review-table tr,
+            .wf-queue.wf-bulk-review-table td {
+                display: block;
+                width: 100%;
+            }
+
+            .wf-queue.wf-bulk-review-table thead {
+                clip: rect(0 0 0 0);
+                clip-path: inset(50%);
+                height: 1px;
+                overflow: hidden;
+                position: absolute;
+                white-space: nowrap;
+                width: 1px;
+            }
+
+            .wf-queue.wf-bulk-review-table tr {
+                border: var(--wf-border) solid var(--wf-rule);
+                border-left: 3px solid var(--wf-brand);
+                margin-bottom: var(--wf-space-3);
+                padding: var(--wf-space-2) var(--wf-space-3);
+            }
+
+            .wf-queue.wf-bulk-review-table tbody td,
+            .wf-queue.wf-bulk-review-table tbody .wf-queue-subject {
+                align-items: baseline;
+                border: 0;
+                display: grid;
+                gap: var(--wf-space-2);
+                grid-template-columns: minmax(72px, 0.35fr) minmax(0, 1fr);
+                min-width: 0;
+                padding: 5px 0;
+            }
+
+            .wf-queue.wf-bulk-review-table td::before {
+                color: var(--wf-muted);
+                content: attr(data-label);
+                font-family: var(--wf-font-cond);
+                font-size: 10.5px;
+                font-weight: 600;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+            }
+        }
+
         .wf-queue {
             width: 100%;
             border-collapse: collapse;

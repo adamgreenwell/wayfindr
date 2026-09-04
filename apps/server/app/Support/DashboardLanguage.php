@@ -125,6 +125,9 @@ final class DashboardLanguage
         'dashboard.account.sla-policies.update',
         'dashboard.conversations.index',
         'dashboard.tickets.index',
+        'dashboard.tickets.bulk.preview',
+        'dashboard.tickets.bulk.store',
+        'dashboard.tickets.bulk.undo',
 
         // The alert centre and its two mark-read actions. Both writes can
         // return to this page with the active filter/query context intact, so

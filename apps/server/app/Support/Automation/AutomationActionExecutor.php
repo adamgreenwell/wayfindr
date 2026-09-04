@@ -71,10 +71,14 @@ final readonly class AutomationActionExecutor
 
         if ($subject instanceof Ticket) {
             $subject->forceFill(['assignee_id' => $agent->id])->save();
-            $this->assignmentAuditTrail->ticket($subject, $automation->actor, $oldAssignee, $agent, $automation->source());
+            $this->assignmentAuditTrail->ticket($subject, $automation->actor, $oldAssignee, $agent, $automation->source(), [
+                $automation->idKey() => $automation->id,
+            ]);
         } else {
             $subject->forceFill(['assigned_agent_id' => $agent->id])->save();
-            $this->assignmentAuditTrail->conversation($subject, $automation->actor, $oldAssignee, $agent, $automation->source());
+            $this->assignmentAuditTrail->conversation($subject, $automation->actor, $oldAssignee, $agent, $automation->source(), [
+                $automation->idKey() => $automation->id,
+            ]);
         }
 
         return $this->result(AutomationRuleActionType::AssignAgent, 'applied', 'agent:'.$agent->id);

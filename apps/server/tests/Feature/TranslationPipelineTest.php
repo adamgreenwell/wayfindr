@@ -1273,6 +1273,9 @@ test('an italian plural branch inflects something', function (): void {
         // only part that changes, and adding an adjective would change the
         // product state merely to satisfy this mechanical check.
         'site_settings.load.pending_tickets.count',
+        // `ticket` is an invariable loanword in Italian. The imperative and
+        // preposition correctly stay the same for one ticket and many.
+        'tickets.bulk.confirm.apply',
         // `in sospeso` is a prepositional phrase, invariable by construction.
         'tickets.summary.heading.pending',
         // Both branches are one noun phrase (`Visualizzazione di ...`); the

@@ -32,6 +32,7 @@ use App\Http\Controllers\AgentReportController;
 use App\Http\Controllers\AgentSiteController;
 use App\Http\Controllers\AgentSiteExternalIssueProjectController;
 use App\Http\Controllers\AgentSupportCodeLookupController;
+use App\Http\Controllers\AgentTicketBulkActionController;
 use App\Http\Controllers\AgentTicketController;
 use App\Http\Controllers\AgentTicketExternalIssueController;
 use App\Http\Controllers\AgentTicketExternalLinkController;
@@ -363,6 +364,13 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.conversations.macros.run');
     Route::get('/dashboard/tickets', AgentTicketQueueController::class)
         ->name('dashboard.tickets.index');
+    Route::post('/dashboard/tickets/bulk/preview', [AgentTicketBulkActionController::class, 'preview'])
+        ->name('dashboard.tickets.bulk.preview');
+    Route::post('/dashboard/tickets/bulk', [AgentTicketBulkActionController::class, 'store'])
+        ->name('dashboard.tickets.bulk.store');
+    Route::post('/dashboard/tickets/bulk/{ticketBulkActionRun}/undo', [AgentTicketBulkActionController::class, 'undo'])
+        ->whereNumber('ticketBulkActionRun')
+        ->name('dashboard.tickets.bulk.undo');
     Route::get('/dashboard/tickets/{ticket}', [AgentTicketController::class, 'show'])
         ->name('dashboard.tickets.show');
     Route::put('/dashboard/tickets/{ticket}', [AgentTicketController::class, 'update'])

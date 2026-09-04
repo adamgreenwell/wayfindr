@@ -35,6 +35,14 @@ class AgentTicketQueueController extends Controller
         return view('agent.tickets.index', [
             'account' => $account,
             'agent' => $agent,
+            'bulkActionAgents' => $account->agents()
+                ->whereNull('deactivated_at')
+                ->with('customRole')
+                ->orderBy('name')
+                ->get()
+                ->filter(fn (User $candidate): bool => $candidate->hasAccountPermission(AccountPermission::ManageTickets))
+                ->values(),
+            'canAssignTickets' => $agent->hasAccountPermission(AccountPermission::AssignTickets),
             'canViewTicketConversations' => $agent->hasAccountPermission(AccountPermission::ViewConversations),
             'sites' => $sites,
             ...$this->ticketQueueData($agent, $account, $sites, $request, $slaStates),
@@ -285,6 +293,7 @@ class AgentTicketQueueController extends Controller
             'ticketFilters' => $ticketFilters,
             'ticketLabel' => $ticketLabel,
             'ticketLabelFilters' => $ticketLabelFilters,
+            'ticketLabels' => $ticketLabels,
             'ticketPriority' => $ticketPriority,
             'ticketPriorityFilters' => $ticketPriorityFilters,
             'ticketQueueCountSummary' => $ticketQueueCountSummary,

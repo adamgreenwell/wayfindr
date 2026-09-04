@@ -14,8 +14,9 @@ final class AssignmentAuditTrail
         ?User $oldAssignee,
         ?User $newAssignee,
         string $source,
+        array $metadata = [],
     ): void {
-        $this->record($conversation, (int) $conversation->site_id, $actor, $oldAssignee, $newAssignee, $source);
+        $this->record($conversation, (int) $conversation->site_id, $actor, $oldAssignee, $newAssignee, $source, $metadata);
     }
 
     public function ticket(
@@ -24,8 +25,9 @@ final class AssignmentAuditTrail
         ?User $oldAssignee,
         ?User $newAssignee,
         string $source,
+        array $metadata = [],
     ): void {
-        $this->record($ticket, (int) $ticket->site_id, $actor, $oldAssignee, $newAssignee, $source);
+        $this->record($ticket, (int) $ticket->site_id, $actor, $oldAssignee, $newAssignee, $source, $metadata);
     }
 
     private function record(
@@ -35,6 +37,7 @@ final class AssignmentAuditTrail
         ?User $oldAssignee,
         ?User $newAssignee,
         string $source,
+        array $metadata,
     ): void {
         $subject->auditEvents()->create([
             'account_id' => $subject instanceof Ticket
@@ -53,6 +56,7 @@ final class AssignmentAuditTrail
                 'new_assignee_name' => $newAssignee?->name,
                 'source' => $source,
                 'strategy' => $source === 'automatic' ? 'round_robin' : null,
+                ...$metadata,
             ],
             'occurred_at' => now(),
         ]);
