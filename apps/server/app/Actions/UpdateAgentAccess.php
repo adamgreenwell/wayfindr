@@ -36,9 +36,27 @@ class UpdateAgentAccess
             $target->loadMissing('customRole');
             $this->siteManagerCoverage->ensureAgentCanDeactivate($target);
 
-            $target->forceFill(['deactivated_at' => now()])->save();
+            $changedAt = now();
+            $wasOnlineForRouting = $target->routing_status === User::ROUTING_STATUS_ONLINE;
+            $target->forceFill([
+                'deactivated_at' => $changedAt,
+                // Reactivation must not silently put somebody who has not
+                // signed back in into an automatic assignment rotation.
+                'routing_status' => User::ROUTING_STATUS_AWAY,
+                'routing_status_changed_at' => $wasOnlineForRouting
+                    ? $changedAt
+                    : $target->routing_status_changed_at,
+            ])->save();
 
             $this->recordAuditEvent($actor, $target, 'agent.deactivated');
+
+            if ($wasOnlineForRouting) {
+                $this->recordAuditEvent($actor, $target, 'agent.routing_status_updated', [
+                    'old_status' => User::ROUTING_STATUS_ONLINE,
+                    'new_status' => User::ROUTING_STATUS_AWAY,
+                    'reason' => 'deactivated',
+                ]);
+            }
             $this->agentRealtimeSessions->requestMany([$target->id]);
 
             return [$target->refresh(), true];
@@ -128,7 +146,8 @@ class UpdateAgentAccess
         }
     }
 
-    private function recordAuditEvent(User $actor, User $target, string $action): void
+    /** @param array<string, mixed> $metadata */
+    private function recordAuditEvent(User $actor, User $target, string $action, array $metadata = []): void
     {
         AuditEvent::query()->create([
             'account_id' => $target->account_id,
@@ -137,7 +156,7 @@ class UpdateAgentAccess
             'subject_type' => $target->getMorphClass(),
             'subject_id' => $target->id,
             'action' => $action,
-            'metadata' => [
+            'metadata' => $metadata + [
                 'role' => $target->account_role?->value,
             ],
             'occurred_at' => now(),

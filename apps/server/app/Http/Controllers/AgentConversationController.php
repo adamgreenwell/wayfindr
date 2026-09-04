@@ -25,6 +25,7 @@ use App\Support\Conversations\ConversationWriteAuthorization;
 use App\Support\DashboardLanguage;
 use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
+use App\Support\Routing\AssignmentAuditTrail;
 use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
@@ -48,7 +49,10 @@ class AgentConversationController extends Controller
     /** How many conversations either side of the current one the menu lists. */
     private const SWITCHER_MENU_WINDOW = 25;
 
-    public function __construct(private readonly ConversationWriteAuthorization $conversationWriteAuthorization) {}
+    public function __construct(
+        private readonly ConversationWriteAuthorization $conversationWriteAuthorization,
+        private readonly AssignmentAuditTrail $assignmentAuditTrail,
+    ) {}
 
     public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates): View
     {
@@ -491,6 +495,7 @@ class AgentConversationController extends Controller
             }
 
             $previousStatus = (string) $conversation->status;
+            $wasUnassigned = $conversation->assigned_agent_id === null;
 
             $conversation->forceFill([
                 'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
@@ -499,6 +504,10 @@ class AgentConversationController extends Controller
                 'last_message_at' => $message->created_at,
                 'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
             ])->save();
+
+            if ($wasUnassigned && $conversation->assigned_agent_id !== null) {
+                $this->assignmentAuditTrail->conversation($conversation, $agent, null, $agent, 'manual');
+            }
 
             // Replying to a closed conversation reopens it. That was silent
             // before -- indistinguishable from any other message.
@@ -662,7 +671,10 @@ class AgentConversationController extends Controller
 
         [$agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
             [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'claim');
+            $conversation->loadMissing('assignedAgent');
+            $oldAssignee = $conversation->assignedAgent;
             $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
+            $this->assignmentAuditTrail->conversation($conversation, $agent, $oldAssignee, $agent, 'manual');
 
             return [$agent, $conversation];
         });
@@ -681,7 +693,10 @@ class AgentConversationController extends Controller
 
         [, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
             [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'release');
+            $conversation->loadMissing('assignedAgent');
+            $oldAssignee = $conversation->assignedAgent;
             $conversation->forceFill(['assigned_agent_id' => null])->save();
+            $this->assignmentAuditTrail->conversation($conversation, $agent, $oldAssignee, null, 'manual');
 
             return [$agent, $conversation];
         });
@@ -768,6 +783,7 @@ class AgentConversationController extends Controller
 
             if (! $conversation->assigned_agent_id && Gate::forUser($agent)->allows('claim', $conversation)) {
                 $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
+                $this->assignmentAuditTrail->conversation($conversation, $agent, null, $agent, 'manual');
             }
 
             return [$ticket, $agent, $conversation];

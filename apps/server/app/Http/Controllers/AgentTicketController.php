@@ -26,6 +26,7 @@ use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
+use App\Support\Routing\AssignmentAuditTrail;
 use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
@@ -48,7 +49,10 @@ class AgentTicketController extends Controller
     /** Providers with an IssueCommenter implementation for outbound note relay. */
     private const COMMENT_PROVIDERS = ['github', 'gitlab', 'jira'];
 
-    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AssignmentAuditTrail $assignmentAuditTrail,
+    ) {}
 
     public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview, SlaStatePresenter $slaStates): View
     {
@@ -421,12 +425,17 @@ class AgentTicketController extends Controller
                 'metadata' => $metadata,
             ]);
 
+            $wasUnassigned = $conversation->assigned_agent_id === null;
             $conversation->forceFill([
                 'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
                 'status' => $canManageConversation ? 'open' : $conversation->status,
                 'closed_at' => $canManageConversation ? null : $conversation->closed_at,
                 'last_message_at' => $message->created_at,
             ])->save();
+
+            if ($wasUnassigned && $conversation->assigned_agent_id !== null) {
+                $this->assignmentAuditTrail->conversation($conversation, $agent, null, $agent, 'manual');
+            }
 
             $activityMetadata = [
                 'conversation_id' => $conversation->id,
@@ -663,14 +672,11 @@ class AgentTicketController extends Controller
             );
             $ticket->loadMissing('assignee');
             $oldAssigneeId = $ticket->assignee_id;
-            $oldAssigneeName = $ticket->assignee?->name;
+            $oldAssignee = $ticket->assignee;
 
             $ticket->forceFill(['assignee_id' => $newAssigneeId])->save();
 
-            $this->recordActivity($ticket, $agent, 'ticket.assignee_updated', [
-                'old_assignee_name' => $oldAssigneeName,
-                'new_assignee_name' => $newAssignee?->name,
-            ]);
+            $this->assignmentAuditTrail->ticket($ticket, $agent, $oldAssignee, $newAssignee, 'manual');
 
             return [$agent, $ticket, $newAssignee, $oldAssigneeId];
         });

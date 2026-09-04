@@ -86,6 +86,7 @@
                 $siteMapSections[] = ['label' => __('site_settings.map.sections.verification'), 'href' => '#install-verification-heading'];
                 $siteMapSections[] = ['label' => __('site_settings.map.sections.snippet'), 'href' => '#install-snippet-heading'];
                 $siteMapSections[] = ['label' => __('site_settings.map.sections.access'), 'href' => '#support-access-heading'];
+                $siteMapSections[] = ['label' => __('site_settings.map.sections.automatic_routing'), 'href' => '#automatic-routing-heading'];
 
                 if ($canViewSiteActivity) {
                     $siteMapSections[] = ['label' => __('site_settings.map.sections.activity'), 'href' => '#site-access-activity-heading'];
@@ -533,6 +534,46 @@
                     @endif
 
                     <p class="empty">{{ __('site_settings.access.restricted') }}</p>
+                @endif
+            </section>
+
+            <section class="section" aria-labelledby="automatic-routing-heading">
+                <div class="section-header">
+                    <h2 id="automatic-routing-heading">{{ __('site_settings.automatic_routing.heading') }}</h2>
+                    <span class="readiness-status" data-status="{{ $routing->enabled ? 'ready' : 'manual' }}">
+                        {{ __($routing->enabled ? 'site_settings.common.on' : 'site_settings.common.off') }}
+                    </span>
+                </div>
+
+                <p>{{ __('site_settings.automatic_routing.lede') }}</p>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.routing.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        <div class="field">
+                            <label for="routing_enabled">
+                                <input type="hidden" name="routing_enabled" value="0">
+                                <input id="routing_enabled" name="routing_enabled" type="checkbox" value="1" @checked(old('routing_enabled', $routing->enabled))>
+                                {{ __('site_settings.automatic_routing.enabled') }}
+                            </label>
+                            <p class="field-help">{{ __('site_settings.automatic_routing.enabled_help') }}</p>
+                        </div>
+
+                        <div class="field">
+                            <label for="routing_conversation_capacity">{{ __('site_settings.automatic_routing.capacity') }}</label>
+                            <input id="routing_conversation_capacity" name="routing_conversation_capacity" type="number" min="1" max="100" value="{{ old('routing_conversation_capacity', $routing->conversationCapacity) }}" required>
+                            <p class="field-help">{{ __('site_settings.automatic_routing.capacity_help') }}</p>
+                            @error('routing_conversation_capacity')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
+
+                        <button class="button" type="submit">{{ __('site_settings.automatic_routing.save') }}</button>
+                    </form>
+                @else
+                    <p class="empty">{{ __('site_settings.automatic_routing.restricted') }}</p>
                 @endif
             </section>
 

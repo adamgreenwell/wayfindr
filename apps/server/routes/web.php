@@ -102,6 +102,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.profile.update');
     Route::put('/dashboard/profile/alerts', [AgentProfileController::class, 'updateAlertPreferences'])
         ->name('dashboard.profile.alerts.update');
+    Route::put('/dashboard/profile/routing-status', [AgentProfileController::class, 'updateRoutingStatus'])
+        ->name('dashboard.profile.routing-status.update');
     Route::put('/dashboard/profile/password', [AgentProfileController::class, 'updatePassword'])
         ->name('dashboard.profile.password.update');
     Route::post('/dashboard/profile/two-factor', [AgentProfileTwoFactorController::class, 'start'])
@@ -264,6 +266,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.sites.language.update');
     Route::put('/dashboard/sites/{site}/availability', [AgentSiteController::class, 'updateAvailability'])
         ->name('dashboard.sites.availability.update');
+    Route::put('/dashboard/sites/{site}/routing', [AgentSiteController::class, 'updateRouting'])
+        ->name('dashboard.sites.routing.update');
     Route::put('/dashboard/sites/{site}/inbound-address', [AgentSiteController::class, 'updateInboundAddress'])
         ->name('dashboard.sites.inbound-address.update');
     Route::put('/dashboard/sites/{site}/appearance', [AgentSiteController::class, 'updateAppearance'])

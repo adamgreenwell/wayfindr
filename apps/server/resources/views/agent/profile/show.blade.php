@@ -94,6 +94,34 @@
         </form>
     </section>
 
+    <section class="section" aria-labelledby="routing-status-heading">
+        <div class="section-header">
+            <h2 id="routing-status-heading">{{ __('profile.routing.heading') }}</h2>
+            <span class="readiness-status" data-status="{{ $agent->isOnlineForRouting() ? 'ready' : 'manual' }}">
+                {{ __($agent->isOnlineForRouting() ? 'profile.routing.online' : 'profile.routing.away') }}
+            </span>
+        </div>
+
+        <form class="section-form" method="POST" action="{{ route('dashboard.profile.routing-status.update') }}">
+            @csrf
+            @method('PUT')
+
+            <div class="field">
+                <label for="routing_status">{{ __('profile.routing.label') }}</label>
+                <select id="routing_status" name="routing_status">
+                    <option value="online" @selected(old('routing_status', $agent->routing_status) === 'online')>{{ __('profile.routing.online') }}</option>
+                    <option value="away" @selected(old('routing_status', $agent->routing_status ?? 'away') === 'away')>{{ __('profile.routing.away') }}</option>
+                </select>
+                <p class="field-help">{{ __('profile.routing.help') }}</p>
+                @error('routing_status')
+                    <p class="field-error">{{ $message }}</p>
+                @enderror
+            </div>
+
+            <button class="button" type="submit">{{ __('profile.routing.save') }}</button>
+        </form>
+    </section>
+
     <section class="section" aria-labelledby="alert-readiness-heading">
         <div class="section-header">
             <h2 id="alert-readiness-heading">{{ __('profile.readiness.heading') }}</h2>

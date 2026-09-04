@@ -162,6 +162,56 @@ class AgentProfileController extends Controller
             ->with('status', 'profile.flash.alerts_updated');
     }
 
+    public function updateRoutingStatus(Request $request): RedirectResponse
+    {
+        abort_unless($request->user()?->account_id, 403);
+
+        $validated = $request->validate([
+            'routing_status' => ['required', Rule::in(User::routingStatuses())],
+        ]);
+        $accountId = (int) $request->user()->account_id;
+        $userId = (int) $request->user()->id;
+
+        DB::transaction(function () use ($accountId, $userId, $validated): void {
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()
+                ->whereKey($userId)
+                ->where('account_id', $accountId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $status = $validated['routing_status'];
+
+            if ($agent->routing_status === $status) {
+                return;
+            }
+
+            $previous = $agent->routing_status ?? User::ROUTING_STATUS_AWAY;
+            $changedAt = now();
+            $agent->forceFill([
+                'routing_status' => $status,
+                'routing_status_changed_at' => $changedAt,
+            ])->save();
+
+            AuditEvent::query()->create([
+                'account_id' => $accountId,
+                'actor_type' => $agent->getMorphClass(),
+                'actor_id' => $agent->id,
+                'subject_type' => $agent->getMorphClass(),
+                'subject_id' => $agent->id,
+                'action' => 'agent.routing_status_updated',
+                'metadata' => [
+                    'old_status' => $previous,
+                    'new_status' => $status,
+                ],
+                'occurred_at' => $changedAt,
+            ]);
+        });
+
+        return redirect()
+            ->route('dashboard.profile.show')
+            ->with('status', 'profile.flash.routing_status_updated');
+    }
+
     public function updatePassword(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->account_id, 403);

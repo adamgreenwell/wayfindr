@@ -38,6 +38,15 @@ return [
         'save' => 'Save profile',
     ],
 
+    'routing' => [
+        'heading' => 'Assignment availability',
+        'label' => 'Automatic assignment status',
+        'online' => 'Online',
+        'away' => 'Away',
+        'help' => 'Online lets enabled sites route new work to you while you have room. Away stops new automatic assignments; work already assigned to you stays put.',
+        'save' => 'Save availability',
+    ],
+
     'readiness' => [
         'heading' => 'Alert readiness',
         'lede' => 'Your current support signal path',
@@ -118,6 +127,7 @@ return [
         'profile_updated' => 'Profile updated.',
         'alerts_updated' => 'Alert preferences updated.',
         'password_updated' => 'Password updated.',
+        'routing_status_updated' => 'Assignment availability updated.',
     ],
 
     'password' => [
