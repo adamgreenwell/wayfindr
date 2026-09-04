@@ -10,6 +10,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -114,3 +115,53 @@ test('ticket replies cannot claim or reopen a conversation without conversation 
         ->closed_at->not->toBeNull()
         ->and($conversation->messages()->count())->toBe(1);
 });
+
+test('reply-only agents preserve an unknown conversation status on either reply surface', function (string $surface): void {
+    $account = Account::factory()->create();
+    $replyRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ViewConversations->value,
+            AccountPermission::ReplyToConversations->value,
+            AccountPermission::ManageTickets->value,
+        ],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $replyRole->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach($agent);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-FUTURE-STATUS',
+        'assigned_agent_id' => null,
+    ]);
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($visitor, 'requester')
+        ->create();
+
+    DB::table('conversations')->where('id', $conversation->id)->update([
+        'status' => 'future-status',
+    ]);
+
+    $response = match ($surface) {
+        'conversation' => $this->actingAs($agent)->post(
+            route('dashboard.conversations.messages.store', $conversation->support_code),
+            ['body' => 'Reply without lifecycle authority.'],
+        ),
+        'ticket' => $this->actingAs($agent)->post(
+            route('dashboard.tickets.replies.store', $ticket),
+            ['message' => 'Reply without lifecycle authority.'],
+        ),
+    };
+
+    $response->assertRedirect();
+
+    expect($conversation->fresh())
+        ->status->toBe('future-status')
+        ->assigned_agent_id->toBeNull()
+        ->and($conversation->messages()->count())->toBe(1);
+})->with(['conversation', 'ticket']);

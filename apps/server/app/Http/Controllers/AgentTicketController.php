@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
+use App\Enums\ConversationStatus;
 use App\Enums\TicketPriority;
 use App\Enums\TicketStatus;
 use App\Events\ConversationMessageCreated;
@@ -427,12 +428,17 @@ class AgentTicketController extends Controller
             ]);
 
             $wasUnassigned = $conversation->assigned_agent_id === null;
-            $conversation->forceFill([
+            $conversationAttributes = [
                 'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
-                'status' => $canManageConversation ? 'open' : $conversation->status,
-                'closed_at' => $canManageConversation ? null : $conversation->closed_at,
                 'last_message_at' => $message->created_at,
-            ])->save();
+            ];
+
+            if ($canManageConversation) {
+                $conversationAttributes['status'] = ConversationStatus::Open;
+                $conversationAttributes['closed_at'] = null;
+            }
+
+            $conversation->forceFill($conversationAttributes)->save();
 
             if ($wasUnassigned && $conversation->assigned_agent_id !== null) {
                 $this->assignmentAuditTrail->conversation($conversation, $agent, null, $agent, 'manual');
