@@ -27,6 +27,10 @@ use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    $this->freezeTime();
+});
+
 function unattendedAlertAgent(Account $account, array $overrides = []): User
 {
     return User::factory()->for($account)->create(array_replace_recursive([
