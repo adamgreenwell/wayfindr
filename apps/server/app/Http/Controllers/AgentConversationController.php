@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
+use App\Enums\ConversationStatus;
+use App\Enums\TicketPriority;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
 use App\Models\ApiToken;
@@ -28,7 +30,6 @@ use App\Support\ReplyTemplateOptions;
 use App\Support\Routing\AssignmentAuditTrail;
 use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
-use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
@@ -496,14 +497,18 @@ class AgentConversationController extends Controller
 
             $previousStatus = (string) $conversation->status;
             $wasUnassigned = $conversation->assigned_agent_id === null;
-
-            $conversation->forceFill([
+            $conversationAttributes = [
                 'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
-                'status' => $canManageConversation ? 'open' : $conversation->status,
-                'closed_at' => $canManageConversation ? null : $conversation->closed_at,
                 'last_message_at' => $message->created_at,
                 'metadata' => $this->metadataWithoutAgentTypingSignal($conversation, $agent),
-            ])->save();
+            ];
+
+            if ($canManageConversation) {
+                $conversationAttributes['status'] = ConversationStatus::Open;
+                $conversationAttributes['closed_at'] = null;
+            }
+
+            $conversation->forceFill($conversationAttributes)->save();
 
             if ($wasUnassigned && $conversation->assigned_agent_id !== null) {
                 $this->assignmentAuditTrail->conversation($conversation, $agent, null, $agent, 'manual');
@@ -588,7 +593,7 @@ class AgentConversationController extends Controller
     private function transitionStatus(
         Conversation $conversation,
         User $agent,
-        string $status,
+        ConversationStatus $status,
         ?CarbonInterface $closedAt,
         callable $record,
     ): void {
@@ -634,7 +639,7 @@ class AgentConversationController extends Controller
         $this->transitionStatus(
             $conversation,
             $agent,
-            'closed',
+            ConversationStatus::Closed,
             now(),
             fn (string $previousStatus, Conversation $conversation, User $agent) => $lifecycle->closed($conversation, $agent, $previousStatus),
         );
@@ -652,7 +657,7 @@ class AgentConversationController extends Controller
         $this->transitionStatus(
             $conversation,
             $agent,
-            'open',
+            ConversationStatus::Open,
             null,
             fn (string $previousStatus, Conversation $conversation, User $agent) => $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus),
         );
@@ -714,7 +719,7 @@ class AgentConversationController extends Controller
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
         $validated = $request->validate([
-            'priority' => ['required', 'string', Rule::in(TicketPriority::values())],
+            'priority' => ['required', 'string', Rule::enum(TicketPriority::class)],
         ]);
 
         [, $conversation] = DB::transaction(function () use ($agent, $conversation, $validated): array {
@@ -737,7 +742,7 @@ class AgentConversationController extends Controller
 
         $validated = $request->validate([
             'category' => ['nullable', 'string', Rule::in(TicketCategory::values())],
-            'priority' => ['nullable', 'string', Rule::in(TicketPriority::values())],
+            'priority' => ['nullable', 'string', Rule::enum(TicketPriority::class)],
         ]);
 
         [$ticket, $agent, $conversation] = DB::transaction(function () use ($conversation, $agent, $validated, $visitorContextSanitizer): array {

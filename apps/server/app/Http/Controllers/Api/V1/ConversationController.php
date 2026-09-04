@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\ConversationStatus;
 use App\Events\ConversationMessageCreated;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
@@ -18,6 +19,7 @@ use App\Support\Mail\ConversationReplyMailer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -121,7 +123,7 @@ class ConversationController extends Controller
 
         $validated = $request->validate([
             'site_id' => ['nullable', 'integer'],
-            'status' => ['nullable', 'string', 'in:open,closed'],
+            'status' => ['nullable', 'string', Rule::enum(ConversationStatus::class)],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);

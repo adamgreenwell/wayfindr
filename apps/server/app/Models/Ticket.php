@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Enums\TicketPriority;
+use App\Enums\TicketStatus;
 use App\Models\Concerns\SanitisesStoredPageUrls;
 use App\Support\TicketCategory;
 use Carbon\CarbonInterface;
 use Database\Factories\TicketFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -61,6 +64,34 @@ class Ticket extends Model
             'metadata' => 'array',
             'closed_at' => 'datetime',
         ];
+    }
+
+    protected function status(): Attribute
+    {
+        return Attribute::set(
+            fn (TicketStatus|string $status): string => $status instanceof TicketStatus
+                ? $status->value
+                : TicketStatus::from($status)->value,
+        );
+    }
+
+    protected function priority(): Attribute
+    {
+        return Attribute::set(
+            fn (TicketPriority|string $priority): string => $priority instanceof TicketPriority
+                ? $priority->value
+                : TicketPriority::from($priority)->value,
+        );
+    }
+
+    public function statusEnum(): TicketStatus
+    {
+        return TicketStatus::from((string) $this->status);
+    }
+
+    public function priorityEnum(): TicketPriority
+    {
+        return TicketPriority::from((string) $this->priority);
     }
 
     public function hasConversationDerivedDescription(): bool

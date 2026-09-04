@@ -18,6 +18,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -462,11 +463,15 @@ test('the read-only operator viewers localize product copy and mark customer con
             ->toBeGreaterThan(0, "{$value} is not marked as language-neutral customer content");
     }
 
-    $ticket->forceFill([
+    // A newer application version can leave values this older binary does not
+    // know. Bypass the current model's typed write boundary to reproduce that
+    // database state; the read-only recovery viewer must still show the row.
+    DB::table('tickets')->where('id', $ticket->id)->update([
         'status' => 'datenpunkt-future-status',
         'priority' => 'datenpunkt-future-priority',
         'category' => 'datenpunkt-future-category',
-    ])->save();
+    ]);
+    $ticket->refresh();
 
     $unknownValues = $this->actingAs($w['operator']->fresh())
         ->get(route('operator.break-glass.tickets.show', [$w['grant'], $ticket]))

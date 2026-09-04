@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
+use App\Enums\TicketPriority;
 use App\Models\Account;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -11,7 +12,6 @@ use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
 use App\Support\TicketExternalIssueState;
-use App\Support\TicketPriority;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;

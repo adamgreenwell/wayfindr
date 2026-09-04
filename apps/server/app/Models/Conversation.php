@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\ConversationStatus;
+use App\Enums\TicketPriority;
 use App\Models\Concerns\SanitisesStoredPageUrls;
 use App\Support\Conversations\ConversationLifecycleLog;
 use Carbon\Carbon;
@@ -9,6 +11,7 @@ use Carbon\CarbonInterface;
 use Database\Factories\ConversationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -66,6 +69,34 @@ class Conversation extends Model
             'support_wait_last_counted_at' => 'datetime',
             'closed_at' => 'datetime',
         ];
+    }
+
+    protected function status(): Attribute
+    {
+        return Attribute::set(
+            fn (ConversationStatus|string $status): string => $status instanceof ConversationStatus
+                ? $status->value
+                : ConversationStatus::from($status)->value,
+        );
+    }
+
+    protected function priority(): Attribute
+    {
+        return Attribute::set(
+            fn (TicketPriority|string $priority): string => $priority instanceof TicketPriority
+                ? $priority->value
+                : TicketPriority::from($priority)->value,
+        );
+    }
+
+    public function statusEnum(): ConversationStatus
+    {
+        return ConversationStatus::from((string) $this->status);
+    }
+
+    public function priorityEnum(): TicketPriority
+    {
+        return TicketPriority::from((string) $this->priority);
     }
 
     public function site(): BelongsTo

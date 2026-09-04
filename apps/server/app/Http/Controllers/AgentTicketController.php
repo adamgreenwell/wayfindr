@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
+use App\Enums\ConversationStatus;
+use App\Enums\TicketPriority;
+use App\Enums\TicketStatus;
 use App\Events\ConversationMessageCreated;
 use App\Jobs\DeliverTicketExternalComment;
 use App\Models\ApiToken;
@@ -31,7 +34,6 @@ use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
-use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
@@ -426,12 +428,17 @@ class AgentTicketController extends Controller
             ]);
 
             $wasUnassigned = $conversation->assigned_agent_id === null;
-            $conversation->forceFill([
+            $conversationAttributes = [
                 'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
-                'status' => $canManageConversation ? 'open' : $conversation->status,
-                'closed_at' => $canManageConversation ? null : $conversation->closed_at,
                 'last_message_at' => $message->created_at,
-            ])->save();
+            ];
+
+            if ($canManageConversation) {
+                $conversationAttributes['status'] = ConversationStatus::Open;
+                $conversationAttributes['closed_at'] = null;
+            }
+
+            $conversation->forceFill($conversationAttributes)->save();
 
             if ($wasUnassigned && $conversation->assigned_agent_id !== null) {
                 $this->assignmentAuditTrail->conversation($conversation, $agent, null, $agent, 'manual');
@@ -489,7 +496,7 @@ class AgentTicketController extends Controller
             'subject' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:10000'],
             'category' => ['nullable', Rule::in(TicketCategory::values())],
-            'priority' => ['required', Rule::in(TicketPriority::values())],
+            'priority' => ['required', Rule::enum(TicketPriority::class)],
         ]);
 
         [$agent, $ticket] = DB::transaction(function () use ($agent, $ticket, $validated): array {
@@ -532,7 +539,7 @@ class AgentTicketController extends Controller
         $this->transitionTicketStatus(
             $ticket,
             $agent,
-            fn (): array => ['status' => 'pending', 'closed_at' => null],
+            fn (): array => ['status' => TicketStatus::Pending, 'closed_at' => null],
             function (string $previousStatus, Ticket $ticket, User $agent) use ($metadata): void {
 
                 // Leaving `closed` is a REOPEN, whichever button did it. The form is
@@ -573,7 +580,7 @@ class AgentTicketController extends Controller
             $agent,
             // A ticket already closed keeps the moment it was actually closed.
             fn (string $previous, Ticket $locked): array => [
-                'status' => 'closed',
+                'status' => TicketStatus::Closed,
                 'closed_at' => $previous === 'closed' ? $locked->closed_at : now(),
             ],
             // Only a TRANSITION is an event -- the rule conversation lifecycle
@@ -614,7 +621,7 @@ class AgentTicketController extends Controller
         $this->transitionTicketStatus(
             $ticket,
             $agent,
-            fn (): array => ['status' => 'open', 'closed_at' => null],
+            fn (): array => ['status' => TicketStatus::Open, 'closed_at' => null],
             function (string $previousStatus, Ticket $ticket, User $agent) use ($reopenNote): void {
 
                 // The same control reopens a CLOSED ticket and un-holds a PENDING one,

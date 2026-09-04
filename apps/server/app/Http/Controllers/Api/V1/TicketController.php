@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\AccountPermission;
+use App\Enums\TicketPriority;
+use App\Enums\TicketStatus;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Site;
@@ -16,7 +18,6 @@ use App\Support\Api\ApiScope;
 use App\Support\Api\V1\Payload;
 use App\Support\DatabaseKey;
 use App\Support\Sites\SiteManagerCoverage;
-use App\Support\TicketPriority;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -42,7 +43,7 @@ class TicketController extends Controller
             'requester_id' => ['nullable', 'integer'],
             'subject' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:10000'],
-            'priority' => ['nullable', 'string', Rule::in(TicketPriority::values())],
+            'priority' => ['nullable', 'string', Rule::enum(TicketPriority::class)],
         ]);
 
         $result = $idempotency->run(
@@ -119,7 +120,7 @@ class TicketController extends Controller
 
         $validated = $request->validate([
             'site_id' => ['nullable', 'integer'],
-            'status' => ['nullable', 'string', 'in:open,pending,closed'],
+            'status' => ['nullable', 'string', Rule::enum(TicketStatus::class)],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'cursor' => ['nullable', 'string', new DecodableCursor],
         ]);
@@ -179,7 +180,7 @@ class TicketController extends Controller
         abort_unless(DatabaseKey::isValid($ticket), 404);
 
         $validated = $request->validate([
-            'status' => ['sometimes', 'string', 'in:open,pending,closed'],
+            'status' => ['sometimes', 'string', Rule::enum(TicketStatus::class)],
             'assignee_id' => ['sometimes', 'nullable', 'integer'],
         ]);
 

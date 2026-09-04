@@ -1,31 +1,36 @@
 <?php
 
-namespace App\Support;
+namespace App\Enums;
 
-final class TicketPriority
+enum TicketPriority: string
 {
+    case Low = 'low';
+    case Normal = 'normal';
+    case High = 'high';
+    case Urgent = 'urgent';
+
     /**
      * @return array<string, array{label: string, description: string, agent_action: string}>
      */
     public static function options(): array
     {
         return [
-            'low' => [
+            self::Low->value => [
                 'label' => 'Low',
                 'description' => 'Nice-to-have follow-up or non-blocking question.',
                 'agent_action' => 'handle after active visitor blockers.',
             ],
-            'normal' => [
+            self::Normal->value => [
                 'label' => 'Normal',
                 'description' => 'Standard support request with no immediate deadline.',
                 'agent_action' => 'answer in normal queue order.',
             ],
-            'high' => [
+            self::High->value => [
                 'label' => 'High',
                 'description' => 'Time-sensitive issue affecting an important customer workflow.',
                 'agent_action' => 'keep it moving today.',
             ],
-            'urgent' => [
+            self::Urgent->value => [
                 'label' => 'Urgent',
                 'description' => 'Business-critical, active outage, or blocked production work.',
                 'agent_action' => 'assign immediately and keep the visitor updated.',
@@ -33,12 +38,10 @@ final class TicketPriority
         ];
     }
 
-    /**
-     * @return list<string>
-     */
+    /** @return list<string> */
     public static function values(): array
     {
-        return array_keys(self::options());
+        return array_column(self::cases(), 'value');
     }
 
     /**
@@ -49,15 +52,17 @@ final class TicketPriority
         $options = self::options();
 
         return [
-            'urgent' => $options['urgent'],
-            'high' => $options['high'],
-            'normal' => $options['normal'],
-            'low' => $options['low'],
+            self::Urgent->value => $options[self::Urgent->value],
+            self::High->value => $options[self::High->value],
+            self::Normal->value => $options[self::Normal->value],
+            self::Low->value => $options[self::Low->value],
         ];
     }
 
-    public static function label(string $priority): string
+    public static function label(self|string $priority): string
     {
-        return self::options()[$priority]['label'] ?? ucfirst($priority);
+        $value = $priority instanceof self ? $priority->value : $priority;
+
+        return self::options()[$value]['label'] ?? ucfirst($value);
     }
 }

@@ -58,7 +58,7 @@ operator-facing data inventory and retention posture.
 
 ## Design Notes
 
-- Status fields are strings instead of database enums so early product states can change without database-type churn.
+- Support lifecycle fields stay portable strings in the database, while PHP-backed enums validate every `Conversation` and `Ticket` status or priority model write. Automation rules can therefore persist stable scalar values without accepting typo-only states.
 - Visitor identity supports both `anonymous_id` and optional host-provided `external_id`. Public widget requests bootstrap a signed visitor token before they can create conversations or read/write visitor messages.
 - Cobrowsing state is separate from conversations because consent, start, end timing, connection telemetry, visitor page state, sanitized page snapshots, and mutation diagnostics need their own lifecycle.
 - Attachments are separate from messages because upload, scan, bind, storage,

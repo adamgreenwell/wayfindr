@@ -3,12 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
+use App\Enums\TicketPriority;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\SlaPolicy;
 use App\Models\User;
 use App\Support\Sla\SlaClockManager;
-use App\Support\TicketPriority;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;

@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Enums\ConversationStatus;
+use App\Enums\TicketPriority;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Visitor;
@@ -21,8 +23,8 @@ class ConversationFactory extends Factory
                 ->id,
             'assigned_agent_id' => null,
             'support_code' => fake()->unique()->bothify('WF-######'),
-            'status' => 'open',
-            'priority' => 'normal',
+            'status' => ConversationStatus::Open,
+            'priority' => TicketPriority::Normal,
             'subject' => null,
             'metadata' => [],
             'last_message_at' => null,
