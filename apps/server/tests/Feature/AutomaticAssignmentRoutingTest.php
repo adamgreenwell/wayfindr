@@ -385,12 +385,15 @@ test('a plain agent cannot configure routing and invalid capacity is rejected', 
     expect($site->fresh()->settings['routing'] ?? null)->toBeNull();
 });
 
-test('manual conversation assignment and release keep an audit trail', function (): void {
+test('manual conversation claim retries and release keep an accurate audit trail', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
     $site = Site::factory()->for($account)->create();
     $conversation = Conversation::factory()->for($site)->create(['support_code' => 'WF-ROUTEAUDIT']);
 
+    $this->actingAs($agent)
+        ->post('/dashboard/conversations/WF-ROUTEAUDIT/claim')
+        ->assertRedirect();
     $this->actingAs($agent)
         ->post('/dashboard/conversations/WF-ROUTEAUDIT/claim')
         ->assertRedirect();

@@ -672,9 +672,12 @@ class AgentConversationController extends Controller
         [$agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
             [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'claim');
             $conversation->loadMissing('assignedAgent');
-            $oldAssignee = $conversation->assignedAgent;
-            $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
-            $this->assignmentAuditTrail->conversation($conversation, $agent, $oldAssignee, $agent, 'manual');
+
+            if ($conversation->assigned_agent_id !== $agent->id) {
+                $oldAssignee = $conversation->assignedAgent;
+                $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
+                $this->assignmentAuditTrail->conversation($conversation, $agent, $oldAssignee, $agent, 'manual');
+            }
 
             return [$agent, $conversation];
         });
