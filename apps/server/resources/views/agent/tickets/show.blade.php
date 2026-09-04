@@ -57,6 +57,13 @@
                         <span class="meta-label">{{ __('ticket_detail.common.priority') }}</span>
                         <span class="meta-value">{{ __('tickets.priorities.'.$ticket->priority) }}</span>
                     </div>
+                    @foreach ($slaStates as $slaState)
+                        <div class="meta-item">
+                            <span class="meta-label">{{ $slaState['metric_label'] }}</span>
+                            <span class="readiness-status" data-status="{{ $slaState['tone'] }}">{{ $slaState['label'] }}</span>
+                            <span class="lede">{{ $slaState['detail'] }}</span>
+                        </div>
+                    @endforeach
                     <div class="meta-item">
                         <span class="meta-label">{{ __('ticket_detail.common.category') }}</span>
                         <span class="meta-value">{{ $ticket->category ? __('tickets.categories.'.$ticket->category) : __('tickets.filters.category_uncategorized') }}</span>

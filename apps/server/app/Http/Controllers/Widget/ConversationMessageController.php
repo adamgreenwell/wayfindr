@@ -9,11 +9,13 @@ use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
@@ -91,8 +93,13 @@ class ConversationMessageController extends Controller
         ]);
     }
 
-    public function store(Request $request, string $supportCode, VisitorConversationResolver $conversations, AttachmentBinder $binder): JsonResponse
-    {
+    public function store(
+        Request $request,
+        string $supportCode,
+        VisitorConversationResolver $conversations,
+        AttachmentBinder $binder,
+        SiteManagerCoverage $siteManagerCoverage,
+    ): JsonResponse {
         // Identity first: everything after this answers the visitor, and the
         // language they are owed comes from the site.
         $identity = $request->validate([
@@ -132,7 +139,19 @@ class ConversationMessageController extends Controller
         $visitor = $conversation->visitor;
 
         try {
-            [$message, $created] = DB::transaction(function () use ($conversation, $body, $attachmentIds, $clientMessageId, $binder, $visitor) {
+            [$message, $created] = DB::transaction(function () use ($conversation, $body, $attachmentIds, $clientMessageId, $binder, $siteManagerCoverage, $visitor) {
+                $siteManagerCoverage->lockAccount((int) $conversation->site->account_id);
+                $currentSite = Site::query()
+                    ->servable()
+                    ->whereKey($conversation->site_id)
+                    ->sharedLock()
+                    ->first();
+
+                // Archive may have committed after the resolver ran. The
+                // account-site-subject order makes that decision stable before
+                // a reopen save asks the SLA observer to start new clocks.
+                abort_unless($currentSite, 404, 'Site not found.');
+
                 // Lock the conversation row so the idempotency check and the insert
                 // are atomic. Without this, two concurrent sends sharing a
                 // client_message_id could both pass the lookup before either row is

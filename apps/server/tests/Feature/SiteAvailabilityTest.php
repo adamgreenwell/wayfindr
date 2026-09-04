@@ -74,6 +74,36 @@ test('the schedule is read in the site timezone, not the server one', function (
         ->and($availability->timezone)->toBe('America/Los_Angeles');
 });
 
+test('open-time elapsed skips nights weekends and a manual closure', function (): void {
+    $site = siteWithHours([
+        'closed_since' => '2026-08-28T15:00:00+01:00',
+        'closed_until' => '2026-08-28T16:00:00+01:00',
+    ]);
+
+    $seconds = SiteAvailability::elapsedOpenSeconds(
+        $site,
+        CarbonImmutable::parse('2026-08-28 14:00', 'Europe/London'),
+        CarbonImmutable::parse('2026-08-31 11:00', 'Europe/London'),
+    );
+
+    // Friday 14:00-17:00 and Monday 09:00-11:00, minus Friday's one-hour
+    // operational closure: four working hours, however long the weekend was.
+    expect($seconds)->toBe(4 * 60 * 60);
+});
+
+test('an unscheduled desk counts wall time except its explicit closure', function (): void {
+    $site = Site::factory()->create(['settings' => ['availability' => [
+        'closed_since' => '2026-08-26T10:30:00+00:00',
+        'closed_until' => '2026-08-26T11:00:00+00:00',
+    ]]]);
+
+    expect(SiteAvailability::elapsedOpenSeconds(
+        $site,
+        CarbonImmutable::parse('2026-08-26 10:00', 'UTC'),
+        CarbonImmutable::parse('2026-08-26 12:00', 'UTC'),
+    ))->toBe(90 * 60);
+});
+
 test('an away desk says when it opens next, across a closed weekend', function (): void {
     $site = siteWithHours();
 

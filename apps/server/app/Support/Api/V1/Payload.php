@@ -46,6 +46,7 @@ final class Payload
             'visitor_id' => (int) $conversation->visitor_id,
             'assigned_agent_id' => $conversation->assigned_agent_id === null ? null : (int) $conversation->assigned_agent_id,
             'status' => (string) $conversation->status,
+            'priority' => (string) $conversation->priority,
             'subject' => $conversation->subject,
             'last_message_at' => $conversation->last_message_at?->toJSON(),
             'closed_at' => $conversation->closed_at?->toJSON(),
@@ -125,6 +126,7 @@ final class Payload
             'site_id' => (int) $input['site_id'],
             'visitor_id' => (int) $input['visitor_id'],
             'status' => 'open',
+            'priority' => 'normal',
             'subject' => $input['subject'] ?? null,
         ];
     }

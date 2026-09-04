@@ -96,14 +96,42 @@
                         <span class="meta-value">{{ $conversation->assignedAgent?->name ?? __('conversations.detail.context.unassigned') }}</span>
                     </div>
                     <div class="meta-item">
+                        <span class="meta-label">{{ __('sla.priority') }}</span>
+                        <span class="meta-value">{{ __('tickets.priorities.'.$conversation->priority) }}</span>
+                    </div>
+                    <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.opened') }}</span>
                         <span class="meta-value">{{ $conversation->created_at->diffForHumans() }}</span>
                         <span class="lede">{{ __('conversations.detail.context.last_activity', ['elapsed' => $conversation->last_message_at?->diffForHumans() ?? __('conversations.detail.context.last_activity_none')]) }}</span>
                     </div>
                 </div>
 
+                @if ($slaStates->isNotEmpty())
+                    <div class="meta-grid" aria-label="{{ __('sla.detail.region') }}">
+                        @foreach ($slaStates as $slaState)
+                            <div class="meta-item">
+                                <span class="meta-label">{{ $slaState['metric_label'] }}</span>
+                                <span class="readiness-status" data-status="{{ $slaState['tone'] }}">{{ $slaState['label'] }}</span>
+                                <span class="lede">{{ $slaState['detail'] }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+
                 @if ($canUpdateConversation)
                     <div class="section-form-row">
+                    <form class="section-form" method="POST" action="{{ route('dashboard.conversations.priority.update', $conversation->support_code) }}">
+                        @csrf
+                        @method('PUT')
+                        @include('agent.conversations.partials.return-query-fields')
+                        <label for="conversation-priority">{{ __('sla.change_priority') }}</label>
+                        <select id="conversation-priority" name="priority">
+                            @foreach ($ticketPriorities as $priority => $option)
+                                <option value="{{ $priority }}" @selected($conversation->priority === $priority)>{{ __('tickets.priorities.'.$priority) }}</option>
+                            @endforeach
+                        </select>
+                        <button class="button secondary" type="submit">{{ __('sla.save_priority') }}</button>
+                    </form>
                     @if (! $conversation->assigned_agent_id && $canClaimConversation)
                         <form class="section-form" method="POST" action="{{ route('dashboard.conversations.claim', $conversation->support_code) }}">
                             @csrf

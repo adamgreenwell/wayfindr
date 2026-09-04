@@ -13,6 +13,7 @@ use App\Http\Controllers\AgentAccountOidcConnectionController;
 use App\Http\Controllers\AgentAccountOidcProvisioningController;
 use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAccountSecurityController;
+use App\Http\Controllers\AgentAccountSlaPolicyController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentConversationAttachmentController;
@@ -130,6 +131,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.account.roles.destroy');
     Route::get('/dashboard/account/security', [AgentAccountSecurityController::class, 'show'])
         ->name('dashboard.account.security.show');
+    Route::get('/dashboard/account/sla-policies', [AgentAccountSlaPolicyController::class, 'index'])
+        ->name('dashboard.account.sla-policies.index');
+    Route::put('/dashboard/account/sla-policies', [AgentAccountSlaPolicyController::class, 'update'])
+        ->name('dashboard.account.sla-policies.update');
     Route::put('/dashboard/account/security', [AgentAccountSecurityController::class, 'update'])
         ->name('dashboard.account.security.update');
     Route::put('/dashboard/account/security/oidc', [AgentAccountOidcConnectionController::class, 'update'])
@@ -297,6 +302,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.conversations.claim');
     Route::post('/dashboard/conversations/{supportCode}/release', [AgentConversationController::class, 'release'])
         ->name('dashboard.conversations.release');
+    Route::put('/dashboard/conversations/{supportCode}/priority', [AgentConversationController::class, 'updatePriority'])
+        ->name('dashboard.conversations.priority.update');
     Route::post('/dashboard/conversations/{supportCode}/attachments', [AgentConversationAttachmentController::class, 'store'])
         ->name('dashboard.conversations.attachments.store');
     Route::get('/dashboard/conversations/{supportCode}/attachments/{attachment}', [AgentConversationAttachmentController::class, 'show'])

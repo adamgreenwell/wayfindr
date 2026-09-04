@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
+use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\Auth\TwoFactorAuthentication;
@@ -16,6 +17,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -133,15 +135,27 @@ class AgentProfileController extends Controller
             'alert_cadence' => ['sometimes', Rule::in(array_keys($request->user()::alertCadenceOptions()))],
         ]);
 
-        $alertPreferences = $request->user()->alert_preferences ?? [];
+        $accountId = (int) $request->user()->account_id;
+        $userId = (int) $request->user()->id;
+        $email = $request->boolean('email_alerts');
 
-        $request->user()->update([
-            'alert_preferences' => array_merge($alertPreferences, [
-                'mode' => $validated['alert_mode'],
-                'email' => $request->boolean('email_alerts'),
-                'cadence' => $validated['alert_cadence'] ?? $request->user()->alertCadence(),
-            ]),
-        ]);
+        DB::transaction(function () use ($accountId, $email, $userId, $validated): void {
+            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            $agent = User::query()
+                ->whereKey($userId)
+                ->where('account_id', $accountId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $alertPreferences = $agent->alert_preferences ?? [];
+
+            $agent->forceFill([
+                'alert_preferences' => array_merge($alertPreferences, [
+                    'mode' => $validated['alert_mode'],
+                    'email' => $email,
+                    'cadence' => $validated['alert_cadence'] ?? $agent->alertCadence(),
+                ]),
+            ])->save();
+        });
 
         return redirect()
             ->route('dashboard.profile.show')

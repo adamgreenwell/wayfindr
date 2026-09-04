@@ -111,6 +111,88 @@ final class SiteAvailability
     }
 
     /**
+     * Count only the seconds during which this desk was expected to be open.
+     *
+     * SLA clocks persist every counted segment before a schedule or manual
+     * closure changes. That means this method only has to describe the current
+     * calendar over the requested segment; an hours edit cannot rewrite time
+     * already committed to a clock.
+     */
+    public static function elapsedOpenSeconds(Site $site, CarbonInterface $from, CarbonInterface $to): int
+    {
+        $start = CarbonImmutable::instance($from);
+        $end = CarbonImmutable::instance($to);
+
+        if ($end->lessThanOrEqualTo($start)) {
+            return 0;
+        }
+
+        $config = self::config($site);
+        $timezone = self::timezone($config['timezone'] ?? null);
+        $closureEnd = self::closedUntil($config['closed_until'] ?? null, $timezone);
+        $closureStart = self::closedSince($config['closed_since'] ?? null, $timezone);
+
+        // Older settings can carry closed_until without the companion start.
+        // Treat the uncounted segment as beginning at this clock boundary. New
+        // closures always persist closed_since, so no newer segment guesses.
+        if ($closureEnd !== null && $closureStart === null && $closureEnd->greaterThan($start)) {
+            $closureStart = $start;
+        }
+
+        if (($config['enabled'] ?? false) !== true) {
+            return self::openIntervalSeconds($start, $end, $closureStart, $closureEnd);
+        }
+
+        $weekdays = self::weekdays($config['weekdays'] ?? []);
+        $cursor = $start->setTimezone($timezone)->startOfDay();
+        $lastDay = $end->setTimezone($timezone)->startOfDay();
+        $seconds = 0;
+
+        while ($cursor->lessThanOrEqualTo($lastDay)) {
+            $hours = $weekdays[self::DAYS[$cursor->dayOfWeekIso - 1]] ?? null;
+
+            if ($hours !== null) {
+                $opens = $cursor->addMinutes(self::minutes($hours[0]));
+                $closes = $cursor->addMinutes(self::minutes($hours[1]));
+                $intervalStart = $opens->greaterThan($start) ? $opens : $start;
+                $intervalEnd = $closes->lessThan($end) ? $closes : $end;
+
+                $seconds += self::openIntervalSeconds($intervalStart, $intervalEnd, $closureStart, $closureEnd);
+            }
+
+            $cursor = $cursor->addDay()->startOfDay();
+        }
+
+        return $seconds;
+    }
+
+    private static function openIntervalSeconds(
+        CarbonImmutable $start,
+        CarbonImmutable $end,
+        ?CarbonImmutable $closureStart,
+        ?CarbonImmutable $closureEnd,
+    ): int {
+        if ($end->lessThanOrEqualTo($start)) {
+            return 0;
+        }
+
+        $seconds = $end->getTimestamp() - $start->getTimestamp();
+
+        if ($closureStart === null || $closureEnd === null || $closureEnd->lessThanOrEqualTo($closureStart)) {
+            return $seconds;
+        }
+
+        $overlapStart = $closureStart->greaterThan($start) ? $closureStart : $start;
+        $overlapEnd = $closureEnd->lessThan($end) ? $closureEnd : $end;
+
+        if ($overlapEnd->greaterThan($overlapStart)) {
+            $seconds -= $overlapEnd->getTimestamp() - $overlapStart->getTimestamp();
+        }
+
+        return max(0, $seconds);
+    }
+
+    /**
      * The rest of today: today's closing time where there is one, midnight
      * otherwise. A desk already past closing gets midnight too, because the
      * rest of today cannot reach backwards.
@@ -250,6 +332,19 @@ final class SiteAvailability
     }
 
     private static function closedUntil(mixed $value, string $timezone): ?CarbonImmutable
+    {
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value)->setTimezone($timezone);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private static function closedSince(mixed $value, string $timezone): ?CarbonImmutable
     {
         if (! is_string($value) || $value === '') {
             return null;

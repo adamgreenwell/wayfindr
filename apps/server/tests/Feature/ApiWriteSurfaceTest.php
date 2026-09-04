@@ -23,6 +23,7 @@ use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\SupportReport;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
@@ -119,6 +120,48 @@ test('a token opens a conversation for a known visitor in its writable scope', f
         ->and($world['visitor']->fresh()->presence_only)->toBeFalse()
         ->and($conversation->auditEvents()->where('action', 'conversation.created')->sole()->actor_type)->toBe(ApiToken::class)
         ->and($conversation->auditEvents()->where('action', 'conversation.created')->sole()->actor_id)->toBe($world['token']->id);
+});
+
+test('API work creation locks the account before its token and site', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clauses used by this concurrency contract.');
+    }
+
+    $world = apiWriteWorld();
+    $requests = [
+        fn () => $this->postJson('/api/v1/conversations', [
+            'site_id' => $world['site']->id,
+            'visitor_id' => $world['visitor']->id,
+            'subject' => 'Ordered conversation',
+        ], apiWriteHeaders($world, 'ordered-conversation')),
+        fn () => $this->postJson('/api/v1/tickets', [
+            'site_id' => $world['site']->id,
+            'requester_id' => $world['visitor']->id,
+            'subject' => 'Ordered ticket',
+        ], apiWriteHeaders($world, 'ordered-ticket')),
+    ];
+
+    foreach ($requests as $request) {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $request()->assertCreated();
+
+        $queries = collect(DB::getQueryLog())->pluck('query')->values();
+        DB::disableQueryLog();
+        $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+            && str_contains($query, 'for update'));
+        $tokenLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "api_tokens"')
+            && str_contains($query, 'for update'));
+        $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+            && str_contains($query, 'for share'));
+
+        expect($accountLock)->toBeInt()
+            ->and($tokenLock)->toBeInt()
+            ->and($siteLock)->toBeInt()
+            ->and($accountLock)->toBeLessThan($tokenLock)
+            ->and($tokenLock)->toBeLessThan($siteLock);
+    }
 });
 
 test('conversation creation refuses archived, unreachable, and mismatched references alike', function (): void {

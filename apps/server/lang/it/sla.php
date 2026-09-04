@@ -1,0 +1,48 @@
+<?php
+
+return [
+    'document_title' => 'Criteri SLA',
+    'title' => 'Criteri SLA',
+    'subtitle' => 'Impegni di risposta e risoluzione per questo account.',
+    'back' => 'Torna all’account',
+    'priority' => 'Priorità',
+    'change_priority' => 'Priorità della conversazione',
+    'save_priority' => 'Salva priorità',
+    'queue' => ['summary' => ':metric – :state'],
+    'detail' => ['region' => 'Stato SLA'],
+    'flash' => ['saved' => 'Criteri SLA salvati.'],
+    'metrics' => ['first_response' => 'Prima risposta', 'resolution' => 'Risoluzione'],
+    'duration' => [
+        'minutes' => '{1} :count minuto lavorativo|[2,*] :count minuti lavorativi',
+        'hours' => '{1} :count ora lavorativa|[2,*] :count ore lavorative',
+        'days' => '{1} :count giorno lavorativo|[2,*] :count giorni lavorativi',
+    ],
+    'states' => [
+        'on_track' => ['label' => 'In linea', 'detail' => 'Restano :duration.'],
+        'paused' => ['label' => 'In pausa', 'detail' => 'Fuori dall’orario di supporto; restano :duration.'],
+        'warning' => ['label' => 'Vicino alla violazione', 'detail' => 'Restano :duration.'],
+        'breached' => ['label' => 'Violato', 'reached' => 'Il termine dell’obiettivo è appena scaduto.', 'detail' => 'Obiettivo superato di :duration.'],
+        'met' => ['label' => 'Rispettato', 'detail' => 'Completato in :duration.'],
+        'missed' => ['label' => 'Mancato', 'detail' => 'Completato :duration oltre l’obiettivo.'],
+    ],
+    'policy' => [
+        'heading' => 'Obiettivi per priorità',
+        'lede' => 'Gli obiettivi vuoti non vengono applicati.',
+        'configured' => 'Configurati',
+        'not_configured' => 'Non configurati',
+        'clock' => 'Conta solo il tempo compreso nell’orario di supporto di ciascun sito. Anche la chiusura anticipata del servizio mette in pausa i contatori attivi.',
+        'warning' => 'Gli agenti vengono avvisati quando è trascorso il :percent% dell’obiettivo, prima della scadenza.',
+        'blank' => 'Lasci vuoto un obiettivo per disattivare solo quel contatore. Un nuovo obiettivo parte da ora per il lavoro attivo non ancora monitorato, senza inventare una violazione passata.',
+        'columns' => ['priority' => 'Priorità', 'first_response' => 'Obiettivo prima risposta', 'resolution' => 'Obiettivo risoluzione', 'guidance' => 'Significato nella coda'],
+        'response_for' => 'Minuti per la prima risposta con priorità :priority',
+        'resolution_for' => 'Minuti per la risoluzione con priorità :priority',
+        'minutes' => 'minuti',
+        'save' => 'Salva criteri SLA',
+        'guidance' => [
+            'urgent' => ['description' => 'Interruzione critica o attività di produzione bloccata.', 'action' => 'Assegni subito e tenga aggiornato il visitatore.'],
+            'high' => ['description' => 'Attività urgente che incide su un flusso importante del cliente.', 'action' => 'La faccia avanzare oggi.'],
+            'normal' => ['description' => 'Attività di supporto standard senza scadenze eccezionali.', 'action' => 'La gestisca nel normale ordine della coda.'],
+            'low' => ['description' => 'Approfondimento facoltativo o domanda non bloccante.', 'action' => 'La gestisca dopo i blocchi attivi dei visitatori.'],
+        ],
+    ],
+];

@@ -10,6 +10,7 @@ use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
 use App\Support\VisitorSessionToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
@@ -47,6 +48,38 @@ test('a site that asks nothing behaves exactly as before', function (): void {
     startConversation($site)->assertSuccessful();
 
     expect(SiteIntake::for($site)->asks())->toBeFalse();
+});
+
+test('widget conversation creation locks the account before the site', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clauses used by this concurrency contract.');
+    }
+
+    $site = intakeSite();
+    $visitor = Visitor::factory()->for($site)->create();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+        'subject' => 'Ordered widget conversation',
+    ])->assertCreated();
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+        && str_contains($query, 'for share'));
+    $siteLockQuery = $siteLock === false ? null : $queries->get($siteLock);
+
+    expect($accountLock)->toBeInt()
+        ->and($siteLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($siteLock)
+        ->and($siteLockQuery)->toContain('"archived_at" is null');
 });
 
 test('a required field is enforced by the server, not the widget', function (): void {

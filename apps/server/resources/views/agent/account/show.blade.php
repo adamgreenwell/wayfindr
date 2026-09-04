@@ -356,6 +356,15 @@
                             <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
                     @endif
+                    @if ($canManageSlaPolicies)
+                        <a class="management-link" href="{{ route('dashboard.account.sla-policies.index') }}">
+                            <span>
+                                <strong>{{ __('account.management.items.sla.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.sla.detail') }}</span>
+                            </span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
+                        </a>
+                    @endif
                     @if ($canManageKnowledge)
                         <a class="management-link" href="{{ route('dashboard.account.articles.index') }}">
                             <span>

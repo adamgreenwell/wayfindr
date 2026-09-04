@@ -338,6 +338,7 @@ return [
         ],
     ],
     'flash' => [
+        'priority_updated' => 'Priorità della conversazione aggiornata.',
         'reply_sent' => 'Risposta inviata.',
         'closed' => 'Conversazione chiusa.',
         'reopened' => 'Conversazione riaperta.',

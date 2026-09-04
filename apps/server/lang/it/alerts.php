@@ -59,6 +59,7 @@ return [
         'all' => 'Tutti gli avvisi',
         'conversation' => 'Avvisi di conversazione',
         'ticket' => 'Avvisi di ticket',
+        'sla' => 'Avvisi SLA',
     ],
 
     'focus' => [
@@ -82,6 +83,7 @@ return [
         'unread' => '{1} :count non letto|[2,*] :count non letti',
         'conversations' => '{1} :count conversazione|[2,*] :count conversazioni',
         'tickets' => '{1} :count ticket presente|[2,*] :count ticket presenti',
+        'sla' => '{1} :count avviso SLA|[2,*] :count avvisi SLA',
         'new_messages' => '{1} 1 nuovo messaggio|[2,*] :count nuovi messaggi',
     ],
 
@@ -107,6 +109,11 @@ return [
             'present' => 'Assegnazioni di ticket e lavoro persistente.',
             'empty' => 'Nessun avviso di assegnazione ticket in questa vista.',
         ],
+        'sla' => [
+            'label' => 'Avvisi SLA',
+            'present' => 'Scadenze vicine o già violate.',
+            'empty' => 'Nessuna scadenza SLA richiede attenzione in questa vista.',
+        ],
     ],
 
     'summary' => [
@@ -117,18 +124,21 @@ return [
             'unread' => '{1} Viene mostrato 1 avviso non letto corrispondente.|[2,*] Vengono mostrati :count avvisi non letti corrispondenti.',
             'conversation' => '{1} Viene mostrato 1 avviso di conversazione corrispondente.|[2,*] Vengono mostrati :count avvisi di conversazione corrispondenti.',
             'ticket' => '{1} Viene mostrato 1 avviso di ticket corrispondente.|[2,*] Vengono mostrati :count avvisi di ticket corrispondenti.',
+            'sla' => '{1} Viene mostrato 1 avviso SLA corrispondente.|[2,*] Vengono mostrati :count avvisi SLA corrispondenti.',
         ],
         'capped_heading' => [
             'all' => '{1} :shown mostrato di 1 avviso corrispondente.|[2,*] :shown mostrati di :count avvisi corrispondenti.',
             'unread' => '{1} :shown mostrato di 1 avviso non letto corrispondente.|[2,*] :shown mostrati di :count avvisi non letti corrispondenti.',
             'conversation' => '{1} :shown mostrato di 1 avviso di conversazione corrispondente.|[2,*] :shown mostrati di :count avvisi di conversazione corrispondenti.',
             'ticket' => '{1} :shown mostrato di 1 avviso di ticket corrispondente.|[2,*] :shown mostrati di :count avvisi di ticket corrispondenti.',
+            'sla' => '{1} :shown mostrato di 1 avviso SLA corrispondente.|[2,*] :shown mostrati di :count avvisi SLA corrispondenti.',
         ],
         'capped_detail' => [
             'all' => '{1} Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. 1 avviso corrisponde a questa vista.|[2,*] Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. :count avvisi corrispondono a questa vista.',
             'unread' => '{1} Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. 1 avviso non letto corrisponde a questa vista.|[2,*] Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. :count avvisi non letti corrispondono a questa vista.',
             'conversation' => '{1} Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. 1 avviso di conversazione corrisponde a questa vista.|[2,*] Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. :count avvisi di conversazione corrispondono a questa vista.',
             'ticket' => '{1} Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. 1 avviso di ticket corrisponde a questa vista.|[2,*] Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. :count avvisi di ticket corrispondono a questa vista.',
+            'sla' => '{1} Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. 1 avviso SLA corrisponde a questa vista.|[2,*] Dopo il limite di visualizzazione corrente vengono mostrati :shown avvisi. :count avvisi SLA corrispondono a questa vista.',
         ],
     ],
 
@@ -140,6 +150,7 @@ return [
         'kind' => [
             'conversation' => 'Nessun avviso di conversazione corrisponde a questa vista.',
             'ticket' => 'Nessun avviso di ticket corrisponde a questa vista.',
+            'sla' => 'Nessun avviso SLA corrisponde a questa vista.',
             'detail' => 'Provi tutti i tipi di avviso per includere gli altri segnali di supporto a cui può ancora accedere.',
         ],
         'unread' => [
@@ -171,6 +182,13 @@ return [
         'untitled_ticket' => 'Ticket senza titolo',
         'untitled_conversation' => 'Conversazione senza titolo',
         'ticket_assigned' => 'Ticket assegnato',
+        'sla_warning' => 'Scadenza SLA vicina',
+        'sla_breached' => 'Scadenza SLA violata',
+        'sla_metric' => 'Obiettivo: :metric',
+        'sla_warning_why' => 'Questo lavoro ha consumato gran parte dell’obiettivo calcolato nell’orario di supporto.',
+        'sla_breach_why' => 'Questo lavoro ha superato l’obiettivo calcolato nell’orario di supporto.',
+        'sla_warning_next' => 'Apra subito il lavoro e decida chi lo porterà avanti prima della scadenza.',
+        'sla_breach_next' => 'Apra il lavoro, ne assuma la responsabilità e ristabilisca un prossimo passo chiaro.',
         'assigned_by' => ':name le ha assegnato questo ticket.',
         'someone' => 'Qualcuno',
         'why' => 'Perché questo avviso:',

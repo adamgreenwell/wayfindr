@@ -92,6 +92,7 @@ return [
         'account_oidc_provisioning_updated' => 'Single-Sign-on-Bereitstellung aktualisiert',
         'account_oidc_role_mapping_created' => 'Single-Sign-on-Rollenzuordnung hinzugefügt',
         'account_oidc_role_mapping_deleted' => 'Single-Sign-on-Rollenzuordnung entfernt',
+        'account_sla_policies_updated' => 'SLA-Richtlinien aktualisiert',
         'agent_oidc_identity_linked' => 'Single-Sign-on-Identität verknüpft',
         'agent_oidc_provisioned' => 'Agent über Single Sign-on bereitgestellt',
         'agent_oidc_role_mapped' => 'Agentenrolle über Single Sign-on zugeordnet',

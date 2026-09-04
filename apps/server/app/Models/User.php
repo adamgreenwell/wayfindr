@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 #[Fillable(['account_id', 'account_role', 'custom_role_id', 'oidc_provisioned_at', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone'])]
@@ -241,20 +242,40 @@ class User extends Authenticatable
      */
     public function recordAlertDigestDelivery(array $delivery): void
     {
-        $preferences = $this->alert_preferences ?? [];
+        $accountId = $this->account_id === null ? null : (int) $this->account_id;
+        $userId = (int) $this->id;
 
-        $this->forceFill([
-            'alert_preferences' => [
-                ...$preferences,
-                'digest_delivery' => array_filter([
-                    'status' => $delivery['status'],
-                    'candidate_count' => (int) ($delivery['candidate_count'] ?? 0),
-                    'message' => $delivery['message'] ?? null,
-                    'error' => $delivery['error'] ?? null,
-                    'last_attempted_at' => $delivery['last_attempted_at'] ?? now()->toISOString(),
-                ], fn ($value): bool => $value !== null),
-            ],
-        ])->save();
+        DB::transaction(function () use ($accountId, $delivery, $userId): void {
+            if ($accountId !== null) {
+                Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
+            }
+
+            $current = self::query()
+                ->whereKey($userId)
+                ->when(
+                    $accountId === null,
+                    fn ($query) => $query->whereNull('account_id'),
+                    fn ($query) => $query->where('account_id', $accountId),
+                )
+                ->lockForUpdate()
+                ->firstOrFail();
+            $preferences = $current->alert_preferences ?? [];
+
+            $current->forceFill([
+                'alert_preferences' => [
+                    ...$preferences,
+                    'digest_delivery' => array_filter([
+                        'status' => $delivery['status'],
+                        'candidate_count' => (int) ($delivery['candidate_count'] ?? 0),
+                        'message' => $delivery['message'] ?? null,
+                        'error' => $delivery['error'] ?? null,
+                        'last_attempted_at' => $delivery['last_attempted_at'] ?? now()->toISOString(),
+                    ], fn ($value): bool => $value !== null),
+                ],
+            ])->save();
+
+            $this->setRawAttributes($current->getAttributes(), true);
+        });
     }
 
     /**

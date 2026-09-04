@@ -95,6 +95,7 @@ return [
         'account_oidc_provisioning_updated' => 'Single sign-on provisioning updated',
         'account_oidc_role_mapping_created' => 'Single sign-on role mapping added',
         'account_oidc_role_mapping_deleted' => 'Single sign-on role mapping removed',
+        'account_sla_policies_updated' => 'SLA policies updated',
         'agent_oidc_identity_linked' => 'Single sign-on identity linked',
         'agent_oidc_provisioned' => 'Agent provisioned through single sign-on',
         'agent_oidc_role_mapped' => 'Agent role mapped through single sign-on',

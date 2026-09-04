@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 
@@ -510,6 +511,9 @@ test('visitor message reopens a closed conversation', function (): void {
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
 
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
@@ -520,11 +524,28 @@ test('visitor message reopens a closed conversation', function (): void {
         ->assertJsonPath('data.conversation.support_code', 'WF-REOPEN2')
         ->assertJsonPath('data.conversation.status', 'open');
 
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
     $conversation->refresh();
 
     expect($conversation->status)->toBe('open')
         ->and($conversation->closed_at)->toBeNull()
         ->and($conversation->last_message_at)->not->toBeNull();
+
+    if (DB::getDriverName() === 'pgsql') {
+        $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+            && str_contains($query, 'for update'));
+        $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+            && str_contains($query, 'for share'));
+        $conversationLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "conversations"')
+            && str_contains($query, 'for update'));
+
+        expect($accountLock)->toBeInt()
+            ->and($siteLock)->toBeInt()
+            ->and($conversationLock)->toBeInt()
+            ->and($accountLock)->toBeLessThan($siteLock)
+            ->and($siteLock)->toBeLessThan($conversationLock);
+    }
 });
 
 test('visitor can report a fresh typing signal for their conversation', function (): void {

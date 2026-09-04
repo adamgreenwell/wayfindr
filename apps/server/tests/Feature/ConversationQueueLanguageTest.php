@@ -17,11 +17,13 @@ use App\Models\ConversationMessageAttachment;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\ReplyTemplate;
 use App\Models\Site;
+use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\TicketExternalLink;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentReplyTemplate;
 use App\Support\CobrowseConsentState;
@@ -1612,10 +1614,23 @@ test('no English is rendered as German on any extracted surface', function (): v
         'sender_id' => $conversation->visitor_id,
         'body' => 'Datenpunkt alert message',
     ]);
+    $slaClock = $conversation->slaClocks()->create([
+        'account_id' => $world['account']->id,
+        'site_id' => $world['site']->id,
+        'metric' => SlaClock::METRIC_FIRST_RESPONSE,
+        'priority' => 'high',
+        'target_seconds' => 900,
+        'warning_seconds' => 720,
+        'elapsed_seconds' => 720,
+        'started_at' => now()->subMinutes(12),
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ]);
 
     foreach ($world['agents'] as $alertReader) {
         $alertReader->notify(new ConversationNeedsReply($alertMessage));
         $alertReader->notify(new TicketAssigned($ticketWorkspace, $world['agents']['en']));
+        $alertReader->notify(new SlaDeadlineAlert($slaClock, 'warning'));
     }
 
     $states = [
@@ -1623,6 +1638,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.alerts.index'),
         route('dashboard.alerts.index', ['alert_filter' => 'unread', 'alert_kind' => 'conversation']),
         route('dashboard.alerts.index', ['alert_kind' => 'ticket']),
+        route('dashboard.alerts.index', ['alert_kind' => 'sla']),
         route('dashboard.alerts.index', ['alert_search' => 'zzzz']),
         route('dashboard.reports.index'),
         route('dashboard.sites.index'),
@@ -1666,6 +1682,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.sites.show', $world['site']),
         route('dashboard.account.show'),
         route('dashboard.account.security.show'),
+        route('dashboard.account.sla-policies.index'),
         route('operator.settings.localization.edit'),
         route('operator.settings.scanning.edit'),
         route('operator.settings.mail.edit'),

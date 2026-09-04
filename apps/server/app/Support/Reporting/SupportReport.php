@@ -10,8 +10,10 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationRating;
 use App\Models\OperatorSetting;
+use App\Models\Site;
 use App\Models\User;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Sites\SiteAvailability;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -375,12 +377,10 @@ final class SupportReport
     /**
      * Conversations waiting on the desk right now.
      *
-     * A point-in-time figure rather than a trend, and deliberately so. The
-     * historical version would have to be reconstructed from
-     * {@see UnattendedConversationAlertCollector}, which cannot answer it: that
-     * definition reads unread notification state, and reading a notification
-     * destroys the evidence. What is reused instead is its threshold, so the
-     * report and the alerts cannot disagree about how long is too long.
+     * A point-in-time figure rather than a trend, and deliberately so. Current
+     * waits reuse the unread episode clock maintained for unattended alerts.
+     * That persisted boundary keeps the report stable across support-calendar
+     * changes without pretending notification state can reconstruct history.
      *
      * @return array{needs_reply: int, oldest_wait_seconds: ?int, threshold_minutes: int}
      */
@@ -395,8 +395,9 @@ final class SupportReport
 
             $waiting = $this->scopedConversations()
                 ->where('status', 'open')
+                ->whereHas('site', fn (Builder $query) => $query->whereNull('archived_at'))
                 ->needsHumanReply()
-                ->select(['conversations.id', 'conversations.last_message_at', 'conversations.created_at'])
+                ->select(['conversations.id', 'conversations.site_id', 'conversations.last_message_at', 'conversations.created_at'])
                 ->addSelect([
                     // Keep the clock on the newest non-integration work
                     // boundary even when an integration updates activity.
@@ -416,6 +417,26 @@ final class SupportReport
                 ->get();
 
             $oldest = null;
+            $sites = Site::query()
+                ->whereIn('id', $waiting->pluck('site_id')->unique()->all())
+                ->get()
+                ->keyBy('id');
+            $now = CarbonImmutable::now();
+            $settledElapsed = [];
+            $collector = app(UnattendedConversationAlertCollector::class);
+
+            foreach ($sites as $site) {
+                $conversationIds = $waiting
+                    ->where('site_id', $site->id)
+                    ->pluck('id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->values()
+                    ->all();
+
+                foreach ($collector->projectedElapsedSecondsByConversation($site, $conversationIds, $now) as $conversationId => $seconds) {
+                    $settledElapsed[$conversationId] = $seconds;
+                }
+            }
 
             foreach ($waiting as $conversation) {
                 $since = CarbonImmutable::parse(
@@ -423,7 +444,11 @@ final class SupportReport
                     ?? $conversation->last_message_at
                     ?? $conversation->created_at,
                 );
-                $seconds = max(0, CarbonImmutable::now()->getTimestamp() - $since->getTimestamp());
+                $site = $sites->get((int) $conversation->site_id);
+                $seconds = $settledElapsed[(int) $conversation->id]
+                    ?? ($site
+                        ? SiteAvailability::elapsedOpenSeconds($site, $since, $now)
+                        : max(0, $now->getTimestamp() - $since->getTimestamp()));
                 $oldest = $oldest === null ? $seconds : max($oldest, $seconds);
             }
 

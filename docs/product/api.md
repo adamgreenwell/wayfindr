@@ -139,6 +139,11 @@ Conversations are addressed by **support code** rather than id: it is the
 identifier the product already uses with people, and it does not tell a reader
 how many conversations the install has.
 
+Conversation reads include the `priority` value used by the account's SLA
+policy. Conversation creation starts at `normal`; changing priority remains a
+deliberate dashboard action rather than part of the broad integration write
+surface.
+
 ### Pagination
 
 Lists are **cursor paginated**, not page-numbered:

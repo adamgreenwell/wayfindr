@@ -5,10 +5,12 @@ use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use App\Support\AlertDigestCandidateCollector;
 use Carbon\CarbonImmutable;
@@ -196,6 +198,133 @@ test('digest candidates skip conversations that no longer need an agent reply', 
         'closed_at' => now(),
         'status' => 'closed',
     ])->save();
+
+    expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
+});
+
+test('digest candidates include SLA deadlines with reader-facing time and no work content', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 24, 15, 5, 0, 'UTC'));
+    $account = Account::factory()->create();
+    $agent = digestAgent($account, ['timezone' => 'Europe/Berlin', 'locale' => 'de']);
+    $site = Site::factory()->for($account)->create(['name' => 'SLA Datenpunkt']);
+    $ticket = Ticket::factory()->for($account)->for($site)->create([
+        'description' => 'Private incident details stay out of this email.',
+        'priority' => 'urgent',
+        'subject' => 'Production checkout',
+    ]);
+    $clock = $ticket->slaClocks()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'metric' => SlaClock::METRIC_RESOLUTION,
+        'priority' => 'urgent',
+        'target_seconds' => 600,
+        'warning_seconds' => 480,
+        'elapsed_seconds' => 480,
+        'started_at' => now()->subMinutes(8),
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ]);
+    $agent->notify(new SlaDeadlineAlert($clock, 'warning'));
+
+    $candidate = app(AlertDigestCandidateCollector::class)->forAgent($agent)->sole();
+
+    expect($candidate)->toMatchArray([
+        'kind' => 'sla_deadline',
+        'reference' => 'Ticket #'.$ticket->id,
+        'priority' => 'urgent',
+        'status' => 'SLA approaching breach',
+        'subject' => 'Production checkout',
+        'site_name' => 'SLA Datenpunkt',
+    ])
+        ->and($candidate['last_activity_label'])->toContain('17:05')
+        ->and(json_encode($candidate, JSON_THROW_ON_ERROR))->not->toContain('Private incident details');
+
+    CarbonImmutable::setTestNow();
+});
+
+test('digest candidates drop SLA alerts whose site is archived or work no longer needs action', function (): void {
+    $account = Account::factory()->create();
+    $agent = digestAgent($account);
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+    $clock = $ticket->slaClocks()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'metric' => SlaClock::METRIC_RESOLUTION,
+        'priority' => 'normal',
+        'target_seconds' => 600,
+        'warning_seconds' => 480,
+        'elapsed_seconds' => 480,
+        'started_at' => now()->subMinutes(8),
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ]);
+    $agent->notify(new SlaDeadlineAlert($clock, 'warning'));
+
+    $site->forceFill(['archived_at' => now()])->save();
+
+    expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
+
+    $site->forceFill(['archived_at' => null])->save();
+    $clock->forceFill(['satisfied_at' => now()])->save();
+
+    expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
+});
+
+test('digest candidates drop warnings below an extended current target', function (): void {
+    $account = Account::factory()->create();
+    $agent = digestAgent($account);
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+    $clock = $ticket->slaClocks()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'metric' => SlaClock::METRIC_RESOLUTION,
+        'priority' => 'normal',
+        'target_seconds' => 600,
+        'warning_seconds' => 480,
+        'elapsed_seconds' => 480,
+        'started_at' => now()->subMinutes(8),
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ]);
+    $agent->notify(new SlaDeadlineAlert($clock, 'warning'));
+
+    $clock->forceFill([
+        'target_seconds' => 60 * 60,
+        'warning_seconds' => 48 * 60,
+    ])->save();
+
+    expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
+});
+
+test('digest candidates recheck current SLA assignment routing', function (): void {
+    $account = Account::factory()->create();
+    $agent = digestAgent($account, [
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ASSIGNED,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+        ],
+    ]);
+    $replacement = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->for($agent, 'assignee')->create();
+    $clock = $ticket->slaClocks()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'metric' => SlaClock::METRIC_RESOLUTION,
+        'priority' => 'normal',
+        'target_seconds' => 600,
+        'warning_seconds' => 480,
+        'elapsed_seconds' => 480,
+        'started_at' => now()->subMinutes(8),
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ]);
+    $agent->notify(new SlaDeadlineAlert($clock, 'warning'));
+
+    $ticket->forceFill(['assignee_id' => $replacement->id])->save();
 
     expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
 });

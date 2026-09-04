@@ -4,6 +4,7 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
@@ -107,6 +108,37 @@ test('agent can update their alert preference mode', function (): void {
         'mode' => 'assigned',
         'email' => true,
     ]);
+});
+
+test('alert preference changes lock the account before the agent', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL],
+    ]);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ASSIGNED,
+            'email_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $agentLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "users"')
+        && str_contains($query, 'for update'));
+
+    expect($accountLock)->toBeInt()
+        ->and($agentLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($agentLock);
 });
 
 test('agent profile explains calm alert preference controls', function (): void {

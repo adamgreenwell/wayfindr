@@ -230,6 +230,65 @@
                     </div>
                 @endif
             </section>
+
+            <section class="section" aria-labelledby="report-sla-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="report-sla-heading">{{ __('reports.sla.heading') }}</h2>
+                        <p class="lede">{{ __('reports.sla.lede') }}</p>
+                    </div>
+                    <span class="lede">{{ trans_choice('reports.sla.breaches', $slaHistory['breached'], ['count' => \App\Support\ReaderNumber::count($slaHistory['breached'])]) }}</span>
+                </div>
+
+                <div class="meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('reports.sla.active_warning') }}</span>
+                        <span class="meta-value">{{ \App\Support\ReaderNumber::count($slaHistory['active_warning']) }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('reports.sla.active_breached') }}</span>
+                        <span class="meta-value">{{ \App\Support\ReaderNumber::count($slaHistory['active_breached']) }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('sla.metrics.first_response') }}</span>
+                        <span class="meta-value">{{ \App\Support\ReaderNumber::count($slaHistory['first_response']) }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('sla.metrics.resolution') }}</span>
+                        <span class="meta-value">{{ \App\Support\ReaderNumber::count($slaHistory['resolution']) }}</span>
+                    </div>
+                </div>
+
+                @if ($slaHistory['recent'] === [])
+                    <p class="empty">{{ __('reports.sla.empty') }}</p>
+                @else
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th scope="col">{{ __('reports.sla.columns.reference') }}</th>
+                                    <th scope="col">{{ __('reports.sla.columns.metric') }}</th>
+                                    <th scope="col">{{ __('reports.sla.columns.priority') }}</th>
+                                    <th scope="col">{{ __('reports.sla.columns.breached') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($slaHistory['recent'] as $breach)
+                                    <tr>
+                                        <td><a href="{{ $breach['url'] }}" lang="">{{ $breach['reference'] }}</a></td>
+                                        <td>{{ __('sla.metrics.'.$breach['metric']) }}</td>
+                                        <td>{{ __('tickets.priorities.'.$breach['priority']) }}</td>
+                                        <td>{{ \App\Support\ReaderClock::dateTime($breach['breached_at'], $agent) }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (count($slaHistory['recent']) === 25)
+                        <p class="lede">{{ __('reports.sla.latest_only') }}</p>
+                    @endif
+                @endif
+            </section>
         </x-tab-panel>
 
         <x-tab-panel id="tickets">

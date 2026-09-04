@@ -137,6 +137,22 @@ return [
         ],
     ],
 
+    'sla' => [
+        'heading' => 'SLA history',
+        'lede' => 'Breaches are counted when the saved business-hours clock first crosses its target.',
+        'breaches' => '{1} :count breach in this period|[0,*] :count breaches in this period',
+        'active_warning' => 'Approaching breach now',
+        'active_breached' => 'Breached and still open',
+        'empty' => 'No SLA clock breached in this period.',
+        'latest_only' => 'Showing the 25 most recent breaches in this period.',
+        'columns' => [
+            'reference' => 'Work item',
+            'metric' => 'Target',
+            'priority' => 'Priority',
+            'breached' => 'Breached',
+        ],
+    ],
+
     'tables' => [
         'agent' => 'Agent',
         'replies' => 'Replies sent',

@@ -383,6 +383,7 @@ return [
     ],
 
     'flash' => [
+        'priority_updated' => 'Conversation priority updated.',
         'reply_sent' => 'Reply sent.',
         'closed' => 'Conversation closed.',
         'reopened' => 'Conversation reopened.',

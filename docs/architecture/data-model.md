@@ -21,6 +21,10 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `tickets`: durable support records that may be created from a conversation.
   Tickets can carry provider-neutral category values for local triage without
   depending on an external issue tracker.
+- `sla_policies`: optional account targets for first response and resolution,
+  keyed by support priority.
+- `sla_clocks`: persisted business-time consumption and warning, breach,
+  satisfaction, or cancellation history for a conversation or ticket target.
 - `ticket_labels`: account-owned labels assignable to tickets.
 - `reply_templates`: account-owned snippets that help agents answer common
   support questions without changing the ticket model.

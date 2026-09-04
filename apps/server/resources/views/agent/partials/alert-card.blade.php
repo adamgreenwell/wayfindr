@@ -5,12 +5,17 @@
     $alertStatusLabel = $notification->unread() ? __('alerts.card.status.unread') : __('alerts.card.status.read');
     $alertActionUrl = data_get($notificationData, 'url');
     $storedSubject = data_get($notificationData, 'subject');
-    $storedSubjectIsFallback = $notificationKind === 'conversation_needs_reply'
-        && $storedSubject === 'Untitled conversation';
+    $storedSubjectIsFallback = ($notificationKind === 'conversation_needs_reply'
+        && $storedSubject === 'Untitled conversation')
+        || ($notificationKind === 'sla_deadline'
+            && in_array($storedSubject, ['Untitled conversation', 'Untitled ticket'], true));
     $subjectIsAuthored = filled($storedSubject) && ! $storedSubjectIsFallback;
+    $subjectKind = data_get($notificationData, 'subject_kind');
     $subject = $subjectIsAuthored
         ? $storedSubject
-        : ($notificationKind === 'ticket_assigned' ? __('alerts.card.untitled_ticket') : __('alerts.card.untitled_conversation'));
+        : (($notificationKind === 'ticket_assigned' || ($notificationKind === 'sla_deadline' && $subjectKind === 'ticket'))
+            ? __('alerts.card.untitled_ticket')
+            : __('alerts.card.untitled_conversation'));
     $siteName = data_get($notificationData, 'site_name');
     $siteNameIsAuthored = filled($siteName);
     $siteFeedback = [
@@ -19,7 +24,18 @@
         'localized_parameters' => $siteNameIsAuthored ? [] : ['site' => __('alerts.card.unknown_site')],
     ];
 
-    if ($notificationKind === 'ticket_assigned') {
+    if ($notificationKind === 'sla_deadline') {
+        $alertActionLabel = $subjectKind === 'ticket' ? __('alerts.card.open_ticket') : __('alerts.card.open_conversation');
+        $alertNextMove = data_get($notificationData, 'stage') === 'breach'
+            ? __('alerts.card.sla_breach_next')
+            : __('alerts.card.sla_warning_next');
+        $priority = (string) data_get($notificationData, 'priority', 'normal');
+        $priorityFeedback = [
+            'key' => 'alerts.card.priority',
+            'parameters' => [],
+            'localized_parameters' => ['priority' => __('tickets.priorities.'.$priority)],
+        ];
+    } elseif ($notificationKind === 'ticket_assigned') {
         $alertActionLabel = __('alerts.card.open_ticket');
         $alertNextMove = __('alerts.card.ticket_next');
         $assignedByName = data_get($notificationData, 'assigned_by_name');
@@ -64,7 +80,22 @@
             </span>
         </span>
     </div>
-    @if ($notificationKind === 'ticket_assigned')
+    @if ($notificationKind === 'sla_deadline')
+        <p class="lede">{{ data_get($notificationData, 'stage') === 'breach' ? __('alerts.card.sla_breached') : __('alerts.card.sla_warning') }}</p>
+        <p class="message-body">{{ __('alerts.card.sla_metric', ['metric' => __('sla.metrics.'.data_get($notificationData, 'metric', 'resolution'))]) }}</p>
+        <p class="field-help">
+            <strong>{{ __('alerts.card.why') }}</strong>
+            {{ data_get($notificationData, 'stage') === 'breach' ? __('alerts.card.sla_breach_why') : __('alerts.card.sla_warning_why') }}
+        </p>
+        <p class="field-help"><strong>{{ __('alerts.card.next_move') }}</strong> {{ $alertNextMove }}</p>
+        <p class="lede">
+            <a class="text-link" href="{{ data_get($notificationData, 'url') }}">
+                {{ $subjectKind === 'ticket' ? __('alerts.card.ticket_reference', ['id' => data_get($notificationData, 'ticket_id')]) : data_get($notificationData, 'support_code') }}
+            </a>
+            <x-translated-feedback :feedback="$siteFeedback" />
+            · <x-translated-feedback :feedback="$priorityFeedback" />
+        </p>
+    @elseif ($notificationKind === 'ticket_assigned')
         <p class="lede">{{ __('alerts.card.ticket_assigned') }}</p>
         <p class="message-body"><x-translated-feedback :feedback="$assignedByFeedback" /></p>
         <p class="field-help">

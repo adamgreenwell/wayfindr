@@ -2,14 +2,20 @@
 
 namespace App\Support;
 
+use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\ConversationReadState;
+use App\Models\Site;
 use App\Models\User;
+use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\Sites\SiteAvailability;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 /**
@@ -50,7 +56,6 @@ class UnattendedConversationAlertCollector
             ->get()
             // The episode clock, not the notification row's age: a re-armed
             // notification restarts its wait when a new episode begins.
-            ->filter(fn (DatabaseNotification $notification): bool => $this->waitingSince($notification)->lessThanOrEqualTo(now()->subMinutes(self::THRESHOLD_MINUTES)))
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
             // One email per waiting episode: the stamp lives on the unread
             // notification and is dropped when a new episode begins.
@@ -65,6 +70,109 @@ class UnattendedConversationAlertCollector
         return ! $agent->isDeactivated()
             && $agent->wantsUnattendedAlertEmail()
             && $agent->alertMode() !== User::ALERT_MODE_QUIET;
+    }
+
+    /** Keep the shared queue/alert clock aligned with human message episodes. */
+    public function conversationMessageCreated(ConversationMessage $message): void
+    {
+        $conversation = $message->conversation()->first();
+
+        if (! $conversation) {
+            return;
+        }
+
+        if ($message->sender_type === User::class) {
+            $this->clearConversationWait($conversation);
+
+            return;
+        }
+
+        if ($message->sender_type !== Visitor::class || $conversation->status === 'closed') {
+            return;
+        }
+
+        $startedAt = $conversation->support_wait_started_at
+            ? CarbonImmutable::instance($conversation->support_wait_started_at)
+            : null;
+
+        if ($startedAt === null || $this->anyAgentSawSince((int) $conversation->id, $startedAt)) {
+            $this->resetConversationWait($conversation, $message->created_at ?? now());
+        }
+    }
+
+    /** Closed time never carries into a newly reopened waiting episode. */
+    public function conversationUpdated(Conversation $conversation): void
+    {
+        if (! $conversation->wasChanged('status')) {
+            return;
+        }
+
+        if ($conversation->status === 'closed') {
+            $this->clearConversationWait($conversation);
+
+            return;
+        }
+
+        if ((string) $conversation->getOriginal('status') === 'closed' && $conversation->attentionState() === 'needs_reply') {
+            $this->resetConversationWait($conversation, now());
+        }
+    }
+
+    /**
+     * Commit waiting time under the site's current calendar before that
+     * calendar or a manual closure changes.
+     */
+    public function advanceSite(Site $site, CarbonInterface $at): void
+    {
+        Conversation::query()
+            ->where('site_id', $site->id)
+            ->where('status', 'open')
+            ->needsHumanReply()
+            ->select('id')
+            ->lazyById(250)
+            ->each(fn (Conversation $conversation) => $this->advanceConversation($conversation, $site, $at));
+    }
+
+    /** Resume queue clocks without charging time while the site was archived. */
+    public function resumeSite(Site $site, CarbonInterface $at): void
+    {
+        Conversation::query()
+            ->where('site_id', $site->id)
+            ->where('status', 'open')
+            ->needsHumanReply()
+            ->whereNotNull('support_wait_started_at')
+            ->update(['support_wait_last_counted_at' => CarbonImmutable::instance($at)]);
+    }
+
+    /**
+     * Project each waiting episode from its persisted business-time boundary
+     * without changing notification state. Queue-health reporting uses this
+     * same clock so a schedule edit or manual closure cannot rewrite the wait.
+     *
+     * @param  list<int>  $conversationIds
+     * @return array<int, int>
+     */
+    public function projectedElapsedSecondsByConversation(Site $site, array $conversationIds, CarbonInterface $at): array
+    {
+        $elapsedByConversation = [];
+
+        if ($conversationIds === []) {
+            return $elapsedByConversation;
+        }
+
+        $conversations = Conversation::query()
+            ->where('site_id', $site->id)
+            ->whereIn('id', $conversationIds)
+            ->where('status', 'open')
+            ->needsHumanReply()
+            ->whereNotNull('support_wait_started_at')
+            ->get();
+
+        foreach ($conversations as $conversation) {
+            $elapsedByConversation[(int) $conversation->id] = $this->projectedConversationElapsed($conversation, $site, $at);
+        }
+
+        return $elapsedByConversation;
     }
 
     /**
@@ -87,16 +195,27 @@ class UnattendedConversationAlertCollector
         if (
             ! $conversation
             || $conversation->status !== 'open'
+            || $conversation->site?->isArchived()
             || $conversation->attentionState() !== 'needs_reply'
             || ! $agent->shouldReceiveConversationAlert($conversation)
         ) {
             return null;
         }
 
+        // The fixed unattended cadence and configured SLA clocks share the
+        // same business-time calculator. A five-minute heuristic that fires at
+        // 03:00 while the site is closed would disagree with every SLA state
+        // beside it and train agents to ignore both.
+        $waitingSince = $this->waitingSince($notification);
+
+        if ($this->advanceConversation($conversation, $conversation->site, CarbonImmutable::now()) < self::THRESHOLD_MINUTES * 60) {
+            return null;
+        }
+
         // "Unseen" is account-wide: another agent opening the conversation
         // marks only THEIR notification read, but the wait has been seen —
         // nobody needs the email.
-        if ($this->anyAgentSawSince($conversationId, $this->waitingSince($notification))) {
+        if ($this->anyAgentSawSince($conversationId, $waitingSince)) {
             return null;
         }
 
@@ -105,7 +224,7 @@ class UnattendedConversationAlertCollector
             'reference' => $conversation->support_code,
             'site_name' => $conversation->site?->name ?? 'Unknown site',
             'subject' => $conversation->subject ?? 'Untitled conversation',
-            'waiting_since' => $this->waitingSince($notification)->toISOString(),
+            'waiting_since' => $waitingSince->toISOString(),
             'url' => route('dashboard.conversations.show', $conversation->support_code, false),
         ];
     }
@@ -190,5 +309,96 @@ class UnattendedConversationAlertCollector
         return is_string($stored) && trim($stored) !== ''
             ? CarbonImmutable::parse($stored)
             : CarbonImmutable::parse($notification->created_at);
+    }
+
+    private function advanceConversation(Conversation $conversation, Site $site, CarbonInterface $at): int
+    {
+        return DB::transaction(function () use ($at, $conversation, $site): int {
+            // Match every calendar and conversation mutation: account, site,
+            // then the waiting conversation. A scheduler can therefore finish
+            // before the edit boundary or resume after it without deadlocking
+            // an agent write whose SLA observer must visit the same site.
+            Account::query()->whereKey($site->account_id)->lockForUpdate()->firstOrFail();
+            $currentSite = Site::query()->whereKey($site->id)->lockForUpdate()->first();
+
+            if (! $currentSite) {
+                return 0;
+            }
+
+            $current = Conversation::query()
+                ->with(['latestMessage', 'latestNonIntegrationMessage'])
+                ->lockForUpdate()
+                ->find($conversation->id);
+
+            if (! $current || $current->status !== 'open' || $current->attentionState() !== 'needs_reply') {
+                return 0;
+            }
+
+            $startedAt = $current->support_wait_started_at
+                ? CarbonImmutable::instance($current->support_wait_started_at)
+                : CarbonImmutable::instance($current->queueTimingContext()['wait_since'] ?? $current->created_at);
+            $lastCountedAt = $current->support_wait_last_counted_at
+                ? CarbonImmutable::instance($current->support_wait_last_counted_at)
+                : $startedAt;
+            $countedAt = CarbonImmutable::instance($at);
+            $elapsed = max(0, (int) $current->support_wait_elapsed_seconds);
+
+            if ($lastCountedAt->lessThan($startedAt)) {
+                $lastCountedAt = $startedAt;
+                $elapsed = 0;
+            }
+
+            if ($countedAt->greaterThan($lastCountedAt) && ! $currentSite->isArchived()) {
+                $elapsed += SiteAvailability::elapsedOpenSeconds($currentSite, $lastCountedAt, $countedAt);
+            }
+
+            $current->forceFill([
+                'support_wait_started_at' => $startedAt,
+                'support_wait_elapsed_seconds' => $elapsed,
+                'support_wait_last_counted_at' => $countedAt->greaterThan($lastCountedAt) ? $countedAt : $lastCountedAt,
+            ])->saveQuietly();
+
+            return $elapsed;
+        });
+    }
+
+    private function projectedConversationElapsed(Conversation $conversation, Site $site, CarbonInterface $at): int
+    {
+        $startedAt = CarbonImmutable::instance($conversation->support_wait_started_at);
+        $lastCountedAt = $conversation->support_wait_last_counted_at
+            ? CarbonImmutable::instance($conversation->support_wait_last_counted_at)
+            : $startedAt;
+        $elapsed = max(0, (int) $conversation->support_wait_elapsed_seconds);
+        $countedAt = CarbonImmutable::instance($at);
+
+        if ($lastCountedAt->lessThan($startedAt)) {
+            $lastCountedAt = $startedAt;
+            $elapsed = 0;
+        }
+
+        if ($countedAt->greaterThan($lastCountedAt)) {
+            $elapsed += SiteAvailability::elapsedOpenSeconds($site, $lastCountedAt, $countedAt);
+        }
+
+        return $elapsed;
+    }
+
+    private function resetConversationWait(Conversation $conversation, CarbonInterface $startedAt): void
+    {
+        $startedAt = CarbonImmutable::instance($startedAt);
+        $conversation->forceFill([
+            'support_wait_started_at' => $startedAt,
+            'support_wait_elapsed_seconds' => 0,
+            'support_wait_last_counted_at' => $startedAt,
+        ])->saveQuietly();
+    }
+
+    private function clearConversationWait(Conversation $conversation): void
+    {
+        $conversation->forceFill([
+            'support_wait_started_at' => null,
+            'support_wait_elapsed_seconds' => 0,
+            'support_wait_last_counted_at' => null,
+        ])->saveQuietly();
     }
 }

@@ -88,7 +88,8 @@ class NotifyAgentsOfVisitorMessage
             $this->agentRepliedSince($conversation, $waitingSince)
             || $this->unattendedAlerts->anyAgentSawSince($conversation->id, CarbonImmutable::parse($waitingSince))
         ) {
-            $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = now()->toISOString();
+            $episodeStartedAt = now()->toISOString();
+            $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $episodeStartedAt;
         } else {
             $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $waitingSince;
 

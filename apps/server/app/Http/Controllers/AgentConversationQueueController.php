@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\CobrowseConsentState;
 use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\Sla\SlaStatePresenter;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -16,7 +17,7 @@ use Illuminate\Support\Collection;
 
 class AgentConversationQueueController extends Controller
 {
-    public function __invoke(Request $request, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder): View
+    public function __invoke(Request $request, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, SlaStatePresenter $slaStates): View
     {
         $agent = $request->user();
 
@@ -32,7 +33,7 @@ class AgentConversationQueueController extends Controller
             'account' => $account,
             'agent' => $agent,
             'sites' => $sites,
-            ...$this->conversationQueueData($agent, $sites, $request, $cobrowseConsentState, $cobrowseAttentionFinder),
+            ...$this->conversationQueueData($agent, $sites, $request, $cobrowseConsentState, $cobrowseAttentionFinder, $slaStates),
         ]);
     }
 
@@ -57,7 +58,7 @@ class AgentConversationQueueController extends Controller
      *     newActivityConversationCount: int
      * }
      */
-    private function conversationQueueData(User $agent, Collection $sites, Request $request, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder): array
+    private function conversationQueueData(User $agent, Collection $sites, Request $request, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, SlaStatePresenter $slaStates): array
     {
         // Keyed by the query-string value, which is the contract with the URL
         // and must not move when the label does.
@@ -137,6 +138,7 @@ class AgentConversationQueueController extends Controller
                 'latestNonIntegrationMessage',
                 'readStates' => fn ($query) => $query->where('user_id', $agent->id),
                 'site',
+                'slaClocks',
                 'visitor',
             ])
             ->where('status', $conversationStatus)
@@ -228,6 +230,9 @@ class AgentConversationQueueController extends Controller
             'conversations' => $conversations,
             'conversationsShownOf' => $conversationsShownOf,
             'newActivityConversationCount' => $newActivityConversationCount,
+            'slaStateByConversationId' => $conversations->mapWithKeys(fn (Conversation $conversation): array => [
+                $conversation->id => $slaStates->summary($conversation),
+            ]),
         ];
     }
 

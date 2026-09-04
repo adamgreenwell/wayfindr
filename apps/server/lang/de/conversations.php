@@ -367,6 +367,7 @@ return [
     ],
 
     'flash' => [
+        'priority_updated' => 'Priorität der Unterhaltung aktualisiert.',
         'reply_sent' => 'Antwort gesendet.',
         'closed' => 'Unterhaltung geschlossen.',
         'reopened' => 'Unterhaltung wieder geöffnet.',

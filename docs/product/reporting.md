@@ -18,7 +18,9 @@ chart that omits quiet days compresses the timeline and makes a weekend look
 like an afternoon.
 
 **Speed.** First-response and resolution time as median and 90th percentile,
-plus how often resolutions did not hold.
+plus how often resolutions did not hold. It also shows SLA breach history and
+current deadline pressure from the persisted clocks described in
+[SLA policies](sla-policies.md).
 
 **Tickets.** The same three questions asked of the ticket half of the desk:
 volume, resolution time and reopens, and who carried the work. It has its own
@@ -187,6 +189,10 @@ Within that, the same three rules:
 destroying anything, so excluding it would mean tidying up silently rewrote last
 quarter's numbers. Purging is the operation that removes history, and a total
 that falls after a purge is correct rather than corrupt.
+
+SLA history follows the same site allowlist and selected reporting window.
+Historical totals use the moment each clock first breached; current warning and
+breached counts are a separate live snapshot and are labelled as such.
 
 ## Agent activity is a workload figure
 

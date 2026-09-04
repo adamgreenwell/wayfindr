@@ -109,6 +109,11 @@ class Ticket extends Model
         return $this->belongsTo(Account::class);
     }
 
+    public function slaClocks(): MorphMany
+    {
+        return $this->morphMany(SlaClock::class, 'subject');
+    }
+
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);

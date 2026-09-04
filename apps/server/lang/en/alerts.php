@@ -59,6 +59,7 @@ return [
         'all' => 'All alerts',
         'conversation' => 'Conversation alerts',
         'ticket' => 'Ticket alerts',
+        'sla' => 'SLA alerts',
     ],
 
     'focus' => [
@@ -82,6 +83,7 @@ return [
         'unread' => '{1} :count unread|[2,*] :count unread',
         'conversations' => '{1} :count conversation|[2,*] :count conversations',
         'tickets' => '{1} :count ticket|[2,*] :count tickets',
+        'sla' => '{1} :count SLA alert|[2,*] :count SLA alerts',
         'new_messages' => '{1} 1 new message|[2,*] :count new messages',
     ],
 
@@ -107,6 +109,11 @@ return [
             'present' => 'Ticket assignments and durable work.',
             'empty' => 'No ticket assignment alerts in this view.',
         ],
+        'sla' => [
+            'label' => 'SLA alerts',
+            'present' => 'Deadlines approaching or already breached.',
+            'empty' => 'No SLA deadlines need attention in this view.',
+        ],
     ],
 
     'summary' => [
@@ -117,18 +124,21 @@ return [
             'unread' => '{1} Showing 1 matching unread alert.|[2,*] Showing :count matching unread alerts.',
             'conversation' => '{1} Showing 1 matching conversation alert.|[2,*] Showing :count matching conversation alerts.',
             'ticket' => '{1} Showing 1 matching ticket alert.|[2,*] Showing :count matching ticket alerts.',
+            'sla' => '{1} Showing 1 matching SLA alert.|[2,*] Showing :count matching SLA alerts.',
         ],
         'capped_heading' => [
             'all' => '{1} :shown shown of 1 matching alert.|[2,*] :shown shown of :count matching alerts.',
             'unread' => '{1} :shown shown of 1 matching unread alert.|[2,*] :shown shown of :count matching unread alerts.',
             'conversation' => '{1} :shown shown of 1 matching conversation alert.|[2,*] :shown shown of :count matching conversation alerts.',
             'ticket' => '{1} :shown shown of 1 matching ticket alert.|[2,*] :shown shown of :count matching ticket alerts.',
+            'sla' => '{1} :shown shown of 1 matching SLA alert.|[2,*] :shown shown of :count matching SLA alerts.',
         ],
         'capped_detail' => [
             'all' => '{1} Showing :shown alerts after the current display cap. 1 alert matches this view.|[2,*] Showing :shown alerts after the current display cap. :count alerts match this view.',
             'unread' => '{1} Showing :shown alerts after the current display cap. 1 unread alert matches this view.|[2,*] Showing :shown alerts after the current display cap. :count unread alerts match this view.',
             'conversation' => '{1} Showing :shown alerts after the current display cap. 1 conversation alert matches this view.|[2,*] Showing :shown alerts after the current display cap. :count conversation alerts match this view.',
             'ticket' => '{1} Showing :shown alerts after the current display cap. 1 ticket alert matches this view.|[2,*] Showing :shown alerts after the current display cap. :count ticket alerts match this view.',
+            'sla' => '{1} Showing :shown alerts after the current display cap. 1 SLA alert matches this view.|[2,*] Showing :shown alerts after the current display cap. :count SLA alerts match this view.',
         ],
     ],
 
@@ -140,6 +150,7 @@ return [
         'kind' => [
             'conversation' => 'No conversation alerts match this view.',
             'ticket' => 'No ticket alerts match this view.',
+            'sla' => 'No SLA alerts match this view.',
             'detail' => 'Try all alert types to include the other support signals you can still access.',
         ],
         'unread' => [
@@ -171,6 +182,13 @@ return [
         'untitled_ticket' => 'Untitled ticket',
         'untitled_conversation' => 'Untitled conversation',
         'ticket_assigned' => 'Ticket assigned',
+        'sla_warning' => 'SLA deadline approaching',
+        'sla_breached' => 'SLA deadline breached',
+        'sla_metric' => 'Target: :metric',
+        'sla_warning_why' => 'This work has used most of its business-hours target.',
+        'sla_breach_why' => 'This work has passed its business-hours target.',
+        'sla_warning_next' => 'Open the work now and decide who will move it forward before the target expires.',
+        'sla_breach_next' => 'Open the work, take ownership, and restore a clear next step.',
         'assigned_by' => ':name assigned this ticket to you.',
         'someone' => 'Someone',
         'why' => 'Why this alert:',

@@ -193,6 +193,7 @@
                                 @foreach ($tickets as $ticket)
                                     @php
                                         $ticketTiming = $ticket->queueTimingContext();
+                                        $slaState = $slaStateByTicketId->get($ticket->id);
                                         $activityPreview = $canViewTicketConversations
                                             ? $ticket->queueActivityPreview()
                                             : null;
@@ -328,6 +329,12 @@
                                         <td class="wf-queue-when">
                                             {{ __('tickets.row.opened', ['elapsed' => $ticketTiming['opened_at']->diffForHumans()]) }}
                                             <span class="wf-queue-preview" title="{{ $waitLabel }}">{{ $waitLabel }}</span>
+                                            @if ($slaState)
+                                                <span class="wf-queue-state" data-tone="{{ $slaState['tone'] }}">
+                                                    <i aria-hidden="true"></i>{{ __('sla.queue.summary', ['metric' => $slaState['metric_label'], 'state' => $slaState['label']]) }}
+                                                </span>
+                                                <span class="wf-queue-preview">{{ $slaState['detail'] }}</span>
+                                            @endif
                                         </td>
                                     </tr>
                                 @endforeach

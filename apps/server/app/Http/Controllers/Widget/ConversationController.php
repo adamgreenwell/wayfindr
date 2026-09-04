@@ -8,6 +8,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
@@ -21,8 +22,12 @@ use Illuminate\Support\Facades\DB;
 
 class ConversationController extends Controller
 {
-    public function store(Request $request, VisitorSessionToken $visitorSessionToken, VisitorContextSanitizer $visitorContextSanitizer): JsonResponse
-    {
+    public function store(
+        Request $request,
+        VisitorSessionToken $visitorSessionToken,
+        VisitorContextSanitizer $visitorContextSanitizer,
+        SiteManagerCoverage $siteManagerCoverage,
+    ): JsonResponse {
         // The site has to be resolved before the intake rules are known, and the
         // intake rules are part of validation -- so this runs in two passes
         // rather than one. The alternative is trusting the widget about what it
@@ -72,10 +77,17 @@ class ConversationController extends Controller
         $conversation = DB::transaction(function () use (
 
             $site,
+            $siteManagerCoverage,
             $validated,
             $visitorContextSanitizer,
             $visitor,
         ): Conversation {
+            // The synchronous conversation observer snapshots the account SLA
+            // policy. Join the account-first protocol before taking the shared
+            // site lock so an availability or archive write cannot deadlock
+            // with this visitor request.
+            $siteManagerCoverage->lockAccount((int) $site->account_id);
+
             // Same lock `updatePresence()` takes, for the same reason as
             // bootstrap: the page-address setting has to be the one in force
             // at the write, not the one this request saw on arrival.
@@ -90,7 +102,12 @@ class ConversationController extends Controller
             // the exclusive lock, so a revocation waits for the readers in flight
             // and blocks the ones after it. Readers exclude the writer; they do not
             // exclude each other.
-            $current = Site::query()->whereKey($site->getKey())->sharedLock()->first() ?? $site;
+            $current = Site::query()->servable()->whereKey($site->getKey())->sharedLock()->first();
+
+            // Archive may have won the account lock after the public-key
+            // lookup above. Decide from the locked row rather than falling
+            // back to the stale pre-transaction site.
+            abort_unless($current, 404, 'Site not found.');
             $storePageUrl = SitePresenceReporting::for($current)->pageUrls;
 
             $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();

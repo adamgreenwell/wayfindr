@@ -16,12 +16,21 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\Reporting\ReportingScope;
+use App\Support\Reporting\ReportingWindow;
+use App\Support\Reporting\SupportReport;
 use App\Support\UnattendedConversationAlertCollector;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    $this->freezeTime();
+});
 
 function unattendedAlertAgent(Account $account, array $overrides = []): User
 {
@@ -104,6 +113,167 @@ test('nothing sends while the wait is inside the threshold', function (): void {
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
 
     Mail::assertNothingQueued();
+});
+
+test('after-hours waiting pauses the unattended threshold until support reopens', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-08-28 18:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['availability' => [
+            'enabled' => true,
+            'timezone' => 'UTC',
+            'weekdays' => [
+                'mon' => ['09:00', '17:00'],
+                'tue' => ['09:00', '17:00'],
+                'wed' => ['09:00', '17:00'],
+                'thu' => ['09:00', '17:00'],
+                'fri' => ['09:00', '17:00'],
+                'sat' => null,
+                'sun' => null,
+            ],
+        ]],
+    ]);
+    createUnattendedWait($agent, $site);
+
+    $this->travelTo(CarbonImmutable::parse('2026-08-31 09:04', 'UTC'));
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travelTo(CarbonImmutable::parse('2026-08-31 09:06', 'UTC'));
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertQueuedCount(1);
+});
+
+test('the unattended sweep locks account before site and conversation', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create(['settings' => ['availability' => ['enabled' => false]]]);
+    createUnattendedWait($agent, $site);
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $candidates = app(UnattendedConversationAlertCollector::class)->forAgent($agent);
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+        && str_contains($query, 'for update'));
+    $conversationLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "conversations"')
+        && str_contains($query, 'for update'));
+
+    expect($candidates)->toHaveCount(1)
+        ->and($accountLock)->toBeInt()
+        ->and($siteLock)->toBeInt()
+        ->and($conversationLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($siteLock)
+        ->and($siteLock)->toBeLessThan($conversationLock);
+});
+
+test('manually reopening a desk does not turn closed time into unattended wait time', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 10:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(2)->minutes();
+    $this->actingAs($agent)
+        ->post(route('dashboard.sites.availability.close', $site), ['closure' => 'hour'])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    $this->travel(10)->minutes();
+    $this->actingAs($agent)
+        ->delete(route('dashboard.sites.availability.reopen', $site))
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    $report = new SupportReport(
+        ReportingScope::for($account, $agent),
+        ReportingWindow::ofDays(30),
+    );
+
+    expect($conversation->fresh()->support_wait_elapsed_seconds)->toBe(2 * 60)
+        ->and($report->queueHealth()['oldest_wait_seconds'])->toBe(2 * 60);
+
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertQueuedCount(1);
+});
+
+test('queue health preserves a waiting clock after its notification is read', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 10:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(2)->minutes();
+    $agent->unreadNotifications()->update(['read_at' => now()]);
+    $conversation->markReadFor($agent);
+
+    $this->actingAs($agent)
+        ->put(route('dashboard.sites.availability.update', $site), [
+            'availability_enabled' => '1',
+            'availability_timezone' => 'UTC',
+        ])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    $report = new SupportReport(
+        ReportingScope::for($account, $agent),
+        ReportingWindow::ofDays(30),
+    );
+
+    expect($agent->unreadNotifications()->where('type', ConversationNeedsReply::class)->count())->toBe(0)
+        ->and($conversation->fresh()->support_wait_elapsed_seconds)->toBe(2 * 60)
+        ->and($report->queueHealth()['oldest_wait_seconds'])->toBe(2 * 60);
+});
+
+test('archiving pauses an unattended wait until the site is restored', function (): void {
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(2)->minutes();
+    $this->actingAs($agent)->post(route('dashboard.sites.archive', $site))->assertRedirect();
+
+    $this->travel(10)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->actingAs($agent)->post(route('dashboard.sites.unarchive', $site))->assertRedirect();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    expect($conversation->fresh()->support_wait_elapsed_seconds)->toBe(6 * 60);
+    Mail::assertQueuedCount(1);
 });
 
 test('nothing sends once the agent has seen the conversation', function (): void {
