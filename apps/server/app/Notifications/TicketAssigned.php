@@ -9,6 +9,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Gate;
 
 class TicketAssigned extends Notification implements ShouldQueue
 {
@@ -46,6 +47,27 @@ class TicketAssigned extends Notification implements ShouldQueue
             'database' => 'sync',
             'mail' => (string) config('queue.default', 'sync'),
         ];
+    }
+
+    public function shouldSend(object $notifiable, string $channel): bool
+    {
+        if ($channel !== 'mail') {
+            return true;
+        }
+
+        $recipient = $notifiable instanceof User
+            ? User::query()->whereKey($notifiable->id)->first()
+            : null;
+        $ticket = Ticket::query()
+            ->with('site')
+            ->whereKey($this->ticket->id)
+            ->first();
+
+        return $recipient instanceof User
+            && $ticket instanceof Ticket
+            && $recipient->wantsImmediateAlertEmail()
+            && Gate::forUser($recipient)->allows('view', $ticket)
+            && $recipient->shouldReceiveTicketAssignmentAlert($ticket);
     }
 
     public function toMail(object $notifiable): MailMessage

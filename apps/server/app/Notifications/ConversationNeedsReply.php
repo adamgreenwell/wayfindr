@@ -8,6 +8,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 
 class ConversationNeedsReply extends Notification implements ShouldQueue
@@ -47,6 +48,28 @@ class ConversationNeedsReply extends Notification implements ShouldQueue
             'database' => 'sync',
             'mail' => (string) config('queue.default', 'sync'),
         ];
+    }
+
+    public function shouldSend(object $notifiable, string $channel): bool
+    {
+        if ($channel !== 'mail') {
+            return true;
+        }
+
+        $recipient = $notifiable instanceof User
+            ? User::query()->whereKey($notifiable->id)->first()
+            : null;
+        $message = ConversationMessage::query()
+            ->with('conversation.site')
+            ->whereKey($this->message->id)
+            ->first();
+        $conversation = $message?->conversation;
+
+        return $recipient instanceof User
+            && $conversation !== null
+            && $recipient->wantsImmediateAlertEmail()
+            && Gate::forUser($recipient)->allows('view', $conversation)
+            && $recipient->shouldReceiveConversationAlert($conversation);
     }
 
     public function toMail(object $notifiable): MailMessage
