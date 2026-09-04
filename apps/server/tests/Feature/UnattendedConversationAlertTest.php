@@ -316,14 +316,17 @@ test('nothing sends once an agent has replied, even with the notification unread
     Mail::assertNothingQueued();
 });
 
-test('a resolved conversation never alerts', function (): void {
+test('an unknown legacy conversation status never alerts', function (): void {
     Mail::fake();
 
     $account = Account::factory()->create();
     $agent = unattendedAlertAgent($account);
     $site = Site::factory()->for($account)->create();
     $conversation = createUnattendedWait($agent, $site);
-    $conversation->forceFill(['status' => 'resolved'])->save();
+    // Model writes reject states outside the lifecycle contract. A database
+    // restored from an older build can still contain one, so the collector
+    // must continue to fail closed when it reads that row.
+    DB::table('conversations')->where('id', $conversation->id)->update(['status' => 'resolved']);
 
     $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
 
