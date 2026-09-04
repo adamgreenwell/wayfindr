@@ -242,7 +242,7 @@ test('digest candidates include SLA deadlines with reader-facing time and no wor
     CarbonImmutable::setTestNow();
 });
 
-test('digest candidates drop SLA alerts whose work no longer needs action', function (): void {
+test('digest candidates drop SLA alerts whose site is archived or work no longer needs action', function (): void {
     $account = Account::factory()->create();
     $agent = digestAgent($account);
     $site = Site::factory()->for($account)->create();
@@ -260,6 +260,12 @@ test('digest candidates drop SLA alerts whose work no longer needs action', func
         'warned_at' => now(),
     ]);
     $agent->notify(new SlaDeadlineAlert($clock, 'warning'));
+
+    $site->forceFill(['archived_at' => now()])->save();
+
+    expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();
+
+    $site->forceFill(['archived_at' => null])->save();
     $clock->forceFill(['satisfied_at' => now()])->save();
 
     expect(app(AlertDigestCandidateCollector::class)->forAgent($agent))->toBeEmpty();

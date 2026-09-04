@@ -53,8 +53,9 @@ final class SlaStatePresenter
     {
         $active = $clock->isActive();
         $elapsed = (int) $clock->elapsed_seconds;
+        $archived = $clock->site?->isArchived() ?? false;
 
-        if ($active && $at->greaterThan($clock->last_counted_at)) {
+        if ($active && ! $archived && $at->greaterThan($clock->last_counted_at)) {
             $elapsed += SiteAvailability::elapsedOpenSeconds(
                 $clock->site,
                 CarbonImmutable::instance($clock->last_counted_at),
@@ -64,7 +65,7 @@ final class SlaStatePresenter
 
         $breached = $clock->breached_at !== null
             || ($active ? $elapsed >= $clock->target_seconds : $elapsed > $clock->target_seconds);
-        $paused = $active && ! SiteAvailability::for($clock->site, $at)->open;
+        $paused = $active && ($archived || ! SiteAvailability::for($clock->site, $at)->open);
         $status = match (true) {
             ! $active && $breached => 'missed',
             ! $active => 'met',

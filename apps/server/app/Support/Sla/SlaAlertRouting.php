@@ -15,11 +15,13 @@ final class SlaAlertRouting
     /** @return Collection<int, User> */
     public function recipients(SlaClock $clock): Collection
     {
-        $clock->loadMissing(['site.account', 'subject']);
+        // Routing is also a delivery-time check. Reload instead of trusting a
+        // queued notification's cached site or assignment relationships.
+        $clock->load(['site.account', 'subject']);
         $subject = $clock->subject;
         $site = $clock->site;
 
-        if (! $site || ! $site->account || ! ($subject instanceof Conversation || $subject instanceof Ticket)) {
+        if (! $site || $site->isArchived() || ! $site->account || ! ($subject instanceof Conversation || $subject instanceof Ticket)) {
             return collect();
         }
 

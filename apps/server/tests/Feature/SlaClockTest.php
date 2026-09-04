@@ -16,6 +16,7 @@ use App\Support\Sla\SlaStatePresenter;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
@@ -73,6 +74,31 @@ test('new conversations start response and resolution clocks from account policy
         ->toBe([SlaClock::METRIC_FIRST_RESPONSE, SlaClock::METRIC_RESOLUTION])
         ->and($conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->first()->target_seconds)
         ->toBe(60 * 60);
+});
+
+test('new SLA clocks lock the account before reading its policy', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $world = slaWorld();
+    configureNormalSla($world['account']);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $policyRead = $queries->search(fn (string $query): bool => str_contains($query, 'from "sla_policies"'));
+
+    expect($accountLock)->toBeInt()
+        ->and($policyRead)->toBeInt()
+        ->and($accountLock)->toBeLessThan($policyRead);
 });
 
 test('reply and close settle their matching clocks with business time only', function (): void {
@@ -343,6 +369,34 @@ test('queued SLA mail rechecks that its stage is still current before delivery',
         ->and($breach->shouldSend($world['agent'], 'database'))->toBeFalse();
 });
 
+test('queued SLA alerts stop routing after their site is archived', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $clock->forceFill([
+        'elapsed_seconds' => $clock->warning_seconds,
+        'warned_at' => now(),
+    ])->save();
+    $warning = new SlaDeadlineAlert($clock->fresh(), 'warning');
+
+    expect($warning->shouldSend($world['agent'], 'mail'))->toBeTrue()
+        ->and($warning->shouldSend($world['agent'], 'database'))->toBeTrue();
+
+    $world['site']->forceFill(['archived_at' => now()])->save();
+
+    expect($warning->shouldSend($world['agent'], 'mail'))->toBeFalse()
+        ->and($warning->shouldSend($world['agent'], 'database'))->toBeFalse();
+});
+
 test('archiving pauses active SLA clocks until the site is restored', function (): void {
     Notification::fake();
     $world = slaWorld(['enabled' => false]);
@@ -356,6 +410,12 @@ test('archiving pauses active SLA clocks until the site is restored', function (
         ->assertRedirect(route('dashboard.sites.show', $world['site']));
 
     $this->travel(20)->minutes();
+
+    $states = app(SlaStatePresenter::class)->all($conversation->fresh());
+    expect($states)->toHaveCount(2)
+        ->and($states->every(fn (array $state): bool => $state['status'] === 'paused'))->toBeTrue()
+        ->and($states->every(fn (array $state): bool => $state['elapsed_seconds'] === 4 * 60))->toBeTrue();
+
     Artisan::call('wayfindr:evaluate-sla-clocks');
 
     $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
@@ -372,6 +432,29 @@ test('archiving pauses active SLA clocks until the site is restored', function (
 
     expect($clock->fresh()->elapsed_seconds)->toBe(8 * 60);
     Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
+});
+
+test('direct updates to archived work do not count paused time', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10, resolution: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(4)->minutes();
+    $this->actingAs($world['agent'])->post(route('dashboard.sites.archive', $world['site']));
+
+    $this->travel(20)->minutes();
+    ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => User::class,
+        'sender_id' => $world['agent']->id,
+    ]);
+    $conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
+
+    $clocks = $conversation->slaClocks()->orderBy('metric')->get();
+
+    expect($clocks)->toHaveCount(2)
+        ->and($clocks->every(fn (SlaClock $clock): bool => $clock->elapsed_seconds === 4 * 60))->toBeTrue()
+        ->and($clocks->every(fn (SlaClock $clock): bool => $clock->satisfied_at !== null))->toBeTrue();
 });
 
 test('advancing before an hours edit preserves time already counted', function (): void {

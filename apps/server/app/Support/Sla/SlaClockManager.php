@@ -28,29 +28,35 @@ final class SlaClockManager
 {
     public function startConversation(Conversation $conversation, ?CarbonInterface $startedAt = null): void
     {
-        $conversation->loadMissing('site.account');
-        $start = CarbonImmutable::instance($startedAt ?? $conversation->created_at ?? now());
+        DB::transaction(function () use ($conversation, $startedAt): void {
+            $conversation->loadMissing('site.account');
+            $this->lockAccountPolicy((int) $conversation->site->account_id);
+            $start = CarbonImmutable::instance($startedAt ?? $conversation->created_at ?? now());
 
-        if (! $conversation->messages()->where('sender_type', User::class)->exists()) {
-            $this->start($conversation, SlaClock::METRIC_FIRST_RESPONSE, $start);
-        }
+            if (! $conversation->messages()->where('sender_type', User::class)->exists()) {
+                $this->start($conversation, SlaClock::METRIC_FIRST_RESPONSE, $start);
+            }
 
-        if ($conversation->status !== 'closed') {
-            $this->start($conversation, SlaClock::METRIC_RESOLUTION, $start);
-        }
+            if ($conversation->status !== 'closed') {
+                $this->start($conversation, SlaClock::METRIC_RESOLUTION, $start);
+            }
+        });
     }
 
     public function startTicket(Ticket $ticket, ?CarbonInterface $startedAt = null): void
     {
-        $ticket->loadMissing('site.account');
+        DB::transaction(function () use ($startedAt, $ticket): void {
+            $ticket->loadMissing('site.account');
+            $this->lockAccountPolicy((int) $ticket->account_id);
 
-        if ($ticket->status !== 'closed') {
-            $this->start(
-                $ticket,
-                SlaClock::METRIC_RESOLUTION,
-                CarbonImmutable::instance($startedAt ?? $ticket->created_at ?? now()),
-            );
-        }
+            if ($ticket->status !== 'closed') {
+                $this->start(
+                    $ticket,
+                    SlaClock::METRIC_RESOLUTION,
+                    CarbonImmutable::instance($startedAt ?? $ticket->created_at ?? now()),
+                );
+            }
+        });
     }
 
     public function conversationMessageCreated(ConversationMessage $message): void
@@ -168,7 +174,17 @@ final class SlaClockManager
             return $clock;
         }
 
-        $clock->loadMissing('site');
+        // This method is called from delayed and observer-driven paths. Reload
+        // the site so an instance cached before archival cannot charge time
+        // after the site has left the operational queues.
+        $clock->load('site');
+
+        if ($clock->site?->isArchived()) {
+            $clock->forceFill(['last_counted_at' => $to])->save();
+
+            return $clock;
+        }
+
         $clock->forceFill([
             'elapsed_seconds' => $clock->elapsed_seconds + SiteAvailability::elapsedOpenSeconds($clock->site, $from, $to),
             'last_counted_at' => $to,
@@ -188,9 +204,7 @@ final class SlaClockManager
             $clock = SlaClock::query()->with(['site', 'subject'])->lockForUpdate()->findOrFail($clockId);
 
             if ($clock->site?->isArchived()) {
-                if ($clock->isActive() && CarbonImmutable::instance($at)->greaterThan($clock->last_counted_at)) {
-                    $clock->forceFill(['last_counted_at' => CarbonImmutable::instance($at)])->save();
-                }
+                $this->advance($clock, $at);
 
                 return ['clock' => $clock->fresh(['site', 'subject']), 'stage' => null];
             }
@@ -402,6 +416,12 @@ final class SlaClockManager
         ])->save();
 
         return true;
+    }
+
+    /** Serialize policy reads with account-wide policy reconciliation. */
+    private function lockAccountPolicy(int $accountId): void
+    {
+        Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
     }
 
     /** @return array{0: string, 1: string} */
