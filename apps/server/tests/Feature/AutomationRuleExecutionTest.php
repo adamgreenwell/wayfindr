@@ -2,6 +2,7 @@
 
 use App\Enums\AutomationExecutionStatus;
 use App\Enums\AutomationRuleEvent;
+use App\Events\ConversationMessageCreated;
 use App\Models\Account;
 use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
@@ -103,7 +104,8 @@ test('visitor messages can trigger conversation actions without creating a visit
     $visitor = Visitor::factory()->for($site)->create();
     $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'priority' => 'normal',
-        'status' => 'open',
+        'status' => 'closed',
+        'closed_at' => now()->subMinute(),
     ]);
     $assignee = User::factory()->for($account)->create();
     $notifiedAgent = User::factory()->for($account)->create();
@@ -126,6 +128,12 @@ test('visitor messages can trigger conversation actions without creating a visit
         'sender_id' => $visitor->id,
         'body' => 'I need a refund for the duplicate charge.',
     ]);
+    $conversation->forceFill([
+        'status' => 'open',
+        'closed_at' => null,
+        'last_message_at' => $message->created_at,
+    ])->save();
+    event(new ConversationMessageCreated($message));
     $conversation->refresh();
 
     expect($conversation->assigned_agent_id)->toBe($assignee->id)
