@@ -678,41 +678,35 @@ class AgentTicketController extends Controller
             ],
         ]);
 
-        $ticket->loadMissing(['assignee', 'site']);
-        $oldAssigneeId = $ticket->assignee_id;
-        $oldAssigneeName = $ticket->assignee?->name;
         $newAssigneeId = $validated['assignee_id'] ?? null;
-        $newAssignee = $newAssigneeId
-            ? $agent->account->agents()->whereKey($newAssigneeId)->first()
-            : null;
+        [$agent, $ticket, $newAssignee, $oldAssigneeId] = DB::transaction(function () use ($agent, $newAssigneeId, $ticket): array {
+            [$agent, $ticket, $newAssignee] = $this->lockedTicketAssignment(
+                $agent,
+                $ticket,
+                $newAssigneeId,
+                'assignee_id',
+            );
+            $ticket->loadMissing('assignee');
+            $oldAssigneeId = $ticket->assignee_id;
+            $oldAssigneeName = $ticket->assignee?->name;
 
-        if ($newAssignee && (! $ticket->site->supportsAgent($newAssignee)
-            || ! $newAssignee->hasAccountPermission(AccountPermission::ManageTickets))) {
-            throw ValidationException::withMessages([
-                'assignee_id' => __('tickets.errors.assignee_not_on_site'),
+            $ticket->forceFill(['assignee_id' => $newAssigneeId])->save();
+
+            $this->recordActivity($ticket, $agent, 'ticket.assignee_updated', [
+                'old_assignee_name' => $oldAssigneeName,
+                'new_assignee_name' => $newAssignee?->name,
             ]);
-        }
 
-        $newAssigneeName = $newAssignee?->name;
-
-        $ticket->forceFill([
-            'assignee_id' => $newAssigneeId,
-        ])->save();
-
-        $this->recordActivity($ticket, $agent, 'ticket.assignee_updated', [
-            'old_assignee_name' => $oldAssigneeName,
-            'new_assignee_name' => $newAssigneeName,
-        ]);
-
-        $freshTicket = $ticket->fresh() ?? $ticket;
+            return [$agent, $ticket, $newAssignee, $oldAssigneeId];
+        });
 
         if (
             $newAssignee
             && $newAssignee->isNot($agent)
             && $newAssignee->id !== $oldAssigneeId
-            && $newAssignee->shouldReceiveTicketAssignmentAlert($freshTicket)
+            && $newAssignee->shouldReceiveTicketAssignmentAlert($ticket)
         ) {
-            $newAssignee->notify(new TicketAssigned($freshTicket, $agent));
+            $newAssignee->notify(new TicketAssigned($ticket, $agent));
         }
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.assignee_updated');
@@ -733,51 +727,48 @@ class AgentTicketController extends Controller
             'reason' => ['nullable', 'string', 'max:4000'],
         ]);
 
-        $ticket->loadMissing(['assignee', 'site']);
-        $oldAssigneeId = $ticket->assignee_id;
-        $oldAssigneeName = $ticket->assignee?->name;
-        $targetAgent = $agent->account->agents()
-            ->whereKey($validated['target_agent_id'])
-            ->first();
-
-        if (! $targetAgent || ! $ticket->site->supportsAgent($targetAgent)
-            || ! $targetAgent->hasAccountPermission(AccountPermission::ManageTickets)) {
-            throw ValidationException::withMessages([
-                'target_agent_id' => __('tickets.errors.assignee_not_on_site'),
-            ]);
-        }
-
-        if ($targetAgent->is($agent)) {
-            throw ValidationException::withMessages([
-                'target_agent_id' => __('tickets.errors.escalate_other_agent'),
-            ]);
-        }
-
-        $ticket->forceFill([
-            'assignee_id' => $targetAgent->id,
-        ])->save();
-
         $reason = trim((string) ($validated['reason'] ?? ''));
-        $metadata = [
-            'old_assignee_id' => $oldAssigneeId,
-            'old_assignee_name' => $oldAssigneeName,
-            'new_assignee_id' => $targetAgent->id,
-            'new_assignee_name' => $targetAgent->name,
-            'target_agent_id' => $targetAgent->id,
-            'target_agent_name' => $targetAgent->name,
-            'target_had_site_access' => true,
-        ];
+        [$agent, $ticket, $targetAgent] = DB::transaction(function () use ($agent, $reason, $ticket, $validated): array {
+            [$agent, $ticket, $targetAgent] = $this->lockedTicketAssignment(
+                $agent,
+                $ticket,
+                (int) $validated['target_agent_id'],
+                'target_agent_id',
+            );
+            abort_unless($targetAgent instanceof User, 404);
 
-        if ($reason !== '') {
-            $metadata['reason'] = $reason;
-        }
+            if ($targetAgent->is($agent)) {
+                throw ValidationException::withMessages([
+                    'target_agent_id' => __('tickets.errors.escalate_other_agent'),
+                ]);
+            }
 
-        $this->recordActivity($ticket, $agent, 'ticket.escalated', $metadata);
+            $ticket->loadMissing('assignee');
+            $oldAssigneeId = $ticket->assignee_id;
+            $oldAssigneeName = $ticket->assignee?->name;
+            $ticket->forceFill(['assignee_id' => $targetAgent->id])->save();
 
-        $freshTicket = $ticket->fresh() ?? $ticket;
+            $metadata = [
+                'old_assignee_id' => $oldAssigneeId,
+                'old_assignee_name' => $oldAssigneeName,
+                'new_assignee_id' => $targetAgent->id,
+                'new_assignee_name' => $targetAgent->name,
+                'target_agent_id' => $targetAgent->id,
+                'target_agent_name' => $targetAgent->name,
+                'target_had_site_access' => true,
+            ];
 
-        if ($targetAgent->shouldReceiveTicketAssignmentAlert($freshTicket)) {
-            $targetAgent->notify(new TicketAssigned($freshTicket, $agent));
+            if ($reason !== '') {
+                $metadata['reason'] = $reason;
+            }
+
+            $this->recordActivity($ticket, $agent, 'ticket.escalated', $metadata);
+
+            return [$agent, $ticket, $targetAgent];
+        });
+
+        if ($targetAgent->shouldReceiveTicketAssignmentAlert($ticket)) {
+            $targetAgent->notify(new TicketAssigned($ticket, $agent));
         }
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.escalated');
@@ -808,6 +799,55 @@ class AgentTicketController extends Controller
         $this->authorizeTicketAbility($agent, $ability, $ticket);
 
         return [$agent, $ticket];
+    }
+
+    /** @return array{0: User, 1: Ticket, 2: User|null} */
+    private function lockedTicketAssignment(User $agent, Ticket $ticket, ?int $targetAgentId, string $field): array
+    {
+        $accountId = (int) $ticket->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $userIds = collect([$agent->id, $targetAgentId])
+            ->filter(fn (?int $id): bool => $id !== null)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+        $users = User::query()
+            ->where('account_id', $accountId)
+            ->whereKey($userIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+        $agent = $users->get($agent->id);
+        abort_unless($agent instanceof User, 404);
+
+        $site = Site::query()
+            ->whereKey($ticket->site_id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $ticket = Ticket::query()
+            ->whereKey($ticket->id)
+            ->where('account_id', $accountId)
+            ->where('site_id', $site->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $ticket->setRelation('site', $site);
+
+        $this->authorizeTicketAbility($agent, 'assign', $ticket);
+
+        $targetAgent = $targetAgentId === null ? null : $users->get($targetAgentId);
+
+        if ($targetAgentId !== null && (! $targetAgent instanceof User
+            || ! $site->supportsAgent($targetAgent)
+            || ! $targetAgent->hasAccountPermission(AccountPermission::ManageTickets))) {
+            throw ValidationException::withMessages([
+                $field => __('tickets.errors.assignee_not_on_site'),
+            ]);
+        }
+
+        return [$agent, $ticket, $targetAgent];
     }
 
     private function supportAgentsForSite(Site $site): Collection

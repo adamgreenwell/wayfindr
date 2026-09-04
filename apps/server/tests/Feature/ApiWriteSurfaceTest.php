@@ -804,6 +804,33 @@ test('ticket updates refuse assignees who cannot manage tickets', function (): v
         ->and($ticket->auditEvents()->where('action', 'ticket.assignee_updated')->exists())->toBeFalse();
 });
 
+test('ticket updates recheck a custom-role assignee before saving', function (): void {
+    $world = apiWriteWorld();
+    $eligibleRole = CustomRole::factory()->for($world['account'])->create([
+        'permissions' => [AccountPermission::ManageTickets->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($world['account'])->create(['permissions' => []]);
+    $assignee = User::factory()->for($world['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $eligibleRole->id,
+    ]);
+    $ticket = Ticket::factory()->for($world['account'])->for($world['site'])->create([
+        'assignee_id' => null,
+    ]);
+
+    expect($assignee->hasAccountPermission(AccountPermission::ManageTickets))->toBeTrue();
+    User::query()->whereKey($assignee->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $this->patchJson('/api/v1/tickets/'.$ticket->id, [
+        'assignee_id' => $assignee->id,
+    ], apiWriteHeaders($world, null))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('assignee_id');
+
+    expect($ticket->fresh()->assignee_id)->toBeNull()
+        ->and($ticket->auditEvents()->where('action', 'ticket.assignee_updated')->exists())->toBeFalse();
+});
+
 test('expired idempotency receipts are pruned without touching live ones', function (): void {
     $world = apiWriteWorld();
 
