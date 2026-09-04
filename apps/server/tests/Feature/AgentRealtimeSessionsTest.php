@@ -21,3 +21,17 @@ test('agent realtime session termination is a no-op without reverb', function ()
 
     app(AgentRealtimeSessions::class)->disconnect(42);
 });
+
+test('a reverb outage cannot interrupt best-effort session eviction', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    $pusher = Mockery::mock();
+    $pusher->shouldReceive('terminateUserConnections')
+        ->twice()
+        ->andThrow(new RuntimeException('Reverb is unavailable.'));
+    $broadcaster = Mockery::mock(PusherBroadcaster::class);
+    $broadcaster->shouldReceive('getPusher')->twice()->andReturn($pusher);
+    Broadcast::shouldReceive('connection')->twice()->with('reverb')->andReturn($broadcaster);
+
+    expect(fn () => app(AgentRealtimeSessions::class)->disconnectMany([42, 43]))
+        ->not->toThrow(RuntimeException::class);
+});

@@ -1597,7 +1597,7 @@ class AgentSiteController extends Controller
 
         $afterAgentIds = $this->normalizeAgentIds($validated['support_agent_ids']);
 
-        DB::transaction(function () use ($request, $site, $afterAgentIds): void {
+        $removedAgentIds = DB::transaction(function () use ($request, $site, $afterAgentIds): array {
             $this->siteManagerCoverage->lockAccount((int) $site->account_id);
             $actor = User::query()
                 ->whereKey($request->user()->id)
@@ -1631,12 +1631,14 @@ class AgentSiteController extends Controller
 
             $site->supportAgents()->sync($afterAgentIds);
 
-            $this->agentRealtimeSessions->disconnectMany(array_diff($beforeAgentIds, $afterAgentIds));
-
             if ($beforeAgentIds !== $afterAgentIds) {
                 $this->recordSiteAccessChange($site, $actor, $beforeAgentIds, $afterAgentIds);
             }
+
+            return array_values(array_diff($beforeAgentIds, $afterAgentIds));
         });
+
+        $this->agentRealtimeSessions->disconnectMany($removedAgentIds);
 
         return redirect()
             ->route('dashboard.sites.show', $site)

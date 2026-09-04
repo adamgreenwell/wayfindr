@@ -83,7 +83,7 @@ final class AgentAccountCustomRoleController extends Controller
         $attributes = $this->validatedAttributes($request);
 
         try {
-            DB::transaction(function () use ($actor, $customRole, $attributes): void {
+            $affectedAgentIds = DB::transaction(function () use ($actor, $customRole, $attributes): array {
                 $actor = $this->lockedRoleManager($actor);
                 $role = $this->roleForActor($actor, $customRole, true);
                 $this->ensureUniqueName((int) $actor->account_id, $attributes['name_key'], (int) $role->id);
@@ -91,24 +91,25 @@ final class AgentAccountCustomRoleController extends Controller
                 $oldName = $role->name;
                 $oldPermissions = $role->permissionValues();
                 $role->fill($attributes)->save();
-
-                if ($oldPermissions !== $role->permissionValues()) {
-                    // Still inside the account lock. A disconnected tab that
-                    // immediately retries broadcast auth waits for this
-                    // transaction, then reads the new permissions.
-                    $this->agentRealtimeSessions->disconnectMany($role->users()->pluck('users.id'));
-                }
-
                 $this->audit($actor, $role, 'custom_role.updated', [
                     'old_role_name' => $oldName,
                     'role_name' => $role->name,
                     'old_permissions' => $oldPermissions,
                     'permissions' => $role->permissionValues(),
                 ]);
+
+                return $oldPermissions === $role->permissionValues()
+                    ? []
+                    : $role->users()->pluck('users.id')->all();
             });
         } catch (UniqueConstraintViolationException) {
             $this->throwDuplicateNameValidation();
         }
+
+        // Never hold the account lock across a network call. The permission
+        // change is authoritative even if Reverb is unavailable; termination
+        // only evicts already-established sockets promptly.
+        $this->agentRealtimeSessions->disconnectMany($affectedAgentIds);
 
         return redirect()
             ->route('dashboard.account.roles.index', ['role' => $customRole])

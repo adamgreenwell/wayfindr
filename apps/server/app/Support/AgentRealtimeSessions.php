@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Support\Facades\Broadcast;
 use RuntimeException;
+use Throwable;
 
 class AgentRealtimeSessions
 {
@@ -35,6 +36,16 @@ class AgentRealtimeSessions
         collect($agentIds)
             ->map(fn (int|string $agentId): int => (int) $agentId)
             ->unique()
-            ->each(fn (int $agentId) => $this->disconnect($agentId));
+            ->each(function (int $agentId): void {
+                try {
+                    $this->disconnect($agentId);
+                } catch (Throwable $exception) {
+                    // Permissions are already committed and stay revoked even
+                    // when Reverb is unavailable. A failed disconnect is
+                    // reported independently so one socket cannot roll back
+                    // access control or block the remaining users.
+                    report($exception);
+                }
+            });
     }
 }

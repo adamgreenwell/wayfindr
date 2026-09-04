@@ -113,7 +113,7 @@ test('permission dependencies are enforced and role names are unique within an a
     expect(CustomRole::query()->count())->toBe(1);
 });
 
-test('changing assigned role permissions disconnects affected realtime sessions inside the account lock', function (): void {
+test('changing assigned role permissions disconnects affected realtime sessions after commit', function (): void {
     $account = Account::factory()->create();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
     $role = CustomRole::factory()->for($account)->create([
@@ -127,7 +127,9 @@ test('changing assigned role permissions disconnects affected realtime sessions 
     $sessions->shouldReceive('disconnectMany')
         ->once()
         ->withArgs(fn (iterable $agentIds): bool => collect($agentIds)->contains($agent->id)
-            && DB::transactionLevel() > 0);
+            // RefreshDatabase owns level one; the controller's account
+            // transaction would raise this to level two if still open.
+            && DB::transactionLevel() === 1);
     $this->app->instance(AgentRealtimeSessions::class, $sessions);
 
     $this->actingAs($owner)

@@ -24,7 +24,7 @@ class UpdateAgentRole
 
     public function handle(User $actor, User $target, AccountRole|CustomRole $role): User
     {
-        return DB::transaction(function () use ($actor, $target, $role): User {
+        [$target, $changed] = DB::transaction(function () use ($actor, $target, $role): array {
             $this->siteManagerCoverage->lockAccount((int) $target->account_id);
             $users = $this->lockUsers($actor, $target);
             $actor = $this->lockedUser($users, $actor);
@@ -42,7 +42,7 @@ class UpdateAgentRole
             $newCustomRoleId = $role instanceof CustomRole ? $role->id : null;
 
             if ($oldRole === $newAccountRole && (int) $target->custom_role_id === (int) $newCustomRoleId) {
-                return $target;
+                return [$target, false];
             }
 
             $this->siteManagerCoverage->ensureAgentRoleCanChange($target, $role);
@@ -51,8 +51,6 @@ class UpdateAgentRole
                 'account_role' => $newAccountRole,
                 'custom_role_id' => $newCustomRoleId,
             ])->save();
-
-            $this->agentRealtimeSessions->disconnect($target);
 
             AuditEvent::query()->create([
                 'account_id' => $target->account_id,
@@ -70,8 +68,14 @@ class UpdateAgentRole
                 'occurred_at' => now(),
             ]);
 
-            return $target->refresh();
+            return [$target->refresh(), true];
         });
+
+        if ($changed) {
+            $this->agentRealtimeSessions->disconnectMany([$target->id]);
+        }
+
+        return $target;
     }
 
     private function lockedRole(AccountRole|CustomRole $role, User $target): AccountRole|CustomRole
