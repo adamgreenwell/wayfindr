@@ -122,6 +122,17 @@ test('automation managers can create edit and delete ordered draft rules', funct
         ->and(AuditEvent::query()->where('action', 'automation_rule.deleted')->count())->toBe(1);
 });
 
+test('the suggested run order stays within the accepted range', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    AutomationRule::factory()->for($account)->create(['position' => 10000]);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.automation-rules.create'))
+        ->assertOk()
+        ->assertSee('name="position" type="number" min="0" max="10000" step="1" value="10000"', false);
+});
+
 test('automation management has a dedicated delegable account boundary', function (): void {
     $account = Account::factory()->create();
     $otherAccount = Account::factory()->create();

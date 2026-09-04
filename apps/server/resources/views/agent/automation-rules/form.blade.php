@@ -268,7 +268,11 @@
                     option.hidden = !ticketEvent;
                     option.disabled = !ticketEvent;
                 });
-                if (!showText && choiceControl.selectedOptions[0]?.disabled) choiceControl.value = '';
+                if (!showText) {
+                    const selected = choiceControl.selectedOptions[0];
+                    const selectedGroup = selected?.closest('optgroup')?.dataset.choiceGroup;
+                    if (selected?.value && (selected.disabled || selectedGroup !== group)) choiceControl.value = '';
+                }
             }
 
             function syncCondition(row) {

@@ -22,6 +22,8 @@ final class AutomationRuleForm
 
     public const MAX_ACTIONS = 10;
 
+    public const MAX_POSITION = 10000;
+
     /**
      * @return array{
      *     name: string,
@@ -37,7 +39,7 @@ final class AutomationRuleForm
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:120'],
             'event' => ['required', 'string', Rule::enum(AutomationRuleEvent::class)],
-            'position' => ['required', 'integer', 'min:0', 'max:10000'],
+            'position' => ['required', 'integer', 'min:0', 'max:'.self::MAX_POSITION],
             'is_enabled' => ['required', 'boolean'],
             'conditions' => ['sometimes', 'array', 'max:'.self::MAX_CONDITIONS],
             'conditions.*' => ['required', 'array'],

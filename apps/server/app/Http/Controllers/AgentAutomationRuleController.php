@@ -64,7 +64,10 @@ final class AgentAutomationRuleController extends Controller
             'automationRule' => null,
             'conditionRows' => [],
             'actionRows' => [$this->form->blankAction()],
-            'defaultPosition' => ((int) $account->automationRules()->max('position')) + 10,
+            'defaultPosition' => min(
+                AutomationRuleForm::MAX_POSITION,
+                ((int) $account->automationRules()->max('position')) + 10,
+            ),
             'preview' => null,
             'previewOptions' => collect(),
         ]);
