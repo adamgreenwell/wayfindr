@@ -173,6 +173,17 @@ final class SlaClockManager
             return $clock;
         }
 
+        $clock->load('site');
+
+        return $this->advanceUsingSite($clock, $clock->site, $at);
+    }
+
+    private function advanceUsingSite(SlaClock $clock, Site $site, CarbonInterface $at): SlaClock
+    {
+        if (! $clock->isActive()) {
+            return $clock;
+        }
+
         $to = CarbonImmutable::instance($at);
         $from = CarbonImmutable::instance($clock->last_counted_at);
 
@@ -180,19 +191,14 @@ final class SlaClockManager
             return $clock;
         }
 
-        // This method is called from delayed and observer-driven paths. Reload
-        // the site so an instance cached before archival cannot charge time
-        // after the site has left the operational queues.
-        $clock->load('site');
-
-        if ($clock->site?->isArchived()) {
+        if ($site->isArchived()) {
             $clock->forceFill(['last_counted_at' => $to])->save();
 
             return $clock;
         }
 
         $clock->forceFill([
-            'elapsed_seconds' => $clock->elapsed_seconds + SiteAvailability::elapsedOpenSeconds($clock->site, $from, $to),
+            'elapsed_seconds' => $clock->elapsed_seconds + SiteAvailability::elapsedOpenSeconds($site, $from, $to),
             'last_counted_at' => $to,
         ])->save();
 
@@ -207,15 +213,22 @@ final class SlaClockManager
     public function evaluate(int $clockId, CarbonInterface $at, bool $recordWarning = true): array
     {
         return DB::transaction(function () use ($at, $clockId, $recordWarning): array {
-            $clock = SlaClock::query()->with(['site', 'subject'])->lockForUpdate()->findOrFail($clockId);
+            $candidate = SlaClock::query()->select(['id', 'site_id'])->findOrFail($clockId);
+            // Calendar mutations lock the site before advancing its clock
+            // rows. The minute evaluator takes the same site-then-clock order,
+            // so it cannot project beyond an uncommitted schedule boundary
+            // under whichever calendar happened to be visible first.
+            $site = Site::query()->whereKey($candidate->site_id)->lockForUpdate()->firstOrFail();
+            $clock = SlaClock::query()->with('subject')->lockForUpdate()->findOrFail($clockId);
+            $clock->setRelation('site', $site);
 
-            if ($clock->site?->isArchived()) {
-                $this->advance($clock, $at);
+            if ($site->isArchived()) {
+                $this->advanceUsingSite($clock, $site, $at);
 
                 return ['clock' => $clock->fresh(['site', 'subject']), 'stage' => null];
             }
 
-            $this->advance($clock, $at);
+            $this->advanceUsingSite($clock, $site, $at);
             $this->recordBreachIfCrossed($clock, $at);
 
             if ($recordWarning && $clock->isActive() && $clock->breached_at === null && $clock->elapsed_seconds >= $clock->warning_seconds && $clock->warned_at === null) {
@@ -254,6 +267,66 @@ final class SlaClockManager
             $clock = SlaClock::query()->lockForUpdate()->findOrFail($clockId);
             $completedColumn = $this->alertCompletionColumn($stage);
             $clock->forceFill([$completedColumn => CarbonImmutable::instance($at)])->save();
+        });
+    }
+
+    /** Complete a stage only while its routing facts stay locked and current. */
+    public function completeAlertHandoffIfCurrent(
+        int $clockId,
+        string $stage,
+        CarbonInterface $at,
+        SlaAlertRouting $routing,
+    ): bool {
+        return DB::transaction(function () use ($at, $clockId, $routing, $stage): bool {
+            $candidate = SlaClock::query()
+                ->select(['id', 'account_id', 'site_id', 'subject_type', 'subject_id'])
+                ->find($clockId);
+
+            if (! $candidate) {
+                return false;
+            }
+
+            // Every supported assignment, access, preference, and site-state
+            // mutation starts with this account lock. Lock the routable rows in
+            // their normal order too, then recheck and stamp inside this one
+            // transaction so a new recipient cannot appear in between.
+            $this->lockAccountPolicy((int) $candidate->account_id);
+            $site = Site::query()->whereKey($candidate->site_id)->lockForUpdate()->first();
+            $subject = $candidate->subject()->lockForUpdate()->first();
+            $clock = SlaClock::query()->lockForUpdate()->find($clockId);
+
+            if (! $site || ! $subject || ! $clock) {
+                return false;
+            }
+
+            $clock->setRelation('site', $site);
+            $clock->setRelation('subject', $subject);
+
+            if (! $clock->alertStageIsCurrent($stage)) {
+                return false;
+            }
+
+            $handoffPending = $routing->recipients($clock)
+                ->contains(fn (User $agent): bool => collect($agent->wantsImmediateAlertEmail()
+                    ? ['database', 'mail']
+                    : ['database'])
+                    ->contains(fn (string $channel): bool => ! $clock->alertWasHandedOff(
+                        $stage,
+                        $channel,
+                        (int) $agent->id,
+                    )));
+
+            if ($handoffPending) {
+                return false;
+            }
+
+            // With no recipients, completing also prevents stale delivery if
+            // somebody opts in only after the operational moment has passed.
+            $clock->forceFill([
+                $this->alertCompletionColumn($stage) => CarbonImmutable::instance($at),
+            ])->save();
+
+            return true;
         });
     }
 

@@ -313,6 +313,16 @@ class UnattendedConversationAlertCollector
     private function advanceConversation(Conversation $conversation, Site $site, CarbonInterface $at): int
     {
         return DB::transaction(function () use ($at, $conversation, $site): int {
+            // Match the calendar-mutation order: site first, then the waiting
+            // conversation. A scheduler can therefore finish before the edit
+            // boundary or resume after it, but never count through it using an
+            // uncommitted calendar.
+            $currentSite = Site::query()->whereKey($site->id)->lockForUpdate()->first();
+
+            if (! $currentSite) {
+                return 0;
+            }
+
             $current = Conversation::query()
                 ->with(['latestMessage', 'latestNonIntegrationMessage'])
                 ->lockForUpdate()
@@ -336,8 +346,8 @@ class UnattendedConversationAlertCollector
                 $elapsed = 0;
             }
 
-            if ($countedAt->greaterThan($lastCountedAt)) {
-                $elapsed += SiteAvailability::elapsedOpenSeconds($site, $lastCountedAt, $countedAt);
+            if ($countedAt->greaterThan($lastCountedAt) && ! $currentSite->isArchived()) {
+                $elapsed += SiteAvailability::elapsedOpenSeconds($currentSite, $lastCountedAt, $countedAt);
             }
 
             $current->forceFill([

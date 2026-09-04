@@ -36,7 +36,9 @@ manual early close pauses the clock too.
 Each clock persists seconds already consumed. Before support hours, a manual
 closure, or an account SLA policy changes, Wayfindr advances affected clocks
 under the settings that were in force. The new settings therefore change the
-future without rewriting yesterday.
+future without rewriting yesterday. Scheduled advancement and calendar edits
+serialize at the site boundary, so a clock cannot run through an uncommitted
+schedule change using stale hours.
 
 Archiving a site settles and pauses its active clocks because that work leaves
 the operational queues. Restoring the site resumes from that moment; time spent
@@ -70,7 +72,10 @@ new SLA alert deliveries. Database and immediate-email queue handoffs are
 checkpointed separately: if one channel fails, the unfinished channel remains
 eligible for the next scheduler run without duplicating the one that already
 succeeded. Routing is checked again before a stage is completed so a silently
-vetoed handoff cannot strand a newly eligible recipient.
+vetoed handoff cannot strand a newly eligible recipient. That final routing
+check and completion stamp share one transaction with the account, site, work
+item, and clock locked, so assignment or alert-preference changes cannot slip
+between them.
 
 The fixed unattended-conversation alert now uses the same business-time
 calculator. It no longer wakes agents at night for five wall-clock minutes that

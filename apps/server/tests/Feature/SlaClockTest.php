@@ -11,6 +11,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\SlaDeadlineAlert;
+use App\Support\Sla\SlaAlertRouting;
 use App\Support\Sla\SlaClockManager;
 use App\Support\Sla\SlaStatePresenter;
 use Carbon\CarbonImmutable;
@@ -103,6 +104,34 @@ test('new SLA clocks lock the account before reading its policy', function (): v
     expect($accountLock)->toBeInt()
         ->and($policyRead)->toBeInt()
         ->and($accountLock)->toBeLessThan($policyRead);
+});
+
+test('SLA evaluation locks the site before advancing its clock', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account']);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    app(SlaClockManager::class)->evaluate((int) $clock->id, now());
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+        && str_contains($query, 'for update'));
+    $clockLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sla_clocks"')
+        && str_contains($query, 'for update'));
+
+    expect($siteLock)->toBeInt()
+        ->and($clockLock)->toBeInt()
+        ->and($siteLock)->toBeLessThan($clockLock);
 });
 
 test('reply and close settle their matching clocks with business time only', function (): void {
@@ -337,6 +366,54 @@ test('the evaluator leaves a handoff pending when delivery-time routing changes'
 
     expect($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $replacement->id])
         ->and($clock->fresh()->warning_alerted_at)->not->toBeNull();
+});
+
+test('final SLA alert completion locks every routing boundary before the clock', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $manager = app(SlaClockManager::class);
+
+    $this->travel(8)->minutes();
+    expect($manager->evaluate((int) $clock->id, now())['stage'])->toBe('warning');
+    $manager->recordAlertHandoff((int) $clock->id, 'warning', 'database', (int) $world['agent']->id);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $completed = $manager->completeAlertHandoffIfCurrent(
+        (int) $clock->id,
+        'warning',
+        now(),
+        app(SlaAlertRouting::class),
+    );
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+        && str_contains($query, 'for update'));
+    $subjectLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "conversations"')
+        && str_contains($query, 'for update'));
+    $clockLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sla_clocks"')
+        && str_contains($query, 'for update'));
+
+    expect($completed)->toBeTrue()
+        ->and($clock->fresh()->warning_alerted_at)->not->toBeNull()
+        ->and($accountLock)->toBeInt()
+        ->and($siteLock)->toBeInt()
+        ->and($subjectLock)->toBeInt()
+        ->and($clockLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($siteLock)
+        ->and($siteLock)->toBeLessThan($subjectLock)
+        ->and($subjectLock)->toBeLessThan($clockLock);
 });
 
 test('a quiet assigned agent does not turn one SLA alert into a team-wide fallback', function (): void {

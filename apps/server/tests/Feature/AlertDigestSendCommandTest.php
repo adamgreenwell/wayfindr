@@ -12,6 +12,7 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -205,6 +206,34 @@ test('alert digest send command records failed delivery attempts', function (): 
         ->and($deliveryStatus['message'])->toBe('Digest email could not be queued.')
         ->and($deliveryStatus)->not->toHaveKey('error')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
+});
+
+test('digest delivery state locks the account before updating the agent preferences', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account);
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $agent->recordAlertDigestDelivery([
+        'status' => User::ALERT_DIGEST_DELIVERY_NO_ALERTS,
+        'candidate_count' => 0,
+    ]);
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $agentLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "users"')
+        && str_contains($query, 'for update'));
+
+    expect($accountLock)->toBeInt()
+        ->and($agentLock)->toBeInt()
+        ->and($accountLock)->toBeLessThan($agentLock);
 });
 
 function digestMailAgent(Account $account, array $overrides = []): User

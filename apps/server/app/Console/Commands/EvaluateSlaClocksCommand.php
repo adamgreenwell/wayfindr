@@ -101,29 +101,9 @@ class EvaluateSlaClocksCommand extends Command
                 }
 
                 try {
-                    $current = SlaClock::query()->with(['site.account', 'subject'])->find($clock->id);
-
-                    if (! $current || ! $current->alertStageIsCurrent($stage)) {
+                    if (! $manager->completeAlertHandoffIfCurrent((int) $clock->id, $stage, $at, $routing)) {
                         return;
                     }
-
-                    $handoffPending = $routing->recipients($current)
-                        ->contains(fn ($agent): bool => collect($this->deliveryChannels($agent))
-                            ->contains(fn (string $channel): bool => ! $current->alertWasHandedOff(
-                                $stage,
-                                $channel,
-                                (int) $agent->id,
-                            )));
-
-                    if ($handoffPending) {
-                        return;
-                    }
-
-                    // A stage is complete only after every currently eligible
-                    // recipient has accepted the handoff. With no recipients,
-                    // completing here also prevents a stale alert appearing
-                    // later merely because routing preferences changed.
-                    $manager->completeAlertHandoff((int) $clock->id, $stage, $at);
                 } catch (Throwable $exception) {
                     $failed++;
                     Log::warning('SLA alert handoff completion failed.', [
