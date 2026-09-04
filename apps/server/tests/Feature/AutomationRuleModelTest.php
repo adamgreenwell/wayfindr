@@ -91,3 +91,79 @@ test('conditions and actions reject unordered JSON objects', function (string $f
         $field => ['type' => 'set_priority', 'value' => 'urgent'],
     ]))->toThrow(InvalidArgumentException::class);
 })->with(['conditions', 'actions']);
+
+test('automation rule definitions reject unknown and event-incompatible vocabulary', function (array $definition, string $message): void {
+    $account = Account::factory()->create();
+
+    expect(fn () => AutomationRule::factory()->for($account)->create($definition))
+        ->toThrow(InvalidArgumentException::class, $message);
+})->with([
+    'unknown condition field' => [
+        [
+            'conditions' => [['field' => 'typo', 'operator' => 'equals', 'value' => 'open']],
+        ],
+        'conditions.0.field is not supported',
+    ],
+    'text operator on an identifier' => [
+        [
+            'conditions' => [['field' => 'site_id', 'operator' => 'contains', 'value' => '1']],
+        ],
+        'conditions.0.operator is not available for site_id',
+    ],
+    'message body outside a visitor message event' => [
+        [
+            'conditions' => [['field' => 'message_body', 'operator' => 'contains', 'value' => 'refund']],
+        ],
+        'conditions.0.field is not available for ticket.created rules',
+    ],
+    'unknown action type' => [
+        [
+            'actions' => [['type' => 'send_visitor_message', 'value' => 'Surprise!']],
+        ],
+        'actions.0.type is not supported',
+    ],
+    'ticket-only action on a conversation' => [
+        [
+            'event' => AutomationRuleEvent::ConversationCreated,
+            'actions' => [['type' => 'post_internal_note', 'value' => 'Private note']],
+        ],
+        'actions.0.type is not available for conversation.created rules',
+    ],
+    'ticket status on a conversation' => [
+        [
+            'event' => AutomationRuleEvent::ConversationCreated,
+            'actions' => [['type' => 'set_status', 'value' => 'pending']],
+        ],
+        'actions.0.value must be a status supported by conversation.created',
+    ],
+    'unexpected action data' => [
+        [
+            'actions' => [['type' => 'set_priority', 'value' => 'high', 'surprise' => true]],
+        ],
+        'actions.0 must contain exactly',
+    ],
+]);
+
+test('ticket rules accept the complete deliberately small action vocabulary in sequence', function (): void {
+    $account = Account::factory()->create();
+    $rule = AutomationRule::factory()->for($account)->create([
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'actions' => [
+            ['type' => 'assign_agent', 'value' => 41],
+            ['type' => 'add_label', 'value' => 12],
+            ['type' => 'set_priority', 'value' => 'urgent'],
+            ['type' => 'set_status', 'value' => 'pending'],
+            ['type' => 'notify_agent', 'value' => 73],
+            ['type' => 'post_internal_note', 'value' => 'Automation kept this private.'],
+        ],
+    ]);
+
+    expect($rule->actions)->toBe([
+        ['type' => 'assign_agent', 'value' => 41],
+        ['type' => 'add_label', 'value' => 12],
+        ['type' => 'set_priority', 'value' => 'urgent'],
+        ['type' => 'set_status', 'value' => 'pending'],
+        ['type' => 'notify_agent', 'value' => 73],
+        ['type' => 'post_internal_note', 'value' => 'Automation kept this private.'],
+    ]);
+});
