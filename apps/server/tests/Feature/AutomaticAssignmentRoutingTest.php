@@ -115,6 +115,21 @@ test('away deactivated unsupported and under-permissioned agents are skipped', f
         ->and($conversation->assigned_agent_id)->not->toBe($unsupported->id);
 });
 
+test('an explicit roster with no active agents does not fall back to account wide routing', function (): void {
+    $account = Account::factory()->create();
+    $site = routingSite($account);
+    $deactivatedRosteredAgent = onlineRoutingAgent($account, ['deactivated_at' => now()]);
+    $outsideAgent = onlineRoutingAgent($account);
+    $site->supportAgents()->attach($deactivatedRosteredAgent);
+
+    $conversation = Conversation::factory()->for($site)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+
+    expect($outsideAgent->isOnlineForRouting())->toBeTrue()
+        ->and($conversation->assigned_agent_id)->toBeNull()
+        ->and($ticket->assignee_id)->toBeNull();
+});
+
 test('tickets use their own round robin and do not consume conversation capacity', function (): void {
     Notification::fake();
     $account = Account::factory()->create();

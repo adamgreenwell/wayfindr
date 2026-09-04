@@ -154,7 +154,10 @@ final readonly class AutomaticAssignmentRouter
     /** @return Collection<int, User> */
     private function candidates(Site $site, AccountPermission $permission): Collection
     {
-        $explicitIds = $site->eligibleSupportAgents()->pluck('users.id');
+        $hasExplicitRoster = $site->supportAgents()->exists();
+        $explicitIds = $hasExplicitRoster
+            ? $site->eligibleSupportAgents()->pluck('users.id')
+            : collect();
         $query = User::query()
             ->where('account_id', $site->account_id)
             ->whereNull('deactivated_at')
@@ -162,7 +165,7 @@ final readonly class AutomaticAssignmentRouter
             ->with('customRole')
             ->orderBy('id');
 
-        if ($explicitIds->isNotEmpty()) {
+        if ($hasExplicitRoster) {
             $query->whereKey($explicitIds->all());
         }
 
