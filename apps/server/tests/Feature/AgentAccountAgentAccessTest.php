@@ -62,10 +62,21 @@ test('owners can deactivate and reactivate another same-account agent', function
         ->and($reactivatedEvent->subject->is($agent))->toBeTrue();
 });
 
-test('admins can deactivate and reactivate non-owner agents', function (): void {
+test('admins can deactivate and reactivate custom-role agents', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
-    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewAudit->value],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee(route('dashboard.account.agents.deactivate', $agent), false);
 
     $this->actingAs($admin)
         ->from('/dashboard/account')

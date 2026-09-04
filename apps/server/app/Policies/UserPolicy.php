@@ -43,6 +43,9 @@ class UserPolicy
         }
 
         return $user->isOwner()
+            || ($user->account_role === AccountRole::Admin
+                && $user->custom_role_id === null
+                && $target->account_role === AccountRole::Agent)
             || ($target->account_role === AccountRole::Agent && $target->custom_role_id === null)
             || ($user->custom_role_id !== null
                 && $target->custom_role_id !== null
