@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\SlaPolicy;
+use App\Models\User;
 use App\Support\Sla\SlaClockManager;
 use App\Support\TicketPriority;
 use Illuminate\Contracts\View\View;
@@ -50,6 +51,16 @@ final class AgentAccountSlaPolicyController extends Controller
 
         DB::transaction(function () use ($agent, $clocks, $priorities, $validated): void {
             $account = Account::query()->whereKey($agent->account_id)->lockForUpdate()->firstOrFail();
+            $agent = User::query()
+                ->whereKey($agent->id)
+                ->where('account_id', $account->id)
+                ->lockForUpdate()
+                ->first();
+
+            // Role and deactivation writes share the account lock. Re-read
+            // after it so a request already waiting cannot spend permission
+            // its actor lost before the policy replacement begins.
+            abort_unless($agent?->hasAccountPermission(AccountPermission::ManageSites), 403);
             $at = now();
 
             // Settle every active row and persist any crossed boundary under

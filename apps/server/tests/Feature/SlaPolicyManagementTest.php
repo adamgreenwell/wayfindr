@@ -1,9 +1,11 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\SlaClock;
 use App\Models\SlaPolicy;
@@ -66,6 +68,30 @@ test('an ordinary agent cannot read or change account SLA targets', function ():
     ]))->assertForbidden();
 
     expect(SlaPolicy::query()->count())->toBe(0);
+});
+
+test('an SLA policy update reauthorizes a stale custom role under the account lock', function (): void {
+    $account = Account::factory()->create();
+    $siteManagerRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManageSites->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $siteManagerRole->id,
+    ]);
+
+    $this->actingAs($manager);
+    expect($manager->hasAccountPermission(AccountPermission::ManageSites))->toBeTrue();
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $this->put(route('dashboard.account.sla-policies.update'), slaPolicyPayload([
+        'first_response_minutes' => 45,
+        'resolution_minutes' => 360,
+    ]))->assertForbidden();
+
+    expect(SlaPolicy::query()->count())->toBe(0)
+        ->and(AuditEvent::query()->where('action', 'account.sla_policies_updated')->exists())->toBeFalse();
 });
 
 test('enabling a target starts existing open work now rather than fabricating old elapsed time', function (): void {
