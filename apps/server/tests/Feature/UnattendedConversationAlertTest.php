@@ -210,6 +210,34 @@ test('queue health preserves a waiting clock after its notification is read', fu
         ->and($report->queueHealth()['oldest_wait_seconds'])->toBe(2 * 60);
 });
 
+test('archiving pauses an unattended wait until the site is restored', function (): void {
+    Mail::fake();
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(2)->minutes();
+    $this->actingAs($agent)->post(route('dashboard.sites.archive', $site))->assertRedirect();
+
+    $this->travel(10)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->actingAs($agent)->post(route('dashboard.sites.unarchive', $site))->assertRedirect();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travel(2)->minutes();
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+
+    expect($conversation->fresh()->support_wait_elapsed_seconds)->toBe(6 * 60);
+    Mail::assertQueuedCount(1);
+});
+
 test('nothing sends once the agent has seen the conversation', function (): void {
     Mail::fake();
 

@@ -132,6 +132,17 @@ class UnattendedConversationAlertCollector
             ->each(fn (Conversation $conversation) => $this->advanceConversation($conversation, $site, $at));
     }
 
+    /** Resume queue clocks without charging time while the site was archived. */
+    public function resumeSite(Site $site, CarbonInterface $at): void
+    {
+        Conversation::query()
+            ->where('site_id', $site->id)
+            ->where('status', 'open')
+            ->needsHumanReply()
+            ->whereNotNull('support_wait_started_at')
+            ->update(['support_wait_last_counted_at' => CarbonImmutable::instance($at)]);
+    }
+
     /**
      * Project each waiting episode from its persisted business-time boundary
      * without changing notification state. Queue-health reporting uses this
@@ -183,6 +194,7 @@ class UnattendedConversationAlertCollector
         if (
             ! $conversation
             || $conversation->status !== 'open'
+            || $conversation->site?->isArchived()
             || $conversation->attentionState() !== 'needs_reply'
             || ! $agent->shouldReceiveConversationAlert($conversation)
         ) {

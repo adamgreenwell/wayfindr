@@ -65,6 +65,18 @@ test('SLA history counts scoped breaches and exposes current pressure separately
         'last_counted_at' => now(),
         'warned_at' => now(),
     ]);
+    $conversation->slaClocks()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'metric' => SlaClock::METRIC_FIRST_RESPONSE,
+        'priority' => 'normal',
+        'target_seconds' => 3_600,
+        'warning_seconds' => 2_880,
+        'elapsed_seconds' => 480,
+        'started_at' => now()->subHour(),
+        'last_counted_at' => now(),
+        'warned_at' => now()->subMinutes(10),
+    ]);
 
     $otherAccount = Account::factory()->create();
     $otherSite = Site::factory()->for($otherAccount)->create();

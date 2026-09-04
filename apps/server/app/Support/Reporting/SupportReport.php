@@ -395,6 +395,7 @@ final class SupportReport
 
             $waiting = $this->scopedConversations()
                 ->where('status', 'open')
+                ->whereHas('site', fn (Builder $query) => $query->whereNull('archived_at'))
                 ->needsHumanReply()
                 ->select(['conversations.id', 'conversations.site_id', 'conversations.last_message_at', 'conversations.created_at'])
                 ->addSelect([

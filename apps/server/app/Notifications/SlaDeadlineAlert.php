@@ -41,19 +41,21 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
 
     public function shouldSend(object $notifiable, string $channel): bool
     {
-        if ($channel !== 'mail') {
+        if (! in_array($channel, ['database', 'mail'], true)) {
             return true;
         }
 
         $recipient = $notifiable instanceof User ? User::query()->whereKey($notifiable->id)->first() : null;
         $clock = SlaClock::query()->with('subject.site')->find($this->clock->id);
 
-        return $recipient instanceof User
+        $currentAndRouted = $recipient instanceof User
             && $clock?->subject !== null
             && $clock->alertStageIsCurrent($this->stage)
-            && $recipient->wantsImmediateAlertEmail()
             && Gate::forUser($recipient)->allows('view', $clock->subject)
             && app(SlaAlertRouting::class)->routesTo($clock, $recipient);
+
+        return $currentAndRouted
+            && ($channel === 'database' || $recipient->wantsImmediateAlertEmail());
     }
 
     public function toMail(object $notifiable): MailMessage

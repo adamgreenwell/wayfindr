@@ -38,6 +38,10 @@ closure, or an account SLA policy changes, Wayfindr advances affected clocks
 under the settings that were in force. The new settings therefore change the
 future without rewriting yesterday.
 
+Archiving a site settles and pauses its active clocks because that work leaves
+the operational queues. Restoring the site resumes from that moment; time spent
+archived is never backfilled into SLA or unattended-wait elapsed time.
+
 When a target is first enabled, existing untracked open work starts at that
 moment with zero consumed time. Backdating those clocks to the work's creation
 would invent breaches under a policy that did not exist.

@@ -70,11 +70,14 @@ final class SlaReport
                 ->whereNull('breached_at')
                 ->whereNull('satisfied_at')
                 ->whereNull('cancelled_at')
+                ->whereColumn('elapsed_seconds', '>=', 'warning_seconds')
+                ->whereHas('site', fn ($query) => $query->whereNull('archived_at'))
                 ->count(),
             'active_breached' => (clone $base)
                 ->whereNotNull('breached_at')
                 ->whereNull('satisfied_at')
                 ->whereNull('cancelled_at')
+                ->whereHas('site', fn ($query) => $query->whereNull('archived_at'))
                 ->count(),
             'by_priority' => collect($empty['by_priority'])
                 ->map(fn (int $_count, string $priority): int => (int) ($countsByPriority[$priority] ?? 0))

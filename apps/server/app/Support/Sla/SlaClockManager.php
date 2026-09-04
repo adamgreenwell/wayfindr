@@ -122,6 +122,16 @@ final class SlaClockManager
             ->each(fn (SlaClock $clock) => $this->advance($clock, $at));
     }
 
+    /** Resume clocks at the restoration boundary without charging archived time. */
+    public function resumeSite(Site $site, CarbonInterface $at): void
+    {
+        SlaClock::query()
+            ->where('site_id', $site->id)
+            ->whereNull('satisfied_at')
+            ->whereNull('cancelled_at')
+            ->update(['last_counted_at' => CarbonImmutable::instance($at)]);
+    }
+
     public function advanceAccount(Account $account, CarbonInterface $at): void
     {
         SlaClock::query()
@@ -176,6 +186,14 @@ final class SlaClockManager
     {
         return DB::transaction(function () use ($at, $clockId, $recordWarning): array {
             $clock = SlaClock::query()->with(['site', 'subject'])->lockForUpdate()->findOrFail($clockId);
+
+            if ($clock->site?->isArchived()) {
+                if ($clock->isActive() && CarbonImmutable::instance($at)->greaterThan($clock->last_counted_at)) {
+                    $clock->forceFill(['last_counted_at' => CarbonImmutable::instance($at)])->save();
+                }
+
+                return ['clock' => $clock->fresh(['site', 'subject']), 'stage' => null];
+            }
 
             $this->advance($clock, $at);
             $this->recordBreachIfCrossed($clock, $at);

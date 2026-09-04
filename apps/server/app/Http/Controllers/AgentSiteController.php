@@ -1503,19 +1503,22 @@ class AgentSiteController extends Controller
      * and the site leaves the working lists, but every conversation, ticket and
      * audit event stays exactly where it was. Reversible via unarchive().
      */
-    public function archive(Request $request, Site $site): RedirectResponse
+    public function archive(Request $request, Site $site, SlaClockManager $slaClocks, UnattendedConversationAlertCollector $unattendedAlerts): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'archive', $site);
 
-        $status = DB::transaction(function () use ($request, $site): string {
+        $status = DB::transaction(function () use ($request, $site, $slaClocks, $unattendedAlerts): string {
             [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'archive');
 
             if ($site->isArchived()) {
                 return 'site_settings.flash.already_archived';
             }
 
-            $site->forceFill(['archived_at' => now()])->save();
+            $at = now();
+            $slaClocks->advanceSite($site, $at);
+            $unattendedAlerts->advanceSite($site, $at);
+            $site->forceFill(['archived_at' => $at])->save();
 
             // Record the scale of what just stopped serving: an operator reading
             // this later wants to know whether a live site was taken down.
@@ -1532,18 +1535,21 @@ class AgentSiteController extends Controller
             ->with('status', $status);
     }
 
-    public function unarchive(Request $request, Site $site): RedirectResponse
+    public function unarchive(Request $request, Site $site, SlaClockManager $slaClocks, UnattendedConversationAlertCollector $unattendedAlerts): RedirectResponse
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
         $this->authorizeSiteAbility($request, 'archive', $site);
 
-        $status = DB::transaction(function () use ($request, $site): string {
+        $status = DB::transaction(function () use ($request, $site, $slaClocks, $unattendedAlerts): string {
             [$actor, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'archive');
 
             if (! $site->isArchived()) {
                 return 'site_settings.flash.not_archived';
             }
 
+            $at = now();
+            $slaClocks->resumeSite($site, $at);
+            $unattendedAlerts->resumeSite($site, $at);
             $site->forceFill(['archived_at' => null])->save();
 
             $this->recordSiteAudit($site, $actor, 'site.unarchived', []);

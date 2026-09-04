@@ -313,14 +313,16 @@ test('queued SLA mail rechecks that its stage is still current before delivery',
     ])->save();
     $warning = new SlaDeadlineAlert($clock->fresh(), 'warning');
 
-    expect($warning->shouldSend($world['agent'], 'mail'))->toBeTrue();
+    expect($warning->shouldSend($world['agent'], 'mail'))->toBeTrue()
+        ->and($warning->shouldSend($world['agent'], 'database'))->toBeTrue();
 
     $clock->forceFill([
         'target_seconds' => 60 * 60,
         'warning_seconds' => 48 * 60,
     ])->save();
 
-    expect($warning->shouldSend($world['agent'], 'mail'))->toBeFalse();
+    expect($warning->shouldSend($world['agent'], 'mail'))->toBeFalse()
+        ->and($warning->shouldSend($world['agent'], 'database'))->toBeFalse();
 
     $clock->forceFill([
         'target_seconds' => 10 * 60,
@@ -331,11 +333,45 @@ test('queued SLA mail rechecks that its stage is still current before delivery',
     $breach = new SlaDeadlineAlert($clock->fresh(), 'breach');
 
     expect($warning->shouldSend($world['agent'], 'mail'))->toBeFalse()
-        ->and($breach->shouldSend($world['agent'], 'mail'))->toBeTrue();
+        ->and($warning->shouldSend($world['agent'], 'database'))->toBeFalse()
+        ->and($breach->shouldSend($world['agent'], 'mail'))->toBeTrue()
+        ->and($breach->shouldSend($world['agent'], 'database'))->toBeTrue();
 
     $clock->forceFill(['satisfied_at' => now()])->save();
 
-    expect($breach->shouldSend($world['agent'], 'mail'))->toBeFalse();
+    expect($breach->shouldSend($world['agent'], 'mail'))->toBeFalse()
+        ->and($breach->shouldSend($world['agent'], 'database'))->toBeFalse();
+});
+
+test('archiving pauses active SLA clocks until the site is restored', function (): void {
+    Notification::fake();
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(4)->minutes();
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.sites.archive', $world['site']))
+        ->assertRedirect(route('dashboard.sites.show', $world['site']));
+
+    $this->travel(20)->minutes();
+    Artisan::call('wayfindr:evaluate-sla-clocks');
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->elapsed_seconds)->toBe(4 * 60)
+        ->and($clock->warned_at)->toBeNull();
+    Notification::assertNothingSent();
+
+    $this->actingAs($world['agent'])
+        ->post(route('dashboard.sites.unarchive', $world['site']))
+        ->assertRedirect(route('dashboard.sites.show', $world['site']));
+
+    $this->travel(4)->minutes();
+    Artisan::call('wayfindr:evaluate-sla-clocks');
+
+    expect($clock->fresh()->elapsed_seconds)->toBe(8 * 60);
+    Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
 });
 
 test('advancing before an hours edit preserves time already counted', function (): void {
