@@ -575,13 +575,14 @@ class AgentConversationController extends Controller
      */
     private function transitionStatus(
         Conversation $conversation,
+        User $agent,
         string $status,
         ?CarbonInterface $closedAt,
         callable $record,
     ): void {
-        DB::transaction(function () use ($conversation, $status, $closedAt, $record): void {
-            $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
-            $previousStatus = (string) ($locked?->status ?? $conversation->status);
+        DB::transaction(function () use ($conversation, $agent, $status, $closedAt, $record): void {
+            [$agent, $locked] = $this->lockedConversationActor($agent, $conversation, 'updateStatus');
+            $previousStatus = (string) $locked->status;
 
             // Written through the LOCKED instance, not the one this request
             // loaded before it waited. Eloquent compares against the original
@@ -589,7 +590,7 @@ class AgentConversationController extends Controller
             // behind a close, would find "open" unchanged and omit status from
             // the update -- leaving the row closed while the callback recorded
             // a reopen that never happened.
-            $target = $locked ?? $conversation;
+            $target = $locked;
 
             $target->forceFill([
                 'status' => $status,
@@ -605,7 +606,7 @@ class AgentConversationController extends Controller
             // for a conversation that ended up open, which is worse than no
             // history at all. It also means a failed insert cannot leave a
             // status change with nothing recording it.
-            $record($previousStatus);
+            $record($previousStatus, $target, $agent);
         });
     }
 
@@ -620,9 +621,10 @@ class AgentConversationController extends Controller
         // guard exists to prevent.
         $this->transitionStatus(
             $conversation,
+            $agent,
             'closed',
             now(),
-            fn (string $previousStatus) => $lifecycle->closed($conversation, $agent, $previousStatus),
+            fn (string $previousStatus, Conversation $conversation, User $agent) => $lifecycle->closed($conversation, $agent, $previousStatus),
         );
 
         return redirect()
@@ -637,9 +639,10 @@ class AgentConversationController extends Controller
 
         $this->transitionStatus(
             $conversation,
+            $agent,
             'open',
             null,
-            fn (string $previousStatus) => $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus),
+            fn (string $previousStatus, Conversation $conversation, User $agent) => $lifecycle->replyReopenedIfClosed($conversation, $agent, $previousStatus),
         );
 
         return redirect()
@@ -654,9 +657,12 @@ class AgentConversationController extends Controller
 
         abort_unless(Gate::forUser($agent)->allows('claim', $conversation), 403);
 
-        $conversation->forceFill([
-            'assigned_agent_id' => $agent->id,
-        ])->save();
+        [$agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
+            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'claim');
+            $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
+
+            return [$agent, $conversation];
+        });
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
@@ -670,9 +676,12 @@ class AgentConversationController extends Controller
 
         abort_unless(Gate::forUser($agent)->allows('release', $conversation), 403);
 
-        $conversation->forceFill([
-            'assigned_agent_id' => null,
-        ])->save();
+        [, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
+            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'release');
+            $conversation->forceFill(['assigned_agent_id' => null])->save();
+
+            return [$agent, $conversation];
+        });
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
@@ -690,13 +699,14 @@ class AgentConversationController extends Controller
             'priority' => ['nullable', 'string', Rule::in(TicketPriority::values())],
         ]);
 
-        if ($conversation->tickets()->exists()) {
-            return redirect()
-                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'conversations.flash.ticket_exists');
-        }
+        [$ticket, $agent, $conversation] = DB::transaction(function () use ($conversation, $agent, $validated, $visitorContextSanitizer): array {
+            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'createTicket');
+            $conversation->load(['site', 'visitor']);
 
-        $ticket = DB::transaction(function () use ($conversation, $agent, $validated, $visitorContextSanitizer): Ticket {
+            if ($conversation->tickets()->exists()) {
+                return [null, $agent, $conversation];
+            }
+
             // The ticket and its webhook outbox rows must share this outer
             // transaction. TicketObserver runs during create; without the
             // wrapper the ticket commits before the durable handoff exists.
@@ -733,18 +743,18 @@ class AgentConversationController extends Controller
                 'occurred_at' => now(),
             ]);
 
-            return $ticket;
-        });
+            if (! $conversation->assigned_agent_id && Gate::forUser($agent)->allows('claim', $conversation)) {
+                $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
+            }
 
-        if (! $conversation->assigned_agent_id && Gate::forUser($agent)->allows('claim', $conversation)) {
-            $conversation->forceFill([
-                'assigned_agent_id' => $agent->id,
-            ])->save();
-        }
+            return [$ticket, $agent, $conversation];
+        });
 
         return redirect()
             ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-            ->with('status', 'conversations.flash.ticket_created');
+            ->with('status', $ticket instanceof Ticket
+                ? 'conversations.flash.ticket_created'
+                : 'conversations.flash.ticket_exists');
     }
 
     /**
@@ -776,24 +786,33 @@ class AgentConversationController extends Controller
     public function requestCobrowse(Request $request, string $supportCode): RedirectResponse
     {
         $agent = $request->user();
-        $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse')
-            ->load(['site', 'visitor']);
+        $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse');
 
-        if ($this->activeCobrowseSession($conversation)) {
+        [$cobrowseSession, $agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
+            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'requestCobrowse');
+
+            if ($this->activeCobrowseSession($conversation)) {
+                return [null, $agent, $conversation];
+            }
+
+            $cobrowseSession = $conversation->cobrowseSessions()->create([
+                'site_id' => $conversation->site_id,
+                'visitor_id' => $conversation->visitor_id,
+                'requested_by_id' => $agent->id,
+                'status' => 'requested',
+                'metadata' => [],
+                'consented_at' => null,
+                'ended_at' => null,
+            ]);
+
+            return [$cobrowseSession, $agent, $conversation];
+        });
+
+        if (! $cobrowseSession instanceof CobrowseSession) {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'conversations.flash.cobrowse_already_active');
         }
-
-        $cobrowseSession = $conversation->cobrowseSessions()->create([
-            'site_id' => $conversation->site_id,
-            'visitor_id' => $conversation->visitor_id,
-            'requested_by_id' => $agent->id,
-            'status' => 'requested',
-            'metadata' => [],
-            'consented_at' => null,
-            'ended_at' => null,
-        ]);
 
         event(new CobrowseStateUpdated($cobrowseSession, 'consent_requested'));
 
@@ -806,26 +825,35 @@ class AgentConversationController extends Controller
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'endCobrowse');
-        $cobrowseSession = $this->activeCobrowseSession($conversation);
+        [$cobrowseSession, $agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
+            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'endCobrowse');
+            $cobrowseSession = $this->activeCobrowseSession($conversation);
 
-        if (! $cobrowseSession) {
+            if (! $cobrowseSession) {
+                return [null, $agent, $conversation];
+            }
+
+            $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session) use ($agent): void {
+                $metadata = $session->metadata ?? [];
+                $metadata['ended_by_id'] = $agent->id;
+                $metadata['ended_by_name'] = $agent->name;
+                $metadata['ended_by_type'] = 'agent';
+
+                $session->forceFill([
+                    'status' => 'ended',
+                    'metadata' => $metadata,
+                    'ended_at' => now(),
+                ]);
+            });
+
+            return [$cobrowseSession, $agent, $conversation];
+        });
+
+        if (! $cobrowseSession instanceof CobrowseSession) {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
                 ->with('status', 'conversations.flash.cobrowse_none');
         }
-
-        $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session) use ($agent): void {
-            $metadata = $session->metadata ?? [];
-            $metadata['ended_by_id'] = $agent->id;
-            $metadata['ended_by_name'] = $agent->name;
-            $metadata['ended_by_type'] = 'agent';
-
-            $session->forceFill([
-                'status' => 'ended',
-                'metadata' => $metadata,
-                'ended_at' => now(),
-            ]);
-        });
 
         event(new CobrowseStateUpdated($cobrowseSession, 'ended'));
 
@@ -838,61 +866,66 @@ class AgentConversationController extends Controller
     {
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse');
-        $cobrowseSession = $this->activeCobrowseSession($conversation);
+        [$cobrowseSession, $agent, $conversation, $status] = DB::transaction(function () use ($agent, $cobrowseAuditTrail, $conversation, $resyncRequestPolicy): array {
+            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'requestCobrowse');
+            $cobrowseSession = $this->activeCobrowseSession($conversation);
 
-        if (! $cobrowseSession || $cobrowseSession->status !== 'granted') {
-            return redirect()
-                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'conversations.flash.cobrowse_needed_for_snapshot');
-        }
-
-        $isActive = true;
-        $alreadyPending = false;
-        $newRequest = null;
-        $previousRequest = null;
-
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, $resyncRequestPolicy, &$isActive, &$alreadyPending, &$newRequest, &$previousRequest): array {
-            if ($session->status !== 'granted' || $session->ended_at) {
-                $isActive = false;
-
-                return $metadata;
+            if (! $cobrowseSession || $cobrowseSession->status !== 'granted') {
+                return [null, $agent, $conversation, 'conversations.flash.cobrowse_needed_for_snapshot'];
             }
 
-            $currentRequest = $metadata['resync_request'] ?? null;
+            $isActive = true;
+            $alreadyPending = false;
+            $newRequest = null;
+            $previousRequest = null;
 
-            if (is_array($currentRequest) && $resyncRequestPolicy->isFreshPending($currentRequest)) {
-                $alreadyPending = true;
+            $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata, CobrowseSession $session) use ($agent, $resyncRequestPolicy, &$isActive, &$alreadyPending, &$newRequest, &$previousRequest): array {
+                if ($session->status !== 'granted' || $session->ended_at) {
+                    $isActive = false;
+
+                    return $metadata;
+                }
+
+                $currentRequest = $metadata['resync_request'] ?? null;
+
+                if (is_array($currentRequest) && $resyncRequestPolicy->isFreshPending($currentRequest)) {
+                    $alreadyPending = true;
+
+                    return $metadata;
+                }
+
+                $previousRequest = is_array($currentRequest) ? $currentRequest : null;
+                $newRequest = [
+                    'id' => 'resync_'.Str::lower((string) Str::ulid()),
+                    'requested_by_id' => $agent->id,
+                    'requested_by_name' => $agent->name,
+                    'requested_at' => now()->toJSON(),
+                    'fulfilled_at' => null,
+                ];
+                $metadata['resync_request'] = $newRequest;
 
                 return $metadata;
+            });
+
+            if (! $isActive) {
+                return [$cobrowseSession, $agent, $conversation, 'conversations.flash.cobrowse_needed_for_snapshot'];
             }
 
-            $previousRequest = is_array($currentRequest) ? $currentRequest : null;
-            $newRequest = [
-                'id' => 'resync_'.Str::lower((string) Str::ulid()),
-                'requested_by_id' => $agent->id,
-                'requested_by_name' => $agent->name,
-                'requested_at' => now()->toJSON(),
-                'fulfilled_at' => null,
-            ];
-            $metadata['resync_request'] = $newRequest;
+            if ($alreadyPending) {
+                return [$cobrowseSession, $agent, $conversation, 'conversations.flash.snapshot_already_requested'];
+            }
 
-            return $metadata;
+            if (is_array($newRequest)) {
+                $cobrowseAuditTrail->resyncRequested($cobrowseSession, $agent, $newRequest, $previousRequest);
+            }
+
+            return [$cobrowseSession, $agent, $conversation, 'conversations.flash.snapshot_requested'];
         });
 
-        if (! $isActive) {
+        if ($status !== 'conversations.flash.snapshot_requested') {
             return redirect()
                 ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'conversations.flash.cobrowse_needed_for_snapshot');
-        }
-
-        if ($alreadyPending) {
-            return redirect()
-                ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
-                ->with('status', 'conversations.flash.snapshot_already_requested');
-        }
-
-        if (is_array($newRequest)) {
-            $cobrowseAuditTrail->resyncRequested($cobrowseSession, $agent, $newRequest, $previousRequest);
+                ->with('status', $status);
         }
 
         event(new CobrowseStateUpdated($cobrowseSession, 'resync_requested'));
