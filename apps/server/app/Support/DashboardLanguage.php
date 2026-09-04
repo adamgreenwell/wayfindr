@@ -121,6 +121,8 @@ final class DashboardLanguage
         'dashboard.profile.two-factor.disable',
         'dashboard.account.security.show',
         'dashboard.account.security.update',
+        'dashboard.account.sla-policies.index',
+        'dashboard.account.sla-policies.update',
         'dashboard.conversations.index',
         'dashboard.tickets.index',
 
@@ -192,6 +194,7 @@ final class DashboardLanguage
         // different language from the page around it.
         'dashboard.conversations.messages.index',
         'dashboard.conversations.messages.store',
+        'dashboard.conversations.priority.update',
         // And the attachment endpoint. The composer prefers the response's own
         // message over its local fallback, so an oversized file answered in
         // English replaced the German live state on an ordinary upload.

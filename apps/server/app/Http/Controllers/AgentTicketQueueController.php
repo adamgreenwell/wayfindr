@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
 use App\Support\TicketExternalIssueState;
@@ -18,7 +19,7 @@ use Illuminate\Support\Collection;
 
 class AgentTicketQueueController extends Controller
 {
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request, SlaStatePresenter $slaStates): View
     {
         $agent = $request->user();
 
@@ -36,7 +37,7 @@ class AgentTicketQueueController extends Controller
             'agent' => $agent,
             'canViewTicketConversations' => $agent->hasAccountPermission(AccountPermission::ViewConversations),
             'sites' => $sites,
-            ...$this->ticketQueueData($agent, $account, $sites, $request),
+            ...$this->ticketQueueData($agent, $account, $sites, $request, $slaStates),
         ]);
     }
 
@@ -44,7 +45,7 @@ class AgentTicketQueueController extends Controller
      * @param  Collection<int, Site>  $sites
      * @return array<string, mixed>
      */
-    private function ticketQueueData(User $agent, Account $account, Collection $sites, Request $request): array
+    private function ticketQueueData(User $agent, Account $account, Collection $sites, Request $request, SlaStatePresenter $slaStates): array
     {
         $canViewTicketConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
         // Keyed by the query-string value, which is the contract with the
@@ -168,6 +169,7 @@ class AgentTicketQueueController extends Controller
                 'latestEscalationEvent.actor',
                 'latestLifecycleEvent.actor',
                 'site',
+                'slaClocks',
             ])
             ->where('account_id', $account->id)
             ->whereHas('site', fn ($query) => $query->visibleToAgent($agent))
@@ -321,6 +323,9 @@ class AgentTicketQueueController extends Controller
             'ticketStatusFilters' => $ticketStatusFilters,
             'ticketStatusSummary' => $ticketStatusSummary,
             'tickets' => $tickets,
+            'slaStateByTicketId' => $tickets->mapWithKeys(fn (Ticket $ticket): array => [
+                $ticket->id => $slaStates->summary($ticket),
+            ]),
         ];
     }
 

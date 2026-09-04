@@ -1,0 +1,53 @@
+<?php
+
+return [
+    'document_title' => 'SLA policies',
+    'title' => 'SLA policies',
+    'subtitle' => 'Response and resolution commitments for this account.',
+    'back' => 'Back to account',
+    'priority' => 'Priority',
+    'change_priority' => 'Conversation priority',
+    'save_priority' => 'Save priority',
+    'queue' => ['summary' => ':metric: :state'],
+    'detail' => ['region' => 'SLA state'],
+    'flash' => ['saved' => 'SLA policies saved.'],
+    'metrics' => ['first_response' => 'First response', 'resolution' => 'Resolution'],
+    'duration' => [
+        'minutes' => '{1} :count working minute|[2,*] :count working minutes',
+        'hours' => '{1} :count working hour|[2,*] :count working hours',
+        'days' => '{1} :count working day|[2,*] :count working days',
+    ],
+    'states' => [
+        'on_track' => ['label' => 'On track', 'detail' => ':duration remain.'],
+        'paused' => ['label' => 'Paused', 'detail' => 'Outside support hours; :duration remain.'],
+        'warning' => ['label' => 'Approaching breach', 'detail' => ':duration remain.'],
+        'breached' => ['label' => 'Breached', 'reached' => 'The target has just expired.', 'detail' => 'Over target by :duration.'],
+        'met' => ['label' => 'Met', 'detail' => 'Completed in :duration.'],
+        'missed' => ['label' => 'Missed', 'detail' => 'Completed :duration over target.'],
+    ],
+    'policy' => [
+        'heading' => 'Targets by priority',
+        'lede' => 'Blank targets are not enforced.',
+        'configured' => 'Configured',
+        'not_configured' => 'Not configured',
+        'clock' => 'Only time inside each site’s support hours counts. Closing a desk early pauses its active clocks too.',
+        'warning' => 'Agents are warned after :percent% of a target has elapsed, before the deadline itself.',
+        'blank' => 'Leave either target blank to disable only that clock. Saving a new target starts existing untracked work from now rather than inventing a historical breach.',
+        'columns' => [
+            'priority' => 'Priority',
+            'first_response' => 'First response target',
+            'resolution' => 'Resolution target',
+            'guidance' => 'Queue meaning',
+        ],
+        'response_for' => 'First response minutes for :priority priority',
+        'resolution_for' => 'Resolution minutes for :priority priority',
+        'minutes' => 'minutes',
+        'save' => 'Save SLA policies',
+        'guidance' => [
+            'urgent' => ['description' => 'Business-critical outage or blocked production work.', 'action' => 'Assign immediately and keep the visitor updated.'],
+            'high' => ['description' => 'Time-sensitive work affecting an important customer workflow.', 'action' => 'Keep it moving today.'],
+            'normal' => ['description' => 'Standard support work with no exceptional deadline.', 'action' => 'Handle in normal queue order.'],
+            'low' => ['description' => 'Nice-to-have follow-up or non-blocking question.', 'action' => 'Handle after active visitor blockers.'],
+        ],
+    ],
+];

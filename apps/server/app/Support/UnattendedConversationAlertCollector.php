@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\ConversationReadState;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\Sites\SiteAvailability;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Notifications\DatabaseNotification;
@@ -50,7 +51,6 @@ class UnattendedConversationAlertCollector
             ->get()
             // The episode clock, not the notification row's age: a re-armed
             // notification restarts its wait when a new episode begins.
-            ->filter(fn (DatabaseNotification $notification): bool => $this->waitingSince($notification)->lessThanOrEqualTo(now()->subMinutes(self::THRESHOLD_MINUTES)))
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
             // One email per waiting episode: the stamp lives on the unread
             // notification and is dropped when a new episode begins.
@@ -90,6 +90,18 @@ class UnattendedConversationAlertCollector
             || $conversation->attentionState() !== 'needs_reply'
             || ! $agent->shouldReceiveConversationAlert($conversation)
         ) {
+            return null;
+        }
+
+        // The fixed unattended cadence and configured SLA clocks share the
+        // same business-time calculator. A five-minute heuristic that fires at
+        // 03:00 while the site is closed would disagree with every SLA state
+        // beside it and train agents to ignore both.
+        if (SiteAvailability::elapsedOpenSeconds(
+            $conversation->site,
+            $this->waitingSince($notification),
+            CarbonImmutable::now(),
+        ) < self::THRESHOLD_MINUTES * 60) {
             return null;
         }
 

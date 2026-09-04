@@ -71,6 +71,15 @@ test('a token lists only its own account conversations', function (): void {
     expect($codes->all())->toBe(['WF-MINE01']);
 });
 
+test('conversation reads expose the priority used by SLA policy', function (): void {
+    $w = readWorld();
+    $w['conversation']->forceFill(['priority' => 'urgent'])->save();
+
+    readGet($this, $w, '/api/v1/conversations/WF-MINE01')
+        ->assertOk()
+        ->assertJsonPath('data.priority', 'urgent');
+});
+
 test('another account conversation is not found, rather than forbidden', function (): void {
     // 403 would confirm the support code exists. Support codes are eight
     // characters and appear in emails.

@@ -137,6 +137,22 @@ return [
         ],
     ],
 
+    'sla' => [
+        'heading' => 'SLA-Verlauf',
+        'lede' => 'Verstöße werden gezählt, sobald die gespeicherte Geschäftszeit-Uhr ihr Ziel erstmals überschreitet.',
+        'breaches' => '{1} :count Verstoß in diesem Zeitraum|[0,*] :count Verstöße in diesem Zeitraum',
+        'active_warning' => 'Aktuell kurz vor einem Verstoß',
+        'active_breached' => 'Verstoßen und noch offen',
+        'empty' => 'In diesem Zeitraum wurde kein SLA-Ziel überschritten.',
+        'latest_only' => 'Es werden die 25 neuesten Verstöße dieses Zeitraums angezeigt.',
+        'columns' => [
+            'reference' => 'Vorgang',
+            'metric' => 'Ziel',
+            'priority' => 'Priorität',
+            'breached' => 'Verstoßen am',
+        ],
+    ],
+
     'tables' => [
         'agent' => 'Agent',
         'replies' => 'Gesendete Antworten',

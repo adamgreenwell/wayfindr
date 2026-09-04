@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
+use App\Models\SlaClock;
 use App\Models\User;
 use App\Support\UnattendedConversationAlertCollector;
 use Illuminate\Contracts\View\View;
@@ -18,6 +19,7 @@ class AgentAlertController extends Controller
     private const ALERT_KINDS = [
         'conversation' => 'conversation_needs_reply',
         'ticket' => 'ticket_assigned',
+        'sla' => 'sla_deadline',
     ];
 
     public function index(Request $request): View
@@ -207,7 +209,15 @@ class AgentAlertController extends Controller
         $localizedSubjectFallback = match (true) {
             $notificationKind === 'conversation_needs_reply'
                 && (! filled($storedSubject) || $storedSubject === 'Untitled conversation') => __('alerts.card.untitled_conversation'),
-            $notificationKind === 'ticket_assigned' && ! filled($storedSubject) => __('alerts.card.untitled_ticket'),
+            $notificationKind === 'ticket_assigned'
+                && data_get($notificationData, 'subject_kind', 'ticket') === 'ticket'
+                && ! filled($storedSubject) => __('alerts.card.untitled_ticket'),
+            $notificationKind === 'sla_deadline'
+                && data_get($notificationData, 'subject_kind') === 'ticket'
+                && (! filled($storedSubject) || $storedSubject === 'Untitled ticket') => __('alerts.card.untitled_ticket'),
+            $notificationKind === 'sla_deadline'
+                && data_get($notificationData, 'subject_kind') === 'conversation'
+                && (! filled($storedSubject) || $storedSubject === 'Untitled conversation') => __('alerts.card.untitled_conversation'),
             default => null,
         };
         $siteName = data_get($notificationData, 'site_name');
@@ -217,7 +227,7 @@ class AgentAlertController extends Controller
         $localizedTicketReference = $ticketId
             ? __('alerts.card.ticket_reference', ['id' => $ticketId])
             : null;
-        $priority = $notificationKind === 'ticket_assigned'
+        $priority = in_array($notificationKind, ['ticket_assigned', 'sla_deadline'], true)
             ? (string) data_get($notificationData, 'priority', 'normal')
             : null;
         $priorityKey = 'tickets.priorities.'.$priority;
@@ -226,6 +236,15 @@ class AgentAlertController extends Controller
             ? __('alerts.card.priority', [
                 'priority' => $localizedPriorityLabel === $priorityKey ? $priority : $localizedPriorityLabel,
             ])
+            : null;
+        $metric = $notificationKind === 'sla_deadline'
+            ? (string) data_get($notificationData, 'metric', SlaClock::METRIC_RESOLUTION)
+            : null;
+        $localizedMetric = $metric !== null ? __('sla.metrics.'.$metric) : null;
+        $localizedStage = $notificationKind === 'sla_deadline'
+            ? (data_get($notificationData, 'stage') === 'breach'
+                ? __('alerts.card.sla_breached')
+                : __('alerts.card.sla_warning'))
             : null;
 
         return collect([
@@ -240,6 +259,10 @@ class AgentAlertController extends Controller
             data_get($notificationData, 'message_preview'),
             data_get($notificationData, 'assigned_by_name'),
             data_get($notificationData, 'visitor_anonymous_id'),
+            $metric,
+            $localizedMetric,
+            data_get($notificationData, 'stage'),
+            $localizedStage,
             $priority,
             $localizedPriority,
         ])
@@ -272,6 +295,9 @@ class AgentAlertController extends Controller
         $ticketAlertCount = $visibleNotifications
             ->filter(fn (DatabaseNotification $notification): bool => data_get($notification->data, 'kind') === 'ticket_assigned')
             ->count();
+        $slaAlertCount = $visibleNotifications
+            ->filter(fn (DatabaseNotification $notification): bool => data_get($notification->data, 'kind') === 'sla_deadline')
+            ->count();
 
         return [
             [
@@ -301,6 +327,13 @@ class AgentAlertController extends Controller
                 'detail' => $ticketAlertCount > 0
                     ? __('alerts.snapshot.tickets.present')
                     : __('alerts.snapshot.tickets.empty'),
+            ],
+            [
+                'label' => __('alerts.snapshot.sla.label'),
+                'value' => trans_choice('alerts.counts.sla', $slaAlertCount, ['count' => $slaAlertCount]),
+                'detail' => $slaAlertCount > 0
+                    ? __('alerts.snapshot.sla.present')
+                    : __('alerts.snapshot.sla.empty'),
             ],
         ];
     }
@@ -366,6 +399,10 @@ class AgentAlertController extends Controller
 
         if ($alertKind === 'ticket') {
             return 'ticket';
+        }
+
+        if ($alertKind === 'sla') {
+            return 'sla';
         }
 
         if ($alertFilter === 'unread') {
@@ -569,6 +606,7 @@ class AgentAlertController extends Controller
         return [
             'conversation' => __('alerts.kinds.conversation'),
             'ticket' => __('alerts.kinds.ticket'),
+            'sla' => __('alerts.kinds.sla'),
         ];
     }
 }

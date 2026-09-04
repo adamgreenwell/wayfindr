@@ -123,6 +123,7 @@ class AgentAccountController extends Controller
             'canManageOperatorAccess' => $agent->hasAccountPermission(AccountPermission::ManageOperatorAccess),
             'canManageRoles' => $agent->hasAccountPermission(AccountPermission::ManageRoles),
             'canManageSecurity' => $agent->hasAccountPermission(AccountPermission::ManageSecurity),
+            'canManageSlaPolicies' => $agent->hasAccountPermission(AccountPermission::ManageSites),
             'canManageTickets' => $canManageTickets,
             'canViewConversations' => $canViewConversations,
             'canViewSites' => $agent->hasAnyAccountPermission(

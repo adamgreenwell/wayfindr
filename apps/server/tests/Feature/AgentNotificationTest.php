@@ -4,10 +4,12 @@ use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\Site;
+use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -656,6 +658,59 @@ test('dashboard shows unread ticket assignment alerts', function (): void {
         ->assertSeeText('Ada Agent assigned this ticket to you.')
         ->assertSee('High priority')
         ->assertSee("/dashboard/tickets/{$ticket->id}", false);
+});
+
+test('dashboard filters and renders SLA deadline alerts', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create([
+        'name' => 'Ada Agent',
+        'alert_preferences' => ['mode' => 'all', 'email' => false, 'cadence' => 'immediate'],
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $agent->id,
+        'support_code' => 'WF-SLA-ALERT',
+        'subject' => 'Checkout deadline',
+        'priority' => 'high',
+    ]);
+    $clock = $conversation->slaClocks()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'metric' => SlaClock::METRIC_FIRST_RESPONSE,
+        'priority' => 'high',
+        'target_seconds' => 900,
+        'warning_seconds' => 720,
+        'elapsed_seconds' => 720,
+        'started_at' => now()->subMinutes(12),
+        'last_counted_at' => now(),
+        'warned_at' => now(),
+    ]);
+    $agent->notify(new SlaDeadlineAlert($clock, 'warning'));
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index', ['alert_kind' => 'sla', 'alert_search' => 'WF-SLA-ALERT']))
+        ->assertOk()
+        ->assertSee('Type: SLA alerts')
+        ->assertSee('Showing 1 matching SLA alert.')
+        ->assertSee('SLA deadline approaching')
+        ->assertSee('Target: First response')
+        ->assertSee('Checkout deadline')
+        ->assertSee('WF-SLA-ALERT')
+        ->assertSee('High priority');
+
+    $agent->forceFill(['locale' => 'de'])->save();
+    $this->actingAs($agent)
+        ->get(route('dashboard.alerts.index', ['alert_kind' => 'sla', 'alert_search' => 'SLA-Frist nähert sich']))
+        ->assertOk()
+        ->assertSee('1 passende SLA-Benachrichtigung wird angezeigt.')
+        ->assertSee('SLA-Frist nähert sich');
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk();
+
+    expect($agent->fresh()->unreadNotifications()->where('type', SlaDeadlineAlert::class)->count())->toBe(0);
 });
 
 test('dashboard exposes calm alert controls and empty state', function (): void {

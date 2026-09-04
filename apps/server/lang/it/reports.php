@@ -137,6 +137,22 @@ return [
         ],
     ],
 
+    'sla' => [
+        'heading' => 'Cronologia SLA',
+        'lede' => 'Le violazioni vengono conteggiate quando l’orologio salvato delle ore di assistenza supera per la prima volta il proprio obiettivo.',
+        'breaches' => '{1} :count violazione in questo periodo|[0,*] :count violazioni in questo periodo',
+        'active_warning' => 'Ora vicini alla violazione',
+        'active_breached' => 'Violati e ancora aperti',
+        'empty' => 'In questo periodo nessun obiettivo SLA è stato violato.',
+        'latest_only' => 'Sono mostrate le 25 violazioni più recenti di questo periodo.',
+        'columns' => [
+            'reference' => 'Elemento di lavoro',
+            'metric' => 'Obiettivo',
+            'priority' => 'Priorità',
+            'breached' => 'Violato il',
+        ],
+    ],
+
     'tables' => [
         'agent' => 'Agente',
         'replies' => 'Risposte inviate',

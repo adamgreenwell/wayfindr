@@ -181,6 +181,7 @@
                                     @php
                                         $activityPreview = $conversation->queueActivityPreview();
                                         $conversationTiming = $conversation->queueTimingContext();
+                                        $slaState = $slaStateByConversationId->get($conversation->id);
                                         $cobrowseTransport = $cobrowseTransportByConversationId->get($conversation->id, [
                                             'label' => 'Unavailable',
                                             'message' => 'Cobrowse transport is not active.',
@@ -321,6 +322,12 @@
                                         <td class="wf-queue-when">
                                             {{ __('conversations.row.opened', ['elapsed' => $conversationTiming['opened_at']->diffForHumans()]) }}
                                             <span class="wf-queue-preview" title="{{ $waitLabel }}">{{ $waitLabel }}</span>
+                                            @if ($slaState)
+                                                <span class="wf-queue-state" data-tone="{{ $slaState['tone'] }}">
+                                                    <i aria-hidden="true"></i>{{ __('sla.queue.summary', ['metric' => $slaState['metric_label'], 'state' => $slaState['label']]) }}
+                                                </span>
+                                                <span class="wf-queue-preview">{{ $slaState['detail'] }}</span>
+                                            @endif
                                         </td>
                                     </tr>
                                 @endforeach

@@ -4,9 +4,11 @@ namespace App\Policies;
 
 use App\Enums\AccountPermission;
 use App\Models\Conversation;
+use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
+use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
@@ -52,6 +54,16 @@ class AlertPolicy
 
             return $ticket
                 && Gate::forUser($user)->allows('view', $ticket);
+        }
+
+        if ($notification->type === SlaDeadlineAlert::class) {
+            $clockId = (int) data_get($notification->data, 'sla_clock_id');
+            $clock = $clockId > 0
+                ? SlaClock::query()->with('subject.site')->find($clockId)
+                : null;
+
+            return $clock?->subject
+                && Gate::forUser($user)->allows('view', $clock->subject);
         }
 
         return false;

@@ -42,6 +42,16 @@ class Account extends Model
         return $this->hasMany(Ticket::class);
     }
 
+    public function slaPolicies(): HasMany
+    {
+        return $this->hasMany(SlaPolicy::class);
+    }
+
+    public function slaClocks(): HasMany
+    {
+        return $this->hasMany(SlaClock::class);
+    }
+
     public function ticketLabels(): HasMany
     {
         return $this->hasMany(TicketLabel::class);

@@ -18,6 +18,7 @@ use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
 use App\Support\DashboardLanguage;
@@ -26,6 +27,7 @@ use App\Support\ExternalIssues\ExternalIssueExportPreview;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
 use App\Support\Sites\SiteManagerCoverage;
+use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
 use App\Support\TicketPriority;
@@ -48,7 +50,7 @@ class AgentTicketController extends Controller
 
     public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
 
-    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview): View
+    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview, SlaStatePresenter $slaStates): View
     {
         $agent = $request->user();
 
@@ -69,6 +71,7 @@ class AgentTicketController extends Controller
             'latestEscalationEvent.actor',
             'requester',
             'site.externalIssueProjects.providerConnection',
+            'slaClocks',
             'auditEvents' => fn ($query) => $query
                 ->where('action', 'ticket.note_added')
                 ->with('actor')
@@ -118,6 +121,7 @@ class AgentTicketController extends Controller
             'ticketDescription' => $canViewTicketDescription ? $ticket->description : null,
             'ticketPriorities' => TicketPriority::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
+            'slaStates' => $slaStates->all($ticket),
             'ticket' => $ticket,
             'ticketArtifactCoverage' => $this->ticketArtifactCoverage($ticket),
             'ticketExternalIssueHandoffReadiness' => $this->ticketExternalIssueHandoffReadiness($ticket),
@@ -1103,7 +1107,7 @@ class AgentTicketController extends Controller
     private function markTicketAssignmentNotificationsRead(User $agent, Ticket $ticket): void
     {
         $agent->unreadNotifications()
-            ->where('type', TicketAssigned::class)
+            ->whereIn('type', [TicketAssigned::class, SlaDeadlineAlert::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'ticket_id') === $ticket->id)
             ->each
@@ -1113,7 +1117,7 @@ class AgentTicketController extends Controller
     private function markConversationNotificationsRead(User $agent, Conversation $conversation): void
     {
         $agent->unreadNotifications()
-            ->where('type', ConversationNeedsReply::class)
+            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversation->id)
             ->each

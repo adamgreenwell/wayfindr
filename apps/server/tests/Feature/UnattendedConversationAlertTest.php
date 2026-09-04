@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\UnattendedConversationAlertCollector;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Mail;
@@ -104,6 +105,38 @@ test('nothing sends while the wait is inside the threshold', function (): void {
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
 
     Mail::assertNothingQueued();
+});
+
+test('after-hours waiting pauses the unattended threshold until support reopens', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-08-28 18:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['availability' => [
+            'enabled' => true,
+            'timezone' => 'UTC',
+            'weekdays' => [
+                'mon' => ['09:00', '17:00'],
+                'tue' => ['09:00', '17:00'],
+                'wed' => ['09:00', '17:00'],
+                'thu' => ['09:00', '17:00'],
+                'fri' => ['09:00', '17:00'],
+                'sat' => null,
+                'sun' => null,
+            ],
+        ]],
+    ]);
+    createUnattendedWait($agent, $site);
+
+    $this->travelTo(CarbonImmutable::parse('2026-08-31 09:04', 'UTC'));
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertNothingQueued();
+
+    $this->travelTo(CarbonImmutable::parse('2026-08-31 09:06', 'UTC'));
+    Artisan::call('wayfindr:send-unattended-conversation-alerts');
+    Mail::assertQueuedCount(1);
 });
 
 test('nothing sends once the agent has seen the conversation', function (): void {

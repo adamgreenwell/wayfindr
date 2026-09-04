@@ -12,6 +12,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
+use App\Notifications\SlaDeadlineAlert;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\CobrowseAuditTrail;
@@ -24,6 +25,7 @@ use App\Support\Conversations\ConversationWriteAuthorization;
 use App\Support\DashboardLanguage;
 use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
+use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
@@ -48,12 +50,12 @@ class AgentConversationController extends Controller
 
     public function __construct(private readonly ConversationWriteAuthorization $conversationWriteAuthorization) {}
 
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates): View
     {
         $agent = $request->user();
 
         $conversation = $this->conversationForAgent($agent, $supportCode, 'view')
-            ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'latestNonIntegrationMessage', 'site', 'visitor']);
+            ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'latestNonIntegrationMessage', 'site', 'slaClocks', 'visitor']);
 
         $conversationReturnQuery = $this->conversationQueueReturnQuery($request);
         $canReply = Gate::forUser($agent)->allows('reply', $conversation);
@@ -219,6 +221,7 @@ class AgentConversationController extends Controller
             'priorConversations' => $this->priorConversations($conversation, $canManageTickets),
             'realtime' => $this->realtimeConfig($conversation, $agent),
             'replyTemplates' => $canReply ? $replyTemplateOptions->forAgent($agent) : [],
+            'slaStates' => $slaStates->all($conversation),
             'tickets' => $tickets,
             'ticketCategories' => TicketCategory::options(),
             'ticketPriorities' => TicketPriority::options(),
@@ -688,6 +691,26 @@ class AgentConversationController extends Controller
             ->with('status', 'conversations.flash.released');
     }
 
+    public function updatePriority(Request $request, string $supportCode): RedirectResponse
+    {
+        $agent = $request->user();
+        $conversation = $this->conversationForAgent($agent, $supportCode, 'updateStatus');
+        $validated = $request->validate([
+            'priority' => ['required', 'string', Rule::in(TicketPriority::values())],
+        ]);
+
+        [, $conversation] = DB::transaction(function () use ($agent, $conversation, $validated): array {
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'updateStatus');
+            $conversation->forceFill(['priority' => $validated['priority']])->save();
+
+            return [$agent, $conversation];
+        });
+
+        return redirect()
+            ->route('dashboard.conversations.show', $this->conversationShowRouteParams($conversation, $request))
+            ->with('status', 'conversations.flash.priority_updated');
+    }
+
     public function storeTicket(Request $request, string $supportCode, VisitorContextSanitizer $visitorContextSanitizer): RedirectResponse
     {
         $agent = $request->user();
@@ -1095,7 +1118,7 @@ class AgentConversationController extends Controller
     private function markConversationNotificationsRead(User $agent, Conversation $conversation): void
     {
         $agent->unreadNotifications()
-            ->where('type', ConversationNeedsReply::class)
+            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversation->id)
             ->each

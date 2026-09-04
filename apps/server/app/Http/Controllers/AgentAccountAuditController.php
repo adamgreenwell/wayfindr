@@ -418,6 +418,7 @@ class AgentAccountAuditController extends Controller
             'account.oidc_provisioning_updated' => 'Single sign-on provisioning updated',
             'account.oidc_role_mapping_created' => 'Single sign-on role mapping added',
             'account.oidc_role_mapping_deleted' => 'Single sign-on role mapping removed',
+            'account.sla_policies_updated' => 'SLA policies updated',
             'agent.oidc_identity_linked' => 'Single sign-on identity linked',
             'agent.oidc_provisioned' => 'Agent provisioned through single sign-on',
             'agent.oidc_role_mapped' => 'Agent role mapped through single sign-on',

@@ -10,8 +10,10 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationRating;
 use App\Models\OperatorSetting;
+use App\Models\Site;
 use App\Models\User;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Sites\SiteAvailability;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -396,7 +398,7 @@ final class SupportReport
             $waiting = $this->scopedConversations()
                 ->where('status', 'open')
                 ->needsHumanReply()
-                ->select(['conversations.id', 'conversations.last_message_at', 'conversations.created_at'])
+                ->select(['conversations.id', 'conversations.site_id', 'conversations.last_message_at', 'conversations.created_at'])
                 ->addSelect([
                     // Keep the clock on the newest non-integration work
                     // boundary even when an integration updates activity.
@@ -416,6 +418,10 @@ final class SupportReport
                 ->get();
 
             $oldest = null;
+            $sites = Site::query()
+                ->whereIn('id', $waiting->pluck('site_id')->unique()->all())
+                ->get()
+                ->keyBy('id');
 
             foreach ($waiting as $conversation) {
                 $since = CarbonImmutable::parse(
@@ -423,7 +429,10 @@ final class SupportReport
                     ?? $conversation->last_message_at
                     ?? $conversation->created_at,
                 );
-                $seconds = max(0, CarbonImmutable::now()->getTimestamp() - $since->getTimestamp());
+                $site = $sites->get((int) $conversation->site_id);
+                $seconds = $site
+                    ? SiteAvailability::elapsedOpenSeconds($site, $since, CarbonImmutable::now())
+                    : max(0, CarbonImmutable::now()->getTimestamp() - $since->getTimestamp());
                 $oldest = $oldest === null ? $seconds : max($oldest, $seconds);
             }
 

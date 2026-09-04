@@ -22,6 +22,7 @@ class ConversationFactory extends Factory
             'assigned_agent_id' => null,
             'support_code' => fake()->unique()->bothify('WF-######'),
             'status' => 'open',
+            'priority' => 'normal',
             'subject' => null,
             'metadata' => [],
             'last_message_at' => null,

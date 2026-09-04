@@ -3,9 +3,11 @@
 namespace App\Support;
 
 use App\Models\Conversation;
+use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\ConversationNeedsReply;
+use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -72,6 +74,7 @@ class AlertDigestCandidateCollector
         $candidate = match ($notification->type) {
             ConversationNeedsReply::class => $this->conversationCandidate($agent, $notification),
             TicketAssigned::class => $this->ticketCandidate($agent, $notification),
+            SlaDeadlineAlert::class => $this->slaCandidate($agent, $notification),
             default => null,
         };
 
@@ -160,6 +163,48 @@ class AlertDigestCandidateCollector
             'status' => $ticket->status,
             'subject' => $ticket->subject,
             'url' => route('dashboard.tickets.show', $ticket, false),
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function slaCandidate(User $agent, DatabaseNotification $notification): ?array
+    {
+        $clockId = (int) data_get($notification->data, 'sla_clock_id');
+        $clock = $clockId > 0
+            ? SlaClock::query()->with(['site', 'subject'])->find($clockId)
+            : null;
+
+        if (! $clock || ! $clock->subject) {
+            return null;
+        }
+
+        $stage = data_get($notification->data, 'stage');
+
+        // A digest is a current-work summary. A warning whose work has since
+        // completed, or whose clock has since breached, is durable history in
+        // the alert centre but no longer something to interrupt email with.
+        if (! $clock->isActive()
+            || ($stage === 'warning' && $clock->breached_at !== null)
+            || ($stage === 'breach' && $clock->breached_at === null)) {
+            return null;
+        }
+
+        $isTicket = $clock->subject instanceof Ticket;
+        $activityAt = $stage === 'breach'
+            ? $clock->breached_at
+            : $clock->warned_at;
+
+        return [
+            'kind' => 'sla_deadline',
+            'last_activity_at' => $this->timestamp($activityAt ?? $notification->created_at),
+            'last_activity_label' => $this->label($activityAt ?? $notification->created_at, $agent),
+            'notification_id' => (string) $notification->id,
+            'priority' => $clock->priority,
+            'reference' => $isTicket ? 'Ticket #'.$clock->subject->id : $clock->subject->support_code,
+            'site_name' => $clock->site?->name ?? 'Unknown site',
+            'status' => $stage === 'breach' ? 'SLA breached' : 'SLA approaching breach',
+            'subject' => $clock->subject->subject ?? ($isTicket ? 'Untitled ticket' : 'Untitled conversation'),
+            'url' => (string) data_get($notification->data, 'url'),
         ];
     }
 

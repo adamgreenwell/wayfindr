@@ -59,6 +59,7 @@ return [
         'all' => 'Alle Benachrichtigungen',
         'conversation' => 'Unterhaltungsbenachrichtigungen',
         'ticket' => 'Ticketbenachrichtigungen',
+        'sla' => 'SLA-Benachrichtigungen',
     ],
 
     'focus' => [
@@ -82,6 +83,7 @@ return [
         'unread' => '{1} :count ungelesen|[2,*] :count ungelesen',
         'conversations' => '{1} :count Unterhaltung|[2,*] :count Unterhaltungen',
         'tickets' => '{1} :count Ticket|[2,*] :count Tickets',
+        'sla' => '{1} :count SLA-Benachrichtigung|[2,*] :count SLA-Benachrichtigungen',
         'new_messages' => '{1} 1 neue Nachricht|[2,*] :count neue Nachrichten',
     ],
 
@@ -107,6 +109,11 @@ return [
             'present' => 'Ticketzuweisungen und dauerhafte Arbeit.',
             'empty' => 'Keine Benachrichtigungen zu Ticketzuweisungen in dieser Ansicht.',
         ],
+        'sla' => [
+            'label' => 'SLA-Benachrichtigungen',
+            'present' => 'Fristen nähern sich oder wurden bereits überschritten.',
+            'empty' => 'Keine SLA-Frist erfordert in dieser Ansicht Aufmerksamkeit.',
+        ],
     ],
 
     'summary' => [
@@ -117,18 +124,21 @@ return [
             'unread' => '{1} 1 passende ungelesene Benachrichtigung wird angezeigt.|[2,*] :count passende ungelesene Benachrichtigungen werden angezeigt.',
             'conversation' => '{1} 1 passende Unterhaltungsbenachrichtigung wird angezeigt.|[2,*] :count passende Unterhaltungsbenachrichtigungen werden angezeigt.',
             'ticket' => '{1} 1 passende Ticketbenachrichtigung wird angezeigt.|[2,*] :count passende Ticketbenachrichtigungen werden angezeigt.',
+            'sla' => '{1} 1 passende SLA-Benachrichtigung wird angezeigt.|[2,*] :count passende SLA-Benachrichtigungen werden angezeigt.',
         ],
         'capped_heading' => [
             'all' => '{1} :shown von 1 passender Benachrichtigung werden angezeigt.|[2,*] :shown von :count passenden Benachrichtigungen werden angezeigt.',
             'unread' => '{1} :shown von 1 passender ungelesener Benachrichtigung werden angezeigt.|[2,*] :shown von :count passenden ungelesenen Benachrichtigungen werden angezeigt.',
             'conversation' => '{1} :shown von 1 passender Unterhaltungsbenachrichtigung werden angezeigt.|[2,*] :shown von :count passenden Unterhaltungsbenachrichtigungen werden angezeigt.',
             'ticket' => '{1} :shown von 1 passender Ticketbenachrichtigung werden angezeigt.|[2,*] :shown von :count passenden Ticketbenachrichtigungen werden angezeigt.',
+            'sla' => '{1} :shown von 1 passender SLA-Benachrichtigung werden angezeigt.|[2,*] :shown von :count passenden SLA-Benachrichtigungen werden angezeigt.',
         ],
         'capped_detail' => [
             'all' => '{1} Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. 1 Benachrichtigung passt zu dieser Ansicht.|[2,*] Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. :count Benachrichtigungen passen zu dieser Ansicht.',
             'unread' => '{1} Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. 1 ungelesene Benachrichtigung passt zu dieser Ansicht.|[2,*] Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. :count ungelesene Benachrichtigungen passen zu dieser Ansicht.',
             'conversation' => '{1} Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. 1 Unterhaltungsbenachrichtigung passt zu dieser Ansicht.|[2,*] Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. :count Unterhaltungsbenachrichtigungen passen zu dieser Ansicht.',
             'ticket' => '{1} Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. 1 Ticketbenachrichtigung passt zu dieser Ansicht.|[2,*] Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. :count Ticketbenachrichtigungen passen zu dieser Ansicht.',
+            'sla' => '{1} Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. 1 SLA-Benachrichtigung passt zu dieser Ansicht.|[2,*] Nach der aktuellen Anzeigegrenze werden :shown Benachrichtigungen gezeigt. :count SLA-Benachrichtigungen passen zu dieser Ansicht.',
         ],
     ],
 
@@ -140,6 +150,7 @@ return [
         'kind' => [
             'conversation' => 'Keine Unterhaltungsbenachrichtigungen passen zu dieser Ansicht.',
             'ticket' => 'Keine Ticketbenachrichtigungen passen zu dieser Ansicht.',
+            'sla' => 'Keine SLA-Benachrichtigungen passen zu dieser Ansicht.',
             'detail' => 'Versuchen Sie es mit allen Benachrichtigungstypen, um weitere zugängliche Support-Signale einzubeziehen.',
         ],
         'unread' => [
@@ -171,6 +182,13 @@ return [
         'untitled_ticket' => 'Ticket ohne Titel',
         'untitled_conversation' => 'Unterhaltung ohne Titel',
         'ticket_assigned' => 'Ticket zugewiesen',
+        'sla_warning' => 'SLA-Frist nähert sich',
+        'sla_breached' => 'SLA-Frist überschritten',
+        'sla_metric' => 'Ziel: :metric',
+        'sla_warning_why' => 'Diese Arbeit hat den größten Teil ihres Ziels innerhalb der Supportzeiten verbraucht.',
+        'sla_breach_why' => 'Diese Arbeit hat ihr Ziel innerhalb der Supportzeiten überschritten.',
+        'sla_warning_next' => 'Öffnen Sie die Arbeit jetzt und klären Sie, wer sie vor Ablauf des Ziels voranbringt.',
+        'sla_breach_next' => 'Öffnen Sie die Arbeit, übernehmen Sie Verantwortung und stellen Sie einen klaren nächsten Schritt her.',
         'assigned_by' => ':name hat Ihnen dieses Ticket zugewiesen.',
         'someone' => 'Jemand',
         'why' => 'Grund für diese Benachrichtigung:',

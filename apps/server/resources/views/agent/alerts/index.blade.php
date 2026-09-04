@@ -116,7 +116,7 @@
             <div class="wf-filter">
                 <label for="alert_kind">{{ __('alerts.filters.kind_label') }}</label>
                 <select id="alert_kind" name="alert_kind">
-                    @foreach (['all' => __('alerts.kinds.all'), 'conversation' => __('alerts.kinds.conversation'), 'ticket' => __('alerts.kinds.ticket')] as $kindValue => $kindLabel)
+                    @foreach (['all' => __('alerts.kinds.all'), 'conversation' => __('alerts.kinds.conversation'), 'ticket' => __('alerts.kinds.ticket'), 'sla' => __('alerts.kinds.sla')] as $kindValue => $kindLabel)
                         <option value="{{ $kindValue }}" @selected($alertKind === $kindValue)>{{ $kindLabel }}</option>
                     @endforeach
                 </select>
@@ -135,6 +135,7 @@
                 'all' => __('alerts.kinds.all'),
                 'conversation' => __('alerts.kinds.conversation'),
                 'ticket' => __('alerts.kinds.ticket'),
+                'sla' => __('alerts.kinds.sla'),
             ];
             $alertFocusItems = [
                 ['label' => __('alerts.focus.view'), 'value' => $alertFilter === 'unread' ? __('alerts.center.unread_only') : __('alerts.center.all'), 'authored' => false],

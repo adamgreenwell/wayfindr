@@ -1,0 +1,48 @@
+<?php
+
+return [
+    'document_title' => 'SLA-Richtlinien',
+    'title' => 'SLA-Richtlinien',
+    'subtitle' => 'Zusagen für Antwort und Lösung dieses Kontos.',
+    'back' => 'Zurück zum Konto',
+    'priority' => 'Priorität',
+    'change_priority' => 'Priorität der Unterhaltung',
+    'save_priority' => 'Priorität speichern',
+    'queue' => ['summary' => ':metric – :state'],
+    'detail' => ['region' => 'SLA-Status'],
+    'flash' => ['saved' => 'SLA-Richtlinien gespeichert.'],
+    'metrics' => ['first_response' => 'Erste Antwort', 'resolution' => 'Lösung'],
+    'duration' => [
+        'minutes' => '{1} :count Arbeitsminute|[2,*] :count Arbeitsminuten',
+        'hours' => '{1} :count Arbeitsstunde|[2,*] :count Arbeitsstunden',
+        'days' => '{1} :count Arbeitstag|[2,*] :count Arbeitstage',
+    ],
+    'states' => [
+        'on_track' => ['label' => 'Im Plan', 'detail' => ':duration verbleiben.'],
+        'paused' => ['label' => 'Pausiert', 'detail' => 'Außerhalb der Supportzeiten; :duration verbleiben.'],
+        'warning' => ['label' => 'Frist nähert sich', 'detail' => ':duration verbleiben.'],
+        'breached' => ['label' => 'Überschritten', 'reached' => 'Die Zielfrist ist gerade abgelaufen.', 'detail' => 'Ziel um :duration überschritten.'],
+        'met' => ['label' => 'Eingehalten', 'detail' => 'In :duration abgeschlossen.'],
+        'missed' => ['label' => 'Verfehlt', 'detail' => ':duration nach dem Ziel abgeschlossen.'],
+    ],
+    'policy' => [
+        'heading' => 'Ziele nach Priorität',
+        'lede' => 'Leere Ziele werden nicht durchgesetzt.',
+        'configured' => 'Eingerichtet',
+        'not_configured' => 'Nicht eingerichtet',
+        'clock' => 'Nur Zeiten innerhalb der Supportzeiten der jeweiligen Website zählen. Wird der Supportbereich geschlossen, pausieren auch die aktiven Uhren.',
+        'warning' => 'Agenten werden gewarnt, sobald :percent % eines Ziels verstrichen sind, also vor der eigentlichen Frist.',
+        'blank' => 'Lassen Sie ein Ziel leer, um nur diese Uhr zu deaktivieren. Ein neues Ziel beginnt für bisher nicht erfasste aktive Arbeit ab jetzt, statt rückwirkend einen Verstoß zu erfinden.',
+        'columns' => ['priority' => 'Priorität', 'first_response' => 'Ziel für erste Antwort', 'resolution' => 'Lösungsziel', 'guidance' => 'Bedeutung in der Warteschlange'],
+        'response_for' => 'Minuten bis zur ersten Antwort für Priorität :priority',
+        'resolution_for' => 'Minuten bis zur Lösung für Priorität :priority',
+        'minutes' => 'Minuten',
+        'save' => 'SLA-Richtlinien speichern',
+        'guidance' => [
+            'urgent' => ['description' => 'Geschäftskritischer Ausfall oder blockierte Produktionsarbeit.', 'action' => 'Sofort zuweisen und Besuchende auf dem Laufenden halten.'],
+            'high' => ['description' => 'Zeitkritische Arbeit an einem wichtigen Kundenablauf.', 'action' => 'Noch heute voranbringen.'],
+            'normal' => ['description' => 'Reguläre Support-Arbeit ohne außergewöhnliche Frist.', 'action' => 'In normaler Warteschlangen-Reihenfolge bearbeiten.'],
+            'low' => ['description' => 'Optionale Nacharbeit oder nicht blockierende Frage.', 'action' => 'Nach aktiven Blockern für Besuchende bearbeiten.'],
+        ],
+    ],
+];

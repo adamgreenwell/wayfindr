@@ -103,6 +103,7 @@ return [
         'items' => [
             'integrations' => ['label' => 'Integrazioni', 'detail' => 'Provider di segnalazioni esterne e dove ogni sito passa i ticket.'],
             'sites' => ['label' => 'Siti', 'detail' => 'Siti collegati, stato di installazione del widget e impostazioni per sito.'],
+            'sla' => ['label' => 'Criteri SLA', 'detail' => 'Obiettivi di risposta e risoluzione per priorità di supporto.'],
             'articles' => ['label' => 'Articoli', 'detail' => 'Risposte che un visitatore può cercare autonomamente prima di chiedere.'],
             'replies' => ['label' => 'Assistenti di risposta', 'detail' => 'Risposte salvate che gli agenti possono inserire nelle conversazioni.'],
             'labels' => ['label' => 'Etichette dei ticket', 'detail' => 'Etichette condivise per organizzare e filtrare i ticket.'],

@@ -16,6 +16,11 @@ Schedule::command('wayfindr:send-unattended-conversation-alerts')
     ->everyFiveMinutes()
     ->description('Email agents when a visitor message waits unseen past the threshold.');
 
+Schedule::command('wayfindr:evaluate-sla-clocks')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->description('Advance SLA clocks and create approaching-breach or breach alerts.');
+
 Schedule::command('wayfindr:expire-idle-cobrowse-sessions')
     ->everyFiveMinutes()
     ->description('End idle cobrowse sessions so abandoned sessions stop reading active and become prunable.');

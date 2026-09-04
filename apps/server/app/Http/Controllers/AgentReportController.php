@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Support\ReaderNumber;
 use App\Support\Reporting\ReportingScope;
 use App\Support\Reporting\ReportingWindow;
+use App\Support\Reporting\SlaReport;
 use App\Support\Reporting\SupportReport;
 use App\Support\Reporting\TicketReport;
 use App\Support\SpreadsheetSafeCsv;
@@ -35,6 +36,7 @@ class AgentReportController extends Controller
 
         [$scope, $window, $report] = $this->report($request, $account, $agent);
         $tickets = new TicketReport($scope, $window);
+        $sla = new SlaReport($scope, $window);
 
         $volume = $report->volume();
         $firstResponse = $report->firstResponse();
@@ -59,6 +61,7 @@ class AgentReportController extends Controller
             'ratingComments' => $report->comments(),
             'agentActivity' => $report->agentActivity(),
             'queueHealth' => $queueHealth,
+            'slaHistory' => $sla->history(),
             'historyBeganAt' => $report->historyBeganAt(),
             'historyIsPartial' => $report->historyIsPartial(),
             'reportQuery' => $this->reportQueryParams($window, $scope->requestedSiteId),
