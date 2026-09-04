@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Enums\AutomationRuleEvent;
+use App\Enums\ConversationStatus;
 use App\Events\ConversationMessageCreated;
 use App\Models\Conversation;
 use App\Models\User;
@@ -48,6 +49,10 @@ class NotifyAgentsOfVisitorMessage
             $conversation,
             $message,
         );
+
+        if ($conversation->status !== ConversationStatus::Open->value) {
+            return;
+        }
 
         if ($conversation->assigned_agent_id) {
             $assignedAgent = $conversation->site->account->agents()

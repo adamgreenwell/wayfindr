@@ -41,12 +41,20 @@ test('closing a ticket twice records one close', function (): void {
     // A double-click, a retry, or a stale page. Two rows make one resolution
     // contribute two durations to the report and inflate every close count.
     $w = ticketTransitionWorld();
+    AutomationRule::factory()->for($w['account'])->enabled()->create([
+        'name' => 'Record actual updates',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'A real status update occurred.']],
+    ]);
 
     foreach (range(1, 3) as $ignored) {
         $this->actingAs($w['agent'])->post(route('dashboard.tickets.close', $w['ticket']), []);
+        $this->travel(1)->second();
     }
 
-    expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.closed'))->toHaveCount(1);
+    expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.closed'))->toHaveCount(1)
+        ->and($w['ticket']->auditEvents()->where('action', 'ticket.note_added')->count())->toBe(1)
+        ->and(AutomationRuleExecution::query()->count())->toBe(1);
 });
 
 test('a re-submitted close does not move the moment the ticket was closed', function (): void {

@@ -2131,7 +2131,7 @@ class AgentTicketController extends Controller
             $target = $locked;
 
             $target->forceFill($attributes($previousStatus, $target))->save();
-            $statusChanged = $target->wasChanged();
+            $statusChanged = $target->wasChanged(['status', 'closed_at']);
 
             // Keep the caller's instance honest about what is now stored.
             $ticket->setRawAttributes($target->getAttributes(), true);

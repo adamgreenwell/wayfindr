@@ -16,6 +16,7 @@ use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\AutomationRuleMatched;
+use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AlertDigestCandidateCollector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -193,6 +194,7 @@ test('visitor messages can trigger conversation actions without creating a visit
         ]);
 
     Notification::assertSentTo($notifiedAgent, AutomationRuleMatched::class);
+    Notification::assertNotSentTo($assignee, ConversationNeedsReply::class);
 });
 
 test('visitor ticket reopen automation follows the visitor reply audit', function (): void {
