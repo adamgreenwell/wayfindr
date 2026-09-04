@@ -13,8 +13,17 @@ enum AutomationRuleActionType: string
 
     public function supports(AutomationRuleEvent $event): bool
     {
+        return $this->supportsSubjectType(
+            $event->isTicketEvent()
+                ? AutomationMacroSubjectType::Ticket
+                : AutomationMacroSubjectType::Conversation,
+        );
+    }
+
+    public function supportsSubjectType(AutomationMacroSubjectType $subjectType): bool
+    {
         return match ($this) {
-            self::AddLabel, self::PostInternalNote => $event->isTicketEvent(),
+            self::AddLabel, self::PostInternalNote => $subjectType === AutomationMacroSubjectType::Ticket,
             default => true,
         };
     }

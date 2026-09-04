@@ -16,6 +16,8 @@ use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAccountSlaPolicyController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentArticleController;
+use App\Http\Controllers\AgentAutomationMacroController;
+use App\Http\Controllers\AgentAutomationMacroRunController;
 use App\Http\Controllers\AgentAutomationRuleController;
 use App\Http\Controllers\AgentConversationAttachmentController;
 use App\Http\Controllers\AgentConversationController;
@@ -234,6 +236,19 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::delete('/dashboard/account/automation-rules/{automationRule}', [AgentAutomationRuleController::class, 'destroy'])
         ->whereNumber('automationRule')
         ->name('dashboard.account.automation-rules.destroy');
+    Route::get('/dashboard/account/automation-macros/new', [AgentAutomationMacroController::class, 'create'])
+        ->name('dashboard.account.automation-macros.create');
+    Route::post('/dashboard/account/automation-macros', [AgentAutomationMacroController::class, 'store'])
+        ->name('dashboard.account.automation-macros.store');
+    Route::get('/dashboard/account/automation-macros/{automationMacro}/edit', [AgentAutomationMacroController::class, 'edit'])
+        ->whereNumber('automationMacro')
+        ->name('dashboard.account.automation-macros.edit');
+    Route::put('/dashboard/account/automation-macros/{automationMacro}', [AgentAutomationMacroController::class, 'update'])
+        ->whereNumber('automationMacro')
+        ->name('dashboard.account.automation-macros.update');
+    Route::delete('/dashboard/account/automation-macros/{automationMacro}', [AgentAutomationMacroController::class, 'destroy'])
+        ->whereNumber('automationMacro')
+        ->name('dashboard.account.automation-macros.destroy');
     // Readiness is an instance report about mail, queues, storage and
     // scanning -- an operator's job, not an account's. This route predates the
     // operator console and served the same report to account admins, who then
@@ -343,6 +358,9 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.conversations.typing.store');
     Route::post('/dashboard/conversations/{supportCode}/tickets', [AgentConversationController::class, 'storeTicket'])
         ->name('dashboard.conversations.tickets.store');
+    Route::post('/dashboard/conversations/{supportCode}/macros/{automationMacro}', [AgentAutomationMacroRunController::class, 'conversation'])
+        ->whereNumber('automationMacro')
+        ->name('dashboard.conversations.macros.run');
     Route::get('/dashboard/tickets', AgentTicketQueueController::class)
         ->name('dashboard.tickets.index');
     Route::get('/dashboard/tickets/{ticket}', [AgentTicketController::class, 'show'])
@@ -377,6 +395,9 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.tickets.assignee.update');
     Route::post('/dashboard/tickets/{ticket}/escalations', [AgentTicketController::class, 'storeEscalation'])
         ->name('dashboard.tickets.escalations.store');
+    Route::post('/dashboard/tickets/{ticket}/macros/{automationMacro}', [AgentAutomationMacroRunController::class, 'ticket'])
+        ->whereNumber('automationMacro')
+        ->name('dashboard.tickets.macros.run');
     Route::get('/dashboard/conversations/{supportCode}/cobrowse/preview', [AgentConversationController::class, 'cobrowsePreview'])
         ->name('dashboard.conversations.cobrowse.preview');
     Route::post('/dashboard/conversations/{supportCode}/cobrowse/request', [AgentConversationController::class, 'requestCobrowse'])

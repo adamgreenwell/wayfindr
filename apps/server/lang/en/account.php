@@ -155,7 +155,7 @@ return [
             'articles' => ['label' => 'Articles', 'detail' => 'Answers a visitor can search for themselves, before they ask.'],
             'replies' => ['label' => 'Reply templates', 'detail' => 'Saved replies agents can insert into conversations.'],
             'labels' => ['label' => 'Ticket labels', 'detail' => 'Shared labels for organizing and filtering tickets.'],
-            'automations' => ['label' => 'Automation rules', 'detail' => 'Ordered conditions and support actions with previews and execution history.'],
+            'automations' => ['label' => 'Automations', 'detail' => 'Event-driven rules and one-click macros with shared actions and execution history.'],
             'audit' => ['label' => 'Audit log', 'detail' => 'Search account activity and export safe audit records.'],
             'tokens' => ['label' => 'API and webhooks', 'detail' => 'Scoped read and write access plus signed event delivery for integrations.'],
             'operator_access' => ['label' => 'Operator access', 'detail' => 'Requests from platform operators to see this account\'s support data.'],

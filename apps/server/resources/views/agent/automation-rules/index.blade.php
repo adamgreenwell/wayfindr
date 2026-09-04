@@ -3,6 +3,7 @@
 <x-layouts.app :title="__('automation_rules.title')" :agent="$agent" :account="$account">
     <x-page-header :title="__('automation_rules.title')" :subtitle="__('automation_rules.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('automation_rules.back')">
         <x-slot:actions>
+            <a class="button secondary" href="{{ route('dashboard.account.automation-macros.create') }}">{{ __('automation_macros.create.action') }}</a>
             <a class="button" href="{{ route('dashboard.account.automation-rules.create') }}">{{ __('automation_rules.create.action') }}</a>
         </x-slot:actions>
     </x-page-header>
@@ -21,6 +22,54 @@
             <p>{{ __('automation_rules.safety.order') }}</p>
             <p>{{ __('automation_rules.safety.visitor') }}</p>
         </div>
+    </section>
+
+    <section class="section" aria-labelledby="automation-macros-heading">
+        <div class="section-header">
+            <h2 id="automation-macros-heading">{{ __('automation_macros.list.heading') }}</h2>
+            <span class="lede">{{ trans_choice('automation_macros.list.count', $macros->count(), ['count' => \App\Support\ReaderNumber::count($macros->count())]) }}</span>
+        </div>
+
+        @if ($macros->isEmpty())
+            <div class="empty empty-state">
+                <strong>{{ __('automation_macros.empty.heading') }}</strong>
+                {{ __('automation_macros.empty.body') }}
+                <div class="empty-state-actions">
+                    <a class="button secondary" href="{{ route('dashboard.account.automation-macros.create') }}">{{ __('automation_macros.empty.action') }}</a>
+                </div>
+            </div>
+        @else
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">{{ __('automation_macros.list.macro') }}</th>
+                            <th scope="col">{{ __('automation_macros.list.work_type') }}</th>
+                            <th scope="col">{{ __('automation_macros.list.actions') }}</th>
+                            <th scope="col">{{ __('automation_macros.list.order') }}</th>
+                            <th scope="col">{{ __('automation_macros.list.status') }}</th>
+                            <th scope="col">{{ __('automation_macros.list.manage') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($macros as $macro)
+                            <tr>
+                                <td><strong lang="">{{ $macro->name }}</strong></td>
+                                <td>{{ __('automation_macros.subject_types.'.$macro->subject_type) }}</td>
+                                <td>{{ trans_choice('automation_rules.list.action_count', count($macro->actions), ['count' => \App\Support\ReaderNumber::count(count($macro->actions))]) }}</td>
+                                <td>{{ $macro->position }}</td>
+                                <td>
+                                    <span class="readiness-status" data-status="{{ $macro->is_enabled ? 'ready' : 'manual' }}">
+                                        {{ $macro->is_enabled ? __('automation_rules.status.enabled') : __('automation_rules.status.draft') }}
+                                    </span>
+                                </td>
+                                <td><a class="button secondary" href="{{ route('dashboard.account.automation-macros.edit', $macro) }}">{{ __('automation_macros.list.edit') }}</a></td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
     </section>
 
     <section class="section" aria-labelledby="automation-rules-heading">
@@ -96,10 +145,11 @@
                     </thead>
                     <tbody>
                         @foreach ($executions as $execution)
+                            @php($isMacroExecution = data_get($execution->metadata, 'source') === 'macro')
                             <tr>
                                 <td>
                                     {{ $execution->completed_at === null ? '' : \App\Support\ReaderClock::dateTime($execution->completed_at, $agent) }}
-                                    <span class="table-note">{{ $presenter->event($execution->event) }}</span>
+                                    <span class="table-note">{{ $isMacroExecution ? __('automation_macros.execution.kind', ['type' => __('automation_macros.subject_types.'.($execution->event === 'macro.ticket' ? 'ticket' : 'conversation'))]) : $presenter->event($execution->event) }}</span>
                                 </td>
                                 <td><strong lang="">{{ $execution->rule_name }}</strong></td>
                                 <td>
@@ -119,8 +169,17 @@
                                 <td class="automation-log-details">
                                     <x-details-disclosure :summary="__('automation_rules.executions.open_details')">
                                         <div>
-                                            <strong>{{ __('automation_rules.executions.conditions') }}</strong>
-                                            @if ($execution->conditions === [])
+                                            <strong>{{ $isMacroExecution ? __('automation_macros.execution.trigger') : __('automation_rules.executions.conditions') }}</strong>
+                                            @if ($isMacroExecution)
+                                                <p class="lede">
+                                                    {{ __('automation_macros.execution.triggered_by') }}
+                                                    @if (data_get($execution->metadata, 'triggered_by_name'))
+                                                        <span lang="">{{ data_get($execution->metadata, 'triggered_by_name') }}</span>.
+                                                    @else
+                                                        {{ __('account_audit.references.system') }}.
+                                                    @endif
+                                                </p>
+                                            @elseif ($execution->conditions === [])
                                                 <p class="lede">{{ __('automation_rules.values.every_event') }}</p>
                                             @else
                                                 <ol class="automation-definition-list">

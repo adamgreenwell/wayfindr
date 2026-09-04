@@ -72,7 +72,7 @@ return [
     'validation' => [
         'duplicate' => 'Questa etichetta esiste già in questo account.',
         'in_use' => 'Rimuova questa etichetta dai ticket prima di eliminarla.',
-        'in_use_automation' => 'Rimuova questa etichetta da tutte le regole di automazione prima di eliminarla.',
+        'in_use_automation' => 'Rimuova questa etichetta da tutte le regole e macro di automazione prima di eliminarla.',
         'empty' => 'Usi almeno una lettera o una cifra per l\'etichetta.',
         'reserved' => 'Questo nome di etichetta è riservato al filtro dei ticket.',
     ],

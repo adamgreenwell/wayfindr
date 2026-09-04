@@ -122,9 +122,15 @@ final class AutomationRulePresenter
 
     private function status(string $value, AutomationRuleEvent|string $event): string
     {
-        $event = $event instanceof AutomationRuleEvent ? $event : AutomationRuleEvent::from($event);
+        $isTicket = $event instanceof AutomationRuleEvent
+            ? $event->isTicketEvent()
+            : match ($event) {
+                'macro.ticket' => true,
+                'macro.conversation' => false,
+                default => AutomationRuleEvent::from($event)->isTicketEvent(),
+            };
 
-        return $event->isTicketEvent()
+        return $isTicket
             ? __('tickets.statuses.'.$value)
             : __('conversations.detail.statuses.'.$value);
     }

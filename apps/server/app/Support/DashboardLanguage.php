@@ -218,6 +218,13 @@ final class DashboardLanguage
         'dashboard.account.automation-rules.update',
         'dashboard.account.automation-rules.preview',
         'dashboard.account.automation-rules.destroy',
+        'dashboard.account.automation-macros.create',
+        'dashboard.account.automation-macros.store',
+        'dashboard.account.automation-macros.edit',
+        'dashboard.account.automation-macros.update',
+        'dashboard.account.automation-macros.destroy',
+        'dashboard.tickets.macros.run',
+        'dashboard.conversations.macros.run',
 
         // The account ticket-labels page. Reached from the ticket queue, which
         // is extracted, and it links straight back there -- so English here put

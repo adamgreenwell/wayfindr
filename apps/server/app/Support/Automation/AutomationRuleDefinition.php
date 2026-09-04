@@ -2,6 +2,7 @@
 
 namespace App\Support\Automation;
 
+use App\Enums\AutomationMacroSubjectType;
 use App\Enums\AutomationRuleActionType;
 use App\Enums\AutomationRuleConditionField;
 use App\Enums\AutomationRuleConditionOperator;
@@ -26,6 +27,16 @@ final class AutomationRuleDefinition
 
         foreach ($actions as $index => $action) {
             self::assertAction($event, $action, $index);
+        }
+    }
+
+    /** @param list<mixed> $actions */
+    public static function assertActionsForSubjectType(
+        AutomationMacroSubjectType $subjectType,
+        array $actions,
+    ): void {
+        foreach ($actions as $index => $action) {
+            self::assertAction($subjectType, $action, $index);
         }
     }
 
@@ -113,8 +124,11 @@ final class AutomationRuleDefinition
         }
     }
 
-    private static function assertAction(AutomationRuleEvent $event, mixed $action, int $index): void
-    {
+    private static function assertAction(
+        AutomationRuleEvent|AutomationMacroSubjectType $context,
+        mixed $action,
+        int $index,
+    ): void {
         $path = "actions.{$index}";
         self::assertObject($action, ['type', 'value'], $path);
 
@@ -124,8 +138,14 @@ final class AutomationRuleDefinition
             throw new InvalidArgumentException("{$path}.type is not supported.");
         }
 
-        if (! $type->supports($event)) {
-            throw new InvalidArgumentException("{$path}.type is not available for {$event->value} rules.");
+        $supported = $context instanceof AutomationRuleEvent
+            ? $type->supports($context)
+            : $type->supportsSubjectType($context);
+
+        if (! $supported) {
+            $suffix = $context instanceof AutomationRuleEvent ? ' rules' : ' macros';
+
+            throw new InvalidArgumentException("{$path}.type is not available for {$context->value}{$suffix}.");
         }
 
         $value = $action['value'];
@@ -135,7 +155,7 @@ final class AutomationRuleDefinition
             AutomationRuleActionType::NotifyAgent,
             AutomationRuleActionType::AddLabel => self::assertPositiveId($value, "{$path}.value"),
             AutomationRuleActionType::SetPriority => self::assertPriority($value, "{$path}.value"),
-            AutomationRuleActionType::SetStatus => self::assertStatus($event, $value, "{$path}.value"),
+            AutomationRuleActionType::SetStatus => self::assertStatus($context, $value, "{$path}.value"),
             AutomationRuleActionType::PostInternalNote => self::assertInternalNote($value, "{$path}.value"),
         };
     }
@@ -179,14 +199,20 @@ final class AutomationRuleDefinition
         }
     }
 
-    private static function assertStatus(AutomationRuleEvent $event, mixed $value, string $path): void
-    {
-        $valid = is_string($value) && ($event->isTicketEvent()
+    private static function assertStatus(
+        AutomationRuleEvent|AutomationMacroSubjectType $context,
+        mixed $value,
+        string $path,
+    ): void {
+        $isTicket = $context instanceof AutomationRuleEvent
+            ? $context->isTicketEvent()
+            : $context === AutomationMacroSubjectType::Ticket;
+        $valid = is_string($value) && ($isTicket
             ? TicketStatus::tryFrom($value) !== null
             : ConversationStatus::tryFrom($value) !== null);
 
         if (! $valid) {
-            throw new InvalidArgumentException("{$path} must be a status supported by {$event->value}.");
+            throw new InvalidArgumentException("{$path} must be a status supported by {$context->value}.");
         }
     }
 

@@ -1,8 +1,8 @@
 <?php
 
 return [
-    'title' => 'Automatisierungsregeln',
-    'subtitle' => 'Eine kleine, eindeutige Folge von Supportaktionen ausführen, wenn Vorgänge im Konto übereinstimmen.',
+    'title' => 'Automatisierungen',
+    'subtitle' => 'Eindeutige Folgen von Supportaktionen durch passende Ereignisse oder einen Agentenklick ausführen.',
     'back' => 'Zurück zum Konto',
     'status' => ['enabled' => 'Aktiviert', 'draft' => 'Entwurf'],
     'flash' => [
@@ -14,7 +14,7 @@ return [
     'safety' => [
         'heading' => 'Sichere Automatisierung',
         'lede' => 'Kontoweite Änderungen an Supportvorgängen',
-        'drafts' => 'Neue Regeln beginnen als Entwurf. Speichern und testen Sie eine Regel mit aktuellen Vorgängen, bevor Sie sie aktivieren.',
+        'drafts' => 'Neue Regeln und Makros beginnen als Entwurf. Testen Sie Regeln vor der Aktivierung; Makros erscheinen erst, wenn sie aktiviert sind.',
         'order' => 'Niedrigere Ausführungsnummern werden zuerst verarbeitet. Bedingungen und Aktionen laufen von oben nach unten.',
         'visitor' => 'Diese Aktionen senden keine Nachricht an Besucher. Interne Notizen bleiben für das Supportteam privat.',
     ],
@@ -86,8 +86,8 @@ return [
         'would_run' => 'Aktionen, die ausgeführt würden', 'no_actions' => 'Es würden keine Aktionen ausgeführt, weil nicht alle Bedingungen passen.',
     ],
     'executions' => [
-        'heading' => 'Ausführungsprotokoll', 'lede' => 'Dauerhafte Ergebnisse passender Regeln, einschließlich Fehlern und Aktionen ohne Änderung.',
-        'empty' => 'Es wurden noch keine Automatisierungsregeln ausgeführt.', 'when' => 'Abgeschlossen', 'rule' => 'Regelsnapshot',
+        'heading' => 'Ausführungsprotokoll', 'lede' => 'Dauerhafte Ergebnisse passender Regeln und manuell angewendeter Makros, einschließlich Fehlern und Aktionen ohne Änderung.',
+        'empty' => 'Es wurden noch keine Automatisierungen ausgeführt.', 'when' => 'Abgeschlossen', 'rule' => 'Automatisierungssnapshot',
         'work' => 'Supportvorgang', 'outcome' => 'Ergebnis', 'details' => 'Einzelheiten', 'open_details' => 'Ausführungsdetails öffnen',
         'conditions' => 'Passende Bedingungen', 'actions' => 'Geplante Aktionen', 'results' => 'Aktionsergebnisse', 'error' => 'Fehlerdetail',
     ],

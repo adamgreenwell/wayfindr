@@ -1,6 +1,8 @@
 @php
     $notificationData = $notification->data;
     $notificationKind = data_get($notificationData, 'kind');
+    $isMacroNotification = $notificationKind === 'automation_rule_matched'
+        && data_get($notificationData, 'automation_kind') === 'macro';
     $messageCount = max(1, (int) data_get($notificationData, 'message_count', 1));
     $alertStatusLabel = $notification->unread() ? __('alerts.card.status.unread') : __('alerts.card.status.read');
     $alertActionUrl = data_get($notificationData, 'url');
@@ -58,7 +60,7 @@
         ];
     } elseif ($notificationKind === 'automation_rule_matched') {
         $alertActionLabel = $subjectKind === 'ticket' ? __('alerts.card.open_ticket') : __('alerts.card.open_conversation');
-        $alertNextMove = __('alerts.card.automation_next');
+        $alertNextMove = $isMacroNotification ? __('alerts.card.macro_next') : __('alerts.card.automation_next');
         $priority = (string) data_get($notificationData, 'priority', 'normal');
         $priorityKey = 'tickets.priorities.'.$priority;
         $priorityLabel = __($priorityKey);
@@ -128,14 +130,14 @@
             · <x-translated-feedback :feedback="$priorityFeedback" />
         </p>
     @elseif ($notificationKind === 'automation_rule_matched')
-        <p class="lede">{{ __('alerts.card.automation_matched') }}</p>
+        <p class="lede">{{ $isMacroNotification ? __('alerts.card.macro_applied') : __('alerts.card.automation_matched') }}</p>
         <p class="message-body">
-            <strong>{{ __('alerts.card.automation_rule') }}</strong>
+            <strong>{{ $isMacroNotification ? __('alerts.card.automation_macro') : __('alerts.card.automation_rule') }}</strong>
             <span lang="">{{ data_get($notificationData, 'rule_name') }}</span>
         </p>
         <p class="field-help">
             <strong>{{ __('alerts.card.why') }}</strong>
-            {{ __('alerts.card.automation_why') }}
+            {{ $isMacroNotification ? __('alerts.card.macro_why') : __('alerts.card.automation_why') }}
         </p>
         <p class="field-help">
             <strong>{{ __('alerts.card.next_move') }}</strong>

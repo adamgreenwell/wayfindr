@@ -105,7 +105,11 @@ final readonly class AutomationRuleEngine
                     return false;
                 }
 
-                $results = $this->executor->execute($rule, $lockedSubject, $preview['actions']);
+                $results = $this->executor->execute(
+                    AutomationActionContext::forRule($rule),
+                    $lockedSubject,
+                    $preview['actions'],
+                );
 
                 AutomationRuleExecution::query()->create([
                     ...$this->executionIdentity($rule, $event, $lockedSubject, $lockedMessage),

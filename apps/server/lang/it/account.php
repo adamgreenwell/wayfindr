@@ -107,7 +107,7 @@ return [
             'articles' => ['label' => 'Articoli', 'detail' => 'Risposte che un visitatore può cercare autonomamente prima di chiedere.'],
             'replies' => ['label' => 'Assistenti di risposta', 'detail' => 'Risposte salvate che gli agenti possono inserire nelle conversazioni.'],
             'labels' => ['label' => 'Etichette dei ticket', 'detail' => 'Etichette condivise per organizzare e filtrare i ticket.'],
-            'automations' => ['label' => 'Regole di automazione', 'detail' => 'Condizioni e azioni di assistenza ordinate, con anteprima e cronologia delle esecuzioni.'],
+            'automations' => ['label' => 'Automazioni', 'detail' => 'Regole basate su eventi e macro con azioni condivise e cronologia delle esecuzioni.'],
             'audit' => ['label' => 'Registro di audit', 'detail' => 'Cerchi nell’attività dell’account ed esporti record di audit sicuri.'],
             'tokens' => ['label' => 'API e webhook', 'detail' => 'Accesso limitato in lettura e scrittura, più consegna firmata degli eventi per le integrazioni.'],
             'operator_access' => ['label' => 'Accesso degli operatori', 'detail' => 'Richieste degli operatori della piattaforma per vedere i dati di supporto di questo account.'],

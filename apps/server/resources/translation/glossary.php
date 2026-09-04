@@ -106,6 +106,8 @@ return [
         'it' => [
             'Cobrowse',
             'Live',
+            'Macro',
+            'Macro:',
 
             // Loanwords Italian tech writing uses as-is.
             'Ticket',

@@ -42,7 +42,7 @@ return [
         'request_cobrowse' => ['label' => 'Cobrowsing anfordern', 'detail' => 'Vom Besucher genehmigte Cobrowsing-Sitzungen starten und beenden.'],
         'manage_tickets' => ['label' => 'Tickets verwalten', 'detail' => 'Tickets zugewiesener Websites lesen und aktualisieren.'],
         'assign_tickets' => ['label' => 'Tickets zuweisen', 'detail' => 'Sichtbare Tickets Teammitgliedern zuweisen.'],
-        'manage_automations' => ['label' => 'Automatisierungen verwalten', 'detail' => 'Kontoweite Regeln erstellen, testen und ihren Ausführungsverlauf prüfen.'],
+        'manage_automations' => ['label' => 'Automatisierungen verwalten', 'detail' => 'Kontoweite Regeln und Makros erstellen, Regeln testen und den Ausführungsverlauf prüfen.'],
         'view_alerts' => ['label' => 'Benachrichtigungen anzeigen', 'detail' => 'Support-Benachrichtigungen für sichtbare Arbeit lesen.'],
     ],
 ];

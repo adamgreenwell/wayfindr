@@ -71,7 +71,7 @@ return [
     'validation' => [
         'duplicate' => 'Dieses Label gibt es in diesem Konto bereits.',
         'in_use' => 'Entfernen Sie dieses Label von den Tickets, bevor Sie es löschen.',
-        'in_use_automation' => 'Entfernen Sie dieses Label vor dem Löschen aus allen Automatisierungsregeln.',
+        'in_use_automation' => 'Entfernen Sie dieses Label vor dem Löschen aus allen Automatisierungsregeln und Makros.',
         'empty' => 'Verwenden Sie mindestens einen Buchstaben oder eine Ziffer für das Label.',
         'reserved' => 'Dieser Labelname ist für die Ticket-Filterung reserviert.',
     ],
