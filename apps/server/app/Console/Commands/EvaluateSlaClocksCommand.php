@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SlaClock;
+use App\Models\User;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\Sla\SlaAlertRouting;
 use App\Support\Sla\SlaClockManager;
@@ -54,26 +55,44 @@ class EvaluateSlaClocksCommand extends Command
                 }
 
                 $stageFailed = false;
-                $deliveredUserIds = $clock->alertedUserIds($stage);
 
                 foreach ($routing->recipients($clock) as $agent) {
-                    if (in_array((int) $agent->id, $deliveredUserIds, true)) {
-                        continue;
-                    }
+                    foreach ($this->deliveryChannels($agent) as $channel) {
+                        if ($clock->alertWasHandedOff($stage, $channel, (int) $agent->id)) {
+                            continue;
+                        }
 
-                    try {
-                        $agent->notify(new SlaDeadlineAlert($clock, $stage));
-                        $manager->recordAlertHandoff((int) $clock->id, $stage, (int) $agent->id);
-                        $alerts++;
-                    } catch (Throwable $exception) {
-                        $stageFailed = true;
-                        $failed++;
-                        Log::warning('SLA deadline alert delivery failed.', [
-                            'sla_clock_id' => $clock->id,
-                            'agent_id' => $agent->id,
-                            'stage' => $stage,
-                            'exception' => $exception,
-                        ]);
+                        $notification = new SlaDeadlineAlert($clock, $stage, $channel);
+
+                        try {
+                            // Notification::shouldSend() runs inside a queued
+                            // channel, where its veto has no return value for
+                            // this scheduler. Check immediately on both sides
+                            // of the handoff so only a still-current channel is
+                            // checkpointed as accepted.
+                            if (! $notification->shouldSend($agent, $channel)) {
+                                continue;
+                            }
+
+                            $agent->notify($notification);
+
+                            if (! $notification->shouldSend($agent, $channel)) {
+                                continue;
+                            }
+
+                            $manager->recordAlertHandoff((int) $clock->id, $stage, $channel, (int) $agent->id);
+                            $alerts++;
+                        } catch (Throwable $exception) {
+                            $stageFailed = true;
+                            $failed++;
+                            Log::warning('SLA deadline alert delivery failed.', [
+                                'sla_clock_id' => $clock->id,
+                                'agent_id' => $agent->id,
+                                'channel' => $channel,
+                                'stage' => $stage,
+                                'exception' => $exception,
+                            ]);
+                        }
                     }
                 }
 
@@ -82,6 +101,24 @@ class EvaluateSlaClocksCommand extends Command
                 }
 
                 try {
+                    $current = SlaClock::query()->with(['site.account', 'subject'])->find($clock->id);
+
+                    if (! $current || ! $current->alertStageIsCurrent($stage)) {
+                        return;
+                    }
+
+                    $handoffPending = $routing->recipients($current)
+                        ->contains(fn ($agent): bool => collect($this->deliveryChannels($agent))
+                            ->contains(fn (string $channel): bool => ! $current->alertWasHandedOff(
+                                $stage,
+                                $channel,
+                                (int) $agent->id,
+                            )));
+
+                    if ($handoffPending) {
+                        return;
+                    }
+
                     // A stage is complete only after every currently eligible
                     // recipient has accepted the handoff. With no recipients,
                     // completing here also prevents a stale alert appearing
@@ -100,5 +137,13 @@ class EvaluateSlaClocksCommand extends Command
         $this->line("SLA evaluation complete. Clocks evaluated: {$evaluated}. Alerts queued: {$alerts}. Failed: {$failed}.");
 
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    /** @return list<'database'|'mail'> */
+    private function deliveryChannels(User $agent): array
+    {
+        return $agent->wantsImmediateAlertEmail()
+            ? ['database', 'mail']
+            : ['database'];
     }
 }

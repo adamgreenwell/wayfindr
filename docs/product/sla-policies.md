@@ -65,9 +65,12 @@ one breach alert at most for each clock. The assigned eligible agent receives
 the alert; unassigned work falls back to eligible agents for the site. Quiet
 mode, deactivation, permissions, and current site access are rechecked. Email
 follows the agent's immediate-or-digest preference and contains support
-metadata rather than transcript or visitor content. If a notification queue
-handoff fails, the unfinished stage remains eligible for the next scheduler
-run; recipients whose handoff already succeeded are not queued twice.
+metadata rather than transcript or visitor content. Archived sites route no
+new SLA alert deliveries. Database and immediate-email queue handoffs are
+checkpointed separately: if one channel fails, the unfinished channel remains
+eligible for the next scheduler run without duplicating the one that already
+succeeded. Routing is checked again before a stage is completed so a silently
+vetoed handoff cannot strand a newly eligible recipient.
 
 The fixed unattended-conversation alert now uses the same business-time
 calculator. It no longer wakes agents at night for five wall-clock minutes that

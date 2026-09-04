@@ -17,13 +17,24 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(private readonly SlaClock $clock, private readonly string $stage)
-    {
+    public function __construct(
+        private readonly SlaClock $clock,
+        private readonly string $stage,
+        private readonly ?string $onlyChannel = null,
+    ) {
+        if ($onlyChannel !== null && ! in_array($onlyChannel, ['database', 'mail'], true)) {
+            throw new \InvalidArgumentException('Unknown SLA alert channel.');
+        }
+
         $this->clock->loadMissing(['site', 'subject']);
     }
 
     public function via(object $notifiable): array
     {
+        if ($this->onlyChannel !== null) {
+            return [$this->onlyChannel];
+        }
+
         $channels = ['database'];
 
         if ($notifiable instanceof User && $notifiable->wantsImmediateAlertEmail()) {

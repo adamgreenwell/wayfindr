@@ -22,8 +22,10 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'warned_at',
     'breached_at',
     'warning_alerted_user_ids',
+    'warning_mail_alerted_user_ids',
     'warning_alerted_at',
     'breach_alerted_user_ids',
+    'breach_mail_alerted_user_ids',
     'breach_alerted_at',
     'satisfied_at',
     'cancelled_at',
@@ -47,8 +49,10 @@ class SlaClock extends Model
             'warned_at' => 'datetime',
             'breached_at' => 'datetime',
             'warning_alerted_user_ids' => 'array',
+            'warning_mail_alerted_user_ids' => 'array',
             'warning_alerted_at' => 'datetime',
             'breach_alerted_user_ids' => 'array',
+            'breach_mail_alerted_user_ids' => 'array',
             'breach_alerted_at' => 'datetime',
             'satisfied_at' => 'datetime',
             'cancelled_at' => 'datetime',
@@ -81,11 +85,15 @@ class SlaClock extends Model
     }
 
     /** @return list<int> */
-    public function alertedUserIds(string $stage): array
+    public function alertedUserIds(string $stage, string $channel = 'database'): array
     {
-        $ids = $stage === 'breach'
-            ? $this->breach_alerted_user_ids
-            : $this->warning_alerted_user_ids;
+        $ids = $this->getAttribute(match ([$stage, $channel]) {
+            ['warning', 'database'] => 'warning_alerted_user_ids',
+            ['warning', 'mail'] => 'warning_mail_alerted_user_ids',
+            ['breach', 'database'] => 'breach_alerted_user_ids',
+            ['breach', 'mail'] => 'breach_mail_alerted_user_ids',
+            default => throw new \InvalidArgumentException('Unknown SLA alert handoff.'),
+        });
 
         return collect(is_array($ids) ? $ids : [])
             ->map(fn ($id): int => (int) $id)
@@ -93,6 +101,11 @@ class SlaClock extends Model
             ->unique()
             ->values()
             ->all();
+    }
+
+    public function alertWasHandedOff(string $stage, string $channel, int $userId): bool
+    {
+        return in_array($userId, $this->alertedUserIds($stage, $channel), true);
     }
 
     public function alertStageIsCurrent(string $stage): bool

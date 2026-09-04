@@ -21,6 +21,10 @@ use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
 
+beforeEach(function (): void {
+    $this->freezeTime();
+});
+
 function slaWorld(array $availability = []): array
 {
     $account = Account::factory()->create();
@@ -238,6 +242,83 @@ test('the evaluator retries an alert after its queue handoff fails', function ()
 
     expect($clock->fresh()->warning_alerted_at)->not->toBeNull()
         ->and($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $world['agent']->id]);
+});
+
+test('the evaluator retries only the alert channel whose handoff failed', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(8)->minutes();
+    Notification::shouldReceive('send')->once()->ordered()->andReturnNull();
+    Notification::shouldReceive('send')->once()->ordered()->andThrow(new RuntimeException('Mail queue unavailable.'));
+
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(1);
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->alertedUserIds('warning', 'database'))->toBe([(int) $world['agent']->id])
+        ->and($clock->alertedUserIds('warning', 'mail'))->toBe([])
+        ->and($clock->warning_alerted_at)->toBeNull();
+
+    Notification::fake();
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
+    Notification::assertSentTo(
+        $world['agent'],
+        SlaDeadlineAlert::class,
+        fn (SlaDeadlineAlert $notification): bool => $notification->via($world['agent']) === ['mail'],
+    );
+
+    $clock->refresh();
+    expect($clock->alertedUserIds('warning', 'database'))->toBe([(int) $world['agent']->id])
+        ->and($clock->alertedUserIds('warning', 'mail'))->toBe([(int) $world['agent']->id])
+        ->and($clock->warning_alerted_at)->not->toBeNull();
+});
+
+test('the evaluator leaves a handoff pending when delivery-time routing changes', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ASSIGNED,
+            'email' => false,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+    $replacement = User::factory()->for($world['account'])->create();
+    $world['site']->supportAgents()->attach($replacement);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create([
+        'assigned_agent_id' => $world['agent']->id,
+    ]);
+
+    $this->travel(8)->minutes();
+    Notification::shouldReceive('send')
+        ->once()
+        ->andReturnUsing(function () use ($conversation, $replacement): void {
+            $conversation->forceFill(['assigned_agent_id' => $replacement->id])->saveQuietly();
+        });
+
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->alertedUserIds('warning'))->toBe([])
+        ->and($clock->warning_alerted_at)->toBeNull();
+
+    Notification::fake();
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
+    Notification::assertNotSentTo($world['agent'], SlaDeadlineAlert::class);
+    Notification::assertSentTo($replacement, SlaDeadlineAlert::class);
+
+    expect($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $replacement->id])
+        ->and($clock->fresh()->warning_alerted_at)->not->toBeNull();
 });
 
 test('a quiet assigned agent does not turn one SLA alert into a team-wide fallback', function (): void {
@@ -566,7 +647,7 @@ test('an alert stage remains pending until its queue handoff completes', functio
     expect($first['stage'])->toBe('warning')
         ->and($retry['stage'])->toBe('warning');
 
-    $manager->recordAlertHandoff((int) $clock->id, 'warning', (int) $world['agent']->id);
+    $manager->recordAlertHandoff((int) $clock->id, 'warning', 'database', (int) $world['agent']->id);
     $manager->completeAlertHandoff((int) $clock->id, 'warning', now());
 
     expect($manager->evaluate((int) $clock->id, now())['stage'])->toBeNull()

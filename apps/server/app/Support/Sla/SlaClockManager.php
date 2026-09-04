@@ -227,12 +227,12 @@ final class SlaClockManager
         });
     }
 
-    public function recordAlertHandoff(int $clockId, string $stage, int $userId): void
+    public function recordAlertHandoff(int $clockId, string $stage, string $channel, int $userId): void
     {
-        DB::transaction(function () use ($clockId, $stage, $userId): void {
+        DB::transaction(function () use ($channel, $clockId, $stage, $userId): void {
             $clock = SlaClock::query()->lockForUpdate()->findOrFail($clockId);
-            [, $recipientColumn] = $this->alertColumns($stage);
-            $ids = collect($clock->alertedUserIds($stage))
+            $recipientColumn = $this->alertRecipientColumn($stage, $channel);
+            $ids = collect($clock->alertedUserIds($stage, $channel))
                 ->push($userId)
                 ->unique()
                 ->values()
@@ -246,7 +246,7 @@ final class SlaClockManager
     {
         DB::transaction(function () use ($at, $clockId, $stage): void {
             $clock = SlaClock::query()->lockForUpdate()->findOrFail($clockId);
-            [$completedColumn] = $this->alertColumns($stage);
+            $completedColumn = $this->alertCompletionColumn($stage);
             $clock->forceFill([$completedColumn => CarbonImmutable::instance($at)])->save();
         });
     }
@@ -424,13 +424,23 @@ final class SlaClockManager
         Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
     }
 
-    /** @return array{0: string, 1: string} */
-    private function alertColumns(string $stage): array
+    private function alertCompletionColumn(string $stage): string
     {
         return match ($stage) {
-            'warning' => ['warning_alerted_at', 'warning_alerted_user_ids'],
-            'breach' => ['breach_alerted_at', 'breach_alerted_user_ids'],
+            'warning' => 'warning_alerted_at',
+            'breach' => 'breach_alerted_at',
             default => throw new \InvalidArgumentException('Unknown SLA alert stage.'),
+        };
+    }
+
+    private function alertRecipientColumn(string $stage, string $channel): string
+    {
+        return match ([$stage, $channel]) {
+            ['warning', 'database'] => 'warning_alerted_user_ids',
+            ['warning', 'mail'] => 'warning_mail_alerted_user_ids',
+            ['breach', 'database'] => 'breach_alerted_user_ids',
+            ['breach', 'mail'] => 'breach_mail_alerted_user_ids',
+            default => throw new \InvalidArgumentException('Unknown SLA alert handoff.'),
         };
     }
 }
