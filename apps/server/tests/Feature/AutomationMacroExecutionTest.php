@@ -3,9 +3,11 @@
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Enums\AutomationExecutionStatus;
+use App\Enums\AutomationRuleEvent;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\AutomationMacro;
+use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -181,6 +183,76 @@ test('a conversation macro changes only internal work state and records the agen
         ->assertOk()
         ->assertSee('Manual Conversation macro')
         ->assertSee('Close urgent conversation');
+});
+
+test('ticket state macros trigger matching ticket updated rules once after the sequence', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $agent = User::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create([
+        'priority' => 'normal',
+        'status' => 'open',
+    ]);
+    $rule = AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Hold urgent tickets',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'conditions' => [[
+            'field' => 'priority',
+            'operator' => 'equals',
+            'value' => 'urgent',
+        ]],
+        'actions' => [['type' => 'set_status', 'value' => 'pending']],
+    ]);
+    $macro = AutomationMacro::factory()->for($account)->enabled()->create([
+        'name' => 'Raise urgent ticket',
+        'subject_type' => 'ticket',
+        'actions' => [
+            ['type' => 'set_priority', 'value' => 'urgent'],
+            ['type' => 'set_status', 'value' => 'open'],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.tickets.macros.run', [$ticket, $macro]))
+        ->assertRedirect();
+
+    expect($ticket->fresh())
+        ->priority->toBe('urgent')
+        ->status->toBe('pending')
+        ->and(AutomationRuleExecution::query()->where('automation_macro_id', $macro->id)->count())->toBe(1)
+        ->and(AutomationRuleExecution::query()->where('automation_rule_id', $rule->id)->count())->toBe(1);
+});
+
+test('ticket macros without net rule-visible state changes do not trigger ticket updated rules', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $agent = User::factory()->for($account)->create();
+    $label = TicketLabel::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create(['priority' => 'normal']);
+    $rule = AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Raise every updated ticket',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'conditions' => [],
+        'actions' => [['type' => 'set_priority', 'value' => 'urgent']],
+    ]);
+    $macro = AutomationMacro::factory()->for($account)->enabled()->create([
+        'name' => 'Add billing label',
+        'subject_type' => 'ticket',
+        'actions' => [
+            ['type' => 'add_label', 'value' => $label->id],
+            ['type' => 'set_priority', 'value' => 'urgent'],
+            ['type' => 'set_priority', 'value' => 'normal'],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.tickets.macros.run', [$ticket, $macro]))
+        ->assertRedirect();
+
+    expect($ticket->fresh()->priority)->toBe('normal')
+        ->and($ticket->labels()->whereKey($label->id)->exists())->toBeTrue()
+        ->and(AutomationRuleExecution::query()->where('automation_macro_id', $macro->id)->count())->toBe(1)
+        ->and(AutomationRuleExecution::query()->where('automation_rule_id', $rule->id)->count())->toBe(0);
 });
 
 test('macro buttons and run endpoints cannot launder support permissions', function (): void {

@@ -3,6 +3,7 @@
 namespace App\Support\Automation;
 
 use App\Enums\AutomationExecutionStatus;
+use App\Events\TicketUpdated;
 use App\Models\AuditEvent;
 use App\Models\AutomationMacro;
 use App\Models\AutomationRuleExecution;
@@ -53,8 +54,8 @@ final readonly class AutomationMacroRunner
 
                 abort_unless($this->authorization->allows($agent, $macro, $subject), 404);
 
-                $previousTicketAssigneeId = $subject instanceof Ticket && $subject->assignee_id !== null
-                    ? (int) $subject->assignee_id
+                $previousTicketRuleState = $subject instanceof Ticket
+                    ? $this->ticketRuleState($subject)
                     : null;
                 $results = $this->executor->execute(
                     AutomationActionContext::forMacro($macro, $agent),
@@ -92,7 +93,14 @@ final readonly class AutomationMacroRunner
                 ]);
 
                 if ($subject instanceof Ticket) {
-                    $this->executor->notifyFinalTicketAssignmentAfterCommit($subject, $previousTicketAssigneeId);
+                    $this->executor->notifyFinalTicketAssignmentAfterCommit(
+                        $subject,
+                        $previousTicketRuleState['assignee_id'],
+                    );
+
+                    if ($this->ticketRuleState($subject) !== $previousTicketRuleState) {
+                        event(new TicketUpdated($subject));
+                    }
                 }
 
                 return $execution;
@@ -230,5 +238,15 @@ final readonly class AutomationMacroRunner
         $subject->loadMissing('site');
 
         return (int) $subject->site?->account_id;
+    }
+
+    /** @return array{assignee_id: int|null, priority: string, status: string} */
+    private function ticketRuleState(Ticket $ticket): array
+    {
+        return [
+            'assignee_id' => $ticket->assignee_id === null ? null : (int) $ticket->assignee_id,
+            'priority' => (string) $ticket->priority,
+            'status' => (string) $ticket->status,
+        ];
     }
 }
