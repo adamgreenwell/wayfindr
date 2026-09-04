@@ -59,11 +59,12 @@ class AgentConversationAttachmentController extends Controller
         ]);
 
         try {
-            $attachment = DB::transaction(function () use ($agent, $conversation, $request, $uploads): ConversationMessageAttachment {
-                [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'reply');
-
-                return $uploads->store($conversation, $request->file('file'), $agent);
-            });
+            $attachment = $uploads->store(
+                $conversation,
+                $request->file('file'),
+                $agent,
+                fn (User $agent, Conversation $conversation): array => $this->conversationWriteAuthorization->lock($agent, $conversation, 'reply'),
+            );
         } catch (AttachmentRejected $rejected) {
             // No locale: `SetDashboardLocale` has already put the agent's
             // language in place for this route.
