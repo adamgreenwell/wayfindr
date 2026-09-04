@@ -7,6 +7,7 @@ use App\Enums\ConversationStatus;
 use App\Enums\TicketPriority;
 use App\Enums\TicketStatus;
 use App\Events\ConversationMessageCreated;
+use App\Events\TicketUpdated;
 use App\Jobs\DeliverTicketExternalComment;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
@@ -20,6 +21,7 @@ use App\Models\TicketExternalLink;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
@@ -515,6 +517,7 @@ class AgentTicketController extends Controller
                 $this->recordActivity($ticket, $agent, 'ticket.updated', [
                     'changes' => $changes,
                 ]);
+                event(new TicketUpdated($ticket));
             }
 
             return [$agent, $ticket];
@@ -686,6 +689,7 @@ class AgentTicketController extends Controller
             if ($oldAssigneeId !== $newAssigneeId) {
                 $ticket->forceFill(['assignee_id' => $newAssigneeId])->save();
                 $this->assignmentAuditTrail->ticket($ticket, $agent, $oldAssignee, $newAssignee, 'manual');
+                event(new TicketUpdated($ticket));
             }
 
             return [$agent, $ticket, $newAssignee, $oldAssigneeId];
@@ -695,6 +699,7 @@ class AgentTicketController extends Controller
             $newAssignee
             && $newAssignee->isNot($agent)
             && $newAssignee->id !== $oldAssigneeId
+            && (int) $ticket->assignee_id === (int) $newAssignee->id
             && $newAssignee->shouldReceiveTicketAssignmentAlert($ticket)
         ) {
             $newAssignee->notify(new TicketAssigned($ticket, $agent));
@@ -738,6 +743,7 @@ class AgentTicketController extends Controller
             $oldAssigneeId = $ticket->assignee_id;
             $oldAssigneeName = $ticket->assignee?->name;
             $ticket->forceFill(['assignee_id' => $targetAgent->id])->save();
+            $assigneeChanged = $ticket->wasChanged('assignee_id');
 
             $metadata = [
                 'old_assignee_id' => $oldAssigneeId,
@@ -755,10 +761,15 @@ class AgentTicketController extends Controller
 
             $this->recordActivity($ticket, $agent, 'ticket.escalated', $metadata);
 
+            if ($assigneeChanged) {
+                event(new TicketUpdated($ticket));
+            }
+
             return [$agent, $ticket, $targetAgent];
         });
 
-        if ($targetAgent->shouldReceiveTicketAssignmentAlert($ticket)) {
+        if ((int) $ticket->assignee_id === (int) $targetAgent->id
+            && $targetAgent->shouldReceiveTicketAssignmentAlert($ticket)) {
             $targetAgent->notify(new TicketAssigned($ticket, $agent));
         }
 
@@ -1123,7 +1134,7 @@ class AgentTicketController extends Controller
     private function markTicketAssignmentNotificationsRead(User $agent, Ticket $ticket): void
     {
         $agent->unreadNotifications()
-            ->whereIn('type', [TicketAssigned::class, SlaDeadlineAlert::class])
+            ->whereIn('type', [TicketAssigned::class, SlaDeadlineAlert::class, AutomationRuleMatched::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'ticket_id') === $ticket->id)
             ->each
@@ -1133,7 +1144,7 @@ class AgentTicketController extends Controller
     private function markConversationNotificationsRead(User $agent, Conversation $conversation): void
     {
         $agent->unreadNotifications()
-            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class])
+            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class, AutomationRuleMatched::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversation->id)
             ->each
@@ -2120,6 +2131,7 @@ class AgentTicketController extends Controller
             $target = $locked;
 
             $target->forceFill($attributes($previousStatus, $target))->save();
+            $statusChanged = $target->wasChanged(['status', 'closed_at']);
 
             // Keep the caller's instance honest about what is now stored.
             $ticket->setRawAttributes($target->getAttributes(), true);
@@ -2129,6 +2141,11 @@ class AgentTicketController extends Controller
             // its event first -- a reopen before the close that preceded it,
             // for a ticket that ended up open.
             $record($previousStatus, $target, $agent);
+
+            if ($statusChanged) {
+                event(new TicketUpdated($target));
+                $ticket->setRawAttributes($target->getAttributes(), true);
+            }
         });
     }
 

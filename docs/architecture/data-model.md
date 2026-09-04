@@ -27,6 +27,11 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `sla_clocks`: persisted business-time consumption and warning, breach,
   satisfaction, or cancellation history for a conversation or ticket target.
 - `ticket_labels`: account-owned labels assignable to tickets.
+- `automation_rules`: disabled-by-default, account-owned event, condition, and
+  action definitions evaluated in a stable order.
+- `automation_rule_executions`: append-style success and failure records with
+  the rule definition snapshot and per-action outcomes. The rule reference may
+  be cleared later without erasing the historical explanation.
 - `reply_templates`: account-owned snippets that help agents answer common
   support questions without changing the ticket model.
 - `ticket_external_links`: provider-neutral records that connect a local
@@ -60,6 +65,7 @@ operator-facing data inventory and retention posture.
 
 - Support lifecycle fields stay portable strings in the database, while PHP-backed enums validate every `Conversation` and `Ticket` status or priority model write. Automation rules can therefore persist stable scalar values without accepting typo-only states.
 - Automation rules belong to one account, default to disabled, select a typed event, and keep ordered condition and action lists as JSON. Equal positions are evaluated by row ID so order remains deterministic while an operator is reordering rules. Conditions use a typed field/operator/value vocabulary and actions are limited to assignment, labels, priority, status, agent notification, and private ticket notes; no action in this contract can send a visitor message.
+- Creation and update rules enter through explicit domain events after intake has established its final initial state and after the causal audit event is stored. Eloquent observers still maintain infrastructure such as SLA clocks, routing, and webhook outboxes, but they do not run business automation against half-finished workflows.
 - Visitor identity supports both `anonymous_id` and optional host-provided `external_id`. Public widget requests bootstrap a signed visitor token before they can create conversations or read/write visitor messages.
 - Cobrowsing state is separate from conversations because consent, start, end timing, connection telemetry, visitor page state, sanitized page snapshots, and mutation diagnostics need their own lifecycle.
 - Attachments are separate from messages because upload, scan, bind, storage,

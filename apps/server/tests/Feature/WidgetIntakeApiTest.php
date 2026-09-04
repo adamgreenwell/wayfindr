@@ -1,8 +1,11 @@
 <?php
 
+use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationReadReceiptUpdated;
 use App\Events\ConversationTypingUpdated;
+use App\Models\AutomationRule;
+use App\Models\AutomationRuleExecution;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -216,6 +219,11 @@ test('conversation creation uses the site scoped visitor', function (): void {
 
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'shared-anon']);
     Visitor::factory()->for($otherSite)->create(['anonymous_id' => 'shared-anon']);
+    $rule = AutomationRule::factory()->for($site->account()->firstOrFail())->enabled()->create([
+        'name' => 'Prioritize widget intake',
+        'event' => AutomationRuleEvent::ConversationCreated,
+        'actions' => [['type' => 'set_priority', 'value' => 'high']],
+    ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'shared-anon');
 
     $response = $this->postJson('/api/conversations', [
@@ -241,7 +249,10 @@ test('conversation creation uses the site scoped visitor', function (): void {
         'visitor_id' => $visitor->id,
         'subject' => 'Need help installing',
         'status' => 'open',
+        'priority' => 'high',
     ]);
+
+    expect(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
 });
 
 test('conversation creation can refresh safe host context for the visitor', function (): void {

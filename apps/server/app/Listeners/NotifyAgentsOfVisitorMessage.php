@@ -2,18 +2,24 @@
 
 namespace App\Listeners;
 
+use App\Enums\AutomationRuleEvent;
+use App\Enums\ConversationStatus;
 use App\Events\ConversationMessageCreated;
 use App\Models\Conversation;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\Automation\AutomationRuleEngine;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Notifications\DatabaseNotification;
 
 class NotifyAgentsOfVisitorMessage
 {
-    public function __construct(private readonly UnattendedConversationAlertCollector $unattendedAlerts) {}
+    public function __construct(
+        private readonly UnattendedConversationAlertCollector $unattendedAlerts,
+        private readonly AutomationRuleEngine $automationRules,
+    ) {}
 
     /**
      * Handle the event.
@@ -29,6 +35,24 @@ class NotifyAgentsOfVisitorMessage
         $message->loadMissing(['conversation.site.account']);
 
         $conversation = $message->conversation;
+
+        if (! $conversation) {
+            return;
+        }
+
+        // ConversationMessageCreated is dispatched after widget and inbound
+        // mail transactions finish reopening the conversation and updating
+        // last_message_at. Run rules here, before choosing recipients, so both
+        // automation and the ordinary reply alert see that final state.
+        $this->automationRules->handle(
+            AutomationRuleEvent::VisitorMessageCreated,
+            $conversation,
+            $message,
+        );
+
+        if ($conversation->status !== ConversationStatus::Open->value) {
+            return;
+        }
 
         if ($conversation->assigned_agent_id) {
             $assignedAgent = $conversation->site->account->agents()

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Widget;
 
+use App\Events\ConversationCreated;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -194,6 +195,8 @@ class ConversationController extends Controller
                 ], fn ($value): bool => $value !== null),
             ]);
         });
+
+        event(new ConversationCreated($conversation));
 
         return response()->json([
             'data' => [

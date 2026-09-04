@@ -1,9 +1,12 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationMessageCreated;
 use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
+use App\Models\AutomationRule;
+use App\Models\AutomationRuleExecution;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationReplyDelivery;
@@ -54,13 +57,21 @@ function mailPayload(array $overrides = []): array
 
 test('an email becomes a conversation for a visitor nobody had met', function (): void {
     $site = mailSite();
+    $rule = AutomationRule::factory()->for($site->account()->firstOrFail())->enabled()->create([
+        'name' => 'Close new email intake',
+        'event' => AutomationRuleEvent::ConversationCreated,
+        'conditions' => [
+            ['field' => 'subject', 'operator' => 'contains', 'value' => 'not arrived'],
+        ],
+        'actions' => [['type' => 'set_status', 'value' => 'closed']],
+    ]);
 
     $stored = deliver(mailPayload());
 
     expect($stored)->not->toBeNull();
 
     $visitor = Visitor::query()->firstOrFail();
-    $conversation = $stored->conversation;
+    $conversation = $stored->conversation->fresh();
 
     expect($visitor->email)->toBe('ada@example.test')
         ->and($visitor->name)->toBe('Ada Lovelace')
@@ -68,8 +79,11 @@ test('an email becomes a conversation for a visitor nobody had met', function ()
         ->and($visitor->anonymous_id)->toBeNull()
         ->and($conversation->site_id)->toBe($site->id)
         ->and($conversation->subject)->toBe('My order has not arrived')
+        ->and($conversation->status)->toBe('closed')
+        ->and($conversation->last_message_at?->equalTo($stored->created_at))->toBeTrue()
         ->and($stored->body)->toBe('It was due on Tuesday.')
-        ->and($stored->email_message_id)->toBe('<first@example.test>');
+        ->and($stored->email_message_id)->toBe('<first@example.test>')
+        ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
 });
 
 test('a reply lands on the conversation it is replying to, not a new one', function (): void {

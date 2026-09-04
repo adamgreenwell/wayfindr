@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Enums\ConversationStatus;
+use App\Events\ConversationCreated;
 use App\Events\ConversationMessageCreated;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
@@ -100,6 +101,7 @@ class ConversationController extends Controller
                     'metadata' => ['source' => 'api'],
                     'occurred_at' => now(),
                 ]);
+                event(new ConversationCreated($conversation));
 
                 return $conversation;
             },

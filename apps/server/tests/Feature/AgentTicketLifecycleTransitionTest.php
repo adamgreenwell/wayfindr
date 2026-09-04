@@ -1,7 +1,10 @@
 <?php
 
+use App\Enums\AutomationRuleEvent;
 use App\Models\Account;
 use App\Models\AuditEvent;
+use App\Models\AutomationRule;
+use App\Models\AutomationRuleExecution;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -38,12 +41,20 @@ test('closing a ticket twice records one close', function (): void {
     // A double-click, a retry, or a stale page. Two rows make one resolution
     // contribute two durations to the report and inflate every close count.
     $w = ticketTransitionWorld();
+    AutomationRule::factory()->for($w['account'])->enabled()->create([
+        'name' => 'Record actual updates',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'A real status update occurred.']],
+    ]);
 
     foreach (range(1, 3) as $ignored) {
         $this->actingAs($w['agent'])->post(route('dashboard.tickets.close', $w['ticket']), []);
+        $this->travel(1)->second();
     }
 
-    expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.closed'))->toHaveCount(1);
+    expect(array_filter(ticketTransitionActions($w['ticket']), fn (string $a): bool => $a === 'ticket.closed'))->toHaveCount(1)
+        ->and($w['ticket']->auditEvents()->where('action', 'ticket.note_added')->count())->toBe(1)
+        ->and(AutomationRuleExecution::query()->count())->toBe(1);
 });
 
 test('a re-submitted close does not move the moment the ticket was closed', function (): void {
@@ -69,6 +80,24 @@ test('reopening a closed ticket is a reopen', function (): void {
 
     expect(ticketTransitionActions($w['ticket']))->toContain('ticket.reopened')
         ->and($w['ticket']->fresh()->status)->toBe('open');
+});
+
+test('ticket update automation runs after the triggering lifecycle event', function (): void {
+    $w = ticketTransitionWorld();
+    $rule = AutomationRule::factory()->for($w['account'])->enabled()->create([
+        'name' => 'Reopen freshly closed tickets',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'conditions' => [
+            ['field' => 'status', 'operator' => 'equals', 'value' => 'closed'],
+        ],
+        'actions' => [['type' => 'set_status', 'value' => 'open']],
+    ]);
+
+    $this->actingAs($w['agent'])->post(route('dashboard.tickets.close', $w['ticket']), []);
+
+    expect($w['ticket']->fresh()->status)->toBe('open')
+        ->and(ticketTransitionActions($w['ticket']))->toBe(['ticket.closed', 'ticket.reopened'])
+        ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
 });
 
 test('taking a pending ticket off hold is not a reopen', function (): void {

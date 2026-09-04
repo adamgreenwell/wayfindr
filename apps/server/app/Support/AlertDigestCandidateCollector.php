@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
@@ -78,6 +79,7 @@ class AlertDigestCandidateCollector
             ConversationNeedsReply::class => $this->conversationCandidate($agent, $notification),
             TicketAssigned::class => $this->ticketCandidate($agent, $notification),
             SlaDeadlineAlert::class => $this->slaCandidate($agent, $notification),
+            AutomationRuleMatched::class => $this->automationCandidate($agent, $notification),
             default => null,
         };
 
@@ -207,6 +209,36 @@ class AlertDigestCandidateCollector
             'site_name' => $clock->site?->name ?? 'Unknown site',
             'status' => $stage === 'breach' ? 'SLA breached' : 'SLA approaching breach',
             'subject' => $clock->subject->subject ?? ($isTicket ? 'Untitled ticket' : 'Untitled conversation'),
+            'url' => (string) data_get($notification->data, 'url'),
+        ];
+    }
+
+    /** @return array<string, mixed>|null */
+    private function automationCandidate(User $agent, DatabaseNotification $notification): ?array
+    {
+        $subjectId = (int) data_get($notification->data, 'subject_id');
+        $subject = match (data_get($notification->data, 'subject_kind')) {
+            'ticket' => Ticket::query()->with('site')->find($subjectId),
+            'conversation' => Conversation::query()->with('site')->find($subjectId),
+            default => null,
+        };
+
+        if (! $subject || ! Gate::forUser($agent)->allows('view', $subject)) {
+            return null;
+        }
+
+        $isTicket = $subject instanceof Ticket;
+
+        return [
+            'kind' => 'automation_rule_matched',
+            'last_activity_at' => $this->timestamp($notification->created_at),
+            'last_activity_label' => $this->label($notification->created_at, $agent),
+            'notification_id' => (string) $notification->id,
+            'priority' => $subject->priority,
+            'reference' => $isTicket ? 'Ticket #'.$subject->id : $subject->support_code,
+            'site_name' => $subject->site?->name ?? 'Unknown site',
+            'status' => $subject->status,
+            'subject' => $subject->subject ?? ($isTicket ? 'Untitled ticket' : 'Untitled conversation'),
             'url' => (string) data_get($notification->data, 'url'),
         ];
     }

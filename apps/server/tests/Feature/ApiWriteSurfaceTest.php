@@ -2,6 +2,7 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationMessageCreated;
 use App\Events\ConversationReadReceiptUpdated;
 use App\Jobs\SendConversationReplyDelivery;
@@ -9,6 +10,8 @@ use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\ApiIdempotencyKey;
 use App\Models\ApiToken;
+use App\Models\AutomationRule;
+use App\Models\AutomationRuleExecution;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationReplyDelivery;
@@ -100,6 +103,11 @@ test('write is a separate ability in both directions', function (): void {
 test('a token opens a conversation for a known visitor in its writable scope', function (): void {
     $world = apiWriteWorld();
     $world['visitor']->forceFill(['presence_only' => true])->save();
+    $rule = AutomationRule::factory()->for($world['account'])->enabled()->create([
+        'name' => 'Close API intake',
+        'event' => AutomationRuleEvent::ConversationCreated,
+        'actions' => [['type' => 'set_status', 'value' => 'closed']],
+    ]);
 
     $response = $this->postJson('/api/v1/conversations', [
         'site_id' => $world['site']->id,
@@ -115,11 +123,16 @@ test('a token opens a conversation for a known visitor in its writable scope', f
         ->assertJsonPath('data.status', 'open');
 
     $conversation = Conversation::query()->sole();
+    $createdAudit = $conversation->auditEvents()->where('action', 'conversation.created')->sole();
+    $automationAudit = $conversation->auditEvents()->where('action', 'conversation.closed')->sole();
 
     expect($conversation->metadata)->toBe(['channel' => 'api'])
+        ->and($conversation->status)->toBe('closed')
         ->and($world['visitor']->fresh()->presence_only)->toBeFalse()
-        ->and($conversation->auditEvents()->where('action', 'conversation.created')->sole()->actor_type)->toBe(ApiToken::class)
-        ->and($conversation->auditEvents()->where('action', 'conversation.created')->sole()->actor_id)->toBe($world['token']->id);
+        ->and($createdAudit->actor_type)->toBe(ApiToken::class)
+        ->and($createdAudit->actor_id)->toBe($world['token']->id)
+        ->and($createdAudit->id)->toBeLessThan($automationAudit->id)
+        ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
 });
 
 test('API work creation locks the account before its token and site', function (): void {
@@ -686,6 +699,11 @@ test('one idempotency key cannot be moved to another conversation', function ():
 test('a token creates an idempotent ticket for a visitor in its writable scope', function (): void {
     $world = apiWriteWorld();
     $world['visitor']->forceFill(['presence_only' => true])->save();
+    $rule = AutomationRule::factory()->for($world['account'])->enabled()->create([
+        'name' => 'API ticket intake',
+        'event' => AutomationRuleEvent::TicketCreated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'Created through the public API.']],
+    ]);
     $payload = [
         'site_id' => $world['site']->id,
         'requester_id' => $world['visitor']->id,
@@ -717,11 +735,15 @@ test('a token creates an idempotent ticket for a visitor in its writable scope',
 
     $ticket = Ticket::query()->sole();
     $created = $ticket->auditEvents()->where('action', 'ticket.created')->sole();
+    $automationNote = $ticket->auditEvents()->where('action', 'ticket.note_added')->sole();
+    $execution = AutomationRuleExecution::query()->sole();
 
     expect($ticket->metadata)->toBe(['source' => 'api'])
         ->and($world['visitor']->fresh()->presence_only)->toBeFalse()
         ->and($created->actor_type)->toBe(ApiToken::class)
-        ->and($created->actor_id)->toBe($world['token']->id);
+        ->and($created->actor_id)->toBe($world['token']->id)
+        ->and($created->id)->toBeLessThan($automationNote->id)
+        ->and($execution->automation_rule_id)->toBe($rule->id);
 });
 
 test('ticket creation refuses archived sites and requesters from another site', function (): void {
@@ -752,6 +774,11 @@ test('a token transitions and assigns a ticket without attributing either action
         'status' => 'open',
         'assignee_id' => null,
     ]);
+    $rule = AutomationRule::factory()->for($world['account'])->enabled()->create([
+        'name' => 'API ticket update',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'actions' => [['type' => 'post_internal_note', 'value' => 'API update completed.']],
+    ]);
 
     $this->patchJson('/api/v1/tickets/'.$ticket->id, [
         'status' => 'pending',
@@ -770,7 +797,13 @@ test('a token transitions and assigns a ticket without attributing either action
     expect($events)->toHaveCount(2)
         ->and($events->pluck('actor_type')->unique()->all())->toBe([ApiToken::class])
         ->and($events->pluck('actor_id')->unique()->all())->toBe([$world['token']->id])
-        ->and($events->pluck('metadata')->every(fn (array $metadata): bool => $metadata['source'] === 'api'))->toBeTrue();
+        ->and($events->pluck('metadata')->every(fn (array $metadata): bool => $metadata['source'] === 'api'))->toBeTrue()
+        ->and($fresh->auditEvents()->orderBy('id')->pluck('action')->all())->toBe([
+            'ticket.pending',
+            'ticket.assignee_updated',
+            'ticket.note_added',
+        ])
+        ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
 
     Notification::assertSentTo($assignee, TicketAssigned::class, function (TicketAssigned $notification): bool {
         return str_contains($notification->toArray(new stdClass)['assigned_by_name'], 'Warehouse sync');

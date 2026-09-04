@@ -7,12 +7,14 @@ use App\Enums\ConversationStatus;
 use App\Enums\TicketPriority;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
+use App\Events\TicketCreated;
 use App\Models\ApiToken;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\Attachments\AttachmentBinder;
@@ -788,6 +790,7 @@ class AgentConversationController extends Controller
                 ],
                 'occurred_at' => now(),
             ]);
+            event(new TicketCreated($ticket));
 
             if (! $conversation->assigned_agent_id && Gate::forUser($agent)->allows('claim', $conversation)) {
                 $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
@@ -1142,7 +1145,7 @@ class AgentConversationController extends Controller
     private function markConversationNotificationsRead(User $agent, Conversation $conversation): void
     {
         $agent->unreadNotifications()
-            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class])
+            ->whereIn('type', [ConversationNeedsReply::class, SlaDeadlineAlert::class, AutomationRuleMatched::class])
             ->get()
             ->filter(fn ($notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversation->id)
             ->each

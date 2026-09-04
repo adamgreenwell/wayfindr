@@ -19,6 +19,7 @@ document, not a complete compliance register.
 | Tickets | Subject, status, priority, category, requester, assignee, conversation link, metadata | `tickets` | Tickets are durable support records and may outlive the original chat. |
 | SLA policies and clocks | Priority targets, work-item links, elapsed business time, warning/breach/completion timestamps, alert handoff recipient IDs and timestamps | `sla_policies`, `sla_clocks` | Operational metadata only; clocks inherit the account and site visibility of their conversation or ticket and are not included in alert email with visitor content. Alert handoff fields prevent retrying recipients whose notification was already queued. |
 | Support notifications | Alert kind, work-item references, subject or message preview, read/delivery timestamps | `notifications` | Notification metadata inherits the recipient's account and site access. Some existing conversation alerts include a short visitor-message preview, so operators should handle notification rows as support content. |
+| Automation rules and executions | Event conditions, ordered actions, target agent/label IDs, private note actions, matched work-item references, outcomes, errors, timestamps | `automation_rules`, `automation_rule_executions` | Account-owned operational data. Execution rows snapshot matched rule definitions so deleting a rule does not erase why prior work changed; private-note action text should be handled as support content. Visitor message bodies are evaluated in place and are not copied into execution logs. |
 | External provider connections | Provider name, base URL, encrypted credentials, capability flags | `external_issue_provider_connections` | Credentials are account-owned and should be rotated in the external provider if compromised. |
 | Site external project mappings | Site, provider connection, project or repository key, optional project URL | `site_external_issue_projects` | Mappings decide where a site's tickets may be sent. Operators should avoid mapping private visitor-heavy support to public projects unless they have explicit export controls. |
 | Ticket external links | Provider, project or repository key, external ID/key, URL, sync status, last sync time, metadata | `ticket_external_links` | External links point to third-party systems. Operators should assume linked providers have their own access, retention, and privacy rules. |
@@ -56,7 +57,7 @@ changes `visitors` from *people who opened the chat* to *people on the site*,
 which turns the absence of pruning from a gap into a defect.
 
 **Everything else still persists indefinitely.** Conversations, messages,
-tickets, ratings, SLA history and audit events have no automatic retention, and operators
+tickets, ratings, SLA history, automation execution history, and audit events have no automatic retention, and operators
 should assume database records, logs and backups persist according to their
 infrastructure defaults.
 
