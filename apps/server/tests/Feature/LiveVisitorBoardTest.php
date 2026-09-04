@@ -466,6 +466,30 @@ test('a refreshed row moves to the newest-first position', function (): void {
         ->and($apply)->not->toContain('existing.replaceWith');
 });
 
+test('count-authorized boards refresh private conversation totals after shared updates', function (): void {
+    // Presence is broadcast on one site channel whose ticket-only subscribers
+    // must not receive conversation totals. A conversation-authorized reader
+    // therefore refreshes those private counts from the ordinary gated page,
+    // with burst coalescing so heartbeats do not become one request each.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+    $apply = Str::before(Str::after($source, 'function applyVisitor(visitor) {'), 'function dropDeparted');
+    $schedule = Str::before(
+        Str::after($source, 'function scheduleConversationCountResync() {'),
+        '// Which socket is in service',
+    );
+
+    test()->assertStringContainsString(
+        "!Object.prototype.hasOwnProperty.call(visitor, 'conversations_count')",
+        $apply,
+        'the count-free shared update is not detected',
+    );
+
+    expect($apply)->toContain('scheduleConversationCountResync();')
+        ->and($schedule)->toContain('conversationCountResyncTimer')
+        ->and($schedule)->toContain('CONVERSATION_COUNT_RESYNC_INTERVAL_MS')
+        ->and($schedule)->toContain('resyncBoard();');
+});
+
 test('an archived site does not open a socket it cannot subscribe to', function (): void {
     // SitePresenceChannel queries servable() and refuses every authorization.
     // Handing the page a config anyway meant the socket opened, the auth

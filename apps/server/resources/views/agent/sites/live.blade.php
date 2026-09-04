@@ -417,6 +417,9 @@
                     }
 
                     var existing = rows.querySelector('[data-visitor-id="' + CSS.escape(String(visitor.id)) + '"]');
+                    var needsConversationCountResync = showConversationCounts
+                        && visitor.made_contact
+                        && !Object.prototype.hasOwnProperty.call(visitor, 'conversations_count');
 
                     // An older event about somebody already on the board is
                     // dropped.
@@ -439,8 +442,10 @@
                     // The shared socket payload cannot contain a conversation
                     // count because ticket-only subscribers use the same
                     // channel. Preserve an authorized reader's private
-                    // snapshot value while replacing an existing row; a new
-                    // arrival receives its count at the next page resync.
+                    // snapshot value while replacing an existing row. The
+                    // coalesced resync below refreshes that value and supplies
+                    // one for a new contacted visitor without putting private
+                    // support totals onto the shared socket channel.
                     if (showConversationCounts
                         && existing
                         && !Object.prototype.hasOwnProperty.call(visitor, 'conversations_count')) {
@@ -509,6 +514,10 @@
                     }
 
                     refreshCount();
+
+                    if (needsConversationCountResync) {
+                        scheduleConversationCountResync();
+                    }
                 }
 
                 // This site has stopped collecting, and nothing about a visitor
@@ -644,6 +653,15 @@
                  * the same template.
                  */
                 function resyncBoard() {
+                    if (showConversationCounts) {
+                        lastConversationCountResyncAt = Date.now();
+
+                        if (conversationCountResyncTimer) {
+                            window.clearTimeout(conversationCountResyncTimer);
+                            conversationCountResyncTimer = null;
+                        }
+                    }
+
                     // Events that land while the snapshot is being fetched are
                     // NEWER than it. Replacing the rows wholesale would then
                     // overwrite them with older state -- and that is the likely
@@ -806,6 +824,29 @@
 
                 // Orders overlapping snapshots, so only the newest is applied.
                 var resyncSequence = 0;
+
+                // The shared presence event deliberately carries no private
+                // conversation totals. Count-authorized boards re-read their
+                // permission-scoped snapshot after such an event, coalescing a
+                // burst of heartbeats so a busy site cannot create one page
+                // request per visitor update.
+                var conversationCountResyncTimer = null;
+                var lastConversationCountResyncAt = 0;
+                var CONVERSATION_COUNT_RESYNC_INTERVAL_MS = 10000;
+
+                function scheduleConversationCountResync() {
+                    if (!showConversationCounts || conversationCountResyncTimer) {
+                        return;
+                    }
+
+                    var elapsed = Date.now() - lastConversationCountResyncAt;
+                    var wait = Math.max(0, CONVERSATION_COUNT_RESYNC_INTERVAL_MS - elapsed);
+
+                    conversationCountResyncTimer = window.setTimeout(function () {
+                        conversationCountResyncTimer = null;
+                        resyncBoard();
+                    }, wait);
+                }
 
                 // Which socket is in service. A callback from an older one is
                 // answering about a connection nobody is using.
