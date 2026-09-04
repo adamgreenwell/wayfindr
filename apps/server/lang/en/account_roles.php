@@ -32,6 +32,7 @@ return [
     ],
     'errors' => [
         'assigned' => 'Move every person off this role before deleting it.',
+        'oidc_mapped' => 'Remove this role from the single sign-on claim mappings before deleting it.',
         'duplicate' => 'A role with this name already exists.',
         'reserved' => 'Owner, Admin, and Agent are reserved built-in role names.',
         'requires' => ':permission requires :required.',

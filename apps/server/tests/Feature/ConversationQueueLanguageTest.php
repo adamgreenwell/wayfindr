@@ -3038,6 +3038,7 @@ test('every catalogue file answers the same set of keys', function (): void {
         'operator_break_glass.conversation.senders.system = System',
         'operator_break_glass.ticket.record.status = Status',
         'operator_break_glass.values.not_set = —',
+        'oidc.provisioning.roles.agent = Agent',
         // An em dash. Punctuation rather than a word, and in the catalogue so a
         // language that prefers a different dash can say so.
         'sites_live.duration.unknown = —',
