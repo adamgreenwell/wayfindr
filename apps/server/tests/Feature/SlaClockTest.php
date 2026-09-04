@@ -156,6 +156,24 @@ test('closing without a reply cancels its response clock and reopening starts a 
         ->and($conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->whereNull('satisfied_at')->whereNull('cancelled_at')->count())->toBe(1);
 });
 
+test('closing an unreplied conversation keeps a crossed response target visible as missed', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 5, resolution: 60);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(6)->minutes();
+    $conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
+
+    $response = app(SlaStatePresenter::class)
+        ->all($conversation->fresh())
+        ->firstWhere('metric', SlaClock::METRIC_FIRST_RESPONSE);
+
+    expect($response)->not->toBeNull()
+        ->and($response['status'])->toBe('missed')
+        ->and($response['elapsed_seconds'])->toBe(6 * 60);
+});
+
 test('a reopen starts a new resolution episode without rewriting the old one', function (): void {
     $world = slaWorld();
     configureNormalSla($world['account']);
@@ -604,6 +622,38 @@ test('changing conversation priority applies the matching active targets', funct
         ->toBe(15 * 60)
         ->and($conversation->slaClocks()->whereNull('cancelled_at')->where('metric', SlaClock::METRIC_RESOLUTION)->sole()->target_seconds)
         ->toBe(120 * 60);
+});
+
+test('priority reconciliation locks the account before reading its replacement policy', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clause used by this concurrency contract.');
+    }
+
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account']);
+    SlaPolicy::factory()->for($world['account'])->create([
+        'priority' => 'urgent',
+        'first_response_minutes' => 15,
+        'resolution_minutes' => 120,
+        'effective_at' => now(),
+    ]);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $conversation->forceFill(['priority' => 'urgent'])->save();
+
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+    $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+        && str_contains($query, 'for update'));
+    $policyRead = $queries->search(fn (string $query): bool => str_contains($query, 'from "sla_policies"'));
+
+    expect($accountLock)->toBeInt()
+        ->and($policyRead)->toBeInt()
+        ->and($accountLock)->toBeLessThan($policyRead);
 });
 
 test('changing priority preserves a breach crossed under the old target', function (): void {

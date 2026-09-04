@@ -19,7 +19,11 @@ final class SlaStatePresenter
         $at = CarbonImmutable::instance($at ?? now());
         $subject->loadMissing(['site', 'slaClocks']);
 
-        $clocks = $subject->slaClocks->whereNull('cancelled_at');
+        // An unbreached cancellation is an abandoned clock episode. A clock
+        // cancelled only after crossing its target is durable miss history and
+        // remains useful on the work detail alongside the SLA report.
+        $clocks = $subject->slaClocks->filter(fn (SlaClock $clock): bool => $clock->cancelled_at === null
+            || $clock->breached_at !== null);
 
         if ($subject->getAttribute('status') !== 'closed') {
             $clocks = $clocks->reject(fn (SlaClock $clock): bool => $clock->metric === SlaClock::METRIC_RESOLUTION

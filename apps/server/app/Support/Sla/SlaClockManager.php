@@ -77,7 +77,10 @@ final class SlaClockManager
         $conversation->loadMissing('site.account');
 
         if ($conversation->wasChanged('priority')) {
-            $this->reconcileSubject($conversation, now());
+            DB::transaction(function () use ($conversation): void {
+                $this->lockAccountPolicy((int) $conversation->site->account_id);
+                $this->reconcileSubject($conversation, now());
+            });
         }
 
         if (! $conversation->wasChanged('status')) {
@@ -99,7 +102,10 @@ final class SlaClockManager
         $ticket->loadMissing('site.account');
 
         if ($ticket->wasChanged('priority')) {
-            $this->reconcileSubject($ticket, now());
+            DB::transaction(function () use ($ticket): void {
+                $this->lockAccountPolicy((int) $ticket->account_id);
+                $this->reconcileSubject($ticket, now());
+            });
         }
 
         if (! $ticket->wasChanged('status')) {
