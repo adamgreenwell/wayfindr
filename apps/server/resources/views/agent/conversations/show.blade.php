@@ -159,6 +159,27 @@
                     </div>
                 @endif
             </section>
+
+            @if ($automationMacros->isNotEmpty())
+                <section class="section" aria-labelledby="conversation-macros-heading">
+                    <div class="section-header">
+                        <h2 id="conversation-macros-heading">{{ __('automation_macros.apply.heading') }}</h2>
+                        <span class="lede">{{ __('automation_macros.apply.lede') }}</span>
+                    </div>
+                    <div class="section-form-row">
+                        @foreach ($automationMacros as $macro)
+                            <form class="section-form" method="POST" action="{{ route('dashboard.conversations.macros.run', [$conversation->support_code, $macro]) }}">
+                                @csrf
+                                @include('agent.conversations.partials.return-query-fields')
+                                <button class="button secondary" type="submit">
+                                    {{ __('automation_macros.apply.run') }} <span lang="">{{ $macro->name }}</span>
+                                </button>
+                                <span class="field-help">{{ trans_choice('automation_macros.apply.action_count', count($macro->actions), ['count' => \App\Support\ReaderNumber::count(count($macro->actions))]) }}</span>
+                            </form>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
                 </x-tab-panel>
 
                 {{-- The cobrowse vocabulary is extracted, so this panel no longer declares

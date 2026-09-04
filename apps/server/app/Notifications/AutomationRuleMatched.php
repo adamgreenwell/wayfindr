@@ -19,6 +19,7 @@ class AutomationRuleMatched extends Notification implements ShouldQueue
     public function __construct(
         private readonly Ticket|Conversation $subject,
         private readonly string $ruleName,
+        private readonly string $automationKind = 'rule',
     ) {
         $this->subject->loadMissing('site');
         $this->afterCommit();
@@ -67,6 +68,14 @@ class AutomationRuleMatched extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
+        if ($this->automationKind === 'macro') {
+            return (new MailMessage)
+                ->subject('Wayfindr macro applied: '.$this->ruleName)
+                ->line('Macro “'.$this->ruleName.'” was applied to '.$this->subjectLabel().'.')
+                ->line('Site: '.$this->subject->site->name)
+                ->action('Open support work', url($this->subjectUrl()));
+        }
+
         return (new MailMessage)
             ->subject('Wayfindr automation matched: '.$this->ruleName)
             ->line('Automation “'.$this->ruleName.'” matched '.$this->subjectLabel().'.')
@@ -81,6 +90,7 @@ class AutomationRuleMatched extends Notification implements ShouldQueue
 
         return [
             'kind' => 'automation_rule_matched',
+            'automation_kind' => $this->automationKind,
             'rule_name' => $this->ruleName,
             'subject_kind' => $isTicket ? 'ticket' : 'conversation',
             'subject_id' => $this->subject->id,

@@ -48,7 +48,7 @@ test('automation managers can create edit and delete ordered draft rules', funct
     $this->actingAs($admin)
         ->get(route('dashboard.account.automation-rules.index'))
         ->assertOk()
-        ->assertSee('Automation rules')
+        ->assertSee('Automations')
         ->assertSee('No automation rules yet.')
         ->assertSee('Create the first rule');
 
@@ -157,7 +157,7 @@ test('automation management has a dedicated delegable account boundary', functio
     $this->actingAs($automationManager)
         ->get(route('dashboard.account.show'))
         ->assertOk()
-        ->assertSee('Automation rules');
+        ->assertSee('Automations');
 
     $this->actingAs($automationManager)
         ->get(route('dashboard.account.automation-rules.edit', $otherRule))

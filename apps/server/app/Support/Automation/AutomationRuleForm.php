@@ -67,10 +67,7 @@ final class AutomationRuleForm
             ->values()
             ->map(fn (array $condition, int $index): array => $this->condition($condition, $event, $index))
             ->all();
-        $actions = collect($validated['actions'])
-            ->values()
-            ->map(fn (array $action, int $index): array => $this->action($action, $event, $index))
-            ->all();
+        $actions = $this->normalizeActions($validated['actions']);
 
         try {
             AutomationRuleDefinition::assertValid($event, $conditions, $actions);
@@ -139,6 +136,22 @@ final class AutomationRuleForm
         }, $actions);
     }
 
+    /**
+     * Normalise the shared action-builder rows into the persisted action
+     * vocabulary. Macros call this too, so a saved action means exactly the
+     * same thing whether an event or an agent starts the sequence.
+     *
+     * @param  list<array<string, mixed>>  $actions
+     * @return list<array{type: string, value: mixed}>
+     */
+    public function normalizeActions(array $actions): array
+    {
+        return collect($actions)
+            ->values()
+            ->map(fn (array $action, int $index): array => $this->action($action, $index))
+            ->all();
+    }
+
     /** @return array{field: string, operator: string, text_value: string, select_value: string} */
     public function blankCondition(): array
     {
@@ -186,7 +199,7 @@ final class AutomationRuleForm
     }
 
     /** @param array<string, mixed> $action */
-    private function action(array $action, AutomationRuleEvent $event, int $index): array
+    private function action(array $action, int $index): array
     {
         $type = AutomationRuleActionType::from($action['type']);
         $path = "actions.{$index}";
@@ -274,6 +287,20 @@ final class AutomationRuleForm
             }
         }
 
+        $this->assertActionReferences($account, $event, $actions, $isEnabled, $conditions);
+    }
+
+    /**
+     * @param  list<array{type: string, value: mixed}>  $actions
+     * @param  list<array{field: string, operator: string, value: mixed}>  $conditions
+     */
+    public function assertActionReferences(
+        Account $account,
+        AutomationRuleEvent $event,
+        array $actions,
+        bool $isEnabled,
+        array $conditions = [],
+    ): void {
         foreach ($actions as $index => $action) {
             $type = AutomationRuleActionType::from($action['type']);
             $id = $action['value'];

@@ -19,6 +19,7 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
+use App\Support\Automation\AutomationMacroAuthorization;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
@@ -57,7 +58,7 @@ class AgentConversationController extends Controller
         private readonly AssignmentAuditTrail $assignmentAuditTrail,
     ) {}
 
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization): View
     {
         $agent = $request->user();
 
@@ -93,9 +94,17 @@ class AgentConversationController extends Controller
                 ->latest()
                 ->get()
             : collect();
+        $account = $agent->account()->firstOrFail();
+        $automationMacros = $account->automationMacros()
+            ->enabled()
+            ->forSubjectType('conversation')
+            ->inDisplayOrder()
+            ->get()
+            ->filter(fn ($macro): bool => $macroAuthorization->allows($agent, $macro, $conversation))
+            ->values();
 
         return view('agent.conversations.show', [
-            'account' => $agent->account()->firstOrFail(),
+            'account' => $account,
             // Every word the page's realtime handlers can render, in THIS
             // agent's language. A broadcast payload carries state, never prose:
             // it reaches every agent watching the conversation and they do not
@@ -212,6 +221,7 @@ class AgentConversationController extends Controller
             ],
             'accountAgents' => $canManageTickets ? $this->supportAgentsForSite($conversation->site) : collect(),
             'agent' => $agent,
+            'automationMacros' => $automationMacros,
             'canClaimConversation' => Gate::forUser($agent)->allows('claim', $conversation),
             'canCreateTicket' => $canManageTickets,
             'canEndCobrowse' => Gate::forUser($agent)->allows('endCobrowse', $conversation),

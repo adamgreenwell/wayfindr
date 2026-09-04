@@ -1,8 +1,8 @@
 <?php
 
 return [
-    'title' => 'Regole di automazione',
-    'subtitle' => 'Esegua una sequenza piccola ed esplicita di azioni di assistenza quando il lavoro dell’account corrisponde.',
+    'title' => 'Automazioni',
+    'subtitle' => 'Esegua sequenze esplicite di azioni tramite eventi corrispondenti o un clic dell’agente.',
     'back' => 'Torna all’account',
     'status' => ['enabled' => 'Attiva', 'draft' => 'Bozza'],
     'flash' => [
@@ -13,7 +13,7 @@ return [
     ],
     'safety' => [
         'heading' => 'Sicurezza dell’automazione', 'lede' => 'Modifiche al lavoro di assistenza per tutto l’account',
-        'drafts' => 'Le nuove regole iniziano come bozze. Salvi e provi una regola sul lavoro recente prima di attivarla.',
+        'drafts' => 'Le nuove regole e macro iniziano come bozze. Provi le regole prima di attivarle; le macro compaiono solo dopo l’attivazione.',
         'order' => 'I numeri di esecuzione più bassi vengono elaborati per primi. Condizioni e azioni procedono dall’alto verso il basso.',
         'visitor' => 'Queste azioni non inviano messaggi visibili ai visitatori. Le note interne restano private per il team di assistenza.',
     ],
@@ -85,8 +85,8 @@ return [
         'would_run' => 'Azioni che verrebbero eseguite', 'no_actions' => 'Nessuna azione verrebbe eseguita perché non tutte le condizioni corrispondono.',
     ],
     'executions' => [
-        'heading' => 'Registro delle esecuzioni', 'lede' => 'Risultati permanenti delle regole corrispondenti, inclusi errori e azioni senza modifiche.',
-        'empty' => 'Nessuna regola di automazione è stata ancora eseguita.', 'when' => 'Completata', 'rule' => 'Snapshot della regola',
+        'heading' => 'Registro delle esecuzioni', 'lede' => 'Risultati permanenti delle regole corrispondenti e delle macro applicate manualmente, inclusi errori e azioni senza modifiche.',
+        'empty' => 'Nessuna automazione è stata ancora eseguita.', 'when' => 'Completata', 'rule' => 'Snapshot dell’automazione',
         'work' => 'Lavoro di assistenza', 'outcome' => 'Esito', 'details' => 'Dettagli', 'open_details' => 'Apri dettagli dell’esecuzione',
         'conditions' => 'Condizioni corrispondenti', 'actions' => 'Azioni pianificate', 'results' => 'Risultati delle azioni', 'error' => 'Dettaglio dell’errore',
     ],

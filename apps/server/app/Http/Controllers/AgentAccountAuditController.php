@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
+use App\Models\AutomationMacro;
 use App\Models\AutomationRule;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
@@ -427,6 +428,10 @@ class AgentAccountAuditController extends Controller
             'automation_rule.created' => 'Automation rule created',
             'automation_rule.updated' => 'Automation rule updated',
             'automation_rule.deleted' => 'Automation rule deleted',
+            'automation_macro.created' => 'Automation macro created',
+            'automation_macro.updated' => 'Automation macro updated',
+            'automation_macro.deleted' => 'Automation macro deleted',
+            'automation_macro.applied' => 'Automation macro applied',
             'agent.oidc_identity_linked' => 'Single sign-on identity linked',
             'agent.oidc_provisioned' => 'Agent provisioned through single sign-on',
             'agent.oidc_role_mapped' => 'Agent role mapped through single sign-on',
@@ -506,6 +511,15 @@ class AgentAccountAuditController extends Controller
             return [
                 'prefix' => __('account_audit.references.automation_rule'),
                 'value' => $event->subject instanceof AutomationRule
+                    ? $event->subject->name
+                    : data_get($event->metadata, 'name'),
+            ];
+        }
+
+        if ($event->subject instanceof AutomationMacro || str_starts_with($event->action, 'automation_macro.')) {
+            return [
+                'prefix' => __('account_audit.references.automation_macro'),
+                'value' => $event->subject instanceof AutomationMacro
                     ? $event->subject->name
                     : data_get($event->metadata, 'name'),
             ];

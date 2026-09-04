@@ -1,8 +1,8 @@
 <?php
 
 return [
-    'title' => 'Automation rules',
-    'subtitle' => 'Apply a small, explicit sequence of support actions when account work matches.',
+    'title' => 'Automations',
+    'subtitle' => 'Run explicit support-action sequences from matching events or an agent click.',
     'back' => 'Back to account',
     'status' => ['enabled' => 'Enabled', 'draft' => 'Draft'],
     'flash' => [
@@ -14,7 +14,7 @@ return [
     'safety' => [
         'heading' => 'Automation safety',
         'lede' => 'Account-wide support changes',
-        'drafts' => 'New rules start as drafts. Save and preview a rule against recent work before enabling it.',
+        'drafts' => 'New rules and macros start as drafts. Preview rules before enabling them; macros appear only after they are enabled.',
         'order' => 'Lower run-order numbers execute first. Conditions and actions run from top to bottom.',
         'visitor' => 'This action set never sends a visitor-facing message. Internal notes stay private to the support team.',
     ],
@@ -144,10 +144,10 @@ return [
     ],
     'executions' => [
         'heading' => 'Execution log',
-        'lede' => 'Durable results from matched rules, including failures and no-op actions.',
-        'empty' => 'No automation rules have executed yet.',
+        'lede' => 'Durable results from matched rules and manually applied macros, including failures and no-op actions.',
+        'empty' => 'No automations have executed yet.',
         'when' => 'Completed',
-        'rule' => 'Rule snapshot',
+        'rule' => 'Automation snapshot',
         'work' => 'Support work',
         'outcome' => 'Outcome',
         'details' => 'Details',

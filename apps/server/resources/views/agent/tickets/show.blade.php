@@ -316,6 +316,27 @@
                 @endif
             </section>
 
+            @if ($automationMacros->isNotEmpty())
+                <section class="section" aria-labelledby="ticket-macros-heading">
+                    <div class="section-header">
+                        <h2 id="ticket-macros-heading">{{ __('automation_macros.apply.heading') }}</h2>
+                        <span class="lede">{{ __('automation_macros.apply.lede') }}</span>
+                    </div>
+                    <div class="section-form-row">
+                        @foreach ($automationMacros as $macro)
+                            <form class="section-form" method="POST" action="{{ route('dashboard.tickets.macros.run', [$ticket, $macro]) }}">
+                                @csrf
+                                @include('agent.tickets.partials.return-query-fields')
+                                <button class="button secondary" type="submit">
+                                    {{ __('automation_macros.apply.run') }} <span lang="">{{ $macro->name }}</span>
+                                </button>
+                                <span class="field-help">{{ trans_choice('automation_macros.apply.action_count', count($macro->actions), ['count' => \App\Support\ReaderNumber::count(count($macro->actions))]) }}</span>
+                            </form>
+                        @endforeach
+                    </div>
+                </section>
+            @endif
+
             <section class="section" aria-labelledby="ticket-notes-heading">
                 <div class="section-header">
                     <h2 id="ticket-notes-heading">{{ __('ticket_detail.notes.heading') }}</h2>

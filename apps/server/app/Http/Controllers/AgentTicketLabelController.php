@@ -110,6 +110,7 @@ class AgentTicketLabelController extends Controller
 
             $usedByAutomation = $ticketLabel->account->automationRules()
                 ->get(['actions'])
+                ->concat($ticketLabel->account->automationMacros()->get(['actions']))
                 ->contains(fn ($rule): bool => collect($rule->actions)->contains(
                     fn (array $action): bool => $action['type'] === AutomationRuleActionType::AddLabel->value
                         && (int) $action['value'] === (int) $ticketLabel->id,

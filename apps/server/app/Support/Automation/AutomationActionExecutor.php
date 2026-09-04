@@ -6,7 +6,6 @@ use App\Enums\AccountPermission;
 use App\Enums\AutomationRuleActionType;
 use App\Enums\ConversationStatus;
 use App\Enums\TicketStatus;
-use App\Models\AutomationRule;
 use App\Models\Conversation;
 use App\Models\Ticket;
 use App\Models\TicketLabel;
@@ -32,19 +31,19 @@ final readonly class AutomationActionExecutor
      * @param  list<array{type: string, value: mixed}>  $actions
      * @return list<array{type: string, status: string, detail: string}>
      */
-    public function execute(AutomationRule $rule, Ticket|Conversation $subject, array $actions): array
+    public function execute(AutomationActionContext $automation, Ticket|Conversation $subject, array $actions): array
     {
         $results = [];
 
         foreach ($actions as $action) {
             $type = AutomationRuleActionType::from($action['type']);
             $results[] = match ($type) {
-                AutomationRuleActionType::AssignAgent => $this->assignAgent($rule, $subject, (int) $action['value']),
-                AutomationRuleActionType::AddLabel => $this->addLabel($rule, $subject, (int) $action['value']),
-                AutomationRuleActionType::SetPriority => $this->setPriority($rule, $subject, (string) $action['value']),
-                AutomationRuleActionType::SetStatus => $this->setStatus($rule, $subject, (string) $action['value']),
-                AutomationRuleActionType::NotifyAgent => $this->notifyAgent($rule, $subject, (int) $action['value']),
-                AutomationRuleActionType::PostInternalNote => $this->postInternalNote($rule, $subject, (string) $action['value']),
+                AutomationRuleActionType::AssignAgent => $this->assignAgent($automation, $subject, (int) $action['value']),
+                AutomationRuleActionType::AddLabel => $this->addLabel($automation, $subject, (int) $action['value']),
+                AutomationRuleActionType::SetPriority => $this->setPriority($automation, $subject, (string) $action['value']),
+                AutomationRuleActionType::SetStatus => $this->setStatus($automation, $subject, (string) $action['value']),
+                AutomationRuleActionType::NotifyAgent => $this->notifyAgent($automation, $subject, (int) $action['value']),
+                AutomationRuleActionType::PostInternalNote => $this->postInternalNote($automation, $subject, (string) $action['value']),
             };
         }
 
@@ -52,9 +51,9 @@ final readonly class AutomationActionExecutor
     }
 
     /** @return array{type: string, status: string, detail: string} */
-    private function assignAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): array
+    private function assignAgent(AutomationActionContext $automation, Ticket|Conversation $subject, int $agentId): array
     {
-        $agent = $this->eligibleAgent($rule, $subject, $agentId);
+        $agent = $this->eligibleAgent($automation, $subject, $agentId);
 
         if (! $agent instanceof User) {
             return $this->result(AutomationRuleActionType::AssignAgent, 'noop', 'target_unavailable');
@@ -72,17 +71,17 @@ final readonly class AutomationActionExecutor
 
         if ($subject instanceof Ticket) {
             $subject->forceFill(['assignee_id' => $agent->id])->save();
-            $this->assignmentAuditTrail->ticket($subject, null, $oldAssignee, $agent, 'automation');
+            $this->assignmentAuditTrail->ticket($subject, $automation->actor, $oldAssignee, $agent, $automation->source());
         } else {
             $subject->forceFill(['assigned_agent_id' => $agent->id])->save();
-            $this->assignmentAuditTrail->conversation($subject, null, $oldAssignee, $agent, 'automation');
+            $this->assignmentAuditTrail->conversation($subject, $automation->actor, $oldAssignee, $agent, $automation->source());
         }
 
         return $this->result(AutomationRuleActionType::AssignAgent, 'applied', 'agent:'.$agent->id);
     }
 
     /** @return array{type: string, status: string, detail: string} */
-    private function addLabel(AutomationRule $rule, Ticket|Conversation $subject, int $labelId): array
+    private function addLabel(AutomationActionContext $automation, Ticket|Conversation $subject, int $labelId): array
     {
         if (! $subject instanceof Ticket) {
             throw new InvalidArgumentException('Only tickets can receive labels.');
@@ -90,11 +89,11 @@ final readonly class AutomationActionExecutor
 
         $label = TicketLabel::query()
             ->whereKey($labelId)
-            ->where('account_id', $rule->account_id)
+            ->where('account_id', $automation->accountId)
             ->first();
 
         if (! $label instanceof TicketLabel) {
-            throw new InvalidArgumentException("Label {$labelId} is not available to this automation rule.");
+            throw new InvalidArgumentException("Label {$labelId} is not available to this {$automation->description()}.");
         }
 
         $changes = $subject->labels()->syncWithoutDetaching([$label->id]);
@@ -103,7 +102,7 @@ final readonly class AutomationActionExecutor
             return $this->result(AutomationRuleActionType::AddLabel, 'noop', 'already_labeled');
         }
 
-        $this->recordTicketActivity($rule, $subject, 'ticket.label_added', [
+        $this->recordTicketActivity($automation, $subject, 'ticket.label_added', [
             'label_id' => $label->id,
             'label_name' => $label->name,
             'label_slug' => $label->slug,
@@ -113,7 +112,7 @@ final readonly class AutomationActionExecutor
     }
 
     /** @return array{type: string, status: string, detail: string} */
-    private function setPriority(AutomationRule $rule, Ticket|Conversation $subject, string $priority): array
+    private function setPriority(AutomationActionContext $automation, Ticket|Conversation $subject, string $priority): array
     {
         $previous = (string) $subject->priority;
 
@@ -124,7 +123,7 @@ final readonly class AutomationActionExecutor
         $subject->forceFill(['priority' => $priority])->save();
 
         if ($subject instanceof Ticket) {
-            $this->recordTicketActivity($rule, $subject, 'ticket.updated', [
+            $this->recordTicketActivity($automation, $subject, 'ticket.updated', [
                 'changes' => [
                     'priority' => ['old' => $previous, 'new' => $priority],
                 ],
@@ -135,7 +134,7 @@ final readonly class AutomationActionExecutor
     }
 
     /** @return array{type: string, status: string, detail: string} */
-    private function setStatus(AutomationRule $rule, Ticket|Conversation $subject, string $status): array
+    private function setStatus(AutomationActionContext $automation, Ticket|Conversation $subject, string $status): array
     {
         $previous = (string) $subject->status;
 
@@ -144,18 +143,18 @@ final readonly class AutomationActionExecutor
         }
 
         if ($subject instanceof Ticket) {
-            $this->setTicketStatus($rule, $subject, TicketStatus::from($status), $previous);
+            $this->setTicketStatus($automation, $subject, TicketStatus::from($status), $previous);
         } else {
-            $this->setConversationStatus($subject, ConversationStatus::from($status), $previous);
+            $this->setConversationStatus($automation, $subject, ConversationStatus::from($status), $previous);
         }
 
         return $this->result(AutomationRuleActionType::SetStatus, 'applied', $previous.'->'.$status);
     }
 
     /** @return array{type: string, status: string, detail: string} */
-    private function notifyAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): array
+    private function notifyAgent(AutomationActionContext $automation, Ticket|Conversation $subject, int $agentId): array
     {
-        $agent = $this->eligibleAgent($rule, $subject, $agentId);
+        $agent = $this->eligibleAgent($automation, $subject, $agentId);
 
         if (! $agent instanceof User || ! $agent->hasAccountPermission(AccountPermission::ViewAlerts)) {
             return $this->result(AutomationRuleActionType::NotifyAgent, 'noop', 'target_unavailable');
@@ -165,7 +164,7 @@ final readonly class AutomationActionExecutor
             return $this->result(AutomationRuleActionType::NotifyAgent, 'noop', 'quiet_mode');
         }
 
-        DB::afterCommit(function () use ($agent, $rule, $subject): void {
+        DB::afterCommit(function () use ($agent, $automation, $subject): void {
             $recipient = User::query()->whereKey($agent->id)->first();
             $current = $this->freshSubject($subject);
 
@@ -176,10 +175,10 @@ final readonly class AutomationActionExecutor
             }
 
             try {
-                $recipient->notify(new AutomationRuleMatched($current, (string) $rule->name));
+                $recipient->notify(new AutomationRuleMatched($current, $automation->name, $automation->kind));
             } catch (Throwable $exception) {
                 Log::error('Automation completed, but its agent notification failed.', [
-                    'automation_rule_id' => $rule->id,
+                    $automation->idKey() => $automation->id,
                     'subject_type' => $subject->getMorphClass(),
                     'subject_id' => $subject->id,
                     'agent_id' => $agent->id,
@@ -192,26 +191,26 @@ final readonly class AutomationActionExecutor
     }
 
     /** @return array{type: string, status: string, detail: string} */
-    private function postInternalNote(AutomationRule $rule, Ticket|Conversation $subject, string $body): array
+    private function postInternalNote(AutomationActionContext $automation, Ticket|Conversation $subject, string $body): array
     {
         if (! $subject instanceof Ticket) {
             throw new InvalidArgumentException('Only tickets can receive internal notes.');
         }
 
-        $this->recordTicketActivity($rule, $subject, 'ticket.note_added', ['body' => $body]);
+        $this->recordTicketActivity($automation, $subject, 'ticket.note_added', ['body' => $body]);
 
         return $this->result(AutomationRuleActionType::PostInternalNote, 'applied', 'private_ticket_note');
     }
 
-    private function eligibleAgent(AutomationRule $rule, Ticket|Conversation $subject, int $agentId): ?User
+    private function eligibleAgent(AutomationActionContext $automation, Ticket|Conversation $subject, int $agentId): ?User
     {
         $agent = User::query()
             ->with('customRole')
             ->whereKey($agentId)
             ->first();
 
-        if ($agent instanceof User && (int) $agent->account_id !== (int) $rule->account_id) {
-            throw new InvalidArgumentException("Agent {$agentId} is not available to this automation rule.");
+        if ($agent instanceof User && (int) $agent->account_id !== $automation->accountId) {
+            throw new InvalidArgumentException("Agent {$agentId} is not available to this {$automation->description()}.");
         }
 
         $permission = $subject instanceof Ticket
@@ -229,7 +228,7 @@ final readonly class AutomationActionExecutor
     }
 
     private function setTicketStatus(
-        AutomationRule $rule,
+        AutomationActionContext $automation,
         Ticket $ticket,
         TicketStatus $status,
         string $previous,
@@ -253,11 +252,12 @@ final readonly class AutomationActionExecutor
         };
 
         foreach ($actions as $action) {
-            $this->recordTicketActivity($rule, $ticket, $action);
+            $this->recordTicketActivity($automation, $ticket, $action);
         }
     }
 
     private function setConversationStatus(
+        AutomationActionContext $automation,
         Conversation $conversation,
         ConversationStatus $status,
         string $previous,
@@ -268,15 +268,15 @@ final readonly class AutomationActionExecutor
         ])->save();
 
         if ($status === ConversationStatus::Closed) {
-            $this->conversationLifecycleLog->closed($conversation, null, $previous);
+            $this->conversationLifecycleLog->closed($conversation, $automation->actor, $previous);
         } else {
-            $this->conversationLifecycleLog->reopened($conversation, null, $previous);
+            $this->conversationLifecycleLog->reopened($conversation, $automation->actor, $previous);
         }
     }
 
     /** @param array<string, mixed> $metadata */
     private function recordTicketActivity(
-        AutomationRule $rule,
+        AutomationActionContext $automation,
         Ticket $ticket,
         string $action,
         array $metadata = [],
@@ -284,13 +284,13 @@ final readonly class AutomationActionExecutor
         $ticket->auditEvents()->create([
             'account_id' => $ticket->account_id,
             'site_id' => $ticket->site_id,
-            'actor_type' => null,
-            'actor_id' => null,
+            'actor_type' => $automation->actor?->getMorphClass(),
+            'actor_id' => $automation->actor?->id,
             'action' => $action,
             'metadata' => [
                 ...$metadata,
-                'source' => 'automation',
-                'automation_rule_id' => $rule->id,
+                'source' => $automation->source(),
+                $automation->idKey() => $automation->id,
             ],
             'occurred_at' => now(),
         ]);

@@ -26,6 +26,7 @@ use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Notifications\TicketAssigned;
 use App\Support\AgentNoteTemplate;
+use App\Support\Automation\AutomationMacroAuthorization;
 use App\Support\DashboardLanguage;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssues\ExternalIssueExportPreview;
@@ -58,7 +59,7 @@ class AgentTicketController extends Controller
         private readonly AssignmentAuditTrail $assignmentAuditTrail,
     ) {}
 
-    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview, SlaStatePresenter $slaStates): View
+    public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization): View
     {
         $agent = $request->user();
 
@@ -94,11 +95,20 @@ class AgentTicketController extends Controller
             || ! $ticket->hasConversationDerivedDescription();
         $fullTicketTimeline = $this->ticketTimeline($ticket, $canViewLinkedConversation);
         $ticketTimeline = $this->filteredTicketTimeline($fullTicketTimeline, $ticketTimelineFilter);
+        $account = $agent->account()->firstOrFail();
+        $automationMacros = $account->automationMacros()
+            ->enabled()
+            ->forSubjectType('ticket')
+            ->inDisplayOrder()
+            ->get()
+            ->filter(fn ($macro): bool => $macroAuthorization->allows($agent, $macro, $ticket))
+            ->values();
 
         return view('agent.tickets.show', [
-            'account' => $agent->account()->firstOrFail(),
+            'account' => $account,
             'accountAgents' => $this->supportAgentsForSite($ticket->site),
             'agent' => $agent,
+            'automationMacros' => $automationMacros,
             'canAssignTickets' => Gate::forUser($agent)->allows('assign', $ticket),
             'canReplyToLinkedConversation' => $canReplyToLinkedConversation,
             'canViewLinkedConversation' => $canViewLinkedConversation,

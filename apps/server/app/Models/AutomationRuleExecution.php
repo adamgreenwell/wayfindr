@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 #[Fillable([
     'account_id',
     'automation_rule_id',
+    'automation_macro_id',
+    'triggered_by_user_id',
     'subject_type',
     'subject_id',
     'rule_name',
@@ -62,6 +64,16 @@ class AutomationRuleExecution extends Model
     public function rule(): BelongsTo
     {
         return $this->belongsTo(AutomationRule::class, 'automation_rule_id');
+    }
+
+    public function macro(): BelongsTo
+    {
+        return $this->belongsTo(AutomationMacro::class, 'automation_macro_id');
+    }
+
+    public function triggeredBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'triggered_by_user_id');
     }
 
     public function subject(): MorphTo

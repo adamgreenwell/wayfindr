@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\Article;
 use App\Models\AuditEvent;
+use App\Models\AutomationMacro;
 use App\Models\AutomationRule;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
@@ -1611,6 +1612,11 @@ test('no English is rendered as German on any extracted surface', function (): v
         'conditions' => [['field' => 'subject', 'operator' => 'contains', 'value' => 'Datenpunkt']],
         'actions' => [['type' => 'set_priority', 'value' => 'urgent']],
     ]);
+    $automationMacro = AutomationMacro::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt priority macro',
+        'subject_type' => 'ticket',
+        'actions' => [['type' => 'set_priority', 'value' => 'urgent']],
+    ]);
 
     // Alerts need populated states for BOTH readers. Comparing a populated
     // German page with an empty English page would let untranslated card copy
@@ -1684,6 +1690,8 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.automation-rules.index'),
         route('dashboard.account.automation-rules.create'),
         route('dashboard.account.automation-rules.edit', $automationRule),
+        route('dashboard.account.automation-macros.create'),
+        route('dashboard.account.automation-macros.edit', $automationMacro),
         route('dashboard.account.labels.index'),
         route('dashboard.account.api-tokens.index'),
         route('dashboard.account.audit.index'),
@@ -3055,6 +3063,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'account.agents.columns.status = Status',
         'automation_rules.list.status = Status',
         'automation_rules.condition_fields.status = Status',
+        'automation_macros.list.status = Status',
+        'automation_macros.subject_types.ticket = Ticket',
         'operator.scanning.driver = Scanner',
         'operator.mail.transport = Transport',
         'operator.backups.history.status = Status',

@@ -52,6 +52,11 @@ class Account extends Model
         return $this->hasMany(AutomationRule::class);
     }
 
+    public function automationMacros(): HasMany
+    {
+        return $this->hasMany(AutomationMacro::class);
+    }
+
     public function automationRuleExecutions(): HasMany
     {
         return $this->hasMany(AutomationRuleExecution::class);

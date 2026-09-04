@@ -49,6 +49,7 @@ final class AgentAutomationRuleController extends Controller
                     $execution->id => $this->subjectLink($agent, $execution),
                 ]),
             'executions' => $executions,
+            'macros' => $account->automationMacros()->inDisplayOrder()->get(),
             'referenceLabels' => $this->referenceLabels($account),
             'rules' => $account->automationRules()->inEvaluationOrder()->get(),
         ]);
