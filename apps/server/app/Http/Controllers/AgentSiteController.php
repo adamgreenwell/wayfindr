@@ -702,11 +702,15 @@ class AgentSiteController extends Controller
             'mask_terms' => ['nullable', 'string', 'max:4000'],
         ]);
 
-        $settings = $site->mutateSettings(function (array $settings) use ($validated): array {
-            $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
-            $settings['mask_terms'] = $this->parseMaskTerms($validated['mask_terms'] ?? '');
+        DB::transaction(function () use ($request, $site, $validated): void {
+            [, $site] = $this->lockedPrivacyManagerAndSite($request->user(), $site);
 
-            return $settings;
+            $site->mutateSettings(function (array $settings) use ($validated): array {
+                $settings['mask_selectors'] = $this->parseMaskSelectors($validated['mask_selectors'] ?? '');
+                $settings['mask_terms'] = $this->parseMaskTerms($validated['mask_terms'] ?? '');
+
+                return $settings;
+            });
         });
 
         return redirect()
@@ -980,20 +984,24 @@ class AgentSiteController extends Controller
         // already on its way then creates -- and no other settings form can
         // save its stale copy of this column afterwards and put the revoked
         // value back.
-        $site->mutateSettings(function (array $settings) use ($site, $enabled, $pageUrls, &$removed): array {
-            $settings['presence'] = ['enabled' => $enabled, 'page_urls' => $pageUrls];
+        DB::transaction(function () use ($request, $site, $enabled, $pageUrls, &$removed): void {
+            [, $site] = $this->lockedPrivacyManagerAndSite($request->user(), $site);
 
-            // Switching presence off is a revocation, so the rows it collected
-            // go. Leaving them to age out over thirty days would mean the
-            // visitor directory still listing people who never made contact on
-            // a site whose operator has just said not to watch them. Only rows
-            // this feature created and nobody has since been in touch through:
-            // somebody who arrived as a heartbeat and later wrote in stays.
-            if (! $enabled) {
-                $removed = $this->forgetPresenceOnlyVisitors($site);
-            }
+            $site->mutateSettings(function (array $settings) use ($site, $enabled, $pageUrls, &$removed): array {
+                $settings['presence'] = ['enabled' => $enabled, 'page_urls' => $pageUrls];
 
-            return $settings;
+                // Switching presence off is a revocation, so the rows it collected
+                // go. Leaving them to age out over thirty days would mean the
+                // visitor directory still listing people who never made contact on
+                // a site whose operator has just said not to watch them. Only rows
+                // this feature created and nobody has since been in touch through:
+                // somebody who arrived as a heartbeat and later wrote in stays.
+                if (! $enabled) {
+                    $removed = $this->forgetPresenceOnlyVisitors($site);
+                }
+
+                return $settings;
+            });
         });
 
         // Addresses go whenever the switch is off, not only while presence is
@@ -1653,6 +1661,28 @@ class AgentSiteController extends Controller
         $agent = $request->user();
 
         abort_unless($agent && Gate::forUser($agent)->allows($ability, $site), $status);
+    }
+
+    /** @return array{0: User, 1: Site} */
+    private function lockedPrivacyManagerAndSite(User $actor, Site $site): array
+    {
+        $accountId = (int) $site->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $actor = User::query()
+            ->whereKey($actor->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $site = Site::query()
+            ->whereKey($site->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        abort_unless(Gate::forUser($actor)->allows('view', $site), 404);
+        abort_unless(Gate::forUser($actor)->allows('updatePrivacy', $site), 403);
+
+        return [$actor, $site];
     }
 
     /**

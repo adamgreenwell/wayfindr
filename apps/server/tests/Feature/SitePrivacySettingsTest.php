@@ -1,9 +1,12 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
+use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -193,6 +196,51 @@ test('account admins can configure extra sensitive field terms for their account
         'mask_terms' => ['contraseña', 'NHS number'],
     ]);
 });
+
+test('privacy mutations reauthorize a stale custom role under the account lock', function (string $action): void {
+    $account = Account::factory()->create();
+    $privacyRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ManagePrivacySettings->value],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $manager = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $privacyRole->id,
+    ]);
+    $site = Site::factory()->for($account)->create([
+        'settings' => [
+            'mask_selectors' => ['[data-original]'],
+            'presence' => ['enabled' => true, 'page_urls' => true],
+        ],
+    ]);
+    $visitor = Visitor::factory()->for($site)->create([
+        'presence_only' => true,
+        'metadata' => ['last_page_url' => 'https://example.test/private'],
+    ]);
+
+    $this->actingAs($manager);
+    expect($manager->hasAccountPermission(AccountPermission::ManagePrivacySettings))->toBeTrue();
+    User::query()->whereKey($manager->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $response = match ($action) {
+        'masking' => $this->put(route('dashboard.sites.update', $site), [
+            'mask_selectors' => '[data-late]',
+            'mask_terms' => 'private',
+        ]),
+        'presence' => $this->put(route('dashboard.sites.presence.update', $site), [
+            'presence_enabled' => false,
+            'presence_page_urls' => false,
+        ]),
+    };
+
+    $response->assertNotFound();
+
+    expect($site->fresh()->settings)->toBe([
+        'mask_selectors' => ['[data-original]'],
+        'presence' => ['enabled' => true, 'page_urls' => true],
+    ])->and($visitor->fresh())->not->toBeNull()
+        ->and($visitor->fresh()->metadata['last_page_url'])->toBe('https://example.test/private');
+})->with(['masking', 'presence']);
 
 test('plain agents cannot update mask selectors for their account site', function (): void {
     $account = Account::factory()->create();
