@@ -7,7 +7,6 @@ use App\Events\ConversationMessageCreated;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
-use App\Models\ConversationMessage;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\SiteExternalIssueProject;
@@ -30,6 +29,7 @@ use App\Support\ExternalIssues\IssueCommenter;
 use App\Support\ExternalIssues\JiraIssueCommenter;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\ReplyTemplateOptions;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
 use App\Support\TicketPriority;
@@ -49,6 +49,8 @@ class AgentTicketController extends Controller
 {
     /** Providers with an IssueCommenter implementation for outbound note relay. */
     private const COMMENT_PROVIDERS = ['github', 'gitlab', 'jira'];
+
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
 
     public function show(Request $request, Ticket $ticket, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, ExternalIssueExportPreview $externalIssueExportPreview): View
     {
@@ -421,7 +423,6 @@ class AgentTicketController extends Controller
             ]);
         }
 
-        $conversation = $ticket->conversation;
         $metadata = [
             'source' => 'ticket',
             'ticket_id' => $ticket->id,
@@ -434,7 +435,14 @@ class AgentTicketController extends Controller
             ];
         }
 
-        $message = DB::transaction(function () use ($conversation, $ticket, $agent, $body, $metadata, $resolvedTemplate): ConversationMessage {
+        [$message, $agent, $conversation, $ticket] = DB::transaction(function () use ($ticket, $agent, $body, $metadata, $resolvedTemplate): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'reply');
+            $conversation = Conversation::query()
+                ->whereKey($ticket->conversation_id)
+                ->where('site_id', $ticket->site_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
             // ConversationMessageObserver creates the webhook outbox rows
             // during this insert. Keep the reply, conversation state and
             // delivery handoff atomic even when the queue is unavailable.
@@ -467,7 +475,7 @@ class AgentTicketController extends Controller
 
             $this->recordActivity($ticket, $agent, 'ticket.reply_sent', $activityMetadata);
 
-            return $message;
+            return [$message, $agent, $conversation, $ticket];
         });
         $this->markConversationNotificationsRead($agent, $conversation);
         $conversation->markReadFor($agent);
@@ -778,6 +786,28 @@ class AgentTicketController extends Controller
     private function authorizeTicketAbility(User $agent, string $ability, Ticket $ticket): void
     {
         abort_unless(Gate::forUser($agent)->allows($ability, $ticket), 404);
+    }
+
+    /** @return array{0: User, 1: Ticket} */
+    private function lockedTicketActor(User $agent, Ticket $ticket, string $ability): array
+    {
+        $accountId = (int) $ticket->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $agent = User::query()
+            ->whereKey($agent->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $ticket = Ticket::query()
+            ->with('site')
+            ->whereKey($ticket->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $this->authorizeTicketAbility($agent, $ability, $ticket);
+
+        return [$agent, $ticket];
     }
 
     private function supportAgentsForSite(Site $site): Collection

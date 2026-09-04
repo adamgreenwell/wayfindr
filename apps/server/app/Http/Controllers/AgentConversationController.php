@@ -23,6 +23,7 @@ use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\DashboardLanguage;
 use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
+use App\Support\Sites\SiteManagerCoverage;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
@@ -44,6 +45,8 @@ class AgentConversationController extends Controller
 {
     /** How many conversations either side of the current one the menu lists. */
     private const SWITCHER_MENU_WINDOW = 25;
+
+    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
 
     public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail): View
     {
@@ -463,9 +466,9 @@ class AgentConversationController extends Controller
             ]);
         }
 
-        $canManageConversation = $agent->hasAccountPermission(AccountPermission::ManageConversations);
-
-        $message = DB::transaction(function () use ($conversation, $agent, $body, $resolvedTemplate, $attachmentIds, $binder, $canManageConversation) {
+        [$message, $agent, $conversation] = DB::transaction(function () use ($conversation, $agent, $body, $resolvedTemplate, $attachmentIds, $binder): array {
+            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'reply');
+            $canManageConversation = $agent->hasAccountPermission(AccountPermission::ManageConversations);
             $message = $conversation->messages()->create([
                 'sender_type' => User::class,
                 'sender_id' => $agent->id,
@@ -501,7 +504,7 @@ class AgentConversationController extends Controller
                     ->replyReopenedIfClosed($conversation, $agent, $previousStatus);
             }
 
-            return $message;
+            return [$message, $agent, $conversation];
         });
 
         $this->markConversationNotificationsRead($agent, $conversation);
@@ -910,6 +913,29 @@ class AgentConversationController extends Controller
         abort_unless(Gate::forUser($agent)->allows($ability, $conversation), 404);
 
         return $conversation;
+    }
+
+    /** @return array{0: User, 1: Conversation} */
+    private function lockedConversationActor(User $agent, Conversation $conversation, string $ability): array
+    {
+        $site = $conversation->site()->firstOrFail();
+        $accountId = (int) $site->account_id;
+        $this->siteManagerCoverage->lockAccount($accountId);
+        $agent = User::query()
+            ->whereKey($agent->id)
+            ->where('account_id', $accountId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $conversation = Conversation::query()
+            ->with('site')
+            ->whereKey($conversation->id)
+            ->where('site_id', $site->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        abort_unless(Gate::forUser($agent)->allows($ability, $conversation), 404);
+
+        return [$agent, $conversation];
     }
 
     private function supportAgentsForSite(Site $site): Collection
