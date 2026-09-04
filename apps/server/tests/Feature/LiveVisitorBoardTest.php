@@ -337,7 +337,8 @@ test('the board subscribes when the install runs realtime', function (): void {
     // The CLIENT host, not the internal one a browser cannot resolve.
     $response->assertSee('realtime.shop.test', false)
         ->assertDontSee('reverb.internal', false)
-        ->assertSee('private-sites.'.$f['site']->id.'.presence', false);
+        ->assertSee('private-sites.'.$f['site']->id.'.presence', false)
+        ->assertSee('presence-agents.'.$f['agent']->id, false);
 });
 
 test('an install without realtime says the list is a snapshot', function (): void {
@@ -429,22 +430,22 @@ test('the board recovers from a failed subscription', function (): void {
     // the artifact under test.
     $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
 
-    $authorize = Str::before(
-        Str::after($source, 'function authorize(activeSocket, socketId) {'),
-        'function handleSocketMessage',
+    $failure = Str::before(
+        Str::after($source, 'function authorizationFailed(activeSocket, error) {'),
+        'function authorizeIdentity',
     );
 
     // The slice is proven before anything is asserted about it -- `.catch(`
     // appears several times in this script, and a slice that grabbed the wrong
     // one would assert over the wrong code and pass.
     test()->assertStringContainsString(
-        'pusher:subscribe',
-        $authorize,
-        'the slice is not the authorize function',
+        'activeSocket.wayfindrGeneration !== socketGeneration',
+        $failure,
+        'the slice is not the authorization failure handler',
     );
 
-    expect($authorize)->toContain('scheduleReconnect();')
-        ->and($authorize)->toContain('activeSocket.close();');
+    expect($failure)->toContain('scheduleReconnect();')
+        ->and($failure)->toContain('activeSocket.close();');
 });
 
 test('a refreshed row moves to the newest-first position', function (): void {
@@ -504,15 +505,15 @@ test('the board resyncs whenever it subscribes', function (): void {
     // reconnect that gap is however long the socket was down.
     $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
 
-    $authorize = Str::before(
-        Str::after($source, 'function authorize(activeSocket, socketId) {'),
+    $ready = Str::before(
+        Str::after($source, 'function boardSubscriptionReady() {'),
         'function handleSocketMessage',
     );
 
     test()->assertStringContainsString(
-        'pusher:subscribe',
-        $authorize,
-        'the slice is not the authorize function',
+        'resyncBoard();',
+        $ready,
+        'the slice is not the confirmed-subscription handler',
     );
 
     // The resync hangs off the SUBSCRIPTION CONFIRMATION, not the
@@ -529,9 +530,10 @@ test('the board resyncs whenever it subscribes', function (): void {
         'the slice is not the socket message handler',
     );
 
-    expect($handler)->toContain('resyncBoard();')
+    expect($handler)->toContain('boardSubscriptionReady();')
         ->and($source)->toContain('function resyncBoard()')
-        ->and($authorize)->not->toContain('resyncBoard();');
+        ->and($source)->toContain('event.channel === config.identityChannelName')
+        ->and($source)->toContain('authorizeBoard(message.target)');
 });
 
 test('an open board does not keep showing revoked visitors', function (): void {

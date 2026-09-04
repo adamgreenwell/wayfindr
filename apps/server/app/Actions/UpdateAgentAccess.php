@@ -5,6 +5,7 @@ namespace App\Actions;
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\AgentRealtimeSessions;
 use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
@@ -14,7 +15,10 @@ use Illuminate\Validation\ValidationException;
 
 class UpdateAgentAccess
 {
-    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AgentRealtimeSessions $agentRealtimeSessions,
+    ) {}
 
     public function deactivate(User $actor, User $target): User
     {
@@ -33,6 +37,8 @@ class UpdateAgentAccess
             $this->siteManagerCoverage->ensureAgentCanDeactivate($target);
 
             $target->forceFill(['deactivated_at' => now()])->save();
+
+            $this->agentRealtimeSessions->disconnect($target);
 
             $this->recordAuditEvent($actor, $target, 'agent.deactivated');
 

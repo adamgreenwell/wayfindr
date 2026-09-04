@@ -9,6 +9,7 @@ use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Support\AgentRealtimeSessions;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
@@ -110,6 +111,33 @@ test('permission dependencies are enforced and role names are unique within an a
         ->assertSessionHasErrors('name');
 
     expect(CustomRole::query()->count())->toBe(1);
+});
+
+test('changing assigned role permissions disconnects affected realtime sessions inside the account lock', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewConversations->value],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $sessions = Mockery::mock(AgentRealtimeSessions::class);
+    $sessions->shouldReceive('disconnectMany')
+        ->once()
+        ->withArgs(fn (iterable $agentIds): bool => collect($agentIds)->contains($agent->id)
+            && DB::transactionLevel() > 0);
+    $this->app->instance(AgentRealtimeSessions::class, $sessions);
+
+    $this->actingAs($owner)
+        ->put(route('dashboard.account.roles.update', $role), [
+            'name' => $role->name,
+            'permissions' => [AccountPermission::ViewAudit->value],
+        ])
+        ->assertRedirect();
+
+    expect($role->fresh()->permissionValues())->toBe([AccountPermission::ViewAudit->value]);
 });
 
 test('normalized custom role names must fit the persisted key boundary', function (): void {

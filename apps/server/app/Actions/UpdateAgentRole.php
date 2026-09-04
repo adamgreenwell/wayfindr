@@ -6,6 +6,7 @@ use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\CustomRole;
 use App\Models\User;
+use App\Support\AgentRealtimeSessions;
 use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -16,7 +17,10 @@ use Illuminate\Validation\ValidationException;
 
 class UpdateAgentRole
 {
-    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AgentRealtimeSessions $agentRealtimeSessions,
+    ) {}
 
     public function handle(User $actor, User $target, AccountRole|CustomRole $role): User
     {
@@ -47,6 +51,8 @@ class UpdateAgentRole
                 'account_role' => $newAccountRole,
                 'custom_role_id' => $newCustomRoleId,
             ])->save();
+
+            $this->agentRealtimeSessions->disconnect($target);
 
             AuditEvent::query()->create([
                 'account_id' => $target->account_id,

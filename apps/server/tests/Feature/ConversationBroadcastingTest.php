@@ -1,5 +1,6 @@
 <?php
 
+use App\Broadcasting\AgentConnectionChannel;
 use App\Broadcasting\ConversationChannel;
 use App\Events\CobrowseStateUpdated;
 use App\Events\ConversationMessageCreated;
@@ -636,6 +637,49 @@ test('agent broadcast auth signs an authorized private conversation channel', fu
         ->assertJson([
             'auth' => 'reverb-key:'.$signature,
         ]);
+});
+
+test('agent broadcast auth identifies the socket on its private presence channel', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.secret', 'reverb-secret');
+    config()->set('broadcasting.connections.reverb.app_id', 'reverb-app');
+    Broadcast::purge('reverb');
+    Broadcast::connection('reverb')->channel('agents.{agentId}', AgentConnectionChannel::class);
+
+    $agent = User::factory()->for(Account::factory())->create();
+    $channelName = 'presence-agents.'.$agent->id;
+    $response = $this->actingAs($agent)->postJson('/broadcasting/auth', [
+        'socket_id' => '1234.5678',
+        'channel_name' => $channelName,
+    ]);
+
+    $response->assertOk();
+    $channelData = $response->json('channel_data');
+
+    expect(json_decode($channelData, true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'user_id' => (string) $agent->id,
+        'user_info' => ['connected' => true],
+    ]);
+
+    $signature = hash_hmac('sha256', '1234.5678:'.$channelName.':'.$channelData, 'reverb-secret');
+
+    $response->assertJson(['auth' => 'reverb-key:'.$signature]);
+});
+
+test('the agent identity channel refuses another or deactivated user', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $other = User::factory()->for($account)->create();
+    $channel = new AgentConnectionChannel;
+
+    expect($channel->join($agent, $agent->id))->toBe(['connected' => true])
+        ->and($channel->join($agent, $other->id))->toBeFalse()
+        ->and($channel->join($agent, 'not-an-id'))->toBeFalse();
+
+    $agent->forceFill(['deactivated_at' => now()])->save();
+
+    expect($channel->join($agent->fresh(), $agent->id))->toBeFalse();
 });
 
 test('visitor broadcast auth signs their private conversation channel', function (): void {

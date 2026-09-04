@@ -11,6 +11,7 @@ use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\AgentRealtimeSessions;
 use App\Support\ExternalIssueProvider;
 use App\Support\ExternalIssueSyncStatus;
 use App\Support\OperatorDashboardPresenter;
@@ -43,7 +44,10 @@ use Illuminate\View\View;
 
 class AgentSiteController extends Controller
 {
-    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AgentRealtimeSessions $agentRealtimeSessions,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -824,6 +828,7 @@ class AgentSiteController extends Controller
         $this->authorizeSiteAbility($request, 'viewLiveBoard', $site, 404);
 
         $agent = $request->user();
+        abort_unless($agent instanceof User, 403);
 
         // Read as of NOW, not as of route binding.
         //
@@ -866,7 +871,7 @@ class AgentSiteController extends Controller
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
             'canViewConversationCounts' => $canViewConversationCounts,
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
-            'realtime' => $this->presenceRealtimeConfig($site, $canViewConversationCounts),
+            'realtime' => $this->presenceRealtimeConfig($site, $agent, $canViewConversationCounts),
             // Words for the script, chosen here. The socket carries a state
             // and this page picks the sentence, which is the same rule the
             // conversation presence payload follows: a payload broadcast to
@@ -891,7 +896,7 @@ class AgentSiteController extends Controller
      *
      * @return array<string, mixed>|null
      */
-    private function presenceRealtimeConfig(Site $site, bool $showConversationCounts): ?array
+    private function presenceRealtimeConfig(Site $site, User $agent, bool $showConversationCounts): ?array
     {
         // An archived site has no board to subscribe to: SitePresenceChannel
         // queries `servable()` and refuses every authorization. Handing the
@@ -929,6 +934,7 @@ class AgentSiteController extends Controller
             'appKey' => (string) $key,
             'authEndpoint' => url('/broadcasting/auth'),
             'channelName' => 'private-sites.'.$site->id.'.presence',
+            'identityChannelName' => 'presence-agents.'.$agent->id,
             'host' => (string) $host,
             'port' => (string) $port,
             'scheme' => (string) $scheme,
@@ -1624,6 +1630,8 @@ class AgentSiteController extends Controller
             }
 
             $site->supportAgents()->sync($afterAgentIds);
+
+            $this->agentRealtimeSessions->disconnectMany(array_diff($beforeAgentIds, $afterAgentIds));
 
             if ($beforeAgentIds !== $afterAgentIds) {
                 $this->recordSiteAccessChange($site, $actor, $beforeAgentIds, $afterAgentIds);

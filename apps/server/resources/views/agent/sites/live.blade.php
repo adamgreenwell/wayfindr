@@ -884,7 +884,7 @@
                     }, every * 1000);
                 }
 
-                function authorize(activeSocket, socketId) {
+                function authorization(socketId, channelName) {
                     var token = document.querySelector('meta[name="csrf-token"]');
 
                     return fetch(config.authEndpoint, {
@@ -897,55 +897,97 @@
                         },
                         body: new URLSearchParams({
                             socket_id: socketId,
-                            channel_name: config.channelName,
+                            channel_name: channelName,
                         }),
                     }).then(function (response) {
                         if (!response.ok) {
-                            throw new Error('auth');
+                            var failure = new Error('auth');
+
+                            failure.status = response.status;
+                            throw failure;
                         }
 
                         return response.json();
-                    }).then(function (data) {
-                        activeSocket.send(JSON.stringify({
-                            event: 'pusher:subscribe',
-                            data: { auth: data.auth, channel: config.channelName },
-                        }));
+                    });
+                }
 
-                        reconnectDelay = 1000;
+                function subscribe(activeSocket, channelName, authorization) {
+                    var data = { auth: authorization.auth, channel: channelName };
 
-                        if (statusEl) {
-                            statusEl.textContent = copy.live;
-                        }
+                    if (authorization.channel_data) {
+                        data.channel_data = authorization.channel_data;
+                    }
 
-                        // NOT resynced here. Authorization succeeding only
-                        // means the subscribe frame has been sent; Reverb has
-                        // not yet confirmed it, so a snapshot taken now still
-                        // has a window on the far side of it. The resync waits
-                        // for `pusher_internal:subscription_succeeded`.
-                    }).catch(function () {
-                        // Only the socket still in service may react.
+                    activeSocket.send(JSON.stringify({
+                        event: 'pusher:subscribe',
+                        data: data,
+                    }));
+                }
+
+                function authorizationFailed(activeSocket, error) {
+                    if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                        return;
+                    }
+
+                    // An authenticated socket refused by the content channel
+                    // has lost access. Reload so the ordinary route boundary
+                    // clears the visitor rows already on screen.
+                    if (error && error.status === 403) {
+                        window.location.reload();
+
+                        return;
+                    }
+
+                    if (statusEl) {
+                        statusEl.textContent = copy.reconnecting;
+                    }
+
+                    try {
+                        activeSocket.close();
+                    } catch (closeError) {
+                        // Closing is best effort; the reconnect is what matters.
+                    }
+
+                    scheduleReconnect();
+                }
+
+                function authorizeIdentity(activeSocket, socketId) {
+                    activeSocket.wayfindrSocketId = socketId;
+
+                    authorization(socketId, config.identityChannelName).then(function (data) {
                         if (activeSocket.wayfindrGeneration !== socketGeneration) {
                             return;
                         }
 
-                        if (statusEl) {
-                            statusEl.textContent = copy.reconnecting;
-                        }
-
-                        // A failed authorization leaves the socket HEALTHY and
-                        // unsubscribed, so no close event ever fires and the
-                        // reconnect that only the close handler schedules never
-                        // runs. The board would then sit there, connected to
-                        // nothing, for the rest of the session -- looking
-                        // exactly like a quiet afternoon.
-                        try {
-                            activeSocket.close();
-                        } catch (error) {
-                            // Closing is best effort; the reconnect is what matters.
-                        }
-
-                        scheduleReconnect();
+                        subscribe(activeSocket, config.identityChannelName, data);
+                    }).catch(function (error) {
+                        authorizationFailed(activeSocket, error);
                     });
+                }
+
+                function authorizeBoard(activeSocket) {
+                    authorization(activeSocket.wayfindrSocketId, config.channelName).then(function (data) {
+                        if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                            return;
+                        }
+
+                        subscribe(activeSocket, config.channelName, data);
+                    }).catch(function (error) {
+                        authorizationFailed(activeSocket, error);
+                    });
+                }
+
+                function boardSubscriptionReady() {
+                    reconnectDelay = 1000;
+
+                    if (statusEl) {
+                        statusEl.textContent = copy.live;
+                    }
+
+                    // Reverb does not replay events. Refresh only after it has
+                    // confirmed the content subscription, so the snapshot's
+                    // buffered-event window starts on the safe side of it.
+                    resyncBoard();
                 }
 
                 function handleSocketMessage(message) {
@@ -999,7 +1041,7 @@
                         }
 
                         startKeepalive(message.target, established.activity_timeout);
-                        authorize(message.target, established.socket_id);
+                        authorizeIdentity(message.target, established.socket_id);
 
                         return;
                     }
@@ -1011,7 +1053,11 @@
                     // this frame is gone -- and after a reconnect that gap is
                     // however long the socket was down.
                     if (event.event === 'pusher_internal:subscription_succeeded') {
-                        resyncBoard();
+                        if (event.channel === config.identityChannelName) {
+                            authorizeBoard(message.target);
+                        } else if (event.channel === config.channelName) {
+                            boardSubscriptionReady();
+                        }
 
                         return;
                     }

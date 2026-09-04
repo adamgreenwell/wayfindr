@@ -214,7 +214,7 @@ class AgentConversationController extends Controller
             'conversationSiblings' => $conversationSiblings,
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation, $canManageTickets),
-            'realtime' => $this->realtimeConfig($conversation),
+            'realtime' => $this->realtimeConfig($conversation, $agent),
             'replyTemplates' => $canReply ? $replyTemplateOptions->forAgent($agent) : [],
             'tickets' => $tickets,
             'ticketCategories' => TicketCategory::options(),
@@ -1103,7 +1103,7 @@ class AgentConversationController extends Controller
     /**
      * @return array<string, mixed>|null
      */
-    private function realtimeConfig(Conversation $conversation): ?array
+    private function realtimeConfig(Conversation $conversation, User $agent): ?array
     {
         if ((string) config('broadcasting.default') !== 'reverb') {
             return null;
@@ -1128,6 +1128,7 @@ class AgentConversationController extends Controller
             'appKey' => (string) $key,
             'authEndpoint' => url('/broadcasting/auth'),
             'channelName' => 'private-conversations.'.$conversation->support_code,
+            'identityChannelName' => 'presence-agents.'.$agent->id,
             'eventName' => 'conversation.cobrowse.updated',
             'host' => (string) $host,
             'messageEventName' => 'conversation.message.created',

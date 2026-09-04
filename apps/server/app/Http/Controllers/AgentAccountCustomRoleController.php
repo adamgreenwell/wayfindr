@@ -9,6 +9,7 @@ use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\CustomRole;
 use App\Models\User;
+use App\Support\AgentRealtimeSessions;
 use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\RedirectResponse;
@@ -23,7 +24,10 @@ final class AgentAccountCustomRoleController extends Controller
 {
     private const NAME_MAX_LENGTH = 80;
 
-    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+    public function __construct(
+        private readonly SiteManagerCoverage $siteManagerCoverage,
+        private readonly AgentRealtimeSessions $agentRealtimeSessions,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -87,6 +91,14 @@ final class AgentAccountCustomRoleController extends Controller
                 $oldName = $role->name;
                 $oldPermissions = $role->permissionValues();
                 $role->fill($attributes)->save();
+
+                if ($oldPermissions !== $role->permissionValues()) {
+                    // Still inside the account lock. A disconnected tab that
+                    // immediately retries broadcast auth waits for this
+                    // transaction, then reads the new permissions.
+                    $this->agentRealtimeSessions->disconnectMany($role->users()->pluck('users.id'));
+                }
+
                 $this->audit($actor, $role, 'custom_role.updated', [
                     'old_role_name' => $oldName,
                     'role_name' => $role->name,
