@@ -9,10 +9,12 @@ use App\Events\TicketUpdated;
 use App\Models\AuditEvent;
 use App\Models\Ticket;
 use App\Models\TicketBulkActionRun;
+use App\Models\TicketLabel;
 use App\Models\User;
 use App\Support\Automation\AutomationActionContext;
 use App\Support\Automation\AutomationActionExecutor;
 use App\Support\Routing\AssignmentAuditTrail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
@@ -36,7 +38,9 @@ final readonly class TicketBulkActionService
             TicketBulkAction::AssignAgent => ['assignee_id' => $ticket->assignee_id === null ? null : (int) $ticket->assignee_id],
             TicketBulkAction::AddLabel => [
                 'label_id' => (int) $value,
-                'attached' => $ticket->labels()->whereKey((int) $value)->exists(),
+                'attached' => $ticket->relationLoaded('labels')
+                    ? $ticket->labels->contains('id', (int) $value)
+                    : $ticket->labels()->whereKey((int) $value)->exists(),
             ],
             TicketBulkAction::SetPriority => ['priority' => (string) $ticket->priority],
             TicketBulkAction::SetStatus, TicketBulkAction::Close => [
@@ -44,6 +48,16 @@ final readonly class TicketBulkActionService
                 'closed_at' => $ticket->closed_at?->getTimestamp(),
             ],
         };
+    }
+
+    /** @param Collection<int, Ticket> $tickets */
+    public function prepareState(Collection $tickets, TicketBulkAction $action, mixed $value): void
+    {
+        if ($action !== TicketBulkAction::AddLabel) {
+            return;
+        }
+
+        $tickets->load(['labels' => fn ($query) => $query->whereKey((int) $value)]);
     }
 
     public function wouldChange(Ticket $ticket, TicketBulkAction $action, mixed $value): bool
@@ -61,10 +75,20 @@ final readonly class TicketBulkActionService
      * @param  Collection<int, Ticket>  $tickets
      * @return list<array{ticket_id: int, subject: string, site: string, before: array<string, mixed>, after: array<string, mixed>}>
      */
-    public function apply(User $agent, TicketBulkActionRun $run, Collection $tickets, mixed $value): array
-    {
+    public function apply(
+        User $agent,
+        TicketBulkActionRun $run,
+        Collection $tickets,
+        mixed $value,
+        User|TicketLabel|null $validatedTarget,
+    ): array {
         $action = $run->actionEnum();
-        $context = AutomationActionContext::forTicketBulkAction($run, $agent);
+        $siteIds = $tickets->pluck('site_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $context = AutomationActionContext::forTicketBulkAction($run, $agent, $validatedTarget, $siteIds);
         $changes = [];
 
         foreach ($tickets as $ticket) {
@@ -80,6 +104,12 @@ final readonly class TicketBulkActionService
                 'value' => $action === TicketBulkAction::Close ? TicketStatus::Closed->value : $value,
             ]]);
 
+            if ($action === TicketBulkAction::AddLabel
+                && $validatedTarget instanceof TicketLabel
+                && $ticket->relationLoaded('labels')) {
+                $ticket->setRelation('labels', $ticket->labels->push($validatedTarget));
+            }
+
             $after = $this->state($ticket, $action, $value);
             $changes[] = [
                 'ticket_id' => (int) $ticket->id,
@@ -92,6 +122,7 @@ final readonly class TicketBulkActionService
             $this->executor->notifyFinalTicketAssignmentAfterCommit(
                 $ticket,
                 $previousRuleState['assignee_id'],
+                $agent,
             );
 
             if ($this->ruleState($ticket) !== $previousRuleState) {
@@ -114,6 +145,7 @@ final readonly class TicketBulkActionService
     {
         $action = $run->actionEnum();
         $tickets = $tickets->keyBy('id');
+        $latestAudits = $this->latestRelevantAudits($tickets->values(), $action, $run);
         $reverted = 0;
         $skippedIds = [];
 
@@ -123,7 +155,7 @@ final readonly class TicketBulkActionService
 
             if (! $ticket instanceof Ticket
                 || $this->state($ticket, $action, $this->storedValue($run)) !== ($change['after'] ?? null)
-                || ! $this->latestRelevantAuditBelongsToRun($ticket, $action, $run)) {
+                || ! $this->auditBelongsToRun($latestAudits->get($ticketId), $run)) {
                 $skippedIds[] = $ticketId;
 
                 continue;
@@ -141,6 +173,7 @@ final readonly class TicketBulkActionService
             $this->executor->notifyFinalTicketAssignmentAfterCommit(
                 $ticket,
                 $previousRuleState['assignee_id'],
+                $agent,
             );
 
             if ($this->ruleState($ticket) !== $previousRuleState) {
@@ -226,29 +259,57 @@ final readonly class TicketBulkActionService
                 ? null
                 : Carbon::createFromTimestampUTC((int) $previousClosedAt),
         ])->save();
-        $this->recordActivity($ticket, $agent, $this->statusAuditAction($current, $previous), $run);
+        foreach ($this->statusAuditActions($current, $previous) as $auditAction) {
+            $this->recordActivity($ticket, $agent, $auditAction, $run);
+        }
 
         return true;
     }
 
-    private function latestRelevantAuditBelongsToRun(Ticket $ticket, TicketBulkAction $action, TicketBulkActionRun $run): bool
-    {
-        $event = $ticket->auditEvents()
+    /**
+     * Fetch only the latest relevant audit per ticket. Doing the relevance
+     * filtering and grouping in SQL keeps a 200-ticket undo bounded even when
+     * those tickets have years of update history.
+     *
+     * @param  Collection<int, Ticket>  $tickets
+     * @return Collection<int, AuditEvent>
+     */
+    private function latestRelevantAudits(
+        Collection $tickets,
+        TicketBulkAction $action,
+        TicketBulkActionRun $run,
+    ): Collection {
+        $ticketIds = $tickets->pluck('id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+        $relevant = AuditEvent::query()
+            ->where('subject_type', (new Ticket)->getMorphClass())
+            ->whereIn('subject_id', $ticketIds)
             ->whereIn('action', $this->relevantAuditActions($action))
-            ->latest('id')
+            ->when(
+                $action === TicketBulkAction::AddLabel,
+                fn (Builder $query) => $query->where(
+                    'metadata->label_id',
+                    (int) data_get($run->value, 'value'),
+                ),
+            )
+            ->when(
+                $action === TicketBulkAction::SetPriority,
+                fn (Builder $query) => $query->whereNotNull('metadata->changes->priority'),
+            );
+        $latestIds = (clone $relevant)
+            ->selectRaw('MAX(id)')
+            ->groupBy('subject_id');
+
+        return AuditEvent::query()
+            ->whereIn('id', $latestIds)
             ->get()
-            ->first(function (AuditEvent $event) use ($action, $run): bool {
-                if ($action === TicketBulkAction::AddLabel) {
-                    return (int) data_get($event->metadata, 'label_id') === (int) data_get($run->value, 'value');
-                }
+            ->keyBy(fn (AuditEvent $event): int => (int) $event->subject_id);
+    }
 
-                if ($action === TicketBulkAction::SetPriority) {
-                    return data_get($event->metadata, 'changes.priority') !== null;
-                }
-
-                return true;
-            });
-
+    private function auditBelongsToRun(mixed $event, TicketBulkActionRun $run): bool
+    {
         return $event instanceof AuditEvent
             && (int) data_get($event->metadata, 'ticket_bulk_action_run_id') === (int) $run->id;
     }
@@ -269,17 +330,21 @@ final readonly class TicketBulkActionService
         };
     }
 
-    private function statusAuditAction(string $from, string $to): string
+    /** @return list<string> */
+    private function statusAuditActions(string $from, string $to): array
     {
         if ($to === TicketStatus::Closed->value) {
-            return 'ticket.closed';
+            return ['ticket.closed'];
         }
 
         if ($to === TicketStatus::Pending->value) {
-            return 'ticket.pending';
+            return array_values(array_filter([
+                $from === TicketStatus::Closed->value ? 'ticket.reopened' : null,
+                'ticket.pending',
+            ]));
         }
 
-        return $from === TicketStatus::Closed->value ? 'ticket.reopened' : 'ticket.unheld';
+        return [$from === TicketStatus::Closed->value ? 'ticket.reopened' : 'ticket.unheld'];
     }
 
     /** @param array<string, mixed> $metadata */

@@ -7,6 +7,7 @@ use App\Enums\TicketBulkAction;
 use App\Enums\TicketPriority;
 use App\Enums\TicketStatus;
 use App\Models\Account;
+use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\TicketBulkActionRun;
 use App\Models\TicketLabel;
@@ -18,7 +19,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -43,6 +43,7 @@ final class AgentTicketBulkActionController extends Controller
         $ids = $this->ticketIds($data['ticket_ids']);
         $tickets = $this->ticketsFor($agent, (int) $account->id, $ids);
         $value = $this->resolveValue($action, $data['value'] ?? null, $account, $tickets, $agent);
+        $this->bulkActions->prepareState($tickets, $action, $value['value']);
         $returnQuery = $this->returnQuery($data['return_query'] ?? []);
         $items = $tickets->map(function (Ticket $ticket) use ($action, $value): array {
             $changed = $this->bulkActions->wouldChange($ticket, $action, $value['value']);
@@ -64,7 +65,7 @@ final class AgentTicketBulkActionController extends Controller
             'account_id' => (int) $account->id,
             'agent_id' => (int) $agent->id,
             'action' => $action->value,
-            'value' => $value,
+            'value' => $this->storedValue($value),
             'ticket_ids' => $ids,
             'snapshots' => $items->mapWithKeys(fn (array $item): array => [
                 $item['ticket_id'] => $item['snapshot'],
@@ -125,8 +126,9 @@ final class AgentTicketBulkActionController extends Controller
                     $tickets,
                     $lockedAgent,
                 );
+                $this->bulkActions->prepareState($tickets, $action, $value['value']);
 
-                if ($value !== ($preview['value'] ?? null)) {
+                if ($this->storedValue($value) !== ($preview['value'] ?? null)) {
                     throw ValidationException::withMessages([
                         'preview_token' => __('tickets.bulk.errors.preview_stale'),
                     ]);
@@ -146,13 +148,19 @@ final class AgentTicketBulkActionController extends Controller
                     'account_id' => $accountId,
                     'triggered_by_user_id' => $lockedAgent->id,
                     'action' => $action,
-                    'value' => $value,
+                    'value' => $this->storedValue($value),
                     'item_count' => (int) $preview['item_count'],
                     'changed_count' => 0,
                     'changes' => [],
                     'return_query' => $this->returnQuery($preview['return_query'] ?? []),
                 ]);
-                $changes = $this->bulkActions->apply($lockedAgent, $run, $tickets, $value['value']);
+                $changes = $this->bulkActions->apply(
+                    $lockedAgent,
+                    $run,
+                    $tickets,
+                    $value['value'],
+                    $value['target'] ?? null,
+                );
                 $run->forceFill([
                     'changed_count' => count($changes),
                     'changes' => $changes,
@@ -216,14 +224,15 @@ final class AgentTicketBulkActionController extends Controller
                     ->values()
                     ->all();
                 $tickets = Ticket::query()
-                    ->with('site')
+                    ->with($run->actionEnum() === TicketBulkAction::AssignAgent
+                        ? ['site.supportAgents.customRole']
+                        : ['site'])
                     ->where('account_id', $accountId)
                     ->whereKey($ids)
                     ->orderBy('id')
                     ->lockForUpdate()
-                    ->get()
-                    ->filter(fn (Ticket $ticket): bool => Gate::forUser($lockedAgent)->allows('view', $ticket))
-                    ->values();
+                    ->get();
+                $this->authorizeTickets($lockedAgent, $accountId, $tickets, $ids);
                 $result = $this->bulkActions->undo($lockedAgent, $run, $tickets);
                 $run->forceFill([
                     'undone_at' => now(),
@@ -288,13 +297,38 @@ final class AgentTicketBulkActionController extends Controller
         }
 
         $tickets = $query->get();
-        abort_unless($tickets->count() === count($ids), 404);
-
-        foreach ($tickets as $ticket) {
-            abort_unless(Gate::forUser($agent)->allows('view', $ticket), 404);
-        }
+        $this->authorizeTickets($agent, $accountId, $tickets, $ids);
 
         return $tickets;
+    }
+
+    /**
+     * Authorize the complete selection before any bulk mutation begins. Site
+     * access is identical for every ticket on a site, so resolve the distinct
+     * sites in one visibility query instead of re-querying each ticket policy.
+     *
+     * @param  Collection<int, Ticket>  $tickets
+     * @param  list<int>  $ids
+     */
+    private function authorizeTickets(User $agent, int $accountId, Collection $tickets, array $ids): void
+    {
+        abort_unless(
+            (int) $agent->account_id === $accountId
+            && $agent->hasAccountPermission(AccountPermission::ManageTickets),
+            403,
+        );
+        abort_unless($tickets->count() === count($ids), 404);
+
+        $siteIds = $tickets->pluck('site_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+        $visibleSiteCount = Site::query()
+            ->visibleToAgentIncludingArchived($agent)
+            ->whereKey($siteIds->all())
+            ->count();
+
+        abort_unless($visibleSiteCount === $siteIds->count(), 404);
     }
 
     /** @return list<int> */
@@ -311,7 +345,7 @@ final class AgentTicketBulkActionController extends Controller
 
     /**
      * @param  Collection<int, Ticket>  $tickets
-     * @return array{value: int|string, label: string}
+     * @return array{value: int|string, label: string, target?: User|TicketLabel}
      */
     private function resolveValue(
         TicketBulkAction $action,
@@ -339,13 +373,28 @@ final class AgentTicketBulkActionController extends Controller
                 ->whereKey((int) $rawValue)
                 ->first();
 
+            $siteIds = $tickets->pluck('site_id')
+                ->map(fn (mixed $id): int => (int) $id)
+                ->unique()
+                ->values();
+            $coveredSiteCount = $target instanceof User
+                ? Site::query()
+                    ->visibleToAgentIncludingArchived($target)
+                    ->whereKey($siteIds->all())
+                    ->count()
+                : 0;
+
             if (! $target instanceof User
                 || ! $target->hasAccountPermission(AccountPermission::ManageTickets)
-                || $tickets->contains(fn (Ticket $ticket): bool => ! $ticket->site->supportsAgent($target))) {
+                || $coveredSiteCount !== $siteIds->count()) {
                 throw ValidationException::withMessages(['value' => __('tickets.bulk.errors.assignee_unavailable')]);
             }
 
-            return ['value' => (int) $target->id, 'label' => (string) $target->name];
+            return [
+                'value' => (int) $target->id,
+                'label' => (string) $target->name,
+                'target' => $target,
+            ];
         }
 
         if ($action === TicketBulkAction::AddLabel) {
@@ -355,7 +404,11 @@ final class AgentTicketBulkActionController extends Controller
                 throw ValidationException::withMessages(['value' => __('tickets.bulk.errors.label_unavailable')]);
             }
 
-            return ['value' => (int) $label->id, 'label' => (string) $label->name];
+            return [
+                'value' => (int) $label->id,
+                'label' => (string) $label->name,
+                'target' => $label,
+            ];
         }
 
         if ($action === TicketBulkAction::SetPriority
@@ -392,6 +445,21 @@ final class AgentTicketBulkActionController extends Controller
             TicketBulkAction::SetPriority => __('tickets.priorities.'.$ticket->priority),
             TicketBulkAction::SetStatus, TicketBulkAction::Close => __('tickets.statuses.'.$ticket->status),
         };
+    }
+
+    /**
+     * Model instances are useful while applying a locked batch, but the review
+     * session and durable run keep only stable scalar identity and display text.
+     *
+     * @param  array{value: int|string, label: string, target?: User|TicketLabel}  $value
+     * @return array{value: int|string, label: string}
+     */
+    private function storedValue(array $value): array
+    {
+        return [
+            'value' => $value['value'],
+            'label' => $value['label'],
+        ];
     }
 
     /** @return array<string, string> */

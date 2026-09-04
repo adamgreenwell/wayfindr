@@ -5,6 +5,7 @@ namespace App\Support\Automation;
 use App\Models\AutomationMacro;
 use App\Models\AutomationRule;
 use App\Models\TicketBulkActionRun;
+use App\Models\TicketLabel;
 use App\Models\User;
 
 final readonly class AutomationActionContext
@@ -15,6 +16,10 @@ final readonly class AutomationActionContext
         public string $kind,
         public int $id,
         public ?User $actor,
+        public ?User $validatedAgent = null,
+        public ?TicketLabel $validatedLabel = null,
+        /** @var list<int> */
+        public array $validatedSiteIds = [],
     ) {}
 
     public static function forRule(AutomationRule $rule): self
@@ -39,14 +44,22 @@ final readonly class AutomationActionContext
         );
     }
 
-    public static function forTicketBulkAction(TicketBulkActionRun $run, User $actor): self
-    {
+    /** @param list<int> $validatedSiteIds */
+    public static function forTicketBulkAction(
+        TicketBulkActionRun $run,
+        User $actor,
+        User|TicketLabel|null $validatedTarget,
+        array $validatedSiteIds,
+    ): self {
         return new self(
             accountId: (int) $run->account_id,
             name: 'Ticket bulk action',
             kind: 'ticket_bulk_action',
             id: (int) $run->id,
             actor: $actor,
+            validatedAgent: $validatedTarget instanceof User ? $validatedTarget : null,
+            validatedLabel: $validatedTarget instanceof TicketLabel ? $validatedTarget : null,
+            validatedSiteIds: $validatedSiteIds,
         );
     }
 

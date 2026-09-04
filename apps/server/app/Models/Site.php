@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 #[Fillable(['account_id', 'name', 'domain', 'color', 'public_key', 'settings', 'inbound_address'])]
@@ -71,6 +72,10 @@ class Site extends Model
 
     public function hasExplicitSupportAgents(): bool
     {
+        if ($this->relationLoaded('supportAgents')) {
+            return $this->eligibleLoadedSupportAgents()->isNotEmpty();
+        }
+
         return $this->eligibleSupportAgents()->exists();
     }
 
@@ -88,7 +93,18 @@ class Site extends Model
             return true;
         }
 
+        if ($this->relationLoaded('supportAgents')) {
+            return $this->eligibleLoadedSupportAgents()->contains('id', $agent->id);
+        }
+
         return $this->eligibleSupportAgents()->whereKey($agent->id)->exists();
+    }
+
+    /** @return Collection<int, User> */
+    private function eligibleLoadedSupportAgents(): Collection
+    {
+        return $this->supportAgents->filter(fn (User $candidate): bool => ! $candidate->isDeactivated()
+            && (int) $candidate->account_id === (int) $this->account_id);
     }
 
     /**

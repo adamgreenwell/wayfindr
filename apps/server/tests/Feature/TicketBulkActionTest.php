@@ -13,6 +13,7 @@ use App\Models\Ticket;
 use App\Models\TicketBulkActionRun;
 use App\Models\TicketLabel;
 use App\Models\User;
+use App\Notifications\TicketAssigned;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
@@ -131,6 +132,32 @@ test('bulk assignment records the run and dispatches one ticket update per chang
         ->and($audit->metadata['source'])->toBe('bulk_action')
         ->and($audit->metadata['ticket_bulk_action_run_id'])->toBe($run->id);
     Event::assertDispatchedTimes(TicketUpdated::class, 1);
+    Notification::assertSentTo(
+        $target,
+        TicketAssigned::class,
+        fn (TicketAssigned $notification): bool => $notification->toArray($target)['assigned_by_name'] === $agent->name,
+    );
+});
+
+test('bulk self-assignment does not notify the acting agent for every selected ticket', function (): void {
+    Notification::fake();
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $tickets = Ticket::factory()->count(3)->for($account)->for($site)->create(['assignee_id' => null]);
+
+    $preview = $this->actingAs($agent)->post(route('dashboard.tickets.bulk.preview'), [
+        'ticket_ids' => $tickets->modelKeys(),
+        'action' => 'assign_agent',
+        'value' => (string) $agent->id,
+    ]);
+    $this->actingAs($agent)->post(route('dashboard.tickets.bulk.store'), [
+        'preview_token' => $preview->viewData('token'),
+    ]);
+
+    expect($tickets->map(fn (Ticket $ticket): ?int => $ticket->fresh()->assignee_id)->all())
+        ->toBe([$agent->id, $agent->id, $agent->id]);
+    Notification::assertNothingSent();
 });
 
 test('a bulk state change runs each matching ticket updated rule once', function (): void {
@@ -414,4 +441,67 @@ test('an assignment target must support every selected ticket site', function ()
 
     expect($first->fresh()->assignee_id)->toBeNull()
         ->and($second->fresh()->assignee_id)->toBeNull();
+});
+
+test('undo authorizes the complete ticket set before reverting any ticket', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $otherAgent = User::factory()->for($account)->create();
+    $openSite = Site::factory()->for($account)->create();
+    $restrictedSite = Site::factory()->for($account)->create();
+    $restrictedSite->supportAgents()->attach([$agent->id, $otherAgent->id]);
+    $first = Ticket::factory()->for($account)->for($openSite)->create(['priority' => 'normal']);
+    $second = Ticket::factory()->for($account)->for($restrictedSite)->create(['priority' => 'normal']);
+
+    $preview = $this->actingAs($agent)->post(route('dashboard.tickets.bulk.preview'), [
+        'ticket_ids' => [$first->id, $second->id],
+        'action' => 'set_priority',
+        'value' => 'high',
+    ]);
+    $this->actingAs($agent)->post(route('dashboard.tickets.bulk.store'), [
+        'preview_token' => $preview->viewData('token'),
+    ]);
+    $run = TicketBulkActionRun::query()->sole();
+
+    $restrictedSite->supportAgents()->detach($agent);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.tickets.bulk.undo', $run))
+        ->assertNotFound();
+
+    expect($first->fresh()->priority)->toBe('high')
+        ->and($second->fresh()->priority)->toBe('high')
+        ->and($run->fresh()->undone_at)->toBeNull();
+});
+
+test('undoing a close back to pending records both reopen and pending lifecycle events', function (): void {
+    Event::fake([TicketUpdated::class]);
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create([
+        'status' => 'pending',
+        'closed_at' => null,
+    ]);
+
+    $preview = $this->actingAs($agent)->post(route('dashboard.tickets.bulk.preview'), [
+        'ticket_ids' => [$ticket->id],
+        'action' => 'close',
+    ]);
+    $this->actingAs($agent)->post(route('dashboard.tickets.bulk.store'), [
+        'preview_token' => $preview->viewData('token'),
+    ]);
+    $run = TicketBulkActionRun::query()->sole();
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.tickets.bulk.undo', $run))
+        ->assertSessionHas('ticket_bulk_status', fn (array $status): bool => $status['reverted'] === 1);
+
+    $undoEvents = $ticket->auditEvents()
+        ->whereIn('action', ['ticket.reopened', 'ticket.pending'])
+        ->get()
+        ->filter(fn ($event): bool => (int) data_get($event->metadata, 'undo_of_ticket_bulk_action_run_id') === $run->id);
+
+    expect($ticket->fresh()->status)->toBe('pending')
+        ->and($undoEvents->pluck('action')->all())->toBe(['ticket.reopened', 'ticket.pending']);
 });
