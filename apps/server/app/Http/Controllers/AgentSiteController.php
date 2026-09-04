@@ -1569,7 +1569,11 @@ class AgentSiteController extends Controller
                 ->withErrors(['confirm_name' => __('site_settings.validation.purge_name')]);
         }
 
-        $summary = $purge->purge($site, $request->user());
+        $summary = $purge->purgeAuthorized(
+            $site,
+            $request->user(),
+            $request->string('confirm_name')->trim()->value(),
+        );
 
         return redirect()
             ->route('dashboard.sites.index')
