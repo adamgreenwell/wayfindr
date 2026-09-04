@@ -132,6 +132,7 @@ test('an external note relay commits durable intent before provider delivery', f
 
     expect($relayTransactionLevel)->toBe($baseline)
         ->and($durableBeforeHttp)->toBeTrue()
+        ->and($delivery->accepted_at)->not->toBeNull()
         ->and($delivery->delivered_at)->not->toBeNull()
         ->and($delivery->failed_at)->toBeNull()
         ->and($delivery->remote_comment_id)->toBe('700124')
@@ -162,11 +163,55 @@ test('an accepted external comment is not resent when local completion fails', f
     $delivery = TicketExternalCommentDelivery::query()->sole();
 
     expect($delivery->started_at)->not->toBeNull()
+        ->and($delivery->accepted_at)->not->toBeNull()
         ->and($delivery->delivered_at)->toBeNull()
-        ->and($delivery->failed_at)->toBeNull()
-        ->and(DeliverTicketExternalComment::processNow($delivery->id))->toBe(DeliverTicketExternalComment::OUTCOME_PENDING);
+        ->and($delivery->failed_at)->toBeNull();
+
+    Queue::fake();
+
+    $this->artisan('wayfindr:queue-ticket-external-comments')
+        ->expectsOutput('Queued 1 pending external comment delivery.')
+        ->assertExitCode(0);
+
+    Queue::assertPushed(
+        DeliverTicketExternalComment::class,
+        fn (DeliverTicketExternalComment $job): bool => $job->uniqueId() === (string) $delivery->id,
+    );
+
+    app()->instance(InboundCommentSync::class, new InboundCommentSync);
+
+    expect(DeliverTicketExternalComment::processNow($delivery->id))->toBe(DeliverTicketExternalComment::OUTCOME_POSTED)
+        ->and($delivery->fresh()->delivered_at)->not->toBeNull()
+        ->and(data_get($f['link']->fresh()->metadata, 'synced_comment_ids'))->toContain('700125')
+        ->and(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
 
     Http::assertSentCount(1);
+});
+
+test('a successful relay without a remote id completes without an echo-ledger write', function (): void {
+    $f = commentRelayFixture();
+
+    Http::fake([
+        'https://api.github.com/repos/acme/widgets/issues/42/comments' => Http::response([
+            'html_url' => 'https://github.com/acme/widgets/issues/42#issuecomment-no-id',
+        ], 201),
+    ]);
+
+    $this->actingAs($f['agent'])
+        ->post(route('dashboard.tickets.notes.store', $f['ticket']), [
+            'body' => 'The provider omitted its comment id.',
+            'post_to_external' => '1',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
+
+    $delivery = TicketExternalCommentDelivery::query()->sole();
+
+    expect($delivery->accepted_at)->not->toBeNull()
+        ->and($delivery->delivered_at)->not->toBeNull()
+        ->and($delivery->remote_comment_id)->toBeNull()
+        ->and(data_get($f['link']->fresh()->metadata, 'synced_comment_ids', []))->toBe([])
+        ->and(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
 });
 
 test('the scheduler recovers an external comment intent that was not handed off', function (): void {

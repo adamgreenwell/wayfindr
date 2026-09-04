@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'body',
     'attempts',
     'started_at',
+    'accepted_at',
     'delivered_at',
     'failed_at',
     'remote_comment_id',
@@ -33,6 +34,7 @@ class TicketExternalCommentDelivery extends Model
             'body' => 'encrypted',
             'remote_url' => 'encrypted',
             'started_at' => 'immutable_datetime',
+            'accepted_at' => 'immutable_datetime',
             'delivered_at' => 'immutable_datetime',
             'failed_at' => 'immutable_datetime',
         ];
@@ -72,8 +74,13 @@ class TicketExternalCommentDelivery extends Model
     public function scopeAwaitingDispatch(Builder $query): Builder
     {
         return $query
-            ->whereNull('started_at')
             ->whereNull('delivered_at')
-            ->whereNull('failed_at');
+            ->whereNull('failed_at')
+            ->where(function (Builder $query): void {
+                $query->whereNull('started_at')
+                    // Provider acceptance is already durable. Re-run only the
+                    // idempotent local completion; handle() never POSTs again.
+                    ->orWhereNotNull('accepted_at');
+            });
     }
 }

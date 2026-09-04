@@ -23,6 +23,7 @@ return new class extends Migration
             $table->text('body');
             $table->unsignedInteger('attempts')->default(0);
             $table->timestamp('started_at')->nullable();
+            $table->timestamp('accepted_at')->nullable();
             $table->timestamp('delivered_at')->nullable();
             $table->timestamp('failed_at')->nullable();
             $table->string('remote_comment_id')->nullable();
@@ -35,7 +36,7 @@ return new class extends Migration
                 'ticket_external_comment_note_link_unique',
             );
             $table->index(
-                ['started_at', 'delivered_at', 'failed_at'],
+                ['started_at', 'accepted_at', 'delivered_at', 'failed_at'],
                 'ticket_external_comment_pending_index',
             );
         });

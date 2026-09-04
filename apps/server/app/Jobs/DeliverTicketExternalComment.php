@@ -99,6 +99,13 @@ class DeliverTicketExternalComment implements ShouldBeUnique, ShouldQueue
                 return $delivery;
             }
 
+            // The provider has already accepted this comment. Only the local,
+            // idempotent completion phase remains; never call the provider a
+            // second time for this delivery.
+            if ($delivery->accepted_at !== null) {
+                return $delivery;
+            }
+
             // A committed start marker is deliberately not retried. Provider
             // comment APIs offer no idempotency key, so a worker that vanished
             // after acceptance leaves an uncertain row for reconciliation
@@ -156,6 +163,12 @@ class DeliverTicketExternalComment implements ShouldBeUnique, ShouldQueue
             return self::OUTCOME_FAILED;
         }
 
+        if ($delivery->accepted_at !== null) {
+            $this->completeAcceptedDelivery($delivery->id, $commentSync);
+
+            return self::OUTCOME_POSTED;
+        }
+
         $link = $delivery->externalLink;
         $connection = $delivery->providerConnection;
         $commenter = $this->commenterFor($link->provider);
@@ -176,49 +189,100 @@ class DeliverTicketExternalComment implements ShouldBeUnique, ShouldQueue
             return self::OUTCOME_FAILED;
         }
 
-        // The provider has accepted an irreversible comment. From here on,
-        // never throw back into a queue retry or HTTP retry: if local completion
-        // fails, the committed started_at marker prevents a duplicate send.
+        // Persist provider acceptance before any echo-ledger or audit writes.
+        // If those local writes fail, the scheduler can safely retry only that
+        // idempotent phase without ever POSTing the comment again.
         try {
-            DB::transaction(function () use ($commentSync, $delivery, $result): void {
+            $accepted = DB::transaction(function () use ($delivery, $link, $result): ?TicketExternalCommentDelivery {
                 $fresh = TicketExternalCommentDelivery::query()
                     ->whereKey($delivery->id)
                     ->lockForUpdate()
                     ->first();
 
                 if ($fresh === null || $fresh->delivered_at !== null) {
-                    return;
+                    return $fresh;
                 }
 
-                $link = TicketExternalLink::query()
-                    ->whereKey($fresh->ticket_external_link_id)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($link === null) {
-                    return;
-                }
-
-                $commentSync->remember($link, $result['id'] ?? null);
-                $this->recordActivity($fresh, $link, 'ticket.external_comment_posted', [
-                    'url' => $result['url'] ?? $link->url,
-                ]);
                 $fresh->forceFill([
-                    'delivered_at' => now(),
-                    'failed_at' => null,
+                    'accepted_at' => now(),
                     'remote_comment_id' => $result['id'] ?? null,
                     'remote_url' => $result['url'] ?? $link->url,
                     'last_error' => null,
                 ])->save();
+
+                return $fresh;
             });
         } catch (Throwable $exception) {
-            Log::critical('External issue comment was accepted but local completion failed.', [
+            // The committed start marker still forbids another provider POST.
+            // A persistence failure here needs manual reconciliation because
+            // the remote acceptance cannot be represented durably.
+            Log::critical('External issue comment was accepted but its receipt could not be persisted.', [
                 'delivery_id' => $delivery->public_id,
                 'exception' => $exception::class,
             ]);
+
+            return self::OUTCOME_POSTED;
+        }
+
+        if ($accepted !== null && $accepted->delivered_at === null) {
+            $this->completeAcceptedDelivery($accepted->id, $commentSync);
         }
 
         return self::OUTCOME_POSTED;
+    }
+
+    private function completeAcceptedDelivery(int $deliveryId, InboundCommentSync $commentSync): bool
+    {
+        try {
+            return DB::transaction(function () use ($deliveryId, $commentSync): bool {
+                $delivery = TicketExternalCommentDelivery::query()
+                    ->whereKey($deliveryId)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($delivery === null || $delivery->delivered_at !== null) {
+                    return true;
+                }
+
+                if ($delivery->accepted_at === null) {
+                    return false;
+                }
+
+                $link = TicketExternalLink::query()
+                    ->whereKey($delivery->ticket_external_link_id)
+                    ->where('ticket_id', $delivery->ticket_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($link === null) {
+                    return false;
+                }
+
+                $commentId = trim((string) ($delivery->remote_comment_id ?? ''));
+
+                if ($commentId !== '') {
+                    $commentSync->remember($link, $commentId);
+                }
+
+                $this->recordActivity($delivery, $link, 'ticket.external_comment_posted', [
+                    'url' => $delivery->remote_url ?? $link->url,
+                ]);
+                $delivery->forceFill([
+                    'delivered_at' => now(),
+                    'failed_at' => null,
+                    'last_error' => null,
+                ])->save();
+
+                return true;
+            });
+        } catch (Throwable $exception) {
+            Log::critical('External issue comment was accepted but local completion failed.', [
+                'delivery_id' => $deliveryId,
+                'exception' => $exception::class,
+            ]);
+
+            return false;
+        }
     }
 
     private function recordFailure(TicketExternalCommentDelivery $delivery, ExternalIssueCommentFailed $exception): void
