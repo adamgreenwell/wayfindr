@@ -10,6 +10,7 @@ use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentUploadService;
+use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -37,6 +38,7 @@ final class InboundMailRouter
     public function __construct(
         private readonly AttachmentUploadService $attachments,
         private readonly AttachmentBinder $binder,
+        private readonly SiteManagerCoverage $siteManagerCoverage,
     ) {}
 
     public function route(InboundMessage $message): ?ConversationMessage
@@ -58,7 +60,21 @@ final class InboundMailRouter
             return $seen;
         }
 
-        $stored = DB::transaction(function () use ($site, $message): ConversationMessage {
+        $stored = DB::transaction(function () use ($site, $message): ?ConversationMessage {
+            $this->siteManagerCoverage->lockAccount((int) $site->account_id);
+            $site = Site::query()
+                ->servable()
+                ->whereKey($site->id)
+                ->sharedLock()
+                ->first();
+
+            // Archive may have won after the inbound-address lookup. Refuse
+            // from the locked state, and take account-site before any existing
+            // conversation is reopened by its synchronous SLA observer.
+            if (! $site) {
+                return null;
+            }
+
             $visitor = $this->visitor($site, $message);
             $conversation = $this->conversation($site, $visitor, $message);
 
@@ -93,6 +109,10 @@ final class InboundMailRouter
 
             return $stored;
         });
+
+        if (! $stored) {
+            return null;
+        }
 
         // After the commit, exactly as the widget path does it. The listeners
         // notify eligible agents and reopen pending tickets, and dispatching

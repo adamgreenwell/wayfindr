@@ -15,6 +15,7 @@ use App\Support\Mail\InboundMailRouter;
 use App\Support\Mail\InboundMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -167,13 +168,33 @@ test('a reply reopens a conversation that had been closed', function (): void {
     $first = deliver(mailPayload());
     $first->conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
 
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
     deliver(mailPayload([
         'message_id' => '<second@example.test>',
         'in_reply_to' => '<first@example.test>',
     ]));
 
+    $queries = collect(DB::getQueryLog())->pluck('query')->values();
+    DB::disableQueryLog();
+
     expect($first->conversation->fresh()->status)->toBe('open')
         ->and($first->conversation->fresh()->closed_at)->toBeNull();
+
+    if (DB::getDriverName() === 'pgsql') {
+        $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
+            && str_contains($query, 'for update'));
+        $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+            && str_contains($query, 'for share'));
+        $conversationUpdate = $queries->search(fn (string $query): bool => str_contains($query, 'update "conversations"'));
+
+        expect($accountLock)->toBeInt()
+            ->and($siteLock)->toBeInt()
+            ->and($conversationUpdate)->toBeInt()
+            ->and($accountLock)->toBeLessThan($siteLock)
+            ->and($siteLock)->toBeLessThan($conversationUpdate);
+    }
 });
 
 test('a message with no sender is refused', function (): void {
