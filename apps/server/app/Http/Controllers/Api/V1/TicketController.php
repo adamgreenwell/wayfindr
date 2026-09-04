@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Enums\TicketPriority;
 use App\Enums\TicketStatus;
 use App\Events\TicketCreated;
+use App\Events\TicketUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Site;
@@ -314,10 +315,17 @@ class TicketController extends Controller
                 ]);
             }
 
+            if ($attributes !== []) {
+                event(new TicketUpdated($locked));
+            }
+
             return $locked;
         });
 
-        if ($assigneeChanged && $newAssignee !== null && $newAssignee->shouldReceiveTicketAssignmentAlert($ticket)) {
+        if ($assigneeChanged
+            && $newAssignee !== null
+            && (int) $ticket->assignee_id === (int) $newAssignee->id
+            && $newAssignee->shouldReceiveTicketAssignmentAlert($ticket)) {
             try {
                 $newAssignee->notify(new TicketAssigned($ticket, $scope->token));
             } catch (Throwable $exception) {

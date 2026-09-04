@@ -2,6 +2,7 @@
 
 namespace App\Support\Mail;
 
+use App\Events\ConversationCreated;
 use App\Events\ConversationMessageCreated;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -60,7 +61,7 @@ final class InboundMailRouter
             return $seen;
         }
 
-        $stored = DB::transaction(function () use ($site, $message): ?ConversationMessage {
+        $result = DB::transaction(function () use ($site, $message): ?array {
             $this->siteManagerCoverage->lockAccount((int) $site->account_id);
             $site = Site::query()
                 ->servable()
@@ -77,6 +78,7 @@ final class InboundMailRouter
 
             $visitor = $this->visitor($site, $message);
             $conversation = $this->conversation($site, $visitor, $message);
+            $conversationWasCreated = $conversation->wasRecentlyCreated;
 
             $stored = $conversation->messages()->create([
                 'sender_type' => Visitor::class,
@@ -107,12 +109,14 @@ final class InboundMailRouter
                 'last_message_at' => $stored->created_at,
             ])->save();
 
-            return $stored;
+            return [$stored, $conversationWasCreated ? $conversation : null];
         });
 
-        if (! $stored) {
+        if ($result === null) {
             return null;
         }
+
+        [$stored, $createdConversation] = $result;
 
         // After the commit, exactly as the widget path does it. The listeners
         // notify eligible agents and reopen pending tickets, and dispatching
@@ -134,6 +138,17 @@ final class InboundMailRouter
         // provider is owed that answer. What happens to the live update
         // afterwards is this install's problem, not something to solve by
         // asking for the message again.
+        if ($createdConversation instanceof Conversation) {
+            try {
+                event(new ConversationCreated($createdConversation));
+            } catch (Throwable $exception) {
+                Log::error('Inbound conversation stored, but announcing its creation failed.', [
+                    'conversation_id' => $createdConversation->id,
+                    'exception_class' => $exception::class,
+                ]);
+            }
+        }
+
         try {
             event(new ConversationMessageCreated($stored));
         } catch (Throwable $exception) {

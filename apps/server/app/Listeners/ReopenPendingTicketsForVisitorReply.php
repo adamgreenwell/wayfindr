@@ -3,6 +3,7 @@
 namespace App\Listeners;
 
 use App\Events\ConversationMessageCreated;
+use App\Events\TicketUpdated;
 use App\Models\Ticket;
 use App\Models\Visitor;
 
@@ -51,6 +52,7 @@ class ReopenPendingTicketsForVisitorReply
                     ],
                     'occurred_at' => $message->created_at,
                 ]);
+                event(new TicketUpdated($ticket));
             });
     }
 }

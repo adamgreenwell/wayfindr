@@ -4,6 +4,7 @@ use App\Enums\AutomationExecutionStatus;
 use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationMessageCreated;
 use App\Events\TicketCreated;
+use App\Events\TicketUpdated;
 use App\Models\Account;
 use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
@@ -36,6 +37,23 @@ function dispatchTicketCreatedAutomation(Ticket $ticket): Ticket
     ]);
 
     event(new TicketCreated($ticket));
+
+    return $ticket->fresh();
+}
+
+function dispatchTicketUpdatedAutomation(Ticket $ticket): Ticket
+{
+    $ticket->auditEvents()->create([
+        'account_id' => $ticket->account_id,
+        'site_id' => $ticket->site_id,
+        'actor_type' => null,
+        'actor_id' => null,
+        'action' => 'ticket.updated',
+        'metadata' => ['source' => 'test'],
+        'occurred_at' => now(),
+    ]);
+
+    event(new TicketUpdated($ticket));
 
     return $ticket->fresh();
 }
@@ -177,6 +195,37 @@ test('visitor messages can trigger conversation actions without creating a visit
     Notification::assertSentTo($notifiedAgent, AutomationRuleMatched::class);
 });
 
+test('visitor ticket reopen automation follows the visitor reply audit', function (): void {
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->for($conversation)->create([
+        'status' => 'pending',
+    ]);
+    $rule = AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Visitor reply follow-up',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'conditions' => [
+            ['field' => 'status', 'operator' => 'equals', 'value' => 'open'],
+        ],
+        'actions' => [['type' => 'post_internal_note', 'value' => 'Visitor replied to a pending ticket.']],
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+    ]);
+
+    event(new ConversationMessageCreated($message));
+
+    $replyAudit = $ticket->auditEvents()->where('action', 'ticket.visitor_replied')->sole();
+    $automationAudit = $ticket->auditEvents()->where('action', 'ticket.note_added')->sole();
+
+    expect($ticket->fresh()->status)->toBe('open')
+        ->and($replyAudit->id)->toBeLessThan($automationAudit->id)
+        ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
+});
+
 test('a failed action rolls back its sequence records the failure and lets the next rule run', function (): void {
     Notification::fake();
 
@@ -243,8 +292,9 @@ test('a ticket updated rule cannot recursively trigger itself', function (): voi
     ]);
 
     $ticket->forceFill(['subject' => 'Changed by an agent'])->save();
+    $ticket = dispatchTicketUpdatedAutomation($ticket);
 
-    expect($ticket->fresh()->priority)->toBe('high')
+    expect($ticket->priority)->toBe('high')
         ->and(AutomationRuleExecution::query()->count())->toBe(1)
         ->and(AutomationRuleExecution::query()->sole()->status)->toBe('succeeded');
 });
