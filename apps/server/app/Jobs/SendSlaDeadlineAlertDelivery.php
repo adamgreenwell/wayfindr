@@ -161,6 +161,8 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 || $delivery->accepted_at !== null
                 || $delivery->cancelled_at !== null
                 || $delivery->started_at !== null
+                || ($delivery->claimed_at !== null
+                    && $delivery->claimed_at->isAfter(now()->subMinutes(SlaAlertDelivery::CLAIM_LEASE_MINUTES)))
             ) {
                 return null;
             }
@@ -185,10 +187,10 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
             }
 
             $delivery->forceFill([
-                // Commit BEFORE SMTP. A transport error or a failed receipt
-                // write after this point is an ambiguous outcome and must not
-                // be retried automatically into a duplicate customer email.
-                'started_at' => now(),
+                // This is only a recoverable worker lease. The MessageSending
+                // listener places started_at at Laravel's transport boundary,
+                // so a crash before sendNow never strands an unsent message.
+                'claimed_at' => now(),
                 'attempts' => $delivery->attempts + 1,
                 'last_attempted_at' => now(),
                 'failed_at' => null,
@@ -218,22 +220,66 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                     return;
                 }
 
+                if ($current->started_at === null) {
+                    // Notification::shouldSend vetoed the channel between the
+                    // preparation check and MailChannel. No transport event
+                    // ran, so this delivery is known not to have been sent.
+                    $current->forceFill([
+                        'claimed_at' => null,
+                        'failed_at' => null,
+                        'cancelled_at' => now(),
+                    ])->save();
+
+                    return;
+                }
+
                 $current->forceFill([
                     'accepted_at' => now(),
                     'failed_at' => null,
                 ])->save();
             });
         } catch (Throwable $exception) {
-            SlaAlertDelivery::query()
-                ->whereKey($delivery->id)
-                ->whereNull('accepted_at')
-                ->whereNotNull('started_at')
-                ->update(['failed_at' => now()]);
+            $outcome = DB::transaction(function () use ($delivery): string {
+                $current = SlaAlertDelivery::query()
+                    ->whereKey($delivery->id)
+                    ->lockForUpdate()
+                    ->first();
 
-            Log::critical('SLA mail transport outcome is uncertain; automatic retries stopped.', [
-                'sla_alert_delivery_id' => $delivery->public_id,
-                'exception' => $exception::class,
-            ]);
+                if ($current === null || $current->accepted_at !== null) {
+                    return 'complete';
+                }
+
+                if ($current->started_at === null) {
+                    if ($current->cancelled_at !== null) {
+                        return 'cancelled';
+                    }
+
+                    // Rendering, policy vetoes, and transport-boundary setup
+                    // failures happen before SMTP. Release the lease so those
+                    // known-unsent attempts remain safe to retry.
+                    $current->forceFill([
+                        'claimed_at' => null,
+                        'failed_at' => now(),
+                    ])->save();
+
+                    return 'retryable';
+                }
+
+                $current->forceFill(['failed_at' => now()])->save();
+
+                return 'uncertain';
+            });
+
+            if ($outcome === 'cancelled' || $outcome === 'complete') {
+                return;
+            }
+
+            if ($outcome === 'uncertain') {
+                Log::critical('SLA mail transport outcome is uncertain; automatic retries stopped.', [
+                    'sla_alert_delivery_id' => $delivery->public_id,
+                    'exception' => $exception::class,
+                ]);
+            }
 
             throw $exception;
         }

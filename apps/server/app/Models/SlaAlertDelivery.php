@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'stage',
     'channel',
     'attempts',
+    'claimed_at',
     'started_at',
     'last_attempted_at',
     'accepted_at',
@@ -23,12 +24,15 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class SlaAlertDelivery extends Model
 {
+    public const CLAIM_LEASE_MINUTES = 5;
+
     public const FAILED_RETRY_AFTER_MINUTES = 60;
 
     protected function casts(): array
     {
         return [
             'attempts' => 'integer',
+            'claimed_at' => 'immutable_datetime',
             'started_at' => 'immutable_datetime',
             'last_attempted_at' => 'immutable_datetime',
             'accepted_at' => 'immutable_datetime',
@@ -59,6 +63,10 @@ class SlaAlertDelivery extends Model
             // Never turn that uncertainty into an automatic duplicate.
             ->whereNull('started_at')
             ->whereNull('cancelled_at')
+            ->where(function (Builder $query): void {
+                $query->whereNull('claimed_at')
+                    ->orWhere('claimed_at', '<=', now()->subMinutes(self::CLAIM_LEASE_MINUTES));
+            })
             ->where(function (Builder $query): void {
                 $query->whereNull('failed_at')
                     ->orWhere('failed_at', '<=', now()->subMinutes(self::FAILED_RETRY_AFTER_MINUTES));

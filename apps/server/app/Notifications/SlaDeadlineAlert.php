@@ -18,6 +18,8 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public const DELIVERY_HEADER = 'X-Wayfindr-Sla-Delivery';
+
     public function __construct(
         private readonly SlaClock $clock,
         private readonly string $stage,
@@ -86,6 +88,7 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
             $message->withSymfonyMessage(function (Email $email) use ($host): void {
                 $email->getHeaders()->remove('Message-ID');
                 $email->getHeaders()->addIdHeader('Message-ID', $this->id.'@'.$host);
+                $email->getHeaders()->addTextHeader(self::DELIVERY_HEADER, $this->id);
             });
         }
 
