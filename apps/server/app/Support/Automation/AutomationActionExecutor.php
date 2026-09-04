@@ -71,10 +71,14 @@ final readonly class AutomationActionExecutor
 
         if ($subject instanceof Ticket) {
             $subject->forceFill(['assignee_id' => $agent->id])->save();
-            $this->assignmentAuditTrail->ticket($subject, $automation->actor, $oldAssignee, $agent, $automation->source());
+            $this->assignmentAuditTrail->ticket($subject, $automation->actor, $oldAssignee, $agent, $automation->source(), [
+                $automation->idKey() => $automation->id,
+            ]);
         } else {
             $subject->forceFill(['assigned_agent_id' => $agent->id])->save();
-            $this->assignmentAuditTrail->conversation($subject, $automation->actor, $oldAssignee, $agent, $automation->source());
+            $this->assignmentAuditTrail->conversation($subject, $automation->actor, $oldAssignee, $agent, $automation->source(), [
+                $automation->idKey() => $automation->id,
+            ]);
         }
 
         return $this->result(AutomationRuleActionType::AssignAgent, 'applied', 'agent:'.$agent->id);
@@ -87,10 +91,12 @@ final readonly class AutomationActionExecutor
             throw new InvalidArgumentException('Only tickets can receive labels.');
         }
 
-        $label = TicketLabel::query()
-            ->whereKey($labelId)
-            ->where('account_id', $automation->accountId)
-            ->first();
+        $label = $automation->validatedLabel?->id === $labelId
+            ? $automation->validatedLabel
+            : TicketLabel::query()
+                ->whereKey($labelId)
+                ->where('account_id', $automation->accountId)
+                ->first();
 
         if (! $label instanceof TicketLabel) {
             throw new InvalidArgumentException("Label {$labelId} is not available to this {$automation->description()}.");
@@ -204,6 +210,11 @@ final readonly class AutomationActionExecutor
 
     private function eligibleAgent(AutomationActionContext $automation, Ticket|Conversation $subject, int $agentId): ?User
     {
+        if ($automation->validatedAgent?->id === $agentId
+            && in_array((int) $subject->site_id, $automation->validatedSiteIds, true)) {
+            return $automation->validatedAgent;
+        }
+
         $agent = User::query()
             ->with('customRole')
             ->whereKey($agentId)
@@ -296,15 +307,20 @@ final readonly class AutomationActionExecutor
         ]);
     }
 
-    public function notifyFinalTicketAssignmentAfterCommit(Ticket $ticket, ?int $previousAssigneeId): void
-    {
+    public function notifyFinalTicketAssignmentAfterCommit(
+        Ticket $ticket,
+        ?int $previousAssigneeId,
+        ?User $assignedBy = null,
+    ): void {
         $assigneeId = $ticket->assignee_id === null ? null : (int) $ticket->assignee_id;
 
-        if ($assigneeId === null || $assigneeId === $previousAssigneeId) {
+        if ($assigneeId === null
+            || $assigneeId === $previousAssigneeId
+            || $assigneeId === $assignedBy?->id) {
             return;
         }
 
-        DB::afterCommit(function () use ($assigneeId, $ticket): void {
+        DB::afterCommit(function () use ($assignedBy, $assigneeId, $ticket): void {
             $recipient = User::query()->whereKey($assigneeId)->first();
             $current = Ticket::query()->with('site')->whereKey($ticket->id)->first();
 
@@ -315,7 +331,7 @@ final readonly class AutomationActionExecutor
             }
 
             try {
-                $recipient->notify(new TicketAssigned($current, null));
+                $recipient->notify(new TicketAssigned($current, $assignedBy));
             } catch (Throwable $exception) {
                 Log::error('Automation assigned a ticket, but its alert failed.', [
                     'ticket_id' => $ticket->id,
