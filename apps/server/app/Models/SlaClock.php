@@ -94,4 +94,20 @@ class SlaClock extends Model
             ->values()
             ->all();
     }
+
+    public function alertStageIsCurrent(string $stage): bool
+    {
+        if (! $this->isActive()) {
+            return false;
+        }
+
+        return match ($stage) {
+            'warning' => $this->warned_at !== null
+                && $this->breached_at === null
+                && $this->elapsed_seconds >= $this->warning_seconds,
+            'breach' => $this->breached_at !== null
+                && $this->elapsed_seconds >= $this->target_seconds,
+            default => false,
+        };
+    }
 }

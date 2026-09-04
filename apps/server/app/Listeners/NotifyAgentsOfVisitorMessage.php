@@ -90,19 +90,8 @@ class NotifyAgentsOfVisitorMessage
         ) {
             $episodeStartedAt = now()->toISOString();
             $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $episodeStartedAt;
-            $data[UnattendedConversationAlertCollector::ELAPSED_SECONDS_KEY] = 0;
-            $data[UnattendedConversationAlertCollector::LAST_COUNTED_AT_KEY] = $episodeStartedAt;
         } else {
             $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $waitingSince;
-
-            foreach ([
-                UnattendedConversationAlertCollector::ELAPSED_SECONDS_KEY,
-                UnattendedConversationAlertCollector::LAST_COUNTED_AT_KEY,
-            ] as $clockKey) {
-                if (data_get($existingData, $clockKey) !== null) {
-                    $data[$clockKey] = data_get($existingData, $clockKey);
-                }
-            }
 
             $unattendedEmailedAt = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY);
 

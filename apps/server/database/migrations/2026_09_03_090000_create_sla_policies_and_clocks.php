@@ -10,6 +10,9 @@ return new class extends Migration
     {
         Schema::table('conversations', function (Blueprint $table): void {
             $table->string('priority')->default('normal')->after('status');
+            $table->timestamp('support_wait_started_at')->nullable()->after('last_message_at');
+            $table->unsignedBigInteger('support_wait_elapsed_seconds')->default(0)->after('support_wait_started_at');
+            $table->timestamp('support_wait_last_counted_at')->nullable()->after('support_wait_elapsed_seconds');
             $table->index(['site_id', 'status', 'priority']);
         });
 
@@ -60,7 +63,12 @@ return new class extends Migration
 
         Schema::table('conversations', function (Blueprint $table): void {
             $table->dropIndex(['site_id', 'status', 'priority']);
-            $table->dropColumn('priority');
+            $table->dropColumn([
+                'priority',
+                'support_wait_started_at',
+                'support_wait_elapsed_seconds',
+                'support_wait_last_counted_at',
+            ]);
         });
     }
 };

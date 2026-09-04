@@ -50,6 +50,7 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
 
         return $recipient instanceof User
             && $clock?->subject !== null
+            && $clock->alertStageIsCurrent($this->stage)
             && $recipient->wantsImmediateAlertEmail()
             && Gate::forUser($recipient)->allows('view', $clock->subject)
             && app(SlaAlertRouting::class)->routesTo($clock, $recipient);

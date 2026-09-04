@@ -67,10 +67,11 @@ run; recipients whose handoff already succeeded are not queued twice.
 
 The fixed unattended-conversation alert now uses the same business-time
 calculator. It no longer wakes agents at night for five wall-clock minutes that
-the SLA view correctly calls paused. Each unread waiting episode persists the
-business seconds already consumed before support hours or a manual closure
-changes, so reopening a desk cannot turn its closed interval back into waiting
-time. Queue-health reporting projects from that same settled episode clock.
+the SLA view correctly calls paused. Each current waiting episode persists its
+business seconds on the conversation before support hours or a manual closure
+changes, so notification reads and reopening a desk cannot rewrite its wait.
+Queue-health reporting and unattended email project from that same settled
+episode clock.
 
 ## History
 

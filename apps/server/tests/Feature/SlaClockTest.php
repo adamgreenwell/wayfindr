@@ -292,6 +292,52 @@ test('queued SLA mail rechecks assignment and quiet mode before delivery', funct
     expect($notification->shouldSend($world['agent'], 'mail'))->toBeFalse();
 });
 
+test('queued SLA mail rechecks that its stage is still current before delivery', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create([
+        'assigned_agent_id' => $world['agent']->id,
+    ]);
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $clock->forceFill([
+        'elapsed_seconds' => $clock->warning_seconds,
+        'warned_at' => now(),
+    ])->save();
+    $warning = new SlaDeadlineAlert($clock->fresh(), 'warning');
+
+    expect($warning->shouldSend($world['agent'], 'mail'))->toBeTrue();
+
+    $clock->forceFill([
+        'target_seconds' => 60 * 60,
+        'warning_seconds' => 48 * 60,
+    ])->save();
+
+    expect($warning->shouldSend($world['agent'], 'mail'))->toBeFalse();
+
+    $clock->forceFill([
+        'target_seconds' => 10 * 60,
+        'warning_seconds' => 8 * 60,
+        'elapsed_seconds' => 10 * 60,
+        'breached_at' => now(),
+    ])->save();
+    $breach = new SlaDeadlineAlert($clock->fresh(), 'breach');
+
+    expect($warning->shouldSend($world['agent'], 'mail'))->toBeFalse()
+        ->and($breach->shouldSend($world['agent'], 'mail'))->toBeTrue();
+
+    $clock->forceFill(['satisfied_at' => now()])->save();
+
+    expect($breach->shouldSend($world['agent'], 'mail'))->toBeFalse();
+});
+
 test('advancing before an hours edit preserves time already counted', function (): void {
     $world = slaWorld();
     configureNormalSla($world['account']);

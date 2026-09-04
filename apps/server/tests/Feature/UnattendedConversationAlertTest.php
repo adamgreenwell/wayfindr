@@ -149,7 +149,7 @@ test('manually reopening a desk does not turn closed time into unattended wait t
     $account = Account::factory()->create();
     $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
     $site = Site::factory()->for($account)->create(['settings' => []]);
-    createUnattendedWait($agent, $site);
+    $conversation = createUnattendedWait($agent, $site);
 
     $this->travel(2)->minutes();
     $this->actingAs($agent)
@@ -161,13 +161,12 @@ test('manually reopening a desk does not turn closed time into unattended wait t
         ->delete(route('dashboard.sites.availability.reopen', $site))
         ->assertRedirect(route('dashboard.sites.show', $site));
 
-    $notification = $agent->unreadNotifications()->where('type', ConversationNeedsReply::class)->sole();
     $report = new SupportReport(
         ReportingScope::for($account, $agent),
         ReportingWindow::ofDays(30),
     );
 
-    expect(data_get($notification->data, UnattendedConversationAlertCollector::ELAPSED_SECONDS_KEY))->toBe(2 * 60)
+    expect($conversation->fresh()->support_wait_elapsed_seconds)->toBe(2 * 60)
         ->and($report->queueHealth()['oldest_wait_seconds'])->toBe(2 * 60);
 
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
@@ -180,6 +179,35 @@ test('manually reopening a desk does not turn closed time into unattended wait t
     $this->travel(2)->minutes();
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
     Mail::assertQueuedCount(1);
+});
+
+test('queue health preserves a waiting clock after its notification is read', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-08-26 10:00', 'UTC'));
+
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, ['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $conversation = createUnattendedWait($agent, $site);
+
+    $this->travel(2)->minutes();
+    $agent->unreadNotifications()->update(['read_at' => now()]);
+    $conversation->markReadFor($agent);
+
+    $this->actingAs($agent)
+        ->put(route('dashboard.sites.availability.update', $site), [
+            'availability_enabled' => '1',
+            'availability_timezone' => 'UTC',
+        ])
+        ->assertRedirect(route('dashboard.sites.show', $site));
+
+    $report = new SupportReport(
+        ReportingScope::for($account, $agent),
+        ReportingWindow::ofDays(30),
+    );
+
+    expect($agent->unreadNotifications()->where('type', ConversationNeedsReply::class)->count())->toBe(0)
+        ->and($conversation->fresh()->support_wait_elapsed_seconds)->toBe(2 * 60)
+        ->and($report->queueHealth()['oldest_wait_seconds'])->toBe(2 * 60);
 });
 
 test('nothing sends once the agent has seen the conversation', function (): void {

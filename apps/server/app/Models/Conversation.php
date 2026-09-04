@@ -27,6 +27,9 @@ use Illuminate\Support\Str;
     'subject',
     'metadata',
     'last_message_at',
+    'support_wait_started_at',
+    'support_wait_elapsed_seconds',
+    'support_wait_last_counted_at',
     'closed_at',
 ])]
 class Conversation extends Model
@@ -58,6 +61,9 @@ class Conversation extends Model
         return [
             'metadata' => 'array',
             'last_message_at' => 'datetime',
+            'support_wait_started_at' => 'datetime',
+            'support_wait_elapsed_seconds' => 'integer',
+            'support_wait_last_counted_at' => 'datetime',
             'closed_at' => 'datetime',
         ];
     }
