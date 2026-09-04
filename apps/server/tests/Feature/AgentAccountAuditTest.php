@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -504,4 +506,104 @@ test('admins can find cobrowse audit activity by support code without exposing m
         ->assertSee('Docs Site')
         ->assertDontSee('Do not render me')
         ->assertDontSee('https://docs.example.test/private');
+});
+
+test('audit-only roles cannot read or search support identities and references', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewAudit->value],
+    ]);
+    $auditor = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Public Docs']);
+    $site->supportAgents()->attach($auditor);
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => 'Dana Confidential',
+        'email' => 'audit-hidden@example.test',
+        'external_id' => 'customer-hidden-481',
+        'anonymous_id' => 'anonymous-hidden-592',
+        'presence_only' => false,
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-HIDDEN-749',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+    ]);
+    $grant = BreakGlassGrant::factory()->create([
+        'account_id' => $account->id,
+        'requester_id' => $auditor->id,
+        'scope_type' => BreakGlassGrant::SCOPE_CONVERSATION,
+        'conversation_id' => $conversation->id,
+    ]);
+
+    $session->auditEvents()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => $visitor->getMorphClass(),
+        'actor_id' => $visitor->id,
+        'action' => 'cobrowse.resync_fulfilled',
+        'metadata' => [],
+        'occurred_at' => now(),
+    ]);
+
+    foreach ([
+        ['resource_type' => BreakGlassGrant::SCOPE_CONVERSATION, 'resource_label' => 'Conversation WF-HIDDEN-749'],
+        ['resource_type' => 'ticket', 'resource_label' => 'Ticket #98765'],
+    ] as $metadata) {
+        AuditEvent::factory()->for($account)->for($site)->for($grant, 'subject')->create([
+            'actor_type' => null,
+            'actor_id' => null,
+            'action' => 'break_glass.resource_viewed',
+            'metadata' => $metadata,
+            'occurred_at' => now(),
+        ]);
+    }
+
+    $this->actingAs($auditor)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('Visitor')
+        ->assertSee('Cobrowse')
+        ->assertSee('Operator access: Conversation')
+        ->assertSee('Operator access: Ticket')
+        ->assertDontSee('Dana Confidential')
+        ->assertDontSee('audit-hidden@example.test')
+        ->assertDontSee('customer-hidden-481')
+        ->assertDontSee('anonymous-hidden-592')
+        ->assertDontSee('WF-HIDDEN-749')
+        ->assertDontSee('#98765');
+
+    foreach ([
+        'Dana Confidential',
+        'audit-hidden@example.test',
+        'customer-hidden-481',
+        'anonymous-hidden-592',
+        'WF-HIDDEN-749',
+        '98765',
+    ] as $search) {
+        $this->actingAs($auditor)
+            ->get(route('dashboard.account.audit.index', ['audit_search' => $search]))
+            ->assertOk()
+            ->assertSee('0 shown');
+    }
+
+    $content = $this->actingAs($auditor)
+        ->get(route('dashboard.account.audit.export'))
+        ->streamedContent();
+
+    expect($content)
+        ->toContain('cobrowse.resync_fulfilled')
+        ->toContain('Visitor')
+        ->toContain('Cobrowse')
+        ->toContain('Operator access: Conversation')
+        ->toContain('Operator access: Ticket')
+        ->not->toContain('Dana Confidential')
+        ->not->toContain('audit-hidden@example.test')
+        ->not->toContain('customer-hidden-481')
+        ->not->toContain('anonymous-hidden-592')
+        ->not->toContain('WF-HIDDEN-749')
+        ->not->toContain('#98765');
 });

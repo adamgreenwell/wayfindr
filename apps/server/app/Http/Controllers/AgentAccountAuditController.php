@@ -33,12 +33,25 @@ class AgentAccountAuditController extends Controller
         $account = $agent->account()->firstOrFail();
         $visibleSites = $this->visibleSites($account, $agent);
         $visibleSiteIds = $this->siteIds($visibleSites);
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
         $baseQuery = $this->baseAuditQuery($account, $visibleSiteIds);
         $availableActions = $this->availableActions($baseQuery);
         [$auditAction, $auditSearch, $auditSiteId] = $this->filters($request, $availableActions, $visibleSiteIds);
         $auditQuery = $this->auditQueryParams($auditAction, $auditSearch, $auditSiteId);
-        $auditEvents = $this->auditEvents($baseQuery, $auditAction, $auditSearch, $auditSiteId, 50)
-            ->map(fn (AuditEvent $event): array => $this->auditItem($event));
+        $auditEvents = $this->auditEvents(
+            $baseQuery,
+            $auditAction,
+            $auditSearch,
+            $auditSiteId,
+            50,
+            $canViewConversations,
+            $canManageTickets,
+        )->map(fn (AuditEvent $event): array => $this->auditItem(
+            $event,
+            $canViewConversations,
+            $canManageTickets,
+        ));
 
         return view('agent.account.audit', [
             'account' => $account,
@@ -58,11 +71,21 @@ class AgentAccountAuditController extends Controller
         $agent = $this->accountAdmin($request);
         $account = $agent->account()->firstOrFail();
         $visibleSiteIds = $this->siteIds($this->visibleSites($account, $agent));
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
         $baseQuery = $this->baseAuditQuery($account, $visibleSiteIds);
         [$auditAction, $auditSearch, $auditSiteId] = $this->filters($request, $this->availableActions($baseQuery), $visibleSiteIds);
-        $auditEvents = $this->auditEvents($baseQuery, $auditAction, $auditSearch, $auditSiteId, 500);
+        $auditEvents = $this->auditEvents(
+            $baseQuery,
+            $auditAction,
+            $auditSearch,
+            $auditSiteId,
+            500,
+            $canViewConversations,
+            $canManageTickets,
+        );
 
-        return response()->streamDownload(function () use ($auditEvents): void {
+        return response()->streamDownload(function () use ($auditEvents, $canViewConversations, $canManageTickets): void {
             $stream = fopen('php://output', 'w');
 
             if ($stream === false) {
@@ -72,7 +95,7 @@ class AgentAccountAuditController extends Controller
             fputcsv($stream, ['occurred_at', 'action', 'label', 'actor', 'subject', 'site']);
 
             foreach ($auditEvents as $event) {
-                fputcsv($stream, $this->auditCsvRow($event));
+                fputcsv($stream, $this->auditCsvRow($event, $canViewConversations, $canManageTickets));
             }
 
             fclose($stream);
@@ -186,9 +209,23 @@ class AgentAccountAuditController extends Controller
      * @param  Builder<AuditEvent>  $baseQuery
      * @return Collection<int, AuditEvent>
      */
-    private function auditEvents(Builder $baseQuery, string $auditAction, string $auditSearch, ?int $auditSiteId, int $limit): Collection
-    {
-        return $this->applyAuditFilters(clone $baseQuery, $auditAction, $auditSearch, $auditSiteId)
+    private function auditEvents(
+        Builder $baseQuery,
+        string $auditAction,
+        string $auditSearch,
+        ?int $auditSiteId,
+        int $limit,
+        bool $canViewConversations,
+        bool $canManageTickets,
+    ): Collection {
+        return $this->applyAuditFilters(
+            clone $baseQuery,
+            $auditAction,
+            $auditSearch,
+            $auditSiteId,
+            $canViewConversations,
+            $canManageTickets,
+        )
             ->latest('occurred_at')
             ->latest('id')
             ->limit($limit)
@@ -209,14 +246,14 @@ class AgentAccountAuditController extends Controller
      *     site: array{prefix: string|null, value: string|null}
      * }
      */
-    private function auditItem(AuditEvent $event): array
+    private function auditItem(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): array
     {
         return [
             'occurred_at' => $event->occurred_at === null ? '' : ReaderClock::dateTime($event->occurred_at),
             'action' => $event->action,
             'label' => $this->translatedAuditLabel($event->action),
-            'actor' => $this->auditActorParts($event),
-            'subject' => $this->auditSubjectParts($event),
+            'actor' => $this->auditActorParts($event, $canViewConversations || $canManageTickets),
+            'subject' => $this->auditSubjectParts($event, $canViewConversations, $canManageTickets),
             'site' => $event->site
                 ? ['prefix' => null, 'value' => $event->site->name]
                 : ['prefix' => __('account_audit.references.account'), 'value' => null],
@@ -226,7 +263,7 @@ class AgentAccountAuditController extends Controller
     /**
      * @return array<int, string>
      */
-    private function auditCsvRow(AuditEvent $event): array
+    private function auditCsvRow(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): array
     {
         // Stable English reference labels and a sortable timestamp on purpose:
         // the file may be read under a different locale from the dashboard that
@@ -237,8 +274,8 @@ class AgentAccountAuditController extends Controller
                 : ReaderClock::moment($event->occurred_at)->toDateTimeString(),
             $event->action,
             $this->auditLabel($event->action),
-            $this->auditActor($event),
-            $this->auditSubject($event),
+            $this->auditActor($event, $canViewConversations || $canManageTickets),
+            $this->auditSubject($event, $canViewConversations, $canManageTickets),
             $event->site?->name ?? 'Account',
         ]);
     }
@@ -247,15 +284,21 @@ class AgentAccountAuditController extends Controller
      * @param  Builder<AuditEvent>  $query
      * @return Builder<AuditEvent>
      */
-    private function applyAuditFilters(Builder $query, string $auditAction, string $auditSearch, ?int $auditSiteId): Builder
-    {
+    private function applyAuditFilters(
+        Builder $query,
+        string $auditAction,
+        string $auditSearch,
+        ?int $auditSiteId,
+        bool $canViewConversations,
+        bool $canManageTickets,
+    ): Builder {
         return $query
             ->when($auditAction !== '', fn (Builder $query) => $query->where('action', $auditAction))
             ->when($auditSiteId !== null, fn (Builder $query) => $query->where('site_id', $auditSiteId))
-            ->when($auditSearch !== '', function (Builder $query) use ($auditSearch): void {
+            ->when($auditSearch !== '', function (Builder $query) use ($auditSearch, $canViewConversations, $canManageTickets): void {
                 $searchPattern = '%'.$auditSearch.'%';
 
-                $query->where(function (Builder $query) use ($searchPattern): void {
+                $query->where(function (Builder $query) use ($searchPattern, $canViewConversations, $canManageTickets): void {
                     $query
                         ->whereLike('action', $searchPattern)
                         ->orWhereHas('site', fn (Builder $query) => $query
@@ -264,11 +307,6 @@ class AgentAccountAuditController extends Controller
                         ->orWhereHasMorph('actor', [User::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern))
-                        ->orWhereHasMorph('actor', [Visitor::class], fn (Builder $query) => $query
-                            ->whereLike('name', $searchPattern)
-                            ->orWhereLike('email', $searchPattern)
-                            ->orWhereLike('external_id', $searchPattern)
-                            ->orWhereLike('anonymous_id', $searchPattern))
                         ->orWhereHasMorph('actor', [ApiToken::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('last_four', $searchPattern))
@@ -278,8 +316,6 @@ class AgentAccountAuditController extends Controller
                         ->orWhereHasMorph('subject', [Site::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('domain', $searchPattern))
-                        ->orWhereHasMorph('subject', [Conversation::class], fn (Builder $query) => $query
-                            ->whereLike('support_code', $searchPattern))
                         ->orWhereHasMorph('subject', [CustomRole::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern))
                         ->orWhereLike('metadata->role_name', $searchPattern)
@@ -296,15 +332,55 @@ class AgentAccountAuditController extends Controller
                             ->whereLike('name', $searchPattern))
                         ->orWhereHasMorph('subject', [OidcIdentity::class], fn (Builder $query) => $query
                             ->whereHas('connection', fn (Builder $query) => $query->whereLike('name', $searchPattern)))
-                        ->orWhereLike('metadata->oidc_provider_name', $searchPattern)
-                        ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
-                            ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)))
-                        // Break-glass subjects surface their reference-safe
-                        // labels (support code, site name, "Ticket #n") from
-                        // event metadata — the search must reach what the
-                        // subject column shows.
-                        ->orWhereLike('metadata->resource_label', $searchPattern)
-                        ->orWhereLike('metadata->scope_label', $searchPattern);
+                        ->orWhereLike('metadata->oidc_provider_name', $searchPattern);
+
+                    if ($canViewConversations || $canManageTickets) {
+                        $query->orWhereHasMorph('actor', [Visitor::class], fn (Builder $query) => $query
+                            ->whereLike('name', $searchPattern)
+                            ->orWhereLike('email', $searchPattern)
+                            ->orWhereLike('external_id', $searchPattern)
+                            ->orWhereLike('anonymous_id', $searchPattern));
+                    }
+
+                    if ($canViewConversations) {
+                        $query
+                            ->orWhereHasMorph('subject', [Conversation::class], fn (Builder $query) => $query
+                                ->whereLike('support_code', $searchPattern))
+                            ->orWhereHasMorph('subject', [CobrowseSession::class], fn (Builder $query) => $query
+                                ->whereHas('conversation', fn (Builder $query) => $query->whereLike('support_code', $searchPattern)));
+                    }
+
+                    $breakGlassTypes = [BreakGlassGrant::SCOPE_ACCOUNT, BreakGlassGrant::SCOPE_SITE];
+
+                    if ($canViewConversations) {
+                        $breakGlassTypes[] = BreakGlassGrant::SCOPE_CONVERSATION;
+                    }
+
+                    if ($canManageTickets) {
+                        $breakGlassTypes[] = 'ticket';
+                    }
+
+                    // Only search labels this reader may also see. Otherwise
+                    // the result count becomes an oracle for a support code,
+                    // visitor, or ticket reference hidden in the row itself.
+                    $query
+                        ->orWhere(function (Builder $query) use ($breakGlassTypes, $searchPattern): void {
+                            $query->whereIn('metadata->resource_type', $breakGlassTypes)
+                                ->whereLike('metadata->resource_label', $searchPattern);
+                        })
+                        ->orWhere(function (Builder $query) use ($breakGlassTypes, $searchPattern): void {
+                            $query->whereIn('metadata->scope_type', $breakGlassTypes)
+                                ->whereLike('metadata->scope_label', $searchPattern);
+                        });
+
+                    if ($canViewConversations && $canManageTickets) {
+                        // Full support readers retain search for legacy or
+                        // provider-defined reference types that predate the
+                        // explicit conversation/ticket taxonomy above.
+                        $query
+                            ->orWhereLike('metadata->resource_label', $searchPattern)
+                            ->orWhereLike('metadata->scope_label', $searchPattern);
+                    }
                 });
             });
     }
@@ -369,7 +445,7 @@ class AgentAccountAuditController extends Controller
     }
 
     /** @return array{prefix: string|null, value: string|null} */
-    private function auditActorParts(AuditEvent $event): array
+    private function auditActorParts(AuditEvent $event, bool $canViewVisitorIdentity): array
     {
         if ($event->actor instanceof User) {
             return ['prefix' => null, 'value' => $event->actor->name];
@@ -378,7 +454,7 @@ class AgentAccountAuditController extends Controller
         if ($event->actor instanceof Visitor) {
             return [
                 'prefix' => __('account_audit.references.visitor'),
-                'value' => $this->visitorLabel($event->actor),
+                'value' => $canViewVisitorIdentity ? $this->visitorLabel($event->actor) : null,
             ];
         }
 
@@ -393,10 +469,10 @@ class AgentAccountAuditController extends Controller
     }
 
     /** @return array{prefix: string|null, value: string|null} */
-    private function auditSubjectParts(AuditEvent $event): array
+    private function auditSubjectParts(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): array
     {
         if ($event->subject instanceof BreakGlassGrant) {
-            return $this->breakGlassReferenceParts($event);
+            return $this->breakGlassReferenceParts($event, $canViewConversations, $canManageTickets);
         }
 
         if ($event->subject instanceof User || $event->subject instanceof Site) {
@@ -443,7 +519,7 @@ class AgentAccountAuditController extends Controller
         if ($event->subject instanceof Conversation) {
             return [
                 'prefix' => __('account_audit.references.conversation'),
-                'value' => $event->subject->support_code,
+                'value' => $canViewConversations ? $event->subject->support_code : null,
             ];
         }
 
@@ -452,7 +528,9 @@ class AgentAccountAuditController extends Controller
 
             return [
                 'prefix' => __('account_audit.references.cobrowse'),
-                'value' => $event->subject->conversation?->support_code ?? '#'.$event->subject->id,
+                'value' => $canViewConversations
+                    ? ($event->subject->conversation?->support_code ?? '#'.$event->subject->id)
+                    : null,
             ];
         }
 
@@ -460,7 +538,7 @@ class AgentAccountAuditController extends Controller
     }
 
     /** @return array{prefix: string|null, value: string|null} */
-    private function breakGlassReferenceParts(AuditEvent $event): array
+    private function breakGlassReferenceParts(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): array
     {
         $resourceType = data_get($event->metadata, 'resource_type');
 
@@ -469,6 +547,8 @@ class AgentAccountAuditController extends Controller
                 $resourceType,
                 data_get($event->metadata, 'resource_label'),
                 data_get($event->metadata, 'resource_id'),
+                $canViewConversations,
+                $canManageTickets,
             );
         }
 
@@ -480,12 +560,20 @@ class AgentAccountAuditController extends Controller
         return $this->typedBreakGlassReferenceParts(
             $scopeType,
             data_get($event->metadata, 'scope_label') ?? $event->subject->scopeLabel(),
+            null,
+            $canViewConversations,
+            $canManageTickets,
         );
     }
 
     /** @return array{prefix: string|null, value: string|null} */
-    private function typedBreakGlassReferenceParts(string $type, mixed $label, mixed $fallbackId = null): array
-    {
+    private function typedBreakGlassReferenceParts(
+        string $type,
+        mixed $label,
+        mixed $fallbackId,
+        bool $canViewConversations,
+        bool $canManageTickets,
+    ): array {
         if ($type === BreakGlassGrant::SCOPE_ACCOUNT) {
             return ['prefix' => __('account_audit.references.operator_access_account'), 'value' => null];
         }
@@ -496,6 +584,15 @@ class AgentAccountAuditController extends Controller
             'ticket' => ['Ticket', 'ticket'],
             default => [null, null],
         };
+
+        if (! $this->canViewBreakGlassReference($type, $canViewConversations, $canManageTickets)) {
+            return [
+                'prefix' => $translationSuffix === null
+                    ? __('account_audit.references.operator_access')
+                    : __('account_audit.references.operator_access_'.$translationSuffix),
+                'value' => null,
+            ];
+        }
 
         if ($sourcePrefix === null || $translationSuffix === null) {
             return [
@@ -529,14 +626,16 @@ class AgentAccountAuditController extends Controller
         ];
     }
 
-    private function auditActor(AuditEvent $event): string
+    private function auditActor(AuditEvent $event, bool $canViewVisitorIdentity): string
     {
         if ($event->actor instanceof User) {
             return $event->actor->name;
         }
 
         if ($event->actor instanceof Visitor) {
-            return 'Visitor '.$this->visitorLabel($event->actor);
+            return $canViewVisitorIdentity
+                ? 'Visitor '.$this->visitorLabel($event->actor)
+                : 'Visitor';
         }
 
         if ($event->actor instanceof ApiToken) {
@@ -546,13 +645,25 @@ class AgentAccountAuditController extends Controller
         return 'System';
     }
 
-    private function auditSubject(AuditEvent $event): string
+    private function auditSubject(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): string
     {
         if ($event->subject instanceof BreakGlassGrant) {
-            // The break-glass label fields are references by construction
-            // (support code, site name, "Ticket #n" — never customer
-            // content), so surfacing them here keeps the export boundary
-            // while telling the account exactly what an operator reached.
+            // These are references rather than customer-authored content, but
+            // a support code or ticket number still belongs to the underlying
+            // support domain and follows that domain's permission boundary.
+            $type = data_get($event->metadata, 'resource_type')
+                ?? data_get($event->metadata, 'scope_type')
+                ?? $event->subject->scope_type;
+            $type = is_string($type) ? $type : '';
+
+            if (! $this->canViewBreakGlassReference($type, $canViewConversations, $canManageTickets)) {
+                return match ($type) {
+                    BreakGlassGrant::SCOPE_CONVERSATION => 'Operator access: Conversation',
+                    'ticket' => 'Operator access: Ticket',
+                    default => 'Operator access',
+                };
+            }
+
             $label = data_get($event->metadata, 'resource_label')
                 ?? data_get($event->metadata, 'scope_label')
                 ?? $event->subject->scopeLabel();
@@ -597,16 +708,30 @@ class AgentAccountAuditController extends Controller
             // authored text and this page is exported. The code is a reference
             // by construction, which is the same rule the break-glass labels
             // and the cobrowse rows already follow.
-            return 'Conversation '.$event->subject->support_code;
+            return $canViewConversations
+                ? 'Conversation '.$event->subject->support_code
+                : 'Conversation';
         }
 
         if ($event->subject instanceof CobrowseSession) {
             $event->subject->loadMissing('conversation');
 
-            return 'Cobrowse '.($event->subject->conversation?->support_code ?? '#'.$event->subject->id);
+            return $canViewConversations
+                ? 'Cobrowse '.($event->subject->conversation?->support_code ?? '#'.$event->subject->id)
+                : 'Cobrowse';
         }
 
         return 'Account';
+    }
+
+    private function canViewBreakGlassReference(string $type, bool $canViewConversations, bool $canManageTickets): bool
+    {
+        return match ($type) {
+            BreakGlassGrant::SCOPE_ACCOUNT, BreakGlassGrant::SCOPE_SITE => true,
+            BreakGlassGrant::SCOPE_CONVERSATION => $canViewConversations,
+            'ticket' => $canManageTickets,
+            default => $canViewConversations && $canManageTickets,
+        };
     }
 
     private function isDeletedCustomRoleSubject(AuditEvent $event): bool
