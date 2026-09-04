@@ -130,6 +130,7 @@ return [
         'conversation_closed' => 'Unterhaltung geschlossen',
         'conversation_reopened' => 'Unterhaltung wieder geöffnet',
         'conversation_assignee_updated' => 'Unterhaltungsverantwortung aktualisiert',
+        'conversation_priority_updated' => 'Unterhaltungspriorität aktualisiert',
         'inbound_webhook_verified' => 'Eingehender Webhook bestätigt',
         'operator_readiness_confirmed' => 'Betriebsbereitschaft bestätigt',
         'operator_settings_backup_restore_triggered' => 'Wiederherstellung aus Sicherung ausgelöst',

@@ -207,19 +207,19 @@
                         @endif
                     </div>
                 @else
-                    <form method="POST" action="{{ route('dashboard.tickets.bulk.preview') }}" data-ticket-bulk-form>
+                    <form method="POST" action="{{ route('dashboard.tickets.bulk.preview') }}" data-queue-bulk-form data-queue-bulk-no-value-actions="close" data-ticket-bulk-form>
                         @csrf
                         @foreach ($ticketQuery as $queryKey => $queryValue)
                             <input type="hidden" name="return_query[{{ $queryKey }}]" value="{{ $queryValue }}">
                         @endforeach
 
                         <div class="wf-bulk-toolbar" role="group" aria-label="{{ __('tickets.bulk.region') }}">
-                            <strong data-ticket-selected-count data-one="{{ __('tickets.bulk.selected.one') }}" data-many="{{ __('tickets.bulk.selected.many', ['count' => '__COUNT__']) }}">
+                            <strong data-queue-selected-count data-none="{{ __('tickets.bulk.selected.none') }}" data-one="{{ __('tickets.bulk.selected.one') }}" data-many="{{ __('tickets.bulk.selected.many', ['count' => '__COUNT__']) }}" data-ticket-selected-count>
                                 {{ __('tickets.bulk.selected.none') }}
                             </strong>
 
                             <label for="ticket_bulk_action">{{ __('tickets.bulk.action_label') }}</label>
-                            <select id="ticket_bulk_action" name="action" data-ticket-bulk-action>
+                            <select id="ticket_bulk_action" name="action" data-queue-bulk-action data-ticket-bulk-action>
                                 <option value="">{{ __('tickets.bulk.choose_action') }}</option>
                                 @if ($canAssignTickets)
                                     <option value="assign_agent">{{ __('tickets.bulk.actions.assign_agent') }}</option>
@@ -231,8 +231,8 @@
                             </select>
 
                             @if ($canAssignTickets)
-                                <label class="sr-only" for="ticket_bulk_assign_agent_value" data-ticket-bulk-value-label="assign_agent" hidden>{{ __('tickets.bulk.values.agent') }}</label>
-                                <select id="ticket_bulk_assign_agent_value" name="value" data-ticket-bulk-value="assign_agent" disabled hidden>
+                                <label class="sr-only" for="ticket_bulk_assign_agent_value" data-queue-bulk-value-label="assign_agent" data-ticket-bulk-value-label="assign_agent" hidden>{{ __('tickets.bulk.values.agent') }}</label>
+                                <select id="ticket_bulk_assign_agent_value" name="value" data-queue-bulk-value="assign_agent" data-ticket-bulk-value="assign_agent" disabled hidden>
                                     <option value="">{{ __('tickets.bulk.values.choose_agent') }}</option>
                                     @foreach ($bulkActionAgents as $bulkAgent)
                                         <option value="{{ $bulkAgent->id }}">{{ $bulkAgent->name }}</option>
@@ -240,31 +240,31 @@
                                 </select>
                             @endif
 
-                            <label class="sr-only" for="ticket_bulk_add_label_value" data-ticket-bulk-value-label="add_label" hidden>{{ __('tickets.bulk.values.label') }}</label>
-                            <select id="ticket_bulk_add_label_value" name="value" data-ticket-bulk-value="add_label" disabled hidden>
+                            <label class="sr-only" for="ticket_bulk_add_label_value" data-queue-bulk-value-label="add_label" data-ticket-bulk-value-label="add_label" hidden>{{ __('tickets.bulk.values.label') }}</label>
+                            <select id="ticket_bulk_add_label_value" name="value" data-queue-bulk-value="add_label" data-ticket-bulk-value="add_label" disabled hidden>
                                 <option value="">{{ __('tickets.bulk.values.choose_label') }}</option>
                                 @foreach ($ticketLabels as $bulkLabel)
                                     <option value="{{ $bulkLabel->id }}">{{ $bulkLabel->name }}</option>
                                 @endforeach
                             </select>
 
-                            <label class="sr-only" for="ticket_bulk_priority_value" data-ticket-bulk-value-label="set_priority" hidden>{{ __('tickets.bulk.values.priority') }}</label>
-                            <select id="ticket_bulk_priority_value" name="value" data-ticket-bulk-value="set_priority" disabled hidden>
+                            <label class="sr-only" for="ticket_bulk_priority_value" data-queue-bulk-value-label="set_priority" data-ticket-bulk-value-label="set_priority" hidden>{{ __('tickets.bulk.values.priority') }}</label>
+                            <select id="ticket_bulk_priority_value" name="value" data-queue-bulk-value="set_priority" data-ticket-bulk-value="set_priority" disabled hidden>
                                 <option value="">{{ __('tickets.bulk.values.choose_priority') }}</option>
                                 @foreach (array_keys(\App\Enums\TicketPriority::guidanceOptions()) as $bulkPriority)
                                     <option value="{{ $bulkPriority }}">{{ __('tickets.priorities.'.$bulkPriority) }}</option>
                                 @endforeach
                             </select>
 
-                            <label class="sr-only" for="ticket_bulk_status_value" data-ticket-bulk-value-label="set_status" hidden>{{ __('tickets.bulk.values.status') }}</label>
-                            <select id="ticket_bulk_status_value" name="value" data-ticket-bulk-value="set_status" disabled hidden>
+                            <label class="sr-only" for="ticket_bulk_status_value" data-queue-bulk-value-label="set_status" data-ticket-bulk-value-label="set_status" hidden>{{ __('tickets.bulk.values.status') }}</label>
+                            <select id="ticket_bulk_status_value" name="value" data-queue-bulk-value="set_status" data-ticket-bulk-value="set_status" disabled hidden>
                                 <option value="">{{ __('tickets.bulk.values.choose_status') }}</option>
                                 <option value="open">{{ __('tickets.statuses.open') }}</option>
                                 <option value="pending">{{ __('tickets.statuses.pending') }}</option>
                             </select>
 
-                            <button class="button" type="submit" data-ticket-bulk-review disabled>{{ __('tickets.bulk.review') }}</button>
-                            <button class="button secondary" type="button" data-ticket-bulk-clear disabled>{{ __('tickets.bulk.clear') }}</button>
+                            <button class="button" type="submit" data-queue-bulk-review data-ticket-bulk-review disabled>{{ __('tickets.bulk.review') }}</button>
+                            <button class="button secondary" type="button" data-queue-bulk-clear data-ticket-bulk-clear disabled>{{ __('tickets.bulk.clear') }}</button>
                         </div>
 
                         <div class="table-wrap">
@@ -272,7 +272,7 @@
                             <thead>
                                 <tr>
                                     <th class="wf-queue-select" scope="col">
-                                        <input type="checkbox" data-ticket-select-all aria-label="{{ __('tickets.bulk.select_all') }}">
+                                        <input type="checkbox" data-queue-select-all data-ticket-select-all aria-label="{{ __('tickets.bulk.select_all') }}">
                                     </th>
                                     <th scope="col">{{ __('tickets.columns.subject') }}</th>
                                     @if ($canViewTicketConversations)
@@ -325,12 +325,13 @@
                                             'detail' => 'Wayfindr is the only tracker for this ticket.',
                                         ];
                                     @endphp
-                                    <tr data-ticket-bulk-row>
+                                    <tr data-queue-bulk-row data-ticket-bulk-row>
                                         <td class="wf-queue-select">
                                             <input
                                                 type="checkbox"
                                                 name="ticket_ids[]"
                                                 value="{{ $ticket->id }}"
+                                                data-queue-select
                                                 data-ticket-select
                                                 aria-label="{{ __('tickets.bulk.select_ticket', ['subject' => $ticket->subject]) }}"
                                             >
@@ -454,97 +455,5 @@
                 @endif
             </section>
 
-            <script>
-                (function () {
-                    var form = document.querySelector('[data-ticket-bulk-form]');
-
-                    if (! form) {
-                        return;
-                    }
-
-                    var boxes = Array.from(form.querySelectorAll('[data-ticket-select]'));
-                    var selectAll = form.querySelector('[data-ticket-select-all]');
-                    var count = form.querySelector('[data-ticket-selected-count]');
-                    var action = form.querySelector('[data-ticket-bulk-action]');
-                    var values = Array.from(form.querySelectorAll('[data-ticket-bulk-value]'));
-                    var valueLabels = Array.from(form.querySelectorAll('[data-ticket-bulk-value-label]'));
-                    var review = form.querySelector('[data-ticket-bulk-review]');
-                    var clear = form.querySelector('[data-ticket-bulk-clear]');
-                    var lastBox = null;
-
-                    function activeValue() {
-                        return values.find(function (select) {
-                            return ! select.disabled;
-                        });
-                    }
-
-                    function update() {
-                        var selected = boxes.filter(function (box) { return box.checked; });
-                        var number = selected.length;
-                        var value = activeValue();
-                        var actionReady = action.value !== '' && (action.value === 'close' || (value && value.value !== ''));
-
-                        count.textContent = number === 0
-                            ? '{{ __('tickets.bulk.selected.none') }}'
-                            : (number === 1
-                                ? count.dataset.one
-                                : count.dataset.many.replace('__COUNT__', String(number)));
-                        selectAll.checked = number === boxes.length && boxes.length > 0;
-                        selectAll.indeterminate = number > 0 && number < boxes.length;
-                        review.disabled = number === 0 || ! actionReady;
-                        clear.disabled = number === 0;
-
-                        boxes.forEach(function (box) {
-                            box.closest('[data-ticket-bulk-row]').toggleAttribute('data-selected', box.checked);
-                        });
-                    }
-
-                    action.addEventListener('change', function () {
-                        values.forEach(function (select) {
-                            var active = select.dataset.ticketBulkValue === action.value;
-                            select.disabled = ! active;
-                            select.hidden = ! active;
-                        });
-                        valueLabels.forEach(function (label) {
-                            label.hidden = label.dataset.ticketBulkValueLabel !== action.value;
-                        });
-                        update();
-                    });
-
-                    values.forEach(function (select) {
-                        select.addEventListener('change', update);
-                    });
-
-                    boxes.forEach(function (box, index) {
-                        box.addEventListener('click', function (event) {
-                            if (event.shiftKey && lastBox) {
-                                var lastIndex = boxes.indexOf(lastBox);
-                                var from = Math.min(lastIndex, index);
-                                var to = Math.max(lastIndex, index);
-
-                                boxes.slice(from, to + 1).forEach(function (rangeBox) {
-                                    rangeBox.checked = box.checked;
-                                });
-                            }
-
-                            lastBox = box;
-                            update();
-                        });
-                    });
-
-                    selectAll.addEventListener('change', function () {
-                        boxes.forEach(function (box) { box.checked = selectAll.checked; });
-                        lastBox = null;
-                        update();
-                    });
-
-                    clear.addEventListener('click', function () {
-                        boxes.forEach(function (box) { box.checked = false; });
-                        lastBox = null;
-                        update();
-                    });
-
-                    update();
-                })();
-            </script>
+            <x-queue-bulk-selector-script />
 </x-layouts.app>

@@ -826,7 +826,7 @@
             width: 34px;
         }
 
-        .wf-queue [data-ticket-bulk-row][data-selected] td {
+        .wf-queue [data-queue-bulk-row][data-selected] td {
             background: color-mix(in srgb, var(--wf-brand) 9%, var(--wf-surface));
         }
 

@@ -415,6 +415,7 @@ class AgentAccountAuditController extends Controller
             'site_access.updated' => 'Site access updated',
             'site.routing_updated' => 'Automatic assignment updated',
             'conversation.assignee_updated' => 'Conversation owner updated',
+            'conversation.priority_updated' => 'Conversation priority updated',
             'api_token.created' => 'API token issued',
             'api_token.revoked' => 'API token revoked',
             'outbound_webhook.created' => 'Outbound webhook created',

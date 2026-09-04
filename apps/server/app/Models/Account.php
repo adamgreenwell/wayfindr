@@ -67,6 +67,11 @@ class Account extends Model
         return $this->hasMany(TicketBulkActionRun::class);
     }
 
+    public function conversationBulkActionRuns(): HasMany
+    {
+        return $this->hasMany(ConversationBulkActionRun::class);
+    }
+
     public function slaClocks(): HasMany
     {
         return $this->hasMany(SlaClock::class);
