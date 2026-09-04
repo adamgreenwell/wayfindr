@@ -48,6 +48,8 @@ The first roles are:
 
 Custom roles are deny-by-default and account-owned. They can combine team, support, knowledge, settings, reporting, and audit permissions, but cannot receive `manage_roles`, ownership, platform-operator authority, or destructive site purge. Editing a custom role takes effect immediately for its assigned users. An assigned role cannot be deleted, and role creation, editing, deletion, and assignment are audited with the role name retained in history.
 
+An account owner may map an exact top-level OIDC claim value to built-in Agent or Admin, or to one custom role. Owner is never a federation target. Existing locally created agents keep their local role; only identities created through just-in-time provisioning are remapped at later federated sign-ins. Provider claims never assign sites, and an ambiguous or missing mapping fails closed.
+
 ## Platform Operators
 
 Platform operators are outside account RBAC. They operate the Wayfindr installation itself: infrastructure health, setup recovery, background processes, hosted account lifecycle, and other instance-level work.
@@ -81,4 +83,4 @@ See [Platform Operator Boundary](platform-operator-boundary.md) for the product 
 
 - Should future invitation flows ask for site assignments during agent creation?
 - Should WordPress and future integrations expose site-agent assignment hints during install?
-- Which identity-provider claims should map to existing role keys during just-in-time provisioning, and what should happen when a claim no longer matches?
+- Should a future SCIM integration deactivate users and terminate existing sessions when directory membership is removed?

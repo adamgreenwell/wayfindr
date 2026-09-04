@@ -199,7 +199,8 @@ Every RBAC implementation slice should include tests for:
 12. Add read-only account-level visibility for current site access. The account overview now shows visible sites, their fallback-or-explicit access model, active support-agent assignments, each rostered agent's visible support scope, and a management link back to each site.
 13. Add a curated recent account activity feed for access/account audit events. The account overview now shows agent creation, role changes, password updates, deactivation/reactivation, and site access updates without rendering raw audit metadata.
 14. Add account-owned custom roles without changing the built-in defaults. Permission changes are immediate, assigned roles cannot be deleted, and site access remains mandatory for support data.
-15. Add platform operator scaffolding only when the first operator-only workflow exists, keeping it separate from account roles and support data access. The first scaffold adds `users.platform_role`, `/operator`, safe system identity, documentation links, and readiness diagnostics.
+15. Add owner-controlled OIDC claim mappings after custom roles exist. Exact provider values may select built-in Agent/Admin or one custom role for JIT-managed identities; Owner and site assignments remain local-only.
+16. Add platform operator scaffolding only when the first operator-only workflow exists, keeping it separate from account roles and support data access. The first scaffold adds `users.platform_role`, `/operator`, safe system identity, documentation links, and readiness diagnostics.
 
 ## Role Management Guardrails
 
@@ -212,6 +213,7 @@ Role management stays owner-only and is exposed from the account overview. Wayfi
 - recording every role change as an audit event.
 - rejecting unknown, non-delegable, and dependency-incomplete permission sets.
 - preventing custom roles from crossing account boundaries or being deleted while assigned.
+- preventing mapped custom roles from being deleted and preventing federation from assigning Owner or site access.
 
 ## Agent Access Guardrails
 

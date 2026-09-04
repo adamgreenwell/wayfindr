@@ -54,8 +54,10 @@ The product has moved past a spine. It now includes:
 - A visitor directory, agent-initiated password recovery, and a public API with
   a decided isolation model, scoped reads, and a narrow write surface.
 - TOTP two-factor authentication with one-time recovery codes, replay-safe
-  challenges, and an admin-controlled account requirement. OIDC federation,
-  just-in-time provisioning, and custom roles remain later Tier 2 slices.
+  challenges, and an admin-controlled account requirement; OIDC federation;
+  account-owned custom roles; and owner-controlled, deny-by-default JIT role
+  mapping. SAML remains demand-gated and SCIM remains a separate lifecycle
+  decision.
 - Visitor presence collection (ADR 0019) — heartbeat, disclosure, decline, and
   the product's first automatic retention window: thirty days by default, and at
   most, with operators free to shorten it. The maximum belongs to the product
