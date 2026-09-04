@@ -188,6 +188,32 @@ test('the evaluator warns once and breaches once', function (): void {
         ->and($clock->breached_at)->not->toBeNull();
 });
 
+test('the evaluator retries an alert after its queue handoff fails', function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(8)->minutes();
+    Notification::shouldReceive('send')
+        ->once()
+        ->andThrow(new RuntimeException('Queue unavailable.'));
+
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(1);
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->warned_at)->not->toBeNull()
+        ->and($clock->warning_alerted_at)->toBeNull()
+        ->and($clock->alertedUserIds('warning'))->toBe([]);
+
+    Notification::fake();
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
+    Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
+
+    expect($clock->fresh()->warning_alerted_at)->not->toBeNull()
+        ->and($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $world['agent']->id]);
+});
+
 test('a quiet assigned agent does not turn one SLA alert into a team-wide fallback', function (): void {
     Notification::fake();
     $world = slaWorld(['enabled' => false]);
@@ -355,8 +381,32 @@ test('changing priority preserves a breach crossed under the old target', functi
     $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
     expect($clock->elapsed_seconds)->toBe(11 * 60)
         ->and($clock->breached_at)->not->toBeNull()
-        ->and($clock->priority)->toBe('urgent')
-        ->and($clock->target_seconds)->toBe(60 * 60);
+        ->and($clock->priority)->toBe('normal')
+        ->and($clock->target_seconds)->toBe(10 * 60);
+});
+
+test('an alert stage remains pending until its queue handoff completes', function (): void {
+    Notification::fake();
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $manager = app(SlaClockManager::class);
+
+    $this->travel(8)->minutes();
+    $first = $manager->evaluate((int) $clock->id, now());
+    $retry = $manager->evaluate((int) $clock->id, now());
+
+    expect($first['stage'])->toBe('warning')
+        ->and($retry['stage'])->toBe('warning');
+
+    $manager->recordAlertHandoff((int) $clock->id, 'warning', (int) $world['agent']->id);
+    $manager->completeAlertHandoff((int) $clock->id, 'warning', now());
+
+    expect($manager->evaluate((int) $clock->id, now())['stage'])->toBeNull()
+        ->and($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $world['agent']->id])
+        ->and($clock->fresh()->warning_alerted_at)->not->toBeNull();
 });
 
 test('ticket queues and detail show resolution breaches', function (): void {

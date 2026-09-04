@@ -178,16 +178,44 @@ final class SlaClockManager
             $clock = SlaClock::query()->with(['site', 'subject'])->lockForUpdate()->findOrFail($clockId);
 
             $this->advance($clock, $at);
-            $stage = null;
+            $this->recordBreachIfCrossed($clock, $at);
 
-            if ($this->recordBreachIfCrossed($clock, $at)) {
-                $stage = 'breach';
-            } elseif ($recordWarning && $clock->isActive() && $clock->elapsed_seconds >= $clock->warning_seconds && $clock->warned_at === null) {
+            if ($recordWarning && $clock->isActive() && $clock->breached_at === null && $clock->elapsed_seconds >= $clock->warning_seconds && $clock->warned_at === null) {
                 $clock->forceFill(['warned_at' => CarbonImmutable::instance($at)])->save();
-                $stage = 'warning';
             }
 
+            $stage = match (true) {
+                ! $clock->isActive() => null,
+                $clock->breached_at !== null && $clock->breach_alerted_at === null => 'breach',
+                $clock->breached_at === null && $clock->warned_at !== null && $clock->warning_alerted_at === null => 'warning',
+                default => null,
+            };
+
             return ['clock' => $clock->fresh(['site', 'subject']), 'stage' => $stage];
+        });
+    }
+
+    public function recordAlertHandoff(int $clockId, string $stage, int $userId): void
+    {
+        DB::transaction(function () use ($clockId, $stage, $userId): void {
+            $clock = SlaClock::query()->lockForUpdate()->findOrFail($clockId);
+            [, $recipientColumn] = $this->alertColumns($stage);
+            $ids = collect($clock->alertedUserIds($stage))
+                ->push($userId)
+                ->unique()
+                ->values()
+                ->all();
+
+            $clock->forceFill([$recipientColumn => $ids])->save();
+        });
+    }
+
+    public function completeAlertHandoff(int $clockId, string $stage, CarbonInterface $at): void
+    {
+        DB::transaction(function () use ($at, $clockId, $stage): void {
+            $clock = SlaClock::query()->lockForUpdate()->findOrFail($clockId);
+            [$completedColumn] = $this->alertColumns($stage);
+            $clock->forceFill([$completedColumn => CarbonImmutable::instance($at)])->save();
         });
     }
 
@@ -314,6 +342,11 @@ final class SlaClockManager
     {
         $this->advance($clock, $at);
         $this->recordBreachIfCrossed($clock, $at);
+
+        if ($clock->breached_at !== null) {
+            return;
+        }
+
         $priority = (string) ($subject->priority ?: 'normal');
         $policy = SlaPolicy::query()
             ->where('account_id', $clock->account_id)
@@ -351,5 +384,15 @@ final class SlaClockManager
         ])->save();
 
         return true;
+    }
+
+    /** @return array{0: string, 1: string} */
+    private function alertColumns(string $stage): array
+    {
+        return match ($stage) {
+            'warning' => ['warning_alerted_at', 'warning_alerted_user_ids'],
+            'breach' => ['breach_alerted_at', 'breach_alerted_user_ids'],
+            default => throw new \InvalidArgumentException('Unknown SLA alert stage.'),
+        };
     }
 }

@@ -21,6 +21,10 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
     'last_counted_at',
     'warned_at',
     'breached_at',
+    'warning_alerted_user_ids',
+    'warning_alerted_at',
+    'breach_alerted_user_ids',
+    'breach_alerted_at',
     'satisfied_at',
     'cancelled_at',
 ])]
@@ -42,6 +46,10 @@ class SlaClock extends Model
             'last_counted_at' => 'datetime',
             'warned_at' => 'datetime',
             'breached_at' => 'datetime',
+            'warning_alerted_user_ids' => 'array',
+            'warning_alerted_at' => 'datetime',
+            'breach_alerted_user_ids' => 'array',
+            'breach_alerted_at' => 'datetime',
             'satisfied_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
@@ -70,5 +78,20 @@ class SlaClock extends Model
     public static function warningSeconds(int $targetSeconds): int
     {
         return max(1, (int) floor($targetSeconds * (self::WARNING_PERCENT / 100)));
+    }
+
+    /** @return list<int> */
+    public function alertedUserIds(string $stage): array
+    {
+        $ids = $stage === 'breach'
+            ? $this->breach_alerted_user_ids
+            : $this->warning_alerted_user_ids;
+
+        return collect(is_array($ids) ? $ids : [])
+            ->map(fn ($id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 }

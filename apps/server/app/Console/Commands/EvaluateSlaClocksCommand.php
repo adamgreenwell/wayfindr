@@ -53,11 +53,20 @@ class EvaluateSlaClocksCommand extends Command
                     return;
                 }
 
+                $stageFailed = false;
+                $deliveredUserIds = $clock->alertedUserIds($stage);
+
                 foreach ($routing->recipients($clock) as $agent) {
+                    if (in_array((int) $agent->id, $deliveredUserIds, true)) {
+                        continue;
+                    }
+
                     try {
                         $agent->notify(new SlaDeadlineAlert($clock, $stage));
+                        $manager->recordAlertHandoff((int) $clock->id, $stage, (int) $agent->id);
                         $alerts++;
                     } catch (Throwable $exception) {
+                        $stageFailed = true;
                         $failed++;
                         Log::warning('SLA deadline alert delivery failed.', [
                             'sla_clock_id' => $clock->id,
@@ -66,6 +75,25 @@ class EvaluateSlaClocksCommand extends Command
                             'exception' => $exception,
                         ]);
                     }
+                }
+
+                if ($stageFailed) {
+                    return;
+                }
+
+                try {
+                    // A stage is complete only after every currently eligible
+                    // recipient has accepted the handoff. With no recipients,
+                    // completing here also prevents a stale alert appearing
+                    // later merely because routing preferences changed.
+                    $manager->completeAlertHandoff((int) $clock->id, $stage, $at);
+                } catch (Throwable $exception) {
+                    $failed++;
+                    Log::warning('SLA alert handoff completion failed.', [
+                        'sla_clock_id' => $clock->id,
+                        'stage' => $stage,
+                        'exception' => $exception,
+                    ]);
                 }
             });
 

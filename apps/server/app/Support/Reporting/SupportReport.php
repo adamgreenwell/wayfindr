@@ -377,12 +377,10 @@ final class SupportReport
     /**
      * Conversations waiting on the desk right now.
      *
-     * A point-in-time figure rather than a trend, and deliberately so. The
-     * historical version would have to be reconstructed from
-     * {@see UnattendedConversationAlertCollector}, which cannot answer it: that
-     * definition reads unread notification state, and reading a notification
-     * destroys the evidence. What is reused instead is its threshold, so the
-     * report and the alerts cannot disagree about how long is too long.
+     * A point-in-time figure rather than a trend, and deliberately so. Current
+     * waits reuse the unread episode clock maintained for unattended alerts.
+     * That persisted boundary keeps the report stable across support-calendar
+     * changes without pretending notification state can reconstruct history.
      *
      * @return array{needs_reply: int, oldest_wait_seconds: ?int, threshold_minutes: int}
      */
@@ -422,6 +420,22 @@ final class SupportReport
                 ->whereIn('id', $waiting->pluck('site_id')->unique()->all())
                 ->get()
                 ->keyBy('id');
+            $now = CarbonImmutable::now();
+            $settledElapsed = [];
+            $collector = app(UnattendedConversationAlertCollector::class);
+
+            foreach ($sites as $site) {
+                $conversationIds = $waiting
+                    ->where('site_id', $site->id)
+                    ->pluck('id')
+                    ->map(fn ($id): int => (int) $id)
+                    ->values()
+                    ->all();
+
+                foreach ($collector->projectedElapsedSecondsByConversation($site, $conversationIds, $now) as $conversationId => $seconds) {
+                    $settledElapsed[$conversationId] = $seconds;
+                }
+            }
 
             foreach ($waiting as $conversation) {
                 $since = CarbonImmutable::parse(
@@ -430,9 +444,10 @@ final class SupportReport
                     ?? $conversation->created_at,
                 );
                 $site = $sites->get((int) $conversation->site_id);
-                $seconds = $site
-                    ? SiteAvailability::elapsedOpenSeconds($site, $since, CarbonImmutable::now())
-                    : max(0, CarbonImmutable::now()->getTimestamp() - $since->getTimestamp());
+                $seconds = $settledElapsed[(int) $conversation->id]
+                    ?? ($site
+                        ? SiteAvailability::elapsedOpenSeconds($site, $since, $now)
+                        : max(0, $now->getTimestamp() - $since->getTimestamp()));
                 $oldest = $oldest === null ? $seconds : max($oldest, $seconds);
             }
 

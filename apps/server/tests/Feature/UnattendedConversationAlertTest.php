@@ -16,6 +16,9 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\Reporting\ReportingScope;
+use App\Support\Reporting\ReportingWindow;
+use App\Support\Reporting\SupportReport;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -159,7 +162,13 @@ test('manually reopening a desk does not turn closed time into unattended wait t
         ->assertRedirect(route('dashboard.sites.show', $site));
 
     $notification = $agent->unreadNotifications()->where('type', ConversationNeedsReply::class)->sole();
-    expect(data_get($notification->data, UnattendedConversationAlertCollector::ELAPSED_SECONDS_KEY))->toBe(2 * 60);
+    $report = new SupportReport(
+        ReportingScope::for($account, $agent),
+        ReportingWindow::ofDays(30),
+    );
+
+    expect(data_get($notification->data, UnattendedConversationAlertCollector::ELAPSED_SECONDS_KEY))->toBe(2 * 60)
+        ->and($report->queueHealth()['oldest_wait_seconds'])->toBe(2 * 60);
 
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
     Mail::assertNothingQueued();

@@ -39,6 +39,10 @@ return new class extends Migration
             $table->timestamp('last_counted_at');
             $table->timestamp('warned_at')->nullable();
             $table->timestamp('breached_at')->nullable();
+            $table->json('warning_alerted_user_ids')->nullable();
+            $table->timestamp('warning_alerted_at')->nullable();
+            $table->json('breach_alerted_user_ids')->nullable();
+            $table->timestamp('breach_alerted_at')->nullable();
             $table->timestamp('satisfied_at')->nullable();
             $table->timestamp('cancelled_at')->nullable();
             $table->timestamps();

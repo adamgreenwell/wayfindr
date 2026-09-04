@@ -123,7 +123,7 @@ test('changing a policy preserves a breach crossed under the old target', functi
     $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
     expect($clock->elapsed_seconds)->toBe(11 * 60)
         ->and($clock->breached_at)->not->toBeNull()
-        ->and($clock->target_seconds)->toBe(60 * 60);
+        ->and($clock->target_seconds)->toBe(10 * 60);
 });
 
 test('extending a policy does not consume the future warning at the old threshold', function (): void {

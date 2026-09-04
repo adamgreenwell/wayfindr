@@ -85,27 +85,33 @@ class UnattendedConversationAlertCollector
             ->pluck('id')
             ->map(fn ($id): int => (int) $id)
             ->all();
-        $agentIds = User::query()
-            ->where('account_id', $site->account_id)
-            ->pluck('id')
-            ->all();
-
-        if ($conversationIds === [] || $agentIds === []) {
+        if ($conversationIds === []) {
             return;
         }
 
-        DatabaseNotification::query()
-            ->where('type', ConversationNeedsReply::class)
-            ->where('notifiable_type', (new User)->getMorphClass())
-            ->whereIn('notifiable_id', $agentIds)
-            ->whereNull('read_at')
-            ->get()
-            ->filter(fn (DatabaseNotification $notification): bool => in_array(
-                (int) data_get($notification->data, 'conversation_id'),
-                $conversationIds,
-                true,
-            ))
+        $this->waitingNotificationsForSite($site, $conversationIds)
             ->each(fn (DatabaseNotification $notification) => $this->advanceNotification($notification, $site, $at));
+    }
+
+    /**
+     * Project each waiting episode from its persisted business-time boundary
+     * without changing notification state. Queue-health reporting uses this
+     * same clock so a schedule edit or manual closure cannot rewrite the wait.
+     *
+     * @param  list<int>  $conversationIds
+     * @return array<int, int>
+     */
+    public function projectedElapsedSecondsByConversation(Site $site, array $conversationIds, CarbonInterface $at): array
+    {
+        $elapsedByConversation = [];
+
+        foreach ($this->waitingNotificationsForSite($site, $conversationIds) as $notification) {
+            $conversationId = (int) data_get($notification->data, 'conversation_id');
+            $elapsed = $this->projectedElapsedSeconds($notification, $site, $at);
+            $elapsedByConversation[$conversationId] = max($elapsedByConversation[$conversationId] ?? 0, $elapsed);
+        }
+
+        return $elapsedByConversation;
     }
 
     /**
@@ -254,16 +260,10 @@ class UnattendedConversationAlertCollector
 
             $waitingSince = $this->waitingSince($current);
             $lastCountedAt = $this->lastCountedAt($current, $waitingSince);
-            $elapsed = max(0, (int) data_get($current->data, self::ELAPSED_SECONDS_KEY, 0));
             $countedAt = CarbonImmutable::instance($at);
-
-            if ($lastCountedAt->lessThan($waitingSince)) {
-                $lastCountedAt = $waitingSince;
-                $elapsed = 0;
-            }
+            $elapsed = $this->projectedElapsedSeconds($current, $site, $countedAt);
 
             if ($countedAt->greaterThan($lastCountedAt)) {
-                $elapsed += SiteAvailability::elapsedOpenSeconds($site, $lastCountedAt, $countedAt);
                 $current->forceFill(['data' => [
                     ...$current->data,
                     self::ELAPSED_SECONDS_KEY => $elapsed,
@@ -273,6 +273,60 @@ class UnattendedConversationAlertCollector
 
             return $elapsed;
         });
+    }
+
+    private function projectedElapsedSeconds(DatabaseNotification $notification, Site $site, CarbonInterface $at): int
+    {
+        $waitingSince = $this->waitingSince($notification);
+        $lastCountedAt = $this->lastCountedAt($notification, $waitingSince);
+        $elapsed = max(0, (int) data_get($notification->data, self::ELAPSED_SECONDS_KEY, 0));
+        $countedAt = CarbonImmutable::instance($at);
+
+        if ($lastCountedAt->lessThan($waitingSince)) {
+            $lastCountedAt = $waitingSince;
+            $elapsed = 0;
+        }
+
+        if ($countedAt->greaterThan($lastCountedAt)) {
+            $elapsed += SiteAvailability::elapsedOpenSeconds($site, $lastCountedAt, $countedAt);
+        }
+
+        return $elapsed;
+    }
+
+    /**
+     * notifications.data is TEXT on PostgreSQL, so the plain columns narrow
+     * the candidate set and PHP applies the conversation boundary.
+     *
+     * @param  list<int>  $conversationIds
+     * @return Collection<int, DatabaseNotification>
+     */
+    private function waitingNotificationsForSite(Site $site, array $conversationIds): Collection
+    {
+        if ($conversationIds === []) {
+            return collect();
+        }
+
+        $agentIds = User::query()
+            ->where('account_id', $site->account_id)
+            ->pluck('id')
+            ->all();
+
+        if ($agentIds === []) {
+            return collect();
+        }
+
+        return DatabaseNotification::query()
+            ->where('type', ConversationNeedsReply::class)
+            ->where('notifiable_type', (new User)->getMorphClass())
+            ->whereIn('notifiable_id', $agentIds)
+            ->whereNull('read_at')
+            ->get()
+            ->filter(fn (DatabaseNotification $notification): bool => in_array(
+                (int) data_get($notification->data, 'conversation_id'),
+                $conversationIds,
+                true,
+            ));
     }
 
     private function lastCountedAt(DatabaseNotification $notification, CarbonImmutable $waitingSince): CarbonImmutable
