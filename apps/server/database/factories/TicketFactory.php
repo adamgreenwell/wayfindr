@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Enums\TicketPriority;
+use App\Enums\TicketStatus;
 use App\Models\Account;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -22,8 +24,8 @@ class TicketFactory extends Factory
             'conversation_id' => null,
             'requester_id' => null,
             'assignee_id' => null,
-            'status' => 'open',
-            'priority' => 'normal',
+            'status' => TicketStatus::Open,
+            'priority' => TicketPriority::Normal,
             'category' => null,
             'subject' => fake()->sentence(),
             'description' => fake()->paragraph(),
