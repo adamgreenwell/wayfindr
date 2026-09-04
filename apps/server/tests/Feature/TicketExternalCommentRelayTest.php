@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpClientRequest;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 uses(RefreshDatabase::class);
@@ -93,6 +94,31 @@ test('an opted-in note posts to the linked GitHub issue and records the relay', 
 
     expect(AuditEvent::where('action', 'ticket.note_added')->count())->toBe(1)
         ->and(AuditEvent::where('action', 'ticket.external_comment_posted')->count())->toBe(1);
+});
+
+test('an external note relay stays inside the fresh authorization transaction', function (): void {
+    $f = commentRelayFixture();
+    $baseline = DB::transactionLevel();
+    $relayTransactionLevel = null;
+
+    Http::fake(function () use (&$relayTransactionLevel) {
+        $relayTransactionLevel = DB::transactionLevel();
+
+        return Http::response([
+            'id' => 700124,
+            'html_url' => 'https://github.com/acme/widgets/issues/42#issuecomment-2',
+        ], 201);
+    });
+
+    $this->actingAs($f['agent'])
+        ->post(route('dashboard.tickets.notes.store', $f['ticket']), [
+            'body' => 'Keep this relay serialized.',
+            'post_to_external' => '1',
+        ])
+        ->assertRedirect()
+        ->assertSessionHas('status', 'tickets.flash.note_added_posted');
+
+    expect($relayTransactionLevel)->toBeGreaterThan($baseline);
 });
 
 test('an opted-in note posts to the linked GitLab issue as a note', function (): void {

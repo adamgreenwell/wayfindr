@@ -178,27 +178,30 @@ class AgentTicketController extends Controller
             $metadata['note_template'] = $selectedTemplate;
         }
 
-        [$agent, $ticket] = DB::transaction(function () use ($agent, $metadata, $ticket): array {
+        $postToExternal = $request->boolean('post_to_external');
+        [$agent, $ticket, $status] = DB::transaction(function () use ($agent, $body, $metadata, $postToExternal, $ticket): array {
             [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'addNote');
             $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
 
-            return [$agent, $ticket];
-        });
+            $status = 'tickets.flash.note_added';
 
-        $status = 'tickets.flash.note_added';
+            // Internal notes stay internal unless the agent explicitly opts to
+            // relay this one. Keep the provider calls inside the same account
+            // lock as the fresh authorization: a concurrent role revocation
+            // then lands either wholly before this note or wholly after its
+            // selected external side effects.
+            if ($postToExternal) {
+                $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body);
 
-        // Internal notes stay internal unless the agent explicitly opts to relay
-        // this one to the linked external issue (conservative-by-default per the
-        // external-integrations stance).
-        if ($request->boolean('post_to_external')) {
-            $relay = $this->relayNoteToExternalIssues($ticket, $agent, $body);
-
-            if ($relay['failed'] > 0) {
-                $status = 'tickets.flash.note_added_not_posted';
-            } elseif ($relay['posted'] > 0) {
-                $status = 'tickets.flash.note_added_posted';
+                if ($relay['failed'] > 0) {
+                    $status = 'tickets.flash.note_added_not_posted';
+                } elseif ($relay['posted'] > 0) {
+                    $status = 'tickets.flash.note_added_posted';
+                }
             }
-        }
+
+            return [$agent, $ticket, $status];
+        });
 
         return $this->redirectAfterUpdate($ticket, $request, $status);
     }
@@ -458,6 +461,7 @@ class AgentTicketController extends Controller
                 ->where('site_id', $ticket->site_id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $canManageConversation = $agent->hasAccountPermission(AccountPermission::ManageConversations);
 
             // ConversationMessageObserver creates the webhook outbox rows
             // during this insert. Keep the reply, conversation state and
@@ -471,9 +475,9 @@ class AgentTicketController extends Controller
             ]);
 
             $conversation->forceFill([
-                'assigned_agent_id' => $conversation->assigned_agent_id ?: $agent->id,
-                'status' => 'open',
-                'closed_at' => null,
+                'assigned_agent_id' => $conversation->assigned_agent_id ?: ($canManageConversation ? $agent->id : null),
+                'status' => $canManageConversation ? 'open' : $conversation->status,
+                'closed_at' => $canManageConversation ? null : $conversation->closed_at,
                 'last_message_at' => $message->created_at,
             ])->save();
 

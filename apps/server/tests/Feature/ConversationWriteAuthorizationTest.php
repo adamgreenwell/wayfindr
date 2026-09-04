@@ -5,11 +5,14 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\ConversationMessageAttachment;
 use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -105,3 +108,59 @@ test('cobrowse mutations reauthorize a stale custom role under the account lock'
 
     $this->assertDatabaseCount('audit_events', 0);
 })->with(['request', 'end', 'resync']);
+
+test('auxiliary conversation mutations reauthorize a stale custom role under the account lock', function (string $action): void {
+    Storage::fake('attachments');
+    $account = Account::factory()->create();
+    $replyRole = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ViewConversations->value,
+            AccountPermission::ReplyToConversations->value,
+        ],
+    ]);
+    $revokedRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $replyRole->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach($agent);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-STALE-AUXILIARY',
+    ]);
+    $attachment = $action === 'delete attachment'
+        ? ConversationMessageAttachment::factory()->pendingFor($conversation, $agent)->create()
+        : null;
+
+    $this->actingAs($agent);
+    expect($agent->hasAccountPermission(AccountPermission::ReplyToConversations))->toBeTrue();
+    User::query()->whereKey($agent->id)->update(['custom_role_id' => $revokedRole->id]);
+
+    $before = $conversation->fresh()->getRawOriginal();
+    $beforeCount = ConversationMessageAttachment::query()->count();
+
+    $response = match ($action) {
+        'upload attachment' => $this->postJson(route('dashboard.conversations.attachments.store', $conversation->support_code), [
+            'file' => UploadedFile::fake()->image('late.png'),
+        ]),
+        'delete attachment' => $this->delete(route('dashboard.conversations.attachments.destroy', [
+            'supportCode' => $conversation->support_code,
+            'attachment' => $attachment,
+        ])),
+        'typing' => $this->postJson(route('dashboard.conversations.typing.store', $conversation->support_code), [
+            'is_typing' => true,
+        ]),
+    };
+
+    $response->assertNotFound();
+
+    expect($conversation->fresh()->getRawOriginal())->toBe($before)
+        ->and(ConversationMessageAttachment::query()->count())->toBe($beforeCount);
+
+    if ($attachment) {
+        $this->assertDatabaseHas('conversation_message_attachments', ['id' => $attachment->id]);
+    }
+
+    $this->assertDatabaseCount('audit_events', 0);
+})->with(['upload attachment', 'delete attachment', 'typing']);

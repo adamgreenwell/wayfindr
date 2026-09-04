@@ -20,10 +20,10 @@ use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\Conversations\ConversationWriteAuthorization;
 use App\Support\DashboardLanguage;
 use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ReplyTemplateOptions;
-use App\Support\Sites\SiteManagerCoverage;
 use App\Support\TicketCategory;
 use App\Support\TicketPriority;
 use App\Support\VisitorContextSanitizer;
@@ -46,7 +46,7 @@ class AgentConversationController extends Controller
     /** How many conversations either side of the current one the menu lists. */
     private const SWITCHER_MENU_WINDOW = 25;
 
-    public function __construct(private readonly SiteManagerCoverage $siteManagerCoverage) {}
+    public function __construct(private readonly ConversationWriteAuthorization $conversationWriteAuthorization) {}
 
     public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail): View
     {
@@ -467,7 +467,7 @@ class AgentConversationController extends Controller
         }
 
         [$message, $agent, $conversation] = DB::transaction(function () use ($conversation, $agent, $body, $resolvedTemplate, $attachmentIds, $binder): array {
-            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'reply');
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'reply');
             $canManageConversation = $agent->hasAccountPermission(AccountPermission::ManageConversations);
             $message = $conversation->messages()->create([
                 'sender_type' => User::class,
@@ -581,7 +581,7 @@ class AgentConversationController extends Controller
         callable $record,
     ): void {
         DB::transaction(function () use ($conversation, $agent, $status, $closedAt, $record): void {
-            [$agent, $locked] = $this->lockedConversationActor($agent, $conversation, 'updateStatus');
+            [$agent, $locked] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'updateStatus');
             $previousStatus = (string) $locked->status;
 
             // Written through the LOCKED instance, not the one this request
@@ -658,7 +658,7 @@ class AgentConversationController extends Controller
         abort_unless(Gate::forUser($agent)->allows('claim', $conversation), 403);
 
         [$agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
-            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'claim');
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'claim');
             $conversation->forceFill(['assigned_agent_id' => $agent->id])->save();
 
             return [$agent, $conversation];
@@ -677,7 +677,7 @@ class AgentConversationController extends Controller
         abort_unless(Gate::forUser($agent)->allows('release', $conversation), 403);
 
         [, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
-            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'release');
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'release');
             $conversation->forceFill(['assigned_agent_id' => null])->save();
 
             return [$agent, $conversation];
@@ -700,7 +700,7 @@ class AgentConversationController extends Controller
         ]);
 
         [$ticket, $agent, $conversation] = DB::transaction(function () use ($conversation, $agent, $validated, $visitorContextSanitizer): array {
-            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'createTicket');
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'createTicket');
             $conversation->load(['site', 'visitor']);
 
             if ($conversation->tickets()->exists()) {
@@ -789,7 +789,7 @@ class AgentConversationController extends Controller
         $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse');
 
         [$cobrowseSession, $agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
-            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'requestCobrowse');
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'requestCobrowse');
 
             if ($this->activeCobrowseSession($conversation)) {
                 return [null, $agent, $conversation];
@@ -826,7 +826,7 @@ class AgentConversationController extends Controller
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'endCobrowse');
         [$cobrowseSession, $agent, $conversation] = DB::transaction(function () use ($agent, $conversation): array {
-            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'endCobrowse');
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'endCobrowse');
             $cobrowseSession = $this->activeCobrowseSession($conversation);
 
             if (! $cobrowseSession) {
@@ -867,7 +867,7 @@ class AgentConversationController extends Controller
         $agent = $request->user();
         $conversation = $this->conversationForAgent($agent, $supportCode, 'requestCobrowse');
         [$cobrowseSession, $agent, $conversation, $status] = DB::transaction(function () use ($agent, $cobrowseAuditTrail, $conversation, $resyncRequestPolicy): array {
-            [$agent, $conversation] = $this->lockedConversationActor($agent, $conversation, 'requestCobrowse');
+            [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'requestCobrowse');
             $cobrowseSession = $this->activeCobrowseSession($conversation);
 
             if (! $cobrowseSession || $cobrowseSession->status !== 'granted') {
@@ -946,29 +946,6 @@ class AgentConversationController extends Controller
         abort_unless(Gate::forUser($agent)->allows($ability, $conversation), 404);
 
         return $conversation;
-    }
-
-    /** @return array{0: User, 1: Conversation} */
-    private function lockedConversationActor(User $agent, Conversation $conversation, string $ability): array
-    {
-        $site = $conversation->site()->firstOrFail();
-        $accountId = (int) $site->account_id;
-        $this->siteManagerCoverage->lockAccount($accountId);
-        $agent = User::query()
-            ->whereKey($agent->id)
-            ->where('account_id', $accountId)
-            ->lockForUpdate()
-            ->firstOrFail();
-        $conversation = Conversation::query()
-            ->with('site')
-            ->whereKey($conversation->id)
-            ->where('site_id', $site->id)
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        abort_unless(Gate::forUser($agent)->allows($ability, $conversation), 404);
-
-        return [$agent, $conversation];
     }
 
     private function supportAgentsForSite(Site $site): Collection

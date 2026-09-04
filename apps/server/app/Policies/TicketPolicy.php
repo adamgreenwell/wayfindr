@@ -26,10 +26,14 @@ class TicketPolicy
 
     public function reply(User $user, Ticket $ticket): bool
     {
+        $ticket->loadMissing('conversation');
+
         return $this->view($user, $ticket)
             && $ticket->conversation_id !== null
             && $user->hasAccountPermission(AccountPermission::ViewConversations)
-            && $user->hasAccountPermission(AccountPermission::ReplyToConversations);
+            && $user->hasAccountPermission(AccountPermission::ReplyToConversations)
+            && ($ticket->conversation?->status !== 'closed'
+                || $user->hasAccountPermission(AccountPermission::ManageConversations));
     }
 
     public function update(User $user, Ticket $ticket): bool
