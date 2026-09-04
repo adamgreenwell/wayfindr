@@ -273,7 +273,7 @@ final class SlaClockManager
     {
         $this->alertRecipientColumn($stage, $channel);
 
-        return SlaAlertDelivery::query()->firstOrCreate(
+        $delivery = SlaAlertDelivery::query()->firstOrCreate(
             [
                 'sla_clock_id' => $clockId,
                 'stage' => $stage,
@@ -282,6 +282,18 @@ final class SlaClockManager
             ],
             ['public_id' => (string) Str::uuid()],
         );
+
+        // The caller has just re-proved current routing. A delivery cancelled
+        // by an earlier veto may therefore reuse its stable identity safely;
+        // the worker could not have sent before setting that cancellation.
+        if ($delivery->cancelled_at !== null) {
+            $delivery->forceFill([
+                'failed_at' => null,
+                'cancelled_at' => null,
+            ])->save();
+        }
+
+        return $delivery;
     }
 
     public function completeAlertHandoff(int $clockId, string $stage, CarbonInterface $at): void

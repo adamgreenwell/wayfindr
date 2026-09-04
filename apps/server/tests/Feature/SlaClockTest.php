@@ -413,6 +413,65 @@ test('the evaluator leaves a handoff pending when delivery-time routing changes'
         ->and($clock->fresh()->warning_alerted_at)->not->toBeNull();
 });
 
+test('a cancelled SLA delivery is not checkpointed and can be reactivated', function (): void {
+    Notification::fake();
+    $world = slaWorld(['enabled' => false]);
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ASSIGNED,
+            'email' => false,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+    $replacement = User::factory()->for($world['account'])->create();
+    $world['site']->supportAgents()->attach($replacement);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create([
+        'assigned_agent_id' => $world['agent']->id,
+    ]);
+
+    $moved = false;
+    $restored = false;
+    SlaAlertDelivery::created(function () use (&$moved, $conversation, $replacement): void {
+        if ($moved) {
+            return;
+        }
+
+        $moved = true;
+        $conversation->forceFill(['assigned_agent_id' => $replacement->id])->saveQuietly();
+    });
+    SlaAlertDelivery::updated(function (SlaAlertDelivery $delivery) use (&$restored, $conversation, $world): void {
+        if ($restored || ! $delivery->wasChanged('cancelled_at') || $delivery->cancelled_at === null) {
+            return;
+        }
+
+        $restored = true;
+        $conversation->forceFill(['assigned_agent_id' => $world['agent']->id])->saveQuietly();
+    });
+
+    $this->travel(8)->minutes();
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $delivery = SlaAlertDelivery::query()->sole();
+    expect($moved)->toBeTrue()
+        ->and($restored)->toBeTrue()
+        ->and($delivery->cancelled_at)->not->toBeNull()
+        ->and($clock->alertedUserIds('warning'))->toBe([])
+        ->and($clock->warning_alerted_at)->toBeNull();
+    Notification::assertNothingSent();
+
+    expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
+    Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
+
+    expect(SlaAlertDelivery::query()->count())->toBe(1)
+        ->and($delivery->fresh()->cancelled_at)->toBeNull()
+        ->and($delivery->fresh()->accepted_at)->not->toBeNull()
+        ->and($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $world['agent']->id])
+        ->and($clock->fresh()->warning_alerted_at)->not->toBeNull();
+});
+
 test('a failed alert checkpoint reuses its accepted outbox delivery', function (): void {
     Notification::fake();
     $world = slaWorld(['enabled' => false]);

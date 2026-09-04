@@ -83,6 +83,13 @@ class EvaluateSlaClocksCommand extends Command
                             );
                             SendSlaDeadlineAlertDelivery::dispatchPending((int) $delivery->id, $channel);
 
+                            // A synchronous worker can veto this route after
+                            // the first check. Never turn its durable
+                            // cancellation into a successful clock checkpoint.
+                            if ($delivery->refresh()->cancelled_at !== null) {
+                                continue;
+                            }
+
                             if (! $notification->shouldSend($agent, $channel)) {
                                 continue;
                             }
