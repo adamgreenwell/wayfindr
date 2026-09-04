@@ -129,7 +129,7 @@ test('agent access changes stay inside the current account', function (): void {
         ->and(AuditEvent::query()->where('action', 'agent.deactivated')->exists())->toBeFalse();
 });
 
-test('custom agent managers can suspend teammates in the same role but not another custom role', function (): void {
+test('custom agent managers can suspend only teammates in the same role', function (): void {
     $account = Account::factory()->create();
     $managerRole = CustomRole::factory()->for($account)->create([
         'permissions' => [AccountPermission::ManageAgents->value],
@@ -149,12 +149,23 @@ test('custom agent managers can suspend teammates in the same role but not anoth
         'account_role' => AccountRole::Agent,
         'custom_role_id' => $otherRole->id,
     ]);
+    $builtInAgent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => null,
+    ]);
+    $suspendedBuiltInAgent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => null,
+        'deactivated_at' => now(),
+    ]);
 
     $this->actingAs($manager)
         ->get(route('dashboard.account.show'))
         ->assertOk()
         ->assertSee(route('dashboard.account.agents.deactivate', $teammate), false)
-        ->assertDontSee(route('dashboard.account.agents.deactivate', $other), false);
+        ->assertDontSee(route('dashboard.account.agents.deactivate', $other), false)
+        ->assertDontSee(route('dashboard.account.agents.deactivate', $builtInAgent), false)
+        ->assertDontSee(route('dashboard.account.agents.reactivate', $suspendedBuiltInAgent), false);
 
     $this->actingAs($manager)
         ->post(route('dashboard.account.agents.deactivate', $teammate))
@@ -168,8 +179,16 @@ test('custom agent managers can suspend teammates in the same role but not anoth
         ->post(route('dashboard.account.agents.deactivate', $other))
         ->assertForbidden();
 
+    $this->post(route('dashboard.account.agents.deactivate', $builtInAgent))
+        ->assertForbidden();
+
+    $this->post(route('dashboard.account.agents.reactivate', $suspendedBuiltInAgent))
+        ->assertForbidden();
+
     expect($teammate->fresh()->isDeactivated())->toBeFalse()
         ->and($other->fresh()->isDeactivated())->toBeFalse()
+        ->and($builtInAgent->fresh()->isDeactivated())->toBeFalse()
+        ->and($suspendedBuiltInAgent->fresh()->isDeactivated())->toBeTrue()
         ->and(AuditEvent::query()->whereIn('action', ['agent.deactivated', 'agent.reactivated'])->count())->toBe(2);
 });
 
