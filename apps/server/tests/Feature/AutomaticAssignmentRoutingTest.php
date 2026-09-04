@@ -436,6 +436,24 @@ test('manual conversation claim retries and release keep an accurate audit trail
         ]);
 });
 
+test('manual ticket assignment retries do not record a change that did not happen', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->for($agent, 'assignee')->create();
+
+    $this->actingAs($agent)
+        ->put("/dashboard/tickets/{$ticket->id}/assignee", [
+            'assignee_id' => (string) $agent->id,
+        ])
+        ->assertRedirect();
+
+    expect(AuditEvent::query()
+        ->where('action', 'ticket.assignee_updated')
+        ->where('subject_id', $ticket->id)
+        ->exists())->toBeFalse();
+});
+
 test('routing mutations take the account lock before mutable routing rows', function (): void {
     if (DB::getDriverName() !== 'pgsql') {
         $this->markTestSkipped('PostgreSQL exposes the row-lock clauses used by this contract.');

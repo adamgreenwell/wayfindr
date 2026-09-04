@@ -662,7 +662,9 @@ class AgentTicketController extends Controller
             ],
         ]);
 
-        $newAssigneeId = $validated['assignee_id'] ?? null;
+        $newAssigneeId = isset($validated['assignee_id'])
+            ? (int) $validated['assignee_id']
+            : null;
         [$agent, $ticket, $newAssignee, $oldAssigneeId] = DB::transaction(function () use ($agent, $newAssigneeId, $ticket): array {
             [$agent, $ticket, $newAssignee] = $this->lockedTicketAssignment(
                 $agent,
@@ -674,9 +676,10 @@ class AgentTicketController extends Controller
             $oldAssigneeId = $ticket->assignee_id;
             $oldAssignee = $ticket->assignee;
 
-            $ticket->forceFill(['assignee_id' => $newAssigneeId])->save();
-
-            $this->assignmentAuditTrail->ticket($ticket, $agent, $oldAssignee, $newAssignee, 'manual');
+            if ($oldAssigneeId !== $newAssigneeId) {
+                $ticket->forceFill(['assignee_id' => $newAssigneeId])->save();
+                $this->assignmentAuditTrail->ticket($ticket, $agent, $oldAssignee, $newAssignee, 'manual');
+            }
 
             return [$agent, $ticket, $newAssignee, $oldAssigneeId];
         });
