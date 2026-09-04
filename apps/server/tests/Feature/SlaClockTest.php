@@ -336,7 +336,7 @@ test('the evaluator retries an alert after its queue handoff fails', function ()
         ->and($clock->fresh()->alertedUserIds('warning'))->toBe([(int) $world['agent']->id]);
 });
 
-test('the evaluator retries only the alert channel whose handoff failed', function (): void {
+test('the evaluator does not resend an ambiguously accepted mail channel', function (): void {
     $world = slaWorld(['enabled' => false]);
     $world['agent']->forceFill([
         'alert_preferences' => [
@@ -356,17 +356,17 @@ test('the evaluator retries only the alert channel whose handoff failed', functi
     expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(1);
 
     $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $mailDelivery = SlaAlertDelivery::query()->where('channel', 'mail')->sole();
     expect($clock->alertedUserIds('warning', 'database'))->toBe([(int) $world['agent']->id])
         ->and($clock->alertedUserIds('warning', 'mail'))->toBe([])
-        ->and($clock->warning_alerted_at)->toBeNull();
+        ->and($clock->warning_alerted_at)->toBeNull()
+        ->and($mailDelivery->started_at)->not->toBeNull()
+        ->and($mailDelivery->accepted_at)->toBeNull()
+        ->and($mailDelivery->failed_at)->not->toBeNull();
 
     Notification::fake();
     expect(Artisan::call('wayfindr:evaluate-sla-clocks'))->toBe(0);
-    Notification::assertSentTo(
-        $world['agent'],
-        SlaDeadlineAlert::class,
-        fn (SlaDeadlineAlert $notification): bool => $notification->via($world['agent']) === ['mail'],
-    );
+    Notification::assertNothingSent();
 
     $clock->refresh();
     expect($clock->alertedUserIds('warning', 'database'))->toBe([(int) $world['agent']->id])
@@ -522,9 +522,11 @@ test('the scheduler recovers cooled-down SLA alert delivery failures', function 
     $cooledAgent = User::factory()->for($world['account'])->create();
     $recentAgent = User::factory()->for($world['account'])->create();
     $cancelledAgent = User::factory()->for($world['account'])->create();
+    $uncertainAgent = User::factory()->for($world['account'])->create();
     $cooled = $manager->alertDelivery((int) $clock->id, 'warning', 'mail', (int) $cooledAgent->id);
     $recent = $manager->alertDelivery((int) $clock->id, 'warning', 'mail', (int) $recentAgent->id);
     $cancelled = $manager->alertDelivery((int) $clock->id, 'warning', 'mail', (int) $cancelledAgent->id);
+    $uncertain = $manager->alertDelivery((int) $clock->id, 'warning', 'mail', (int) $uncertainAgent->id);
     $cooled->forceFill([
         'failed_at' => now()->subMinutes(SlaAlertDelivery::FAILED_RETRY_AFTER_MINUTES + 1),
     ])->save();
@@ -534,6 +536,10 @@ test('the scheduler recovers cooled-down SLA alert delivery failures', function 
     $cancelled->forceFill([
         'failed_at' => now()->subMinutes(SlaAlertDelivery::FAILED_RETRY_AFTER_MINUTES + 1),
         'cancelled_at' => now(),
+    ])->save();
+    $uncertain->forceFill([
+        'started_at' => now()->subMinutes(SlaAlertDelivery::FAILED_RETRY_AFTER_MINUTES + 1),
+        'failed_at' => now()->subMinutes(SlaAlertDelivery::FAILED_RETRY_AFTER_MINUTES + 1),
     ])->save();
 
     $this->artisan('wayfindr:queue-sla-alert-deliveries')
@@ -546,13 +552,64 @@ test('the scheduler recovers cooled-down SLA alert delivery failures', function 
     );
     Queue::assertNotPushed(
         SendSlaDeadlineAlertDelivery::class,
-        fn ($job): bool => in_array($job->uniqueId(), [(string) $recent->id, (string) $cancelled->id], true),
+        fn ($job): bool => in_array($job->uniqueId(), [
+            (string) $recent->id,
+            (string) $cancelled->id,
+            (string) $uncertain->id,
+        ], true),
     );
 
     expect(collect(Schedule::events())->contains(
         fn ($event): bool => str_contains((string) $event->command, 'wayfindr:queue-sla-alert-deliveries')
             && $event->getExpression() === '* * * * *',
     ))->toBeTrue();
+});
+
+test('an ambiguous SLA mail receipt failure is never sent automatically twice', function (): void {
+    Notification::fake();
+    $world = slaWorld(['enabled' => false]);
+    $world['agent']->forceFill([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ])->save();
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    $manager = app(SlaClockManager::class);
+    $this->travel(8)->minutes();
+    expect($manager->evaluate((int) $clock->id, now())['stage'])->toBe('warning');
+    $delivery = $manager->alertDelivery(
+        (int) $clock->id,
+        'warning',
+        'mail',
+        (int) $world['agent']->id,
+    );
+
+    $failReceipt = true;
+    SlaAlertDelivery::updating(function (SlaAlertDelivery $current) use (&$failReceipt): void {
+        if ($failReceipt && $current->isDirty('accepted_at')) {
+            $failReceipt = false;
+
+            throw new RuntimeException('Receipt database unavailable.');
+        }
+    });
+
+    $job = new SendSlaDeadlineAlertDelivery((int) $delivery->id);
+    expect(fn () => app()->call([$job, 'handle']))->toThrow(RuntimeException::class);
+    Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
+
+    $delivery->refresh();
+    expect($delivery->started_at)->not->toBeNull()
+        ->and($delivery->accepted_at)->toBeNull()
+        ->and($delivery->failed_at)->not->toBeNull()
+        ->and(SlaAlertDelivery::query()->awaitingDispatch()->count())->toBe(0);
+
+    app()->call([$job, 'handle']);
+    Notification::assertSentToTimes($world['agent'], SlaDeadlineAlert::class, 1);
 });
 
 test('final SLA alert completion locks every routing boundary before the clock', function (): void {

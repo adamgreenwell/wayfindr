@@ -288,6 +288,7 @@ final class SlaClockManager
         // the worker could not have sent before setting that cancellation.
         if ($delivery->cancelled_at !== null) {
             $delivery->forceFill([
+                'started_at' => null,
                 'failed_at' => null,
                 'cancelled_at' => null,
             ])->save();

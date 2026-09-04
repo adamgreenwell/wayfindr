@@ -13,6 +13,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Throwable;
 
@@ -66,6 +67,23 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
 
     public function handle(): void
     {
+        $channel = SlaAlertDelivery::query()->whereKey($this->deliveryId)->value('channel');
+
+        if ($channel === null) {
+            return;
+        }
+
+        if ($channel === 'mail') {
+            $this->handleMail();
+
+            return;
+        }
+
+        $this->handleDatabase();
+    }
+
+    private function handleDatabase(): void
+    {
         try {
             DB::transaction(function (): void {
                 $delivery = SlaAlertDelivery::query()
@@ -88,8 +106,9 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 }
 
                 $notification = new SlaDeadlineAlert($clock, $delivery->stage, $delivery->channel);
-                // Retrying the durable row reuses the database notification ID
-                // and the mail Message-ID instead of inventing another alert.
+                // A database alert and its accepted receipt share this
+                // transaction. Retrying therefore reuses one durable ID
+                // without exposing a post-insert checkpoint seam.
                 $notification->id = $delivery->public_id;
 
                 if (! $notification->shouldSend($agent, $delivery->channel)) {
@@ -124,6 +143,97 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                     'last_attempted_at' => now(),
                     'failed_at' => now(),
                 ]);
+
+            throw $exception;
+        }
+    }
+
+    private function handleMail(): void
+    {
+        $prepared = DB::transaction(function (): ?array {
+            $delivery = SlaAlertDelivery::query()
+                ->whereKey($this->deliveryId)
+                ->lockForUpdate()
+                ->first();
+
+            if (
+                $delivery === null
+                || $delivery->accepted_at !== null
+                || $delivery->cancelled_at !== null
+                || $delivery->started_at !== null
+            ) {
+                return null;
+            }
+
+            $delivery->loadMissing(['clock.site', 'clock.subject', 'user']);
+            $clock = $delivery->clock;
+            $agent = $delivery->user;
+
+            if ($clock === null || $clock->subject === null || $agent === null) {
+                $delivery->forceFill(['cancelled_at' => now()])->save();
+
+                return null;
+            }
+
+            $notification = new SlaDeadlineAlert($clock, $delivery->stage, $delivery->channel);
+            $notification->id = $delivery->public_id;
+
+            if (! $notification->shouldSend($agent, $delivery->channel)) {
+                $delivery->forceFill(['cancelled_at' => now()])->save();
+
+                return null;
+            }
+
+            $delivery->forceFill([
+                // Commit BEFORE SMTP. A transport error or a failed receipt
+                // write after this point is an ambiguous outcome and must not
+                // be retried automatically into a duplicate customer email.
+                'started_at' => now(),
+                'attempts' => $delivery->attempts + 1,
+                'last_attempted_at' => now(),
+                'failed_at' => null,
+                'cancelled_at' => null,
+            ])->save();
+
+            return compact('agent', 'delivery', 'notification');
+        });
+
+        if ($prepared === null) {
+            return;
+        }
+
+        /** @var SlaAlertDelivery $delivery */
+        $delivery = $prepared['delivery'];
+
+        try {
+            Notification::sendNow($prepared['agent'], $prepared['notification'], ['mail']);
+
+            DB::transaction(function () use ($delivery): void {
+                $current = SlaAlertDelivery::query()
+                    ->whereKey($delivery->id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($current === null || $current->accepted_at !== null || $current->cancelled_at !== null) {
+                    return;
+                }
+
+                $current->forceFill([
+                    'accepted_at' => now(),
+                    'failed_at' => null,
+                ])->save();
+            });
+        } catch (Throwable $exception) {
+            SlaAlertDelivery::query()
+                ->whereKey($delivery->id)
+                ->whereNull('accepted_at')
+                ->whereNotNull('started_at')
+                ->update(['failed_at' => now()]);
+
+            Log::critical('SLA mail transport outcome is uncertain; automatic retries stopped.', [
+                'sla_alert_delivery_id' => $delivery->public_id,
+                'exception' => $exception::class,
+            ]);
 
             throw $exception;
         }

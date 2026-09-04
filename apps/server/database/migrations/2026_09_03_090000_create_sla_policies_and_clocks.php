@@ -65,6 +65,7 @@ return new class extends Migration
             $table->string('stage');
             $table->string('channel');
             $table->unsignedInteger('attempts')->default(0);
+            $table->timestamp('started_at')->nullable();
             $table->timestamp('last_attempted_at')->nullable();
             $table->timestamp('accepted_at')->nullable();
             $table->timestamp('failed_at')->nullable();
@@ -75,7 +76,10 @@ return new class extends Migration
                 ['sla_clock_id', 'stage', 'channel', 'user_id'],
                 'sla_alert_delivery_route_unique',
             );
-            $table->index(['accepted_at', 'failed_at', 'cancelled_at'], 'sla_alert_delivery_pending_index');
+            $table->index(
+                ['accepted_at', 'started_at', 'failed_at', 'cancelled_at'],
+                'sla_alert_delivery_pending_index',
+            );
         });
     }
 
