@@ -68,7 +68,6 @@ final readonly class AutomationActionExecutor
         if ($subject instanceof Ticket) {
             $subject->forceFill(['assignee_id' => $agent->id])->save();
             $this->assignmentAuditTrail->ticket($subject, null, $oldAssignee, $agent, 'automation');
-            $this->notifyTicketAssignmentAfterCommit($subject, $agent);
         } else {
             $subject->forceFill(['assigned_agent_id' => $agent->id])->save();
             $this->assignmentAuditTrail->conversation($subject, null, $oldAssignee, $agent, 'automation');
@@ -289,10 +288,16 @@ final readonly class AutomationActionExecutor
         ]);
     }
 
-    private function notifyTicketAssignmentAfterCommit(Ticket $ticket, User $agent): void
+    public function notifyFinalTicketAssignmentAfterCommit(Ticket $ticket, ?int $previousAssigneeId): void
     {
-        DB::afterCommit(function () use ($agent, $ticket): void {
-            $recipient = User::query()->whereKey($agent->id)->first();
+        $assigneeId = $ticket->assignee_id === null ? null : (int) $ticket->assignee_id;
+
+        if ($assigneeId === null || $assigneeId === $previousAssigneeId) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($assigneeId, $ticket): void {
+            $recipient = User::query()->whereKey($assigneeId)->first();
             $current = Ticket::query()->with('site')->whereKey($ticket->id)->first();
 
             if (! $recipient instanceof User
@@ -306,7 +311,7 @@ final readonly class AutomationActionExecutor
             } catch (Throwable $exception) {
                 Log::error('Automation assigned a ticket, but its alert failed.', [
                     'ticket_id' => $ticket->id,
-                    'assignee_id' => $agent->id,
+                    'assignee_id' => $assigneeId,
                     'exception' => $exception->getMessage(),
                 ]);
             }

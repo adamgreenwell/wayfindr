@@ -36,6 +36,9 @@ final readonly class AutomationRuleEngine
 
         try {
             $accountId = $this->accountId($subject);
+            $previousTicketAssigneeId = $subject instanceof Ticket && $subject->assignee_id !== null
+                ? (int) $subject->assignee_id
+                : null;
             $rules = AutomationRule::query()
                 ->where('account_id', $accountId)
                 ->enabled()
@@ -50,6 +53,10 @@ final readonly class AutomationRuleEngine
 
             if ($executed) {
                 $subject->refresh();
+
+                if ($subject instanceof Ticket) {
+                    $this->executor->notifyFinalTicketAssignmentAfterCommit($subject, $previousTicketAssigneeId);
+                }
             }
         } catch (Throwable $exception) {
             // Automation is an enhancement to support work, never permission

@@ -226,6 +226,44 @@ test('visitor ticket reopen automation follows the visitor reply audit', functio
         ->and(AutomationRuleExecution::query()->sole()->automation_rule_id)->toBe($rule->id);
 });
 
+test('assignment alerts wait for the final matching rule', function (): void {
+    Notification::fake();
+
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->for($conversation)->create([
+        'status' => 'pending',
+    ]);
+    $firstAgent = User::factory()->for($account)->create();
+    $finalAgent = User::factory()->for($account)->create();
+    AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'First assignment',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'position' => 0,
+        'actions' => [['type' => 'assign_agent', 'value' => $firstAgent->id]],
+    ]);
+    AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Final assignment',
+        'event' => AutomationRuleEvent::TicketUpdated,
+        'position' => 10,
+        'actions' => [['type' => 'assign_agent', 'value' => $finalAgent->id]],
+    ]);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+    ]);
+
+    event(new ConversationMessageCreated($message));
+
+    expect($ticket->fresh()->assignee_id)->toBe($finalAgent->id)
+        ->and(AutomationRuleExecution::query()->count())->toBe(2);
+
+    Notification::assertNotSentTo($firstAgent, TicketAssigned::class);
+    Notification::assertSentTo($finalAgent, TicketAssigned::class);
+});
+
 test('a failed action rolls back its sequence records the failure and lets the next rule run', function (): void {
     Notification::fake();
 
