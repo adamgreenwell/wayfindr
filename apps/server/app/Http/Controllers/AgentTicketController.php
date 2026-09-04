@@ -178,7 +178,12 @@ class AgentTicketController extends Controller
             $metadata['note_template'] = $selectedTemplate;
         }
 
-        $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
+        [$agent, $ticket] = DB::transaction(function () use ($agent, $metadata, $ticket): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'addNote');
+            $this->recordActivity($ticket, $agent, 'ticket.note_added', $metadata);
+
+            return [$agent, $ticket];
+        });
 
         $status = 'tickets.flash.note_added';
 
@@ -344,20 +349,25 @@ class AgentTicketController extends Controller
             ]);
         }
 
-        $label = TicketLabel::firstOrCreate([
-            'account_id' => $ticket->account_id,
-            'slug' => $slug,
-        ], [
-            'name' => $name,
-        ]);
+        [$agent, $ticket] = DB::transaction(function () use ($agent, $name, $slug, $ticket): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'update');
+            $label = TicketLabel::firstOrCreate([
+                'account_id' => $ticket->account_id,
+                'slug' => $slug,
+            ], [
+                'name' => $name,
+            ]);
 
-        $ticket->labels()->syncWithoutDetaching([$label->id]);
+            $ticket->labels()->syncWithoutDetaching([$label->id]);
 
-        $this->recordActivity($ticket, $agent, 'ticket.label_added', [
-            'label_id' => $label->id,
-            'label_name' => $label->name,
-            'label_slug' => $label->slug,
-        ]);
+            $this->recordActivity($ticket, $agent, 'ticket.label_added', [
+                'label_id' => $label->id,
+                'label_name' => $label->name,
+                'label_slug' => $label->slug,
+            ]);
+
+            return [$agent, $ticket];
+        });
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.label_added');
     }
@@ -368,19 +378,25 @@ class AgentTicketController extends Controller
 
         $this->authorizeTicketAbility($agent, 'update', $ticket);
 
-        abort_unless(
-            (int) $ticketLabel->account_id === (int) $ticket->account_id
-            && $ticket->labels()->whereKey($ticketLabel->id)->exists(),
-            404,
-        );
+        [$agent, $ticket] = DB::transaction(function () use ($agent, $ticket, $ticketLabel): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'update');
+            $ticketLabel = TicketLabel::query()
+                ->whereKey($ticketLabel->id)
+                ->where('account_id', $ticket->account_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            abort_unless($ticket->labels()->whereKey($ticketLabel->id)->exists(), 404);
 
-        $ticket->labels()->detach($ticketLabel->id);
+            $ticket->labels()->detach($ticketLabel->id);
 
-        $this->recordActivity($ticket, $agent, 'ticket.label_removed', [
-            'label_id' => $ticketLabel->id,
-            'label_name' => $ticketLabel->name,
-            'label_slug' => $ticketLabel->slug,
-        ]);
+            $this->recordActivity($ticket, $agent, 'ticket.label_removed', [
+                'label_id' => $ticketLabel->id,
+                'label_name' => $ticketLabel->name,
+                'label_slug' => $ticketLabel->slug,
+            ]);
+
+            return [$agent, $ticket];
+        });
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.label_removed');
     }
@@ -516,21 +532,26 @@ class AgentTicketController extends Controller
             'priority' => ['required', Rule::in(TicketPriority::values())],
         ]);
 
-        $changes = $this->ticketFieldChanges($ticket, $validated);
+        [$agent, $ticket] = DB::transaction(function () use ($agent, $ticket, $validated): array {
+            [$agent, $ticket] = $this->lockedTicketActor($agent, $ticket, 'update');
+            $changes = $this->ticketFieldChanges($ticket, $validated);
 
-        if (array_key_exists('description', $changes)) {
-            $validated['metadata'] = array_replace($ticket->metadata ?? [], [
-                'description_source' => 'agent_summary',
-            ]);
-        }
+            if (array_key_exists('description', $changes)) {
+                $validated['metadata'] = array_replace($ticket->metadata ?? [], [
+                    'description_source' => 'agent_summary',
+                ]);
+            }
 
-        $ticket->forceFill($validated)->save();
+            $ticket->forceFill($validated)->save();
 
-        if ($changes !== []) {
-            $this->recordActivity($ticket, $agent, 'ticket.updated', [
-                'changes' => $changes,
-            ]);
-        }
+            if ($changes !== []) {
+                $this->recordActivity($ticket, $agent, 'ticket.updated', [
+                    'changes' => $changes,
+                ]);
+            }
+
+            return [$agent, $ticket];
+        });
 
         return $this->redirectAfterUpdate($ticket, $request, 'tickets.flash.updated');
     }
@@ -550,8 +571,9 @@ class AgentTicketController extends Controller
 
         $this->transitionTicketStatus(
             $ticket,
+            $agent,
             fn (): array => ['status' => 'pending', 'closed_at' => null],
-            function (string $previousStatus) use ($ticket, $agent, $metadata): void {
+            function (string $previousStatus, Ticket $ticket, User $agent) use ($metadata): void {
 
                 // Leaving `closed` is a REOPEN, whichever button did it. The form is
                 // only offered for open tickets, so this is a stale or crafted submit
@@ -588,6 +610,7 @@ class AgentTicketController extends Controller
 
         $this->transitionTicketStatus(
             $ticket,
+            $agent,
             // A ticket already closed keeps the moment it was actually closed.
             fn (string $previous, Ticket $locked): array => [
                 'status' => 'closed',
@@ -599,7 +622,7 @@ class AgentTicketController extends Controller
             // reopen between them, which makes one resolution contribute two
             // durations to the report and inflates every close count derived
             // from the log.
-            function (string $previous) use ($ticket, $agent, $resolutionNote): void {
+            function (string $previous, Ticket $ticket, User $agent) use ($resolutionNote): void {
                 if ($previous === 'closed') {
                     return;
                 }
@@ -630,8 +653,9 @@ class AgentTicketController extends Controller
 
         $this->transitionTicketStatus(
             $ticket,
+            $agent,
             fn (): array => ['status' => 'open', 'closed_at' => null],
-            function (string $previousStatus) use ($ticket, $agent, $reopenNote): void {
+            function (string $previousStatus, Ticket $ticket, User $agent) use ($reopenNote): void {
 
                 // The same control reopens a CLOSED ticket and un-holds a PENDING one,
                 // and only the first is a reopen. `open -> pending -> reopen -> close`
@@ -2113,20 +2137,20 @@ class AgentTicketController extends Controller
      * in front of you.
      *
      * @param  callable(string, Ticket): array<string, mixed>  $attributes  What to write, given the LOCKED previous status.
-     * @param  callable(string): void  $record  What to log, given the same.
+     * @param  callable(string, Ticket, User): void  $record  What to log, given the same.
      */
-    private function transitionTicketStatus(Ticket $ticket, callable $attributes, callable $record): void
+    private function transitionTicketStatus(Ticket $ticket, User $agent, callable $attributes, callable $record): void
     {
-        DB::transaction(function () use ($ticket, $attributes, $record): void {
-            $locked = Ticket::query()->whereKey($ticket->getKey())->lockForUpdate()->first();
-            $previousStatus = (string) ($locked?->status ?? $ticket->status);
+        DB::transaction(function () use ($ticket, $agent, $attributes, $record): void {
+            [$agent, $locked] = $this->lockedTicketActor($agent, $ticket, 'updateStatus');
+            $previousStatus = (string) $locked->status;
 
             // Written through the LOCKED instance, not the one this request
             // loaded before it waited. Eloquent diffs against the attributes it
             // originally read, so a reopen that loaded "open" and then queued
             // behind a close would find "open" unchanged, omit status from the
             // update, and leave the row closed while recording a reopen.
-            $target = $locked ?? $ticket;
+            $target = $locked;
 
             $target->forceFill($attributes($previousStatus, $target))->save();
 
@@ -2137,7 +2161,7 @@ class AgentTicketController extends Controller
             // logging afterwards lets the next writer take the lock and insert
             // its event first -- a reopen before the close that preceded it,
             // for a ticket that ended up open.
-            $record($previousStatus);
+            $record($previousStatus, $target, $agent);
         });
     }
 
