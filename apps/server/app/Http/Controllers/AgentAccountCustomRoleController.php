@@ -98,17 +98,20 @@ final class AgentAccountCustomRoleController extends Controller
                     'permissions' => $role->permissionValues(),
                 ]);
 
-                return $oldPermissions === $role->permissionValues()
+                $affectedAgentIds = $oldPermissions === $role->permissionValues()
                     ? []
                     : $role->users()->pluck('users.id')->all();
+
+                $this->agentRealtimeSessions->requestMany($affectedAgentIds);
+
+                return $affectedAgentIds;
             });
         } catch (UniqueConstraintViolationException) {
             $this->throwDuplicateNameValidation();
         }
 
-        // Never hold the account lock across a network call. The permission
-        // change is authoritative even if Reverb is unavailable; termination
-        // only evicts already-established sockets promptly.
+        // The durable eviction request committed with the permission change,
+        // but the network call stays outside the account transaction.
         $this->agentRealtimeSessions->disconnectMany($affectedAgentIds);
 
         return redirect()

@@ -124,6 +124,12 @@ test('changing assigned role permissions disconnects affected realtime sessions 
         'custom_role_id' => $role->id,
     ]);
     $sessions = Mockery::mock(AgentRealtimeSessions::class);
+    $sessions->shouldReceive('requestMany')
+        ->once()
+        ->withArgs(fn (iterable $agentIds): bool => collect($agentIds)->contains($agent->id)
+            // RefreshDatabase owns level one; the controller's account
+            // transaction raises this to level two while both writes commit.
+            && DB::transactionLevel() === 2);
     $sessions->shouldReceive('disconnectMany')
         ->once()
         ->withArgs(fn (iterable $agentIds): bool => collect($agentIds)->contains($agent->id)

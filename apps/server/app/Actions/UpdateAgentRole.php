@@ -68,6 +68,8 @@ class UpdateAgentRole
                 'occurred_at' => now(),
             ]);
 
+            $this->agentRealtimeSessions->requestMany([$target->id]);
+
             return [$target->refresh(), true];
         });
 

@@ -39,6 +39,7 @@ class UpdateAgentAccess
             $target->forceFill(['deactivated_at' => now()])->save();
 
             $this->recordAuditEvent($actor, $target, 'agent.deactivated');
+            $this->agentRealtimeSessions->requestMany([$target->id]);
 
             return [$target->refresh(), true];
         });

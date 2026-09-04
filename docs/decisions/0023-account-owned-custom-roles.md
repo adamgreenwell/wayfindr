@@ -63,6 +63,13 @@ the user. Role creation, changes, deletion, and user assignments are audited
 with reference-safe names and permission identifiers. Audit history does not
 depend on the role row continuing to exist.
 
+Realtime access revocations also create a durable eviction request in the same
+database transaction. Wayfindr attempts the Reverb termination after commit;
+the default queue retries a failed termination, and the scheduler recovers a
+failed queue handoff until Reverb accepts it. A realtime outage can therefore
+delay socket eviction without rolling back or permanently stranding the
+authorization change.
+
 `manage_integrations` governs API-token lifecycle, not the support data a token
 can use. The coarse `read` and `write` token abilities are available only when
 the issuer holds every support permission bundled into the chosen ability.

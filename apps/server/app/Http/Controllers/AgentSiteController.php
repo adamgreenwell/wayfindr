@@ -1635,7 +1635,10 @@ class AgentSiteController extends Controller
                 $this->recordSiteAccessChange($site, $actor, $beforeAgentIds, $afterAgentIds);
             }
 
-            return array_values(array_diff($beforeAgentIds, $afterAgentIds));
+            $removedAgentIds = array_values(array_diff($beforeAgentIds, $afterAgentIds));
+            $this->agentRealtimeSessions->requestMany($removedAgentIds);
+
+            return $removedAgentIds;
         });
 
         $this->agentRealtimeSessions->disconnectMany($removedAgentIds);
