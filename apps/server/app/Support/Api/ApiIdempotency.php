@@ -2,6 +2,7 @@
 
 namespace App\Support\Api;
 
+use App\Models\Account;
 use App\Models\ApiIdempotencyKey;
 use App\Models\ApiToken;
 use Closure;
@@ -16,10 +17,10 @@ use LogicException;
 /**
  * Turns an Idempotency-Key into one durable public-API write.
  *
- * The token row is the lock. That deliberately serialises the short write
- * transactions made by one credential, which gives every supported database
- * the same check-then-insert behaviour without relying on driver-specific
- * advisory locks. Different tokens never wait on each other.
+ * The account row joins the application's account-first write protocol before
+ * the token row serialises one credential's short transactions. That gives
+ * every supported database the same check-then-insert behaviour without
+ * driver-specific advisory locks while avoiding token/site lock inversions.
  */
 final class ApiIdempotency
 {
@@ -54,6 +55,11 @@ final class ApiIdempotency
             $write,
             $resolve,
         ): IdempotentWrite {
+            // Site availability and archival mutations take account then site.
+            // API writes must enter that order before their token and site
+            // locks; the created-model observers may re-enter this account
+            // lock when they snapshot the active SLA policy.
+            Account::query()->whereKey($scope->accountId())->lockForUpdate()->firstOrFail();
             $token = ApiToken::query()
                 ->whereKey($scope->token->getKey())
                 ->lockForUpdate()
