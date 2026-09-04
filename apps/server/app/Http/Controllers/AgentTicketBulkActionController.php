@@ -232,7 +232,7 @@ final class AgentTicketBulkActionController extends Controller
                     ->orderBy('id')
                     ->lockForUpdate()
                     ->get();
-                $this->authorizeTickets($lockedAgent, $accountId, $tickets, $ids);
+                $this->authorizeTickets($lockedAgent, $accountId, $tickets, $ids, true);
                 $result = $this->bulkActions->undo($lockedAgent, $run, $tickets);
                 $run->forceFill([
                     'undone_at' => now(),
@@ -310,14 +310,19 @@ final class AgentTicketBulkActionController extends Controller
      * @param  Collection<int, Ticket>  $tickets
      * @param  list<int>  $ids
      */
-    private function authorizeTickets(User $agent, int $accountId, Collection $tickets, array $ids): void
-    {
+    private function authorizeTickets(
+        User $agent,
+        int $accountId,
+        Collection $tickets,
+        array $ids,
+        bool $allowMissing = false,
+    ): void {
         abort_unless(
             (int) $agent->account_id === $accountId
             && $agent->hasAccountPermission(AccountPermission::ManageTickets),
             403,
         );
-        abort_unless($tickets->count() === count($ids), 404);
+        abort_unless($allowMissing || $tickets->count() === count($ids), 404);
 
         $siteIds = $tickets->pluck('site_id')
             ->map(fn (mixed $id): int => (int) $id)

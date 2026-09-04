@@ -73,7 +73,7 @@ final readonly class TicketBulkActionService
 
     /**
      * @param  Collection<int, Ticket>  $tickets
-     * @return list<array{ticket_id: int, subject: string, site: string, before: array<string, mixed>, after: array<string, mixed>}>
+     * @return list<array{ticket_id: int, before: array<string, mixed>, after: array<string, mixed>}>
      */
     public function apply(
         User $agent,
@@ -113,8 +113,6 @@ final readonly class TicketBulkActionService
             $after = $this->state($ticket, $action, $value);
             $changes[] = [
                 'ticket_id' => (int) $ticket->id,
-                'subject' => (string) $ticket->subject,
-                'site' => (string) $ticket->site->name,
                 'before' => $before,
                 'after' => $after,
             ];

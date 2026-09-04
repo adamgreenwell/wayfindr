@@ -14,6 +14,7 @@ use App\Models\TicketBulkActionRun;
 use App\Models\TicketLabel;
 use App\Models\User;
 use App\Notifications\TicketAssigned;
+use App\Support\SitePurge;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
@@ -504,4 +505,39 @@ test('undoing a close back to pending records both reopen and pending lifecycle 
 
     expect($ticket->fresh()->status)->toBe('pending')
         ->and($undoEvents->pluck('action')->all())->toBe(['ticket.reopened', 'ticket.pending']);
+});
+
+test('site purge leaves no copied ticket content and undo restores surviving tickets', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $purgedSite = Site::factory()->for($account)->create(['name' => 'Secret workspace']);
+    $survivingSite = Site::factory()->for($account)->create();
+    $purged = Ticket::factory()->for($account)->for($purgedSite)->create([
+        'subject' => 'Private customer incident',
+        'priority' => 'normal',
+    ]);
+    $surviving = Ticket::factory()->for($account)->for($survivingSite)->create(['priority' => 'normal']);
+
+    $preview = $this->actingAs($agent)->post(route('dashboard.tickets.bulk.preview'), [
+        'ticket_ids' => [$purged->id, $surviving->id],
+        'action' => 'set_priority',
+        'value' => 'urgent',
+    ]);
+    $this->actingAs($agent)->post(route('dashboard.tickets.bulk.store'), [
+        'preview_token' => $preview->viewData('token'),
+    ]);
+    $run = TicketBulkActionRun::query()->sole();
+
+    expect(json_encode($run->changes))
+        ->not->toContain('Private customer incident')
+        ->not->toContain('Secret workspace');
+
+    app(SitePurge::class)->purge($purgedSite, $agent);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.tickets.bulk.undo', $run))
+        ->assertSessionHas('ticket_bulk_status', fn (array $status): bool => $status['reverted'] === 1 && $status['skipped'] === 1);
+
+    expect($surviving->fresh()->priority)->toBe('normal')
+        ->and($run->fresh()->undone_at)->not->toBeNull();
 });
