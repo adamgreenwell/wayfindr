@@ -79,12 +79,13 @@ final class SlaClockManager
         }
 
         if ($conversation->status === 'closed') {
+            $this->cancel($conversation, SlaClock::METRIC_FIRST_RESPONSE, $conversation->closed_at ?? now());
             $this->satisfy($conversation, SlaClock::METRIC_RESOLUTION, $conversation->closed_at ?? now());
 
             return;
         }
 
-        $this->start($conversation, SlaClock::METRIC_RESOLUTION, now());
+        $this->startConversation($conversation, now());
     }
 
     public function ticketUpdated(Ticket $ticket): void
@@ -132,6 +133,18 @@ final class SlaClockManager
             ->each(fn (SlaClock $clock) => $this->advance($clock, $at));
     }
 
+    /** Persist breaches crossed under the policy that is still in force. */
+    public function recordAccountBreaches(Account $account, CarbonInterface $at): void
+    {
+        SlaClock::query()
+            ->select('id')
+            ->where('account_id', $account->id)
+            ->whereNull('satisfied_at')
+            ->whereNull('cancelled_at')
+            ->lazyById(250)
+            ->each(fn (SlaClock $clock) => $this->evaluate((int) $clock->id, $at, recordWarning: false));
+    }
+
     public function advance(SlaClock $clock, CarbonInterface $at): SlaClock
     {
         if (! $clock->isActive()) {
@@ -159,9 +172,9 @@ final class SlaClockManager
      *
      * @return array{clock: SlaClock, stage: 'warning'|'breach'|null}
      */
-    public function evaluate(int $clockId, CarbonInterface $at): array
+    public function evaluate(int $clockId, CarbonInterface $at, bool $recordWarning = true): array
     {
-        return DB::transaction(function () use ($at, $clockId): array {
+        return DB::transaction(function () use ($at, $clockId, $recordWarning): array {
             $clock = SlaClock::query()->with(['site', 'subject'])->lockForUpdate()->findOrFail($clockId);
 
             $this->advance($clock, $at);
@@ -176,7 +189,7 @@ final class SlaClockManager
                     'breached_at' => CarbonImmutable::instance($at),
                 ])->save();
                 $stage = 'breach';
-            } elseif ($clock->isActive() && $clock->elapsed_seconds >= $clock->warning_seconds && $clock->warned_at === null) {
+            } elseif ($recordWarning && $clock->isActive() && $clock->elapsed_seconds >= $clock->warning_seconds && $clock->warned_at === null) {
                 $clock->forceFill(['warned_at' => CarbonImmutable::instance($at)])->save();
                 $stage = 'warning';
             }
@@ -265,6 +278,31 @@ final class SlaClockManager
                 if ($clock->elapsed_seconds > $clock->target_seconds && $clock->breached_at === null) {
                     // The work completed before the scheduler noticed. Keep the
                     // missed target in history without sending a stale alert.
+                    $attributes['breached_at'] = CarbonImmutable::instance($at);
+                }
+
+                $clock->forceFill($attributes)->save();
+            });
+    }
+
+    private function cancel(Model $subject, string $metric, CarbonInterface $at): void
+    {
+        $subject->slaClocks()
+            ->where('metric', $metric)
+            ->whereNull('satisfied_at')
+            ->whereNull('cancelled_at')
+            ->with('site')
+            ->orderBy('id')
+            ->get()
+            ->each(function (SlaClock $clock) use ($at): void {
+                $this->advance($clock, $at);
+                $attributes = ['cancelled_at' => CarbonImmutable::instance($at)];
+
+                if ($clock->elapsed_seconds >= $clock->target_seconds && $clock->breached_at === null) {
+                    // Closing without a response cannot leave a live clock,
+                    // but it also cannot erase a target that was already
+                    // crossed before the scheduler's next minute tick.
+                    $attributes['warned_at'] = $clock->warned_at ?? CarbonImmutable::instance($at);
                     $attributes['breached_at'] = CarbonImmutable::instance($at);
                 }
 

@@ -101,6 +101,55 @@ test('clearing a target cancels its active clocks without deleting their history
         ->and($conversation->slaClocks()->firstOrFail()->cancelled_at)->not->toBeNull();
 });
 
+test('changing a policy preserves a breach crossed under the old target', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    SlaPolicy::factory()->for($account)->create([
+        'priority' => 'normal',
+        'first_response_minutes' => 10,
+        'resolution_minutes' => null,
+    ]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    $this->travel(11)->minutes();
+    $this->actingAs($admin)
+        ->put(route('dashboard.account.sla-policies.update'), slaPolicyPayload([
+            'first_response_minutes' => 60,
+        ]))
+        ->assertRedirect(route('dashboard.account.sla-policies.index'));
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->elapsed_seconds)->toBe(11 * 60)
+        ->and($clock->breached_at)->not->toBeNull()
+        ->and($clock->target_seconds)->toBe(60 * 60);
+});
+
+test('extending a policy does not consume the future warning at the old threshold', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    SlaPolicy::factory()->for($account)->create([
+        'priority' => 'normal',
+        'first_response_minutes' => 10,
+        'resolution_minutes' => null,
+    ]);
+    $site = Site::factory()->for($account)->create(['settings' => []]);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    $this->travel(8)->minutes();
+    $this->actingAs($admin)->put(route('dashboard.account.sla-policies.update'), slaPolicyPayload([
+        'first_response_minutes' => 60,
+    ]));
+
+    $clock = $conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->sole();
+    expect($clock->elapsed_seconds)->toBe(8 * 60)
+        ->and($clock->warned_at)->toBeNull()
+        ->and($clock->breached_at)->toBeNull()
+        ->and($clock->target_seconds)->toBe(60 * 60);
+});
+
 test('invalid targets return localized validation instead of changing policy', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);

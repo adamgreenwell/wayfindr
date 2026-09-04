@@ -98,6 +98,34 @@ test('reply and close settle their matching clocks with business time only', fun
         ->and($resolution->satisfied_at)->not->toBeNull();
 });
 
+test('closing without a reply cancels its response clock and reopening starts a new episode', function (): void {
+    Notification::fake();
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 5, resolution: 60);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversation = Conversation::factory()->for($world['site'])->for($visitor)->create();
+
+    $this->travel(3)->minutes();
+    $conversation->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
+
+    $firstEpisode = $conversation->slaClocks()
+        ->where('metric', SlaClock::METRIC_FIRST_RESPONSE)
+        ->sole();
+
+    expect($firstEpisode->cancelled_at)->not->toBeNull()
+        ->and($firstEpisode->satisfied_at)->toBeNull()
+        ->and($conversation->slaClocks()->whereNull('satisfied_at')->whereNull('cancelled_at')->count())->toBe(0);
+
+    $this->travel(10)->minutes();
+    Artisan::call('wayfindr:evaluate-sla-clocks');
+    Notification::assertNothingSent();
+
+    $conversation->forceFill(['status' => 'open', 'closed_at' => null])->save();
+
+    expect($conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->count())->toBe(2)
+        ->and($conversation->slaClocks()->where('metric', SlaClock::METRIC_FIRST_RESPONSE)->whereNull('satisfied_at')->whereNull('cancelled_at')->count())->toBe(1);
+});
+
 test('a reopen starts a new resolution episode without rewriting the old one', function (): void {
     $world = slaWorld();
     configureNormalSla($world['account']);

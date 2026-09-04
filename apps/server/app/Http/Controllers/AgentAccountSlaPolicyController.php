@@ -52,9 +52,10 @@ final class AgentAccountSlaPolicyController extends Controller
             $account = Account::query()->whereKey($agent->account_id)->lockForUpdate()->firstOrFail();
             $at = now();
 
-            // Settle every active row under the OLD targets first. The policy
-            // edit changes the future; it does not rewrite time already kept.
-            $clocks->advanceAccount($account, $at);
+            // Settle every active row and persist any crossed boundary under
+            // the OLD targets first. The policy edit changes the future; it
+            // does not erase a breach that happened before this request.
+            $clocks->recordAccountBreaches($account, $at);
             $changed = [];
 
             foreach ($priorities as $priority) {
