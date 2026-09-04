@@ -986,6 +986,34 @@ test('conversation queues and detail show the same approaching deadline', functi
         ->assertSee('2 working minutes remain.');
 });
 
+test("queue-like SLA presentation reuses each subject's loaded site", function (): void {
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], response: 10);
+    $visitor = Visitor::factory()->for($world['site'])->create();
+    $conversations = collect(range(1, 3))->map(fn (): Conversation => Conversation::factory()
+        ->for($world['site'])
+        ->for($visitor)
+        ->create());
+    $loaded = Conversation::query()
+        ->with(['site', 'slaClocks'])
+        ->whereKey($conversations->pluck('id'))
+        ->get();
+
+    expect($loaded->flatMap->slaClocks->every(
+        fn (SlaClock $clock): bool => ! $clock->relationLoaded('site')
+    ))->toBeTrue();
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+    $loaded->each(fn (Conversation $conversation) => app(SlaStatePresenter::class)->summary($conversation));
+
+    expect(DB::getQueryLog())->toBeEmpty()
+        ->and($loaded->flatMap->slaClocks->every(
+            fn (SlaClock $clock): bool => $clock->relationLoaded('site')
+                && $clock->site->is($world['site'])
+        ))->toBeTrue();
+});
+
 test('changing conversation priority applies the matching active targets', function (): void {
     $world = slaWorld(['enabled' => false]);
     configureNormalSla($world['account'], response: 60);

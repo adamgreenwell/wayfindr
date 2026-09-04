@@ -19,6 +19,15 @@ final class SlaStatePresenter
         $at = CarbonImmutable::instance($at ?? now());
         $subject->loadMissing(['site', 'slaClocks']);
 
+        // Queue queries already load each subject's site. Every clock belongs
+        // to that same site, so attach the in-memory model instead of turning
+        // presentation into one lazy site query per clock.
+        foreach ($subject->slaClocks as $clock) {
+            if ((int) $clock->site_id === (int) $subject->getAttribute('site_id')) {
+                $clock->setRelation('site', $subject->getRelation('site'));
+            }
+        }
+
         // An unbreached cancellation is an abandoned clock episode. A clock
         // cancelled only after crossing its target is durable miss history and
         // remains useful on the work detail alongside the SLA report.
