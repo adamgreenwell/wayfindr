@@ -192,6 +192,38 @@ test('a settings-only custom role cannot read or subscribe to the live board', f
     expect((new SitePresenceChannel)->join($agent, $f['site']->id))->toBeTrue();
 });
 
+test('a ticket-only role can use the live board without seeing conversation totals', function (): void {
+    $f = boardFixture();
+    $role = CustomRole::factory()->for($f['account'])->create([
+        'permissions' => [AccountPermission::ManageTickets->value],
+    ]);
+    $agent = User::factory()->for($f['account'])->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $f['site']->supportAgents()->attach($agent);
+    $visitor = presentVisitor($f['site'], 'anon-ticket-board', [
+        'name' => 'Dana Ticket',
+        'presence_only' => false,
+    ]);
+    Conversation::factory()->for($f['site'])->for($visitor)->create();
+
+    $response = test()->actingAs($agent)
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->assertSee('Dana Ticket')
+        ->assertDontSee('data-live-conversation-count', false);
+
+    $row = $response->viewData('visitors')->firstOrFail();
+    $snapshotRow = LiveVisitorBoard::snapshotFor($f['site'], false)['visitors']->firstOrFail();
+    $broadcastRow = (new VisitorPresenceUpdated($f['site'], $visitor->fresh()))->broadcastWith()['visitor'];
+
+    expect(array_key_exists('conversations_count', $row))->toBeFalse()
+        ->and(array_key_exists('conversations_count', $snapshotRow))->toBeFalse()
+        ->and(array_key_exists('conversations_count', $broadcastRow))->toBeFalse()
+        ->and((new SitePresenceChannel)->join($agent, $f['site']->id))->toBeTrue();
+});
+
 test('a site that does not watch says so instead of showing an empty board', function (): void {
     // An operator looking at nothing deserves to know whether nobody is here or
     // nothing is being recorded.

@@ -836,9 +836,10 @@ class AgentSiteController extends Controller
         $site = Site::query()->whereKey($site->getKey())->first() ?? $site;
 
         $reporting = SitePresenceReporting::for($site);
+        $canViewConversationCounts = $agent?->hasAccountPermission(AccountPermission::ViewConversations) ?? false;
 
         $snapshot = $reporting->enabled && ! $site->isArchived()
-            ? LiveVisitorBoard::snapshotFor($site)
+            ? LiveVisitorBoard::snapshotFor($site, $canViewConversationCounts)
             : ['visitors' => collect(), 'total' => 0];
 
         return view('agent.sites.live', [
@@ -863,8 +864,9 @@ class AgentSiteController extends Controller
             // face value.
             'presentCount' => $snapshot['total'],
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            'canViewConversationCounts' => $canViewConversationCounts,
             'canUpdatePrivacy' => Gate::forUser($agent)->allows('updatePrivacy', $site),
-            'realtime' => $this->presenceRealtimeConfig($site),
+            'realtime' => $this->presenceRealtimeConfig($site, $canViewConversationCounts),
             // Words for the script, chosen here. The socket carries a state
             // and this page picks the sentence, which is the same rule the
             // conversation presence payload follows: a payload broadcast to
@@ -889,7 +891,7 @@ class AgentSiteController extends Controller
      *
      * @return array<string, mixed>|null
      */
-    private function presenceRealtimeConfig(Site $site): ?array
+    private function presenceRealtimeConfig(Site $site, bool $showConversationCounts): ?array
     {
         // An archived site has no board to subscribe to: SitePresenceChannel
         // queries `servable()` and refuses every authorization. Handing the
@@ -932,6 +934,7 @@ class AgentSiteController extends Controller
             'scheme' => (string) $scheme,
             'eventName' => 'visitor.presence.updated',
             'presentMinutes' => LiveVisitorBoard::PRESENT_MINUTES,
+            'showConversationCounts' => $showConversationCounts,
             // How many rows the server will ever render. The board needs it to
             // know whether its own row count is the whole truth: at or below
             // this, every visitor counted is on the page and a departure really

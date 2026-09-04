@@ -65,7 +65,9 @@
                                              their words and not the agent's language. The
                                              `Visitor 41` fallback is ours and is not marked. --}}
                                         <a href="{{ $visitor['profile_url'] }}">@if ($visitor['name'] ?? $visitor['email'])<span lang="">{{ $visitor['name'] ?? $visitor['email'] }}</span>@else{{ __('sites_live.board.unnamed', ['id' => $visitor['id']]) }}@endif</a>
-                                        <span class="lede">{{ trans_choice('sites_live.board.conversations', $visitor['conversations_count'], ['count' => \App\Support\ReaderNumber::count($visitor['conversations_count'])]) }}</span>
+                                        @if ($canViewConversationCounts)
+                                            <span class="lede" data-live-conversation-count data-count="{{ $visitor['conversations_count'] }}">{{ trans_choice('sites_live.board.conversations', $visitor['conversations_count'], ['count' => \App\Support\ReaderNumber::count($visitor['conversations_count'])]) }}</span>
+                                        @endif
                                     @else
                                         {{-- No link: there is nothing on the other side of it yet, and
                                              a name we were never told is not one to invent. --}}
@@ -127,6 +129,7 @@
                 }
 
                 var labels = @json($presenceLabels);
+                var showConversationCounts = Boolean(config.showConversationCounts);
 
                 // Copy for the script, from the same catalogue the markup above
                 // used. `@json(__(...))` is the pattern the reply composer
@@ -364,12 +367,16 @@
                             who.appendChild(document.createTextNode(link.textContent));
                         }
 
-                        var count = document.createElement('span');
-                        var total = Number(visitor.conversations_count) || 0;
+                        if (showConversationCounts && Object.prototype.hasOwnProperty.call(visitor, 'conversations_count')) {
+                            var count = document.createElement('span');
+                            var total = Number(visitor.conversations_count) || 0;
 
-                        count.className = 'lede';
-                        count.textContent = conversationsLabel(total);
-                        who.appendChild(count);
+                            count.className = 'lede';
+                            count.setAttribute('data-live-conversation-count', '');
+                            count.dataset.count = String(total);
+                            count.textContent = conversationsLabel(total);
+                            who.appendChild(count);
+                        }
                     } else {
                         var stranger = document.createElement('span');
 
@@ -427,6 +434,23 @@
                     // the writes they describe, not by their arrival.
                     if (existing && !isNewerThanRow(existing, visitor)) {
                         return;
+                    }
+
+                    // The shared socket payload cannot contain a conversation
+                    // count because ticket-only subscribers use the same
+                    // channel. Preserve an authorized reader's private
+                    // snapshot value while replacing an existing row; a new
+                    // arrival receives its count at the next page resync.
+                    if (showConversationCounts
+                        && existing
+                        && !Object.prototype.hasOwnProperty.call(visitor, 'conversations_count')) {
+                        var existingCount = existing.querySelector('[data-live-conversation-count]');
+
+                        if (existingCount) {
+                            visitor = Object.assign({}, visitor, {
+                                conversations_count: Number(existingCount.dataset.count) || 0
+                            });
+                        }
                     }
 
                     var fresh = buildRow(visitor);

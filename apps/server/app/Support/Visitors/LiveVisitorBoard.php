@@ -72,9 +72,9 @@ final class LiveVisitorBoard
      *
      * @return array{visitors: Collection<int, array<string, mixed>>, total: int}
      */
-    public static function snapshotFor(Site $site): array
+    public static function snapshotFor(Site $site, bool $showConversationCounts = true): array
     {
-        $visitors = self::for($site);
+        $visitors = self::for($site, $showConversationCounts);
 
         return [
             'visitors' => $visitors,
@@ -87,7 +87,7 @@ final class LiveVisitorBoard
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    public static function for(Site $site): Collection
+    public static function for(Site $site, bool $showConversationCounts = true): Collection
     {
         // Read as of NOW, not as of route binding. The site handed in is the
         // model the request resolved on its way in, and another operator
@@ -103,7 +103,7 @@ final class LiveVisitorBoard
         $showPageUrls = $current !== null && SitePresenceReporting::for($current)->pageUrls;
 
         return self::present($site)
-            ->withCount('conversations')
+            ->when($showConversationCounts, fn (Builder $query) => $query->withCount('conversations'))
             ->orderByDesc('last_web_seen_at')
             ->orderByDesc('id')
             // Capped so one page stays readable and one query stays bounded.
@@ -111,7 +111,7 @@ final class LiveVisitorBoard
             // "247 here" above the 200 most recent rather than as 200.
             ->limit(self::DISPLAY_LIMIT)
             ->get()
-            ->map(static fn (Visitor $visitor): array => self::row($visitor, $showPageUrls))
+            ->map(static fn (Visitor $visitor): array => self::row($visitor, $showPageUrls, $showConversationCounts))
             ->values();
     }
 
@@ -147,9 +147,14 @@ final class LiveVisitorBoard
      * @param  bool  $showPageUrls  whether the site's policy still allows an
      *                              address to be SHOWN, which is a different
      *                              question from whether one is stored
+     * @param  bool  $showConversationCount  whether the reader may see the
+     *                                       support history total
      */
-    public static function row(Visitor $visitor, bool $showPageUrls = true): array
-    {
+    public static function row(
+        Visitor $visitor,
+        bool $showPageUrls = true,
+        bool $showConversationCount = true,
+    ): array {
         return [
             'id' => $visitor->id,
             'name' => $visitor->name,
@@ -176,10 +181,11 @@ final class LiveVisitorBoard
             // on each.
             'made_contact' => ! $visitor->presence_only,
             // Counted rather than defaulted. The board's own query loads this
-            // with withCount(); a broadcast carries one visitor resolved
-            // somewhere else, and letting it fall back to zero meant the first
-            // realtime update silently rewrote "3 conversations" as "0".
-            'conversations_count' => (int) ($visitor->conversations_count ?? $visitor->conversations()->count()),
+            // with withCount(); a private snapshot may fall back to a count,
+            // while the shared broadcast deliberately omits the field.
+            ...($showConversationCount ? [
+                'conversations_count' => (int) ($visitor->conversations_count ?? $visitor->conversations()->count()),
+            ] : []),
             'profile_url' => $visitor->presence_only ? null : route('dashboard.visitors.show', $visitor->id),
         ];
     }
