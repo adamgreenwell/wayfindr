@@ -68,6 +68,23 @@ test('agent can view their profile from the application shell', function (): voi
         ->assertSee('/dashboard/profile/password', false);
 });
 
+test('every authenticated dashboard page clears a prior agents local push subscription', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('data-agent-push-ownership-guard', false);
+
+    $source = file_get_contents(resource_path('views/components/agent-push-ownership-guard.blade.php'));
+
+    expect($source)
+        ->toContain("payload.status === 'foreign'")
+        ->toContain('subscription.unsubscribe()')
+        ->not->toContain('destroyEndpoint')
+        ->not->toContain("method: 'DELETE'");
+});
+
 test('agent profile password form includes a hidden username for browser tooling', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'email' => 'ada@example.test',
