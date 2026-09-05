@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\AgentAlertRealtimeConfig;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -18,6 +19,52 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+test('agent alert realtime config uses the existing browser transport and recipient channel', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.options.client_host', 'desk.example.test');
+    config()->set('broadcasting.connections.reverb.options.client_port', '443');
+    config()->set('broadcasting.connections.reverb.options.client_scheme', 'https');
+
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create([
+        'alert_preferences' => ['sound' => true],
+    ]);
+
+    expect(AgentAlertRealtimeConfig::forAgent($agent))->toBe([
+        'appKey' => 'reverb-key',
+        'authEndpoint' => 'http://localhost:8000/broadcasting/auth',
+        'channelName' => sprintf('private-accounts.%d.agents.%d.alerts', $account->id, $agent->id),
+        'eventName' => 'agent.alert.stored',
+        'host' => 'desk.example.test',
+        'identityChannelName' => 'presence-agents.'.$agent->id,
+        'port' => '443',
+        'scheme' => 'https',
+        'soundEnabled' => true,
+    ]);
+
+    config()->set('broadcasting.default', 'null');
+
+    expect(AgentAlertRealtimeConfig::forAgent($agent))->toBeNull();
+});
+
+test('agent alert realtime config is unavailable after alert permission is revoked', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.options.host', '127.0.0.1');
+    config()->set('broadcasting.connections.reverb.options.port', '8080');
+    config()->set('broadcasting.connections.reverb.options.scheme', 'http');
+
+    $account = Account::factory()->create();
+    $noAlertsRole = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $noAlertsRole->id,
+    ]);
+
+    expect(AgentAlertRealtimeConfig::forAgent($agent))->toBeNull();
+});
 
 test('the account agent alert channel admits only its active recipient with alert access', function (): void {
     $account = Account::factory()->create();

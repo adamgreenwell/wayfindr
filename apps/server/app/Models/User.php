@@ -237,6 +237,11 @@ class User extends Authenticatable
         return data_get($this->alert_preferences, 'email') === true;
     }
 
+    public function alertSoundEnabled(): bool
+    {
+        return data_get($this->alert_preferences, 'sound') === true;
+    }
+
     public function alertCadence(): string
     {
         $cadence = data_get($this->alert_preferences, 'cadence');

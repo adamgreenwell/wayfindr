@@ -506,17 +506,22 @@ test('an archived site does not open a socket it cannot subscribe to', function 
     presentVisitor($f['site'], 'anon-archived-board');
 
     // Live first, so the difference is the archiving and not the config.
+    $siteChannel = 'private-sites.'.$f['site']->id.'.presence';
+
     test()->actingAs($f['agent'])
         ->get(route('dashboard.sites.live', $f['site']))
         ->assertOk()
-        ->assertSee('pusher:subscribe', false);
+        ->assertSee($siteChannel, false);
 
     $f['site']->forceFill(['archived_at' => now()])->save();
 
     $response = test()->actingAs($f['agent'])->get(route('dashboard.sites.live', $f['site']->fresh()));
 
     if ($response->status() === 200) {
-        $response->assertDontSee('pusher:subscribe', false);
+        // Other account-level realtime features may still have a socket on
+        // this page. The archived site's own channel is the one that must not
+        // be rendered because it can no longer authorize a subscription.
+        $response->assertDontSee($siteChannel, false);
     } else {
         // Refusing the page outright is also a correct answer.
         expect($response->status())->toBeIn([403, 404]);

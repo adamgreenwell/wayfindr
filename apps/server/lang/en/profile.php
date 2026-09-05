@@ -91,6 +91,8 @@ return [
         'guidance_quiet' => 'Quiet mode pauses new alerts without changing assignments, site access, or support responsibility.',
         'mode' => 'Alert mode',
         'email_alerts' => 'Email alerts',
+        'sound_alerts' => 'Play a sound for new dashboard alerts',
+        'sound_help' => 'A short local tone plays only while this dashboard is open in the background. Your browser may wait for you to interact with the page before allowing sound.',
         'cadence' => 'Email cadence',
         'cadence_help' => 'Digest delivery bundles eligible email alerts when the scheduler runs. Unattended only emails when a visitor message waits unseen. Dashboard alerts stay immediate.',
         'last_digest' => 'Last digest',
