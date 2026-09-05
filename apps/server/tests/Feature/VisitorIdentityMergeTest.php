@@ -15,6 +15,8 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorIdentityAlias;
 use App\Models\VisitorNote;
+use App\Support\Attachments\Scanning\AttachmentScanner;
+use App\Support\Attachments\Scanning\ScanResult;
 use App\Support\VisitorConversationResolver;
 use App\Support\Visitors\VisitorIdentityMerger;
 use App\Support\Visitors\VisitorIdentityResolver;
@@ -27,6 +29,28 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
+
+function mergeAfterVisitorConversationResolution(User $manager, Visitor $source, Visitor $target): void
+{
+    app()->extend(VisitorConversationResolver::class, fn ($resolver) => new class($resolver, app(VisitorIdentityMerger::class), $manager, $source, $target) extends VisitorConversationResolver
+    {
+        public function __construct(
+            private $inner,
+            private VisitorIdentityMerger $merger,
+            private User $manager,
+            private Visitor $source,
+            private Visitor $target,
+        ) {}
+
+        public function resolve(Request $request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
+        {
+            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
+            $this->merger->merge($this->manager, $this->source, (int) $this->target->id);
+
+            return $conversation;
+        }
+    });
+}
 
 test('a contact manager can find a same-site contact to keep', function (): void {
     $account = Account::factory()->create();
@@ -345,24 +369,7 @@ test('a message that loses the merge race uses the canonical sender and pending 
     $attachment = ConversationMessageAttachment::factory()->pendingFor($conversation, $source)->create();
     $token = app(VisitorSessionToken::class)->issue($site, $source);
 
-    $this->app->extend(VisitorConversationResolver::class, fn ($resolver) => new class($resolver, app(VisitorIdentityMerger::class), $manager, $source, $target) extends VisitorConversationResolver
-    {
-        public function __construct(
-            private $inner,
-            private VisitorIdentityMerger $merger,
-            private User $manager,
-            private Visitor $source,
-            private Visitor $target,
-        ) {}
-
-        public function resolve(Request $request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
-        {
-            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
-            $this->merger->merge($this->manager, $this->source, (int) $this->target->id);
-
-            return $conversation;
-        }
-    });
+    mergeAfterVisitorConversationResolution($manager, $source, $target);
 
     $this->postJson('/api/conversations/WF-MERGERACE1/messages', [
         'site_public_key' => $site->public_key,
@@ -392,24 +399,7 @@ test('an upload that loses the merge race belongs to the canonical visitor', fun
     $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE2']);
     $token = app(VisitorSessionToken::class)->issue($site, $source);
 
-    $this->app->extend(VisitorConversationResolver::class, fn ($resolver) => new class($resolver, app(VisitorIdentityMerger::class), $manager, $source, $target) extends VisitorConversationResolver
-    {
-        public function __construct(
-            private $inner,
-            private VisitorIdentityMerger $merger,
-            private User $manager,
-            private Visitor $source,
-            private Visitor $target,
-        ) {}
-
-        public function resolve(Request $request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
-        {
-            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
-            $this->merger->merge($this->manager, $this->source, (int) $this->target->id);
-
-            return $conversation;
-        }
-    });
+    mergeAfterVisitorConversationResolution($manager, $source, $target);
 
     $this->post('/api/conversations/WF-MERGERACE2/attachments', [
         'site_public_key' => $site->public_key,
@@ -424,6 +414,128 @@ test('an upload that loses the merge race belongs to the canonical visitor', fun
         ->and($conversation->fresh()?->visitor_id)->toBe($target->id)
         ->and($attachment->uploaded_by_id)->toBe($target->id);
     Storage::disk('attachments')->assertExists($attachment->storage_key);
+});
+
+test('a rejected upload that loses the merge race audits the canonical visitor', function (): void {
+    Storage::fake('attachments');
+    app()->instance(AttachmentScanner::class, new class implements AttachmentScanner
+    {
+        public function scan(string $path): ScanResult
+        {
+            return ScanResult::infected('Test.Merge.Race');
+        }
+
+        public function isConfigured(): bool
+        {
+            return true;
+        }
+
+        public function isAvailable(): bool
+        {
+            return true;
+        }
+    });
+
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-rejected-upload']);
+    $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-rejected-canonical']);
+    $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE3']);
+    $token = app(VisitorSessionToken::class)->issue($site, $source);
+
+    mergeAfterVisitorConversationResolution($manager, $source, $target);
+
+    $this->post('/api/conversations/WF-MERGERACE3/attachments', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-racing-rejected-upload',
+        'visitor_token' => $token,
+        'file' => UploadedFile::fake()->image('infected.png'),
+    ], ['Accept' => 'application/json'])->assertUnprocessable();
+
+    $event = AuditEvent::query()->where('action', 'attachment.quarantined')->sole();
+
+    expect(Visitor::query()->pluck('id')->all())->toBe([$target->id])
+        ->and($event->actor_id)->toBe($target->id)
+        ->and($event->actor?->is($target))->toBeTrue()
+        ->and(ConversationMessageAttachment::query()->count())->toBe(0);
+});
+
+test('a cobrowse snapshot that loses the merge race audits the canonical visitor', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-snapshot']);
+    $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-snapshot-canonical']);
+    $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE4']);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($source)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => [],
+    ]);
+    $token = app(VisitorSessionToken::class)->issue($site, $source);
+
+    mergeAfterVisitorConversationResolution($manager, $source, $target);
+
+    $this->postJson('/api/conversations/WF-MERGERACE4/cobrowse-snapshot', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-racing-snapshot',
+        'visitor_token' => $token,
+        'page_url' => 'https://example.test/help',
+        'html' => '<main>Masked support view</main>',
+        'text' => 'Masked support view',
+        'node_count' => 2,
+        'masked_count' => 1,
+    ])->assertOk();
+
+    $event = AuditEvent::query()->where('action', 'cobrowse.snapshot_received')->sole();
+
+    expect($session->fresh()?->visitor_id)->toBe($target->id)
+        ->and($event->actor_id)->toBe($target->id)
+        ->and($event->actor?->is($target))->toBeTrue();
+});
+
+test('cobrowse telemetry that loses the merge race audits the canonical visitor', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-telemetry']);
+    $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-telemetry-canonical']);
+    $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE5']);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($source)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+        'metadata' => [
+            'resync_request' => [
+                'id' => 'merge-race-resync',
+                'requested_at' => now()->subSeconds(30)->toJSON(),
+                'fulfilled_at' => null,
+            ],
+        ],
+    ]);
+    $token = app(VisitorSessionToken::class)->issue($site, $source);
+
+    mergeAfterVisitorConversationResolution($manager, $source, $target);
+
+    $this->postJson('/api/conversations/WF-MERGERACE5/cobrowse-telemetry', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-racing-telemetry',
+        'visitor_token' => $token,
+        'resync_request_id' => 'merge-race-resync',
+        'resync_attempts_exhausted' => true,
+        'rtt_ms' => 950,
+        'payload_bytes' => 4096,
+        'dropped_batches' => 4,
+        'reconnects' => 3,
+    ])->assertOk();
+
+    $event = AuditEvent::query()->where('action', 'cobrowse.resync_exhausted')->sole();
+
+    expect($session->fresh()?->visitor_id)->toBe($target->id)
+        ->and($event->actor_id)->toBe($target->id)
+        ->and($event->actor?->is($target))->toBeTrue();
 });
 
 test('merge permission site and identity conflicts fail closed', function (): void {

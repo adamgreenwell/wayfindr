@@ -5,15 +5,16 @@ namespace App\Http\Controllers\Widget;
 use App\Events\CobrowseStateUpdated;
 use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
-use App\Models\Conversation;
+use App\Models\Visitor;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowsePayloadBudget;
 use App\Support\CobrowseResyncRequestPolicy;
+use App\Support\VisitorConversationResolver;
+use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use App\Support\Visitors\VisitorPageUrl;
-use App\Support\VisitorSessionToken;
-use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CobrowseSnapshotController extends Controller
 {
@@ -22,8 +23,12 @@ class CobrowseSnapshotController extends Controller
         private readonly CobrowseAuditTrail $cobrowseAuditTrail,
     ) {}
 
-    public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
-    {
+    public function store(
+        Request $request,
+        string $supportCode,
+        VisitorConversationResolver $conversations,
+        VisitorConversationWriteAuthorization $conversationWrites,
+    ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
@@ -43,28 +48,12 @@ class CobrowseSnapshotController extends Controller
             'sensitive_terms.*' => ['string', 'max:255'],
         ]);
 
-        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
-
-        $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
-
-        $conversation = Conversation::query()
-            ->where('support_code', $supportCode)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->first();
-
-        abort_unless($conversation, 404, 'Conversation not found.');
-
-        $cobrowseSession = CobrowseSession::query()
-            ->where('conversation_id', $conversation->id)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->where('status', 'granted')
-            ->whereNull('ended_at')
-            ->latest('id')
-            ->first();
-
-        abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
+        $conversation = $conversations->resolve(
+            $request,
+            $supportCode,
+            $validated['site_public_key'],
+            $validated['anonymous_id'],
+        );
 
         $snapshot = [
             // See CobrowsePageStateController: the hook is the guarantee, this
@@ -98,25 +87,6 @@ class CobrowseSnapshotController extends Controller
 
         $resyncAuditTransition = null;
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($snapshot, &$resyncAuditTransition): array {
-            $metadata['snapshot'] = $snapshot;
-            $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
-
-            [$metadata, $resyncAuditTransition] = $this->markResyncRequestFulfilled($metadata, $snapshot['resync_request_id'] ?? null, $snapshot['reported_at']);
-
-            return $metadata;
-        });
-
-        if (is_array($resyncAuditTransition)) {
-            if (($resyncAuditTransition['state'] ?? null) === 'fulfilled') {
-                $this->cobrowseAuditTrail->resyncFulfilled($cobrowseSession, $visitor, $resyncAuditTransition);
-            }
-
-            if (($resyncAuditTransition['state'] ?? null) === 'ignored') {
-                $this->cobrowseAuditTrail->resyncIgnored($cobrowseSession, $visitor, $resyncAuditTransition);
-            }
-        }
-
         // Provenance prefers the ruleset the widget says it actually masked
         // with (cached from its bootstrap) over the site's current settings,
         // which may have been edited mid-session. Absent fields mean an older
@@ -130,16 +100,59 @@ class CobrowseSnapshotController extends Controller
             ];
         }
 
-        $this->cobrowseAuditTrail->snapshotReceived(
-            $cobrowseSession,
-            $visitor,
-            $snapshot,
-            $reportedRuleset,
-            [
-                'selectors' => $this->stringList($site->settings['mask_selectors'] ?? []),
-                'terms' => $this->stringList($site->settings['mask_terms'] ?? []),
-            ],
-        );
+        [$conversation, $cobrowseSession] = DB::transaction(function () use ($conversation, $conversationWrites, $validated, $snapshot, $reportedRuleset, &$resyncAuditTransition): array {
+            // The token and conversation were resolved before the payload was
+            // validated. Re-resolve under the site lock so a merge in that gap
+            // cannot leave the snapshot audit actor pointing at a deleted row.
+            $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
+            $visitor = $conversation->visitor;
+            abort_unless($visitor instanceof Visitor, 404, 'Conversation not found.');
+
+            $cobrowseSession = CobrowseSession::query()
+                ->where('conversation_id', $conversation->id)
+                ->where('site_id', $conversation->site_id)
+                ->where('visitor_id', $visitor->id)
+                ->where('status', 'granted')
+                ->whereNull('ended_at')
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+            abort_unless($cobrowseSession instanceof CobrowseSession, 404, 'Cobrowse session not active.');
+
+            $cobrowseSession->setRelation('conversation', $conversation);
+            $cobrowseSession->setRelation('site', $conversation->site);
+            $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($snapshot, &$resyncAuditTransition): array {
+                $metadata['snapshot'] = $snapshot;
+                $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
+
+                [$metadata, $resyncAuditTransition] = $this->markResyncRequestFulfilled($metadata, $snapshot['resync_request_id'] ?? null, $snapshot['reported_at']);
+
+                return $metadata;
+            });
+
+            if (is_array($resyncAuditTransition)) {
+                if (($resyncAuditTransition['state'] ?? null) === 'fulfilled') {
+                    $this->cobrowseAuditTrail->resyncFulfilled($cobrowseSession, $visitor, $resyncAuditTransition);
+                }
+
+                if (($resyncAuditTransition['state'] ?? null) === 'ignored') {
+                    $this->cobrowseAuditTrail->resyncIgnored($cobrowseSession, $visitor, $resyncAuditTransition);
+                }
+            }
+
+            $this->cobrowseAuditTrail->snapshotReceived(
+                $cobrowseSession,
+                $visitor,
+                $snapshot,
+                $reportedRuleset,
+                [
+                    'selectors' => $this->stringList($conversation->site?->settings['mask_selectors'] ?? []),
+                    'terms' => $this->stringList($conversation->site?->settings['mask_terms'] ?? []),
+                ],
+            );
+
+            return [$conversation, $cobrowseSession];
+        });
 
         event(new CobrowseStateUpdated($cobrowseSession, 'snapshot'));
 
