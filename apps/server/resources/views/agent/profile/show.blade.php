@@ -274,6 +274,7 @@
                 'destroyEndpoint' => route('dashboard.profile.push-subscription.destroy'),
                 'unsupportedMessage' => __('profile.alerts.push_unsupported'),
                 'failedMessage' => __('profile.alerts.push_failed'),
+                'reenrollMessage' => __('profile.alerts.push_reenroll'),
                 'ownershipCheckFailedMessage' => __('profile.alerts.push_ownership_check_failed'),
                 'ownedElsewhereMessage' => __('profile.alerts.push_owned_elsewhere'),
                 'ownedElsewhereCleanupFailedMessage' => __('profile.alerts.push_owned_elsewhere_cleanup_failed'),

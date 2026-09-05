@@ -412,11 +412,12 @@
                                     if (payload.generation === 'transitional') {
                                         // Environment keys are process-local. During a
                                         // rolling deploy, another live process may own
-                                        // this generation, so preserve it until the
-                                        // agent explicitly turns this browser off.
-                                        initialBrowserEnabled = payload.status === 'owned';
-                                        checkbox.checked = initialBrowserEnabled;
+                                        // this generation, so do not delete it. Present
+                                        // a safe explicit re-enrolment action instead.
+                                        initialBrowserEnabled = false;
+                                        checkbox.checked = false;
                                         checkbox.disabled = false;
+                                        showError(config.reenrollMessage);
 
                                         return;
                                     }

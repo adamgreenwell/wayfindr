@@ -216,6 +216,44 @@ test('an agent can save their closed-dashboard alert preference', function (): v
     ]);
 });
 
+test('preference saves preserve and can explicitly remove a transitional environment subscription', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'push' => true,
+        ],
+    ]);
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/transitional-profile',
+        'public_key' => 'public-key',
+        'auth_token' => 'auth-token',
+        'content_encoding' => 'aes128gcm',
+    ]);
+    AgentPushSubscription::withoutGlobalScopes()
+        ->whereKey($subscription->id)
+        ->update(['vapid_public_key_hash' => hash('sha256', 'another-environment-generation')]);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'email_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(1);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => $subscription->endpoint,
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeFalse()
+        ->and(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(0);
+});
+
 test('the profile exposes only a ready public VAPID key to the agent browser', function (): void {
     $keys = VAPID::createVapidKeys();
     config()->set('webpush.vapid', [
@@ -381,7 +419,8 @@ test('the profile cleans up an owned browser subscription after a VAPID key rota
         ->toContain("payload.status === 'foreign'")
         ->toContain("payload.status === 'missing'")
         ->toContain("payload.generation === 'transitional'")
-        ->toContain("initialBrowserEnabled = payload.status === 'owned'")
+        ->toContain('initialBrowserEnabled = false')
+        ->toContain('showError(config.reenrollMessage)')
         ->toContain('subscriptionStatus(subscription.endpoint, 2)')
         ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
         ->toContain('showError(config.ownershipCheckFailedMessage)')

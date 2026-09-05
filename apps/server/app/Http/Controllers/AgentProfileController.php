@@ -178,18 +178,24 @@ class AgentProfileController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
             $removedEndpoint = trim((string) ($validated['push_subscription_endpoint'] ?? ''));
+            $ownedSubscriptions = fn () => AgentPushSubscription::withoutGlobalScope(
+                AgentPushSubscription::CURRENT_VAPID_SCOPE,
+            )
+                ->where('subscribable_type', $agent->getMorphClass())
+                ->where('subscribable_id', $agent->getKey());
 
             if ($removedEndpoint !== '') {
-                $agent->pushSubscriptions()
-                    ->where('endpoint', $removedEndpoint)
-                    ->delete();
+                $ownedSubscriptions()->where('endpoint', $removedEndpoint)->delete();
             }
 
             // The UI control represents this browser, while `push` remains the
             // per-agent channel preference required by the alert pipeline. One
             // browser opting out must not silence the agent's other subscribed
             // browsers; the channel turns off only after the last one leaves.
-            $push = $pushRequested || $agent->pushSubscriptions()->exists();
+            // An environment-key generation can be transitional during a
+            // rolling deploy. Preserve the agent-level channel preference on
+            // unrelated saves while any owned browser generation remains.
+            $push = $pushRequested || $ownedSubscriptions()->exists();
             $alertPreferences = $agent->alert_preferences ?? [];
 
             $agent->forceFill([

@@ -117,6 +117,7 @@ return [
         'push_unavailable' => 'Un gestore della piattaforma deve configurare Web Push prima che i browser possano iscriversi. La preferenza attuale viene mantenuta.',
         'push_unsupported' => 'Questo browser o questa connessione non può usare Web Push. La preferenza attuale è stata mantenuta.',
         'push_failed' => 'Non è stato possibile iscrivere questo browser. Controlli il permesso per le notifiche e riprovi.',
+        'push_reenroll' => 'Questo browser usa una chiave Web Push precedente. Selezioni questa opzione e salvi per iscriverlo di nuovo; Wayfindr non ha modificato l’iscrizione esistente durante la distribuzione.',
         'push_configuration_changed' => 'Le impostazioni Web Push sono cambiate dopo il caricamento di questa pagina. Ricarichi il profilo e riprovi.',
         'push_ownership_check_failed' => 'Wayfindr non ha potuto verificare a chi appartiene l’iscrizione di questo browser, quindi l’ha rimossa qui per tutelare la privacy. Provi ad attivarla di nuovo.',
         'push_invalid_endpoint' => 'Questo browser ha fornito un indirizzo del servizio push che Wayfindr non può contattare in sicurezza.',
