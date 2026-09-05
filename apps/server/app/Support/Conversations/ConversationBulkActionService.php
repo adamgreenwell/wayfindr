@@ -205,12 +205,24 @@ final readonly class ConversationBulkActionService
         $current = (string) $conversation->status;
         $previous = (string) ($before['status'] ?? '');
         $previousClosedAt = $before['closed_at'] ?? null;
+        $historicalClosedAt = $previousClosedAt === null
+            ? null
+            : Carbon::createFromTimestampUTC((int) $previousClosedAt);
         $conversation->forceFill([
             'status' => $previous,
-            'closed_at' => $previousClosedAt === null
-                ? null
-                : Carbon::createFromTimestampUTC((int) $previousClosedAt),
+            // Closing the episode is new work even when undo restores the
+            // conversation's historical close timestamp. Let the observer
+            // settle the reopened SLA at the undo time, then restore the
+            // exact historical value without firing a second transition.
+            'closed_at' => $previous === ConversationStatus::Closed->value
+                ? now()
+                : $historicalClosedAt,
         ])->save();
+
+        if ($previous === ConversationStatus::Closed->value) {
+            $conversation->forceFill(['closed_at' => $historicalClosedAt])->saveQuietly();
+        }
+
         $metadata = [
             'source' => 'bulk_action_undo',
             'undo_of_conversation_bulk_action_run_id' => (int) $run->id,

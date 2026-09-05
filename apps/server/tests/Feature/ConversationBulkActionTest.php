@@ -7,6 +7,8 @@ use App\Models\Conversation;
 use App\Models\ConversationBulkActionRun;
 use App\Models\CustomRole;
 use App\Models\Site;
+use App\Models\SlaClock;
+use App\Models\SlaPolicy;
 use App\Models\User;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationPriorityLog;
@@ -139,6 +141,48 @@ test('priority and lifecycle bulk actions write attributable history and can be 
     'reopen' => ['set_status', 'open', ['status' => 'closed', 'closed_at' => now()], ['status' => 'open'], ConversationLifecycleLog::REOPENED],
     'close' => ['close', null, ['status' => 'open', 'closed_at' => null], ['status' => 'closed'], ConversationLifecycleLog::CLOSED],
 ]);
+
+test('undoing a bulk reopen settles the new SLA episode before restoring the historical close time', function (): void {
+    $this->freezeTime();
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    SlaPolicy::factory()->for($account)->create([
+        'priority' => 'normal',
+        'first_response_minutes' => 30,
+        'resolution_minutes' => 60,
+        'effective_at' => now()->subDay(),
+    ]);
+    $historicalClosedAt = now()->subDay();
+    $conversation = Conversation::factory()->for($site)->create([
+        'status' => 'closed',
+        'closed_at' => $historicalClosedAt,
+        'priority' => 'normal',
+    ]);
+    $preview = $this->actingAs($agent)->post(route('dashboard.conversations.bulk.preview'), [
+        'conversation_ids' => [$conversation->id],
+        'action' => 'set_status',
+        'value' => 'open',
+    ]);
+
+    $this->actingAs($agent)->post(route('dashboard.conversations.bulk.store'), [
+        'preview_token' => $preview->viewData('token'),
+    ]);
+    $run = ConversationBulkActionRun::query()->sole();
+    $resolution = $conversation->slaClocks()
+        ->where('metric', SlaClock::METRIC_RESOLUTION)
+        ->sole();
+
+    $this->travel(5)->minutes();
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.bulk.undo', $run))
+        ->assertSessionHas('conversation_bulk_status', fn (array $status): bool => $status['reverted'] === 1);
+
+    $resolution->refresh();
+    expect($conversation->fresh()->closed_at?->getTimestamp())->toBe($historicalClosedAt->getTimestamp())
+        ->and($resolution->satisfied_at?->getTimestamp())->toBe(now()->getTimestamp())
+        ->and($resolution->satisfied_at?->greaterThanOrEqualTo($resolution->started_at))->toBeTrue();
+});
 
 test('a stale conversation review applies nothing and cannot be reused', function (): void {
     $account = Account::factory()->create();
