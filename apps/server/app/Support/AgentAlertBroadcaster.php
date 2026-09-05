@@ -54,26 +54,34 @@ final class AgentAlertBroadcaster
             $recordedVersion = $current->getAttribute('agent_alert_version');
             $fingerprintMatches = is_string($recordedFingerprint)
                 && hash_equals($recordedFingerprint, $fingerprint);
+            $publicationAlreadyVersioned = $fingerprintMatches
+                && is_string($recordedVersion)
+                && $recordedVersion !== '';
+            $version = $publicationAlreadyVersioned
+                ? $recordedVersion
+                : (blank($recordedFingerprint) ? $notificationId : (string) Str::uuid());
+            $claimedVersion = $current->getAttribute('agent_alert_broadcast_claim_version');
 
-            if ($fingerprintMatches && filled($recordedVersion)) {
+            if (is_string($claimedVersion)
+                && hash_equals($claimedVersion, $version)) {
                 return null;
             }
 
-            // Before the first claim, reconciliation deliberately exposes the
-            // notification ID as its stable fallback version. Keep that same
-            // version when the listener claims the row so a concurrent catch-up
-            // and live delivery deduplicate. A compatibility sweep can already
-            // have fingerprinted that first state without claiming its live
-            // send. Meaningful later refreshes rotate.
-            $version = blank($recordedFingerprint) || $fingerprintMatches
-                ? $notificationId
-                : (string) Str::uuid();
+            $updates = ['agent_alert_broadcast_claim_version' => $version];
 
-            DB::table('notifications')->where('id', $notificationId)->update([
-                'agent_alerted_at' => now(),
-                'agent_alert_version' => $version,
-                'agent_alert_fingerprint' => $fingerprint,
-            ]);
+            if (! $publicationAlreadyVersioned) {
+                // Before the first claim, reconciliation deliberately exposes
+                // the notification ID as its stable fallback version. Keep that
+                // same version so catch-up and live delivery deduplicate.
+                $updates = [
+                    ...$updates,
+                    'agent_alerted_at' => now(),
+                    'agent_alert_version' => $version,
+                    'agent_alert_fingerprint' => $fingerprint,
+                ];
+            }
+
+            DB::table('notifications')->where('id', $notificationId)->update($updates);
 
             return [
                 'fingerprint' => $fingerprint,
@@ -122,6 +130,9 @@ final class AgentAlertBroadcaster
                     $currentVersion = $currentNotification instanceof DatabaseNotification
                         ? $currentNotification->getAttribute('agent_alert_version')
                         : null;
+                    $currentClaimVersion = $currentNotification instanceof DatabaseNotification
+                        ? $currentNotification->getAttribute('agent_alert_broadcast_claim_version')
+                        : null;
 
                     if (! $currentRecipient instanceof User
                         || $currentRecipient->isDeactivated()
@@ -132,6 +143,8 @@ final class AgentAlertBroadcaster
                         || ! hash_equals($claim['fingerprint'], AgentAlertPublicationFingerprint::for($currentNotification->data))
                         || ! is_string($currentVersion)
                         || ! hash_equals($claim['version'], $currentVersion)
+                        || ! is_string($currentClaimVersion)
+                        || ! hash_equals($claim['version'], $currentClaimVersion)
                         || ! Gate::forUser($currentRecipient)->allows('view', $currentNotification)) {
                         return;
                     }

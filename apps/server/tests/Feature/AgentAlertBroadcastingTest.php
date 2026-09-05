@@ -41,6 +41,7 @@ test('notifications are indexed for recipient alert reconciliation', function ()
         ->and(Schema::hasColumns('notifications', [
             'agent_alerted_at',
             'agent_alert_version',
+            'agent_alert_broadcast_claim_version',
             'agent_alert_fingerprint',
         ]))->toBeTrue();
 });
@@ -351,13 +352,51 @@ test('publication sweep closes the zero downtime writer window without replaying
     }
 });
 
+test('a swept refresh remains claimable by a live listener exactly once', function (): void {
+    Event::fake([AgentAlertStored::class]);
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $alert = databaseAlertFor($agent, [
+        'kind' => 'conversation_needs_reply',
+        'conversation_id' => $conversation->id,
+        'message_count' => 1,
+    ]);
+    $originalClaimedVersion = $alert->getAttribute('agent_alert_broadcast_claim_version');
+
+    DB::table('notifications')->where('id', $alert->id)->update([
+        'data' => json_encode([...$alert->data, 'message_count' => 2]),
+        'updated_at' => now(),
+    ]);
+
+    expect(AgentAlertPublicationSweep::run())->toBe(1);
+
+    $swept = $alert->fresh();
+    $sweptVersion = $swept->getAttribute('agent_alert_version');
+
+    expect($sweptVersion)->not->toBe($originalClaimedVersion)
+        ->and($swept->getAttribute('agent_alert_broadcast_claim_version'))->toBe($originalClaimedVersion);
+
+    app(AgentAlertBroadcaster::class)->stored($agent, $swept);
+    app(AgentAlertBroadcaster::class)->stored($agent, $alert->fresh());
+
+    Event::assertDispatchedTimes(AgentAlertStored::class, 1);
+
+    $event = Event::dispatched(AgentAlertStored::class)->sole()[0];
+
+    expect(AgentAlertPayload::version($event->alert))->toBe($sweptVersion)
+        ->and($alert->fresh()->getAttribute('agent_alert_broadcast_claim_version'))->toBe($sweptVersion);
+});
+
 test('publication sweep backfills alerts inserted by the previous release', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
     $id = (string) Str::uuid();
     $data = ['kind' => 'conversation_needs_reply', 'message_count' => 1];
 
-    // Omit all three new fields exactly as the pre-deploy code does. The
+    // Omit all four new fields exactly as the pre-deploy code does. The
     // database timestamp default prevents a permanent reconciliation gap.
     DB::table('notifications')->insert([
         'id' => $id,
@@ -417,7 +456,8 @@ test('a first live publication keeps the version already exposed by concurrent r
 
     $preclaimed = DatabaseNotification::query()->findOrFail($id);
 
-    expect($preclaimed->getAttribute('agent_alert_version'))->toBeNull()
+    expect($preclaimed->getAttribute('agent_alert_version'))->toBe($id)
+        ->and($preclaimed->getAttribute('agent_alert_broadcast_claim_version'))->toBeNull()
         ->and($preclaimed->getAttribute('agent_alert_fingerprint'))->toBe(
             AgentAlertPublicationFingerprint::for($data),
         );
@@ -436,7 +476,8 @@ test('a first live publication keeps the version already exposed by concurrent r
 
     expect($catchUpVersion)->toBe($id)
         ->and(AgentAlertPayload::version($liveEvent->alert))->toBe($catchUpVersion)
-        ->and(AgentAlertPayload::version($alert->fresh()))->toBe($catchUpVersion);
+        ->and(AgentAlertPayload::version($alert->fresh()))->toBe($catchUpVersion)
+        ->and($alert->fresh()->getAttribute('agent_alert_broadcast_claim_version'))->toBe($catchUpVersion);
 });
 
 test('publication compatibility sweep remains scheduled for late old workers', function (): void {
@@ -600,6 +641,8 @@ test('stored alert broadcasts recheck current recipient access and ownership', f
 /** @param array<string, mixed> $data */
 function databaseAlertFor(User $agent, array $data): DatabaseNotification
 {
+    $version = (string) Str::uuid();
+
     /** @var DatabaseNotification $notification */
     $notification = $agent->notifications()->create([
         'id' => (string) Str::uuid(),
@@ -607,7 +650,8 @@ function databaseAlertFor(User $agent, array $data): DatabaseNotification
         'data' => $data,
         'read_at' => null,
         'agent_alerted_at' => now(),
-        'agent_alert_version' => (string) Str::uuid(),
+        'agent_alert_version' => $version,
+        'agent_alert_broadcast_claim_version' => $version,
         'agent_alert_fingerprint' => AgentAlertPublicationFingerprint::for($data),
     ]);
 

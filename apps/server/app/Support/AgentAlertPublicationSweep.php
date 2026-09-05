@@ -77,12 +77,12 @@ final class AgentAlertPublicationSweep
                     ?? $notification->created_at
                     ?? now(),
                 'agent_alert_version' => $firstPublication
-                    // Leave the first version unclaimed. Reconciliation already
-                    // exposes its stable ID fallback, while a current-release
-                    // listener that arrives after this sweep can still claim and
-                    // broadcast that same state exactly once.
-                    ? null
+                    ? $id
                     : (string) Str::uuid(),
+                // Deliberately do not touch agent_alert_broadcast_claim_version.
+                // A sweep makes the state visible to durable reconciliation; a
+                // current listener arriving after it must still be able to claim
+                // and publish this exact version to an already-connected tab.
                 'agent_alert_fingerprint' => $fingerprint,
             ]);
 

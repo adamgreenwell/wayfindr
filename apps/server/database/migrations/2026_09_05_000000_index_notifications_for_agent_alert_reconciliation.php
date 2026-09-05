@@ -30,6 +30,7 @@ return new class extends Migration
             // them. Existing in-place refreshes are detected by fingerprint.
             $table->timestamp('agent_alerted_at', precision: 6)->useCurrent();
             $table->uuid('agent_alert_version')->nullable();
+            $table->uuid('agent_alert_broadcast_claim_version')->nullable();
             $table->string('agent_alert_fingerprint', 64)->nullable();
         });
 
@@ -67,6 +68,7 @@ return new class extends Migration
             $table->dropColumn([
                 'agent_alerted_at',
                 'agent_alert_version',
+                'agent_alert_broadcast_claim_version',
                 'agent_alert_fingerprint',
             ]);
         });
