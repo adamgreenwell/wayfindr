@@ -99,6 +99,9 @@ forge_php artisan wayfindr:sanitise-page-urls
 echo "Restarting Laravel queues."
 forge_php artisan queue:restart
 
+echo "Reconciling agent alert publications."
+forge_php artisan wayfindr:reconcile-agent-alert-publications
+
 echo "Restarting Laravel Reverb."
 forge_php artisan reverb:restart
 

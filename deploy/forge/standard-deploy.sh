@@ -115,6 +115,7 @@ fi
 forge_php artisan route:cache
 forge_php artisan view:cache
 forge_php artisan queue:restart
+forge_php artisan wayfindr:reconcile-agent-alert-publications
 forge_php artisan reverb:restart
 forge_php artisan up
 maintenance_enabled=0

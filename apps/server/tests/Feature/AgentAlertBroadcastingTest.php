@@ -13,9 +13,12 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\AgentAlertBroadcaster;
 use App\Support\AgentAlertPayload;
+use App\Support\AgentAlertPublicationFingerprint;
+use App\Support\AgentAlertPublicationSweep;
 use App\Support\AgentAlertRealtimeConfig;
 use Carbon\CarbonImmutable;
 use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\DatabaseNotification;
@@ -34,7 +37,11 @@ test('notifications are indexed for recipient alert reconciliation', function ()
         'agent_alerted_at',
         'id',
     ])
-        ->and(Schema::hasColumns('notifications', ['agent_alerted_at', 'agent_alert_version']))->toBeTrue();
+        ->and(Schema::hasColumns('notifications', [
+            'agent_alerted_at',
+            'agent_alert_version',
+            'agent_alert_fingerprint',
+        ]))->toBeTrue();
 });
 
 test('agent alert realtime config uses the existing browser transport and recipient channel', function (): void {
@@ -290,6 +297,99 @@ test('read state and email bookkeeping do not create reconciliation alert versio
     }
 });
 
+test('publication sweep closes the zero downtime writer window without replaying bookkeeping', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:00Z'));
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    try {
+        $alert = databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $conversation->id,
+            'message_count' => 1,
+        ]);
+        $initialVersion = AgentAlertPayload::version($alert);
+
+        // The previous release refreshes the payload after the migration's
+        // first pass, without knowing about publication metadata.
+        DB::table('notifications')->where('id', $alert->id)->update([
+            'data' => json_encode([...$alert->data, 'message_count' => 2]),
+            'updated_at' => CarbonImmutable::parse('2026-09-05T12:00:05Z'),
+        ]);
+
+        expect(AgentAlertPublicationSweep::run())->toBe(1);
+
+        $refreshed = $alert->fresh();
+
+        expect(AgentAlertPayload::alertedAt($refreshed)?->toJSON())->toBe('2026-09-05T12:00:05.000000Z')
+            ->and(AgentAlertPayload::version($refreshed))->not->toBe($initialVersion)
+            ->and($refreshed->getAttribute('agent_alert_fingerprint'))->toBe(
+                AgentAlertPublicationFingerprint::for($refreshed->data),
+            );
+
+        // Read and delivery metadata can also land during activation. They do
+        // not change the alert-bearing fingerprint and must stay silent.
+        DB::table('notifications')->where('id', $alert->id)->update([
+            'data' => json_encode([
+                ...$refreshed->data,
+                'unattended_emailed_at' => '2026-09-05T12:00:06Z',
+                'digest_queued_at' => '2026-09-05T12:00:07Z',
+            ]),
+            'read_at' => CarbonImmutable::parse('2026-09-05T12:00:08Z'),
+            'updated_at' => CarbonImmutable::parse('2026-09-05T12:00:08Z'),
+        ]);
+
+        expect(AgentAlertPublicationSweep::run())->toBe(0)
+            ->and(AgentAlertPayload::version($alert->fresh()))->toBe(AgentAlertPayload::version($refreshed))
+            ->and(AgentAlertPayload::alertedAt($alert->fresh())?->toJSON())->toBe('2026-09-05T12:00:05.000000Z');
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
+});
+
+test('publication sweep backfills alerts inserted by the previous release', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $id = (string) Str::uuid();
+    $data = ['kind' => 'conversation_needs_reply', 'message_count' => 1];
+
+    // Omit all three new fields exactly as the pre-deploy code does. The
+    // database timestamp default prevents a permanent reconciliation gap.
+    DB::table('notifications')->insert([
+        'id' => $id,
+        'type' => ConversationNeedsReply::class,
+        'notifiable_type' => $agent->getMorphClass(),
+        'notifiable_id' => $agent->id,
+        'data' => json_encode($data),
+        'read_at' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    expect(DB::table('notifications')->where('id', $id)->value('agent_alerted_at'))->not->toBeNull();
+
+    $this->artisan('wayfindr:reconcile-agent-alert-publications')
+        ->expectsOutput('Reconciled 1 agent alert publication(s).')
+        ->assertSuccessful();
+
+    $alert = DatabaseNotification::query()->findOrFail($id);
+
+    expect(AgentAlertPayload::version($alert))->toBe($id)
+        ->and($alert->getAttribute('agent_alert_fingerprint'))->toBe(AgentAlertPublicationFingerprint::for($data));
+});
+
+test('publication compatibility sweep remains scheduled for late old workers', function (): void {
+    $commands = collect(app(Schedule::class)->events())
+        ->map(fn ($event): string => (string) $event->command);
+
+    expect($commands->filter(
+        fn (string $command): bool => str_contains($command, 'wayfindr:reconcile-agent-alert-publications'),
+    ))->toHaveCount(1);
+});
+
 test('alert reconciliation returns only recipient alerts that are current and still visible', function (): void {
     CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
     $account = Account::factory()->create();
@@ -450,6 +550,7 @@ function databaseAlertFor(User $agent, array $data): DatabaseNotification
         'read_at' => null,
         'agent_alerted_at' => now(),
         'agent_alert_version' => (string) Str::uuid(),
+        'agent_alert_fingerprint' => AgentAlertPublicationFingerprint::for($data),
     ]);
 
     return $notification;

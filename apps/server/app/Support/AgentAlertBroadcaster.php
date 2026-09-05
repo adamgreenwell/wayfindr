@@ -43,6 +43,7 @@ final class AgentAlertBroadcaster
             ->update([
                 'agent_alerted_at' => $alertedAt,
                 'agent_alert_version' => $alertVersion,
+                'agent_alert_fingerprint' => AgentAlertPublicationFingerprint::for($notification->data),
             ]);
 
         if ($marked !== 1) {
@@ -52,6 +53,7 @@ final class AgentAlertBroadcaster
         $notification->forceFill([
             'agent_alerted_at' => $alertedAt,
             'agent_alert_version' => $alertVersion,
+            'agent_alert_fingerprint' => AgentAlertPublicationFingerprint::for($notification->data),
         ]);
 
         DB::afterCommit(function () use ($accountId, $agentId, $notificationId, $notifiableType): void {

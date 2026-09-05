@@ -1,8 +1,8 @@
 <?php
 
+use App\Support\AgentAlertPublicationSweep;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -11,22 +11,28 @@ use Illuminate\Support\Facades\Schema;
  * Notification updated_at also advances for read-state and email bookkeeping,
  * neither of which is a new browser alert. These dedicated fields advance only
  * when AgentAlertBroadcaster publishes a newly stored or meaningfully refreshed
- * alert. Existing rows are backfilled so a just-deployed dashboard can remember
- * recent durable alerts at its initial overlap boundary.
+ * alert. The shared sweep establishes publication metadata for existing rows;
+ * Forge repeats it after activation because the previous release can still
+ * create or refresh notifications while this migration runs.
  */
 return new class extends Migration
 {
+    // The sweep locks and releases one row at a time while the old release is
+    // still serving. Do not let PostgreSQL hold those locks for the full table.
+    public $withinTransaction = false;
+
     public function up(): void
     {
         Schema::table('notifications', function (Blueprint $table): void {
-            $table->timestamp('agent_alerted_at', precision: 6)->nullable();
+            // The default keeps inserts from the previous zero-downtime
+            // release visible until the post-activation sweep fingerprints
+            // them. Existing in-place refreshes are detected by fingerprint.
+            $table->timestamp('agent_alerted_at', precision: 6)->useCurrent();
             $table->uuid('agent_alert_version')->nullable();
+            $table->string('agent_alert_fingerprint', 64)->nullable();
         });
 
-        DB::table('notifications')->update([
-            'agent_alerted_at' => DB::raw('created_at'),
-            'agent_alert_version' => DB::raw('id'),
-        ]);
+        AgentAlertPublicationSweep::run();
 
         Schema::table('notifications', function (Blueprint $table): void {
             $table->index(
@@ -40,7 +46,11 @@ return new class extends Migration
     {
         Schema::table('notifications', function (Blueprint $table): void {
             $table->dropIndex('notifications_recipient_alerted_at_id_index');
-            $table->dropColumn(['agent_alerted_at', 'agent_alert_version']);
+            $table->dropColumn([
+                'agent_alerted_at',
+                'agent_alert_version',
+                'agent_alert_fingerprint',
+            ]);
         });
     }
 };
