@@ -428,6 +428,15 @@
                 reconcileThrough = null;
                 reconcileSoundPlayed = false;
                 activeSocket.wayfindrReconciling = false;
+
+                // A reconnect can resume a cursor whose upper watermark was
+                // frozen on the previous socket. Finish that bounded walk, then
+                // immediately sweep through the present so alerts committed
+                // during the second gap are not stranded until another outage.
+                if (activeSocket.wayfindrNeedsFreshReconcile) {
+                    activeSocket.wayfindrNeedsFreshReconcile = false;
+                    reconcileAlerts(activeSocket);
+                }
             }).catch(function (error) {
                 activeSocket.wayfindrReconciling = false;
                 authorizationFailed(activeSocket, error);
@@ -439,6 +448,7 @@
                 return;
             }
 
+            activeSocket.wayfindrNeedsFreshReconcile = Boolean(reconcileThrough || reconcileCursor);
             activeSocket.wayfindrReconciling = true;
             reconcileAlertPage(activeSocket);
         }

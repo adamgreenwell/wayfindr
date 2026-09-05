@@ -32,6 +32,8 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee('reconcileAlerts(message.target)', false)
         ->assertSee('reconcileAlertPage(activeSocket)', false)
         ->assertSee('overlappingReconcileSince(data.watermark)', false)
+        ->assertSee('activeSocket.wayfindrNeedsFreshReconcile = Boolean(reconcileThrough || reconcileCursor)', false)
+        ->assertSee('if (activeSocket.wayfindrNeedsFreshReconcile)', false)
         ->assertSee('seenAlertVersions', false)
         ->assertSee('dashboard\/alerts\/reconcile', false)
         ->assertSee("document.title = '(' + count + ') ' + originalTitle", false)
