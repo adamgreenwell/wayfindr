@@ -69,7 +69,7 @@ return [
     'profile' => [
         'document_title' => 'Besucherprofil',
         'title' => 'Besucherprofil',
-        'back' => 'Zurück zur Übersicht',
+        'back' => 'Zurück zu Besuchern',
         'glance' => [
             'heading' => 'Besucher auf einen Blick',
             'safe_only' => 'Nur sichere Kontextdaten',

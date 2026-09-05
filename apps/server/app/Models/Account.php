@@ -32,6 +32,11 @@ class Account extends Model
         return $this->hasMany(CustomRole::class);
     }
 
+    public function visitorAttributeDefinitions(): HasMany
+    {
+        return $this->hasMany(VisitorAttributeDefinition::class);
+    }
+
     public function sites(): HasMany
     {
         return $this->hasMany(Site::class);

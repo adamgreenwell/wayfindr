@@ -45,11 +45,53 @@
                         @endforeach
                     </select>
                 </div>
+
+                <div class="field">
+                    <label for="attribute">{{ __('visitor_attributes.filters.attribute') }}</label>
+                    <select id="attribute" name="attribute">
+                        <option value="">{{ __('visitor_attributes.filters.any_attribute') }}</option>
+                        @foreach ($attributeDefinitions as $definition)
+                            <option value="{{ $definition->key }}" lang="" @selected($attributeKey === $definition->key)>{{ $definition->label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                @php($selectedAttribute = $attributeDefinitions->firstWhere('key', $attributeKey))
+                <div class="field">
+                    <label for="attribute-value">{{ __('visitor_attributes.filters.value') }}</label>
+                    @if ($selectedAttribute?->type === \App\Enums\VisitorAttributeType::Boolean)
+                        <select id="attribute-value" name="attribute_value" aria-describedby="attribute-filter-help @if ($attributeFilterInvalid) attribute-filter-error @endif" @if ($attributeFilterInvalid) aria-invalid="true" @endif>
+                            <option value="">—</option>
+                            <option value="true" @selected($attributeValue === 'true')>{{ __('visitor_attributes.profile.yes') }}</option>
+                            <option value="false" @selected($attributeValue === 'false')>{{ __('visitor_attributes.profile.no') }}</option>
+                        </select>
+                    @else
+                        <input
+                            id="attribute-value"
+                            name="attribute_value"
+                            type="text"
+                            @if ($selectedAttribute?->type === \App\Enums\VisitorAttributeType::Number) inputmode="decimal" @endif
+                            value="{{ $attributeValue }}"
+                            maxlength="160"
+                            placeholder="{{ __('visitor_attributes.filters.value_placeholder') }}"
+                            aria-describedby="attribute-filter-help @if ($attributeFilterInvalid) attribute-filter-error @endif"
+                            @if ($attributeFilterInvalid) aria-invalid="true" @endif
+                            lang=""
+                        >
+                    @endif
+                    <p id="attribute-filter-help" class="field-help">{{ __('visitor_attributes.filters.help') }}</p>
+                    @if ($attributeFilterInvalid)
+                        <p id="attribute-filter-error" class="field-error">{{ __('visitor_attributes.filters.invalid') }}</p>
+                    @endif
+                </div>
             </div>
 
             <div class="section-actions">
                 <button class="button" type="submit">{{ __('visitors.filters.submit') }}</button>
                 <a class="button secondary" href="{{ route('dashboard.visitors.index') }}">{{ __('visitors.filters.clear') }}</a>
+                @if ($canManageContacts)
+                    <a class="button secondary" href="{{ route('dashboard.account.visitor-attributes.index') }}">{{ __('visitor_attributes.filters.manage') }}</a>
+                @endif
             </div>
         </form>
     </section>

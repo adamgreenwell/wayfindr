@@ -307,6 +307,14 @@ final class DashboardLanguage
         // only the destination would put a language switch inside the section.
         'dashboard.visitors.index',
         'dashboard.visitors.show',
+
+        // Visitor attribute definitions are the management half of the
+        // translated directory/profile workflow. Validation and success
+        // feedback return to this page, so its writes share the same locale.
+        'dashboard.account.visitor-attributes.index',
+        'dashboard.account.visitor-attributes.store',
+        'dashboard.account.visitor-attributes.update',
+        'dashboard.account.visitor-attributes.destroy',
     ];
 
     /**

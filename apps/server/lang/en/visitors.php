@@ -72,7 +72,7 @@ return [
     'profile' => [
         'document_title' => 'Visitor profile',
         'title' => 'Visitor profile',
-        'back' => 'Back to dashboard',
+        'back' => 'Back to visitors',
         'glance' => [
             'heading' => 'Visitor at a glance',
             'safe_only' => 'Safe context only',

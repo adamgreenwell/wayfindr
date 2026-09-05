@@ -3238,6 +3238,9 @@
 
             if ($agent->hasAnyAccountPermission(\App\Enums\AccountPermission::ViewConversations, \App\Enums\AccountPermission::ManageTickets)) {
                 $workItems[] = ['label' => __('nav.items.dashboard'), 'icon' => 'dashboard', 'href' => route('dashboard'), 'active' => request()->routeIs('dashboard')];
+            }
+
+            if ($agent->hasAnyAccountPermission(\App\Enums\AccountPermission::ViewConversations, \App\Enums\AccountPermission::ManageTickets, \App\Enums\AccountPermission::ManageContacts)) {
                 $workItems[] = ['label' => __('nav.items.visitors'), 'icon' => 'visitors', 'href' => route('dashboard.visitors.index'), 'active' => request()->routeIs('dashboard.visitors.*')];
             }
 

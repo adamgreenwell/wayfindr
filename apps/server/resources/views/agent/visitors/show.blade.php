@@ -1,5 +1,5 @@
 <x-layouts.app :title="__('visitors.profile.document_title')" :agent="$agent" :account="$account">
-    <x-page-header :title="__('visitors.profile.title')" :back-href="route('dashboard')" :back-label="__('visitors.profile.back')">
+    <x-page-header :title="__('visitors.profile.title')" :back-href="route('dashboard.visitors.index')" :back-label="__('visitors.profile.back')">
         <p class="lede"><span lang="">{{ $visitor->site->name }}</span> · <span lang="">{{ $visitorContext['anonymous_id'] }}</span></p>
     </x-page-header>
 
@@ -30,20 +30,23 @@
                 <span class="meta-label">{{ __('visitors.profile.glance.entry_page') }}</span>
                 <span class="meta-value" @if ($visitorContext['first_started_page_url']) lang="" @endif>{{ $visitorContext['first_started_page_url'] ?? __('visitors.common.not_reported') }}</span>
             </div>
-            <div class="meta-item">
-                <span class="meta-label">{{ __('visitors.profile.glance.support_history') }}</span>
-                <span class="meta-value">
-                    @if ($canViewConversations)
-                        {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
-                    @endif
-                    @if ($canViewConversations && $canManageTickets) · @endif
-                    @if ($canManageTickets)
-                        {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
-                    @endif
-                </span>
-            </div>
+            @if ($canViewConversations || $canManageTickets)
+                <div class="meta-item">
+                    <span class="meta-label">{{ __('visitors.profile.glance.support_history') }}</span>
+                    <span class="meta-value">
+                        @if ($canViewConversations)
+                            {{ trans_choice('visitors.counts.conversations', $conversations->count(), ['count' => \App\Support\ReaderNumber::count($conversations->count())]) }}
+                        @endif
+                        @if ($canViewConversations && $canManageTickets) · @endif
+                        @if ($canManageTickets)
+                            {{ trans_choice('visitors.counts.tickets', $tickets->count(), ['count' => \App\Support\ReaderNumber::count($tickets->count())]) }}
+                        @endif
+                    </span>
+                </div>
+            @endif
         </div>
 
+        @if ($canViewConversations || $canManageTickets)
         <div class="section-header">
             <strong>{{ __('visitors.snapshot.heading') }}</strong>
             <span class="readiness-status" data-status="{{ $supportSnapshot['tone'] }}">
@@ -79,6 +82,7 @@
                 @endif
             </div>
         </div>
+        @endif
 
         <div class="section-header">
             <strong>{{ __('visitors.references.heading') }}</strong>
@@ -141,6 +145,46 @@
             <p>{{ __('visitors.boundary.body') }}</p>
         </div>
 
+        @if ($customAttributes->isNotEmpty())
+            <div class="section-header">
+                <strong>{{ __('visitor_attributes.profile.heading') }}</strong>
+                <span class="lede">{{ __('visitor_attributes.profile.lede') }}</span>
+            </div>
+
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">{{ __('visitor_attributes.profile.attribute') }}</th>
+                            <th scope="col">{{ __('visitor_attributes.profile.value') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($customAttributes as $attribute)
+                            <tr>
+                                <td lang="">{{ $attribute['definition']->label }}</td>
+                                <td @if ($attribute['value'] !== null && $attribute['definition']->type !== \App\Enums\VisitorAttributeType::Boolean) lang="" @endif>
+                                    @if ($attribute['value'] === null)
+                                        {{ __('visitor_attributes.profile.not_set') }}
+                                    @elseif ($attribute['definition']->type === \App\Enums\VisitorAttributeType::Boolean)
+                                        {{ $attribute['value'] === 'true' ? __('visitor_attributes.profile.yes') : __('visitor_attributes.profile.no') }}
+                                    @else
+                                        {{ $attribute['value'] }}
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+
+            @if ($canManageContacts)
+                <div class="section-actions">
+                    <a class="button secondary" href="{{ route('dashboard.account.visitor-attributes.index') }}">{{ __('visitor_attributes.profile.manage') }}</a>
+                </div>
+            @endif
+        @endif
+
         <div class="section-header">
             <strong>{{ __('visitors.context.heading') }}</strong>
             <span class="lede">{{ trans_choice('visitors.counts.fields', count($visitorContext['host_context']), ['count' => \App\Support\ReaderNumber::count(count($visitorContext['host_context']))]) }}</span>
@@ -173,6 +217,7 @@
         @endif
     </section>
 
+    @if ($canViewConversations || $canManageTickets)
     <section class="section" aria-labelledby="visitor-history-heading">
         <div class="section-header">
             <h2 id="visitor-history-heading">{{ __('visitors.history.heading') }}</h2>
@@ -255,4 +300,5 @@
         @endif
         @endif
     </section>
+    @endif
 </x-layouts.app>

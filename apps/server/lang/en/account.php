@@ -152,6 +152,7 @@ return [
             'integrations' => ['label' => 'Integrations', 'detail' => 'External issue providers and where each site hands tickets off.'],
             'sites' => ['label' => 'Sites', 'detail' => 'Connected sites, widget install health, and per-site settings.'],
             'sla' => ['label' => 'SLA policies', 'detail' => 'Response and resolution targets by support priority.'],
+            'visitor_attributes' => ['label' => 'Visitor attributes', 'detail' => 'Name and type the safe host context agents use to understand contacts.'],
             'articles' => ['label' => 'Articles', 'detail' => 'Answers a visitor can search for themselves, before they ask.'],
             'replies' => ['label' => 'Reply templates', 'detail' => 'Saved replies agents can insert into conversations.'],
             'labels' => ['label' => 'Ticket labels', 'detail' => 'Shared labels for organizing and filtering tickets.'],

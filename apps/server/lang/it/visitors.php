@@ -69,7 +69,7 @@ return [
     'profile' => [
         'document_title' => 'Profilo del visitatore',
         'title' => 'Profilo del visitatore',
-        'back' => 'Torna alla dashboard',
+        'back' => 'Torna ai visitatori',
         'glance' => [
             'heading' => 'Visitatore in sintesi',
             'safe_only' => 'Solo contesto sicuro',

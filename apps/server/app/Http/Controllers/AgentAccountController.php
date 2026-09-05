@@ -119,6 +119,7 @@ class AgentAccountController extends Controller
             'canViewAlertDelivery' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
             'canManageAgentAccess' => $agent->hasAccountPermission(AccountPermission::ManageAgents),
             'canManageAutomations' => $agent->hasAccountPermission(AccountPermission::ManageAutomations),
+            'canManageContacts' => $agent->hasAccountPermission(AccountPermission::ManageContacts),
             'canManageIntegrations' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
             'canManageKnowledge' => $agent->hasAccountPermission(AccountPermission::ManageKnowledge),
             'canManageOperatorAccess' => $agent->hasAccountPermission(AccountPermission::ManageOperatorAccess),

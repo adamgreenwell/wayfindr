@@ -123,6 +123,7 @@ return [
             'integrations' => ['label' => 'Integrationen', 'detail' => 'Externe Issue-Anbieter und die Ticketübergabe jeder Website.'],
             'sites' => ['label' => 'Websites', 'detail' => 'Verbundene Websites, Installationszustand des Widgets und Einstellungen pro Website.'],
             'sla' => ['label' => 'SLA-Richtlinien', 'detail' => 'Ziele für Antwort und Lösung nach Support-Priorität.'],
+            'visitor_attributes' => ['label' => 'Besucherattribute', 'detail' => 'Sicheren Host-Kontext für Kontaktdaten benennen und typisieren.'],
             'articles' => ['label' => 'Artikel', 'detail' => 'Antworten, nach denen Besuchende selbst suchen können, bevor sie fragen.'],
             'replies' => ['label' => 'Antworthilfen', 'detail' => 'Gespeicherte Antworten, die Agenten in Unterhaltungen einfügen können.'],
             'labels' => ['label' => 'Ticket-Labels', 'detail' => 'Gemeinsame Labels zum Ordnen und Filtern von Tickets.'],

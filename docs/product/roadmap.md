@@ -51,8 +51,10 @@ The product has moved past a spine. It now includes:
   The widget and the dashboard also carry different language sets on purpose
   rather than by omission: Italian is agent-facing, and adding it to the widget
   is a separate catalogue for a separate audience.
-- A visitor directory, agent-initiated password recovery, and a public API with
-  a decided isolation model, scoped reads, and a narrow write surface.
+- A visitor directory and profile with account-defined typed attributes over
+  existing safe host context, exact-value filtering, and a contacts-only custom
+  role boundary; agent-initiated password recovery; and a public API with a
+  decided isolation model, scoped reads, and a narrow write surface.
 - TOTP two-factor authentication with one-time recovery codes, replay-safe
   challenges, and an admin-controlled account requirement; OIDC federation;
   account-owned custom roles; and owner-controlled, deny-by-default JIT role

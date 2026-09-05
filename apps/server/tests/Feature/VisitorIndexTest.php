@@ -1,11 +1,13 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Enums\VisitorAttributeType;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Models\VisitorAttributeDefinition;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -151,6 +153,106 @@ test('search finds a visitor by what they told us and by what we generated', fun
             ->assertSee('Avery Lane')
             ->assertDontSee('Someone Unrelated');
     }
+});
+
+test('defined visitor attributes filter by an exact typed value within the account', function (): void {
+    $w = visitorIndexWorld();
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'plan',
+        'label' => 'Customer plan',
+        'type' => VisitorAttributeType::Text,
+    ]);
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'seats',
+        'label' => 'Seat count',
+        'type' => VisitorAttributeType::Number,
+    ]);
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'vip',
+        'label' => 'VIP customer',
+        'type' => VisitorAttributeType::Boolean,
+    ]);
+    Visitor::factory()->for($w['site'])->create([
+        'name' => 'Enterprise Contact',
+        'metadata' => ['context' => ['plan' => 'Enterprise', 'seats' => '25', 'vip' => 'YeS']],
+    ]);
+    Visitor::factory()->for($w['site'])->create([
+        'name' => 'Starter Contact',
+        'metadata' => ['context' => ['plan' => 'Starter', 'seats' => '3', 'vip' => 'off']],
+    ]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'plan',
+            'attribute_value' => 'Enterprise',
+        ]))
+        ->assertOk()
+        ->assertSee('Enterprise Contact')
+        ->assertDontSee('Starter Contact');
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'seats',
+            'attribute_value' => '25',
+        ]))
+        ->assertOk()
+        ->assertSee('Enterprise Contact')
+        ->assertDontSee('Starter Contact');
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'vip',
+            'attribute_value' => 'true',
+        ]))
+        ->assertOk()
+        ->assertSee('Enterprise Contact')
+        ->assertDontSee('Starter Contact');
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'vip',
+            'attribute_value' => 'false',
+        ]))
+        ->assertOk()
+        ->assertSee('Starter Contact')
+        ->assertDontSee('Enterprise Contact');
+});
+
+test('unknown malformed and invalid visitor attribute filters never widen account scope or fail the page', function (): void {
+    $w = visitorIndexWorld();
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'seats',
+        'label' => 'Seat count',
+        'type' => VisitorAttributeType::Number,
+    ]);
+    Visitor::factory()->for($w['site'])->create([
+        'name' => 'Our Contact',
+        'metadata' => ['context' => ['seats' => '25']],
+    ]);
+    $otherSite = Site::factory()->for(Account::factory())->create();
+    Visitor::factory()->for($otherSite)->create([
+        'name' => 'Other Account Contact',
+        'metadata' => ['context' => ['seats' => '25']],
+    ]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => ['seats'],
+            'attribute_value' => ['25'],
+        ]))
+        ->assertOk()
+        ->assertSee('Our Contact')
+        ->assertDontSee('Other Account Contact');
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'seats',
+            'attribute_value' => 'many',
+        ]))
+        ->assertOk()
+        ->assertSee('Enter a value that matches the selected attribute type.')
+        ->assertSee('Our Contact')
+        ->assertDontSee('Other Account Contact');
 });
 
 test('an unknown presence value is ignored rather than emptying the list', function (): void {

@@ -42,6 +42,7 @@ return [
         'manage_agents' => ['label' => 'Manage agents', 'detail' => 'Add teammates and suspend ordinary agents.'],
         'manage_sites' => ['label' => 'Manage sites', 'detail' => 'Create, edit, archive, and restore sites.'],
         'manage_site_access' => ['label' => 'Manage site access', 'detail' => 'Choose which teammates can support each site.'],
+        'manage_contacts' => ['label' => 'Manage contacts', 'detail' => 'Define visitor attributes and manage contact records on assigned sites.'],
         'manage_privacy_settings' => ['label' => 'Manage privacy settings', 'detail' => 'Change visitor-data and privacy controls.'],
         'manage_integrations' => ['label' => 'Manage integrations', 'detail' => 'Configure providers, API tokens, webhooks, and routing.'],
         'manage_knowledge' => ['label' => 'Manage knowledge', 'detail' => 'Create and publish articles, replies, and ticket labels.'],

@@ -14,6 +14,7 @@ use App\Http\Controllers\AgentAccountOidcProvisioningController;
 use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAccountSlaPolicyController;
+use App\Http\Controllers\AgentAccountVisitorAttributeController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentAlertRealtimeReceiptController;
 use App\Http\Controllers\AgentAlertReconciliationController;
@@ -161,6 +162,16 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::delete('/dashboard/account/roles/{customRole}', [AgentAccountCustomRoleController::class, 'destroy'])
         ->whereNumber('customRole')
         ->name('dashboard.account.roles.destroy');
+    Route::get('/dashboard/account/visitor-attributes', [AgentAccountVisitorAttributeController::class, 'index'])
+        ->name('dashboard.account.visitor-attributes.index');
+    Route::post('/dashboard/account/visitor-attributes', [AgentAccountVisitorAttributeController::class, 'store'])
+        ->name('dashboard.account.visitor-attributes.store');
+    Route::put('/dashboard/account/visitor-attributes/{visitorAttribute}', [AgentAccountVisitorAttributeController::class, 'update'])
+        ->whereNumber('visitorAttribute')
+        ->name('dashboard.account.visitor-attributes.update');
+    Route::delete('/dashboard/account/visitor-attributes/{visitorAttribute}', [AgentAccountVisitorAttributeController::class, 'destroy'])
+        ->whereNumber('visitorAttribute')
+        ->name('dashboard.account.visitor-attributes.destroy');
     Route::get('/dashboard/account/security', [AgentAccountSecurityController::class, 'show'])
         ->name('dashboard.account.security.show');
     Route::get('/dashboard/account/sla-policies', [AgentAccountSlaPolicyController::class, 'index'])
