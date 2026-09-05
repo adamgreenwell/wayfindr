@@ -59,6 +59,10 @@ test('the alert stream advertises visible presence until the page is hidden', fu
         ->toContain("document.addEventListener('visibilitychange', foregroundStateChanged)")
         ->toContain("event: 'pusher:unsubscribe'")
         ->toContain('unsubscribe(activeSocket, config.visibleChannelName)')
+        ->toContain('activeSocket.wayfindrAlertChannelSubscribed !== true')
+        ->toContain('message.target.wayfindrAlertChannelSubscribed = true')
+        ->toContain("reconcileAlerts(message.target);\n                    joinVisiblePresence(message.target);")
+        ->not->toContain("authorizeChannel(message.target, config.channelName);\n                    joinVisiblePresence(message.target);")
         ->toContain("message.target.wayfindrVisibleChannelState = 'subscribed'");
 });
 

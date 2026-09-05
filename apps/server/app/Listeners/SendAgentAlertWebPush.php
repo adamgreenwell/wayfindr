@@ -22,6 +22,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Sleep;
 use NotificationChannels\WebPush\WebPushChannel;
 use Throwable;
@@ -40,11 +41,17 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
     {
         try {
             $assessment = app(AgentWebPushConfig::class)->assessment();
+        } catch (Throwable) {
+            return false;
+        }
 
-            if (! in_array($assessment['status'], ['ready', 'unavailable'], true)) {
-                return false;
-            }
+        if (! in_array($assessment['status'], ['ready', 'unavailable'], true)
+            || ! $event->recipient->alertPushEnabled()
+            || $event->recipient->alertMode() === User::ALERT_MODE_QUIET) {
+            return false;
+        }
 
+        try {
             if ($assessment['status'] === 'ready') {
                 AgentPushSubscription::purgeStaleFor($event->recipient);
             }
@@ -56,13 +63,12 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
                     ->exists()
                 : $event->recipient->pushSubscriptions()->exists();
 
-            return $event->recipient->alertPushEnabled()
-                && $event->recipient->alertMode() !== User::ALERT_MODE_QUIET
-                && $hasSubscription;
+            return $hasSubscription;
         } catch (Throwable) {
-            // An unconfigured or not-yet-migrated optional channel must not
-            // interfere with the durable database alert or its live broadcast.
-            return false;
+            // A separate subscription database may recover by the time the
+            // queued listener runs. Preserve that retry unless schema inspection
+            // can positively show this optional channel is not migrated yet.
+            return ! $this->pushSubscriptionStorageIsKnownAbsent();
         }
     }
 
@@ -172,6 +178,26 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
         if ($retryableFailure instanceof RetryableAgentWebPushException) {
             throw $retryableFailure;
+        }
+    }
+
+    private function pushSubscriptionStorageIsKnownAbsent(): bool
+    {
+        try {
+            $subscription = new AgentPushSubscription;
+            $schema = Schema::connection($subscription->getConnectionName());
+            $table = $subscription->getTable();
+
+            return ! $schema->hasTable($table)
+                || ! $schema->hasColumns($table, [
+                    'subscribable_type',
+                    'subscribable_id',
+                    'vapid_public_key_hash',
+                ]);
+        } catch (Throwable) {
+            // The same connection outage can prevent schema inspection. Unknown
+            // storage is retryable; only a confirmed missing schema opts out.
+            return false;
         }
     }
 }

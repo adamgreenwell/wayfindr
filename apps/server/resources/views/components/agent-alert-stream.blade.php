@@ -384,6 +384,7 @@
                 || ! activeSocket
                 || activeSocket.readyState !== 1
                 || ! activeSocket.wayfindrSocketId
+                || activeSocket.wayfindrAlertChannelSubscribed !== true
                 || activeSocket.wayfindrVisibleChannelState !== 'absent') {
                 return;
             }
@@ -644,7 +645,6 @@
             if (event.event === 'pusher_internal:subscription_succeeded') {
                 if (event.channel === config.identityChannelName) {
                     authorizeChannel(message.target, config.channelName);
-                    joinVisiblePresence(message.target);
                 } else if (event.channel === config.visibleChannelName) {
                     if (! isPageVisible()) {
                         leaveVisiblePresence(message.target);
@@ -653,8 +653,10 @@
                         message.target.wayfindrVisibleChannelState = 'subscribed';
                     }
                 } else if (event.channel === config.channelName) {
+                    message.target.wayfindrAlertChannelSubscribed = true;
                     reconnectDelay = 1000;
                     reconcileAlerts(message.target);
+                    joinVisiblePresence(message.target);
                 }
 
                 return;
@@ -691,6 +693,7 @@
             }
 
             socket.wayfindrGeneration = generation;
+            socket.wayfindrAlertChannelSubscribed = false;
             socket.wayfindrVisibleAuthorization = 0;
             socket.wayfindrVisibleChannelState = 'absent';
             socket.addEventListener('message', handleSocketMessage);

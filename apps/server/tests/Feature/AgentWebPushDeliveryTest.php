@@ -462,6 +462,34 @@ test('temporarily unavailable Web Push settings retain a retryable delivery atte
         ->count())->toBe(1);
 });
 
+test('an unavailable subscription database retains a retry unless its schema is confirmed missing', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'database-recovery');
+    $listener = app(SendAgentAlertWebPush::class);
+    $event = new AgentAlertStored($agent, $alert);
+
+    config()->set('database.connections.webpush-unavailable', [
+        'driver' => 'sqlite',
+        'database' => storage_path('framework/testing/webpush-unavailable/push.sqlite'),
+        'prefix' => '',
+        'foreign_key_constraints' => true,
+    ]);
+    config()->set('webpush.database_connection', 'webpush-unavailable');
+
+    expect($listener->shouldQueue($event))->toBeTrue();
+
+    config()->set('database.connections.webpush-empty', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+        'prefix' => '',
+        'foreign_key_constraints' => true,
+    ]);
+    config()->set('webpush.database_connection', 'webpush-empty');
+
+    expect($listener->shouldQueue($event))->toBeFalse();
+});
+
 test('the listener sends only the exact current unread alert version to an authorized agent', function (): void {
     readyAgentWebPushConfig();
     [$agent, $site, $alert] = pushAlertFixture();
