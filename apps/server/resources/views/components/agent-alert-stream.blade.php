@@ -374,6 +374,56 @@
                 });
         }
 
+        function retryAfterMilliseconds(value) {
+            if (typeof value === 'string' && value.trim() !== '') {
+                var seconds = Number(value);
+
+                if (Number.isFinite(seconds) && seconds >= 0) {
+                    return Math.max(1000, seconds * 1000);
+                }
+
+                var retryAt = Date.parse(value);
+
+                if (Number.isFinite(retryAt)) {
+                    return Math.max(1000, retryAt - Date.now());
+                }
+            }
+
+            return 60 * 1000;
+        }
+
+        function clearReconcileRetry(activeSocket) {
+            if (activeSocket && activeSocket.wayfindrReconcileRetryTimer) {
+                window.clearTimeout(activeSocket.wayfindrReconcileRetryTimer);
+                activeSocket.wayfindrReconcileRetryTimer = null;
+            }
+        }
+
+        function scheduleReconcileRetry(activeSocket, delayMilliseconds) {
+            if (pageClosing
+                || activeSocket.wayfindrGeneration !== socketGeneration
+                || activeSocket.readyState !== 1) {
+                activeSocket.wayfindrReconciling = false;
+
+                return;
+            }
+
+            clearReconcileRetry(activeSocket);
+            activeSocket.wayfindrReconcileRetryTimer = window.setTimeout(function () {
+                activeSocket.wayfindrReconcileRetryTimer = null;
+
+                if (pageClosing
+                    || activeSocket.wayfindrGeneration !== socketGeneration
+                    || activeSocket.readyState !== 1) {
+                    activeSocket.wayfindrReconciling = false;
+
+                    return;
+                }
+
+                reconcileAlertPage(activeSocket);
+            }, delayMilliseconds);
+        }
+
         function reconcileAlertPage(activeSocket) {
             var parameters = { since: reconcileSince };
 
@@ -397,6 +447,13 @@
                     var failure = new Error('Alert reconciliation failed.');
 
                     failure.status = response.status;
+
+                    if (response.status === 429) {
+                        failure.retryAfterMilliseconds = retryAfterMilliseconds(
+                            response.headers.get('Retry-After')
+                        );
+                    }
+
                     throw failure;
                 }
 
@@ -454,6 +511,12 @@
                     reconcileAlerts(activeSocket);
                 }
             }).catch(function (error) {
+                if (error && error.status === 429) {
+                    scheduleReconcileRetry(activeSocket, error.retryAfterMilliseconds);
+
+                    return;
+                }
+
                 activeSocket.wayfindrReconciling = false;
                 authorizationFailed(activeSocket, error);
             });
@@ -535,7 +598,9 @@
 
             socket.wayfindrGeneration = generation;
             socket.addEventListener('message', handleSocketMessage);
-            socket.addEventListener('close', function () {
+            socket.addEventListener('close', function (event) {
+                clearReconcileRetry(event.currentTarget);
+
                 if (generation !== socketGeneration) {
                     return;
                 }
@@ -557,6 +622,8 @@
             }
 
             if (socket) {
+                clearReconcileRetry(socket);
+
                 try {
                     socket.close();
                 } catch (error) {
