@@ -275,7 +275,7 @@ class ConversationController extends Controller
         $belongsToAnotherVisitor = Visitor::query()
             ->where('site_id', $site->id)
             ->where('external_id', $externalId)
-            ->where('anonymous_id', '!=', $visitor->anonymous_id)
+            ->when($visitor->exists, fn ($query) => $query->where('id', '!=', $visitor->getKey()))
             ->exists();
 
         return $belongsToAnotherVisitor ? [] : ['external_id' => $externalId];

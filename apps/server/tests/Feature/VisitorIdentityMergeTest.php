@@ -325,6 +325,45 @@ test('merged browser identities continue through presence bootstrap and old sign
     ])->assertUnauthorized();
 });
 
+test('a browser alias on an email contact ignores an external id owned by another visitor', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-merged-into-email']);
+    $emailContact = Visitor::factory()->for($site)->create([
+        'anonymous_id' => null,
+        'email' => 'known@example.test',
+        'external_id' => null,
+    ]);
+    $externalOwner = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-real-external-owner',
+        'external_id' => 'customer-already-owned',
+    ]);
+    $oldToken = app(VisitorSessionToken::class)->issue($site, $source);
+
+    app(VisitorIdentityMerger::class)->merge($manager, $source, (int) $emailContact->id);
+
+    $this->postJson('/api/conversations', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-merged-into-email',
+        'visitor_token' => $oldToken,
+        'external_id' => 'customer-already-owned',
+        'subject' => 'Do not claim another contact identifier',
+    ])->assertCreated();
+
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-merged-into-email',
+        'external_id' => 'customer-already-owned',
+    ])->assertOk()
+        ->assertJsonPath('data.visitor.identified', false);
+
+    expect($emailContact->fresh()?->anonymous_id)->toBeNull()
+        ->and($emailContact->fresh()?->external_id)->toBeNull()
+        ->and($externalOwner->fresh()?->external_id)->toBe('customer-already-owned')
+        ->and(Conversation::query()->where('visitor_id', $emailContact->id)->count())->toBe(1);
+});
+
 test('a conversation that loses the merge race follows the alias instead of recreating the duplicate', function (): void {
     $account = Account::factory()->create();
     $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
