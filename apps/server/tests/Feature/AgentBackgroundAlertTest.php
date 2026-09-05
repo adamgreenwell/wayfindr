@@ -49,12 +49,13 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee('"soundEnabled":true', false);
 });
 
-test('the alert stream advertises foreground presence and leaves it in the background', function (): void {
+test('the alert stream advertises visible presence until the page is hidden', function (): void {
     $source = file_get_contents(resource_path('views/components/agent-alert-stream.blade.php'));
 
     expect($source)
         ->toContain('joinVisiblePresence(message.target)')
-        ->toContain("window.addEventListener('blur', syncVisiblePresence)")
+        ->toContain("return document.visibilityState === 'visible'")
+        ->not->toContain("window.addEventListener('blur', syncVisiblePresence)")
         ->toContain("document.addEventListener('visibilitychange', foregroundStateChanged)")
         ->toContain("event: 'pusher:unsubscribe'")
         ->toContain('unsubscribe(activeSocket, config.visibleChannelName)')

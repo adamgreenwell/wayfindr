@@ -91,6 +91,10 @@
             return document.visibilityState === 'hidden' || ! document.hasFocus();
         }
 
+        function isPageVisible() {
+            return document.visibilityState === 'visible';
+        }
+
         function attentionFavicon() {
             var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
                 + '<rect width="32" height="32" rx="6" fill="#16181A"/>'
@@ -232,7 +236,6 @@
 
         document.addEventListener('visibilitychange', foregroundStateChanged);
         window.addEventListener('focus', foregroundStateChanged);
-        window.addEventListener('blur', syncVisiblePresence);
 
         if (config.soundEnabled) {
             document.addEventListener('pointerdown', armSound, { once: true });
@@ -377,7 +380,7 @@
 
         function joinVisiblePresence(activeSocket) {
             if (pageClosing
-                || isBackground()
+                || ! isPageVisible()
                 || ! activeSocket
                 || activeSocket.readyState !== 1
                 || ! activeSocket.wayfindrSocketId
@@ -395,7 +398,7 @@
                         return;
                     }
 
-                    if (isBackground()) {
+                    if (! isPageVisible()) {
                         leaveVisiblePresence(activeSocket);
 
                         return;
@@ -419,7 +422,7 @@
                 return;
             }
 
-            if (isBackground()) {
+            if (! isPageVisible()) {
                 leaveVisiblePresence(socket);
             } else {
                 joinVisiblePresence(socket);
@@ -643,7 +646,7 @@
                     authorizeChannel(message.target, config.channelName);
                     joinVisiblePresence(message.target);
                 } else if (event.channel === config.visibleChannelName) {
-                    if (isBackground()) {
+                    if (! isPageVisible()) {
                         leaveVisiblePresence(message.target);
                     } else {
                         message.target.wayfindrVisibleAuthorization++;
