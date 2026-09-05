@@ -4,6 +4,7 @@ use App\Broadcasting\AccountAgentAlertChannel;
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\AgentAlertStored;
+use App\Jobs\ReconcileAgentAlertPublicationsAfterDrain;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\CustomRole;
@@ -24,6 +25,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -488,6 +490,44 @@ test('publication compatibility sweep remains scheduled for late old workers', f
         fn (string $command): bool => str_contains($command, 'wayfindr:reconcile-agent-alert-publications'),
     ))->toHaveCount(1);
 });
+
+test('deploys can queue a final publication sweep after old workers drain', function (): void {
+    Queue::fake();
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:00Z'));
+
+    try {
+        $this->artisan('wayfindr:reconcile-agent-alert-publications --after-worker-drain')
+            ->expectsOutput('Queued a final agent alert publication pass for 120 seconds after activation.')
+            ->assertSuccessful();
+
+        Queue::assertPushed(
+            ReconcileAgentAlertPublicationsAfterDrain::class,
+            fn (ReconcileAgentAlertPublicationsAfterDrain $job): bool => $job->delay?->equalTo(
+                CarbonImmutable::parse('2026-09-05T12:02:00Z'),
+            ) === true,
+        );
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
+});
+
+test('Forge recipes request the delayed publication pass after restarting workers', function (string $recipe): void {
+    $script = file_get_contents(base_path('../../deploy/forge/'.$recipe));
+    $restart = strpos($script, 'forge_php artisan queue:restart');
+    $immediate = strpos($script, 'forge_php artisan wayfindr:reconcile-agent-alert-publications', $restart);
+    $delayed = strpos(
+        $script,
+        'forge_php artisan wayfindr:reconcile-agent-alert-publications --after-worker-drain',
+        $immediate + 1,
+    );
+
+    expect($restart)->toBeInt()
+        ->and($immediate)->toBeInt()->toBeGreaterThan($restart)
+        ->and($delayed)->toBeInt()->toBeGreaterThan($immediate);
+})->with([
+    'standard-deploy.sh',
+    'zero-downtime-deploy.forge',
+]);
 
 test('alert reconciliation returns only recipient alerts that are current and still visible', function (): void {
     CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
