@@ -438,6 +438,31 @@ test('a queued unattended alert rechecks quiet hours before sending or stamping 
     ))->not->toBeNull();
 });
 
+test('a queued unattended alert rechecks deactivation before sending', function (): void {
+    Mail::fake();
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create();
+    createUnattendedWait($agent, $site);
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    $collector = new class extends UnattendedConversationAlertCollector
+    {
+        public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
+        {
+            $claimed = parent::claimForDelivery($agent, $candidates, $claim);
+            $agent->forceFill(['deactivated_at' => now()])->save();
+
+            return $claimed;
+        }
+    };
+
+    (new SendUnattendedConversationAlert($agent->id))->handle($collector);
+
+    Mail::assertNothingSent();
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+    expect(data_get($notification->data, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY))->toBeNull();
+});
+
 test('an accepted unattended alert keeps a durable claim when finalization is uncertain', function (): void {
     Mail::fake();
     Log::spy();

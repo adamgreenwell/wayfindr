@@ -77,7 +77,7 @@ class SendUnattendedConversationAlert implements ShouldBeUnique, ShouldQueue
         // or newly active quiet window suppresses this queued copy.
         $agent->refresh();
 
-        if (! $agent->wantsUnattendedAlertEmail()) {
+        if ($agent->isDeactivated() || ! $agent->wantsUnattendedAlertEmail()) {
             return;
         }
 
@@ -90,7 +90,7 @@ class SendUnattendedConversationAlert implements ShouldBeUnique, ShouldQueue
 
         $agent->refresh();
 
-        if (! $agent->wantsUnattendedAlertEmail()) {
+        if ($agent->isDeactivated() || ! $agent->wantsUnattendedAlertEmail()) {
             $collector->releaseDeliveryClaim($candidates, $claim);
 
             return;
