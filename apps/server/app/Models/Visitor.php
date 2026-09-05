@@ -124,6 +124,11 @@ class Visitor extends Model
         return $this->hasMany(Conversation::class);
     }
 
+    public function contactNotes(): HasMany
+    {
+        return $this->hasMany(VisitorNote::class);
+    }
+
     public function requestedTickets(): HasMany
     {
         return $this->hasMany(Ticket::class, 'requester_id');

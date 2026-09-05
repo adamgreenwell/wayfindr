@@ -307,6 +307,8 @@ final class DashboardLanguage
         // only the destination would put a language switch inside the section.
         'dashboard.visitors.index',
         'dashboard.visitors.show',
+        'dashboard.visitors.notes.store',
+        'dashboard.visitors.notes.destroy',
 
         // Visitor attribute definitions are the management half of the
         // translated directory/profile workflow. Validation and success

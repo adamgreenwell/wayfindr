@@ -181,6 +181,12 @@ class AgentVisitorController extends Controller
             'definition' => $definition,
             'value' => $definition->valueFor($visitor),
         ]);
+        $contactNotes = $visitor->contactNotes()
+            ->with('author')
+            ->latest('created_at')
+            ->latest('id')
+            ->paginate(10, ['*'], 'notes_page')
+            ->withQueryString();
 
         return view('agent.visitors.show', [
             'account' => $agent->account()->firstOrFail(),
@@ -188,6 +194,7 @@ class AgentVisitorController extends Controller
             'canManageContacts' => $canManageContacts,
             'canManageTickets' => $canManageTickets,
             'canViewConversations' => $canViewConversations,
+            'contactNotes' => $contactNotes,
             'conversations' => $conversations,
             'customAttributes' => $customAttributes,
             'supportSnapshot' => $this->supportSnapshot(

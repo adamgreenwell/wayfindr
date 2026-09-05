@@ -89,6 +89,8 @@ return [
         'visitor_attribute_created' => 'Besucherattribut erstellt',
         'visitor_attribute_updated' => 'Besucherattribut aktualisiert',
         'visitor_attribute_deleted' => 'Besucherattribut gelöscht',
+        'visitor_note_added' => 'Kontaktnotiz hinzugefügt',
+        'visitor_note_deleted' => 'Kontaktnotiz gelöscht',
         'api_token_created' => 'API-Token ausgestellt',
         'api_token_revoked' => 'API-Token widerrufen',
         'outbound_webhook_created' => 'Ausgehender Webhook erstellt',
