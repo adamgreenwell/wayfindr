@@ -35,6 +35,8 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee('activeSocket.wayfindrNeedsFreshReconcile = Boolean(reconcileThrough || reconcileCursor)', false)
         ->assertSee('if (activeSocket.wayfindrNeedsFreshReconcile)', false)
         ->assertSee('seenAlertVersions', false)
+        ->assertSee('liveAlertVersionKeepUntil', false)
+        ->assertSee('liveAlertVersionRetentionMilliseconds = 5 * 60 * 1000', false)
         ->assertSee('dashboard\/alerts\/reconcile', false)
         ->assertSee("document.title = '(' + count + ') ' + originalTitle", false)
         ->assertSee("favicon.setAttribute('data-agent-alert-state', 'attention')", false)

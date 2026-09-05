@@ -10,6 +10,8 @@
         var pendingAlertCount = 0;
         var seenAlertVersions = {};
         var seenAlertVersionOrder = [];
+        var liveAlertVersionKeepUntil = {};
+        var liveAlertVersionRetentionMilliseconds = 5 * 60 * 1000;
         var reconcileSince = config.reconcileSince;
         var reconcileThrough = null;
         var reconcileCursor = null;
@@ -20,12 +22,23 @@
             rememberAlertVersion(alert.version, alert.alertedAt);
         });
 
-        function rememberAlertVersion(version, alertedAt) {
+        function rememberAlertVersion(version, alertedAt, liveDelivery) {
             var milliseconds = Date.parse(alertedAt);
 
             if (typeof version !== 'string'
-                || ! Number.isFinite(milliseconds)
-                || seenAlertVersions[version] !== undefined) {
+                || ! Number.isFinite(milliseconds)) {
+                return false;
+            }
+
+            if (liveDelivery) {
+                // A rolling-release repair can publish an alert whose durable
+                // timestamp is old. Retain its just-delivered version by local
+                // receipt time long enough to dedupe every queued retry.
+                liveAlertVersionKeepUntil[version] = Date.now()
+                    + liveAlertVersionRetentionMilliseconds;
+            }
+
+            if (seenAlertVersions[version] !== undefined) {
                 return false;
             }
 
@@ -40,18 +53,21 @@
 
         function pruneAlertVersions(keepSince) {
             var cutoff = Date.parse(keepSince);
+            var now = Date.now();
 
             if (! Number.isFinite(cutoff)) {
                 return;
             }
 
             seenAlertVersionOrder = seenAlertVersionOrder.filter(function (entry) {
-                if (entry.milliseconds >= cutoff) {
+                if (entry.milliseconds >= cutoff
+                    || (liveAlertVersionKeepUntil[entry.version] || 0) > now) {
                     return true;
                 }
 
                 if (seenAlertVersions[entry.version] === entry.milliseconds) {
                     delete seenAlertVersions[entry.version];
+                    delete liveAlertVersionKeepUntil[entry.version];
                 }
 
                 return false;
@@ -178,7 +194,7 @@
                 || typeof alert.version !== 'string'
                 || ! alert.data
                 || typeof alert.data !== 'object'
-                || ! rememberAlertVersion(alert.version, alert.alerted_at)) {
+                || ! rememberAlertVersion(alert.version, alert.alerted_at, audible)) {
                 return false;
             }
 
