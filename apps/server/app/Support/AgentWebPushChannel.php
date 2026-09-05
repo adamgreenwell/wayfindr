@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Exceptions\RetryableAgentWebPushException;
 use Generator;
 use Illuminate\Database\Eloquent\Collection;
 use Minishlink\WebPush\MessageSentReport;
 use NotificationChannels\WebPush\PushSubscription;
 use NotificationChannels\WebPush\WebPushChannel;
 use NotificationChannels\WebPush\WebPushMessageInterface;
-use RuntimeException;
 
 /** Process every delivery report, then surface transient failures to the queue. */
 final class AgentWebPushChannel extends WebPushChannel
@@ -37,7 +37,7 @@ final class AgentWebPushChannel extends WebPushChannel
             // The queued listener owns retries and backoff. Do this only after
             // every report has been handled so one failed browser does not
             // prevent successful/expired sibling subscriptions from settling.
-            throw new RuntimeException('Web Push delivery received a retryable failure.');
+            throw new RetryableAgentWebPushException('Web Push delivery received a retryable failure.');
         }
     }
 

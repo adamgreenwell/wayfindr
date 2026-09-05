@@ -6,6 +6,7 @@ namespace App\Listeners;
 
 use App\Enums\AccountPermission;
 use App\Events\AgentAlertStored;
+use App\Exceptions\RetryableAgentWebPushException;
 use App\Models\Account;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
@@ -58,7 +59,9 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
             return;
         }
 
-        DB::transaction(function () use ($accountId, $event): void {
+        $retryableFailure = null;
+
+        DB::transaction(function () use ($accountId, $event, &$retryableFailure): void {
             // Match the account-then-user order used by deactivation, role,
             // site-access, and preference writers. Keep those locks plus the
             // alert row lock through the network send: whichever operation
@@ -102,15 +105,26 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
                 return;
             }
 
-            Notification::sendNow(
-                $recipient,
-                new AgentAlertWebPush(
-                    alertId: (string) $alert->id,
-                    version: $event->version,
-                    dashboardLocale: DashboardLanguage::for($recipient),
-                ),
-                [WebPushChannel::class],
-            );
+            try {
+                Notification::sendNow(
+                    $recipient,
+                    new AgentAlertWebPush(
+                        alertId: (string) $alert->id,
+                        version: $event->version,
+                        dashboardLocale: DashboardLanguage::for($recipient),
+                    ),
+                    [WebPushChannel::class],
+                );
+            } catch (RetryableAgentWebPushException $exception) {
+                // The channel has already processed every report. Commit any
+                // expired-subscription deletions before asking the queue to
+                // retry transient siblings; throwing here would roll them back.
+                $retryableFailure = $exception;
+            }
         });
+
+        if ($retryableFailure instanceof RetryableAgentWebPushException) {
+            throw $retryableFailure;
+        }
     }
 }

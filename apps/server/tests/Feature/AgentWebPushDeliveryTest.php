@@ -1,6 +1,7 @@
 <?php
 
 use App\Events\AgentAlertStored;
+use App\Exceptions\RetryableAgentWebPushException;
 use App\Listeners\SendAgentAlertWebPush;
 use App\Models\Account;
 use App\Models\Site;
@@ -175,6 +176,26 @@ test('an expired Web Push report removes the endpoint without retrying the queue
 
     Http::assertSentCount(1);
     expect($agent->pushSubscriptions()->count())->toBe(0);
+});
+
+test('expired subscription cleanup commits before a transient sibling retries', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'expired');
+    subscribeAgentForPush($agent, 'transient');
+    Http::fake([
+        'push.example.test/subscriptions/expired' => Http::response('', 410),
+        'push.example.test/subscriptions/transient' => Http::response('', 503),
+    ]);
+
+    expect(fn () => app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+    ))->toThrow(RetryableAgentWebPushException::class, 'retryable failure');
+
+    expect($agent->pushSubscriptions()->pluck('endpoint')->all())->toBe([
+        'https://push.example.test/subscriptions/transient',
+    ]);
 });
 
 test('the Web Push transport pins public DNS and refuses private destinations', function (): void {
