@@ -140,6 +140,7 @@
 
             return request(config.storeEndpoint, 'POST', {
                 endpoint: subscription.endpoint,
+                application_server_key: config.publicKey,
                 keys: {
                     p256dh: base64Url(key),
                     auth: base64Url(token),

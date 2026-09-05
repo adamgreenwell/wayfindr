@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\OperatorSetting;
 use App\Models\User;
+use App\Support\Settings\OperatorSettings;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use Closure;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -47,8 +49,11 @@ final class AgentPushSubscriptionController extends Controller
         ]);
     }
 
-    public function store(Request $request, OutboundWebhookDestination $destination): JsonResponse
-    {
+    public function store(
+        Request $request,
+        OutboundWebhookDestination $destination,
+        OperatorSettings $settings,
+    ): JsonResponse {
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
@@ -72,6 +77,7 @@ final class AgentPushSubscriptionController extends Controller
                     }
                 },
             ],
+            'application_server_key' => ['required', 'string', 'max:1024'],
             'keys' => ['required', 'array:p256dh,auth'],
             'keys.p256dh' => [
                 'required',
@@ -99,7 +105,28 @@ final class AgentPushSubscriptionController extends Controller
         ]);
 
         try {
-            $stored = DB::transaction(function () use ($agent, $validated): string {
+            $stored = DB::transaction(function () use ($agent, $settings, $validated): string {
+                // Serialize against VAPID rotation and bypass the versioned
+                // settings cache under the lock. A profile loaded before a key
+                // change must not recreate an old-key subscription after the
+                // rotation transaction has purged it.
+                OperatorSetting::query()->insertOrIgnore([
+                    'key' => 'webpush.public_key',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                OperatorSetting::query()
+                    ->where('key', 'webpush.public_key')
+                    ->sharedLock()
+                    ->firstOrFail();
+                $settings->refreshFromDatabase();
+                $currentPublicKey = trim((string) config('webpush.vapid.public_key'));
+
+                if ($currentPublicKey === ''
+                    || ! hash_equals($currentPublicKey, $validated['application_server_key'])) {
+                    return 'stale_key';
+                }
+
                 $currentAgent = User::query()
                     ->whereKey($agent->id)
                     ->where('account_id', $agent->account_id)
@@ -147,6 +174,7 @@ final class AgentPushSubscriptionController extends Controller
         return match ($stored) {
             'stored' => response()->json(['stored' => true]),
             'limit' => response()->json(['message' => __('profile.alerts.push_limit')], 422),
+            'stale_key' => response()->json(['message' => __('profile.alerts.push_configuration_changed')], 409),
             default => response()->json(['message' => __('profile.alerts.push_owned_elsewhere')], 409),
         };
     }

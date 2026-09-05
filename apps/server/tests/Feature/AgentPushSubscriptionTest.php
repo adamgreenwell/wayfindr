@@ -2,7 +2,9 @@
 
 use App\Enums\PlatformRole;
 use App\Models\Account;
+use App\Models\OperatorSetting;
 use App\Models\User;
+use App\Support\Settings\OperatorSettings;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use NotificationChannels\WebPush\PushSubscription;
@@ -14,6 +16,10 @@ beforeEach(function (): void {
         OutboundWebhookDestination::class,
         new OutboundWebhookDestination(fn (): array => ['8.8.8.8']),
     );
+
+    $settings = app(OperatorSettings::class);
+    $settings->set('webpush.public_key', 'current-vapid-public-key');
+    $settings->applyOverrides();
 });
 
 function agentPushPayload(string $endpoint = 'https://push.example.test/subscription/one', string $seed = 'a'): array
@@ -22,6 +28,7 @@ function agentPushPayload(string $endpoint = 'https://push.example.test/subscrip
 
     return [
         'endpoint' => $endpoint,
+        'application_server_key' => (string) config('webpush.vapid.public_key'),
         'keys' => [
             'p256dh' => rtrim(strtr(base64_encode($publicKey), '+/', '-_'), '='),
             'auth' => rtrim(strtr(base64_encode(str_repeat($seed, 16)), '+/', '-_'), '='),
@@ -66,6 +73,36 @@ test('an agent can store and refresh only their own browser subscription', funct
 
     expect(PushSubscription::query()->count())->toBe(1)
         ->and($subscription->fresh()->public_key)->toBe($refreshed['keys']['p256dh']);
+});
+
+test('a stale profile cannot recreate a subscription after VAPID rotation', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $stalePayload = agentPushPayload();
+
+    // Simulate a committed rotation without its cache-version bump reaching
+    // this request yet. The store path must refresh under the shared lock.
+    OperatorSetting::query()
+        ->where('key', 'webpush.public_key')
+        ->update(['value' => 'rotated-vapid-public-key']);
+
+    expect(config('webpush.vapid.public_key'))->toBe('current-vapid-public-key');
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.profile.push-subscription.store'), $stalePayload)
+        ->assertConflict()
+        ->assertExactJson([
+            'message' => __('profile.alerts.push_configuration_changed'),
+        ]);
+
+    expect(PushSubscription::query()->count())->toBe(0);
+
+    $source = file_get_contents(app_path('Http/Controllers/AgentPushSubscriptionController.php'));
+
+    expect($source)
+        ->toContain("->where('key', 'webpush.public_key')")
+        ->toContain('->sharedLock()')
+        ->toContain('$settings->refreshFromDatabase()')
+        ->toContain("\$validated['application_server_key']");
 });
 
 test('a browser endpoint is never reassigned from another signed-in profile', function (): void {
@@ -203,6 +240,9 @@ test('subscription input requires HTTPS and correctly sized Web Push keys', func
     'short auth token' => [[
         'keys' => ['auth' => 'YQ'],
     ], ['keys.auth']],
+    'missing VAPID generation' => [[
+        'application_server_key' => null,
+    ], ['application_server_key']],
 ]);
 
 test('a subscription endpoint must resolve only to public addresses', function (): void {
