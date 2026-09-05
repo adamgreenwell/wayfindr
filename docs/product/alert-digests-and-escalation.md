@@ -21,7 +21,7 @@ Wayfindr already has the pieces needed for calm alert routing:
 - queued email delivery for configured installs, including digest email;
 - mail readiness checks and a mail smoke command;
 - agent profile preferences for all supported-site alerts, assigned-only alerts,
-  quiet mode, email delivery, and email cadence;
+  quiet mode, scheduled quiet hours, email delivery, and email cadence;
 - hourly alert digest scheduling through Laravel's scheduler;
 - digest delivery state on the agent profile, account roster, and operator
   readiness screens;
@@ -39,6 +39,29 @@ The first digest setting is per-agent because alert fatigue is personal and
 support workloads differ. Account-level defaults can come later when teams need
 a shared operating policy. Site-level overrides should wait until site staffing
 patterns prove they are needed.
+
+Scheduled quiet hours follow the same per-agent boundary. An agent chooses one
+daily start and end time, interpreted in their dashboard timezone; an end earlier
+than the start wraps through midnight. The maximum window is 22 hours, leaving
+at least two hours each day for the hourly digest sweep and the five-minute
+unattended sweep to reach pending work, including around clock changes. During
+that window Wayfindr still stores and renders eligible dashboard alerts, but
+pauses the interruptive copies: local sound, Web Push, immediate email,
+unattended email, and digest delivery. The next scheduled unattended or digest
+sweep can deliver still-current work after the window ends. Their queue jobs
+rebuild the current candidate set, re-check the agent immediately before mail
+transport handoff, and only stamp delivery after that handoff succeeds. Before
+SMTP, each job writes a durable claim over the exact last-activity version it is
+about to send; later alert activity can replace an older claim without
+resending the uncertain version. A transport rejection releases that claim for
+a normal retry. If SMTP has
+accepted the message but finalizing its delivery stamp fails, Wayfindr keeps the
+claim and logs the uncertain delivery for operator inspection; later jobs skip
+the claimed state instead of risking duplicate customer mail. This at-most-once
+boundary also means a worker lost after claiming but before a confirmed handoff
+needs operator inspection rather than an automatic resend. This is deliberately
+different from manual quiet mode, which suppresses new support alerts until the
+agent turns it off.
 
 Suggested preference shape:
 
@@ -127,6 +150,8 @@ create noisy alerts.
 ## Guardrails
 
 - Respect quiet mode.
+- Respect each agent's scheduled quiet hours at delivery time without discarding
+  the durable dashboard alert.
 - Re-check site access and deactivated-agent status at send time.
 - Keep platform operators out of customer support alerts unless a separate
   customer-data access path grants it.
@@ -143,6 +168,10 @@ create noisy alerts.
 The first digest path is intentionally modest and useful:
 
 - agents choose immediate or digest email cadence from their profile;
+- agents can pause sound, Web Push, and every email cadence during a daily quiet
+  window on their own dashboard clock;
+- already-open dashboards refresh the authenticated sound gate before each tone,
+  so quiet-hour and sound changes take effect without reloading the page;
 - dashboard notifications stay immediate so the app remains current;
 - digest-enabled agents skip event-by-event email for eligible support alerts;
 - `php artisan wayfindr:alert-digest-preview` shows metadata-only candidates
@@ -202,6 +231,10 @@ same current access and delivery rules and are documented in
    implemented.
 9. Add automatic escalation policies only when there is a clear account setting,
    tests, and UI copy that explains what will happen.
+10. Scheduled quiet hours are implemented as a per-agent delivery gate. They
+    reuse the dashboard timezone, support overnight windows, preserve durable
+    alerts, re-check queued notification channels before sending, and gate
+    unattended or digest mail when each scheduler sweep selects recipients.
 
 ## Open Questions
 

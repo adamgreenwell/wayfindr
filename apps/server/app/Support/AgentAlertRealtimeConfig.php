@@ -24,11 +24,13 @@ final class AgentAlertRealtimeConfig
      *     identityChannelName: string,
      *     knownAlerts: list<array{alertedAt: string, version: string}>,
      *     port: string,
+     *     quietHours: array{enabled: bool, start: string, end: string, timezone: string},
      *     realtimeReceiptEndpoint: string,
      *     reconcileEndpoint: string,
      *     reconcileOverlapSeconds: int,
      *     reconcileSince: string,
      *     scheme: string,
+     *     soundGateEndpoint: string,
      *     soundEnabled: bool
      * }|null
      */
@@ -79,11 +81,13 @@ final class AgentAlertRealtimeConfig
             'identityChannelName' => 'presence-agents.'.$agent->id,
             'knownAlerts' => $knownAlerts,
             'port' => $reverb['port'],
+            'quietHours' => $agent->alertQuietHours(),
             'realtimeReceiptEndpoint' => route('dashboard.alerts.realtime-receipt'),
             'reconcileEndpoint' => route('dashboard.alerts.reconcile'),
             'reconcileOverlapSeconds' => self::RECONCILIATION_OVERLAP_SECONDS,
             'reconcileSince' => $reconcileSince->toJSON(),
             'scheme' => $reverb['scheme'],
+            'soundGateEndpoint' => route('dashboard.alerts.sound-gate'),
             'soundEnabled' => $agent->alertSoundEnabled(),
         ];
     }

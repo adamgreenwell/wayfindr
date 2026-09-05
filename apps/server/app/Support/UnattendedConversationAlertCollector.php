@@ -29,6 +29,8 @@ class UnattendedConversationAlertCollector
 {
     public const UNATTENDED_EMAILED_AT_KEY = 'unattended_emailed_at';
 
+    public const UNATTENDED_DELIVERY_CLAIM_KEY = 'unattended_delivery_claim';
+
     public const WAITING_SINCE_KEY = 'unattended_waiting_since';
 
     public const THRESHOLD_MINUTES = 5;
@@ -60,6 +62,7 @@ class UnattendedConversationAlertCollector
             // One email per waiting episode: the stamp lives on the unread
             // notification and is dropped when a new episode begins.
             ->reject(fn (DatabaseNotification $notification): bool => filled(data_get($notification->data, self::UNATTENDED_EMAILED_AT_KEY)))
+            ->reject(fn (DatabaseNotification $notification): bool => filled(data_get($notification->data, self::UNATTENDED_DELIVERY_CLAIM_KEY)))
             ->map(fn (DatabaseNotification $notification): ?array => $this->candidateFor($agent, $notification))
             ->filter()
             ->values();
@@ -68,8 +71,7 @@ class UnattendedConversationAlertCollector
     private function agentWantsUnattendedAlerts(User $agent): bool
     {
         return ! $agent->isDeactivated()
-            && $agent->wantsUnattendedAlertEmail()
-            && $agent->alertMode() !== User::ALERT_MODE_QUIET;
+            && $agent->wantsUnattendedAlertEmail();
     }
 
     /** Keep the shared queue/alert clock aligned with human message episodes. */
@@ -230,33 +232,97 @@ class UnattendedConversationAlertCollector
     }
 
     /**
-     * Stamp the notifications behind the just-emailed candidates — but only
-     * while they still belong to the emailed episode. The listener may have
-     * re-armed a notification (new clock, stamp dropped) between collection
-     * and this write; stamping the NEW episode would silently swallow its
-     * email.
+     * Persist an idempotency claim for the exact waiting episodes to be sent.
+     *
+     * @param  Collection<int, array{notification_id: string, waiting_since: string|null}>  $candidates
+     * @return Collection<int, array{notification_id: string, waiting_since: string|null}>
+     */
+    public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
+    {
+        return DB::transaction(function () use ($agent, $candidates, $claim): Collection {
+            $candidateByNotification = $candidates->keyBy('notification_id');
+            $claimed = collect();
+
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($agent, $candidateByNotification, $claim, $claimed): void {
+                    $candidate = $candidateByNotification->get((string) $notification->id);
+                    $current = $this->candidateFor($agent, $notification);
+
+                    if (filled(data_get($notification->data, self::UNATTENDED_DELIVERY_CLAIM_KEY))
+                        || ! is_array($candidate)
+                        || $current === null
+                        || $current['waiting_since'] !== $candidate['waiting_since']) {
+                        return;
+                    }
+
+                    $notification->forceFill([
+                        'data' => [
+                            ...$notification->data,
+                            self::UNATTENDED_DELIVERY_CLAIM_KEY => $claim,
+                        ],
+                    ])->save();
+                    $claimed->push($candidate);
+                });
+
+            return $claimed->values();
+        });
+    }
+
+    /**
+     * Finalize only the exact waiting episodes covered by SMTP acceptance.
      *
      * @param  Collection<int, array{notification_id: string, waiting_since: string|null}>  $candidates
      */
-    public function stampEmailed(Collection $candidates, CarbonInterface $emailedAt): void
+    public function acceptDeliveryClaim(Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
     {
-        $episodeByNotification = $candidates->pluck('waiting_since', 'notification_id');
+        DB::transaction(function () use ($candidates, $claim, $acceptedAt): void {
+            $episodeByNotification = $candidates->pluck('waiting_since', 'notification_id');
 
-        DatabaseNotification::query()
-            ->whereIn('id', $candidates->pluck('notification_id')->all())
-            ->get()
-            ->each(function (DatabaseNotification $notification) use ($emailedAt, $episodeByNotification): void {
-                if ($this->waitingSince($notification)->toISOString() !== $episodeByNotification->get((string) $notification->id)) {
-                    return;
-                }
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($episodeByNotification, $claim, $acceptedAt): void {
+                    if (! hash_equals($claim, (string) data_get($notification->data, self::UNATTENDED_DELIVERY_CLAIM_KEY))) {
+                        return;
+                    }
 
-                $notification->forceFill([
-                    'data' => [
-                        ...$notification->data,
-                        self::UNATTENDED_EMAILED_AT_KEY => $emailedAt->toISOString(),
-                    ],
-                ])->save();
-            });
+                    $data = $notification->data;
+                    unset($data[self::UNATTENDED_DELIVERY_CLAIM_KEY]);
+
+                    if ($this->waitingSince($notification)->toISOString() === $episodeByNotification->get((string) $notification->id)) {
+                        $data[self::UNATTENDED_EMAILED_AT_KEY] = $acceptedAt->toISOString();
+                    }
+
+                    $notification->forceFill(['data' => $data])->save();
+                });
+        });
+    }
+
+    /** Release a pre-SMTP claim only when this exact job still owns it. */
+    public function releaseDeliveryClaim(Collection $candidates, string $claim): void
+    {
+        DB::transaction(function () use ($candidates, $claim): void {
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($claim): void {
+                    if (! hash_equals($claim, (string) data_get($notification->data, self::UNATTENDED_DELIVERY_CLAIM_KEY))) {
+                        return;
+                    }
+
+                    $data = $notification->data;
+                    unset($data[self::UNATTENDED_DELIVERY_CLAIM_KEY]);
+                    $notification->forceFill(['data' => $data])->save();
+                });
+        });
     }
 
     public function anyAgentSawSince(int $conversationId, CarbonImmutable $episodeStart): bool

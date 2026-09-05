@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\SendAgentAlertDigest;
 use App\Mail\AlertDigestMessage;
 use App\Models\Account;
 use App\Models\Conversation;
@@ -10,7 +11,12 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
+use App\Support\AlertDigestCandidateCollector;
+use App\Support\Sla\SlaAlertRouting;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -68,7 +74,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->and($deliveryStatus['message'])->toBe('Queued digest email with 2 alerts.')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 
-    Mail::assertQueued(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
+    Mail::assertSent(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
         $renderedMail = $mail->render();
 
         return $mail->hasTo($agent->email)
@@ -96,7 +102,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->and(Artisan::output())->toContain('No alert digest emails queued.')
         ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 0. Candidates: 0.');
 
-    Mail::assertQueuedCount(1);
+    Mail::assertSentCount(1);
 
     $this->travelTo(now()->addMinutes(5));
     $ticket->forceFill([
@@ -118,7 +124,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->and($deliveryStatus['message'])->toBe('Queued digest email with 1 alert.')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 
-    Mail::assertQueued(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
+    Mail::assertSent(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
         $renderedMail = $mail->render();
 
         return $mail->hasTo($agent->email)
@@ -129,7 +135,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
             && ! str_contains($renderedMail, 'Checkout trouble');
     });
 
-    Mail::assertQueuedCount(2);
+    Mail::assertSentCount(2);
 });
 
 test('alert digest send command reports empty and missing-agent states without queueing mail', function (): void {
@@ -156,7 +162,7 @@ test('alert digest send command reports empty and missing-agent states without q
         ->and($deliveryStatus['message'])->toBe('No digest-ready alerts found.')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 
-    Mail::assertNothingQueued();
+    Mail::assertNothingSent();
 
     $exitCode = Artisan::call('wayfindr:send-alert-digests', [
         '--email' => 'missing@example.test',
@@ -164,6 +170,140 @@ test('alert digest send command reports empty and missing-agent states without q
 
     expect($exitCode)->toBe(1)
         ->and(Artisan::output())->toContain('No agent found for missing@example.test.');
+});
+
+test('alert digest delivery waits until agent quiet hours end', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account, [
+        'email' => 'quiet-digest@example.test',
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create();
+    createDigestMailConversationAlert(agent: $agent, site: $site);
+
+    expect(Artisan::call('wayfindr:send-alert-digests', ['--email' => $agent->email]))->toBe(0)
+        ->and(Artisan::output())->toContain('Agents scanned: 0. Emails queued: 0. Candidates: 0.');
+    Mail::assertNothingSent();
+    expect(data_get($agent->fresh()->alert_preferences, 'digest_delivery'))->toBeNull();
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
+
+    expect(Artisan::call('wayfindr:send-alert-digests', ['--email' => $agent->email]))->toBe(0)
+        ->and(Artisan::output())->toContain('Agents scanned: 1. Emails queued: 1. Candidates: 1.');
+    Mail::assertSentCount(1);
+});
+
+test('a queued digest rechecks quiet hours before sending or stamping candidates', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 01:59:00', 'UTC'));
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account, [
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create();
+    createDigestMailConversationAlert(agent: $agent, site: $site);
+    $job = new SendAgentAlertDigest($agent->id, 1);
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 02:00:00', 'UTC'));
+    $job->handle(app(AlertDigestCandidateCollector::class));
+
+    Mail::assertNothingSent();
+    expect(data_get($agent->fresh()->alert_preferences, 'digest_delivery'))->toBeNull();
+    $agent->fresh()->unreadNotifications->each(function ($notification): void {
+        expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->toBeNull();
+    });
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
+    $job->handle(app(AlertDigestCandidateCollector::class));
+
+    Mail::assertSentCount(1);
+    expect(data_get($agent->fresh()->alert_preferences, 'digest_delivery.status'))->toBe(User::ALERT_DIGEST_DELIVERY_QUEUED);
+    $agent->fresh()->unreadNotifications->each(function ($notification): void {
+        expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->not->toBeNull();
+    });
+});
+
+test('an accepted digest keeps a durable claim when finalization is uncertain', function (): void {
+    Mail::fake();
+    Log::spy();
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account);
+    $site = Site::factory()->for($account)->create();
+    createDigestMailConversationAlert(agent: $agent, site: $site);
+    $collector = new class(app(SlaAlertRouting::class)) extends AlertDigestCandidateCollector
+    {
+        public function acceptDeliveryClaim(User $agent, Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
+        {
+            throw new RuntimeException('Database unavailable after SMTP acceptance.');
+        }
+    };
+    $job = new SendAgentAlertDigest($agent->id, 1);
+
+    $job->handle($collector);
+
+    Mail::assertSentCount(1);
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+    $deliveryClaim = data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY);
+
+    expect($deliveryClaim)->toBeArray()
+        ->and(data_get($deliveryClaim, 'token'))->toBeString()->not->toBe('')
+        ->and(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->toBeNull()
+        ->and(app(AlertDigestCandidateCollector::class)->forAgent($agent->fresh()))->toBeEmpty();
+
+    $job->handle(app(AlertDigestCandidateCollector::class));
+    Mail::assertSentCount(1);
+    Log::shouldHaveReceived('critical')->once();
+});
+
+test('an uncertain digest claim does not suppress an advanced alert version', function (): void {
+    Mail::fake();
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account);
+    $assigningAgent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create();
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+    $collector = app(AlertDigestCandidateCollector::class);
+    $original = $collector->forAgent($agent);
+
+    expect($original)->toHaveCount(1)
+        ->and($collector->claimForDelivery($agent, $original, 'uncertain-old-version'))->toHaveCount(1)
+        ->and($collector->forAgent($agent->fresh()))->toBeEmpty();
+
+    $this->travel(1)->minutes();
+    $ticket->forceFill(['priority' => 'high'])->save();
+
+    $advanced = $collector->forAgent($agent->fresh());
+
+    expect($advanced)->toHaveCount(1)
+        ->and($advanced->first()['last_activity_at'])->not->toBe($original->first()['last_activity_at']);
+
+    (new SendAgentAlertDigest($agent->id, 1))->handle($collector);
+
+    Mail::assertSentCount(1);
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+    expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY))->toBeNull()
+        ->and(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->not->toBeNull();
 });
 
 test('alert digest send command records failed delivery attempts', function (): void {
@@ -206,6 +346,11 @@ test('alert digest send command records failed delivery attempts', function (): 
         ->and($deliveryStatus['message'])->toBe('Digest email could not be queued.')
         ->and($deliveryStatus)->not->toHaveKey('error')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
+
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+
+    expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY))->toBeNull()
+        ->and(app(AlertDigestCandidateCollector::class)->forAgent($agent->fresh()))->toHaveCount(1);
 });
 
 test('digest delivery state locks the account before updating the agent preferences', function (): void {

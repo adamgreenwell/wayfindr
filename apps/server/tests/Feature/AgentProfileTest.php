@@ -5,6 +5,7 @@ use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\Settings\OperatorSettings;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -168,6 +169,115 @@ test('agent can update their alert preference mode', function (): void {
         'email' => true,
         'sound' => true,
     ]);
+});
+
+test('agent can schedule quiet hours in their profile timezone', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
+    $agent = User::factory()->for(Account::factory())->create([
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee('name="quiet_hours_enabled"', false)
+        ->assertSee('name="quiet_hours_start"', false)
+        ->assertSee('value="22:00"', false)
+        ->assertSee('name="quiet_hours_end"', false)
+        ->assertSee('value="07:00"', false)
+        ->assertSee('Sounds, Web Push, and email pause during this window in America/New_York.')
+        ->assertSee('Active now')
+        ->assertSee('Quiet hours are active, so email alerts will resume when the quiet window ends.');
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ASSIGNED,
+            'email_alerts' => '1',
+            'quiet_hours_enabled' => '1',
+            'quiet_hours_start' => '23:15',
+            'quiet_hours_end' => '06:45',
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHasNoErrors();
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => User::ALERT_MODE_ASSIGNED,
+        'quiet_hours' => [
+            'enabled' => true,
+            'start' => '23:15',
+            'end' => '06:45',
+        ],
+    ]);
+
+    // Older or partial callers that know nothing about quiet hours must not
+    // erase the schedule while changing an unrelated alert preference.
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect(data_get($agent->fresh()->alert_preferences, 'quiet_hours'))->toBe([
+        'enabled' => true,
+        'start' => '23:15',
+        'end' => '06:45',
+    ]);
+});
+
+test('enabled quiet hours require distinct valid bounds', function (array $payload, array $errors): void {
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'quiet_hours_enabled' => '1',
+            ...$payload,
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHasErrors($errors);
+})->with([
+    'missing start' => [['quiet_hours_end' => '07:00'], ['quiet_hours_start']],
+    'missing end' => [['quiet_hours_start' => '22:00'], ['quiet_hours_end']],
+    'invalid clock' => [['quiet_hours_start' => '25:00', 'quiet_hours_end' => '07:00'], ['quiet_hours_start']],
+    'equal bounds' => [['quiet_hours_start' => '22:00', 'quiet_hours_end' => '22:00'], ['quiet_hours_end']],
+    'longer than twenty two hours' => [['quiet_hours_start' => '07:00', 'quiet_hours_end' => '06:59'], ['quiet_hours_end']],
+]);
+
+test('agent can disable a stale quiet window that is longer than the current limit', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '07:00',
+                'end' => '06:59',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'quiet_hours_enabled' => '0',
+            'quiet_hours_start' => '07:00',
+            'quiet_hours_end' => '06:59',
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHasNoErrors();
+
+    expect(data_get($agent->fresh()->alert_preferences, 'quiet_hours.enabled'))->toBeFalse();
 });
 
 test('agent can turn the optional dashboard alert sound off', function (): void {

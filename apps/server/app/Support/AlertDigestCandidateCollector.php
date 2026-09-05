@@ -15,11 +15,14 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class AlertDigestCandidateCollector
 {
     public const DIGEST_QUEUED_AT_KEY = 'digest_queued_at';
+
+    public const DIGEST_DELIVERY_CLAIM_KEY = 'digest_delivery_claim';
 
     public function __construct(private readonly SlaAlertRouting $slaAlertRouting) {}
 
@@ -47,7 +50,16 @@ class AlertDigestCandidateCollector
             ->latest()
             ->get()
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
-            ->map(fn (DatabaseNotification $notification): ?array => $this->candidateFor($agent, $notification))
+            ->map(function (DatabaseNotification $notification) use ($agent): ?array {
+                $candidate = $this->candidateFor($agent, $notification);
+
+                if ($candidate === null
+                    || $this->deliveryClaimCovers($notification, $candidate['last_activity_at'])) {
+                    return null;
+                }
+
+                return $candidate;
+            })
             ->filter()
             ->values();
     }
@@ -56,8 +68,127 @@ class AlertDigestCandidateCollector
     {
         return ! $agent->isDeactivated()
             && $agent->alertEmailEnabled()
-            && $agent->alertMode() !== User::ALERT_MODE_QUIET
+            && ! $agent->alertInterruptionsPaused()
             && $agent->alertCadence() === User::ALERT_CADENCE_DIGEST;
+    }
+
+    /**
+     * Persist an idempotency claim before handing a digest to SMTP.
+     *
+     * @param  Collection<int, array{last_activity_at: string|null, notification_id: string}>  $candidates
+     * @return Collection<int, array{last_activity_at: string|null, notification_id: string}>
+     */
+    public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
+    {
+        return DB::transaction(function () use ($agent, $candidates, $claim): Collection {
+            $candidateByNotification = $candidates->keyBy('notification_id');
+            $claimed = collect();
+
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($agent, $candidateByNotification, $claim, $claimed): void {
+                    $candidate = $candidateByNotification->get((string) $notification->id);
+                    $current = $this->candidateFor($agent, $notification);
+
+                    if (! is_array($candidate)
+                        || $current === null
+                        || $current['last_activity_at'] !== $candidate['last_activity_at']
+                        || $this->deliveryClaimCovers($notification, $current['last_activity_at'])) {
+                        return;
+                    }
+
+                    $notification->forceFill([
+                        'data' => [
+                            ...$notification->data,
+                            self::DIGEST_DELIVERY_CLAIM_KEY => [
+                                'token' => $claim,
+                                'last_activity_at' => $candidate['last_activity_at'],
+                            ],
+                        ],
+                    ])->save();
+                    $claimed->push($candidate);
+                });
+
+            return $claimed->values();
+        });
+    }
+
+    /**
+     * Finalize only the exact states covered by an accepted SMTP handoff.
+     *
+     * @param  Collection<int, array{last_activity_at: string|null, notification_id: string}>  $candidates
+     */
+    public function acceptDeliveryClaim(User $agent, Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
+    {
+        DB::transaction(function () use ($agent, $candidates, $claim, $acceptedAt): void {
+            $sentByNotification = $candidates->keyBy('notification_id');
+
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($agent, $sentByNotification, $claim, $acceptedAt): void {
+                    if (! $this->deliveryClaimIsOwnedBy($notification, $claim)) {
+                        return;
+                    }
+
+                    $sent = $sentByNotification->get((string) $notification->id);
+                    $current = $this->candidateFor($agent, $notification);
+                    $data = $notification->data;
+                    unset($data[self::DIGEST_DELIVERY_CLAIM_KEY]);
+
+                    if (is_array($sent)
+                        && $current !== null
+                        && $current['last_activity_at'] === $sent['last_activity_at']) {
+                        $data[self::DIGEST_QUEUED_AT_KEY] = $acceptedAt->toISOString();
+                    }
+
+                    $notification->forceFill(['data' => $data])->save();
+                });
+        });
+    }
+
+    /** Release a pre-SMTP claim only when this exact job still owns it. */
+    public function releaseDeliveryClaim(Collection $candidates, string $claim): void
+    {
+        DB::transaction(function () use ($candidates, $claim): void {
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($claim): void {
+                    if (! $this->deliveryClaimIsOwnedBy($notification, $claim)) {
+                        return;
+                    }
+
+                    $data = $notification->data;
+                    unset($data[self::DIGEST_DELIVERY_CLAIM_KEY]);
+                    $notification->forceFill(['data' => $data])->save();
+                });
+        });
+    }
+
+    private function deliveryClaimCovers(DatabaseNotification $notification, ?string $lastActivityAt): bool
+    {
+        $claim = data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY);
+
+        return is_array($claim)
+            && array_key_exists('last_activity_at', $claim)
+            && $claim['last_activity_at'] === $lastActivityAt
+            && is_string(data_get($claim, 'token'))
+            && data_get($claim, 'token') !== '';
+    }
+
+    private function deliveryClaimIsOwnedBy(DatabaseNotification $notification, string $claim): bool
+    {
+        $token = data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY.'.token');
+
+        return is_string($token) && hash_equals($claim, $token);
     }
 
     /**

@@ -54,7 +54,7 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
                 if (! in_array($assessment['status'], ['ready', 'unavailable'], true)
                     || ! $event->recipient->alertPushEnabled()
-                    || $event->recipient->alertMode() === User::ALERT_MODE_QUIET) {
+                    || $event->recipient->alertInterruptionsPaused()) {
                     return false;
                 }
 
@@ -133,7 +133,7 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
             if (! $recipient instanceof User
                 || $recipient->isDeactivated()
-                || $recipient->alertMode() === User::ALERT_MODE_QUIET
+                || $recipient->alertInterruptionsPaused()
                 || ! $recipient->alertPushEnabled()
                 || ! $recipient->hasAccountPermission(AccountPermission::ViewAlerts)) {
                 return;

@@ -74,11 +74,18 @@ test('agent alert realtime config uses the existing browser transport and recipi
             'identityChannelName' => 'presence-agents.'.$agent->id,
             'knownAlerts' => [],
             'port' => '443',
+            'quietHours' => [
+                'enabled' => false,
+                'start' => User::ALERT_QUIET_HOURS_DEFAULT_START,
+                'end' => User::ALERT_QUIET_HOURS_DEFAULT_END,
+                'timezone' => 'UTC',
+            ],
             'realtimeReceiptEndpoint' => 'http://localhost:8000/dashboard/alerts/realtime-receipt',
             'reconcileEndpoint' => 'http://localhost:8000/dashboard/alerts/reconcile',
             'reconcileOverlapSeconds' => 30,
             'reconcileSince' => '2026-09-05T11:59:35.000000Z',
             'scheme' => 'https',
+            'soundGateEndpoint' => 'http://localhost:8000/dashboard/alerts/sound-gate',
             'soundEnabled' => true,
         ]);
 
@@ -343,7 +350,12 @@ test('publication sweep closes the zero downtime writer window without replaying
         DB::table('notifications')->where('id', $alert->id)->update([
             'data' => json_encode([
                 ...$refreshed->data,
+                'digest_delivery_claim' => [
+                    'token' => 'digest-claim',
+                    'last_activity_at' => '2026-09-05T12:00:05Z',
+                ],
                 'unattended_emailed_at' => '2026-09-05T12:00:06Z',
+                'unattended_delivery_claim' => 'unattended-claim',
                 'digest_queued_at' => '2026-09-05T12:00:07Z',
             ]),
             'read_at' => CarbonImmutable::parse('2026-09-05T12:00:08Z'),

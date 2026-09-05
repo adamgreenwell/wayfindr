@@ -9,7 +9,9 @@ final class AgentAlertPublicationFingerprint
 {
     /** @var list<string> */
     private const BOOKKEEPING_KEYS = [
+        AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY,
         AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY,
+        UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY,
         UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY,
     ];
 

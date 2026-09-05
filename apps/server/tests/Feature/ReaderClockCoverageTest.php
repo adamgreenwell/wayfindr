@@ -89,6 +89,10 @@ const READER_CLOCK_EXEMPT_LINES = [
     // stale. Named by shape rather than by file, because its display twin
     // `label()` lives beside it and must stay checked.
     'return $timestamp?->toISOString();' => 'the machine half of a labelled pair',
+
+    // Stored on notification data and parsed back as a delivery watermark;
+    // unlike the candidate label beside it, this value is never rendered.
+    '$data[self::DIGEST_QUEUED_AT_KEY] = $acceptedAt->toISOString();' => 'a stored digest watermark',
 ];
 
 /**

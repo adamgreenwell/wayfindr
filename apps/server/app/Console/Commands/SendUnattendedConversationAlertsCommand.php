@@ -2,13 +2,12 @@
 
 namespace App\Console\Commands;
 
-use App\Mail\UnattendedConversationAlertMessage;
+use App\Jobs\SendUnattendedConversationAlert;
 use App\Models\User;
 use App\Support\UnattendedConversationAlertCollector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 class SendUnattendedConversationAlertsCommand extends Command
@@ -34,7 +33,6 @@ class SendUnattendedConversationAlertsCommand extends Command
 
         foreach ($this->eligibleAgents($email) as $agent) {
             $agentsScanned++;
-            $attemptedAt = now();
 
             $candidates = $collector->forAgent($agent);
 
@@ -43,15 +41,9 @@ class SendUnattendedConversationAlertsCommand extends Command
             }
 
             try {
-                Mail::to($agent->email)->queue(new UnattendedConversationAlertMessage(
-                    agentName: $agent->name,
-                    candidates: $candidates->all(),
-                    generatedAt: $attemptedAt,
-                ));
+                SendUnattendedConversationAlert::dispatchPending($agent->id);
 
                 $emailsQueued++;
-
-                $collector->stampEmailed($candidates, $attemptedAt);
 
                 $this->line("Queued unattended alert for {$agent->name} <{$agent->email}> with {$candidates->count()} waiting conversation(s).");
             } catch (Throwable $exception) {
@@ -88,8 +80,7 @@ class SendUnattendedConversationAlertsCommand extends Command
             ->orderBy('email')
             ->get()
             ->filter(fn (User $agent): bool => ! $agent->isDeactivated()
-                && $agent->wantsUnattendedAlertEmail()
-                && $agent->alertMode() !== User::ALERT_MODE_QUIET)
+                && $agent->wantsUnattendedAlertEmail())
             ->values();
     }
 }

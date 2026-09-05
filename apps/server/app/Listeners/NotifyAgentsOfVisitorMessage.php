@@ -14,6 +14,8 @@ use App\Support\Automation\AutomationRuleEngine;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class NotifyAgentsOfVisitorMessage
 {
@@ -82,52 +84,74 @@ class NotifyAgentsOfVisitorMessage
 
     private function notifyAgent(User $agent, ConversationNeedsReply $notification, Conversation $conversation): void
     {
-        $existingNotification = $this->existingUnreadConversationNotification($agent, $conversation->id);
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            $refreshedNotification = DB::transaction(function () use ($agent, $notification, $conversation): DatabaseNotification|false|null {
+                $existingNotification = $this->existingUnreadConversationNotification($agent, $conversation->id);
 
-        if (! $existingNotification) {
-            $agent->notify($notification);
+                if (! $existingNotification) {
+                    $agent->notify($notification);
+
+                    return null;
+                }
+
+                $existingData = $existingNotification->data;
+                $messageCount = max(1, (int) data_get($existingData, 'message_count', 1)) + 1;
+
+                $data = [
+                    ...$notification->toArray($agent),
+                    'message_count' => $messageCount,
+                ];
+
+                // The waiting episode ends when an agent REPLIES or anyone SEES the
+                // conversation. A follow-up inside the same episode keeps the episode
+                // clock and the emailed stamp (no re-arm, no premature email); a
+                // fresh visitor message after either boundary starts a NEW episode —
+                // clock reset to now, stamp dropped, email re-armed with a full
+                // threshold. Without the seen boundary, a viewed-but-never-answered
+                // conversation could wait forever in silence.
+                $waitingSince = data_get($existingData, UnattendedConversationAlertCollector::WAITING_SINCE_KEY);
+                $waitingSince = is_string($waitingSince) && $waitingSince !== ''
+                    ? $waitingSince
+                    : $existingNotification->created_at->toISOString();
+
+                if (
+                    $this->agentRepliedSince($conversation, $waitingSince)
+                    || $this->unattendedAlerts->anyAgentSawSince($conversation->id, CarbonImmutable::parse($waitingSince))
+                ) {
+                    $episodeStartedAt = now()->toISOString();
+                    $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $episodeStartedAt;
+                } else {
+                    $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $waitingSince;
+
+                    $unattendedEmailedAt = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY);
+
+                    if (is_string($unattendedEmailedAt) && $unattendedEmailedAt !== '') {
+                        $data[UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY] = $unattendedEmailedAt;
+                    }
+
+                    $unattendedDeliveryClaim = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY);
+
+                    if (is_string($unattendedDeliveryClaim) && $unattendedDeliveryClaim !== '') {
+                        $data[UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY] = $unattendedDeliveryClaim;
+                    }
+                }
+
+                return $this->storeRefreshedDataIfCurrent($existingNotification, $data) ?? false;
+            });
+
+            if ($refreshedNotification === false) {
+                continue;
+            }
+
+            if ($refreshedNotification instanceof DatabaseNotification) {
+                // Broadcast only after the locked refresh commits.
+                $this->alertBroadcaster->stored($agent, $refreshedNotification);
+            }
 
             return;
         }
 
-        $existingData = $existingNotification->data;
-        $messageCount = max(1, (int) data_get($existingData, 'message_count', 1)) + 1;
-
-        $data = [
-            ...$notification->toArray($agent),
-            'message_count' => $messageCount,
-        ];
-
-        // The waiting episode ends when an agent REPLIES or anyone SEES the
-        // conversation. A follow-up inside the same episode keeps the episode
-        // clock and the emailed stamp (no re-arm, no premature email); a
-        // fresh visitor message after either boundary starts a NEW episode —
-        // clock reset to now, stamp dropped, email re-armed with a full
-        // threshold. Without the seen boundary, a viewed-but-never-answered
-        // conversation could wait forever in silence.
-        $waitingSince = data_get($existingData, UnattendedConversationAlertCollector::WAITING_SINCE_KEY);
-        $waitingSince = is_string($waitingSince) && $waitingSince !== ''
-            ? $waitingSince
-            : $existingNotification->created_at->toISOString();
-
-        if (
-            $this->agentRepliedSince($conversation, $waitingSince)
-            || $this->unattendedAlerts->anyAgentSawSince($conversation->id, CarbonImmutable::parse($waitingSince))
-        ) {
-            $episodeStartedAt = now()->toISOString();
-            $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $episodeStartedAt;
-        } else {
-            $data[UnattendedConversationAlertCollector::WAITING_SINCE_KEY] = $waitingSince;
-
-            $unattendedEmailedAt = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY);
-
-            if (is_string($unattendedEmailedAt) && $unattendedEmailedAt !== '') {
-                $data[UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY] = $unattendedEmailedAt;
-            }
-        }
-
-        $existingNotification->forceFill(['data' => $data])->save();
-        $this->alertBroadcaster->stored($agent, $existingNotification);
+        throw new RuntimeException('The conversation alert changed repeatedly while it was refreshed.');
     }
 
     private function agentRepliedSince(Conversation $conversation, string $timestamp): bool
@@ -142,7 +166,30 @@ class NotifyAgentsOfVisitorMessage
     {
         return $agent->unreadNotifications()
             ->where('type', ConversationNeedsReply::class)
+            ->reorder('id')
+            ->lockForUpdate()
             ->get()
             ->first(fn (DatabaseNotification $notification): bool => (int) data_get($notification->data, 'conversation_id') === $conversationId);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function storeRefreshedDataIfCurrent(DatabaseNotification $notification, array $data): ?DatabaseNotification
+    {
+        $originalData = (string) $notification->getRawOriginal('data');
+        $notification->forceFill([
+            'data' => $data,
+            'updated_at' => now(),
+        ]);
+        $attributes = $notification->getAttributes();
+        $updated = DatabaseNotification::query()
+            ->whereKey($notification->getKey())
+            ->whereNull('read_at')
+            ->where('data', $originalData)
+            ->update([
+                'data' => $attributes['data'],
+                'updated_at' => $attributes['updated_at'],
+            ]);
+
+        return $updated === 1 ? $notification->fresh() : null;
     }
 }

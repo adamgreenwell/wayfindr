@@ -17,6 +17,7 @@
         var reconcileCursor = null;
         var reconcileSoundPlayed = false;
         var audioContext = null;
+        var soundGateRequest = null;
 
         (config.knownAlerts || []).forEach(function (alert) {
             rememberAlertVersion(alert.version, alert.alertedAt);
@@ -138,8 +139,97 @@
             return window.AudioContext || window.webkitAudioContext || null;
         }
 
+        function quietTimeMinutes(value) {
+            var match = typeof value === 'string'
+                ? value.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+                : null;
+
+            return match ? (Number(match[1]) * 60) + Number(match[2]) : null;
+        }
+
+        function quietHoursActive() {
+            var quietHours = config.quietHours;
+
+            if (! quietHours || quietHours.enabled !== true) {
+                return false;
+            }
+
+            try {
+                var parts = new Intl.DateTimeFormat('en-GB', {
+                    hour: '2-digit',
+                    hour12: false,
+                    hourCycle: 'h23',
+                    minute: '2-digit',
+                    timeZone: quietHours.timezone,
+                }).formatToParts(new Date());
+                var values = {};
+
+                parts.forEach(function (part) {
+                    values[part.type] = part.value;
+                });
+
+                var current = quietTimeMinutes(values.hour + ':' + values.minute);
+                var start = quietTimeMinutes(quietHours.start);
+                var end = quietTimeMinutes(quietHours.end);
+
+                if (current === null || start === null || end === null || start === end) {
+                    // A configured quiet period should fail silent in an older
+                    // browser rather than unexpectedly waking the agent.
+                    return true;
+                }
+
+                return start < end
+                    ? current >= start && current < end
+                    : current >= start || current < end;
+            } catch (error) {
+                return true;
+            }
+        }
+
+        function refreshSoundGate() {
+            if (soundGateRequest) {
+                return soundGateRequest;
+            }
+
+            soundGateRequest = window.fetch(config.soundGateEndpoint, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                },
+            }).then(function (response) {
+                if (! response.ok) {
+                    throw new Error('Alert sound preferences could not be refreshed.');
+                }
+
+                return response.json();
+            }).then(function (payload) {
+                var data = payload && payload.data;
+
+                if (! data
+                    || typeof data.interruptions_paused !== 'boolean'
+                    || typeof data.sound_enabled !== 'boolean'
+                    || ! data.quiet_hours
+                    || typeof data.quiet_hours !== 'object') {
+                    throw new Error('Alert sound preferences were invalid.');
+                }
+
+                config.quietHours = data.quiet_hours;
+                config.soundEnabled = data.sound_enabled;
+
+                return config.soundEnabled && ! data.interruptions_paused;
+            }).catch(function () {
+                // An unverified sound decision fails silent. The durable title
+                // and favicon attention cues still update normally.
+                return false;
+            }).finally(function () {
+                soundGateRequest = null;
+            });
+
+            return soundGateRequest;
+        }
+
         function armSound() {
-            if (! config.soundEnabled || audioContext) {
+            if (audioContext) {
                 return;
             }
 
@@ -164,28 +254,35 @@
         }
 
         function playSound() {
-            if (! config.soundEnabled || ! audioContext || audioContext.state !== 'running') {
+            if (! audioContext
+                || audioContext.state !== 'running') {
                 return;
             }
 
-            try {
-                var oscillator = audioContext.createOscillator();
-                var gain = audioContext.createGain();
-                var startsAt = audioContext.currentTime;
+            refreshSoundGate().then(function (soundAllowed) {
+                if (! soundAllowed || quietHoursActive()) {
+                    return;
+                }
 
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(660, startsAt);
-                gain.gain.setValueAtTime(0.0001, startsAt);
-                gain.gain.exponentialRampToValueAtTime(0.055, startsAt + 0.015);
-                gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + 0.16);
-                oscillator.connect(gain);
-                gain.connect(audioContext.destination);
-                oscillator.start(startsAt);
-                oscillator.stop(startsAt + 0.17);
-            } catch (error) {
-                // Sound is optional. Never let an audio implementation fault
-                // suppress the title, favicon, or underlying database alert.
-            }
+                try {
+                    var oscillator = audioContext.createOscillator();
+                    var gain = audioContext.createGain();
+                    var startsAt = audioContext.currentTime;
+
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(660, startsAt);
+                    gain.gain.setValueAtTime(0.0001, startsAt);
+                    gain.gain.exponentialRampToValueAtTime(0.055, startsAt + 0.015);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + 0.16);
+                    oscillator.connect(gain);
+                    gain.connect(audioContext.destination);
+                    oscillator.start(startsAt);
+                    oscillator.stop(startsAt + 0.17);
+                } catch (error) {
+                    // Sound is optional. Never let an audio implementation fault
+                    // suppress the title, favicon, or underlying database alert.
+                }
+            });
         }
 
         function announceAlert(alert, audible) {
@@ -232,10 +329,8 @@
         document.addEventListener('visibilitychange', foregroundStateChanged);
         window.addEventListener('focus', foregroundStateChanged);
 
-        if (config.soundEnabled) {
-            document.addEventListener('pointerdown', armSound, { once: true });
-            document.addEventListener('keydown', armSound, { once: true });
-        }
+        document.addEventListener('pointerdown', armSound, { once: true });
+        document.addEventListener('keydown', armSound, { once: true });
 
         if (! window.WebSocket) {
             return;
