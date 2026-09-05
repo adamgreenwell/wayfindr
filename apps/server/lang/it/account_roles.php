@@ -29,6 +29,7 @@ return [
         'manage_agents' => ['label' => 'Gestisci agenti', 'detail' => 'Aggiunta dei membri del team e sospensione degli agenti ordinari.'],
         'manage_sites' => ['label' => 'Gestisci siti', 'detail' => 'Creazione, modifica, archiviazione e ripristino dei siti.'],
         'manage_site_access' => ['label' => 'Gestisci accesso ai siti', 'detail' => 'Scelta delle persone che possono assistere ogni sito.'],
+        'manage_contacts' => ['label' => 'Gestisci contatti', 'detail' => 'Definisca gli attributi dei visitatori e gestisca i contatti sui siti assegnati.'],
         'manage_privacy_settings' => ['label' => 'Gestisci impostazioni privacy', 'detail' => 'Gestione dei controlli sui dati dei visitatori e sulla privacy.'],
         'manage_integrations' => ['label' => 'Gestisci integrazioni', 'detail' => 'Configurazione di provider, token API, webhook e instradamento.'],
         'manage_knowledge' => ['label' => 'Gestisci conoscenza', 'detail' => 'Creazione e pubblicazione di articoli, risposte ed etichette dei ticket.'],

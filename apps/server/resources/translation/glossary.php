@@ -132,6 +132,10 @@ return [
             // The established Italian UI term for an authentication secret;
             // translating it as `parola d’ordine` would be less familiar.
             'Password',
+            // The ordinary negative answer is spelled identically in Italian;
+            // replacing it with a longer phrase would make this tiny boolean
+            // value less natural merely to avoid an English collision.
+            'No',
             // Established in the ticket catalogues and used as the visible
             // integration-field label; `fornitore` would introduce a second
             // term for the same external service on adjacent surfaces.

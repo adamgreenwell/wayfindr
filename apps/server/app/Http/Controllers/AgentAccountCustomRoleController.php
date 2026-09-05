@@ -276,7 +276,7 @@ final class AgentAccountCustomRoleController extends Controller
     {
         return [
             'team' => [AccountPermission::ManageAgents, AccountPermission::ManageSiteAccess],
-            'support' => [AccountPermission::ViewConversations, AccountPermission::ReplyToConversations, AccountPermission::ManageConversations, AccountPermission::RequestCobrowse, AccountPermission::ManageTickets, AccountPermission::AssignTickets, AccountPermission::ManageAutomations, AccountPermission::ViewAlerts],
+            'support' => [AccountPermission::ViewConversations, AccountPermission::ReplyToConversations, AccountPermission::ManageConversations, AccountPermission::RequestCobrowse, AccountPermission::ManageTickets, AccountPermission::AssignTickets, AccountPermission::ManageContacts, AccountPermission::ManageAutomations, AccountPermission::ViewAlerts],
             'content' => [AccountPermission::ManageKnowledge],
             'account' => [AccountPermission::ManageSites, AccountPermission::ManagePrivacySettings, AccountPermission::ManageIntegrations, AccountPermission::ManageSecurity, AccountPermission::ManageOperatorAccess, AccountPermission::ViewReports, AccountPermission::ViewAudit],
         ];

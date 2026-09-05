@@ -365,6 +365,15 @@
                             <span class="management-action">{{ __('account.management.actions.manage') }}</span>
                         </a>
                     @endif
+                    @if ($canManageContacts)
+                        <a class="management-link" href="{{ route('dashboard.account.visitor-attributes.index') }}">
+                            <span>
+                                <strong>{{ __('account.management.items.visitor_attributes.label') }}</strong>
+                                <span class="lede">{{ __('account.management.items.visitor_attributes.detail') }}</span>
+                            </span>
+                            <span class="management-action">{{ __('account.management.actions.manage') }}</span>
+                        </a>
+                    @endif
                     @if ($canManageKnowledge)
                         <a class="management-link" href="{{ route('dashboard.account.articles.index') }}">
                             <span>

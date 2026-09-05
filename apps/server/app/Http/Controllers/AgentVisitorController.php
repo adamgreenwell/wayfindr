@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\Visitor;
+use App\Models\VisitorAttributeDefinition;
 use App\Support\ReaderNumber;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\VisitorContextSanitizer;
@@ -40,8 +41,14 @@ class AgentVisitorController extends Controller
         abort_unless($agent->hasAnyAccountPermission(
             AccountPermission::ViewConversations,
             AccountPermission::ManageTickets,
+            AccountPermission::ManageContacts,
         ), 403);
         $account = $agent->account()->firstOrFail();
+        $canManageContacts = $agent->hasAccountPermission(AccountPermission::ManageContacts);
+        $attributeDefinitions = $account->visitorAttributeDefinitions()
+            ->orderBy('label')
+            ->orderBy('id')
+            ->get();
 
         // Read before narrowing, exactly as the search and site filters below
         // do. Casting first meant `?presence[]=active` raised an "Array to
@@ -54,6 +61,18 @@ class AgentVisitorController extends Controller
 
         $search = $request->query('search', '');
         $search = is_string($search) ? mb_substr(trim($search), 0, 120) : '';
+
+        $attributeKey = $request->query('attribute', '');
+        $attributeKey = is_string($attributeKey) ? mb_substr(trim($attributeKey), 0, 64) : '';
+        $attributeDefinition = $attributeDefinitions->firstWhere('key', $attributeKey);
+        $attributeKey = $attributeDefinition?->key ?? '';
+
+        $attributeValue = $request->query('attribute_value', '');
+        $attributeValue = is_string($attributeValue) ? mb_substr(trim($attributeValue), 0, 160) : '';
+        $normalizedAttributeValue = $attributeDefinition?->type->normalize($attributeValue);
+        $attributeFilterInvalid = $attributeDefinition !== null
+            && $attributeValue !== ''
+            && $normalizedAttributeValue === null;
 
         $siteId = $request->query('site', '');
         $visibleSites = $account->sites()->visibleToAgent($agent)->orderBy('name')->get();
@@ -94,6 +113,10 @@ class AgentVisitorController extends Controller
                 ->orWhereLike('anonymous_id', $pattern));
         }
 
+        if ($attributeDefinition !== null && $normalizedAttributeValue !== null) {
+            $query->where('metadata->context->'.$attributeDefinition->key, $normalizedAttributeValue);
+        }
+
         if ($canViewConversations) {
             $query->withCount('conversations');
         }
@@ -115,6 +138,11 @@ class AgentVisitorController extends Controller
         return view('agent.visitors.index', [
             'account' => $account,
             'agent' => $agent,
+            'attributeDefinitions' => $attributeDefinitions,
+            'attributeFilterInvalid' => $attributeFilterInvalid,
+            'attributeKey' => $attributeKey,
+            'attributeValue' => $attributeValue,
+            'canManageContacts' => $canManageContacts,
             'canViewConversations' => $canViewConversations,
             'listsBrowsers' => $listsBrowsers,
             'presence' => $presence,
@@ -134,19 +162,31 @@ class AgentVisitorController extends Controller
         $visitor->loadMissing('site.account');
         $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
         $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canManageContacts = $agent->hasAccountPermission(AccountPermission::ManageContacts);
         $canReplyToConversations = $agent->hasAccountPermission(AccountPermission::ReplyToConversations);
         $canAssignTickets = $agent->hasAccountPermission(AccountPermission::AssignTickets);
         $conversations = $canViewConversations ? $this->visitorConversations($visitor) : collect();
         $tickets = $canManageTickets
             ? $this->visitorTickets($visitor, $canViewConversations)
             : collect();
+        $attributeDefinitions = VisitorAttributeDefinition::query()
+            ->where('account_id', $visitor->site->account_id)
+            ->orderBy('label')
+            ->orderBy('id')
+            ->get();
+        $customAttributes = $attributeDefinitions->map(fn (VisitorAttributeDefinition $definition): array => [
+            'definition' => $definition,
+            'value' => $definition->valueFor($visitor),
+        ]);
 
         return view('agent.visitors.show', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
+            'canManageContacts' => $canManageContacts,
             'canManageTickets' => $canManageTickets,
             'canViewConversations' => $canViewConversations,
             'conversations' => $conversations,
+            'customAttributes' => $customAttributes,
             'supportSnapshot' => $this->supportSnapshot(
                 $visitor,
                 $canViewConversations,
@@ -162,7 +202,12 @@ class AgentVisitorController extends Controller
             ),
             'tickets' => $tickets,
             'visitor' => $visitor,
-            'visitorContext' => $this->visitorContext($visitor, $visitorContextSanitizer),
+            'visitorContext' => $this->visitorContext(
+                $visitor,
+                $visitorContextSanitizer,
+                $attributeDefinitions->pluck('key')->all(),
+                $canViewConversations,
+            ),
         ]);
     }
 
@@ -207,19 +252,31 @@ class AgentVisitorController extends Controller
     }
 
     /**
+     * @param  list<string>  $definedAttributeKeys
      * @return array{anonymous_id: string, external_id: string|null, last_seen_at: CarbonInterface|null, last_page_url: string|null, first_started_page_url: string|null, host_context: array<string, string>}
      */
-    private function visitorContext(Visitor $visitor, VisitorContextSanitizer $visitorContextSanitizer): array
-    {
+    private function visitorContext(
+        Visitor $visitor,
+        VisitorContextSanitizer $visitorContextSanitizer,
+        array $definedAttributeKeys,
+        bool $canViewConversations,
+    ): array {
         $visitorMetadata = $visitor->metadata ?? [];
+        $hostContext = $visitorContextSanitizer->sanitize($visitorMetadata['context'] ?? []);
+
+        foreach ($definedAttributeKeys as $key) {
+            unset($hostContext[$key]);
+        }
 
         return [
             'anonymous_id' => $visitor->anonymous_id,
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id),
             'last_seen_at' => $visitor->last_seen_at,
             'last_page_url' => $this->contextString($visitorMetadata['last_page_url'] ?? null),
-            'first_started_page_url' => $this->firstStartedPageUrl($visitor),
-            'host_context' => $visitorContextSanitizer->sanitize($visitorMetadata['context'] ?? []),
+            'first_started_page_url' => $canViewConversations
+                ? $this->firstStartedPageUrl($visitor)
+                : null,
+            'host_context' => $hostContext,
         ];
     }
 

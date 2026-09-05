@@ -18,6 +18,7 @@ use App\Models\OutboundWebhookEndpoint;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Models\VisitorAttributeDefinition;
 use App\Support\ReaderClock;
 use App\Support\SpreadsheetSafeCsv;
 use Illuminate\Contracts\View\View;
@@ -37,6 +38,11 @@ class AgentAccountAuditController extends Controller
         $visibleSiteIds = $this->siteIds($visibleSites);
         $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
         $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canViewVisitorIdentity = $agent->hasAnyAccountPermission(
+            AccountPermission::ViewConversations,
+            AccountPermission::ManageTickets,
+            AccountPermission::ManageContacts,
+        );
         $baseQuery = $this->baseAuditQuery($account, $visibleSiteIds);
         $availableActions = $this->availableActions($baseQuery);
         [$auditAction, $auditSearch, $auditSiteId] = $this->filters($request, $availableActions, $visibleSiteIds);
@@ -49,10 +55,12 @@ class AgentAccountAuditController extends Controller
             50,
             $canViewConversations,
             $canManageTickets,
+            $canViewVisitorIdentity,
         )->map(fn (AuditEvent $event): array => $this->auditItem(
             $event,
             $canViewConversations,
             $canManageTickets,
+            $canViewVisitorIdentity,
         ));
 
         return view('agent.account.audit', [
@@ -75,6 +83,11 @@ class AgentAccountAuditController extends Controller
         $visibleSiteIds = $this->siteIds($this->visibleSites($account, $agent));
         $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
         $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canViewVisitorIdentity = $agent->hasAnyAccountPermission(
+            AccountPermission::ViewConversations,
+            AccountPermission::ManageTickets,
+            AccountPermission::ManageContacts,
+        );
         $baseQuery = $this->baseAuditQuery($account, $visibleSiteIds);
         [$auditAction, $auditSearch, $auditSiteId] = $this->filters($request, $this->availableActions($baseQuery), $visibleSiteIds);
         $auditEvents = $this->auditEvents(
@@ -85,9 +98,10 @@ class AgentAccountAuditController extends Controller
             500,
             $canViewConversations,
             $canManageTickets,
+            $canViewVisitorIdentity,
         );
 
-        return response()->streamDownload(function () use ($auditEvents, $canViewConversations, $canManageTickets): void {
+        return response()->streamDownload(function () use ($auditEvents, $canViewConversations, $canManageTickets, $canViewVisitorIdentity): void {
             $stream = fopen('php://output', 'w');
 
             if ($stream === false) {
@@ -97,7 +111,7 @@ class AgentAccountAuditController extends Controller
             fputcsv($stream, ['occurred_at', 'action', 'label', 'actor', 'subject', 'site']);
 
             foreach ($auditEvents as $event) {
-                fputcsv($stream, $this->auditCsvRow($event, $canViewConversations, $canManageTickets));
+                fputcsv($stream, $this->auditCsvRow($event, $canViewConversations, $canManageTickets, $canViewVisitorIdentity));
             }
 
             fclose($stream);
@@ -219,6 +233,7 @@ class AgentAccountAuditController extends Controller
         int $limit,
         bool $canViewConversations,
         bool $canManageTickets,
+        bool $canViewVisitorIdentity,
     ): Collection {
         return $this->applyAuditFilters(
             clone $baseQuery,
@@ -227,6 +242,7 @@ class AgentAccountAuditController extends Controller
             $auditSiteId,
             $canViewConversations,
             $canManageTickets,
+            $canViewVisitorIdentity,
         )
             ->latest('occurred_at')
             ->latest('id')
@@ -248,13 +264,17 @@ class AgentAccountAuditController extends Controller
      *     site: array{prefix: string|null, value: string|null}
      * }
      */
-    private function auditItem(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): array
-    {
+    private function auditItem(
+        AuditEvent $event,
+        bool $canViewConversations,
+        bool $canManageTickets,
+        bool $canViewVisitorIdentity,
+    ): array {
         return [
             'occurred_at' => $event->occurred_at === null ? '' : ReaderClock::dateTime($event->occurred_at),
             'action' => $event->action,
             'label' => $this->translatedAuditLabel($event->action),
-            'actor' => $this->auditActorParts($event, $canViewConversations || $canManageTickets),
+            'actor' => $this->auditActorParts($event, $canViewVisitorIdentity),
             'subject' => $this->auditSubjectParts($event, $canViewConversations, $canManageTickets),
             'site' => $event->site
                 ? ['prefix' => null, 'value' => $event->site->name]
@@ -265,8 +285,12 @@ class AgentAccountAuditController extends Controller
     /**
      * @return array<int, string>
      */
-    private function auditCsvRow(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): array
-    {
+    private function auditCsvRow(
+        AuditEvent $event,
+        bool $canViewConversations,
+        bool $canManageTickets,
+        bool $canViewVisitorIdentity,
+    ): array {
         // Stable English reference labels and a sortable timestamp on purpose:
         // the file may be read under a different locale from the dashboard that
         // downloaded it, or keyed by a script rather than read by a person.
@@ -276,7 +300,7 @@ class AgentAccountAuditController extends Controller
                 : ReaderClock::moment($event->occurred_at)->toDateTimeString(),
             $event->action,
             $this->auditLabel($event->action),
-            $this->auditActor($event, $canViewConversations || $canManageTickets),
+            $this->auditActor($event, $canViewVisitorIdentity),
             $this->auditSubject($event, $canViewConversations, $canManageTickets),
             $event->site?->name ?? 'Account',
         ]);
@@ -293,14 +317,15 @@ class AgentAccountAuditController extends Controller
         ?int $auditSiteId,
         bool $canViewConversations,
         bool $canManageTickets,
+        bool $canViewVisitorIdentity,
     ): Builder {
         return $query
             ->when($auditAction !== '', fn (Builder $query) => $query->where('action', $auditAction))
             ->when($auditSiteId !== null, fn (Builder $query) => $query->where('site_id', $auditSiteId))
-            ->when($auditSearch !== '', function (Builder $query) use ($auditSearch, $canViewConversations, $canManageTickets): void {
+            ->when($auditSearch !== '', function (Builder $query) use ($auditSearch, $canViewConversations, $canManageTickets, $canViewVisitorIdentity): void {
                 $searchPattern = '%'.$auditSearch.'%';
 
-                $query->where(function (Builder $query) use ($searchPattern, $canViewConversations, $canManageTickets): void {
+                $query->where(function (Builder $query) use ($searchPattern, $canViewConversations, $canManageTickets, $canViewVisitorIdentity): void {
                     $query
                         ->whereLike('action', $searchPattern)
                         ->orWhereHas('site', fn (Builder $query) => $query
@@ -321,6 +346,8 @@ class AgentAccountAuditController extends Controller
                         ->orWhereHasMorph('subject', [CustomRole::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern))
                         ->orWhereLike('metadata->role_name', $searchPattern)
+                        ->orWhereLike('metadata->attribute_key', $searchPattern)
+                        ->orWhereLike('metadata->attribute_label', $searchPattern)
                         ->orWhereLike('metadata->name', $searchPattern)
                         ->orWhereLike('metadata->old_role_name', $searchPattern)
                         ->orWhereLike('metadata->new_role_name', $searchPattern)
@@ -337,7 +364,7 @@ class AgentAccountAuditController extends Controller
                             ->whereHas('connection', fn (Builder $query) => $query->whereLike('name', $searchPattern)))
                         ->orWhereLike('metadata->oidc_provider_name', $searchPattern);
 
-                    if ($canViewConversations || $canManageTickets) {
+                    if ($canViewVisitorIdentity) {
                         $query->orWhereHasMorph('actor', [Visitor::class], fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern)
@@ -412,6 +439,9 @@ class AgentAccountAuditController extends Controller
             'custom_role.created' => 'Custom role created',
             'custom_role.updated' => 'Custom role updated',
             'custom_role.deleted' => 'Custom role deleted',
+            'visitor_attribute.created' => 'Visitor attribute created',
+            'visitor_attribute.updated' => 'Visitor attribute updated',
+            'visitor_attribute.deleted' => 'Visitor attribute deleted',
             'site_access.updated' => 'Site access updated',
             'site.routing_updated' => 'Automatic assignment updated',
             'conversation.assignee_updated' => 'Conversation owner updated',
@@ -505,6 +535,15 @@ class AgentAccountAuditController extends Controller
                 'value' => $event->subject instanceof CustomRole
                     ? $event->subject->name
                     : $this->customRoleName($event),
+            ];
+        }
+
+        if ($event->subject instanceof VisitorAttributeDefinition || $this->isDeletedVisitorAttributeSubject($event)) {
+            return [
+                'prefix' => __('account_audit.references.visitor_attribute'),
+                'value' => $event->subject instanceof VisitorAttributeDefinition
+                    ? $event->subject->label
+                    : $this->visitorAttributeLabel($event),
             ];
         }
 
@@ -719,6 +758,12 @@ class AgentAccountAuditController extends Controller
                 : $this->customRoleName($event));
         }
 
+        if ($event->subject instanceof VisitorAttributeDefinition || $this->isDeletedVisitorAttributeSubject($event)) {
+            return 'Visitor attribute '.($event->subject instanceof VisitorAttributeDefinition
+                ? $event->subject->label
+                : $this->visitorAttributeLabel($event));
+        }
+
         if ($event->subject instanceof Site) {
             return $event->subject->name;
         }
@@ -776,6 +821,20 @@ class AgentAccountAuditController extends Controller
     {
         return $event->subject === null
             && $event->subject_type === (new CustomRole)->getMorphClass();
+    }
+
+    private function isDeletedVisitorAttributeSubject(AuditEvent $event): bool
+    {
+        return $event->subject === null
+            && $event->subject_type === (new VisitorAttributeDefinition)->getMorphClass();
+    }
+
+    private function visitorAttributeLabel(AuditEvent $event): string
+    {
+        $label = data_get($event->metadata, 'attribute_label')
+            ?? data_get($event->metadata, 'attribute_key');
+
+        return is_string($label) && $label !== '' ? $label : '#'.$event->subject_id;
     }
 
     private function customRoleName(AuditEvent $event): string

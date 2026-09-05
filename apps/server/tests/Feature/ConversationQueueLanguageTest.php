@@ -1693,6 +1693,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.automation-macros.create'),
         route('dashboard.account.automation-macros.edit', $automationMacro),
         route('dashboard.account.labels.index'),
+        route('dashboard.account.visitor-attributes.index'),
         route('dashboard.account.api-tokens.index'),
         route('dashboard.account.audit.index'),
         route('dashboard.account.break-glass.index'),

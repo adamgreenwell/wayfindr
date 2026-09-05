@@ -60,6 +60,20 @@ class VisitorContextSanitizer
     }
 
     /**
+     * A definition is useful only when the same key could survive ingestion.
+     * Keeping that decision here prevents the account UI from blessing keys
+     * such as `email` or `api_token` that this sanitizer will always discard.
+     */
+    public function isSafeContextKey(mixed $key): bool
+    {
+        $label = $this->safeLabel($key);
+
+        return $label !== null
+            && $label === $key
+            && ! $this->looksSensitiveKey($label);
+    }
+
+    /**
      * @param  array<string, mixed>|null  $metadata
      * @return array<string, mixed>
      */

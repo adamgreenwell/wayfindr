@@ -29,6 +29,7 @@ return [
         'manage_agents' => ['label' => 'Agenten verwalten', 'detail' => 'Teammitglieder hinzufügen und gewöhnliche Agenten sperren.'],
         'manage_sites' => ['label' => 'Websites verwalten', 'detail' => 'Websites erstellen, bearbeiten, archivieren und wiederherstellen.'],
         'manage_site_access' => ['label' => 'Website-Zugriff verwalten', 'detail' => 'Festlegen, wer jede Website betreuen darf.'],
+        'manage_contacts' => ['label' => 'Kontakte verwalten', 'detail' => 'Besucherattribute definieren und Kontaktdatensätze auf zugewiesenen Websites verwalten.'],
         'manage_privacy_settings' => ['label' => 'Datenschutzeinstellungen verwalten', 'detail' => 'Besucherdaten- und Datenschutzkontrollen ändern.'],
         'manage_integrations' => ['label' => 'Integrationen verwalten', 'detail' => 'Anbieter, API-Token, Webhooks und Routing konfigurieren.'],
         'manage_knowledge' => ['label' => 'Wissen verwalten', 'detail' => 'Artikel, Antworten und Ticket-Labels erstellen und veröffentlichen.'],

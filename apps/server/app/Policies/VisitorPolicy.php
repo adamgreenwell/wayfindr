@@ -16,6 +16,7 @@ class VisitorPolicy
             && $user->hasAnyAccountPermission(
                 AccountPermission::ViewConversations,
                 AccountPermission::ManageTickets,
+                AccountPermission::ManageContacts,
             )
             && $visitor->site?->supportsAgent($user) === true;
     }
