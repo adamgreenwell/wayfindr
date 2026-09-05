@@ -212,6 +212,12 @@ test('a contacts-only role can use assigned visitor records without gaining supp
         ->assertSee('Customer plan');
 
     $this->actingAs($contactManager)
+        ->get(route('dashboard.account.show'))
+        ->assertOk()
+        ->assertSee('href="'.route('dashboard.account.visitor-attributes.index').'"', false)
+        ->assertDontSee('href="'.route('dashboard.sites.index').'"', false);
+
+    $this->actingAs($contactManager)
         ->get(route('dashboard.visitors.index'))
         ->assertOk()
         ->assertSee('Contact Record')

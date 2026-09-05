@@ -132,7 +132,6 @@ class AgentAccountController extends Controller
                 AccountPermission::ManageSites,
                 AccountPermission::ManageSiteAccess,
                 AccountPermission::ManagePrivacySettings,
-                AccountPermission::ManageContacts,
                 AccountPermission::ManageIntegrations,
                 AccountPermission::ViewAudit,
                 AccountPermission::ViewConversations,
