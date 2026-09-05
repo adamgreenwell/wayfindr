@@ -340,6 +340,39 @@ test('profile fallback refuses a cross-database endpoint deletion', function ():
         ->toBe($subscription->endpoint);
 });
 
+test('unrelated preference saves skip incompatible subscription storage', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => false,
+            'push' => false,
+            'sound' => false,
+        ],
+    ]);
+    config()->set('database.connections.webpush-unavailable', [
+        'driver' => 'sqlite',
+        'database' => storage_path('framework/testing/webpush-unavailable/push.sqlite'),
+        'prefix' => '',
+        'foreign_key_constraints' => true,
+    ]);
+    config()->set('webpush.database_connection', 'webpush-unavailable');
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ASSIGNED,
+            'email_alerts' => '1',
+            'sound_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => User::ALERT_MODE_ASSIGNED,
+        'email' => true,
+        'push' => false,
+        'sound' => true,
+    ]);
+});
+
 test('profile cleanup refreshes VAPID settings under the rotation lock', function (): void {
     $oldKeys = VAPID::createVapidKeys();
     $newKeys = VAPID::createVapidKeys();

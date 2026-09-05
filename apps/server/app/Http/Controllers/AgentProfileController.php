@@ -183,14 +183,15 @@ class AgentProfileController extends Controller
         $sound = $request->boolean('sound_alerts');
         $pushRequested = $request->boolean('push_alerts');
         $removedEndpoint = trim((string) ($validated['push_subscription_endpoint'] ?? ''));
+        $pushStorageCompatible = AgentPushSubscription::usesPrimaryDatabaseConnection();
 
-        if ($removedEndpoint !== '' && ! AgentPushSubscription::usesPrimaryDatabaseConnection()) {
+        if ($removedEndpoint !== '' && ! $pushStorageCompatible) {
             throw ValidationException::withMessages([
                 'push_alerts' => __('profile.alerts.push_storage_incompatible'),
             ]);
         }
 
-        DB::transaction(function () use ($accountId, $email, $pushRequested, $removedEndpoint, $sound, $userId, $validated): void {
+        DB::transaction(function () use ($accountId, $email, $pushRequested, $pushStorageCompatible, $removedEndpoint, $sound, $userId, $validated): void {
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()
                 ->whereKey($userId)
@@ -214,7 +215,9 @@ class AgentProfileController extends Controller
             // An environment-key generation can be transitional during a
             // rolling deploy. Preserve the agent-level channel preference on
             // unrelated saves while any owned browser generation remains.
-            $push = $pushRequested || $ownedSubscriptions()->exists();
+            $push = $pushStorageCompatible
+                ? $pushRequested || $ownedSubscriptions()->exists()
+                : $agent->alertPushEnabled();
             $alertPreferences = $agent->alert_preferences ?? [];
 
             $agent->forceFill([
