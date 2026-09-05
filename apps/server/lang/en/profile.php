@@ -140,6 +140,7 @@ return [
         'cadence_help' => 'Digest delivery bundles eligible email alerts when the scheduler runs. Unattended only emails when a visitor message waits unseen. Dashboard alerts stay immediate.',
         'last_digest' => 'Last digest',
         'email_help' => 'Email alerts send the same calm support signals to your inbox when mail is configured. Quiet mode still suppresses new alerts.',
+        'dedup_help' => 'Wayfindr delivers each alert once outside the alert center: first to a live dashboard, then by Web Push, then through your selected email cadence as the fallback.',
         'delivery_ready' => 'Email delivery ready',
         'delivery_attention' => 'Email delivery needs attention',
         'save' => 'Save alert preferences',

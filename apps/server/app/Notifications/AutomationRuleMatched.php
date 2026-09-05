@@ -6,6 +6,7 @@ use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Notifications\Concerns\CoordinatesAgentAlertMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\Gate;
 
 class AutomationRuleMatched extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use CoordinatesAgentAlertMail, Queueable;
 
     public function __construct(
         private readonly Ticket|Conversation $subject,
@@ -68,19 +69,19 @@ class AutomationRuleMatched extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        if ($this->automationKind === 'macro') {
-            return (new MailMessage)
+        $message = $this->automationKind === 'macro'
+            ? (new MailMessage)
                 ->subject('Wayfindr macro applied: '.$this->ruleName)
                 ->line('Macro “'.$this->ruleName.'” was applied to '.$this->subjectLabel().'.')
                 ->line('Site: '.$this->subject->site->name)
+                ->action('Open support work', url($this->subjectUrl()))
+            : (new MailMessage)
+                ->subject('Wayfindr automation matched: '.$this->ruleName)
+                ->line('Automation “'.$this->ruleName.'” matched '.$this->subjectLabel().'.')
+                ->line('Site: '.$this->subject->site->name)
                 ->action('Open support work', url($this->subjectUrl()));
-        }
 
-        return (new MailMessage)
-            ->subject('Wayfindr automation matched: '.$this->ruleName)
-            ->line('Automation “'.$this->ruleName.'” matched '.$this->subjectLabel().'.')
-            ->line('Site: '.$this->subject->site->name)
-            ->action('Open support work', url($this->subjectUrl()));
+        return $this->coordinateAgentAlertMail($message);
     }
 
     /** @return array<string, mixed> */

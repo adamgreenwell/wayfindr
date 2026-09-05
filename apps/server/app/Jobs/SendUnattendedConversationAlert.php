@@ -103,6 +103,7 @@ class SendUnattendedConversationAlert implements ShouldBeUnique, ShouldQueue
                 agentName: $agent->name,
                 candidates: $candidates->all(),
                 generatedAt: $deliveredAt,
+                deliveryClaim: $claim,
             ));
         } catch (Throwable $exception) {
             try {

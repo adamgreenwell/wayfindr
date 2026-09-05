@@ -2,11 +2,13 @@
 
 namespace App\Mail;
 
+use App\Support\AgentAlertDeliveryCoordinator;
 use Carbon\CarbonInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Mail\Mailables\Headers;
 use Illuminate\Queue\SerializesModels;
 
 class AlertDigestMessage extends Mailable
@@ -31,7 +33,15 @@ class AlertDigestMessage extends Mailable
         public readonly string $agentName,
         public readonly array $candidates,
         public readonly CarbonInterface $generatedAt,
+        public readonly ?string $deliveryClaim = null,
     ) {}
+
+    public function headers(): Headers
+    {
+        return new Headers(text: $this->deliveryClaim === null ? [] : [
+            AgentAlertDeliveryCoordinator::BATCH_CLAIM_HEADER => $this->deliveryClaim,
+        ]);
+    }
 
     public function envelope(): Envelope
     {

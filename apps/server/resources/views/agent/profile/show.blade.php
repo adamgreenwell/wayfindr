@@ -310,6 +310,7 @@
             @endif
 
             <p class="field-help">{{ __('profile.alerts.email_help') }}</p>
+            <p class="field-help">{{ __('profile.alerts.dedup_help') }}</p>
             <p class="field-help">
                 <span class="readiness-status" data-status="{{ $mailReadiness['status'] }}">
                     {{ $mailReadiness['status'] === 'ready' ? __('profile.alerts.delivery_ready') : __('profile.alerts.delivery_attention') }}

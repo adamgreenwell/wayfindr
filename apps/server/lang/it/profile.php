@@ -148,6 +148,7 @@ return [
         'cadence_help' => 'La consegna del riepilogo raggruppa le email di avviso idonee quando viene eseguito il pianificatore. La modalità non presidiata invia email solo quando un messaggio di un visitatore resta non visualizzato. Gli avvisi della dashboard restano immediati.',
         'last_digest' => 'Ultimo riepilogo',
         'email_help' => 'Gli avvisi email inviano gli stessi segnali di supporto tranquilli alla sua casella di posta quando la posta è configurata. La modalità silenziosa continua comunque a sopprimere i nuovi avvisi.',
+        'dedup_help' => 'Wayfindr consegna ogni avviso una sola volta fuori dal centro avvisi: prima a una dashboard attiva, poi tramite Web Push e infine, come ripiego, secondo la cadenza email scelta.',
         'delivery_ready' => 'Consegna email pronta',
         'delivery_attention' => 'La consegna delle email richiede attenzione',
         'save' => 'Salva le preferenze degli avvisi',

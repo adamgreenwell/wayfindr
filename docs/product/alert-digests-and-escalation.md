@@ -63,6 +63,16 @@ needs operator inspection rather than an automatic resend. This is deliberately
 different from manual quiet mode, which suppresses new support alerts until the
 agent turns it off.
 
+Interruptive delivery is ordered rather than additive. A live dashboard receipt
+wins first, Web Push is the closed-dashboard fallback, and the selected email
+cadence runs only when neither browser path has already accepted the same alert
+version. Each off-dashboard attempt claims that exact durable version before
+transport; successful or uncertain claims keep later channels from repeating it.
+A known Web Push or pre-transport mail failure leaves the next channel eligible.
+When the underlying work advances without creating a new alert row (for example,
+an assigned ticket changes after a digest), its later activity remains eligible
+for the next digest instead of being hidden by the older delivery record.
+
 Suggested preference shape:
 
 - `immediate`: send dashboard notifications and configured email alerts as
@@ -153,6 +163,8 @@ create noisy alerts.
 - Respect each agent's scheduled quiet hours at delivery time without discarding
   the durable dashboard alert.
 - Re-check site access and deactivated-agent status at send time.
+- Deliver one interruptive copy per alert version, with live dashboard, Web Push,
+  and the selected email cadence in that order.
 - Keep platform operators out of customer support alerts unless a separate
   customer-data access path grants it.
 - Keep digest email bodies metadata-first and safe by default.
@@ -173,6 +185,8 @@ The first digest path is intentionally modest and useful:
 - already-open dashboards refresh the authenticated sound gate before each tone,
   so quiet-hour and sound changes take effect without reloading the page;
 - dashboard notifications stay immediate so the app remains current;
+- live dashboard, Web Push, immediate mail, unattended mail, and digest mail share
+  one version-scoped delivery ledger so an accepted channel suppresses later copies;
 - digest-enabled agents skip event-by-event email for eligible support alerts;
 - `php artisan wayfindr:alert-digest-preview` shows metadata-only candidates
   without sending mail;
@@ -235,6 +249,10 @@ same current access and delivery rules and are documented in
     reuse the dashboard timezone, support overnight windows, preserve durable
     alerts, re-check queued notification channels before sending, and gate
     unattended or digest mail when each scheduler sweep selects recipients.
+11. Cross-channel deduplication is implemented as an exact-version delivery
+    ledger. A live receipt suppresses Web Push and mail, an accepted Web Push
+    suppresses mail, and an accepted or uncertain mail claim suppresses later
+    push, unattended, and digest copies without suppressing a later alert version.
 
 ## Open Questions
 

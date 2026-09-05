@@ -35,8 +35,16 @@ class UnattendedConversationAlertCollector
 
     public const THRESHOLD_MINUTES = 5;
 
+    private readonly AgentAlertDeliveryCoordinator $deliveries;
+
+    public function __construct(?AgentAlertDeliveryCoordinator $deliveries = null)
+    {
+        $this->deliveries = $deliveries ?? app(AgentAlertDeliveryCoordinator::class);
+    }
+
     /**
      * @return Collection<int, array{
+     *     alert_version: string,
      *     notification_id: string,
      *     reference: string,
      *     site_name: string,
@@ -179,6 +187,7 @@ class UnattendedConversationAlertCollector
 
     /**
      * @return array{
+     *     alert_version: string,
      *     notification_id: string,
      *     reference: string,
      *     site_name: string,
@@ -221,7 +230,14 @@ class UnattendedConversationAlertCollector
             return null;
         }
 
+        $version = AgentAlertPayload::version($notification);
+
+        if ($this->deliveries->versionCovered($notification, $version)) {
+            return null;
+        }
+
         return [
+            'alert_version' => $version,
             'notification_id' => (string) $notification->id,
             'reference' => $conversation->support_code,
             'site_name' => $conversation->site?->name ?? 'Unknown site',
@@ -234,8 +250,8 @@ class UnattendedConversationAlertCollector
     /**
      * Persist an idempotency claim for the exact waiting episodes to be sent.
      *
-     * @param  Collection<int, array{notification_id: string, waiting_since: string|null}>  $candidates
-     * @return Collection<int, array{notification_id: string, waiting_since: string|null}>
+     * @param  Collection<int, array{alert_version: string, notification_id: string, waiting_since: string|null}>  $candidates
+     * @return Collection<int, array{alert_version: string, notification_id: string, waiting_since: string|null}>
      */
     public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
     {
@@ -255,7 +271,14 @@ class UnattendedConversationAlertCollector
                     if (filled(data_get($notification->data, self::UNATTENDED_DELIVERY_CLAIM_KEY))
                         || ! is_array($candidate)
                         || $current === null
-                        || $current['waiting_since'] !== $candidate['waiting_since']) {
+                        || $current['alert_version'] !== $candidate['alert_version']
+                        || $current['waiting_since'] !== $candidate['waiting_since']
+                        || ! $this->deliveries->claimLocked(
+                            $notification,
+                            $current['alert_version'],
+                            AgentAlertDeliveryCoordinator::CHANNEL_UNATTENDED_MAIL,
+                            $claim,
+                        )) {
                         return;
                     }
 
@@ -275,27 +298,41 @@ class UnattendedConversationAlertCollector
     /**
      * Finalize only the exact waiting episodes covered by SMTP acceptance.
      *
-     * @param  Collection<int, array{notification_id: string, waiting_since: string|null}>  $candidates
+     * @param  Collection<int, array{alert_version: string, notification_id: string, waiting_since: string|null}>  $candidates
      */
     public function acceptDeliveryClaim(Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
     {
         DB::transaction(function () use ($candidates, $claim, $acceptedAt): void {
-            $episodeByNotification = $candidates->pluck('waiting_since', 'notification_id');
+            $sentByNotification = $candidates->keyBy('notification_id');
 
             DatabaseNotification::query()
                 ->whereIn('id', $candidates->pluck('notification_id')->all())
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get()
-                ->each(function (DatabaseNotification $notification) use ($episodeByNotification, $claim, $acceptedAt): void {
+                ->each(function (DatabaseNotification $notification) use ($sentByNotification, $claim, $acceptedAt): void {
                     if (! hash_equals($claim, (string) data_get($notification->data, self::UNATTENDED_DELIVERY_CLAIM_KEY))) {
                         return;
+                    }
+
+                    $sent = $sentByNotification->get((string) $notification->id);
+
+                    if (is_array($sent)) {
+                        $this->deliveries->acceptBatchMailClaim(
+                            $this->deliveries->claimPayload(
+                                $notification,
+                                $sent['alert_version'],
+                                $claim,
+                            ),
+                            $acceptedAt,
+                        );
                     }
 
                     $data = $notification->data;
                     unset($data[self::UNATTENDED_DELIVERY_CLAIM_KEY]);
 
-                    if ($this->waitingSince($notification)->toISOString() === $episodeByNotification->get((string) $notification->id)) {
+                    if (is_array($sent)
+                        && $this->waitingSince($notification)->toISOString() === $sent['waiting_since']) {
                         $data[self::UNATTENDED_EMAILED_AT_KEY] = $acceptedAt->toISOString();
                     }
 
@@ -313,9 +350,21 @@ class UnattendedConversationAlertCollector
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get()
-                ->each(function (DatabaseNotification $notification) use ($claim): void {
+                ->each(function (DatabaseNotification $notification) use ($candidates, $claim): void {
                     if (! hash_equals($claim, (string) data_get($notification->data, self::UNATTENDED_DELIVERY_CLAIM_KEY))) {
                         return;
+                    }
+
+                    $candidate = $candidates->firstWhere('notification_id', (string) $notification->id);
+
+                    if (is_array($candidate)) {
+                        $this->deliveries->releaseUnstartedMailClaim(
+                            $this->deliveries->claimPayload(
+                                $notification,
+                                $candidate['alert_version'],
+                                $claim,
+                            ),
+                        );
                     }
 
                     $data = $notification->data;

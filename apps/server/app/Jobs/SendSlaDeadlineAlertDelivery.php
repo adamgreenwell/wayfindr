@@ -2,8 +2,10 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\AgentAlertDeliveryPendingException;
 use App\Models\SlaAlertDelivery;
 use App\Notifications\SlaDeadlineAlert;
+use App\Support\AgentAlertDeliveryCoordinator;
 use Illuminate\Bus\Queueable;
 use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
@@ -40,6 +42,10 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
             ? 'sync'
             : (string) config('queue.default'));
 
+        if ($channel === 'mail') {
+            $job->delay(5);
+        }
+
         try {
             dispatch($job);
         } catch (Throwable $exception) {
@@ -65,7 +71,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
         return [30, 120];
     }
 
-    public function handle(): void
+    public function handle(AgentAlertDeliveryCoordinator $agentAlertDeliveries): void
     {
         $channel = SlaAlertDelivery::query()->whereKey($this->deliveryId)->value('channel');
 
@@ -74,7 +80,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
         }
 
         if ($channel === 'mail') {
-            $this->handleMail();
+            $this->handleMail($agentAlertDeliveries);
 
             return;
         }
@@ -148,9 +154,9 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
         }
     }
 
-    private function handleMail(): void
+    private function handleMail(AgentAlertDeliveryCoordinator $agentAlertDeliveries): void
     {
-        $prepared = DB::transaction(function (): ?array {
+        $prepared = DB::transaction(function () use ($agentAlertDeliveries): ?array {
             $delivery = SlaAlertDelivery::query()
                 ->whereKey($this->deliveryId)
                 ->lockForUpdate()
@@ -159,6 +165,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
             if (
                 $delivery === null
                 || $delivery->accepted_at !== null
+                || $delivery->deduplicated_at !== null
                 || $delivery->cancelled_at !== null
                 || $delivery->started_at !== null
                 || ($delivery->claimed_at !== null
@@ -186,6 +193,22 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 return null;
             }
 
+            $agentAlertDecision = $agentAlertDeliveries->claimNotificationMail($agent, $notification);
+
+            if ($agentAlertDecision['status'] === 'covered') {
+                $delivery->forceFill(['deduplicated_at' => now()])->save();
+
+                return ['deduplicated' => true];
+            }
+
+            if ($agentAlertDecision['status'] === 'pending') {
+                throw new AgentAlertDeliveryPendingException;
+            }
+
+            if ($agentAlertDecision['status'] === 'claimed') {
+                $notification->useAgentAlertMailClaim($agentAlertDecision['claim']);
+            }
+
             $delivery->forceFill([
                 // This is only a recoverable worker lease. The MessageSending
                 // listener places started_at at Laravel's transport boundary,
@@ -197,10 +220,15 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 'cancelled_at' => null,
             ])->save();
 
-            return compact('agent', 'delivery', 'notification');
+            return [
+                'agent' => $agent,
+                'delivery' => $delivery,
+                'notification' => $notification,
+                'agent_alert_claim' => $notification->agentAlertMailClaim(),
+            ];
         });
 
-        if ($prepared === null) {
+        if ($prepared === null || ($prepared['deduplicated'] ?? false)) {
             return;
         }
 
@@ -210,7 +238,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
         try {
             Notification::sendNow($prepared['agent'], $prepared['notification'], ['mail']);
 
-            DB::transaction(function () use ($delivery): void {
+            DB::transaction(function () use ($agentAlertDeliveries, $delivery, $prepared): void {
                 $current = SlaAlertDelivery::query()
                     ->whereKey($delivery->id)
                     ->lockForUpdate()
@@ -230,6 +258,10 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                         'cancelled_at' => now(),
                     ])->save();
 
+                    if (is_array($prepared['agent_alert_claim'])) {
+                        $agentAlertDeliveries->releaseUnstartedMailClaim($prepared['agent_alert_claim']);
+                    }
+
                     return;
                 }
 
@@ -239,7 +271,7 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 ])->save();
             });
         } catch (Throwable $exception) {
-            $outcome = DB::transaction(function () use ($delivery): string {
+            $outcome = DB::transaction(function () use ($agentAlertDeliveries, $delivery, $prepared): string {
                 $current = SlaAlertDelivery::query()
                     ->whereKey($delivery->id)
                     ->lockForUpdate()
@@ -252,6 +284,10 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 if ($current->started_at === null) {
                     if ($current->cancelled_at !== null) {
                         return 'cancelled';
+                    }
+
+                    if (is_array($prepared['agent_alert_claim'])) {
+                        $agentAlertDeliveries->releaseUnstartedMailClaim($prepared['agent_alert_claim']);
                     }
 
                     // Rendering, policy vetoes, and transport-boundary setup
