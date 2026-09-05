@@ -253,6 +253,16 @@ test('the profile discards a browser subscription when server storage fails', fu
         ->toContain('}).then(storeEnabledSubscription);');
 });
 
+test('the profile surfaces opt out failures until the endpoint is captured', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $submitHandler = Str::after($source, "form.addEventListener('submit'");
+
+    expect($submitHandler)
+        ->toContain(': disablePush().catch(function (failure)')
+        ->toContain("form.querySelector('input[name=\"push_subscription_endpoint\"]')")
+        ->toContain('throw failure;');
+});
+
 test('the profile cleans up an owned browser subscription after a VAPID key rotation', function (): void {
     $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
     $cleanup = Str::before(

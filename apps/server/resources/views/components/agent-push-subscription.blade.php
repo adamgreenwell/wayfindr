@@ -418,7 +418,16 @@
 
                 return checkbox.checked
                     ? enablePush(pushPermission || Promise.resolve(Notification.permission))
-                    : disablePush().catch(function () {});
+                    : disablePush().catch(function (failure) {
+                        // Once the exact endpoint is in the form, the locked
+                        // profile update can finish server-side removal even
+                        // when local unsubscribe flakes. Before that point we
+                        // must surface the browser failure instead of claiming
+                        // an opt-out that did not happen.
+                        if (! form.querySelector('input[name="push_subscription_endpoint"]')) {
+                            throw failure;
+                        }
+                    });
             });
 
             synchronization
