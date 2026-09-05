@@ -79,10 +79,14 @@ test('every authenticated dashboard page clears a prior agents local push subscr
     $source = file_get_contents(resource_path('views/components/agent-push-ownership-guard.blade.php'));
 
     expect($source)
-        ->toContain("payload.status === 'foreign'")
+        ->toContain("payload.status !== 'foreign'")
         ->toContain('subscription.unsubscribe()')
         ->toContain('unsubscribeForeign(subscription, 2)')
         ->toContain('unsubscribeForeign(subscription, attemptsRemaining - 1)')
+        ->toContain('subscriptionStatus(subscription.endpoint, 2)')
+        ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
+        ->toContain('if (! response.ok)')
+        ->toContain('return unsubscribeForeign(subscription, 2).catch')
         ->not->toContain('destroyEndpoint')
         ->not->toContain("method: 'DELETE'");
 });
