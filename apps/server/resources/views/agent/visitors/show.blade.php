@@ -249,10 +249,17 @@
             </form>
         @endif
 
-        @if ($contactNotes->isEmpty())
+        @if ($contactNotes->total() === 0)
             <div class="empty empty-state">
                 <strong>{{ __('visitor_notes.empty.heading') }}</strong>
                 {{ __('visitor_notes.empty.body') }}
+            </div>
+        @elseif ($contactNotes->isEmpty())
+            <div class="empty empty-state">
+                <strong>{{ __('visitor_notes.stale_page.heading') }}</strong>
+                <a href="{{ route('dashboard.visitors.show', [$visitor, 'notes_page' => $contactNotes->lastPage()]) }}#visitor-notes-heading">
+                    {{ __('visitor_notes.stale_page.action') }}
+                </a>
             </div>
         @else
             <div class="timeline-list">

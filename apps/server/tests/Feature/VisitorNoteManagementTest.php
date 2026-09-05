@@ -212,6 +212,27 @@ test('older contact notes remain reachable through dedicated pagination', functi
         ->assertDontSee('Contact note 11');
 });
 
+test('an out-of-range notes page links back to the last available page', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $visitor = Visitor::factory()->for(Site::factory()->for($account))->create();
+
+    VisitorNote::factory()->count(11)->create([
+        'account_id' => $account->id,
+        'visitor_id' => $visitor->id,
+        'author_id' => $manager->id,
+    ]);
+
+    $lastPageUrl = route('dashboard.visitors.show', [$visitor, 'notes_page' => 2]).'#visitor-notes-heading';
+
+    $this->actingAs($manager)
+        ->get(route('dashboard.visitors.show', [$visitor, 'notes_page' => 3]))
+        ->assertOk()
+        ->assertSee('This notes page is no longer available.')
+        ->assertSee($lastPageUrl, false)
+        ->assertDontSee('No contact notes yet');
+});
+
 test('contact note bodies cascade with the visitor record', function (): void {
     $account = Account::factory()->create();
     $author = User::factory()->for($account)->create();

@@ -21,6 +21,10 @@ return [
         'heading' => 'Nessuna nota sul contatto',
         'body' => 'Qui apparirà il contesto duraturo del team relativo a questa persona.',
     ],
+    'stale_page' => [
+        'heading' => 'Questa pagina delle note non è più disponibile.',
+        'action' => 'Vai all’ultima pagina delle note',
+    ],
     'author_unknown' => 'Ex membro del team',
     'delete' => 'Elimina nota',
     'flash' => [

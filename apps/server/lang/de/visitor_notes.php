@@ -21,6 +21,10 @@ return [
         'heading' => 'Noch keine Kontaktnotizen',
         'body' => 'Dauerhafter Teamkontext zu dieser Person erscheint hier.',
     ],
+    'stale_page' => [
+        'heading' => 'Diese Notizseite ist nicht mehr verfügbar.',
+        'action' => 'Zur letzten Notizseite wechseln',
+    ],
     'author_unknown' => 'Ehemaliges Teammitglied',
     'delete' => 'Notiz löschen',
     'flash' => [

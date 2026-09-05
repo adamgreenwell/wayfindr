@@ -20,6 +20,10 @@ return [
         'heading' => 'No contact notes yet',
         'body' => 'Durable team context about this person will appear here.',
     ],
+    'stale_page' => [
+        'heading' => 'This notes page is no longer available.',
+        'action' => 'Go to the last page of notes',
+    ],
     'author_unknown' => 'Former team member',
     'delete' => 'Delete note',
     'flash' => [
