@@ -441,6 +441,7 @@ test('temporarily unavailable Web Push settings retain a retryable delivery atte
     readyAgentWebPushConfig();
     [$agent, , $alert] = pushAlertFixture();
     subscribeAgentForPush($agent, 'settings-recovery');
+    readyAgentWebPushConfig();
     $settings = Mockery::mock(OperatorSettings::class);
     $settings->shouldReceive('valuesAreAuthoritative')->twice()->andReturnFalse();
     $webPush = new AgentWebPushConfig($settings);
@@ -449,12 +450,16 @@ test('temporarily unavailable Web Push settings retain a retryable delivery atte
     $event = new AgentAlertStored($agent, $alert);
     Notification::fake();
 
-    expect($listener->shouldQueue($event))->toBeTrue()
+    expect($agent->pushSubscriptions()->exists())->toBeFalse()
+        ->and($listener->shouldQueue($event))->toBeTrue()
         ->and(fn () => $listener->handle($event, $webPush))
         ->toThrow(RetryableAgentWebPushException::class, 'temporarily unavailable');
 
     Notification::assertNothingSent();
-    expect($agent->pushSubscriptions()->count())->toBe(1);
+    expect(AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
+        ->where('subscribable_type', $agent->getMorphClass())
+        ->where('subscribable_id', $agent->getKey())
+        ->count())->toBe(1);
 });
 
 test('the listener sends only the exact current unread alert version to an authorized agent', function (): void {

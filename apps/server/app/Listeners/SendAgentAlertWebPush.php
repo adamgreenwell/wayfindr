@@ -49,9 +49,16 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
                 AgentPushSubscription::purgeStaleFor($event->recipient);
             }
 
+            $hasSubscription = $assessment['status'] === 'unavailable'
+                ? AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
+                    ->where('subscribable_type', $event->recipient->getMorphClass())
+                    ->where('subscribable_id', $event->recipient->getKey())
+                    ->exists()
+                : $event->recipient->pushSubscriptions()->exists();
+
             return $event->recipient->alertPushEnabled()
                 && $event->recipient->alertMode() !== User::ALERT_MODE_QUIET
-                && $event->recipient->pushSubscriptions()->exists();
+                && $hasSubscription;
         } catch (Throwable) {
             // An unconfigured or not-yet-migrated optional channel must not
             // interfere with the durable database alert or its live broadcast.
