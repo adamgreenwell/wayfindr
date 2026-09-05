@@ -48,6 +48,11 @@ The first roles are:
 
 Custom roles are deny-by-default and account-owned. They can combine team, support, knowledge, settings, reporting, and audit permissions, but cannot receive `manage_roles`, ownership, platform-operator authority, or destructive site purge. Editing a custom role takes effect immediately for its assigned users. An assigned role cannot be deleted, and role creation, editing, deletion, and assignment are audited with the role name retained in history.
 
+`manage_contacts` grants visitor attribute management and access to contact
+records on the role holder's supported sites. It does not imply conversation or
+ticket access. Definitions, typed filtering, and the underlying privacy boundary
+are documented in [Visitor Contact Management](visitor-contact-management.md).
+
 An account owner may map an exact top-level OIDC claim value to built-in Agent or Admin, or to one custom role. Owner is never a federation target. Existing locally created agents keep their local role; only identities created through just-in-time provisioning are remapped at later federated sign-ins. Provider claims never assign sites, and an ambiguous or missing mapping fails closed.
 
 ## Platform Operators
