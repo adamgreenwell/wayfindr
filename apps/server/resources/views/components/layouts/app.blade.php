@@ -3508,7 +3508,7 @@
         })();
     </script>
     @if ($agent)
-        <x-agent-push-ownership-guard :status-endpoint="route('dashboard.profile.push-subscription.status')" />
+        <x-agent-push-ownership-guard :agent-id="$agent->id" :status-endpoint="route('dashboard.profile.push-subscription.status')" />
         @if ($account)
             @if ($agentAlertRealtimeConfig = \App\Support\AgentAlertRealtimeConfig::forAgent($agent))
                 <x-agent-alert-stream :config="$agentAlertRealtimeConfig" />

@@ -1,4 +1,4 @@
-@props(['statusEndpoint'])
+@props(['agentId', 'statusEndpoint'])
 
 <script data-agent-push-ownership-guard>
     (function () {
@@ -10,6 +10,44 @@
             || ! ('serviceWorker' in navigator)
             || ! ('PushManager' in window)) {
             return;
+        }
+
+        var currentAgentId = String(@json((string) $agentId));
+        var pendingOptInPrefix = 'wayfindr:push-opt-in:';
+        var pendingOptInLifetimeMilliseconds = 60 * 1000;
+
+        function currentAgentHasPendingOptIn(subscription) {
+            try {
+                var key = pendingOptInPrefix + subscription.endpoint;
+                var marker = JSON.parse(localStorage.getItem(key) || 'null');
+                var now = Date.now();
+
+                if (! marker
+                    || typeof marker.agentId !== 'string'
+                    || typeof marker.expiresAt !== 'number'
+                    || marker.expiresAt <= now
+                    || marker.expiresAt > now + pendingOptInLifetimeMilliseconds) {
+                    localStorage.removeItem(key);
+
+                    return false;
+                }
+
+                return marker.agentId === currentAgentId;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function waitForPendingOptIn(subscription) {
+            if (! currentAgentHasPendingOptIn(subscription)) {
+                return Promise.resolve();
+            }
+
+            return new Promise(function (resolve) {
+                window.setTimeout(resolve, 250);
+            }).then(function () {
+                return waitForPendingOptIn(subscription);
+            });
         }
 
         function unsubscribeUnowned(subscription, attemptsRemaining) {
@@ -71,6 +109,16 @@
                 }
 
                 return subscriptionStatus(subscription.endpoint, 2)
+                    .then(function (payload) {
+                        if (payload.status !== 'missing'
+                            || ! currentAgentHasPendingOptIn(subscription)) {
+                            return payload;
+                        }
+
+                        return waitForPendingOptIn(subscription).then(function () {
+                            return subscriptionStatus(subscription.endpoint, 2);
+                        });
+                    })
                     .then(function (payload) {
                         if (payload.status === 'owned') {
                             return;

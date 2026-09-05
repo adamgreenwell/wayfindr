@@ -6,6 +6,8 @@
         var form = document.querySelector('[data-agent-push-preferences]');
         var checkbox = document.getElementById('push_alerts');
         var error = document.querySelector('[data-agent-push-error]');
+        var pendingOptInPrefix = 'wayfindr:push-opt-in:';
+        var pendingOptInLifetimeMilliseconds = 60 * 1000;
 
         if (! form || ! checkbox) {
             return;
@@ -51,6 +53,79 @@
             if (! existing) {
                 form.appendChild(input);
             }
+        }
+
+        function pendingOptInMarker(subscription) {
+            try {
+                var key = pendingOptInPrefix + subscription.endpoint;
+                var marker = JSON.parse(localStorage.getItem(key) || 'null');
+                var now = Date.now();
+
+                if (! marker
+                    || typeof marker.agentId !== 'string'
+                    || typeof marker.token !== 'string'
+                    || typeof marker.expiresAt !== 'number'
+                    || marker.expiresAt <= now
+                    || marker.expiresAt > now + pendingOptInLifetimeMilliseconds) {
+                    localStorage.removeItem(key);
+
+                    return null;
+                }
+
+                return marker;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function markPendingOptIn(subscription) {
+            var token = Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+            try {
+                localStorage.setItem(pendingOptInPrefix + subscription.endpoint, JSON.stringify({
+                    agentId: String(config.agentId),
+                    expiresAt: Date.now() + pendingOptInLifetimeMilliseconds,
+                    token: token,
+                }));
+
+                return token;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function clearPendingOptIn(subscription, token) {
+            if (! token) {
+                return;
+            }
+
+            try {
+                var marker = pendingOptInMarker(subscription);
+
+                if (marker && marker.token === token) {
+                    localStorage.removeItem(pendingOptInPrefix + subscription.endpoint);
+                }
+            } catch (error) {
+                // The marker expires on its own when browser storage is lost.
+            }
+        }
+
+        function currentAgentHasPendingOptIn(subscription) {
+            var marker = pendingOptInMarker(subscription);
+
+            return marker && marker.agentId === String(config.agentId);
+        }
+
+        function waitForPendingOptIn(subscription) {
+            if (! currentAgentHasPendingOptIn(subscription)) {
+                return Promise.resolve();
+            }
+
+            return new Promise(function (resolve) {
+                window.setTimeout(resolve, 250);
+            }).then(function () {
+                return waitForPendingOptIn(subscription);
+            });
         }
 
         if (! window.isSecureContext
@@ -150,7 +225,13 @@
         }
 
         function storeEnabledSubscription(subscription) {
-            return storeSubscription(subscription).catch(function (failure) {
+            var markerToken = markPendingOptIn(subscription);
+
+            return storeSubscription(subscription).then(function (stored) {
+                clearPendingOptIn(subscription, markerToken);
+
+                return stored;
+            }).catch(function (failure) {
                 var storedRemoved = false;
 
                 // The POST may have reached the server even when its response
@@ -169,6 +250,7 @@
                         pendingRemoval(null);
                     }
 
+                    clearPendingOptIn(subscription, markerToken);
                     throw failure;
                 });
             });
@@ -334,6 +416,16 @@
                     }
 
                     return subscriptionStatus(subscription.endpoint, 2)
+                        .then(function (payload) {
+                            if (payload.status !== 'missing'
+                                || ! currentAgentHasPendingOptIn(subscription)) {
+                                return payload;
+                            }
+
+                            return waitForPendingOptIn(subscription).then(function () {
+                                return subscriptionStatus(subscription.endpoint, 2);
+                            });
+                        })
                         .then(function (payload) {
                             subscriptionOwnership = payload.status;
                             initialBrowserEnabled = payload.status === 'owned'

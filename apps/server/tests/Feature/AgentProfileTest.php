@@ -74,7 +74,8 @@ test('every authenticated dashboard page clears a prior agents local push subscr
     $this->actingAs($agent)
         ->get('/dashboard')
         ->assertOk()
-        ->assertSee('data-agent-push-ownership-guard', false);
+        ->assertSee('data-agent-push-ownership-guard', false)
+        ->assertSee('var currentAgentId = String("'.$agent->id.'");', false);
 
     $source = file_get_contents(resource_path('views/components/agent-push-ownership-guard.blade.php'));
 
@@ -86,6 +87,10 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->toContain('unsubscribeUnowned(subscription, 2)')
         ->toContain('unsubscribeUnowned(subscription, attemptsRemaining - 1)')
         ->toContain('subscriptionStatus(subscription.endpoint, 2)')
+        ->toContain("var pendingOptInPrefix = 'wayfindr:push-opt-in:'")
+        ->toContain('marker.agentId === currentAgentId')
+        ->toContain('waitForPendingOptIn(subscription)')
+        ->toContain('return subscriptionStatus(subscription.endpoint, 2);')
         ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
         ->toContain('if (! response.ok)')
         ->toContain('return unsubscribeUnowned(subscription, 2).catch')
@@ -202,6 +207,7 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
         ->assertOk()
         ->assertSee('Notify this browser after I close the dashboard')
         ->assertSee('data-agent-push-subscription', false)
+        ->assertSee('"agentId":"'.$agent->id.'"', false)
         ->assertSee($keys['publicKey'])
         ->assertDontSee($keys['privateKey']);
 
@@ -240,7 +246,9 @@ test('the profile discards a browser subscription when server storage fails', fu
     );
 
     expect($cleanup)
-        ->toContain('return storeSubscription(subscription).catch(function (failure)')
+        ->toContain('var markerToken = markPendingOptIn(subscription)')
+        ->toContain('return storeSubscription(subscription).then(function (stored)')
+        ->toContain('clearPendingOptIn(subscription, markerToken)')
         ->toContain('pendingRemoval(subscription.endpoint)')
         ->toContain("request(config.destroyEndpoint, 'DELETE'")
         ->toContain('subscription.unsubscribe().catch(function () {})')
@@ -249,6 +257,11 @@ test('the profile discards a browser subscription when server storage fails', fu
         ->toContain('throw failure;');
 
     expect($source)
+        ->toContain("var pendingOptInPrefix = 'wayfindr:push-opt-in:'")
+        ->toContain('agentId: String(config.agentId)')
+        ->toContain('marker.agentId === String(config.agentId)')
+        ->toContain('waitForPendingOptIn(subscription)')
+        ->toContain('return subscriptionStatus(subscription.endpoint, 2);')
         ->toContain('return storeEnabledSubscription(subscription);')
         ->toContain('}).then(storeEnabledSubscription);');
 });

@@ -268,6 +268,7 @@
 
         @if ($pushAvailable && $pushPublicKey)
             <x-agent-push-subscription :config="[
+                'agentId' => (string) $agent->id,
                 'publicKey' => $pushPublicKey,
                 'storeEndpoint' => route('dashboard.profile.push-subscription.store'),
                 'statusEndpoint' => route('dashboard.profile.push-subscription.status'),
