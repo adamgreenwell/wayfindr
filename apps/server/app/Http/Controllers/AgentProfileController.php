@@ -6,12 +6,14 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
+use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\AgentWebPushConfig;
 use App\Support\Auth\TwoFactorAuthentication;
 use App\Support\DashboardLanguage;
 use App\Support\DashboardTimezone;
 use App\Support\OperatorReadiness;
+use App\Support\Settings\OperatorSettings;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -31,11 +33,27 @@ class AgentProfileController extends Controller
         OperatorReadiness $readiness,
         TwoFactorAuthentication $twoFactor,
         AgentWebPushConfig $webPush,
+        OperatorSettings $settings,
     ): Response {
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
-        AgentPushSubscription::purgeStaleFor($agent);
+        DB::transaction(function () use ($agent, $settings): void {
+            // Profile cleanup is destructive, so coordinate with VAPID
+            // rotation and browser enrollment before deciding which
+            // subscription generation is stale.
+            OperatorSetting::query()->insertOrIgnore([
+                'key' => 'webpush.public_key',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            OperatorSetting::query()
+                ->where('key', 'webpush.public_key')
+                ->sharedLock()
+                ->firstOrFail();
+            $settings->refreshFromDatabase();
+            AgentPushSubscription::purgeStaleFor($agent);
+        });
         $agent->loadMissing('customRole');
         $agent->loadCount('pushSubscriptions');
 

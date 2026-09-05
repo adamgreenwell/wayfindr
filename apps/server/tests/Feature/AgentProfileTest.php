@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -233,6 +235,61 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
     expect($checkbox)->toBeInstanceOf(DOMElement::class)
         ->and($checkbox->getAttribute('name'))->toBe('push_alerts')
         ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
+});
+
+test('profile cleanup refreshes VAPID settings under the rotation lock', function (): void {
+    $oldKeys = VAPID::createVapidKeys();
+    $newKeys = VAPID::createVapidKeys();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $oldKeys['publicKey'],
+        'webpush.private_key' => $oldKeys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $settings->applyOverrides();
+    $agent = User::factory()->for(Account::factory())->create();
+
+    foreach ([
+        'webpush.public_key' => $newKeys['publicKey'],
+        'webpush.private_key' => $newKeys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/fresh-profile-generation',
+        'public_key' => VAPID::createVapidKeys()['publicKey'],
+        'auth_token' => rtrim(strtr(base64_encode(str_repeat('a', 16)), '+/', '-_'), '='),
+        'content_encoding' => 'aes128gcm',
+    ]);
+    AgentPushSubscription::withoutGlobalScopes()
+        ->whereKey($subscription->id)
+        ->update(['vapid_public_key_hash' => hash('sha256', $newKeys['publicKey'])]);
+
+    expect(config('webpush.vapid.public_key'))->toBe($oldKeys['publicKey']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee($newKeys['publicKey'])
+        ->assertDontSee($oldKeys['publicKey']);
+
+    expect(config('webpush.vapid.public_key'))->toBe($newKeys['publicKey'])
+        ->and(AgentPushSubscription::withoutGlobalScopes()->sole()->endpoint)
+        ->toBe('https://push.example.test/subscriptions/fresh-profile-generation');
+
+    $source = file_get_contents(app_path('Http/Controllers/AgentProfileController.php'));
+
+    expect($source)
+        ->toContain("->where('key', 'webpush.public_key')")
+        ->toContain('->sharedLock()')
+        ->toContain('$settings->refreshFromDatabase()')
+        ->and(strpos($source, '$settings->refreshFromDatabase()'))
+        ->toBeLessThan(strpos($source, 'AgentPushSubscription::purgeStaleFor($agent)'));
 });
 
 test('the profile requests push permission directly from the submit gesture', function (): void {
