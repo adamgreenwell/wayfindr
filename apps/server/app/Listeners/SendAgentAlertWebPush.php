@@ -12,7 +12,9 @@ use App\Models\AgentPushSubscription;
 use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
+use App\Support\AgentAlertDeliveryCoordinator;
 use App\Support\AgentAlertPayload;
+use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushConfig;
 use App\Support\DashboardLanguage;
 use App\Support\Settings\OperatorSettings;
@@ -22,8 +24,8 @@ use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
-use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
+use LogicException;
 use NotificationChannels\WebPush\WebPushChannel;
 use Throwable;
 
@@ -81,6 +83,8 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         AgentAlertStored $event,
         AgentWebPushConfig $webPush,
         ?OperatorSettings $settings = null,
+        ?AgentAlertDeliveryCoordinator $deliveries = null,
+        ?AgentWebPushChannel $channel = null,
     ): void {
         $accountId = $event->recipient->account_id;
 
@@ -90,8 +94,9 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
         $retryableFailure = null;
         $settings ??= app(OperatorSettings::class);
+        $deliveries ??= app(AgentAlertDeliveryCoordinator::class);
 
-        DB::transaction(function () use ($accountId, $event, &$retryableFailure, $settings, $webPush): void {
+        DB::transaction(function () use ($accountId, $channel, $deliveries, $event, &$retryableFailure, $settings, $webPush): void {
             // Coordinate with operator rotation and subscription enrollment,
             // then bypass the process-local settings cache. A worker that
             // started this job on the old key must never purge a browser that
@@ -155,29 +160,40 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
             if (! $alert instanceof DatabaseNotification
                 || ! hash_equals($event->version, AgentAlertPayload::version($alert))
-                || hash_equals(
-                    $event->version,
-                    (string) $alert->getAttribute('agent_alert_realtime_received_version'),
-                )
+                || $deliveries->versionCovered($alert, $event->version)
                 || ! Gate::forUser($recipient)->allows('view', $alert)) {
                 return;
             }
 
+            $deliveryChannel = $channel ?? app(WebPushChannel::class);
+
+            if (! $deliveryChannel instanceof AgentWebPushChannel) {
+                throw new LogicException('Wayfindr Web Push delivery channel is not configured.');
+            }
+
             try {
-                Notification::sendNow(
+                $deliveryChannel->send(
                     $recipient,
                     new AgentAlertWebPush(
                         alertId: (string) $alert->id,
                         version: $event->version,
                         dashboardLocale: DashboardLanguage::for($recipient),
                     ),
-                    [WebPushChannel::class],
                 );
             } catch (RetryableAgentWebPushException $exception) {
                 // The channel has already processed every report. Commit any
                 // expired-subscription deletions before asking the queue to
-                // retry transient siblings; throwing here would roll them back.
-                $retryableFailure = $exception;
+                // retry transient siblings. If even one browser accepted this
+                // version, that is the winning channel and no retry is needed.
+                if (! $deliveryChannel->deliveryAccepted()) {
+                    $retryableFailure = $exception;
+
+                    return;
+                }
+            }
+
+            if ($deliveryChannel->deliveryAccepted()) {
+                $deliveries->acceptPushLocked($alert, $event->version);
             }
         });
 

@@ -4,6 +4,7 @@ use App\Events\AgentAlertStored;
 use App\Exceptions\RetryableAgentWebPushException;
 use App\Listeners\SendAgentAlertWebPush;
 use App\Models\Account;
+use App\Models\AgentAlertDelivery;
 use App\Models\AgentPushSubscription;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -441,14 +442,17 @@ test('a receipt for an older alert version cannot suppress Web Push', function (
     [$agent, , $alert] = pushAlertFixture();
     subscribeAgentForPush($agent, 'stale-receipt');
     $alert->forceFill(['agent_alert_realtime_received_version' => (string) Str::uuid()])->save();
-    Notification::fake();
+    Http::fake(['push.example.test/*' => Http::response('', 201)]);
 
     app(SendAgentAlertWebPush::class)->handle(
         new AgentAlertStored($agent, $alert),
         app(AgentWebPushConfig::class),
     );
 
-    Notification::assertSentTo($agent, AgentAlertWebPush::class);
+    Http::assertSentCount(1);
+    expect(AgentAlertDelivery::query()->sole())
+        ->channel->toBe('push')
+        ->alert_version->toBe($alert->getAttribute('agent_alert_version'));
 });
 
 test('the queued Web Push listener is selected only for ready opted-in recipients', function (): void {
@@ -509,18 +513,18 @@ test('Web Push pauses inside agent quiet hours and resumes at the end boundary',
     try {
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
         $quietEvent = new AgentAlertStored($agent->fresh(), $alert);
-        Notification::fake();
+        Http::fake(['push.example.test/*' => Http::response('', 201)]);
 
         expect($listener->shouldQueue($quietEvent))->toBeFalse();
         $listener->handle($quietEvent, app(AgentWebPushConfig::class));
-        Notification::assertNothingSent();
+        Http::assertNothingSent();
 
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
         $resumedEvent = new AgentAlertStored($agent->fresh(), $alert);
 
         expect($listener->shouldQueue($resumedEvent))->toBeTrue();
         $listener->handle($resumedEvent, app(AgentWebPushConfig::class));
-        Notification::assertSentTo($agent, AgentAlertWebPush::class);
+        Http::assertSentCount(1);
     } finally {
         CarbonImmutable::setTestNow();
     }
@@ -586,36 +590,31 @@ test('the listener sends only the exact current unread alert version to an autho
     $listener = app(SendAgentAlertWebPush::class);
     $event = new AgentAlertStored($agent, $alert);
 
-    Notification::fake();
+    Http::fake(['push.example.test/*' => Http::response('', 201)]);
     $listener->handle($event, app(AgentWebPushConfig::class));
 
-    Notification::assertSentTo(
-        $agent,
-        AgentAlertWebPush::class,
-        fn (AgentAlertWebPush $notification, array $channels): bool => $channels === [WebPushChannel::class]
-            && $notification->alertId === (string) $alert->id
-            && $notification->version === $event->version,
-    );
+    Http::assertSentCount(1);
+    expect(AgentAlertDelivery::query()->sole())
+        ->notification_id->toBe((string) $alert->id)
+        ->alert_version->toBe($event->version)
+        ->channel->toBe('push');
 
-    Notification::fake();
     $alert->markAsRead();
     $listener->handle($event, app(AgentWebPushConfig::class));
-    Notification::assertNothingSent();
+    Http::assertSentCount(1);
 
     $alert->forceFill([
         'read_at' => null,
         'agent_alert_version' => (string) Str::uuid(),
     ])->save();
-    Notification::fake();
     $listener->handle($event, app(AgentWebPushConfig::class));
-    Notification::assertNothingSent();
+    Http::assertSentCount(1);
 
     $currentEvent = new AgentAlertStored($agent->fresh(), $alert->fresh());
     $remainingAgent = User::factory()->for($agent->account)->create();
     $site->supportAgents()->sync([$remainingAgent->id]);
-    Notification::fake();
     $listener->handle($currentEvent, app(AgentWebPushConfig::class));
-    Notification::assertNothingSent();
+    Http::assertSentCount(1);
 });
 
 test('the listener holds eligibility locks through the Web Push delivery call', function (): void {
@@ -624,16 +623,13 @@ test('the listener holds eligibility locks through the Web Push delivery call', 
     subscribeAgentForPush($agent);
     $event = new AgentAlertStored($agent, $alert);
 
-    Notification::shouldReceive('sendNow')
-        ->once()
-        ->withArgs(function (User $recipient, AgentAlertWebPush $notification, array $channels) use ($alert): bool {
-            expect(DB::transactionLevel())->toBeGreaterThan(0)
-                ->and($recipient->id)->toBe($alert->notifiable_id)
-                ->and($notification->alertId)->toBe((string) $alert->id)
-                ->and($channels)->toBe([WebPushChannel::class]);
+    Http::fake(function (Request $request) use ($alert) {
+        expect(DB::transactionLevel())->toBeGreaterThan(0)
+            ->and($request->url())->toContain('push.example.test/subscriptions/one')
+            ->and($alert->fresh()->read_at)->toBeNull();
 
-            return true;
-        });
+        return Http::response('', 201);
+    });
 
     app(SendAgentAlertWebPush::class)->handle($event, app(AgentWebPushConfig::class));
 
@@ -643,7 +639,7 @@ test('the listener holds eligibility locks through the Web Push delivery call', 
         ->toContain('Account::query()')
         ->toContain('DatabaseNotification::query()')
         ->and(substr_count($source, '->lockForUpdate()'))->toBe(3)
-        ->and(strpos($source, 'Notification::sendNow('))->toBeGreaterThan(strpos($source, 'DB::transaction('));
+        ->and(strpos($source, '$deliveryChannel->send('))->toBeGreaterThan(strpos($source, 'DB::transaction('));
 });
 
 test('a queued event preserves the version it claimed before model rehydration', function (): void {

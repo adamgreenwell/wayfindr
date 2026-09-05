@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'started_at',
     'last_attempted_at',
     'accepted_at',
+    'deduplicated_at',
     'failed_at',
     'cancelled_at',
 ])]
@@ -36,6 +37,7 @@ class SlaAlertDelivery extends Model
             'started_at' => 'immutable_datetime',
             'last_attempted_at' => 'immutable_datetime',
             'accepted_at' => 'immutable_datetime',
+            'deduplicated_at' => 'immutable_datetime',
             'failed_at' => 'immutable_datetime',
             'cancelled_at' => 'immutable_datetime',
         ];
@@ -59,6 +61,7 @@ class SlaAlertDelivery extends Model
     {
         return $query
             ->whereNull('accepted_at')
+            ->whereNull('deduplicated_at')
             // Once SMTP begins, its outcome is ambiguous without a receipt.
             // Never turn that uncertainty into an automatic duplicate.
             ->whereNull('started_at')

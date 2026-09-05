@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\ConversationMessage;
 use App\Models\User;
+use App\Notifications\Concerns\CoordinatesAgentAlertMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -13,7 +14,7 @@ use Illuminate\Support\Str;
 
 class ConversationNeedsReply extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use CoordinatesAgentAlertMail, Queueable;
 
     /**
      * Create a new notification instance.
@@ -76,12 +77,12 @@ class ConversationNeedsReply extends Notification implements ShouldQueue
     {
         $conversation = $this->message->conversation;
 
-        return (new MailMessage)
+        return $this->coordinateAgentAlertMail((new MailMessage)
             ->subject('Wayfindr reply needed: '.($conversation->subject ?? $conversation->support_code))
             ->line($conversation->site->name.' has a visitor message waiting for you.')
             ->line('Support code: '.$conversation->support_code)
             ->line(Str::limit((string) $this->message->body, 240))
-            ->action('Open conversation', route('dashboard.conversations.show', $conversation->support_code));
+            ->action('Open conversation', route('dashboard.conversations.show', $conversation->support_code)));
     }
 
     /**

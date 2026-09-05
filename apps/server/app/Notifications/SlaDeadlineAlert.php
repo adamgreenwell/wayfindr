@@ -6,6 +6,7 @@ use App\Models\Conversation;
 use App\Models\SlaClock;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Notifications\Concerns\CoordinatesAgentAlertMail;
 use App\Support\Sla\SlaAlertRouting;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -16,7 +17,7 @@ use Symfony\Component\Mime\Email;
 
 class SlaDeadlineAlert extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use CoordinatesAgentAlertMail, Queueable;
 
     public const DELIVERY_HEADER = 'X-Wayfindr-Sla-Delivery';
 
@@ -92,7 +93,17 @@ class SlaDeadlineAlert extends Notification implements ShouldQueue
             });
         }
 
-        return $message;
+        return $this->coordinateAgentAlertMail($message);
+    }
+
+    public function clockId(): int
+    {
+        return (int) $this->clock->id;
+    }
+
+    public function stage(): string
+    {
+        return $this->stage;
     }
 
     /** @return array<string, mixed> */

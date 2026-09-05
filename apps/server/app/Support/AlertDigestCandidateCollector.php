@@ -24,10 +24,19 @@ class AlertDigestCandidateCollector
 
     public const DIGEST_DELIVERY_CLAIM_KEY = 'digest_delivery_claim';
 
-    public function __construct(private readonly SlaAlertRouting $slaAlertRouting) {}
+    public function __construct(
+        private readonly SlaAlertRouting $slaAlertRouting,
+        ?AgentAlertDeliveryCoordinator $deliveries = null,
+    ) {
+        $this->deliveries = $deliveries ?? app(AgentAlertDeliveryCoordinator::class);
+    }
+
+    private readonly AgentAlertDeliveryCoordinator $deliveries;
 
     /**
      * @return Collection<int, array{
+     *     alert_version: string,
+     *     delivery_state_key: string,
      *     kind: string,
      *     last_activity_at: string|null,
      *     notification_id: string,
@@ -75,8 +84,8 @@ class AlertDigestCandidateCollector
     /**
      * Persist an idempotency claim before handing a digest to SMTP.
      *
-     * @param  Collection<int, array{last_activity_at: string|null, notification_id: string}>  $candidates
-     * @return Collection<int, array{last_activity_at: string|null, notification_id: string}>
+     * @param  Collection<int, array{alert_version: string, delivery_state_key: string, last_activity_at: string|null, notification_id: string}>  $candidates
+     * @return Collection<int, array{alert_version: string, delivery_state_key: string, last_activity_at: string|null, notification_id: string}>
      */
     public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
     {
@@ -95,8 +104,16 @@ class AlertDigestCandidateCollector
 
                     if (! is_array($candidate)
                         || $current === null
+                        || $current['alert_version'] !== $candidate['alert_version']
                         || $current['last_activity_at'] !== $candidate['last_activity_at']
-                        || $this->deliveryClaimCovers($notification, $current['last_activity_at'])) {
+                        || $this->deliveryClaimCovers($notification, $current['last_activity_at'])
+                        || ! $this->deliveries->claimLocked(
+                            $notification,
+                            $current['alert_version'],
+                            AgentAlertDeliveryCoordinator::CHANNEL_DIGEST_MAIL,
+                            $claim,
+                            $current['last_activity_at'],
+                        )) {
                         return;
                     }
 
@@ -119,7 +136,7 @@ class AlertDigestCandidateCollector
     /**
      * Finalize only the exact states covered by an accepted SMTP handoff.
      *
-     * @param  Collection<int, array{last_activity_at: string|null, notification_id: string}>  $candidates
+     * @param  Collection<int, array{alert_version: string, delivery_state_key: string, last_activity_at: string|null, notification_id: string}>  $candidates
      */
     public function acceptDeliveryClaim(User $agent, Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
     {
@@ -137,12 +154,25 @@ class AlertDigestCandidateCollector
                     }
 
                     $sent = $sentByNotification->get((string) $notification->id);
-                    $current = $this->candidateFor($agent, $notification);
+                    $current = $this->candidateFor($agent, $notification, ignoreDelivery: true);
                     $data = $notification->data;
                     unset($data[self::DIGEST_DELIVERY_CLAIM_KEY]);
 
+                    if (is_array($sent)) {
+                        $this->deliveries->acceptBatchMailClaim(
+                            $this->deliveries->claimPayload(
+                                $notification,
+                                $sent['alert_version'],
+                                $claim,
+                                $sent['delivery_state_key'],
+                            ),
+                            $acceptedAt,
+                        );
+                    }
+
                     if (is_array($sent)
                         && $current !== null
+                        && $current['alert_version'] === $sent['alert_version']
                         && $current['last_activity_at'] === $sent['last_activity_at']) {
                         $data[self::DIGEST_QUEUED_AT_KEY] = $acceptedAt->toISOString();
                     }
@@ -161,9 +191,22 @@ class AlertDigestCandidateCollector
                 ->orderBy('id')
                 ->lockForUpdate()
                 ->get()
-                ->each(function (DatabaseNotification $notification) use ($claim): void {
+                ->each(function (DatabaseNotification $notification) use ($candidates, $claim): void {
                     if (! $this->deliveryClaimIsOwnedBy($notification, $claim)) {
                         return;
+                    }
+
+                    $candidate = $candidates->firstWhere('notification_id', (string) $notification->id);
+
+                    if (is_array($candidate)) {
+                        $this->deliveries->releaseUnstartedMailClaim(
+                            $this->deliveries->claimPayload(
+                                $notification,
+                                $candidate['alert_version'],
+                                $claim,
+                                $candidate['delivery_state_key'],
+                            ),
+                        );
                     }
 
                     $data = $notification->data;
@@ -193,6 +236,8 @@ class AlertDigestCandidateCollector
 
     /**
      * @return array{
+     *     alert_version: string,
+     *     delivery_state_key: string,
      *     kind: string,
      *     last_activity_at: string|null,
      *     notification_id: string,
@@ -204,8 +249,11 @@ class AlertDigestCandidateCollector
      *     url: string
      * }|null
      */
-    private function candidateFor(User $agent, DatabaseNotification $notification): ?array
-    {
+    private function candidateFor(
+        User $agent,
+        DatabaseNotification $notification,
+        bool $ignoreDelivery = false,
+    ): ?array {
         $candidate = match ($notification->type) {
             ConversationNeedsReply::class => $this->conversationCandidate($agent, $notification),
             TicketAssigned::class => $this->ticketCandidate($agent, $notification),
@@ -218,7 +266,21 @@ class AlertDigestCandidateCollector
             return null;
         }
 
-        return $candidate;
+        $version = AgentAlertPayload::version($notification);
+
+        if (! $ignoreDelivery && $this->deliveries->candidateVersionCovered(
+            $notification,
+            $version,
+            $candidate['last_activity_at'],
+        )) {
+            return null;
+        }
+
+        return [
+            'alert_version' => $version,
+            'delivery_state_key' => $this->deliveries->stateKey($candidate['last_activity_at']),
+            ...$candidate,
+        ];
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\Support;
 use App\Exceptions\RetryableAgentWebPushException;
 use Generator;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Notifications\Notification;
 use Minishlink\WebPush\MessageSentReport;
 use NotificationChannels\WebPush\PushSubscription;
 use NotificationChannels\WebPush\WebPushChannel;
@@ -15,6 +16,20 @@ use NotificationChannels\WebPush\WebPushMessageInterface;
 /** Process every delivery report, then surface transient failures to the queue. */
 final class AgentWebPushChannel extends WebPushChannel
 {
+    private bool $deliveryAccepted = false;
+
+    public function send(mixed $notifiable, Notification $notification): void
+    {
+        $this->deliveryAccepted = false;
+
+        parent::send($notifiable, $notification);
+    }
+
+    public function deliveryAccepted(): bool
+    {
+        return $this->deliveryAccepted;
+    }
+
     /**
      * @param  Collection<array-key, PushSubscription>  $subscriptions
      */
@@ -30,6 +45,7 @@ final class AgentWebPushChannel extends WebPushChannel
             }
 
             $this->reportHandler->handleReport($report, $subscription, $message);
+            $this->deliveryAccepted = $this->deliveryAccepted || $report->isSuccess();
             $retryableFailure = $retryableFailure || $this->isRetryable($report);
         }
 
