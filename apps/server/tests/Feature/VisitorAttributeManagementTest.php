@@ -216,6 +216,7 @@ test('a contacts-only role can use assigned visitor records without gaining supp
         ->assertOk()
         ->assertSee('Contact Record')
         ->assertSee(route('dashboard.visitors.index'), false)
+        ->assertDontSee(route('dashboard.sites.index'), false)
         ->assertDontSee('<th>Conversations</th>', false);
 
     $this->actingAs($contactManager)

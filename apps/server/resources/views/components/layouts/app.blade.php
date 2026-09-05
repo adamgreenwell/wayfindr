@@ -3269,7 +3269,6 @@
                 \App\Enums\AccountPermission::ManageSites,
                 \App\Enums\AccountPermission::ManageSiteAccess,
                 \App\Enums\AccountPermission::ManagePrivacySettings,
-                \App\Enums\AccountPermission::ManageContacts,
                 \App\Enums\AccountPermission::ManageIntegrations,
                 \App\Enums\AccountPermission::ViewAudit,
                 \App\Enums\AccountPermission::ViewConversations,
