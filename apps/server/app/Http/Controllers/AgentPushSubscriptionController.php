@@ -26,7 +26,10 @@ final class AgentPushSubscriptionController extends Controller
     {
         $agent = $request->user();
 
-        abort_unless($agent?->account_id, 403);
+        // The ownership guard also runs for accountless platform operators.
+        // They cannot create a subscription, but they still need to identify
+        // and locally remove one left behind by a different signed-in agent.
+        abort_unless($agent instanceof User, 403);
 
         $validated = $request->validate([
             'endpoint' => ['required', 'string', 'max:'.PushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],

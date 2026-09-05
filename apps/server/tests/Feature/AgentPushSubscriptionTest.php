@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\User;
 use App\Support\Webhooks\OutboundWebhookDestination;
@@ -118,6 +119,27 @@ test('subscription status distinguishes this agent from another profile without 
             'endpoint' => 'https://push.example.test/subscription/missing',
         ])
         ->assertExactJson(['status' => 'missing']);
+});
+
+test('an accountless platform operator can identify a prior agents browser subscription', function (): void {
+    $owner = User::factory()->for(Account::factory())->create();
+    $operator = User::factory()->create([
+        'account_id' => null,
+        'platform_role' => PlatformRole::Operator,
+    ]);
+    $payload = agentPushPayload();
+    $owner->pushSubscriptions()->create([
+        'endpoint' => $payload['endpoint'],
+        'public_key' => $payload['keys']['p256dh'],
+        'auth_token' => $payload['keys']['auth'],
+        'content_encoding' => 'aes128gcm',
+    ]);
+
+    $this->actingAs($operator)
+        ->postJson(route('dashboard.profile.push-subscription.status'), [
+            'endpoint' => $payload['endpoint'],
+        ])
+        ->assertExactJson(['status' => 'foreign']);
 });
 
 test('unsubscribing deletes only the current agents matching endpoint', function (): void {

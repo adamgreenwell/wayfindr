@@ -18,6 +18,7 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -344,6 +345,34 @@ test('the listener sends only the exact current unread alert version to an autho
     Notification::fake();
     $listener->handle($currentEvent, app(AgentWebPushConfig::class));
     Notification::assertNothingSent();
+});
+
+test('the listener holds eligibility locks through the Web Push delivery call', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent);
+    $event = new AgentAlertStored($agent, $alert);
+
+    Notification::shouldReceive('sendNow')
+        ->once()
+        ->withArgs(function (User $recipient, AgentAlertWebPush $notification, array $channels) use ($alert): bool {
+            expect(DB::transactionLevel())->toBeGreaterThan(0)
+                ->and($recipient->id)->toBe($alert->notifiable_id)
+                ->and($notification->alertId)->toBe((string) $alert->id)
+                ->and($channels)->toBe([WebPushChannel::class]);
+
+            return true;
+        });
+
+    app(SendAgentAlertWebPush::class)->handle($event, app(AgentWebPushConfig::class));
+
+    $source = file_get_contents(app_path('Listeners/SendAgentAlertWebPush.php'));
+
+    expect($source)
+        ->toContain('Account::query()')
+        ->toContain('DatabaseNotification::query()')
+        ->and(substr_count($source, '->lockForUpdate()'))->toBe(3)
+        ->and(strpos($source, 'Notification::sendNow('))->toBeGreaterThan(strpos($source, 'DB::transaction('));
 });
 
 test('a queued event preserves the version it claimed before model rehydration', function (): void {

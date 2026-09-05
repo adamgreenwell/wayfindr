@@ -55,6 +55,18 @@ test('explicit platform operators can inspect the operator console', function ()
         ->assertSee('Platform operator access does not grant support data access.');
 });
 
+test('accountless platform operators run the shared-browser push ownership guard', function (): void {
+    $operator = User::factory()->create([
+        'account_id' => null,
+        'platform_role' => PlatformRole::Operator,
+    ]);
+
+    $this->actingAs($operator)
+        ->get('/operator')
+        ->assertOk()
+        ->assertSee('data-agent-push-ownership-guard', false);
+});
+
 test('operator console shows a safe focus summary for the current instance posture', function (): void {
     $this->travelTo(Carbon::parse('2026-06-22 12:00:00'));
 
