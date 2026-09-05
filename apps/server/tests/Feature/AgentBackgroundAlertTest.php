@@ -35,6 +35,23 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee('"soundEnabled":true', false);
 });
 
+test('visitor index connects the authenticated agent alert stream', function (): void {
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.options.client_host', 'desk.example.test');
+    config()->set('broadcasting.connections.reverb.options.client_port', '443');
+    config()->set('broadcasting.connections.reverb.options.client_scheme', 'https');
+
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+
+    $this->actingAs($agent)
+        ->get('/dashboard/visitors')
+        ->assertOk()
+        ->assertSee('data-agent-alert-stream', false)
+        ->assertSee(sprintf('private-accounts.%d.agents.%d.alerts', $account->id, $agent->id), false);
+});
+
 test('dashboard alert stream degrades quietly when Reverb is unavailable', function (): void {
     config()->set('broadcasting.default', 'null');
 

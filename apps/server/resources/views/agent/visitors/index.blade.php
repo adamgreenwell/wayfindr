@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('visitors.document_title')" :crumb="__('visitors.title')">
+<x-layouts.app :title="__('visitors.document_title')" :agent="$agent" :account="$account" :crumb="__('visitors.title')">
     <x-page-header
         :title="__('visitors.title')"
         {{-- The heading makes the same claim the empty state does, above every
