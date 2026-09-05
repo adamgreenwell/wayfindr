@@ -140,6 +140,7 @@ return [
         'cadence_help' => 'Die Sammelzustellung bündelt geeignete E-Mail-Benachrichtigungen, wenn der Planer läuft. „Unbeantwortet“ sendet nur dann eine E-Mail, wenn eine Besuchernachricht ungesehen wartet. Benachrichtigungen im Dashboard bleiben sofort.',
         'last_digest' => 'Letzte Sammelmeldung',
         'email_help' => 'E-Mail-Benachrichtigungen senden dieselben ruhigen Support-Signale an Ihren Posteingang, sofern E-Mail eingerichtet ist. Der Ruhemodus unterdrückt neue Benachrichtigungen weiterhin.',
+        'dedup_help' => 'Wayfindr stellt jede Benachrichtigung außerhalb der Benachrichtigungszentrale nur einmal zu: zuerst an ein aktives Dashboard, dann per Web-Push und schließlich gemäß Ihrem gewählten E-Mail-Rhythmus als Ausweichlösung.',
         'delivery_ready' => 'E-Mail-Zustellung bereit',
         'delivery_attention' => 'E-Mail-Zustellung erfordert Aufmerksamkeit',
         'save' => 'Benachrichtigungseinstellungen speichern',
