@@ -13,7 +13,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Throwable;
 
 /** Rebuild and send one unattended alert at the worker delivery boundary. */
@@ -79,16 +81,55 @@ class SendUnattendedConversationAlert implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        $claim = (string) Str::uuid();
+        $candidates = $collector->claimForDelivery($agent, $candidates, $claim);
+
+        if ($candidates->isEmpty()) {
+            return;
+        }
+
+        $agent->refresh();
+
+        if (! $agent->wantsUnattendedAlertEmail()) {
+            $collector->releaseDeliveryClaim($candidates, $claim);
+
+            return;
+        }
+
         $deliveredAt = now();
 
-        Mail::to($agent->email)->send(new UnattendedConversationAlertMessage(
-            agentName: $agent->name,
-            candidates: $candidates->all(),
-            generatedAt: $deliveredAt,
-        ));
+        try {
+            Mail::to($agent->email)->send(new UnattendedConversationAlertMessage(
+                agentName: $agent->name,
+                candidates: $candidates->all(),
+                generatedAt: $deliveredAt,
+            ));
+        } catch (Throwable $exception) {
+            try {
+                $collector->releaseDeliveryClaim($candidates, $claim);
+            } catch (Throwable $releaseException) {
+                Log::critical('Unattended delivery is uncertain after its claim could not be released.', [
+                    'agent_id' => $agent->id,
+                    'candidate_count' => $candidates->count(),
+                    'exception' => $releaseException,
+                ]);
 
-        // Only accepted mail consumes the waiting episode. A quiet-hours skip
-        // deliberately leaves it for the next scheduler sweep.
-        $collector->stampEmailed($candidates, $deliveredAt);
+                return;
+            }
+
+            throw $exception;
+        }
+
+        try {
+            $collector->acceptDeliveryClaim($candidates, $claim, $deliveredAt);
+        } catch (Throwable $exception) {
+            // SMTP already accepted the message. The claim remains durable so
+            // a worker retry or later scheduler sweep cannot duplicate it.
+            Log::critical('Unattended delivery was accepted but could not be finalized.', [
+                'agent_id' => $agent->id,
+                'candidate_count' => $candidates->count(),
+                'exception' => $exception,
+            ]);
+        }
     }
 }

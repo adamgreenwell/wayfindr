@@ -13,7 +13,9 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Throwable;
 
 /** Rebuild and send one agent digest at the worker delivery boundary. */
@@ -89,23 +91,78 @@ class SendAgentAlertDigest implements ShouldBeUnique, ShouldQueue
             return;
         }
 
+        $claim = (string) Str::uuid();
+        $candidates = $collector->claimForDelivery($agent, $candidates, $claim);
+
+        if ($candidates->isEmpty()) {
+            return;
+        }
+
+        $agent->refresh();
+
+        if ($agent->isDeactivated()
+            || ! $agent->alertEmailEnabled()
+            || $agent->alertCadence() !== User::ALERT_CADENCE_DIGEST
+            || $agent->alertInterruptionsPaused()) {
+            $collector->releaseDeliveryClaim($candidates, $claim);
+
+            return;
+        }
+
         $deliveredAt = now();
 
-        Mail::to($agent->email)->send(new AlertDigestMessage(
-            agentName: $agent->name,
-            candidates: $candidates->all(),
-            generatedAt: $deliveredAt,
-        ));
+        try {
+            Mail::to($agent->email)->send(new AlertDigestMessage(
+                agentName: $agent->name,
+                candidates: $candidates->all(),
+                generatedAt: $deliveredAt,
+            ));
+        } catch (Throwable $exception) {
+            try {
+                $collector->releaseDeliveryClaim($candidates, $claim);
+            } catch (Throwable $releaseException) {
+                Log::critical('Digest delivery is uncertain after its claim could not be released.', [
+                    'agent_id' => $agent->id,
+                    'candidate_count' => $candidates->count(),
+                    'exception' => $releaseException,
+                ]);
 
-        // Stamps come after mail transport acceptance. A job suppressed by
-        // newly active quiet hours remains eligible for the next sweep.
-        $collector->stampQueued($agent, $candidates, $deliveredAt);
-        $agent->recordAlertDigestDelivery([
-            'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
-            'candidate_count' => $candidates->count(),
-            'message' => User::digestQueuedMessage($candidates->count()),
-            'last_attempted_at' => $deliveredAt->toISOString(),
-        ]);
+                return;
+            }
+
+            throw $exception;
+        }
+
+        try {
+            $collector->acceptDeliveryClaim($agent, $candidates, $claim, $deliveredAt);
+        } catch (Throwable $exception) {
+            // SMTP already accepted the message. The durable claim is left in
+            // place so neither this job nor a later sweep can send it again.
+            Log::critical('Digest delivery was accepted but could not be finalized.', [
+                'agent_id' => $agent->id,
+                'candidate_count' => $candidates->count(),
+                'exception' => $exception,
+            ]);
+
+            return;
+        }
+
+        try {
+            $agent->recordAlertDigestDelivery([
+                'status' => User::ALERT_DIGEST_DELIVERY_QUEUED,
+                'candidate_count' => $candidates->count(),
+                'message' => User::digestQueuedMessage($candidates->count()),
+                'last_attempted_at' => $deliveredAt->toISOString(),
+            ]);
+        } catch (Throwable $exception) {
+            // Candidate stamps already prevent a second email; readiness state
+            // can be repaired by the next successful digest run.
+            Log::warning('Digest delivery was accepted but readiness state was not recorded.', [
+                'agent_id' => $agent->id,
+                'candidate_count' => $candidates->count(),
+                'exception' => $exception,
+            ]);
+        }
     }
 
     public function failed(?Throwable $exception): void

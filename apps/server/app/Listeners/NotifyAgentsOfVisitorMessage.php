@@ -124,6 +124,12 @@ class NotifyAgentsOfVisitorMessage
             if (is_string($unattendedEmailedAt) && $unattendedEmailedAt !== '') {
                 $data[UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY] = $unattendedEmailedAt;
             }
+
+            $unattendedDeliveryClaim = data_get($existingData, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY);
+
+            if (is_string($unattendedDeliveryClaim) && $unattendedDeliveryClaim !== '') {
+                $data[UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY] = $unattendedDeliveryClaim;
+            }
         }
 
         $existingNotification->forceFill(['data' => $data])->save();

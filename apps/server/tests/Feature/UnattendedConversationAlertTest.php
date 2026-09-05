@@ -22,9 +22,12 @@ use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\SupportReport;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
 uses(RefreshDatabase::class);
@@ -434,6 +437,75 @@ test('a queued unattended alert rechecks quiet hours before sending or stamping 
     ))->not->toBeNull();
 });
 
+test('an accepted unattended alert keeps a durable claim when finalization is uncertain', function (): void {
+    Mail::fake();
+    Log::spy();
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    $collector = new class extends UnattendedConversationAlertCollector
+    {
+        public function acceptDeliveryClaim(Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
+        {
+            throw new RuntimeException('Database unavailable after SMTP acceptance.');
+        }
+    };
+    $job = new SendUnattendedConversationAlert($agent->id);
+
+    $job->handle($collector);
+
+    Mail::assertSentCount(1);
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+    $deliveryClaim = data_get($notification->data, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY);
+
+    expect($deliveryClaim)->toBeString()->not->toBe('')
+        ->and(data_get($notification->data, UnattendedConversationAlertCollector::UNATTENDED_EMAILED_AT_KEY))->toBeNull()
+        ->and(app(UnattendedConversationAlertCollector::class)->forAgent($agent->fresh()))->toBeEmpty();
+
+    $job->handle(app(UnattendedConversationAlertCollector::class));
+    Mail::assertSentCount(1);
+    Log::shouldHaveReceived('critical')->once();
+
+    $followUp = ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'One more detail while I wait.',
+        'sender_id' => $conversation->visitor_id,
+        'sender_type' => Visitor::class,
+    ]);
+    app(NotifyAgentsOfVisitorMessage::class)->handle(new ConversationMessageCreated($followUp));
+
+    expect(data_get(
+        $agent->fresh()->unreadNotifications->firstOrFail()->data,
+        UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY,
+    ))->toBe($deliveryClaim);
+
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    $job->handle(app(UnattendedConversationAlertCollector::class));
+    Mail::assertSentCount(1);
+});
+
+test('a rejected unattended transport releases its claim for retry', function (): void {
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create();
+    createUnattendedWait($agent, $site);
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    Mail::shouldReceive('to')
+        ->once()
+        ->with($agent->email)
+        ->andThrow(new RuntimeException('SMTP rejected the message.'));
+    $job = new SendUnattendedConversationAlert($agent->id);
+
+    expect(fn () => $job->handle(app(UnattendedConversationAlertCollector::class)))
+        ->toThrow(RuntimeException::class, 'SMTP rejected the message.');
+
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+
+    expect(data_get($notification->data, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY))->toBeNull()
+        ->and(app(UnattendedConversationAlertCollector::class)->forAgent($agent->fresh()))->toHaveCount(1);
+});
+
 test('a follow-up message inside the same wait does not re-arm the email', function (): void {
     // The listener refreshes the unread notification's data on every new
     // visitor message; the unattended stamp must survive that refresh or a
@@ -674,6 +746,8 @@ test('the sweep never stamps an episode it did not email', function (): void {
     $collector = app(UnattendedConversationAlertCollector::class);
     $staleCandidates = $collector->forAgent($agent);
     expect($staleCandidates)->toHaveCount(1);
+    $claimedCandidates = $collector->claimForDelivery($agent, $staleCandidates, 'stale-episode-claim');
+    expect($claimedCandidates)->toHaveCount(1);
 
     // Interleave: colleague reply + fresh visitor message re-arm the same
     // notification before the stamp lands.
@@ -690,7 +764,7 @@ test('the sweep never stamps an episode it did not email', function (): void {
     ]);
     app(NotifyAgentsOfVisitorMessage::class)->handle(new ConversationMessageCreated($newWait));
 
-    $collector->stampEmailed($staleCandidates, now());
+    $collector->acceptDeliveryClaim($claimedCandidates, 'stale-episode-claim', now());
 
     $notification = $agent->unreadNotifications()->firstOrFail();
 

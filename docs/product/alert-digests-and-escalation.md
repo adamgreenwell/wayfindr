@@ -50,9 +50,16 @@ pauses the interruptive copies: local sound, Web Push, immediate email,
 unattended email, and digest delivery. The next scheduled unattended or digest
 sweep can deliver still-current work after the window ends. Their queue jobs
 rebuild the current candidate set, re-check the agent immediately before mail
-transport handoff, and only stamp delivery after that handoff succeeds. This is
-deliberately different from manual quiet mode, which suppresses new support
-alerts until the agent turns it off.
+transport handoff, and only stamp delivery after that handoff succeeds. Before
+SMTP, each job writes a durable claim over the exact alert state it is about to
+send. A transport rejection releases that claim for a normal retry. If SMTP has
+accepted the message but finalizing its delivery stamp fails, Wayfindr keeps the
+claim and logs the uncertain delivery for operator inspection; later jobs skip
+the claimed state instead of risking duplicate customer mail. This at-most-once
+boundary also means a worker lost after claiming but before a confirmed handoff
+needs operator inspection rather than an automatic resend. This is deliberately
+different from manual quiet mode, which suppresses new support alerts until the
+agent turns it off.
 
 Suggested preference shape:
 
@@ -161,6 +168,8 @@ The first digest path is intentionally modest and useful:
 - agents choose immediate or digest email cadence from their profile;
 - agents can pause sound, Web Push, and every email cadence during a daily quiet
   window on their own dashboard clock;
+- already-open dashboards refresh the authenticated sound gate before each tone,
+  so quiet-hour and sound changes take effect without reloading the page;
 - dashboard notifications stay immediate so the app remains current;
 - digest-enabled agents skip event-by-event email for eligible support alerts;
 - `php artisan wayfindr:alert-digest-preview` shows metadata-only candidates

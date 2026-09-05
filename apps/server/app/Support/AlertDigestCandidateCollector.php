@@ -15,11 +15,14 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 
 class AlertDigestCandidateCollector
 {
     public const DIGEST_QUEUED_AT_KEY = 'digest_queued_at';
+
+    public const DIGEST_DELIVERY_CLAIM_KEY = 'digest_delivery_claim';
 
     public function __construct(private readonly SlaAlertRouting $slaAlertRouting) {}
 
@@ -47,6 +50,7 @@ class AlertDigestCandidateCollector
             ->latest()
             ->get()
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
+            ->reject(fn (DatabaseNotification $notification): bool => filled(data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY)))
             ->map(fn (DatabaseNotification $notification): ?array => $this->candidateFor($agent, $notification))
             ->filter()
             ->values();
@@ -61,34 +65,101 @@ class AlertDigestCandidateCollector
     }
 
     /**
-     * Mark only the exact alert states accepted by the mail transport.
+     * Persist an idempotency claim before handing a digest to SMTP.
+     *
+     * @param  Collection<int, array{last_activity_at: string|null, notification_id: string}>  $candidates
+     * @return Collection<int, array{last_activity_at: string|null, notification_id: string}>
+     */
+    public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
+    {
+        return DB::transaction(function () use ($agent, $candidates, $claim): Collection {
+            $candidateByNotification = $candidates->keyBy('notification_id');
+            $claimed = collect();
+
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($agent, $candidateByNotification, $claim, $claimed): void {
+                    $candidate = $candidateByNotification->get((string) $notification->id);
+                    $current = $this->candidateFor($agent, $notification);
+
+                    if (filled(data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY))
+                        || ! is_array($candidate)
+                        || $current === null
+                        || $current['last_activity_at'] !== $candidate['last_activity_at']) {
+                        return;
+                    }
+
+                    $notification->forceFill([
+                        'data' => [
+                            ...$notification->data,
+                            self::DIGEST_DELIVERY_CLAIM_KEY => $claim,
+                        ],
+                    ])->save();
+                    $claimed->push($candidate);
+                });
+
+            return $claimed->values();
+        });
+    }
+
+    /**
+     * Finalize only the exact states covered by an accepted SMTP handoff.
      *
      * @param  Collection<int, array{last_activity_at: string|null, notification_id: string}>  $candidates
      */
-    public function stampQueued(User $agent, Collection $candidates, CarbonInterface $queuedAt): void
+    public function acceptDeliveryClaim(User $agent, Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
     {
-        $sentByNotification = $candidates->keyBy('notification_id');
+        DB::transaction(function () use ($agent, $candidates, $claim, $acceptedAt): void {
+            $sentByNotification = $candidates->keyBy('notification_id');
 
-        DatabaseNotification::query()
-            ->whereIn('id', $candidates->pluck('notification_id')->all())
-            ->get()
-            ->each(function (DatabaseNotification $notification) use ($agent, $queuedAt, $sentByNotification): void {
-                $sent = $sentByNotification->get((string) $notification->id);
-                $current = $this->candidateFor($agent, $notification);
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($agent, $sentByNotification, $claim, $acceptedAt): void {
+                    if (! hash_equals($claim, (string) data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY))) {
+                        return;
+                    }
 
-                if (! is_array($sent)
-                    || $current === null
-                    || $current['last_activity_at'] !== $sent['last_activity_at']) {
-                    return;
-                }
+                    $sent = $sentByNotification->get((string) $notification->id);
+                    $current = $this->candidateFor($agent, $notification);
+                    $data = $notification->data;
+                    unset($data[self::DIGEST_DELIVERY_CLAIM_KEY]);
 
-                $notification->forceFill([
-                    'data' => [
-                        ...$notification->data,
-                        self::DIGEST_QUEUED_AT_KEY => $queuedAt->toISOString(),
-                    ],
-                ])->save();
-            });
+                    if (is_array($sent)
+                        && $current !== null
+                        && $current['last_activity_at'] === $sent['last_activity_at']) {
+                        $data[self::DIGEST_QUEUED_AT_KEY] = $acceptedAt->toISOString();
+                    }
+
+                    $notification->forceFill(['data' => $data])->save();
+                });
+        });
+    }
+
+    /** Release a pre-SMTP claim only when this exact job still owns it. */
+    public function releaseDeliveryClaim(Collection $candidates, string $claim): void
+    {
+        DB::transaction(function () use ($candidates, $claim): void {
+            DatabaseNotification::query()
+                ->whereIn('id', $candidates->pluck('notification_id')->all())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->each(function (DatabaseNotification $notification) use ($claim): void {
+                    if (! hash_equals($claim, (string) data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY))) {
+                        return;
+                    }
+
+                    $data = $notification->data;
+                    unset($data[self::DIGEST_DELIVERY_CLAIM_KEY]);
+                    $notification->forceFill(['data' => $data])->save();
+                });
+        });
     }
 
     /**

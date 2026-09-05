@@ -92,7 +92,7 @@ const READER_CLOCK_EXEMPT_LINES = [
 
     // Stored on notification data and parsed back as a delivery watermark;
     // unlike the candidate label beside it, this value is never rendered.
-    'self::DIGEST_QUEUED_AT_KEY => $queuedAt->toISOString(),' => 'a stored digest watermark',
+    '$data[self::DIGEST_QUEUED_AT_KEY] = $acceptedAt->toISOString();' => 'a stored digest watermark',
 ];
 
 /**

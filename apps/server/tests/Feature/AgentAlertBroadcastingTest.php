@@ -85,6 +85,7 @@ test('agent alert realtime config uses the existing browser transport and recipi
             'reconcileOverlapSeconds' => 30,
             'reconcileSince' => '2026-09-05T11:59:35.000000Z',
             'scheme' => 'https',
+            'soundGateEndpoint' => 'http://localhost:8000/dashboard/alerts/sound-gate',
             'soundEnabled' => true,
         ]);
 
@@ -349,7 +350,9 @@ test('publication sweep closes the zero downtime writer window without replaying
         DB::table('notifications')->where('id', $alert->id)->update([
             'data' => json_encode([
                 ...$refreshed->data,
+                'digest_delivery_claim' => 'digest-claim',
                 'unattended_emailed_at' => '2026-09-05T12:00:06Z',
+                'unattended_delivery_claim' => 'unattended-claim',
                 'digest_queued_at' => '2026-09-05T12:00:07Z',
             ]),
             'read_at' => CarbonImmutable::parse('2026-09-05T12:00:08Z'),

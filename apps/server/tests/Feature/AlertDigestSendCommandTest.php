@@ -12,8 +12,11 @@ use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
 use App\Support\AlertDigestCandidateCollector;
+use App\Support\Sla\SlaAlertRouting;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -236,6 +239,35 @@ test('a queued digest rechecks quiet hours before sending or stamping candidates
     });
 });
 
+test('an accepted digest keeps a durable claim when finalization is uncertain', function (): void {
+    Mail::fake();
+    Log::spy();
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account);
+    $site = Site::factory()->for($account)->create();
+    createDigestMailConversationAlert(agent: $agent, site: $site);
+    $collector = new class(app(SlaAlertRouting::class)) extends AlertDigestCandidateCollector
+    {
+        public function acceptDeliveryClaim(User $agent, Collection $candidates, string $claim, CarbonInterface $acceptedAt): void
+        {
+            throw new RuntimeException('Database unavailable after SMTP acceptance.');
+        }
+    };
+    $job = new SendAgentAlertDigest($agent->id, 1);
+
+    $job->handle($collector);
+
+    Mail::assertSentCount(1);
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+    expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY))->toBeString()->not->toBe('')
+        ->and(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->toBeNull()
+        ->and(app(AlertDigestCandidateCollector::class)->forAgent($agent->fresh()))->toBeEmpty();
+
+    $job->handle(app(AlertDigestCandidateCollector::class));
+    Mail::assertSentCount(1);
+    Log::shouldHaveReceived('critical')->once();
+});
+
 test('alert digest send command records failed delivery attempts', function (): void {
     $account = Account::factory()->create();
     $agent = digestMailAgent($account, [
@@ -276,6 +308,11 @@ test('alert digest send command records failed delivery attempts', function (): 
         ->and($deliveryStatus['message'])->toBe('Digest email could not be queued.')
         ->and($deliveryStatus)->not->toHaveKey('error')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
+
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+
+    expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY))->toBeNull()
+        ->and(app(AlertDigestCandidateCollector::class)->forAgent($agent->fresh()))->toHaveCount(1);
 });
 
 test('digest delivery state locks the account before updating the agent preferences', function (): void {
