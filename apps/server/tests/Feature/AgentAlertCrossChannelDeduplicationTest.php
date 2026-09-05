@@ -2,7 +2,9 @@
 
 use App\Events\AgentAlertStored;
 use App\Exceptions\RetryableAgentWebPushException;
+use App\Jobs\SendAgentAlertDigest;
 use App\Jobs\SendSlaDeadlineAlertDelivery;
+use App\Jobs\SendUnattendedConversationAlert;
 use App\Listeners\SendAgentAlertWebPush;
 use App\Models\Account;
 use App\Models\AgentAlertDelivery;
@@ -21,10 +23,12 @@ use App\Support\AgentAlertDeliveryCoordinator;
 use App\Support\AgentWebPushConfig;
 use App\Support\AlertDigestCandidateCollector;
 use App\Support\Settings\OperatorSettings;
+use App\Support\Sla\SlaAlertRouting;
 use App\Support\UnattendedConversationAlertCollector;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
@@ -351,6 +355,65 @@ test('a delivered interruptive channel keeps the same event out of a later diges
     expect(app(AlertDigestCandidateCollector::class)->forAgent($agent->fresh()))->toHaveCount(1);
 });
 
+test('a realtime receipt arriving after a digest claim cancels the batch before SMTP', function (): void {
+    [$agent, $assigner, $ticket] = crossChannelTicketWorld(push: false);
+    $agent->forceFill([
+        'alert_preferences' => [
+            ...$agent->alert_preferences,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+        ],
+    ])->save();
+    storeCrossChannelTicketAlert($agent, new TicketAssigned($ticket, $assigner));
+    useCrossChannelArrayMailer();
+    $collector = new class(app(SlaAlertRouting::class), app(AgentAlertDeliveryCoordinator::class)) extends AlertDigestCandidateCollector
+    {
+        public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
+        {
+            $claimed = parent::claimForDelivery($agent, $candidates, $claim);
+
+            DatabaseNotification::query()
+                ->whereIn('id', $claimed->pluck('notification_id')->all())
+                ->get()
+                ->each(function (DatabaseNotification $alert): void {
+                    $alert->forceFill([
+                        'agent_alert_realtime_received_version' => $alert->getAttribute('agent_alert_version'),
+                    ])->save();
+                });
+
+            return $claimed;
+        }
+    };
+
+    expect(fn () => (new SendAgentAlertDigest($agent->id, 1))->handle($collector))
+        ->toThrow(LogicException::class)
+        ->and(Mail::mailer('array')->getSymfonyTransport()->messages())->toHaveCount(0)
+        ->and(AgentAlertDelivery::query()->count())->toBe(0);
+
+    $alert = $agent->fresh()->unreadNotifications()->sole();
+    expect(data_get($alert->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY))->toBeNull();
+});
+
+test('an accepted digest crosses and finalizes the shared batch transport boundary', function (): void {
+    [$agent, $assigner, $ticket] = crossChannelTicketWorld(push: false);
+    $agent->forceFill([
+        'alert_preferences' => [
+            ...$agent->alert_preferences,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+        ],
+    ])->save();
+    storeCrossChannelTicketAlert($agent, new TicketAssigned($ticket, $assigner));
+    useCrossChannelArrayMailer();
+
+    (new SendAgentAlertDigest($agent->id, 1))->handle(app(AlertDigestCandidateCollector::class));
+
+    $delivery = AgentAlertDelivery::query()->sole();
+    expect(Mail::mailer('array')->getSymfonyTransport()->messages())->toHaveCount(1)
+        ->and($delivery->channel)->toBe(AgentAlertDeliveryCoordinator::CHANNEL_DIGEST_MAIL)
+        ->and($delivery->started_at)->not->toBeNull()
+        ->and($delivery->accepted_at)->not->toBeNull()
+        ->and($delivery->started_at->lessThanOrEqualTo($delivery->accepted_at))->toBeTrue();
+});
+
 test('SLA mail records a completed deduplication instead of retrying a push-delivered version', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create([
@@ -435,4 +498,53 @@ test('a push-delivered visitor alert does not reappear as unattended email', fun
     ]);
 
     expect(app(UnattendedConversationAlertCollector::class)->forAgent($agent->fresh()))->toBeEmpty();
+});
+
+test('a realtime receipt arriving after an unattended claim cancels the batch before SMTP', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'cadence' => User::ALERT_CADENCE_UNATTENDED,
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach($agent);
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_id' => $visitor->id,
+        'sender_type' => Visitor::class,
+    ]);
+    $conversation->forceFill(['last_message_at' => $message->created_at])->save();
+    $agent->notify(new ConversationNeedsReply($message));
+    $this->travel(UnattendedConversationAlertCollector::THRESHOLD_MINUTES + 1)->minutes();
+    useCrossChannelArrayMailer();
+    $collector = new class extends UnattendedConversationAlertCollector
+    {
+        public function claimForDelivery(User $agent, Collection $candidates, string $claim): Collection
+        {
+            $claimed = parent::claimForDelivery($agent, $candidates, $claim);
+
+            DatabaseNotification::query()
+                ->whereIn('id', $claimed->pluck('notification_id')->all())
+                ->get()
+                ->each(function (DatabaseNotification $alert): void {
+                    $alert->forceFill([
+                        'agent_alert_realtime_received_version' => $alert->getAttribute('agent_alert_version'),
+                    ])->save();
+                });
+
+            return $claimed;
+        }
+    };
+
+    expect(fn () => (new SendUnattendedConversationAlert($agent->id))->handle($collector))
+        ->toThrow(LogicException::class)
+        ->and(Mail::mailer('array')->getSymfonyTransport()->messages())->toHaveCount(0)
+        ->and(AgentAlertDelivery::query()->count())->toBe(0);
+
+    $alert = $agent->fresh()->unreadNotifications()->sole();
+    expect(data_get($alert->data, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY))->toBeNull();
 });

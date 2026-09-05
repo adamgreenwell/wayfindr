@@ -28,6 +28,8 @@ final class AgentAlertDeliveryCoordinator
 
     public const CLAIM_HEADER = 'X-Wayfindr-Agent-Alert-Claim';
 
+    public const BATCH_CLAIM_HEADER = 'X-Wayfindr-Agent-Alert-Batch-Claim';
+
     public const STATE_EVENT = 'event';
 
     public const CHANNEL_PUSH = 'push';
@@ -112,12 +114,8 @@ final class AgentAlertDeliveryCoordinator
             return $this->versionCovered($alert, $version);
         }
 
-        if ($this->realtimeReceiptCovers($alert, $version)) {
-            $alertedAt = AgentAlertPayload::alertedAt($alert);
-
-            if ($alertedAt === null || $alertedAt->greaterThanOrEqualTo($activity)) {
-                return true;
-            }
+        if ($this->realtimeReceiptCoversCandidate($alert, $version, $activity)) {
+            return true;
         }
 
         return AgentAlertDelivery::query()
@@ -270,6 +268,65 @@ final class AgentAlertDeliveryCoordinator
         }
     }
 
+    /** Recheck every candidate in a batch immediately before SMTP. */
+    public function markBatchMailTransportStarted(string $claim): void
+    {
+        $started = DB::transaction(function () use ($claim): bool {
+            $notificationIds = AgentAlertDelivery::query()
+                ->where('claim_token', $claim)
+                ->whereIn('channel', [self::CHANNEL_DIGEST_MAIL, self::CHANNEL_UNATTENDED_MAIL])
+                ->whereNull('started_at')
+                ->whereNull('accepted_at')
+                ->orderBy('notification_id')
+                ->pluck('notification_id')
+                ->all();
+
+            if ($notificationIds === []) {
+                return false;
+            }
+
+            $alerts = DatabaseNotification::query()
+                ->whereIn('id', $notificationIds)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy(fn (DatabaseNotification $alert): string => (string) $alert->id);
+            $deliveries = AgentAlertDelivery::query()
+                ->where('claim_token', $claim)
+                ->whereIn('channel', [self::CHANNEL_DIGEST_MAIL, self::CHANNEL_UNATTENDED_MAIL])
+                ->whereNull('started_at')
+                ->whereNull('accepted_at')
+                ->orderBy('notification_id')
+                ->lockForUpdate()
+                ->get();
+
+            if ($deliveries->count() !== count($notificationIds)) {
+                return false;
+            }
+
+            foreach ($deliveries as $delivery) {
+                $alert = $alerts->get((string) $delivery->notification_id);
+
+                if (! $alert instanceof DatabaseNotification
+                    || $alert->read_at !== null
+                    || ! hash_equals($delivery->alert_version, AgentAlertPayload::version($alert))
+                    || ! $this->batchClaimIsCurrent($alert, $delivery, $claim)) {
+                    return false;
+                }
+            }
+
+            return AgentAlertDelivery::query()
+                ->whereIn('id', $deliveries->modelKeys())
+                ->whereNull('started_at')
+                ->whereNull('accepted_at')
+                ->update(['started_at' => now()]) === $deliveries->count();
+        });
+
+        if (! $started) {
+            throw new LogicException('The agent alert batch is no longer eligible for mail transport.');
+        }
+    }
+
     /**
      * @param  array{notification_id: string, alert_version: string, state_key: string, claim_token: string}  $claim
      */
@@ -314,18 +371,29 @@ final class AgentAlertDeliveryCoordinator
      */
     public function acceptBatchMailClaim(array $claim, CarbonInterface $acceptedAt): void
     {
-        $accepted = AgentAlertDelivery::query()
-            ->where('notification_id', $claim['notification_id'])
-            ->where('alert_version', $claim['alert_version'])
-            ->where('state_key', $claim['state_key'])
-            ->where('claim_token', $claim['claim_token'])
-            ->whereNull('accepted_at')
-            ->update([
-                'started_at' => $acceptedAt,
-                'accepted_at' => $acceptedAt,
-            ]);
+        $accepted = DB::transaction(function () use ($acceptedAt, $claim): bool {
+            $delivery = AgentAlertDelivery::query()
+                ->where('notification_id', $claim['notification_id'])
+                ->where('alert_version', $claim['alert_version'])
+                ->where('state_key', $claim['state_key'])
+                ->where('claim_token', $claim['claim_token'])
+                ->whereNull('accepted_at')
+                ->lockForUpdate()
+                ->first();
 
-        if ($accepted !== 1) {
+            if (! $delivery instanceof AgentAlertDelivery) {
+                return false;
+            }
+
+            $delivery->forceFill([
+                'started_at' => $delivery->started_at ?? $acceptedAt,
+                'accepted_at' => $acceptedAt,
+            ])->save();
+
+            return true;
+        });
+
+        if (! $accepted) {
             throw new LogicException('The accepted agent alert batch claim could not be finalized.');
         }
     }
@@ -367,6 +435,57 @@ final class AgentAlertDeliveryCoordinator
         $receipt = $alert->getAttribute('agent_alert_realtime_received_version');
 
         return is_string($receipt) && hash_equals($version, $receipt);
+    }
+
+    private function realtimeReceiptCoversCandidate(
+        DatabaseNotification $alert,
+        string $version,
+        CarbonInterface $activity,
+    ): bool {
+        if (! $this->realtimeReceiptCovers($alert, $version)) {
+            return false;
+        }
+
+        $alertedAt = AgentAlertPayload::alertedAt($alert);
+
+        return $alertedAt === null || $alertedAt->greaterThanOrEqualTo($activity);
+    }
+
+    private function batchClaimIsCurrent(
+        DatabaseNotification $alert,
+        AgentAlertDelivery $delivery,
+        string $claim,
+    ): bool {
+        if ($delivery->channel === self::CHANNEL_UNATTENDED_MAIL) {
+            return hash_equals(
+                $claim,
+                (string) data_get($alert->data, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY),
+            ) && ! $this->realtimeReceiptCovers($alert, $delivery->alert_version);
+        }
+
+        $digestClaim = data_get($alert->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY);
+        $lastActivityAt = is_array($digestClaim)
+            ? data_get($digestClaim, 'last_activity_at')
+            : null;
+
+        if (! is_array($digestClaim)
+            || ! hash_equals($claim, (string) data_get($digestClaim, 'token'))
+            || (! is_string($lastActivityAt) && $lastActivityAt !== null)
+            || ! hash_equals($delivery->state_key, $this->stateKey($lastActivityAt))) {
+            return false;
+        }
+
+        if ($lastActivityAt === null) {
+            return ! $this->realtimeReceiptCovers($alert, $delivery->alert_version);
+        }
+
+        try {
+            $activity = CarbonImmutable::parse($lastActivityAt);
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return ! $this->realtimeReceiptCoversCandidate($alert, $delivery->alert_version, $activity);
     }
 
     private function alertForNotification(User $recipient, Notification $notification): ?DatabaseNotification

@@ -17,8 +17,19 @@ class MarkSlaMailTransportStarted
     public function handle(MessageSending $event): void
     {
         $agentAlertClaim = $this->agentAlertClaim($event);
+        $batchClaim = $this->batchClaim($event);
         $header = $event->message->getHeaders()->get(SlaDeadlineAlert::DELIVERY_HEADER);
         $deliveryId = $header === null ? null : trim($header->getBodyAsString());
+
+        if ($batchClaim !== null) {
+            if ($agentAlertClaim !== null || $deliveryId !== null) {
+                throw new LogicException('Mail cannot carry both batch and single-alert delivery claims.');
+            }
+
+            $this->agentAlertDeliveries->markBatchMailTransportStarted($batchClaim);
+
+            return;
+        }
 
         if ($agentAlertClaim !== null) {
             // The common and SLA-specific boundaries move together. A live
@@ -45,6 +56,23 @@ class MarkSlaMailTransportStarted
         if ($started !== 1) {
             throw new LogicException('The SLA mail delivery is no longer eligible for transport.');
         }
+    }
+
+    private function batchClaim(MessageSending $event): ?string
+    {
+        $header = $event->message->getHeaders()->get(AgentAlertDeliveryCoordinator::BATCH_CLAIM_HEADER);
+
+        if ($header === null) {
+            return null;
+        }
+
+        $claim = trim($header->getBodyAsString());
+
+        if (! Str::isUuid($claim)) {
+            throw new LogicException('The agent alert batch delivery header is invalid.');
+        }
+
+        return $claim;
     }
 
     /** @return array{notification_id: string, alert_version: string, state_key: string, claim_token: string}|null */
