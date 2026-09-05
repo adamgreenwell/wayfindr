@@ -20,7 +20,7 @@
             error.hidden = false;
         }
 
-        function preserveAndDisable() {
+        function preserveAndDisable(message) {
             var preserved = document.createElement('input');
 
             preserved.type = 'hidden';
@@ -28,7 +28,7 @@
             preserved.value = checkbox.checked ? '1' : '0';
             form.appendChild(preserved);
             checkbox.disabled = true;
-            showError(config.unsupportedMessage);
+            showError(message || config.unsupportedMessage);
         }
 
         function pendingRemoval(endpoint) {
@@ -211,7 +211,7 @@
                 });
         }
 
-        function cleanStaleSubscription(subscription, removeStored) {
+        function cleanStaleSubscription(subscription, removeStored, requireLocalRemoval) {
             var storedRemoved = ! removeStored;
 
             if (removeStored) {
@@ -231,7 +231,21 @@
 
             return removal
                 .then(function () {
-                    return subscription.unsubscribe().catch(function () {});
+                    var localRemoval = subscription.unsubscribe();
+
+                    if (! requireLocalRemoval) {
+                        return localRemoval.catch(function () {});
+                    }
+
+                    return localRemoval
+                        .then(function (unsubscribed) {
+                            if (unsubscribed === false) {
+                                throw new Error(config.ownedElsewhereCleanupFailedMessage);
+                            }
+                        })
+                        .catch(function () {
+                            throw new Error(config.ownedElsewhereCleanupFailedMessage);
+                        });
                 })
                 .then(function () {
                     if (storedRemoved) {
@@ -277,7 +291,7 @@
                             // This endpoint remains owned by the prior agent
                             // on the server, but it must stop receiving that
                             // agent's alerts in the browser now in use here.
-                            return cleanStaleSubscription(subscription, false);
+                            return cleanStaleSubscription(subscription, false, true);
                         }
 
                         if (! usesCurrentApplicationServerKey(subscription)) {
@@ -288,9 +302,9 @@
                         checkbox.disabled = false;
                     });
                 })
-                .catch(function () {
+                .catch(function (failure) {
                     browserStateAvailable = false;
-                    preserveAndDisable();
+                    preserveAndDisable(failure && failure.message);
                 });
         }
 

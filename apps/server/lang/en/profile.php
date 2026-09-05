@@ -112,6 +112,7 @@ return [
         'push_invalid_endpoint' => 'This browser supplied a push service address that Wayfindr cannot contact safely.',
         'push_limit' => 'This profile already has the maximum of 10 subscribed browsers.',
         'push_owned_elsewhere' => 'A subscription from another signed-in profile was removed from this browser without reassigning its account record.',
+        'push_owned_elsewhere_cleanup_failed' => 'A subscription from another signed-in profile is still active in this browser. Reload the dashboard to retry before leaving it.',
         'push_notification_title' => 'New Wayfindr alert',
         'push_notification_body' => 'Open Wayfindr to review it.',
         'cadence' => 'Email cadence',

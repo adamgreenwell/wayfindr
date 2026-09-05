@@ -81,6 +81,8 @@ test('every authenticated dashboard page clears a prior agents local push subscr
     expect($source)
         ->toContain("payload.status === 'foreign'")
         ->toContain('subscription.unsubscribe()')
+        ->toContain('unsubscribeForeign(subscription, 2)')
+        ->toContain('unsubscribeForeign(subscription, attemptsRemaining - 1)')
         ->not->toContain('destroyEndpoint')
         ->not->toContain("method: 'DELETE'");
 });
@@ -209,18 +211,22 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
 test('the profile cleans up an owned browser subscription after a VAPID key rotation', function (): void {
     $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
     $cleanup = Str::before(
-        Str::after($source, 'function cleanStaleSubscription(subscription, removeStored) {'),
+        Str::after($source, 'function cleanStaleSubscription(subscription, removeStored, requireLocalRemoval) {'),
         'function initializeBrowserState()',
     );
 
     expect($cleanup)
         ->toContain('pendingRemoval(subscription.endpoint);')
         ->toContain("request(config.destroyEndpoint, 'DELETE'")
-        ->toContain('subscription.unsubscribe()');
+        ->toContain('subscription.unsubscribe()')
+        ->toContain('if (! requireLocalRemoval)')
+        ->toContain('if (unsubscribed === false)')
+        ->toContain('throw new Error(config.ownedElsewhereCleanupFailedMessage)');
 
     expect($source)
         ->toContain("payload.status === 'foreign'")
-        ->toContain('cleanStaleSubscription(subscription, false)')
+        ->toContain('cleanStaleSubscription(subscription, false, true)')
+        ->toContain('config.ownedElsewhereCleanupFailedMessage')
         ->toContain('! usesCurrentApplicationServerKey(subscription)')
         ->toContain("cleanStaleSubscription(subscription, payload.status === 'owned')");
 });

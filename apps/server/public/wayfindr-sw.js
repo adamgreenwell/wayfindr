@@ -13,8 +13,22 @@ function isDashboardUrl(value) {
         && (destination.pathname === '/dashboard' || destination.pathname.startsWith('/dashboard/'));
 }
 
-function isVisibleDashboardClient(client) {
-    return client.visibilityState === 'visible' && isDashboardUrl(client.url);
+function isOperatorUrl(value) {
+    var destination;
+
+    try {
+        destination = new URL(value, self.location.origin);
+    } catch (error) {
+        return false;
+    }
+
+    return destination.origin === self.location.origin
+        && (destination.pathname === '/operator' || destination.pathname.startsWith('/operator/'));
+}
+
+function isVisibleAuthenticatedClient(client) {
+    return client.visibilityState === 'visible'
+        && (isDashboardUrl(client.url) || isOperatorUrl(client.url));
 }
 
 self.addEventListener('push', function (event) {
@@ -38,7 +52,7 @@ self.addEventListener('push', function (event) {
 
     event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true })
         .then(function (windows) {
-            if (windows.some(isVisibleDashboardClient)) {
+            if (windows.some(isVisibleAuthenticatedClient)) {
                 return undefined;
             }
 

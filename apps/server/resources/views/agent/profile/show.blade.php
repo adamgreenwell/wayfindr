@@ -275,6 +275,7 @@
                 'unsupportedMessage' => __('profile.alerts.push_unsupported'),
                 'failedMessage' => __('profile.alerts.push_failed'),
                 'ownedElsewhereMessage' => __('profile.alerts.push_owned_elsewhere'),
+                'ownedElsewhereCleanupFailedMessage' => __('profile.alerts.push_owned_elsewhere_cleanup_failed'),
             ]" />
         @endif
     </section>

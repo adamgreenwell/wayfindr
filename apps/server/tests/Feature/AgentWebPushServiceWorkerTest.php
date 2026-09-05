@@ -2,7 +2,7 @@
 
 use Illuminate\Support\Str;
 
-test('web push stays silent while a dashboard client is visible', function (): void {
+test('web push stays silent while an authenticated application client is visible', function (): void {
     $source = file_get_contents(public_path('wayfindr-sw.js'));
     $pushHandler = Str::before(
         Str::after($source, "self.addEventListener('push'"),
@@ -10,14 +10,19 @@ test('web push stays silent while a dashboard client is visible', function (): v
     );
 
     test()->assertStringContainsString(
-        "client.visibilityState === 'visible' && isDashboardUrl(client.url)",
+        "client.visibilityState === 'visible'",
         $source,
-        'only a visible, same-origin dashboard should suppress the OS notification',
+        'only a visible authenticated application should suppress the OS notification',
     );
+
+    expect($source)
+        ->toContain("destination.pathname === '/dashboard'")
+        ->toContain("destination.pathname === '/operator'")
+        ->toContain('isDashboardUrl(client.url) || isOperatorUrl(client.url)');
 
     expect($pushHandler)
         ->toContain("self.clients.matchAll({ type: 'window', includeUncontrolled: true })")
-        ->toContain('windows.some(isVisibleDashboardClient)')
+        ->toContain('windows.some(isVisibleAuthenticatedClient)')
         ->toContain('return undefined;')
         ->toContain('self.registration.showNotification(title, options)');
 

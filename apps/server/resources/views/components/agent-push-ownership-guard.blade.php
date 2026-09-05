@@ -12,6 +12,22 @@
             return;
         }
 
+        function unsubscribeForeign(subscription, attemptsRemaining) {
+            return subscription.unsubscribe()
+                .then(function (unsubscribed) {
+                    if (unsubscribed === false) {
+                        throw new Error('The foreign browser subscription remains active.');
+                    }
+                })
+                .catch(function (failure) {
+                    if (attemptsRemaining <= 1) {
+                        throw failure;
+                    }
+
+                    return unsubscribeForeign(subscription, attemptsRemaining - 1);
+                });
+        }
+
         navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
             .then(function (registration) {
                 return registration ? registration.pushManager.getSubscription() : null;
@@ -38,7 +54,7 @@
                     if (payload && payload.status === 'foreign') {
                         // Do not delete or reassign the prior agent's server
                         // row. Only stop this shared browser from receiving it.
-                        return subscription.unsubscribe();
+                        return unsubscribeForeign(subscription, 2);
                     }
                 });
             })
