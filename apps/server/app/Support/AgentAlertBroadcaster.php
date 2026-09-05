@@ -57,7 +57,13 @@ final class AgentAlertBroadcaster
                 return null;
             }
 
-            $version = (string) Str::uuid();
+            // Before the first claim, reconciliation deliberately exposes the
+            // notification ID as its stable fallback version. Keep that same
+            // version when the listener claims the row so a concurrent catch-up
+            // and live delivery deduplicate. Meaningful later refreshes rotate.
+            $version = blank($recordedFingerprint)
+                ? $notificationId
+                : (string) Str::uuid();
 
             DB::table('notifications')->where('id', $notificationId)->update([
                 'agent_alerted_at' => now(),

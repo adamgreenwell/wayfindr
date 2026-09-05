@@ -23,6 +23,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
@@ -379,6 +380,51 @@ test('publication sweep backfills alerts inserted by the previous release', func
 
     expect(AgentAlertPayload::version($alert))->toBe($id)
         ->and($alert->getAttribute('agent_alert_fingerprint'))->toBe(AgentAlertPublicationFingerprint::for($data));
+});
+
+test('a first live publication keeps the version already exposed by concurrent reconciliation', function (): void {
+    Event::fake([AgentAlertStored::class]);
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $id = (string) Str::uuid();
+    $since = now()->subMinute()->toJSON();
+    $data = [
+        'kind' => 'conversation_needs_reply',
+        'conversation_id' => $conversation->id,
+        'message_count' => 1,
+    ];
+
+    // This is the normal insert shape: the database default makes the row
+    // catch-up-visible before NotificationSent claims its metadata.
+    DB::table('notifications')->insert([
+        'id' => $id,
+        'type' => ConversationNeedsReply::class,
+        'notifiable_type' => $agent->getMorphClass(),
+        'notifiable_id' => $agent->id,
+        'data' => json_encode($data),
+        'read_at' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $catchUpVersion = $this->actingAs($agent)
+        ->getJson(route('dashboard.alerts.reconcile', ['since' => $since]))
+        ->assertOk()
+        ->json('data.alerts.0.version');
+
+    $alert = DatabaseNotification::query()->findOrFail($id);
+    app(AgentAlertBroadcaster::class)->stored($agent, $alert);
+
+    Event::assertDispatchedTimes(AgentAlertStored::class, 1);
+
+    $liveEvent = Event::dispatched(AgentAlertStored::class)->sole()[0];
+
+    expect($catchUpVersion)->toBe($id)
+        ->and(AgentAlertPayload::version($liveEvent->alert))->toBe($catchUpVersion)
+        ->and(AgentAlertPayload::version($alert->fresh()))->toBe($catchUpVersion);
 });
 
 test('publication compatibility sweep remains scheduled for late old workers', function (): void {
