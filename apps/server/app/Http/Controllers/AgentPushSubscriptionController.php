@@ -23,7 +23,7 @@ final class AgentPushSubscriptionController extends Controller
 {
     private const MAX_SUBSCRIPTIONS_PER_AGENT = 10;
 
-    public function status(Request $request): JsonResponse
+    public function status(Request $request, OperatorSettings $settings): JsonResponse
     {
         $agent = $request->user();
 
@@ -35,23 +35,41 @@ final class AgentPushSubscriptionController extends Controller
         $validated = $request->validate([
             'endpoint' => ['required', 'string', 'max:'.AgentPushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
         ]);
-        $subscription = AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
-            ->where('endpoint', $validated['endpoint'])
-            ->first();
+        $status = DB::transaction(function () use ($agent, $settings, $validated): string {
+            // Status can delete a stale generation, so make that decision from
+            // committed VAPID settings while excluding a concurrent rotation.
+            // Otherwise a long-running process could delete a freshly enrolled
+            // endpoint because its process-local config still holds the old key.
+            OperatorSetting::query()->insertOrIgnore([
+                'key' => 'webpush.public_key',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            OperatorSetting::query()
+                ->where('key', 'webpush.public_key')
+                ->sharedLock()
+                ->firstOrFail();
+            $settings->refreshFromDatabase();
 
-        if (! $subscription instanceof AgentPushSubscription) {
-            return response()->json(['status' => 'missing']);
-        }
+            $subscription = AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
+                ->where('endpoint', $validated['endpoint'])
+                ->lockForUpdate()
+                ->first();
 
-        if (! $subscription->usesCurrentVapidGeneration()) {
-            $subscription->delete();
+            if (! $subscription instanceof AgentPushSubscription) {
+                return 'missing';
+            }
 
-            return response()->json(['status' => 'missing']);
-        }
+            if (! $subscription->usesCurrentVapidGeneration()) {
+                $subscription->delete();
 
-        return response()->json([
-            'status' => $agent->ownsPushSubscription($subscription) ? 'owned' : 'foreign',
-        ]);
+                return 'missing';
+            }
+
+            return $agent->ownsPushSubscription($subscription) ? 'owned' : 'foreign';
+        });
+
+        return response()->json(['status' => $status]);
     }
 
     public function store(

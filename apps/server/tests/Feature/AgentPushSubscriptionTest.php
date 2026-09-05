@@ -163,6 +163,49 @@ test('subscription status distinguishes this agent from another profile without 
         ->assertExactJson(['status' => 'missing']);
 });
 
+test('subscription status refreshes VAPID settings before deleting a generation', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $payload = agentPushPayload();
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => $payload['endpoint'],
+        'public_key' => $payload['keys']['p256dh'],
+        'auth_token' => $payload['keys']['auth'],
+        'content_encoding' => 'aes128gcm',
+    ]);
+    $rotatedKey = 'rotated-vapid-public-key';
+
+    // Model this old process checking an endpoint another process enrolled
+    // after the operator committed a rotation.
+    OperatorSetting::query()
+        ->where('key', 'webpush.public_key')
+        ->update(['value' => $rotatedKey]);
+    AgentPushSubscription::withoutGlobalScopes()
+        ->whereKey($subscription->id)
+        ->update(['vapid_public_key_hash' => hash('sha256', $rotatedKey)]);
+
+    expect(config('webpush.vapid.public_key'))->toBe('current-vapid-public-key');
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.profile.push-subscription.status'), [
+            'endpoint' => $payload['endpoint'],
+        ])
+        ->assertExactJson(['status' => 'owned']);
+
+    expect(config('webpush.vapid.public_key'))->toBe($rotatedKey)
+        ->and(AgentPushSubscription::withoutGlobalScopes()->sole()->endpoint)
+        ->toBe($payload['endpoint']);
+
+    $source = file_get_contents(app_path('Http/Controllers/AgentPushSubscriptionController.php'));
+    $status = str($source)->between('public function status(', 'public function store(')->toString();
+
+    expect($status)
+        ->toContain("->where('key', 'webpush.public_key')")
+        ->toContain('->sharedLock()')
+        ->toContain('$settings->refreshFromDatabase()')
+        ->and(strpos($status, '$settings->refreshFromDatabase()'))
+        ->toBeLessThan(strpos($status, '$subscription->usesCurrentVapidGeneration()'));
+});
+
 test('ownership checks remain available across rapid authenticated navigation', function (): void {
     $agent = User::factory()->for(Account::factory())->create();
     $payload = agentPushPayload();
