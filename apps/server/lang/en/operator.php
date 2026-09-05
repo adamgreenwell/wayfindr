@@ -247,6 +247,11 @@ return [
                     'detail' => 'A VAPID subject, public key, and private key must be configured together.',
                     'action' => 'Complete or clear the Web Push credentials in operator settings.',
                 ],
+                'unavailable' => [
+                    'summary' => 'Web Push settings are temporarily unavailable.',
+                    'detail' => 'Wayfindr could not read the operator settings store, so Web Push is paused without changing subscriptions.',
+                    'action' => 'Restore database and cache access, then recheck. Do not rotate VAPID keys for this condition.',
+                ],
                 'invalid' => [
                     'summary' => 'Web Push credentials are invalid.',
                     'detail' => 'The configured VAPID subject or key material cannot authenticate a push request.',

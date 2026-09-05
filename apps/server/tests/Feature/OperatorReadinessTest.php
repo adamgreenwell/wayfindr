@@ -10,7 +10,9 @@ use App\Models\OperatorReadinessConfirmation;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\AgentWebPushConfig;
 use App\Support\OperatorReadiness;
+use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -302,6 +304,26 @@ test('readiness keeps Web Push optional but flags broken credentials', function 
         'status' => 'ready',
         'summary' => 'Web Push VAPID credentials are ready.',
     ]);
+});
+
+test('readiness distinguishes an unavailable Web Push settings store from invalid credentials', function (): void {
+    $settings = Mockery::mock(OperatorSettings::class);
+    $settings->shouldReceive('valuesAreAuthoritative')->once()->andReturnFalse();
+    app()->instance(AgentWebPushConfig::class, new AgentWebPushConfig($settings));
+
+    $webPush = collect(app(OperatorReadiness::class)->summary()['checks'])
+        ->firstWhere('key', 'web_push');
+
+    expect($webPush)->toMatchArray([
+        'status' => 'attention',
+        'summary' => 'Web Push settings are temporarily unavailable.',
+        'detail' => 'Wayfindr could not read the operator settings store, so Web Push is paused without changing subscriptions.',
+        'action' => 'Restore database and cache access, then recheck. Do not rotate VAPID keys for this condition.',
+        'translation' => [
+            'parameters' => [],
+            'variant' => 'unavailable',
+        ],
+    ])->and($webPush['summary'])->not->toContain('invalid');
 });
 
 test('readiness diagnostics recommend the first attention item as the next step', function (): void {

@@ -690,6 +690,14 @@ class OperatorReadiness
                 detail: 'A VAPID subject, public key, and private key must be configured together.',
                 action: 'Complete or clear the Web Push credentials in operator settings.'
             ), 'incomplete'),
+            'unavailable' => $this->withTranslation($this->check(
+                key: 'web_push',
+                label: 'Web Push',
+                status: 'attention',
+                summary: 'Web Push settings are temporarily unavailable.',
+                detail: 'Wayfindr could not read the operator settings store, so Web Push is paused without changing subscriptions.',
+                action: 'Restore database and cache access, then recheck. Do not rotate VAPID keys for this condition.'
+            ), 'unavailable'),
             default => $this->withTranslation($this->check(
                 key: 'web_push',
                 label: 'Web Push',

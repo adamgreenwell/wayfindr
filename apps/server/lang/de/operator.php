@@ -247,6 +247,11 @@ return [
                     'detail' => 'VAPID-Betreff, öffentlicher Schlüssel und privater Schlüssel müssen gemeinsam eingerichtet werden.',
                     'action' => 'Vervollständigen oder löschen Sie die Web-Push-Zugangsdaten in den Betreiber-Einstellungen.',
                 ],
+                'unavailable' => [
+                    'summary' => 'Die Web-Push-Einstellungen sind vorübergehend nicht verfügbar.',
+                    'detail' => 'Wayfindr konnte den Speicher für Betreiber-Einstellungen nicht lesen. Web-Push wurde deshalb pausiert, ohne Abonnements zu ändern.',
+                    'action' => 'Stellen Sie den Datenbank- und Cache-Zugriff wieder her und prüfen Sie erneut. Rotieren Sie die VAPID-Schlüssel aufgrund dieses Zustands nicht.',
+                ],
                 'invalid' => [
                     'summary' => 'Die Web-Push-Zugangsdaten sind ungültig.',
                     'detail' => 'Der eingerichtete VAPID-Betreff oder das Schlüsselmaterial kann eine Push-Anfrage nicht authentifizieren.',

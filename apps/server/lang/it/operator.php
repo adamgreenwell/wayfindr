@@ -254,6 +254,11 @@ return [
                     'detail' => 'Il soggetto, la chiave pubblica e la chiave privata VAPID devono essere configurati insieme.',
                     'action' => 'Completi o cancelli le credenziali Web Push nelle impostazioni del gestore.',
                 ],
+                'unavailable' => [
+                    'summary' => 'Le impostazioni Web Push sono temporaneamente non disponibili.',
+                    'detail' => 'Wayfindr non ha potuto leggere l’archivio delle impostazioni del gestore. Web Push è quindi in pausa senza modificare le iscrizioni.',
+                    'action' => 'Ripristini l’accesso al database e alla cache, quindi verifichi di nuovo. Non ruoti le chiavi VAPID a causa di questa condizione.',
+                ],
                 'invalid' => [
                     'summary' => 'Le credenziali Web Push non sono valide.',
                     'detail' => 'Il soggetto VAPID o il materiale delle chiavi configurato non può autenticare una richiesta push.',
