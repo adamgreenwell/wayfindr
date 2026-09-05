@@ -66,8 +66,8 @@
             form.dataset.pushEndpointCapturePending = 'true';
 
             // If the eager lookup is still running, it is already the freshest
-            // possible answer. Otherwise recheck in case this page opted in or
-            // replaced its browser subscription after the initial capture.
+            // possible answer. Once it has settled, recheck in case this page
+            // opted in or replaced its subscription after the initial capture.
             var logoutLookup = eagerLookupPending ? endpointLookup : captureEndpoint();
 
             logoutLookup
