@@ -111,6 +111,7 @@
                             type="search"
                             value="{{ $conversationSearch }}"
                             placeholder="{{ __('conversations.search.placeholder') }}"
+                            data-agent-shortcut-search-primary
                         >
                         <span class="wf-filter-help">{{ __('conversations.search.hint') }}</span>
                     </div>
@@ -248,7 +249,7 @@
                     @endif
 
                     <div class="table-wrap">
-                        <table class="wf-queue">
+                        <table class="wf-queue" data-agent-shortcut-queue>
                             <thead>
                                 <tr>
                                     @if ($canManageConversations)
@@ -296,7 +297,7 @@
                                             ?: $conversation->visitor?->anonymous_id
                                             ?: __('conversations.row.unknown_visitor');
                                     @endphp
-                                    <tr @if ($canManageConversations) data-queue-bulk-row data-conversation-bulk-row @endif>
+                                    <tr data-agent-shortcut-row @if ($canManageConversations) data-queue-bulk-row data-conversation-bulk-row @endif>
                                         @if ($canManageConversations)
                                             <td class="wf-queue-select">
                                                 <input
@@ -310,7 +311,7 @@
                                             </td>
                                         @endif
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
-                                            <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
+                                            <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}" data-agent-shortcut-open>
                                                 @if (filled($conversation->subject))<span lang="">{{ $conversation->subject }}</span>@else{{ __('conversations.row.untitled') }}@endif
                                             </a>
                                             @php

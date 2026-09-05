@@ -830,6 +830,10 @@
             background: color-mix(in srgb, var(--wf-brand) 9%, var(--wf-surface));
         }
 
+        .wf-queue [data-agent-shortcut-row][data-shortcut-active] td:first-child {
+            box-shadow: inset 3px 0 0 var(--wf-brand);
+        }
+
         .wf-bulk-caution {
             background: var(--wf-surface-2);
             border-left: 3px solid var(--wf-brand);
@@ -3085,7 +3089,7 @@
 
                     <form class="wf-topbar-search" method="GET" action="{{ route('dashboard.support-code.lookup') }}" aria-label="{{ __('nav.regions.search') }}">
                         <label class="sr-only" for="shell_support_code">{{ __('nav.search.label') }}</label>
-                        <input id="shell_support_code" name="support_code" type="search" placeholder="{{ __('nav.search.placeholder') }}" autocomplete="off">
+                        <input id="shell_support_code" name="support_code" type="search" placeholder="{{ __('nav.search.placeholder') }}" autocomplete="off" data-agent-shortcut-search>
                         <button type="submit">{{ __('nav.search.submit') }}</button>
                     </form>
                 </header>
@@ -3238,5 +3242,6 @@
             });
         })();
     </script>
+    <x-agent-shortcut-script />
 </body>
 </html>

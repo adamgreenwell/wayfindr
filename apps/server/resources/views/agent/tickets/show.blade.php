@@ -228,7 +228,7 @@
                         @enderror
                     </div>
 
-                    <button class="button secondary" type="submit">{{ __('ticket_detail.actions.assign') }}</button>
+                    <button class="button secondary" type="submit" @if (! $ticket->assignee_id) data-agent-shortcut-claim data-agent-shortcut-value="{{ $agent->id }}" @endif>{{ __('ticket_detail.actions.assign') }}</button>
                 </form>
 
                 <div class="section-form">
@@ -311,7 +311,7 @@
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
-                        <button class="button secondary" type="submit">{{ __('ticket_detail.actions.close') }}</button>
+                        <button class="button secondary" type="submit" data-agent-shortcut-close>{{ __('ticket_detail.actions.close') }}</button>
                     </form>
                 @endif
             </section>
@@ -514,6 +514,7 @@
                                     aria-describedby="ticket-reply-shortcut-help"
                                     data-reply-body
                                     data-shortcut-submit
+                                    data-agent-shortcut-reply
                                     lang=""
                                 >{{ old('message') }}</textarea>
                                 <p id="ticket-reply-shortcut-help" class="sr-only">{{ __('ticket_detail.conversation.shortcut') }}</p>
