@@ -154,9 +154,26 @@ class AppServiceProvider extends ServiceProvider
             'agent-alert-reconcile-user:'.(string) $request->user()?->getAuthIdentifier()
         ));
 
-        RateLimiter::for('agent-alert-realtime-receipt', fn (Request $request): Limit => Limit::perMinute(120)->by(
-            'agent-alert-realtime-receipt-user:'.(string) $request->user()?->getAuthIdentifier()
-        ));
+        // Every visible tab acknowledges the same live event. Isolate the
+        // quota by exact alert version so duplicate tabs cannot spend the
+        // agent's allowance for later alerts; hash the unvalidated input so
+        // cache keys never retain identifiers or attacker-controlled length.
+        RateLimiter::for('agent-alert-realtime-receipt', function (Request $request): array {
+            $agent = (string) $request->user()?->getAuthIdentifier();
+            $exactAlert = hash('sha256', (string) json_encode([
+                $request->input('alert_id'),
+                $request->input('version'),
+            ]));
+
+            return [
+                // Bound a compromised authenticated browser without making a
+                // normal multi-tab alert burst compete for a tiny global pool.
+                Limit::perMinute(6000)->by('agent-alert-realtime-receipt-user:'.$agent),
+                Limit::perMinute(120)->by(
+                    'agent-alert-realtime-receipt-user:'.$agent.':alert:'.$exactAlert
+                ),
+            ];
+        });
 
         RateLimiter::for('oidc-redirect', fn (Request $request): array => [
             Limit::perMinute(10)->by('oidc-redirect-ip:'.$request->ip()),

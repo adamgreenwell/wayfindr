@@ -38,10 +38,21 @@ final class AgentAlertRealtimeReceiptController extends Controller
 
         if ($alert instanceof DatabaseNotification
             && Gate::forUser($agent)->allows('view', $alert)
-            && hash_equals((string) $alert->getAttribute('agent_alert_version'), $validated['version'])) {
-            $alert->forceFill([
-                'agent_alert_realtime_received_version' => $validated['version'],
-            ])->save();
+            && hash_equals((string) $alert->getAttribute('agent_alert_version'), $validated['version'])
+            && ! hash_equals(
+                (string) $alert->getAttribute('agent_alert_realtime_received_version'),
+                $validated['version'],
+            )) {
+            DatabaseNotification::query()
+                ->whereKey($alert->id)
+                ->where('agent_alert_version', $validated['version'])
+                ->where(function ($query) use ($validated): void {
+                    $query->whereNull('agent_alert_realtime_received_version')
+                        ->orWhere('agent_alert_realtime_received_version', '!=', $validated['version']);
+                })
+                ->update([
+                    'agent_alert_realtime_received_version' => $validated['version'],
+                ]);
         }
 
         // A receipt is intentionally non-enumerating. A stale or superseded

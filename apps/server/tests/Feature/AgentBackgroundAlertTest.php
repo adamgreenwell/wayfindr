@@ -107,6 +107,50 @@ test('an agent can acknowledge only the current version of their own realtime al
     expect($alert->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBe($version);
 });
 
+test('duplicate tab receipts cannot exhaust the quota for a later alert', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+    $firstVersion = (string) Str::uuid();
+    $secondVersion = (string) Str::uuid();
+    $makeAlert = fn (string $version) => $agent->notifications()->create([
+        'id' => (string) Str::uuid(),
+        'type' => TicketAssigned::class,
+        'data' => ['kind' => 'ticket_assigned', 'ticket_id' => $ticket->id],
+        'agent_alert_version' => $version,
+        'read_at' => null,
+    ]);
+    $first = $makeAlert($firstVersion);
+    $second = $makeAlert($secondVersion);
+
+    foreach (range(1, 120) as $duplicateTabReceipt) {
+        $this->actingAs($agent)
+            ->postJson(route('dashboard.alerts.realtime-receipt'), [
+                'alert_id' => $first->id,
+                'version' => $firstVersion,
+            ])
+            ->assertNoContent();
+    }
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.alerts.realtime-receipt'), [
+            'alert_id' => $first->id,
+            'version' => $firstVersion,
+        ])
+        ->assertStatus(429);
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.alerts.realtime-receipt'), [
+            'alert_id' => $second->id,
+            'version' => $secondVersion,
+        ])
+        ->assertNoContent();
+
+    expect($first->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBe($firstVersion)
+        ->and($second->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBe($secondVersion);
+});
+
 test('visitor index connects the authenticated agent alert stream', function (): void {
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');
