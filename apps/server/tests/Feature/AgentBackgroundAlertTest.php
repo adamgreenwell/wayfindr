@@ -53,7 +53,7 @@ test('the alert stream advertises visible presence until the page is hidden', fu
     $source = file_get_contents(resource_path('views/components/agent-alert-stream.blade.php'));
 
     expect($source)
-        ->toContain('joinVisiblePresence(message.target)')
+        ->toContain('joinVisiblePresence(activeSocket)')
         ->toContain("return document.visibilityState === 'visible'")
         ->not->toContain("window.addEventListener('blur', syncVisiblePresence)")
         ->toContain("document.addEventListener('visibilitychange', foregroundStateChanged)")
@@ -61,7 +61,10 @@ test('the alert stream advertises visible presence until the page is hidden', fu
         ->toContain('unsubscribe(activeSocket, config.visibleChannelName)')
         ->toContain('activeSocket.wayfindrAlertChannelSubscribed !== true')
         ->toContain('message.target.wayfindrAlertChannelSubscribed = true')
-        ->toContain("reconcileAlerts(message.target);\n                    joinVisiblePresence(message.target);")
+        ->toContain('activeSocket.wayfindrAlertReconciled !== true')
+        ->toContain('socket.wayfindrAlertReconciled = false')
+        ->toContain("activeSocket.wayfindrAlertReconciled = true;\n                joinVisiblePresence(activeSocket);")
+        ->not->toContain("reconcileAlerts(message.target);\n                    joinVisiblePresence(message.target);")
         ->not->toContain("authorizeChannel(message.target, config.channelName);\n                    joinVisiblePresence(message.target);")
         ->toContain("message.target.wayfindrVisibleChannelState = 'subscribed'");
 });

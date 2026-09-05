@@ -385,6 +385,7 @@
                 || activeSocket.readyState !== 1
                 || ! activeSocket.wayfindrSocketId
                 || activeSocket.wayfindrAlertChannelSubscribed !== true
+                || activeSocket.wayfindrAlertReconciled !== true
                 || activeSocket.wayfindrVisibleChannelState !== 'absent') {
                 return;
             }
@@ -596,7 +597,12 @@
                 if (activeSocket.wayfindrNeedsFreshReconcile) {
                     activeSocket.wayfindrNeedsFreshReconcile = false;
                     reconcileAlerts(activeSocket);
+
+                    return;
                 }
+
+                activeSocket.wayfindrAlertReconciled = true;
+                joinVisiblePresence(activeSocket);
             }).catch(function (error) {
                 if (error && error.status === 429) {
                     scheduleReconcileRetry(activeSocket, error.retryAfterMilliseconds);
@@ -656,7 +662,6 @@
                     message.target.wayfindrAlertChannelSubscribed = true;
                     reconnectDelay = 1000;
                     reconcileAlerts(message.target);
-                    joinVisiblePresence(message.target);
                 }
 
                 return;
@@ -694,6 +699,7 @@
 
             socket.wayfindrGeneration = generation;
             socket.wayfindrAlertChannelSubscribed = false;
+            socket.wayfindrAlertReconciled = false;
             socket.wayfindrVisibleAuthorization = 0;
             socket.wayfindrVisibleChannelState = 'absent';
             socket.addEventListener('message', handleSocketMessage);
