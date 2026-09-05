@@ -214,6 +214,24 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
         ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
 });
 
+test('the profile requests push permission directly from the submit gesture', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $submitHandler = Str::after($source, "form.addEventListener('submit'");
+    $enablePush = Str::before(
+        Str::after($source, 'function enablePush(permissionRequest) {'),
+        'function disablePush()',
+    );
+
+    expect($source)
+        ->toContain('function requestPushPermission()')
+        ->and($submitHandler)->toContain('pushPermission = requestPushPermission()')
+        ->and(strpos($submitHandler, 'pushPermission = requestPushPermission()'))
+        ->toBeLessThan(strpos($submitHandler, 'browserStateReady.then'))
+        ->and($enablePush)
+        ->toContain('return permissionRequest.then(function (permission)')
+        ->not->toContain('Notification.requestPermission()');
+});
+
 test('the profile cleans up an owned browser subscription after a VAPID key rotation', function (): void {
     $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
     $cleanup = Str::before(

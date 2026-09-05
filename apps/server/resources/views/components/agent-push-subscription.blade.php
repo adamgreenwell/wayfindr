@@ -149,7 +149,22 @@
             });
         }
 
-        function enablePush() {
+        function requestPushPermission() {
+            if (Notification.permission === 'granted') {
+                return Promise.resolve('granted');
+            }
+
+            try {
+                // Invoke the browser prompt directly from the submit gesture.
+                // Waiting for service-worker or ownership work first can spend
+                // the transient user activation required by some browsers.
+                return Notification.requestPermission();
+            } catch (failure) {
+                return Promise.reject(failure);
+            }
+        }
+
+        function enablePush(permissionRequest) {
             return navigator.serviceWorker.register('/wayfindr-sw.js', { scope: '/' })
                 .then(function (registration) {
                     return registration.pushManager.getSubscription().then(function (subscription) {
@@ -171,7 +186,7 @@
                             : removeStored;
 
                         return replace.then(function () {
-                            return Notification.requestPermission().then(function (permission) {
+                            return permissionRequest.then(function (permission) {
                                 if (permission !== 'granted') {
                                     throw new Error(config.failedMessage);
                                 }
@@ -353,6 +368,18 @@
                 submitter.disabled = true;
             }
 
+            var pushPermission = null;
+
+            if (browserStateAvailable
+                && checkbox.checked
+                && initialBrowserEnabled === false) {
+                pushPermission = requestPushPermission();
+                // Ownership initialization may still be settling. Mark a
+                // prompt rejection handled immediately; enablePush consumes
+                // this same promise and surfaces the failure to the form.
+                pushPermission.catch(function () {});
+            }
+
             var synchronization = browserStateReady.then(function () {
                 if (! browserStateAvailable) {
                     return;
@@ -365,7 +392,7 @@
                 }
 
                 return checkbox.checked
-                    ? enablePush()
+                    ? enablePush(pushPermission || Promise.resolve(Notification.permission))
                     : disablePush().catch(function () {});
             });
 
