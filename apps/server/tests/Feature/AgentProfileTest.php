@@ -232,6 +232,27 @@ test('the profile requests push permission directly from the submit gesture', fu
         ->not->toContain('Notification.requestPermission()');
 });
 
+test('the profile discards a browser subscription when server storage fails', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $cleanup = Str::before(
+        Str::after($source, 'function storeEnabledSubscription(subscription) {'),
+        'function requestPushPermission()',
+    );
+
+    expect($cleanup)
+        ->toContain('return storeSubscription(subscription).catch(function (failure)')
+        ->toContain('pendingRemoval(subscription.endpoint)')
+        ->toContain("request(config.destroyEndpoint, 'DELETE'")
+        ->toContain('subscription.unsubscribe().catch(function () {})')
+        ->toContain('if (storedRemoved)')
+        ->toContain('pendingRemoval(null)')
+        ->toContain('throw failure;');
+
+    expect($source)
+        ->toContain('return storeEnabledSubscription(subscription);')
+        ->toContain('}).then(storeEnabledSubscription);');
+});
+
 test('the profile cleans up an owned browser subscription after a VAPID key rotation', function (): void {
     $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
     $cleanup = Str::before(

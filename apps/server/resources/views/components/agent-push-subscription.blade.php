@@ -149,6 +149,31 @@
             });
         }
 
+        function storeEnabledSubscription(subscription) {
+            return storeSubscription(subscription).catch(function (failure) {
+                var storedRemoved = false;
+
+                // The POST may have reached the server even when its response
+                // did not reach this page. Remove both halves so a failed
+                // enable cannot strand an unusable local or server endpoint.
+                pendingRemoval(subscription.endpoint);
+
+                return request(config.destroyEndpoint, 'DELETE', {
+                    endpoint: subscription.endpoint,
+                }).then(function () {
+                    storedRemoved = true;
+                }).catch(function () {}).then(function () {
+                    return subscription.unsubscribe().catch(function () {});
+                }).then(function () {
+                    if (storedRemoved) {
+                        pendingRemoval(null);
+                    }
+
+                    throw failure;
+                });
+            });
+        }
+
         function requestPushPermission() {
             if (Notification.permission === 'granted') {
                 return Promise.resolve('granted');
@@ -171,7 +196,7 @@
                         if (subscription
                             && usesCurrentApplicationServerKey(subscription)
                             && subscriptionOwnership !== 'foreign') {
-                            return storeSubscription(subscription);
+                            return storeEnabledSubscription(subscription);
                         }
 
                         var removeStored = subscription && subscriptionOwnership === 'owned'
@@ -196,7 +221,7 @@
                                     applicationServerKey: applicationServerKey(config.publicKey),
                                 });
                             });
-                        }).then(storeSubscription);
+                        }).then(storeEnabledSubscription);
                     });
                 });
         }
