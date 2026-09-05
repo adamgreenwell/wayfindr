@@ -6,6 +6,7 @@ namespace App\Support;
 
 use App\Enums\AccountPermission;
 use App\Events\AgentAlertStored;
+use App\Models\Account;
 use App\Models\User;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
@@ -31,25 +32,45 @@ final class AgentAlertBroadcaster
 
         DB::afterCommit(function () use ($accountId, $agentId, $notificationId, $notifiableType): void {
             try {
-                $currentRecipient = User::query()
-                    ->whereKey($agentId)
-                    ->where('account_id', $accountId)
-                    ->first();
-                $currentNotification = DatabaseNotification::query()
-                    ->whereKey($notificationId)
-                    ->where('notifiable_type', $notifiableType)
-                    ->where('notifiable_id', $agentId)
-                    ->first();
+                DB::transaction(function () use ($accountId, $agentId, $notificationId, $notifiableType): void {
+                    // The same account-then-user order used by role, site-access
+                    // and deactivation writers. Whichever transaction gets the
+                    // account lock first defines reality: either this event is
+                    // sent while access is still valid, or the writer commits
+                    // first and the checks below suppress it. The network send
+                    // remains inside the lock boundary so a revocation cannot
+                    // commit between authorization and publication.
+                    $account = Account::query()
+                        ->whereKey($accountId)
+                        ->lockForUpdate()
+                        ->first();
 
-                if (! $currentRecipient instanceof User
-                    || $currentRecipient->isDeactivated()
-                    || ! $currentRecipient->hasAccountPermission(AccountPermission::ViewAlerts)
-                    || ! $currentNotification instanceof DatabaseNotification
-                    || ! Gate::forUser($currentRecipient)->allows('view', $currentNotification)) {
-                    return;
-                }
+                    if (! $account instanceof Account) {
+                        return;
+                    }
 
-                AgentAlertStored::dispatch($currentRecipient, $currentNotification);
+                    $currentRecipient = User::query()
+                        ->whereKey($agentId)
+                        ->where('account_id', $account->id)
+                        ->lockForUpdate()
+                        ->first();
+                    $currentNotification = DatabaseNotification::query()
+                        ->whereKey($notificationId)
+                        ->where('notifiable_type', $notifiableType)
+                        ->where('notifiable_id', $agentId)
+                        ->lockForUpdate()
+                        ->first();
+
+                    if (! $currentRecipient instanceof User
+                        || $currentRecipient->isDeactivated()
+                        || ! $currentRecipient->hasAccountPermission(AccountPermission::ViewAlerts)
+                        || ! $currentNotification instanceof DatabaseNotification
+                        || ! Gate::forUser($currentRecipient)->allows('view', $currentNotification)) {
+                        return;
+                    }
+
+                    AgentAlertStored::dispatch($currentRecipient, $currentNotification);
+                });
             } catch (Throwable $exception) {
                 // The database alert is already durable and remains the source
                 // of truth. A realtime outage must not turn that success into a

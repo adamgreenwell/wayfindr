@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 
 uses(DatabaseMigrations::class);
 
-test('agent alert broadcasts run immediately without a transaction and only after a commit', function (): void {
+test('agent alert broadcasts wait for commit and serialize their final send inside a transaction', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
     $site = Site::factory()->for($account)->create();
@@ -32,27 +32,26 @@ test('agent alert broadcasts run immediately without a transaction and only afte
         'read_at' => null,
     ]);
     $broadcaster = app(AgentAlertBroadcaster::class);
+    $dispatchLevels = [];
 
-    Event::fake([AgentAlertStored::class]);
+    Event::listen(AgentAlertStored::class, function () use (&$dispatchLevels): void {
+        $dispatchLevels[] = DB::transactionLevel();
+    });
+
     $broadcaster->stored($agent, $alert);
-    Event::assertDispatchedTimes(AgentAlertStored::class, 1);
+    expect($dispatchLevels)->toBe([1]);
 
-    Event::fake([AgentAlertStored::class]);
     DB::beginTransaction();
     $broadcaster->stored($agent, $alert);
-    Event::assertNotDispatched(AgentAlertStored::class);
+    expect($dispatchLevels)->toBe([1]);
     DB::rollBack();
-    Event::assertNotDispatched(AgentAlertStored::class);
+    expect($dispatchLevels)->toBe([1]);
 
     DB::beginTransaction();
     $broadcaster->stored($agent, $alert);
-    Event::assertNotDispatched(AgentAlertStored::class);
+    expect($dispatchLevels)->toBe([1]);
     DB::commit();
-    Event::assertDispatched(
-        AgentAlertStored::class,
-        fn (AgentAlertStored $event): bool => (string) $event->alert->id === (string) $alert->id
-            && (int) $event->recipient->id === (int) $agent->id,
-    );
+    expect($dispatchLevels)->toBe([1, 1]);
 });
 
 test('new and batched conversation alerts both broadcast their durable database state', function (): void {
