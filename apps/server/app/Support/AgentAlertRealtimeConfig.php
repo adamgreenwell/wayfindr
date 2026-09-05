@@ -28,7 +28,8 @@ final class AgentAlertRealtimeConfig
      *     reconcileOverlapSeconds: int,
      *     reconcileSince: string,
      *     scheme: string,
-     *     soundEnabled: bool
+     *     soundEnabled: bool,
+     *     visibleChannelName: string
      * }|null
      */
     public static function forAgent(User $agent): ?array
@@ -83,6 +84,7 @@ final class AgentAlertRealtimeConfig
             'reconcileSince' => $reconcileSince->toJSON(),
             'scheme' => $reverb['scheme'],
             'soundEnabled' => $agent->alertSoundEnabled(),
+            'visibleChannelName' => AgentVisibleRealtimePresence::channelName($agent),
         ];
     }
 }

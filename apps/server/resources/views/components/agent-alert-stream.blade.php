@@ -225,8 +225,14 @@
             announceAlert(alert, true);
             pruneAlertVersions(overlappingReconcileSince(new Date().toISOString()));
         });
-        document.addEventListener('visibilitychange', clearAttentionIfForeground);
-        window.addEventListener('focus', clearAttentionIfForeground);
+        function foregroundStateChanged() {
+            clearAttentionIfForeground();
+            syncVisiblePresence();
+        }
+
+        document.addEventListener('visibilitychange', foregroundStateChanged);
+        window.addEventListener('focus', foregroundStateChanged);
+        window.addEventListener('blur', syncVisiblePresence);
 
         if (config.soundEnabled) {
             document.addEventListener('pointerdown', armSound, { once: true });
@@ -341,6 +347,83 @@
                 event: 'pusher:subscribe',
                 data: data,
             }));
+        }
+
+        function unsubscribe(activeSocket, channelName) {
+            if (! activeSocket || activeSocket.readyState !== 1) {
+                return;
+            }
+
+            activeSocket.send(JSON.stringify({
+                event: 'pusher:unsubscribe',
+                data: { channel: channelName },
+            }));
+        }
+
+        function leaveVisiblePresence(activeSocket) {
+            if (! activeSocket) {
+                return;
+            }
+
+            activeSocket.wayfindrVisibleAuthorization++;
+
+            if (activeSocket.wayfindrVisibleChannelState === 'subscribing'
+                || activeSocket.wayfindrVisibleChannelState === 'subscribed') {
+                unsubscribe(activeSocket, config.visibleChannelName);
+            }
+
+            activeSocket.wayfindrVisibleChannelState = 'absent';
+        }
+
+        function joinVisiblePresence(activeSocket) {
+            if (pageClosing
+                || isBackground()
+                || ! activeSocket
+                || activeSocket.readyState !== 1
+                || ! activeSocket.wayfindrSocketId
+                || activeSocket.wayfindrVisibleChannelState !== 'absent') {
+                return;
+            }
+
+            activeSocket.wayfindrVisibleChannelState = 'authorizing';
+            var attempt = ++activeSocket.wayfindrVisibleAuthorization;
+
+            authorization(activeSocket.wayfindrSocketId, config.visibleChannelName)
+                .then(function (authorized) {
+                    if (activeSocket.wayfindrGeneration !== socketGeneration
+                        || activeSocket.wayfindrVisibleAuthorization !== attempt) {
+                        return;
+                    }
+
+                    if (isBackground()) {
+                        leaveVisiblePresence(activeSocket);
+
+                        return;
+                    }
+
+                    activeSocket.wayfindrVisibleChannelState = 'subscribing';
+                    subscribe(activeSocket, config.visibleChannelName, authorized);
+                })
+                .catch(function (error) {
+                    if (activeSocket.wayfindrVisibleAuthorization !== attempt) {
+                        return;
+                    }
+
+                    activeSocket.wayfindrVisibleChannelState = 'absent';
+                    authorizationFailed(activeSocket, error);
+                });
+        }
+
+        function syncVisiblePresence() {
+            if (! socket || socket.wayfindrGeneration !== socketGeneration) {
+                return;
+            }
+
+            if (isBackground()) {
+                leaveVisiblePresence(socket);
+            } else {
+                joinVisiblePresence(socket);
+            }
         }
 
         function authorizationFailed(activeSocket, error) {
@@ -558,6 +641,14 @@
             if (event.event === 'pusher_internal:subscription_succeeded') {
                 if (event.channel === config.identityChannelName) {
                     authorizeChannel(message.target, config.channelName);
+                    joinVisiblePresence(message.target);
+                } else if (event.channel === config.visibleChannelName) {
+                    if (isBackground()) {
+                        leaveVisiblePresence(message.target);
+                    } else {
+                        message.target.wayfindrVisibleAuthorization++;
+                        message.target.wayfindrVisibleChannelState = 'subscribed';
+                    }
                 } else if (event.channel === config.channelName) {
                     reconnectDelay = 1000;
                     reconcileAlerts(message.target);
@@ -597,6 +688,8 @@
             }
 
             socket.wayfindrGeneration = generation;
+            socket.wayfindrVisibleAuthorization = 0;
+            socket.wayfindrVisibleChannelState = 'absent';
             socket.addEventListener('message', handleSocketMessage);
             socket.addEventListener('close', function (event) {
                 clearReconcileRetry(event.currentTarget);
@@ -622,6 +715,7 @@
             }
 
             if (socket) {
+                leaveVisiblePresence(socket);
                 clearReconcileRetry(socket);
 
                 try {

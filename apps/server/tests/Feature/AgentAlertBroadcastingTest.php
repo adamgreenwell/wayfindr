@@ -78,6 +78,7 @@ test('agent alert realtime config uses the existing browser transport and recipi
             'reconcileSince' => '2026-09-05T11:59:35.000000Z',
             'scheme' => 'https',
             'soundEnabled' => true,
+            'visibleChannelName' => 'presence-visible-agents.'.$agent->id,
         ]);
 
         config()->set('broadcasting.default', 'null');

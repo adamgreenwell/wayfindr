@@ -9,6 +9,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
 use App\Notifications\TicketAssigned;
+use App\Support\AgentVisibleRealtimePresence;
 use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushConfig;
 use App\Support\AgentWebPushFactory;
@@ -16,9 +17,11 @@ use App\Support\Settings\OperatorSettings;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
@@ -322,6 +325,31 @@ test('a long-running worker rebuilds the Web Push channel after VAPID rotation',
         ->and($authorization[0])->toContain('k='.$firstKeys['publicKey'])
         ->and($authorization[1])->toContain('k='.$secondKeys['publicKey'])
         ->and($authorization[1])->not->toContain('k='.$firstKeys['publicKey']);
+});
+
+test('a visible realtime dashboard suppresses Web Push before delivery', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'visible-dashboard');
+    config()->set('broadcasting.default', 'reverb');
+    $pusher = Mockery::mock();
+    $pusher->shouldReceive('getPresenceUsers')
+        ->once()
+        ->with('presence-visible-agents.'.$agent->id)
+        ->andReturn((object) ['users' => [(object) ['id' => (string) $agent->id]]]);
+    $broadcaster = Mockery::mock(PusherBroadcaster::class);
+    $broadcaster->shouldReceive('getPusher')->once()->andReturn($pusher);
+    Broadcast::shouldReceive('connection')->once()->with('reverb')->andReturn($broadcaster);
+    Http::fake();
+
+    app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+        app(AgentVisibleRealtimePresence::class),
+    );
+
+    Http::assertNothingSent();
+    expect($agent->pushSubscriptions()->count())->toBe(1);
 });
 
 test('the queued Web Push listener is selected only for ready opted-in recipients', function (): void {

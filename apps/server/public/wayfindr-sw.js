@@ -13,24 +13,6 @@ function isDashboardUrl(value) {
         && (destination.pathname === '/dashboard' || destination.pathname.startsWith('/dashboard/'));
 }
 
-function isOperatorUrl(value) {
-    var destination;
-
-    try {
-        destination = new URL(value, self.location.origin);
-    } catch (error) {
-        return false;
-    }
-
-    return destination.origin === self.location.origin
-        && (destination.pathname === '/operator' || destination.pathname.startsWith('/operator/'));
-}
-
-function isVisibleAuthenticatedClient(client) {
-    return client.visibilityState === 'visible'
-        && (isDashboardUrl(client.url) || isOperatorUrl(client.url));
-}
-
 self.addEventListener('push', function (event) {
     var payload = {};
 
@@ -50,14 +32,11 @@ self.addEventListener('push', function (event) {
         data: payload.data && typeof payload.data === 'object' ? payload.data : {},
     };
 
-    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-        .then(function (windows) {
-            if (windows.some(isVisibleAuthenticatedClient)) {
-                return undefined;
-            }
-
-            return self.registration.showNotification(title, options);
-        }));
+    // Every userVisibleOnly push must produce a notification. Foreground
+    // dashboards suppress delivery before it reaches the worker through their
+    // dedicated Reverb presence channel; resolving silently here lets Chromium
+    // substitute its own generic notification.
+    event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener('notificationclick', function (event) {

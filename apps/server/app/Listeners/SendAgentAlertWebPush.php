@@ -11,6 +11,7 @@ use App\Models\Account;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
 use App\Support\AgentAlertPayload;
+use App\Support\AgentVisibleRealtimePresence;
 use App\Support\AgentWebPushConfig;
 use App\Support\DashboardLanguage;
 use Illuminate\Bus\Queueable;
@@ -47,8 +48,11 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         }
     }
 
-    public function handle(AgentAlertStored $event, AgentWebPushConfig $webPush): void
-    {
+    public function handle(
+        AgentAlertStored $event,
+        AgentWebPushConfig $webPush,
+        ?AgentVisibleRealtimePresence $visiblePresence = null,
+    ): void {
         if (! $webPush->isReady()) {
             return;
         }
@@ -60,8 +64,9 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         }
 
         $retryableFailure = null;
+        $visiblePresence ??= app(AgentVisibleRealtimePresence::class);
 
-        DB::transaction(function () use ($accountId, $event, &$retryableFailure): void {
+        DB::transaction(function () use ($accountId, $event, &$retryableFailure, $visiblePresence): void {
             // Match the account-then-user order used by deactivation, role,
             // site-access, and preference writers. Keep those locks plus the
             // alert row lock through the network send: whichever operation
@@ -87,7 +92,8 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
                 || $recipient->alertMode() === User::ALERT_MODE_QUIET
                 || ! $recipient->alertPushEnabled()
                 || ! $recipient->hasAccountPermission(AccountPermission::ViewAlerts)
-                || ! $recipient->pushSubscriptions()->exists()) {
+                || ! $recipient->pushSubscriptions()->exists()
+                || $visiblePresence->hasVisibleClient($recipient)) {
                 return;
             }
 

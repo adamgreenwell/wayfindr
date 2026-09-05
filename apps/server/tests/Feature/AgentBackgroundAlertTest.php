@@ -27,6 +27,7 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee('data-agent-alert-stream', false)
         ->assertSee(sprintf('private-accounts.%d.agents.%d.alerts', $account->id, $agent->id), false)
         ->assertSee('presence-agents.'.$agent->id, false)
+        ->assertSee('presence-visible-agents.'.$agent->id, false)
         ->assertSee('agent.alert.stored', false)
         ->assertSee('wayfindr:agent-alert-stored', false)
         ->assertSee('reconcileAlerts(message.target)', false)
@@ -46,6 +47,18 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee("favicon.setAttribute('data-agent-alert-state', 'attention')", false)
         ->assertSee('audioContext.createOscillator()', false)
         ->assertSee('"soundEnabled":true', false);
+});
+
+test('the alert stream advertises foreground presence and leaves it in the background', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-alert-stream.blade.php'));
+
+    expect($source)
+        ->toContain('joinVisiblePresence(message.target)')
+        ->toContain("window.addEventListener('blur', syncVisiblePresence)")
+        ->toContain("document.addEventListener('visibilitychange', foregroundStateChanged)")
+        ->toContain("event: 'pusher:unsubscribe'")
+        ->toContain('unsubscribe(activeSocket, config.visibleChannelName)')
+        ->toContain("message.target.wayfindrVisibleChannelState = 'subscribed'");
 });
 
 test('visitor index connects the authenticated agent alert stream', function (): void {
