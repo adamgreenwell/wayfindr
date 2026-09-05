@@ -134,6 +134,13 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(15)->by('two-factor-confirmation-ip:'.$request->ip()),
         ]);
 
+        // A browser calls this after a realtime subscription succeeds. Key it
+        // to the authenticated agent so one reconnecting desk cannot spend
+        // another agent's catch-up budget behind a shared address.
+        RateLimiter::for('agent-alert-reconcile', fn (Request $request): Limit => Limit::perMinute(30)->by(
+            'agent-alert-reconcile-user:'.(string) $request->user()?->getAuthIdentifier()
+        ));
+
         RateLimiter::for('oidc-redirect', fn (Request $request): array => [
             Limit::perMinute(10)->by('oidc-redirect-ip:'.$request->ip()),
             Limit::perMinutes(15, 20)->by(

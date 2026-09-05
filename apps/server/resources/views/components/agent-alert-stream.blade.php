@@ -8,7 +8,32 @@
         var originalFavicon = favicon ? favicon.getAttribute('href') : null;
         var pendingAlertIds = {};
         var pendingAlertCount = 0;
+        var seenAlertVersions = {};
+        var seenAlertVersionOrder = [];
+        var reconcileSince = config.reconcileSince;
         var audioContext = null;
+
+        (config.knownAlertVersions || []).forEach(function (version) {
+            rememberAlertVersion(version);
+        });
+
+        function rememberAlertVersion(version) {
+            if (typeof version !== 'string' || seenAlertVersions[version]) {
+                return false;
+            }
+
+            seenAlertVersions[version] = true;
+            seenAlertVersionOrder.push(version);
+
+            // The watermark keeps old versions out of later reconciliation,
+            // so retaining a bounded overlap window is enough to deduplicate
+            // live responses without growing forever in a long-lived tab.
+            if (seenAlertVersionOrder.length > 500) {
+                delete seenAlertVersions[seenAlertVersionOrder.shift()];
+            }
+
+            return true;
+        }
 
         function isBackground() {
             return document.visibilityState === 'hidden' || ! document.hasFocus();
@@ -111,9 +136,21 @@
             }
         }
 
-        function announceAlert(alert) {
-            if (! alert || typeof alert.id !== 'string' || ! isBackground()) {
-                return;
+        function announceAlert(alert, audible) {
+            if (! alert
+                || typeof alert.id !== 'string'
+                || typeof alert.version !== 'string'
+                || ! alert.data
+                || typeof alert.data !== 'object'
+                || ! rememberAlertVersion(alert.version)) {
+                return false;
+            }
+
+            // Remember foreground deliveries too. If this exact durable state
+            // appears in an overlapping catch-up after a later reconnect, it
+            // is not a new reason to pull the agent back to the tab.
+            if (! isBackground()) {
+                return false;
             }
 
             if (! pendingAlertIds[alert.id]) {
@@ -122,11 +159,16 @@
             }
 
             renderAttention();
-            playSound();
+
+            if (audible) {
+                playSound();
+            }
+
+            return true;
         }
 
         document.addEventListener('wayfindr:agent-alert-stored', function (event) {
-            announceAlert(event.detail ? event.detail.alert : null);
+            announceAlert(event.detail ? event.detail.alert : null, true);
         });
         document.addEventListener('visibilitychange', clearAttentionIfForeground);
         window.addEventListener('focus', clearAttentionIfForeground);
@@ -277,6 +319,50 @@
                 });
         }
 
+        function reconcileAlerts(activeSocket) {
+            var endpoint = config.reconcileEndpoint + '?'
+                + new URLSearchParams({ since: reconcileSince }).toString();
+
+            fetch(endpoint, {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: { Accept: 'application/json' },
+            }).then(function (response) {
+                if (! response.ok) {
+                    var failure = new Error('Alert reconciliation failed.');
+
+                    failure.status = response.status;
+                    throw failure;
+                }
+
+                return response.json();
+            }).then(function (response) {
+                if (activeSocket.wayfindrGeneration !== socketGeneration) {
+                    return;
+                }
+
+                var data = response && response.data;
+
+                if (! data || ! Array.isArray(data.alerts) || typeof data.watermark !== 'string') {
+                    throw new Error('Alert reconciliation returned an invalid response.');
+                }
+
+                var shouldPlaySound = data.alerts.reduce(function (announced, alert) {
+                    return announceAlert(alert, false) || announced;
+                }, false);
+
+                reconcileSince = data.watermark;
+
+                // One catch-up, one tone. A reconnect after a longer outage
+                // must not turn a backlog into a burst of beeps.
+                if (shouldPlaySound) {
+                    playSound();
+                }
+            }).catch(function (error) {
+                authorizationFailed(activeSocket, error);
+            });
+        }
+
         function handleSocketMessage(message) {
             var event = parsePayload(message.data);
 
@@ -305,6 +391,7 @@
                     authorizeChannel(message.target, config.channelName);
                 } else if (event.channel === config.channelName) {
                     reconnectDelay = 1000;
+                    reconcileAlerts(message.target);
                 }
 
                 return;
@@ -314,7 +401,11 @@
                 var payload = parsePayload(event.data);
                 var alert = payload && payload.alert;
 
-                if (! alert || typeof alert.id !== 'string' || typeof alert.data !== 'object') {
+                if (! alert
+                    || typeof alert.id !== 'string'
+                    || typeof alert.version !== 'string'
+                    || ! alert.data
+                    || typeof alert.data !== 'object') {
                     return;
                 }
 

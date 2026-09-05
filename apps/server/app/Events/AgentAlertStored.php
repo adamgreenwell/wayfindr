@@ -6,6 +6,7 @@ namespace App\Events;
 
 use App\Enums\AccountPermission;
 use App\Models\User;
+use App\Support\AgentAlertPayload;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -60,19 +61,13 @@ final class AgentAlertStored implements ShouldBroadcastNow
             && Gate::forUser($recipient)->allows('view', $currentAlert);
     }
 
-    /** @return array{alert: array{id: string, data: array<string, mixed>, created_at: string|null, updated_at: string|null}} */
+    /** @return array{alert: array{id: string, data: array<string, mixed>, created_at: string|null, updated_at: string|null, version: string}} */
     public function broadcastWith(): array
     {
         return [
-            'alert' => [
-                'id' => (string) $this->alert->id,
-                // Exactly the database-channel payload. Browser alerting can
-                // consume what the Alerts centre already understands without
-                // creating a second schema that will drift from it.
-                'data' => $this->alert->data,
-                'created_at' => $this->alert->created_at?->toJSON(),
-                'updated_at' => $this->alert->updated_at?->toJSON(),
-            ],
+            // Exactly the database-channel payload plus a content-derived
+            // version used to deduplicate overlap with durable catch-up.
+            'alert' => AgentAlertPayload::for($this->alert),
         ];
     }
 }

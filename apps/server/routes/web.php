@@ -15,6 +15,7 @@ use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAccountSlaPolicyController;
 use App\Http\Controllers\AgentAlertController;
+use App\Http\Controllers\AgentAlertReconciliationController;
 use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentAutomationMacroController;
 use App\Http\Controllers\AgentAutomationMacroRunController;
@@ -101,6 +102,9 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.support-code.lookup');
     Route::get('/dashboard/alerts', [AgentAlertController::class, 'index'])
         ->name('dashboard.alerts.index');
+    Route::get('/dashboard/alerts/reconcile', AgentAlertReconciliationController::class)
+        ->middleware('throttle:agent-alert-reconcile')
+        ->name('dashboard.alerts.reconcile');
     Route::get('/dashboard/profile', [AgentProfileController::class, 'show'])
         ->name('dashboard.profile.show');
     Route::put('/dashboard/profile', [AgentProfileController::class, 'update'])

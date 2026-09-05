@@ -1,6 +1,7 @@
 <?php
 
 use App\Broadcasting\AccountAgentAlertChannel;
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\AgentAlertStored;
 use App\Models\Account;
@@ -10,7 +11,9 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\AgentAlertPayload;
 use App\Support\AgentAlertRealtimeConfig;
+use Carbon\CarbonImmutable;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -21,6 +24,7 @@ use Illuminate\Support\Str;
 uses(RefreshDatabase::class);
 
 test('agent alert realtime config uses the existing browser transport and recipient channel', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
     config()->set('broadcasting.default', 'reverb');
     config()->set('broadcasting.connections.reverb.key', 'reverb-key');
     config()->set('broadcasting.connections.reverb.options.client_host', 'desk.example.test');
@@ -32,21 +36,28 @@ test('agent alert realtime config uses the existing browser transport and recipi
         'alert_preferences' => ['sound' => true],
     ]);
 
-    expect(AgentAlertRealtimeConfig::forAgent($agent))->toBe([
-        'appKey' => 'reverb-key',
-        'authEndpoint' => 'http://localhost:8000/broadcasting/auth',
-        'channelName' => sprintf('private-accounts.%d.agents.%d.alerts', $account->id, $agent->id),
-        'eventName' => 'agent.alert.stored',
-        'host' => 'desk.example.test',
-        'identityChannelName' => 'presence-agents.'.$agent->id,
-        'port' => '443',
-        'scheme' => 'https',
-        'soundEnabled' => true,
-    ]);
+    try {
+        expect(AgentAlertRealtimeConfig::forAgent($agent))->toBe([
+            'appKey' => 'reverb-key',
+            'authEndpoint' => 'http://localhost:8000/broadcasting/auth',
+            'channelName' => sprintf('private-accounts.%d.agents.%d.alerts', $account->id, $agent->id),
+            'eventName' => 'agent.alert.stored',
+            'host' => 'desk.example.test',
+            'identityChannelName' => 'presence-agents.'.$agent->id,
+            'knownAlertVersions' => [],
+            'port' => '443',
+            'reconcileEndpoint' => 'http://localhost:8000/dashboard/alerts/reconcile',
+            'reconcileSince' => '2026-09-05T12:00:05.000000Z',
+            'scheme' => 'https',
+            'soundEnabled' => true,
+        ]);
 
-    config()->set('broadcasting.default', 'null');
+        config()->set('broadcasting.default', 'null');
 
-    expect(AgentAlertRealtimeConfig::forAgent($agent))->toBeNull();
+        expect(AgentAlertRealtimeConfig::forAgent($agent))->toBeNull();
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
 });
 
 test('agent alert realtime config is unavailable after alert permission is revoked', function (): void {
@@ -64,6 +75,32 @@ test('agent alert realtime config is unavailable after alert permission is revok
     ]);
 
     expect(AgentAlertRealtimeConfig::forAgent($agent))->toBeNull();
+});
+
+test('agent alert realtime config remembers visible alert versions already present at its boundary', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
+    config()->set('broadcasting.default', 'reverb');
+    config()->set('broadcasting.connections.reverb.key', 'reverb-key');
+    config()->set('broadcasting.connections.reverb.options.host', '127.0.0.1');
+    config()->set('broadcasting.connections.reverb.options.port', '8080');
+    config()->set('broadcasting.connections.reverb.options.scheme', 'http');
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    try {
+        $alert = databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $conversation->id,
+        ]);
+
+        expect(AgentAlertRealtimeConfig::forAgent($agent)['knownAlertVersions'] ?? null)
+            ->toBe([AgentAlertPayload::version($alert)]);
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
 });
 
 test('the account agent alert channel admits only its active recipient with alert access', function (): void {
@@ -149,14 +186,108 @@ test('stored agent alerts broadcast the existing database payload on the recipie
             $agent->id,
         ))
         ->and($event->broadcastWith())->toBe([
-            'alert' => [
-                'id' => (string) $alert->id,
-                'data' => $alert->data,
-                'created_at' => $alert->created_at?->toJSON(),
-                'updated_at' => $alert->updated_at?->toJSON(),
-            ],
+            'alert' => AgentAlertPayload::for($alert),
         ])
         ->and($event->broadcastWhen())->toBeTrue();
+});
+
+test('alert payload versions change when a batched alert is refreshed within the same second', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    try {
+        $alert = databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $conversation->id,
+            'message_count' => 1,
+        ]);
+        $firstVersion = AgentAlertPayload::version($alert);
+        $alert->forceFill(['data' => array_merge($alert->data, ['message_count' => 2])])->save();
+
+        expect($alert->fresh()->updated_at?->toJSON())->toBe($alert->created_at?->toJSON())
+            ->and(AgentAlertPayload::version($alert->fresh()))->not->toBe($firstVersion);
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
+});
+
+test('alert reconciliation returns only recipient alerts that are current and still visible', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ViewAlerts->value,
+            AccountPermission::ViewConversations->value,
+        ],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $otherAgent = User::factory()->for($account)->create();
+    $visibleSite = Site::factory()->for($account)->create();
+    $hiddenSite = Site::factory()->for($account)->create();
+    $visibleSite->supportAgents()->attach($agent);
+    $hiddenSite->supportAgents()->attach($otherAgent);
+    $visibleVisitor = Visitor::factory()->for($visibleSite)->create();
+    $hiddenVisitor = Visitor::factory()->for($hiddenSite)->create();
+    $visibleConversation = Conversation::factory()->for($visibleSite)->for($visibleVisitor)->create();
+    $hiddenConversation = Conversation::factory()->for($hiddenSite)->for($hiddenVisitor)->create();
+
+    try {
+        $oldAlert = databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $visibleConversation->id,
+        ]);
+        $oldAlert->forceFill([
+            'created_at' => CarbonImmutable::parse('2026-09-05T11:59:00Z'),
+            'updated_at' => CarbonImmutable::parse('2026-09-05T11:59:00Z'),
+        ]);
+        $oldAlert->timestamps = false;
+        $oldAlert->saveQuietly();
+        $visibleAlert = databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $visibleConversation->id,
+        ]);
+        databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $hiddenConversation->id,
+        ]);
+        databaseAlertFor($otherAgent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $visibleConversation->id,
+        ]);
+
+        $this->actingAs($agent)
+            ->getJson(route('dashboard.alerts.reconcile', [
+                'since' => '2026-09-05T12:00:00Z',
+            ]))
+            ->assertOk()
+            ->assertJsonCount(1, 'data.alerts')
+            ->assertJsonPath('data.alerts.0.id', (string) $visibleAlert->id)
+            ->assertJsonPath('data.alerts.0.version', AgentAlertPayload::version($visibleAlert))
+            ->assertJsonPath('data.truncated', false)
+            ->assertJsonPath('data.watermark', '2026-09-05T12:00:05.000000Z');
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
+});
+
+test('alert reconciliation requires alert access', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create(['permissions' => []]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+
+    $this->actingAs($agent)
+        ->getJson(route('dashboard.alerts.reconcile', ['since' => now()->toJSON()]))
+        ->assertForbidden();
 });
 
 test('stored alert broadcasts recheck current recipient access and ownership', function (): void {

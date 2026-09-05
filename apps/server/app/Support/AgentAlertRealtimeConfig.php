@@ -6,6 +6,8 @@ namespace App\Support;
 
 use App\Enums\AccountPermission;
 use App\Models\User;
+use Illuminate\Notifications\DatabaseNotification;
+use Illuminate\Support\Facades\Gate;
 
 /** Build the browser-safe settings for one agent's dashboard alert stream. */
 final class AgentAlertRealtimeConfig
@@ -18,7 +20,10 @@ final class AgentAlertRealtimeConfig
      *     eventName: string,
      *     host: string,
      *     identityChannelName: string,
+     *     knownAlertVersions: list<string>,
      *     port: string,
+     *     reconcileEndpoint: string,
+     *     reconcileSince: string,
      *     scheme: string,
      *     soundEnabled: bool
      * }|null
@@ -37,6 +42,22 @@ final class AgentAlertRealtimeConfig
             return null;
         }
 
+        // Reconciliation begins at a deliberately overlapping whole-second
+        // boundary. Remember anything already present there so a database
+        // whose timestamps have second precision does not turn the overlap
+        // into an old-alert cue.
+        $reconcileSince = now()->startOfSecond();
+        $knownAlertVersions = $agent->notifications()
+            ->where('updated_at', '>=', $reconcileSince)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get()
+            ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
+            ->map(fn (DatabaseNotification $notification): string => AgentAlertPayload::version($notification))
+            ->values()
+            ->all();
+
         return [
             'appKey' => $reverb['app_key'],
             'authEndpoint' => url('/broadcasting/auth'),
@@ -48,7 +69,10 @@ final class AgentAlertRealtimeConfig
             'eventName' => 'agent.alert.stored',
             'host' => $reverb['host'],
             'identityChannelName' => 'presence-agents.'.$agent->id,
+            'knownAlertVersions' => $knownAlertVersions,
             'port' => $reverb['port'],
+            'reconcileEndpoint' => route('dashboard.alerts.reconcile'),
+            'reconcileSince' => $reconcileSince->toJSON(),
             'scheme' => $reverb['scheme'],
             'soundEnabled' => $agent->alertSoundEnabled(),
         ];
