@@ -173,6 +173,18 @@ final class VisitorIdentityMerger
                 ->where('uploaded_by_type', $visitorType)
                 ->where('uploaded_by_id', $sourceId)
                 ->update(['uploaded_by_id' => $targetId]),
+            // Audit facts stay append-only: action, actor/subject type, time,
+            // and metadata do not change. Re-anchor only the polymorphic row
+            // id so the same person remains resolvable and searchable after
+            // the duplicate row is deleted.
+            'audit_subjects' => DB::table('audit_events')
+                ->where('subject_type', $visitorType)
+                ->where('subject_id', $sourceId)
+                ->update(['subject_id' => $targetId]),
+            'audit_actors' => DB::table('audit_events')
+                ->where('actor_type', $visitorType)
+                ->where('actor_id', $sourceId)
+                ->update(['actor_id' => $targetId]),
         ];
     }
 

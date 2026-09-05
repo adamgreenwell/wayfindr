@@ -117,6 +117,28 @@ test('a merge moves person-owned support records and retains canonical values', 
         'sender_id' => $source->id,
     ]);
     $attachment = ConversationMessageAttachment::factory()->pendingFor($conversation, $source)->create();
+    $visitorSubjectEvent = AuditEvent::query()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => $manager->getMorphClass(),
+        'actor_id' => $manager->id,
+        'subject_type' => $source->getMorphClass(),
+        'subject_id' => $source->id,
+        'action' => 'visitor.note_added',
+        'metadata' => ['note_id' => $note->id],
+        'occurred_at' => now(),
+    ]);
+    $visitorActorEvent = AuditEvent::query()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => $source->getMorphClass(),
+        'actor_id' => $source->id,
+        'subject_type' => $conversation->getMorphClass(),
+        'subject_id' => $conversation->id,
+        'action' => 'cobrowse.snapshot_received',
+        'metadata' => [],
+        'occurred_at' => now(),
+    ]);
 
     $this->actingAs($manager)
         ->post(route('dashboard.visitors.merge', $source), [
@@ -147,6 +169,10 @@ test('a merge moves person-owned support records and retains canonical values', 
         ->and($note->fresh()?->visitor_id)->toBe($target->id)
         ->and($message->fresh()?->sender_id)->toBe($target->id)
         ->and($attachment->fresh()?->uploaded_by_id)->toBe($target->id)
+        ->and($visitorSubjectEvent->fresh()?->subject_id)->toBe($target->id)
+        ->and($visitorSubjectEvent->fresh()?->subject?->is($target))->toBeTrue()
+        ->and($visitorActorEvent->fresh()?->actor_id)->toBe($target->id)
+        ->and($visitorActorEvent->fresh()?->actor?->is($target))->toBeTrue()
         ->and(VisitorIdentityAlias::query()->where('visitor_id', $target->id)->pluck('anonymous_id')->sort()->values()->all())
         ->toBe(['anon-duplicate', 'anon-duplicate-older']);
 
@@ -170,6 +196,8 @@ test('a merge moves person-owned support records and retains canonical values', 
                 'contact_notes' => 1,
                 'messages' => 1,
                 'attachments' => 1,
+                'audit_subjects' => 1,
+                'audit_actors' => 1,
             ],
         ])
         ->and(json_encode($event->metadata, JSON_THROW_ON_ERROR))
@@ -505,6 +533,17 @@ test('a retained browser id finds the canonical contact across support search su
     ]);
     Conversation::factory()->for($site)->for($source)->create(['subject' => 'Alias conversation']);
     Ticket::factory()->for($account)->for($site)->for($source, 'requester')->create(['subject' => 'Alias ticket']);
+    AuditEvent::query()->create([
+        'account_id' => $account->id,
+        'site_id' => $site->id,
+        'actor_type' => $manager->getMorphClass(),
+        'actor_id' => $manager->id,
+        'subject_type' => $source->getMorphClass(),
+        'subject_id' => $source->id,
+        'action' => 'visitor.note_added',
+        'metadata' => ['note_id' => 42],
+        'occurred_at' => now()->subMinute(),
+    ]);
 
     $this->actingAs($manager)->post(route('dashboard.visitors.merge', $source), [
         'target_id' => (string) $target->id,
@@ -537,5 +576,6 @@ test('a retained browser id finds the canonical contact across support search su
         ->get(route('dashboard.account.audit.index', ['audit_search' => 'anon-find-after-merge']))
         ->assertOk()
         ->assertSee('Visitor contact merged')
+        ->assertSee('Contact note added')
         ->assertSee('Canonical Search Result');
 });

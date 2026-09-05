@@ -75,8 +75,10 @@ The chosen contact keeps populated name, email, host ID, and custom attribute
 values; the duplicate fills only blanks. The newest sightings and page context
 are retained, while conversations, tickets, contact notes, cobrowse sessions,
 visitor-authored messages, and uploads move to the chosen record. The operation
-is permanent and writes a body-free audit receipt containing only internal IDs
-and moved-row counts.
+is permanent. Existing audit facts keep their action, type, time, and metadata;
+only visitor actor/subject row IDs are re-anchored to the chosen contact so the
+events remain labeled and searchable. The merge writes a body-free audit receipt
+containing only internal IDs and moved-row counts.
 
 The deleted contact's anonymous browser ID and any earlier merged IDs become
 private aliases of the chosen contact. Widget presence, bootstrap, conversation
