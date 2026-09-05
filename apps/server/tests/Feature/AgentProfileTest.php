@@ -251,7 +251,34 @@ test('enabled quiet hours require distinct valid bounds', function (array $paylo
     'missing end' => [['quiet_hours_start' => '22:00'], ['quiet_hours_end']],
     'invalid clock' => [['quiet_hours_start' => '25:00', 'quiet_hours_end' => '07:00'], ['quiet_hours_start']],
     'equal bounds' => [['quiet_hours_start' => '22:00', 'quiet_hours_end' => '22:00'], ['quiet_hours_end']],
+    'longer than twenty two hours' => [['quiet_hours_start' => '07:00', 'quiet_hours_end' => '06:59'], ['quiet_hours_end']],
 ]);
+
+test('agent can disable a stale quiet window that is longer than the current limit', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '07:00',
+                'end' => '06:59',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'quiet_hours_enabled' => '0',
+            'quiet_hours_start' => '07:00',
+            'quiet_hours_end' => '06:59',
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHasNoErrors();
+
+    expect(data_get($agent->fresh()->alert_preferences, 'quiet_hours.enabled'))->toBeFalse();
+});
 
 test('agent can turn the optional dashboard alert sound off', function (): void {
     $agent = User::factory()->for(Account::factory())->create([

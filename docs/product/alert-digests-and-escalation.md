@@ -42,14 +42,17 @@ patterns prove they are needed.
 
 Scheduled quiet hours follow the same per-agent boundary. An agent chooses one
 daily start and end time, interpreted in their dashboard timezone; an end earlier
-than the start wraps through midnight. During that window Wayfindr still stores
-and renders eligible dashboard alerts, but pauses the interruptive copies: local
-sound, Web Push, immediate email, unattended email, and digest delivery. The
-next scheduled unattended or digest sweep can deliver still-current work after
-the window ends. Their queue jobs rebuild the current candidate set, re-check
-the agent immediately before mail transport handoff, and only stamp delivery
-after that handoff succeeds. This is deliberately different from manual quiet
-mode, which suppresses new support alerts until the agent turns it off.
+than the start wraps through midnight. The maximum window is 22 hours, leaving
+at least two hours each day for the hourly digest sweep and the five-minute
+unattended sweep to reach pending work, including around clock changes. During
+that window Wayfindr still stores and renders eligible dashboard alerts, but
+pauses the interruptive copies: local sound, Web Push, immediate email,
+unattended email, and digest delivery. The next scheduled unattended or digest
+sweep can deliver still-current work after the window ends. Their queue jobs
+rebuild the current candidate set, re-check the agent immediately before mail
+transport handoff, and only stamp delivery after that handoff succeeds. This is
+deliberately different from manual quiet mode, which suppresses new support
+alerts until the agent turns it off.
 
 Suggested preference shape:
 

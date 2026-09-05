@@ -52,6 +52,11 @@ test('same-day quiet hours include the start and exclude the end', function (): 
         ->and($agent->alertQuietHoursActive(CarbonImmutable::parse('2026-09-05 11:30:00', 'UTC')))->toBeFalse();
 });
 
+test('quiet hours leave at least two hours for scheduled delivery sweeps', function (): void {
+    expect(User::alertQuietHoursScheduleIsValid('07:00', '05:00'))->toBeTrue()
+        ->and(User::alertQuietHoursScheduleIsValid('07:00', '05:01'))->toBeFalse();
+});
+
 test('quiet hours pause interruptive email delivery without suppressing alert scope', function (): void {
     CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
     $agent = User::factory()->for(Account::factory())->create([
@@ -110,4 +115,21 @@ test('invalid persisted quiet hours fail open and render repairable defaults', f
         'end' => User::ALERT_QUIET_HOURS_DEFAULT_END,
         'timezone' => 'Europe/London',
     ])->and($agent->alertQuietHoursActive())->toBeFalse();
+
+    $agent->forceFill([
+        'alert_preferences' => [
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '07:00',
+                'end' => '06:59',
+            ],
+        ],
+    ])->save();
+
+    expect($agent->fresh()->alertQuietHours())->toBe([
+        'enabled' => false,
+        'start' => '07:00',
+        'end' => '06:59',
+        'timezone' => 'Europe/London',
+    ]);
 });

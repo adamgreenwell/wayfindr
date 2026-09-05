@@ -247,9 +247,15 @@ class AgentProfileController extends Controller
                     'end' => $validated['quiet_hours_end'] ?? $quietHours['end'],
                 ];
 
-                if ($quietHours['start'] === $quietHours['end']) {
+                if ($quietHoursEnabled && $quietHours['start'] === $quietHours['end']) {
                     throw ValidationException::withMessages([
                         'quiet_hours_end' => __('profile.alerts.quiet_hours_same'),
+                    ]);
+                }
+
+                if ($quietHoursEnabled && ! User::alertQuietHoursScheduleIsValid($quietHours['start'], $quietHours['end'])) {
+                    throw ValidationException::withMessages([
+                        'quiet_hours_end' => __('profile.alerts.quiet_hours_too_long'),
                     ]);
                 }
             }

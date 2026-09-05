@@ -51,6 +51,8 @@ class User extends Authenticatable
 
     public const ALERT_QUIET_HOURS_DEFAULT_END = '07:00';
 
+    public const ALERT_QUIET_HOURS_MAX_MINUTES = 22 * 60;
+
     public const ALERT_DIGEST_DELIVERY_NOT_RUN = 'not_run';
 
     public const ALERT_DIGEST_DELIVERY_QUEUED = 'queued';
@@ -260,9 +262,7 @@ class User extends Authenticatable
     {
         $start = data_get($this->alert_preferences, 'quiet_hours.start');
         $end = data_get($this->alert_preferences, 'quiet_hours.end');
-        $valid = self::isAlertQuietTime($start)
-            && self::isAlertQuietTime($end)
-            && $start !== $end;
+        $valid = self::alertQuietHoursScheduleIsValid($start, $end);
 
         return [
             // Invalid persisted input must not silently suppress support signals.
@@ -298,6 +298,19 @@ class User extends Authenticatable
     {
         return $this->alertMode() === self::ALERT_MODE_QUIET
             || $this->alertQuietHoursActive($at);
+    }
+
+    public static function alertQuietHoursScheduleIsValid(mixed $start, mixed $end): bool
+    {
+        if (! self::isAlertQuietTime($start)
+            || ! self::isAlertQuietTime($end)
+            || $start === $end) {
+            return false;
+        }
+
+        $duration = (self::alertQuietMinutes($end) - self::alertQuietMinutes($start) + (24 * 60)) % (24 * 60);
+
+        return $duration <= self::ALERT_QUIET_HOURS_MAX_MINUTES;
     }
 
     public function alertCadence(): string
