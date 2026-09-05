@@ -9,6 +9,7 @@
         'reply' => __('nav.commands.actions.reply'),
         'close' => __('nav.commands.actions.close'),
         'search' => __('nav.commands.actions.search'),
+        'reference' => __('nav.shortcuts.actions.reference'),
     ];
 @endphp
 

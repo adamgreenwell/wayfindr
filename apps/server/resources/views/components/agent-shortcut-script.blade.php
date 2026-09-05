@@ -8,7 +8,8 @@
             reply: 'Alt+R',
             close: 'Alt+X',
             search: 'Alt+/',
-            palette: 'Alt+P'
+            palette: 'Alt+P',
+            reference: '?'
         });
         var actionsByKey = Object.freeze({
             j: 'next',
@@ -55,6 +56,10 @@
         function actionTarget(action) {
             if (action === 'palette') {
                 return document.querySelector('[data-command-palette-open]');
+            }
+
+            if (action === 'reference') {
+                return document.querySelector('[data-agent-shortcut-reference]');
             }
 
             if (action === 'search') {
@@ -168,6 +173,16 @@
         }
 
         function run(action) {
+            if (action === 'reference') {
+                if (! available(action)) {
+                    return false;
+                }
+
+                document.dispatchEvent(new CustomEvent('wayfindr:agent-shortcut-reference-open'));
+
+                return true;
+            }
+
             if (action === 'next') {
                 return move(1);
             }
@@ -225,17 +240,27 @@
             if (event.defaultPrevented
                 || event.repeat
                 || event.isComposing
-                || event.ctrlKey
-                || event.metaKey
-                || ! event.altKey
                 || eventOwnsText(event)) {
                 return;
             }
 
-            var action = actionForEvent(event);
+            var action = null;
 
-            if (event.shiftKey && action !== 'search') {
-                return;
+            var isShortcutReferenceKey = event.key === '?'
+                || (event.key === '/' && event.shiftKey);
+
+            if (! event.ctrlKey && ! event.metaKey && ! event.altKey && isShortcutReferenceKey) {
+                action = 'reference';
+            } else {
+                if (event.ctrlKey || event.metaKey || ! event.altKey) {
+                    return;
+                }
+
+                action = actionForEvent(event);
+
+                if (event.shiftKey && action !== 'search') {
+                    return;
+                }
             }
 
             if (action && run(action)) {

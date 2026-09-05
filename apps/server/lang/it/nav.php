@@ -73,5 +73,19 @@ return [
             'search' => 'Cerca',
         ],
     ],
+    'shortcuts' => [
+        'eyebrow' => 'Area di lavoro agente',
+        'title' => 'Scorciatoie da tastiera',
+        'description' => 'Sono mostrate solo le scorciatoie disponibili in questa pagina.',
+        'dismiss' => 'Chiudi l’elenco delle scorciatoie',
+        'groups' => [
+            'general' => 'Generali',
+            'page' => 'In questa pagina',
+        ],
+        'actions' => [
+            'palette' => 'Tavolozza dei comandi',
+            'reference' => 'Elenco scorciatoie',
+        ],
+    ],
     'sign_out' => 'Esci',
 ];

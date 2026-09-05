@@ -64,5 +64,20 @@ return [
         ],
     ],
 
+    'shortcuts' => [
+        'eyebrow' => 'Agent-Arbeitsbereich',
+        'title' => 'Tastenkürzel',
+        'description' => 'Nur die auf dieser Seite verfügbaren Kürzel werden angezeigt.',
+        'dismiss' => 'Tastenkürzelübersicht schließen',
+        'groups' => [
+            'general' => 'Allgemein',
+            'page' => 'Auf dieser Seite',
+        ],
+        'actions' => [
+            'palette' => 'Befehlspalette',
+            'reference' => 'Tastenkürzelübersicht',
+        ],
+    ],
+
     'sign_out' => 'Abmelden',
 ];
