@@ -22,7 +22,7 @@ final class AgentAlertRealtimeConfig
      *     eventName: string,
      *     host: string,
      *     identityChannelName: string,
-     *     knownAlertVersions: list<string>,
+     *     knownAlerts: list<array{updatedAt: string, version: string}>,
      *     port: string,
      *     reconcileEndpoint: string,
      *     reconcileOverlapSeconds: int,
@@ -52,14 +52,16 @@ final class AgentAlertRealtimeConfig
         $reconcileSince = now()
             ->subSeconds(self::RECONCILIATION_OVERLAP_SECONDS)
             ->startOfSecond();
-        $knownAlertVersions = $agent->notifications()
+        $knownAlerts = $agent->notifications()
             ->where('updated_at', '>=', $reconcileSince)
-            ->orderByDesc('updated_at')
-            ->orderByDesc('id')
-            ->limit(500)
+            ->orderBy('updated_at')
+            ->orderBy('id')
             ->get()
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
-            ->map(fn (DatabaseNotification $notification): string => AgentAlertPayload::version($notification))
+            ->map(fn (DatabaseNotification $notification): array => [
+                'updatedAt' => $notification->updated_at->toJSON(),
+                'version' => AgentAlertPayload::version($notification),
+            ])
             ->values()
             ->all();
 
@@ -74,7 +76,7 @@ final class AgentAlertRealtimeConfig
             'eventName' => 'agent.alert.stored',
             'host' => $reverb['host'],
             'identityChannelName' => 'presence-agents.'.$agent->id,
-            'knownAlertVersions' => $knownAlertVersions,
+            'knownAlerts' => $knownAlerts,
             'port' => $reverb['port'],
             'reconcileEndpoint' => route('dashboard.alerts.reconcile'),
             'reconcileOverlapSeconds' => self::RECONCILIATION_OVERLAP_SECONDS,

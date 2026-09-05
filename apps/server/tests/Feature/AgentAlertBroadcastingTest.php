@@ -56,7 +56,7 @@ test('agent alert realtime config uses the existing browser transport and recipi
             'eventName' => 'agent.alert.stored',
             'host' => 'desk.example.test',
             'identityChannelName' => 'presence-agents.'.$agent->id,
-            'knownAlertVersions' => [],
+            'knownAlerts' => [],
             'port' => '443',
             'reconcileEndpoint' => 'http://localhost:8000/dashboard/alerts/reconcile',
             'reconcileOverlapSeconds' => 30,
@@ -104,12 +104,23 @@ test('agent alert realtime config remembers visible alert versions already prese
     $conversation = Conversation::factory()->for($site)->for($visitor)->create();
 
     try {
-        $alert = databaseAlertFor($agent, [
+        $firstAlert = databaseAlertFor($agent, [
             'kind' => 'conversation_needs_reply',
             'conversation_id' => $conversation->id,
         ]);
-        $alert->timestamps = false;
-        $alert->forceFill(['updated_at' => CarbonImmutable::parse('2026-09-05T11:59:36Z')])->saveQuietly();
+        $firstAlert->timestamps = false;
+        $firstAlert->forceFill(['updated_at' => CarbonImmutable::parse('2026-09-05T11:59:36Z')])->saveQuietly();
+
+        $lastAlert = null;
+
+        foreach (range(2, 501) as $sequence) {
+            $lastAlert = databaseAlertFor($agent, [
+                'kind' => 'conversation_needs_reply',
+                'conversation_id' => $conversation->id,
+                'sequence' => $sequence,
+            ]);
+        }
+
         $outsideOverlap = databaseAlertFor($agent, [
             'kind' => 'conversation_needs_reply',
             'conversation_id' => $conversation->id,
@@ -117,8 +128,14 @@ test('agent alert realtime config remembers visible alert versions already prese
         $outsideOverlap->timestamps = false;
         $outsideOverlap->forceFill(['updated_at' => CarbonImmutable::parse('2026-09-05T11:59:34Z')])->saveQuietly();
 
-        expect(AgentAlertRealtimeConfig::forAgent($agent)['knownAlertVersions'] ?? null)
-            ->toBe([AgentAlertPayload::version($alert->fresh())]);
+        $knownAlerts = collect(AgentAlertRealtimeConfig::forAgent($agent)['knownAlerts'] ?? []);
+
+        expect($knownAlerts)->toHaveCount(501)
+            ->and($knownAlerts->pluck('version'))->toContain(
+                AgentAlertPayload::version($firstAlert->fresh()),
+                AgentAlertPayload::version($lastAlert),
+            )
+            ->not->toContain(AgentAlertPayload::version($outsideOverlap->fresh()));
     } finally {
         CarbonImmutable::setTestNow();
     }

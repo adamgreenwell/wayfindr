@@ -16,26 +16,46 @@
         var reconcileSoundPlayed = false;
         var audioContext = null;
 
-        (config.knownAlertVersions || []).forEach(function (version) {
-            rememberAlertVersion(version);
+        (config.knownAlerts || []).forEach(function (alert) {
+            rememberAlertVersion(alert.version, alert.updatedAt);
         });
 
-        function rememberAlertVersion(version) {
-            if (typeof version !== 'string' || seenAlertVersions[version]) {
+        function rememberAlertVersion(version, updatedAt) {
+            var milliseconds = Date.parse(updatedAt);
+
+            if (typeof version !== 'string'
+                || ! Number.isFinite(milliseconds)
+                || seenAlertVersions[version] !== undefined) {
                 return false;
             }
 
-            seenAlertVersions[version] = true;
-            seenAlertVersionOrder.push(version);
-
-            // The watermark keeps old versions out of later reconciliation,
-            // so retaining a bounded overlap window is enough to deduplicate
-            // live responses without growing forever in a long-lived tab.
-            if (seenAlertVersionOrder.length > 500) {
-                delete seenAlertVersions[seenAlertVersionOrder.shift()];
-            }
+            seenAlertVersions[version] = milliseconds;
+            seenAlertVersionOrder.push({
+                milliseconds: milliseconds,
+                version: version,
+            });
 
             return true;
+        }
+
+        function pruneAlertVersions(keepSince) {
+            var cutoff = Date.parse(keepSince);
+
+            if (! Number.isFinite(cutoff)) {
+                return;
+            }
+
+            seenAlertVersionOrder = seenAlertVersionOrder.filter(function (entry) {
+                if (entry.milliseconds >= cutoff) {
+                    return true;
+                }
+
+                if (seenAlertVersions[entry.version] === entry.milliseconds) {
+                    delete seenAlertVersions[entry.version];
+                }
+
+                return false;
+            });
         }
 
         function overlappingReconcileSince(watermark) {
@@ -158,7 +178,7 @@
                 || typeof alert.version !== 'string'
                 || ! alert.data
                 || typeof alert.data !== 'object'
-                || ! rememberAlertVersion(alert.version)) {
+                || ! rememberAlertVersion(alert.version, alert.updated_at)) {
                 return false;
             }
 
@@ -184,7 +204,10 @@
         }
 
         document.addEventListener('wayfindr:agent-alert-stored', function (event) {
-            announceAlert(event.detail ? event.detail.alert : null, true);
+            var alert = event.detail ? event.detail.alert : null;
+
+            announceAlert(alert, true);
+            pruneAlertVersions(overlappingReconcileSince(new Date().toISOString()));
         });
         document.addEventListener('visibilitychange', clearAttentionIfForeground);
         window.addEventListener('focus', clearAttentionIfForeground);
@@ -401,6 +424,7 @@
                 // gap at that boundary cannot strand the durable alert behind
                 // the watermark; payload versions suppress repeated cues.
                 reconcileSince = overlappingReconcileSince(data.watermark);
+                pruneAlertVersions(reconcileSince);
                 reconcileThrough = null;
                 reconcileSoundPlayed = false;
                 activeSocket.wayfindrReconciling = false;
@@ -460,6 +484,7 @@
                 if (! alert
                     || typeof alert.id !== 'string'
                     || typeof alert.version !== 'string'
+                    || typeof alert.updated_at !== 'string'
                     || ! alert.data
                     || typeof alert.data !== 'object') {
                     return;
