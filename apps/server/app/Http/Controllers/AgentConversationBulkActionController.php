@@ -116,6 +116,7 @@ final class AgentConversationBulkActionController extends Controller
                     ->with('customRole')
                     ->whereKey($agent->id)
                     ->where('account_id', $accountId)
+                    ->whereNull('deactivated_at')
                     ->lockForUpdate()
                     ->firstOrFail();
                 $action = ConversationBulkAction::from((string) $preview['action']);
@@ -196,6 +197,7 @@ final class AgentConversationBulkActionController extends Controller
                     ->with('customRole')
                     ->whereKey($agent->id)
                     ->where('account_id', $accountId)
+                    ->whereNull('deactivated_at')
                     ->lockForUpdate()
                     ->firstOrFail();
                 $run = ConversationBulkActionRun::query()
