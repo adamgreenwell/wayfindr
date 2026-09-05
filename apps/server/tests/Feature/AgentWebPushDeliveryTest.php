@@ -331,6 +331,69 @@ test('a long-running worker rebuilds the Web Push channel after VAPID rotation',
         ->and($authorization[1])->not->toContain('k='.$firstKeys['publicKey']);
 });
 
+test('delivery refreshes VAPID settings under the rotation lock before purging subscriptions', function (): void {
+    $oldKeys = VAPID::createVapidKeys();
+    $newKeys = VAPID::createVapidKeys();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $oldKeys['publicKey'],
+        'webpush.private_key' => $oldKeys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    // This is the worker's JobProcessing snapshot. The database changes below
+    // model a rotation committed by the operator in another process afterward.
+    $settings->applyOverrides();
+    [$agent, , $alert] = pushAlertFixture();
+
+    foreach ([
+        'webpush.public_key' => $newKeys['publicKey'],
+        'webpush.private_key' => $newKeys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    subscribeAgentForPush($agent, 'freshly-rotated');
+    $subscription = AgentPushSubscription::withoutGlobalScopes()->sole();
+    AgentPushSubscription::withoutGlobalScopes()
+        ->whereKey($subscription->id)
+        ->update(['vapid_public_key_hash' => hash('sha256', $newKeys['publicKey'])]);
+    Http::fake(['push.example.test/*' => Http::response('', 201)]);
+
+    expect(config('webpush.vapid.public_key'))->toBe($oldKeys['publicKey']);
+
+    app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+        settings: $settings,
+    );
+
+    $authorization = Http::recorded()->sole()[0]->header('Authorization')[0] ?? '';
+
+    expect(config('webpush.vapid.public_key'))->toBe($newKeys['publicKey'])
+        ->and(AgentPushSubscription::withoutGlobalScopes()->sole()->endpoint)
+        ->toBe('https://push.example.test/subscriptions/freshly-rotated')
+        ->and($authorization)->toContain('k='.$newKeys['publicKey'])
+        ->and($authorization)->not->toContain('k='.$oldKeys['publicKey']);
+
+    $source = file_get_contents(app_path('Listeners/SendAgentAlertWebPush.php'));
+    $handle = Str::before(
+        Str::after($source, 'public function handle('),
+        'private function refreshWebPushSettingsUnderLock',
+    );
+
+    expect($source)
+        ->toContain("->where('key', 'webpush.public_key')")
+        ->toContain('->sharedLock()')
+        ->toContain('$settings->refreshFromDatabase()');
+
+    expect(strpos($handle, 'refreshWebPushSettingsUnderLock($settings)'))
+        ->toBeLessThan(strpos($handle, 'AgentPushSubscription::purgeStaleFor($recipient)'));
+});
+
 test('an environment VAPID rotation removes stale subscriptions before delivery', function (): void {
     readyAgentWebPushConfig();
     [$agent, , $alert] = pushAlertFixture();
@@ -424,7 +487,18 @@ test('the queued Web Push listener is selected only for ready opted-in recipient
     ]);
     expect($listener->shouldQueue($event))->toBeFalse();
 
-    readyAgentWebPushConfig();
+    $keys = readyAgentWebPushConfig();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $keys['publicKey'],
+        'webpush.private_key' => $keys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $settings->applyOverrides();
     expect($listener->shouldQueue($event))->toBeFalse();
 
     subscribeAgentForPush($agent);

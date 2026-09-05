@@ -9,12 +9,14 @@ use App\Events\AgentAlertStored;
 use App\Exceptions\RetryableAgentWebPushException;
 use App\Models\Account;
 use App\Models\AgentPushSubscription;
+use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
 use App\Support\AgentAlertPayload;
 use App\Support\AgentVisibleRealtimePresence;
 use App\Support\AgentWebPushConfig;
 use App\Support\DashboardLanguage;
+use App\Support\Settings\OperatorSettings;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\DatabaseNotification;
@@ -40,30 +42,29 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
     public function shouldQueue(AgentAlertStored $event): bool
     {
         try {
-            $assessment = app(AgentWebPushConfig::class)->assessment();
-        } catch (Throwable) {
-            return false;
-        }
+            return DB::transaction(function () use ($event): bool {
+                $settings = app(OperatorSettings::class);
 
-        if (! in_array($assessment['status'], ['ready', 'unavailable'], true)
-            || ! $event->recipient->alertPushEnabled()
-            || $event->recipient->alertMode() === User::ALERT_MODE_QUIET) {
-            return false;
-        }
+                $this->refreshWebPushSettingsUnderLock($settings);
+                $assessment = app(AgentWebPushConfig::class)->assessment();
 
-        try {
-            if ($assessment['status'] === 'ready') {
-                AgentPushSubscription::purgeStaleFor($event->recipient);
-            }
+                if (! in_array($assessment['status'], ['ready', 'unavailable'], true)
+                    || ! $event->recipient->alertPushEnabled()
+                    || $event->recipient->alertMode() === User::ALERT_MODE_QUIET) {
+                    return false;
+                }
 
-            $hasSubscription = $assessment['status'] === 'unavailable'
-                ? AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
-                    ->where('subscribable_type', $event->recipient->getMorphClass())
-                    ->where('subscribable_id', $event->recipient->getKey())
-                    ->exists()
-                : $event->recipient->pushSubscriptions()->exists();
+                if ($assessment['status'] === 'ready') {
+                    AgentPushSubscription::purgeStaleFor($event->recipient);
+                }
 
-            return $hasSubscription;
+                return $assessment['status'] === 'unavailable'
+                    ? AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
+                        ->where('subscribable_type', $event->recipient->getMorphClass())
+                        ->where('subscribable_id', $event->recipient->getKey())
+                        ->exists()
+                    : $event->recipient->pushSubscriptions()->exists();
+            });
         } catch (Throwable) {
             // A separate subscription database may recover by the time the
             // queued listener runs. Preserve that retry unless schema inspection
@@ -76,17 +77,8 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         AgentAlertStored $event,
         AgentWebPushConfig $webPush,
         ?AgentVisibleRealtimePresence $visiblePresence = null,
+        ?OperatorSettings $settings = null,
     ): void {
-        $assessment = $webPush->assessment();
-
-        if ($assessment['status'] === 'unavailable') {
-            throw new RetryableAgentWebPushException('Web Push settings are temporarily unavailable.');
-        }
-
-        if ($assessment['status'] !== 'ready') {
-            return;
-        }
-
         $accountId = $event->recipient->account_id;
 
         if ($accountId === null) {
@@ -95,6 +87,7 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
         $retryableFailure = null;
         $visiblePresence ??= app(AgentVisibleRealtimePresence::class);
+        $settings ??= app(OperatorSettings::class);
 
         // Leaving a Reverb presence channel is asynchronous. A browser that is
         // already closing can therefore appear visible for one last lookup even
@@ -109,7 +102,26 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
             }
         }
 
-        DB::transaction(function () use ($accountId, $event, &$retryableFailure): void {
+        DB::transaction(function () use ($accountId, $event, &$retryableFailure, $settings, $webPush): void {
+            // Coordinate with operator rotation and subscription enrollment,
+            // then bypass the process-local settings cache. A worker that
+            // started this job on the old key must never purge a browser that
+            // enrolled on the newly committed generation.
+            $this->refreshWebPushSettingsUnderLock($settings);
+            $assessment = $webPush->assessment();
+
+            if ($assessment['status'] === 'unavailable') {
+                $retryableFailure = new RetryableAgentWebPushException(
+                    'Web Push settings are temporarily unavailable.',
+                );
+
+                return;
+            }
+
+            if ($assessment['status'] !== 'ready') {
+                return;
+            }
+
             // Match the account-then-user order used by deactivation, role,
             // site-access, and preference writers. Keep those locks plus the
             // alert row lock through the network send: whichever operation
@@ -179,6 +191,21 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         if ($retryableFailure instanceof RetryableAgentWebPushException) {
             throw $retryableFailure;
         }
+    }
+
+    /** Refresh the destructive generation boundary while rotation is excluded. */
+    private function refreshWebPushSettingsUnderLock(OperatorSettings $settings): void
+    {
+        OperatorSetting::query()->insertOrIgnore([
+            'key' => 'webpush.public_key',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        OperatorSetting::query()
+            ->where('key', 'webpush.public_key')
+            ->sharedLock()
+            ->firstOrFail();
+        $settings->refreshFromDatabase();
     }
 
     private function pushSubscriptionStorageIsKnownAbsent(): bool
