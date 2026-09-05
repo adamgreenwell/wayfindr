@@ -14,15 +14,17 @@ final class AgentAlertPublicationSweep
     private const BATCH_SIZE = 500;
 
     /**
-     * @param  (callable(string): void)|null  $afterReconcile
+     * @param  (callable(string): void)|null  $afterPending
      */
-    public static function run(?callable $afterReconcile = null): int
-    {
+    public static function run(
+        bool $markForBroadcast = false,
+        ?callable $afterPending = null,
+    ): int {
         $reconciled = 0;
         $afterId = null;
 
         do {
-            $batch = self::runBatch($afterId, self::BATCH_SIZE, $afterReconcile);
+            $batch = self::runBatch($afterId, self::BATCH_SIZE, $markForBroadcast, $afterPending);
             $reconciled += $batch['reconciled'];
             $afterId = $batch['last_id'];
         } while ($batch['has_more']);
@@ -33,13 +35,14 @@ final class AgentAlertPublicationSweep
     /**
      * Reconcile one restart-safe page for queue workers with finite timeouts.
      *
-     * @param  (callable(string): void)|null  $afterReconcile
+     * @param  (callable(string): void)|null  $afterPending
      * @return array{reconciled: int, last_id: string|null, has_more: bool}
      */
     public static function runBatch(
         ?string $afterId,
         int $limit,
-        ?callable $afterReconcile = null,
+        bool $markForBroadcast = false,
+        ?callable $afterPending = null,
     ): array {
         if ($limit < 1) {
             throw new \InvalidArgumentException('The agent alert reconciliation batch size must be positive.');
@@ -54,6 +57,8 @@ final class AgentAlertPublicationSweep
                 'updated_at',
                 'agent_alerted_at',
                 'agent_alert_version',
+                'agent_alert_broadcast_claim_version',
+                'agent_alert_broadcast_pending_version',
                 'agent_alert_fingerprint',
             ])
             ->when($afterId !== null, fn ($query) => $query->where('id', '>', $afterId))
@@ -67,23 +72,33 @@ final class AgentAlertPublicationSweep
         foreach ($page as $notification) {
             $data = self::decode($notification->data);
 
-            if ($data === null || hash_equals(
-                (string) ($notification->agent_alert_fingerprint ?? ''),
-                AgentAlertPublicationFingerprint::for($data),
-            )) {
+            if ($data === null) {
                 continue;
             }
 
             $id = (string) $notification->id;
+            $fingerprintMatches = hash_equals(
+                (string) ($notification->agent_alert_fingerprint ?? ''),
+                AgentAlertPublicationFingerprint::for($data),
+            );
+            $version = $notification->agent_alert_version ?? null;
+            $versioned = is_string($version) && $version !== '';
+            $hasPendingBroadcast = $markForBroadcast
+                && is_string($notification->agent_alert_broadcast_pending_version ?? null)
+                && $notification->agent_alert_broadcast_pending_version !== '';
 
-            if (! self::reconcile($id)) {
+            if ($fingerprintMatches && $versioned && ! $hasPendingBroadcast) {
                 continue;
             }
 
-            $reconciled++;
+            $result = self::reconcile($id, $markForBroadcast);
 
-            if ($afterReconcile !== null) {
-                $afterReconcile($id);
+            if ($result['reconciled']) {
+                $reconciled++;
+            }
+
+            if ($result['broadcast_pending'] && $afterPending !== null) {
+                $afterPending($id);
             }
         }
 
@@ -94,47 +109,84 @@ final class AgentAlertPublicationSweep
         ];
     }
 
-    private static function reconcile(string $id): bool
+    /** @return array{reconciled: bool, broadcast_pending: bool} */
+    private static function reconcile(string $id, bool $markForBroadcast): array
     {
-        return DB::transaction(function () use ($id): bool {
+        return DB::transaction(function () use ($id, $markForBroadcast): array {
             $notification = DB::table('notifications')
                 ->where('id', $id)
                 ->lockForUpdate()
                 ->first();
 
             if (! $notification instanceof stdClass) {
-                return false;
+                return ['reconciled' => false, 'broadcast_pending' => false];
             }
 
             $data = self::decode($notification->data);
 
             if ($data === null) {
-                return false;
+                return ['reconciled' => false, 'broadcast_pending' => false];
             }
 
             $fingerprint = AgentAlertPublicationFingerprint::for($data);
+            $recordedFingerprint = $notification->agent_alert_fingerprint ?? null;
+            $recordedVersion = $notification->agent_alert_version ?? null;
+            $fingerprintMatches = is_string($recordedFingerprint)
+                && hash_equals($recordedFingerprint, $fingerprint);
+            $publicationAlreadyVersioned = $fingerprintMatches
+                && is_string($recordedVersion)
+                && $recordedVersion !== '';
 
-            if (hash_equals((string) ($notification->agent_alert_fingerprint ?? ''), $fingerprint)) {
-                return false;
+            if ($publicationAlreadyVersioned) {
+                if (! $markForBroadcast
+                    || ! is_string($notification->agent_alert_broadcast_pending_version ?? null)
+                    || $notification->agent_alert_broadcast_pending_version === '') {
+                    return ['reconciled' => false, 'broadcast_pending' => false];
+                }
+
+                if (is_string($notification->agent_alert_broadcast_claim_version ?? null)
+                    && hash_equals($recordedVersion, $notification->agent_alert_broadcast_claim_version)) {
+                    DB::table('notifications')->where('id', $id)->update([
+                        'agent_alert_broadcast_pending_version' => null,
+                    ]);
+
+                    return ['reconciled' => false, 'broadcast_pending' => false];
+                }
+
+                if (! hash_equals($recordedVersion, $notification->agent_alert_broadcast_pending_version)) {
+                    DB::table('notifications')->where('id', $id)->update([
+                        'agent_alert_broadcast_pending_version' => $recordedVersion,
+                    ]);
+                }
+
+                return ['reconciled' => false, 'broadcast_pending' => true];
             }
 
-            $firstPublication = blank($notification->agent_alert_fingerprint ?? null);
-
-            DB::table('notifications')->where('id', $id)->update([
+            $firstPublication = blank($recordedFingerprint) || blank($recordedVersion);
+            $version = $firstPublication ? $id : (string) Str::uuid();
+            $updates = [
                 'agent_alerted_at' => $notification->updated_at
                     ?? $notification->created_at
                     ?? now(),
-                'agent_alert_version' => $firstPublication
-                    ? $id
-                    : (string) Str::uuid(),
+                'agent_alert_version' => $version,
                 // Deliberately do not touch agent_alert_broadcast_claim_version.
-                // A sweep makes the state visible to durable reconciliation; a
-                // current listener arriving after it must still be able to claim
-                // and publish this exact version to an already-connected tab.
+                // The claim is recorded only after Reverb accepts the event.
                 'agent_alert_fingerprint' => $fingerprint,
-            ]);
+            ];
 
-            return true;
+            if ($markForBroadcast) {
+                // This marker and the repaired version commit together. If the
+                // queue enqueue fails immediately afterwards, retrying the same
+                // cursor page sees this marker and enqueues it again.
+                $updates['agent_alert_broadcast_pending_version'] = $version;
+            }
+
+            DB::table('notifications')->where('id', $id)->update($updates);
+
+            return [
+                'reconciled' => true,
+                'broadcast_pending' => $markForBroadcast,
+            ];
         });
     }
 

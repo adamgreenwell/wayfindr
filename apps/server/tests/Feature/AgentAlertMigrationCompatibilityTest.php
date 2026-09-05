@@ -30,6 +30,7 @@ test('the nontransactional alert migration is safe to retry after its phases com
         'agent_alerted_at',
         'agent_alert_version',
         'agent_alert_broadcast_claim_version',
+        'agent_alert_broadcast_pending_version',
         'agent_alert_fingerprint',
     ]))->toBeTrue()
         ->and(collect(Schema::getIndexes('notifications'))->pluck('name'))

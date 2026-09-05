@@ -60,6 +60,7 @@ return new class extends Migration
             'agent_alerted_at',
             'agent_alert_version',
             'agent_alert_broadcast_claim_version',
+            'agent_alert_broadcast_pending_version',
             'agent_alert_fingerprint',
         ], fn (string $column): bool => Schema::hasColumn('notifications', $column)));
 
@@ -76,6 +77,7 @@ return new class extends Migration
             'agent_alerted_at',
             'agent_alert_version',
             'agent_alert_broadcast_claim_version',
+            'agent_alert_broadcast_pending_version',
             'agent_alert_fingerprint',
         ];
 
@@ -93,7 +95,8 @@ return new class extends Migration
                         ? $table->timestamp($column, precision: 6)->nullable()
                         : $table->timestamp($column, precision: 6)->useCurrent(),
                     'agent_alert_version',
-                    'agent_alert_broadcast_claim_version' => $table->uuid($column)->nullable(),
+                    'agent_alert_broadcast_claim_version',
+                    'agent_alert_broadcast_pending_version' => $table->uuid($column)->nullable(),
                     'agent_alert_fingerprint' => $table->string($column, 64)->nullable(),
                 };
             });

@@ -20,6 +20,20 @@ final class AgentAlertBroadcaster
 {
     public function stored(User $recipient, DatabaseNotification $notification): void
     {
+        $this->publish($recipient, $notification, false);
+    }
+
+    /** Publish a repaired alert while allowing its queue job to retry failure. */
+    public function storedOrFail(User $recipient, DatabaseNotification $notification): void
+    {
+        $this->publish($recipient, $notification, true);
+    }
+
+    private function publish(
+        User $recipient,
+        DatabaseNotification $notification,
+        bool $throwOnFailure,
+    ): void {
         $accountId = $recipient->account_id;
         $agentId = (int) $recipient->id;
         $notificationId = (string) $notification->id;
@@ -33,9 +47,10 @@ final class AgentAlertBroadcaster
 
         // Derive publication metadata from the CURRENT durable payload while
         // holding its row lock. Concurrent refresh callbacks may carry stale
-        // model instances; only the first callback to record the stored state
-        // gets a version and broadcast. Generic read/email writes do not alter
-        // the alert-bearing fingerprint and therefore remain silent.
+        // model instances. They may register duplicate after-commit callbacks,
+        // but the final row lock and successfully-delivered claim allow only
+        // one broadcast. Generic read/email writes do not alter the alert-
+        // bearing fingerprint and therefore remain silent.
         /** @var array{fingerprint: string, version: string}|null $claim */
         $claim = DB::transaction(function () use ($agentId, $notificationId, $notifiableType): ?array {
             $current = DatabaseNotification::query()
@@ -59,29 +74,32 @@ final class AgentAlertBroadcaster
                 && $recordedVersion !== '';
             $version = $publicationAlreadyVersioned
                 ? $recordedVersion
-                : (blank($recordedFingerprint) ? $notificationId : (string) Str::uuid());
-            $claimedVersion = $current->getAttribute('agent_alert_broadcast_claim_version');
+                : (blank($recordedFingerprint) || blank($recordedVersion)
+                    ? $notificationId
+                    : (string) Str::uuid());
+            $deliveredVersion = $current->getAttribute('agent_alert_broadcast_claim_version');
 
-            if (is_string($claimedVersion)
-                && hash_equals($claimedVersion, $version)) {
+            if (is_string($deliveredVersion)
+                && hash_equals($deliveredVersion, $version)) {
                 return null;
             }
 
-            $updates = ['agent_alert_broadcast_claim_version' => $version];
+            $updates = [];
 
             if (! $publicationAlreadyVersioned) {
                 // Before the first claim, reconciliation deliberately exposes
                 // the notification ID as its stable fallback version. Keep that
                 // same version so catch-up and live delivery deduplicate.
                 $updates = [
-                    ...$updates,
                     'agent_alerted_at' => now(),
                     'agent_alert_version' => $version,
                     'agent_alert_fingerprint' => $fingerprint,
                 ];
             }
 
-            DB::table('notifications')->where('id', $notificationId)->update($updates);
+            if ($updates !== []) {
+                DB::table('notifications')->where('id', $notificationId)->update($updates);
+            }
 
             return [
                 'fingerprint' => $fingerprint,
@@ -93,7 +111,14 @@ final class AgentAlertBroadcaster
             return;
         }
 
-        DB::afterCommit(function () use ($accountId, $agentId, $claim, $notificationId, $notifiableType): void {
+        DB::afterCommit(function () use (
+            $accountId,
+            $agentId,
+            $claim,
+            $notificationId,
+            $notifiableType,
+            $throwOnFailure,
+        ): void {
             try {
                 DB::transaction(function () use ($accountId, $agentId, $claim, $notificationId, $notifiableType): void {
                     // The same account-then-user order used by role, site-access
@@ -143,13 +168,28 @@ final class AgentAlertBroadcaster
                         || ! hash_equals($claim['fingerprint'], AgentAlertPublicationFingerprint::for($currentNotification->data))
                         || ! is_string($currentVersion)
                         || ! hash_equals($claim['version'], $currentVersion)
-                        || ! is_string($currentClaimVersion)
-                        || ! hash_equals($claim['version'], $currentClaimVersion)
                         || ! Gate::forUser($currentRecipient)->allows('view', $currentNotification)) {
                         return;
                     }
 
+                    // Another callback may have waited on these same locks and
+                    // completed the exact version while this one was queued.
+                    if (is_string($currentClaimVersion)
+                        && hash_equals($claim['version'], $currentClaimVersion)) {
+                        return;
+                    }
+
                     AgentAlertStored::dispatch($currentRecipient, $currentNotification);
+
+                    // Record the claim only after the synchronous broadcast
+                    // succeeds. A thrown transport error rolls this transaction
+                    // back, leaving both the version and any pending marker
+                    // available to a retry. Duplicate sends remain harmless in
+                    // the commit-failure seam because browsers dedupe versions.
+                    DB::table('notifications')->where('id', $notificationId)->update([
+                        'agent_alert_broadcast_claim_version' => $claim['version'],
+                        'agent_alert_broadcast_pending_version' => null,
+                    ]);
                 });
             } catch (Throwable $exception) {
                 // The database alert is already durable and remains the source
@@ -161,6 +201,10 @@ final class AgentAlertBroadcaster
                     'notification_id' => $notificationId,
                     'exception' => $exception->getMessage(),
                 ]);
+
+                if ($throwOnFailure) {
+                    throw $exception;
+                }
             }
         });
     }

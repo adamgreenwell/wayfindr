@@ -45,6 +45,7 @@ test('notifications are indexed for recipient alert reconciliation', function ()
             'agent_alerted_at',
             'agent_alert_version',
             'agent_alert_broadcast_claim_version',
+            'agent_alert_broadcast_pending_version',
             'agent_alert_fingerprint',
         ]))->toBeTrue();
 });
@@ -394,6 +395,7 @@ test('a swept refresh remains claimable by a live listener exactly once', functi
 });
 
 test('publication sweep backfills alerts inserted by the previous release', function (): void {
+    Queue::fake();
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
     $id = (string) Str::uuid();
@@ -421,7 +423,13 @@ test('publication sweep backfills alerts inserted by the previous release', func
     $alert = DatabaseNotification::query()->findOrFail($id);
 
     expect(AgentAlertPayload::version($alert))->toBe($id)
+        ->and($alert->getAttribute('agent_alert_broadcast_pending_version'))->toBe($id)
         ->and($alert->getAttribute('agent_alert_fingerprint'))->toBe(AgentAlertPublicationFingerprint::for($data));
+
+    Queue::assertPushed(
+        BroadcastReconciledAgentAlert::class,
+        fn (BroadcastReconciledAgentAlert $job): bool => $job->notificationId === $id,
+    );
 });
 
 test('a first live publication keeps the version already exposed by concurrent reconciliation', function (): void {
@@ -513,7 +521,6 @@ test('deploys can queue a final publication sweep after old workers drain', func
 });
 
 test('the post-drain sweep publishes old-writer alerts to already-connected agents', function (): void {
-    Event::fake([AgentAlertStored::class]);
     Queue::fake();
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();
@@ -545,6 +552,25 @@ test('the post-drain sweep publishes old-writer alerts to already-connected agen
         fn (BroadcastReconciledAgentAlert $job): bool => $job->notificationId === $id,
     );
 
+    $pending = DatabaseNotification::query()->findOrFail($id);
+
+    expect($pending->getAttribute('agent_alert_broadcast_pending_version'))->toBe($id)
+        ->and($pending->getAttribute('agent_alert_broadcast_claim_version'))->toBeNull();
+
+    Event::listen(AgentAlertStored::class, function (): never {
+        throw new RuntimeException('Synthetic Reverb failure.');
+    });
+
+    expect(fn () => (new BroadcastReconciledAgentAlert($id))->handle(app(AgentAlertBroadcaster::class)))
+        ->toThrow(RuntimeException::class, 'Synthetic Reverb failure.');
+
+    $failed = DatabaseNotification::query()->findOrFail($id);
+
+    expect($failed->getAttribute('agent_alert_broadcast_pending_version'))->toBe($id)
+        ->and($failed->getAttribute('agent_alert_broadcast_claim_version'))->toBeNull();
+
+    Event::fake([AgentAlertStored::class]);
+
     (new BroadcastReconciledAgentAlert($id))->handle(app(AgentAlertBroadcaster::class));
     (new BroadcastReconciledAgentAlert($id))->handle(app(AgentAlertBroadcaster::class));
 
@@ -558,9 +584,54 @@ test('the post-drain sweep publishes old-writer alerts to already-connected agen
 
     expect($alert->getAttribute('agent_alert_version'))->toBe($id)
         ->and($alert->getAttribute('agent_alert_broadcast_claim_version'))->toBe($id)
+        ->and($alert->getAttribute('agent_alert_broadcast_pending_version'))->toBeNull()
         ->and($alert->getAttribute('agent_alert_fingerprint'))->toBe(
             AgentAlertPublicationFingerprint::for($data),
         );
+});
+
+test('a failed publication enqueue remains pending for the cursor retry', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $alert = databaseAlertFor($agent, [
+        'kind' => 'conversation_needs_reply',
+        'message_count' => 1,
+    ]);
+    $originalClaimedVersion = $alert->getAttribute('agent_alert_broadcast_claim_version');
+
+    DB::table('notifications')->where('id', $alert->id)->update([
+        'data' => json_encode([...$alert->data, 'message_count' => 2]),
+        'updated_at' => now(),
+    ]);
+
+    expect(fn () => AgentAlertPublicationSweep::runBatch(
+        null,
+        ReconcileAgentAlertPublicationsAfterDrain::BATCH_SIZE,
+        true,
+        function (): never {
+            throw new RuntimeException('Synthetic queue failure.');
+        },
+    ))->toThrow(RuntimeException::class, 'Synthetic queue failure.');
+
+    $pending = $alert->fresh();
+    $pendingVersion = $pending->getAttribute('agent_alert_broadcast_pending_version');
+
+    expect($pendingVersion)->toBeString()->not->toBe($originalClaimedVersion)
+        ->and($pending->getAttribute('agent_alert_version'))->toBe($pendingVersion)
+        ->and($pending->getAttribute('agent_alert_broadcast_claim_version'))->toBe($originalClaimedVersion);
+
+    $enqueued = [];
+    $retry = AgentAlertPublicationSweep::runBatch(
+        null,
+        ReconcileAgentAlertPublicationsAfterDrain::BATCH_SIZE,
+        true,
+        function (string $notificationId) use (&$enqueued): void {
+            $enqueued[] = $notificationId;
+        },
+    );
+
+    expect($retry['reconciled'])->toBe(0)
+        ->and($enqueued)->toBe([(string) $alert->id]);
 });
 
 test('the post-drain sweep continues through bounded notification pages', function (): void {

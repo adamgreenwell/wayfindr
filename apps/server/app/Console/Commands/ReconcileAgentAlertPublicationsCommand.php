@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Jobs\BroadcastReconciledAgentAlert;
 use App\Jobs\ReconcileAgentAlertPublicationsAfterDrain;
 use App\Support\AgentAlertPublicationSweep;
 use Illuminate\Console\Command;
@@ -32,7 +33,12 @@ final class ReconcileAgentAlertPublicationsCommand extends Command
             return self::SUCCESS;
         }
 
-        $reconciled = AgentAlertPublicationSweep::run();
+        $reconciled = AgentAlertPublicationSweep::run(
+            markForBroadcast: true,
+            afterPending: function (string $notificationId): void {
+                BroadcastReconciledAgentAlert::dispatch($notificationId);
+            },
+        );
 
         $this->info($reconciled === 0
             ? 'No agent alert publication needed reconciliation.'

@@ -38,16 +38,33 @@ final class BroadcastReconciledAgentAlert implements ShouldQueue
             return;
         }
 
+        $pendingVersion = $notification->getAttribute('agent_alert_broadcast_pending_version');
+
+        if (! is_string($pendingVersion) || $pendingVersion === '') {
+            return;
+        }
+
         $recipient = User::query()->whereKey($notification->notifiable_id)->first();
 
         if (! $recipient instanceof User
             || (string) $notification->notifiable_type !== $recipient->getMorphClass()) {
+            $this->clearPendingVersion($pendingVersion);
+
             return;
         }
 
         // The sweep established a durable version without consuming its live
         // claim. Publish that exact state; a concurrent current-release
         // listener safely wins or loses the same claim without duplicating it.
-        $broadcaster->stored($recipient, $notification);
+        $broadcaster->storedOrFail($recipient, $notification);
+        $this->clearPendingVersion($pendingVersion);
+    }
+
+    private function clearPendingVersion(string $pendingVersion): void
+    {
+        DatabaseNotification::query()
+            ->whereKey($this->notificationId)
+            ->where('agent_alert_broadcast_pending_version', $pendingVersion)
+            ->update(['agent_alert_broadcast_pending_version' => null]);
     }
 }

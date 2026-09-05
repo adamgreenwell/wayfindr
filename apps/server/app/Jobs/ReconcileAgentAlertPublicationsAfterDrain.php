@@ -41,6 +41,7 @@ final class ReconcileAgentAlertPublicationsAfterDrain implements ShouldQueue
         $batch = AgentAlertPublicationSweep::runBatch(
             $this->afterId,
             self::BATCH_SIZE,
+            true,
             // Keep Reverb I/O out of this bounded scan. Each durable row gets a
             // retryable publication job; the existing claim lock deduplicates
             // it against any current-release listener racing the sweep.
