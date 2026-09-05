@@ -26,6 +26,10 @@ return new class extends Migration
                 ['notification_id', 'alert_version', 'state_key'],
                 'agent_alert_delivery_state_unique',
             );
+            $table->index(
+                ['claim_token', 'channel'],
+                'agent_alert_delivery_batch_claim_index',
+            );
         });
 
         Schema::table('sla_alert_deliveries', function (Blueprint $table): void {

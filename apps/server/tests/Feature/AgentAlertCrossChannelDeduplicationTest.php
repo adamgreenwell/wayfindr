@@ -414,6 +414,29 @@ test('an accepted digest crosses and finalizes the shared batch transport bounda
         ->and($delivery->started_at->lessThanOrEqualTo($delivery->accepted_at))->toBeTrue();
 });
 
+test('digest acceptance does not hide activity newer than its content snapshot', function (): void {
+    [$agent, $assigner, $ticket] = crossChannelTicketWorld(push: false);
+    $agent->forceFill([
+        'alert_preferences' => [
+            ...$agent->alert_preferences,
+            'cadence' => User::ALERT_CADENCE_DIGEST,
+        ],
+    ])->save();
+    storeCrossChannelTicketAlert($agent, new TicketAssigned($ticket, $assigner));
+    $collector = app(AlertDigestCandidateCollector::class);
+    $original = $collector->forAgent($agent->fresh());
+    $claim = (string) Str::uuid();
+    $claimed = $collector->claimForDelivery($agent->fresh(), $original, $claim);
+
+    $this->travel(1)->minute();
+    $ticket->forceFill(['priority' => 'urgent'])->save();
+    $this->travel(1)->second();
+    $collector->acceptDeliveryClaim($agent->fresh(), $claimed, $claim, now());
+
+    expect($collector->forAgent($agent->fresh()))->toHaveCount(1)
+        ->and(AgentAlertDelivery::query()->sole()->accepted_at)->not->toBeNull();
+});
+
 test('SLA mail records a completed deduplication instead of retrying a push-delivered version', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create([

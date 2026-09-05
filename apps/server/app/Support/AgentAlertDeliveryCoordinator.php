@@ -123,7 +123,10 @@ final class AgentAlertDeliveryCoordinator
             ->where('alert_version', $version)
             ->get()
             ->contains(function (AgentAlertDelivery $delivery) use ($activity): bool {
-                $coveredAt = $delivery->accepted_at ?? $delivery->created_at;
+                // The message contains the state captured when the channel
+                // claimed it. SMTP acceptance can happen after newer work and
+                // must not make that unseen work look covered retroactively.
+                $coveredAt = $delivery->created_at;
 
                 return $coveredAt !== null && $coveredAt->greaterThanOrEqualTo($activity);
             });
