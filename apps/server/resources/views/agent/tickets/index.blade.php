@@ -120,6 +120,7 @@
                             type="search"
                             value="{{ $ticketSearch }}"
                             placeholder="{{ __('tickets.search.placeholder') }}"
+                            data-agent-shortcut-search-primary
                         >
                         <span class="wf-filter-help">{{ __('tickets.search.hint') }}</span>
                     </div>
@@ -268,7 +269,7 @@
                         </div>
 
                         <div class="table-wrap">
-                            <table class="wf-queue">
+                            <table class="wf-queue" data-agent-shortcut-queue>
                             <thead>
                                 <tr>
                                     <th class="wf-queue-select" scope="col">
@@ -325,7 +326,7 @@
                                             'detail' => 'Wayfindr is the only tracker for this ticket.',
                                         ];
                                     @endphp
-                                    <tr data-queue-bulk-row data-ticket-bulk-row>
+                                    <tr data-agent-shortcut-row data-queue-bulk-row data-ticket-bulk-row>
                                         <td class="wf-queue-select">
                                             <input
                                                 type="checkbox"
@@ -337,7 +338,7 @@
                                             >
                                         </td>
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $ticket->site->resolvedColor()->cssVariable() }})">
-                                            <a href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}">
+                                            <a href="{{ route('dashboard.tickets.show', ['ticket' => $ticket] + $ticketQuery) }}" data-agent-shortcut-open>
                                                 {{ $ticket->subject }}
                                             </a>
                                             @if ($canViewTicketConversations)

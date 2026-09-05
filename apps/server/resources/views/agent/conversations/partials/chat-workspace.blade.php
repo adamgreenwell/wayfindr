@@ -88,6 +88,7 @@
                     aria-describedby="reply-shortcut-help"
                     data-reply-body
                     data-shortcut-submit
+                    data-agent-shortcut-reply
                     {{-- A validation failure re-renders this page with the draft
                          restored, and no change event ever fires -- so the
                          language has to be right in the markup, not only in the

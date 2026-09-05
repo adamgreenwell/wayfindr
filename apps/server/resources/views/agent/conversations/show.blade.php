@@ -15,7 +15,7 @@
                              same query the queue itself runs. --}}
                         <nav class="wf-switcher" aria-label="{{ __('conversations.detail.nav.move') }}">
                             @if ($conversationSiblings['previous'])
-                                <a class="wf-switcher-step" rel="prev" aria-label="{{ __('conversations.detail.nav.previous') }}"
+                                <a class="wf-switcher-step" rel="prev" aria-label="{{ __('conversations.detail.nav.previous') }}" data-agent-shortcut-previous
                                    href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['previous'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8593;</a>
                             @else
                                 <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8593;</span>
@@ -38,7 +38,7 @@
                             </details>
 
                             @if ($conversationSiblings['next'])
-                                <a class="wf-switcher-step" rel="next" aria-label="{{ __('conversations.detail.nav.next') }}"
+                                <a class="wf-switcher-step" rel="next" aria-label="{{ __('conversations.detail.nav.next') }}" data-agent-shortcut-next
                                    href="{{ route('dashboard.conversations.show', ['supportCode' => $conversationSiblings['next'], 'from_queue' => '1'] + $conversationReturnQuery) }}">&#8595;</a>
                             @else
                                 <span class="wf-switcher-step" aria-hidden="true" data-disabled="true">&#8595;</span>
@@ -137,7 +137,7 @@
                             @csrf
                             @include('agent.conversations.partials.return-query-fields')
 
-                            <button class="button" type="submit">{{ __('conversations.detail.ticket.claim') }}</button>
+                            <button class="button" type="submit" data-agent-shortcut-claim>{{ __('conversations.detail.ticket.claim') }}</button>
                         </form>
                     @elseif ($conversation->assigned_agent_id === $agent->id && $canReleaseConversation)
                         <form class="section-form" method="POST" action="{{ route('dashboard.conversations.release', $conversation->support_code) }}">
@@ -152,7 +152,7 @@
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
 
-                        <button class="button {{ $conversation->status === 'closed' ? '' : 'secondary' }}" type="submit">
+                        <button class="button {{ $conversation->status === 'closed' ? '' : 'secondary' }}" type="submit" @if ($conversation->status !== 'closed') data-agent-shortcut-close @endif>
                             {{ $conversation->status === 'closed' ? __('conversations.detail.context.reopen') : __('conversations.detail.context.close') }}
                         </button>
                     </form>
