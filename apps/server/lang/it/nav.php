@@ -50,5 +50,28 @@ return [
         'help' => 'Provi con un codice di supporto come WF-ABC123, un riferimento ticket come Ticket #123 o un visitatore ID.',
         'scope' => 'I record al di fuori del suo accesso di supporto rimangono nascosti.',
     ],
+    'commands' => [
+        'open' => 'Comandi',
+        'eyebrow' => 'Area di lavoro agente',
+        'title' => 'Tavolozza dei comandi',
+        'dismiss' => 'Chiudi la tavolozza dei comandi',
+        'search_label' => 'Cerca un comando',
+        'search_placeholder' => 'Digiti un’azione o una destinazione',
+        'current' => 'Pagina attuale',
+        'empty' => 'Nessun comando corrisponde alla ricerca.',
+        'groups' => [
+            'actions' => 'In questa pagina',
+            'navigation' => 'Navigazione',
+        ],
+        'actions' => [
+            'next' => 'Elemento successivo',
+            'previous' => 'Elemento precedente',
+            'open' => 'Apri elemento',
+            'claim' => 'Prendi in carico',
+            'reply' => 'Rispondi',
+            'close' => 'Chiudi',
+            'search' => 'Cerca',
+        ],
+    ],
     'sign_out' => 'Esci',
 ];

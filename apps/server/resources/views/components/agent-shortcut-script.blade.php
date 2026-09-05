@@ -7,7 +7,8 @@
             claim: 'Alt+A',
             reply: 'Alt+R',
             close: 'Alt+X',
-            search: 'Alt+/'
+            search: 'Alt+/',
+            palette: 'Alt+P'
         });
         var actionsByKey = Object.freeze({
             j: 'next',
@@ -16,7 +17,8 @@
             a: 'claim',
             r: 'reply',
             x: 'close',
-            '/': 'search'
+            '/': 'search',
+            p: 'palette'
         });
         var macOptionActions = Object.freeze({
             '∆': 'next',
@@ -25,7 +27,8 @@
             'å': 'claim',
             '®': 'reply',
             '≈': 'close',
-            '÷': 'search'
+            '÷': 'search',
+            'π': 'palette'
         });
         var queue = document.querySelector('[data-agent-shortcut-queue]');
         var rows = queue ? Array.from(queue.querySelectorAll('[data-agent-shortcut-row]')) : [];
@@ -50,12 +53,30 @@
         }
 
         function actionTarget(action) {
+            if (action === 'palette') {
+                return document.querySelector('[data-command-palette-open]');
+            }
+
             if (action === 'search') {
                 return document.querySelector('[data-agent-shortcut-search-primary]')
                     || document.querySelector('[data-agent-shortcut-search]');
             }
 
             return document.querySelector('[data-agent-shortcut-' + action + ']');
+        }
+
+        function available(action) {
+            if (action === 'next' || action === 'previous') {
+                return rows.length > 0 || Boolean(actionTarget(action));
+            }
+
+            if (action === 'open') {
+                return rows.some(function (row) {
+                    return Boolean(row.querySelector('[data-agent-shortcut-open]'));
+                }) || Boolean(actionTarget(action));
+            }
+
+            return Boolean(actionTarget(action));
         }
 
         function activateRow(index) {
@@ -224,7 +245,9 @@
 
         window.WayfindrAgentShortcuts = Object.freeze({
             keys: keys,
+            available: available,
             run: run
         });
+        document.dispatchEvent(new CustomEvent('wayfindr:agent-shortcuts-ready'));
     })();
 </script>

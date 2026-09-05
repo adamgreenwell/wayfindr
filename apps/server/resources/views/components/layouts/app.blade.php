@@ -553,6 +553,179 @@
             border-color: var(--wf-rule-firm);
         }
 
+        .wf-command-trigger,
+        .wf-command-dismiss {
+            appearance: none;
+            border: var(--wf-border) solid var(--wf-rule);
+            border-radius: var(--wf-radius);
+            background: transparent;
+            color: var(--wf-muted);
+            cursor: pointer;
+        }
+
+        .wf-command-trigger {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--wf-space-2);
+            flex: none;
+            padding: 5px var(--wf-space-2);
+            font-size: 12.5px;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+
+        .wf-command-trigger:hover,
+        .wf-command-trigger:focus-visible,
+        .wf-command-dismiss:hover,
+        .wf-command-dismiss:focus-visible {
+            color: var(--wf-ink);
+            border-color: var(--wf-rule-firm);
+        }
+
+        .wf-command-trigger:focus-visible,
+        .wf-command-dismiss:focus-visible {
+            outline: 2px solid var(--wf-brand);
+            outline-offset: 2px;
+        }
+
+        .wf-command-trigger kbd,
+        .wf-command-item kbd {
+            border: var(--wf-border) solid var(--wf-rule-firm);
+            border-radius: 3px;
+            background: var(--wf-surface-2);
+            color: var(--wf-muted);
+            padding: 1px 5px;
+            font-family: var(--wf-font-mono);
+            font-size: 10.5px;
+            line-height: 1.5;
+        }
+
+        .wf-command-dialog {
+            width: min(560px, calc(100vw - 32px));
+            max-height: min(680px, calc(100vh - 32px));
+            margin: auto;
+            padding: 0;
+            overflow: hidden;
+            border: var(--wf-border) solid var(--wf-rule-firm);
+            border-radius: calc(var(--wf-radius) * 2);
+            background: var(--wf-surface);
+            color: var(--wf-ink);
+            box-shadow: 0 24px 80px rgba(19, 25, 25, 0.24);
+        }
+
+        .wf-command-dialog[open] {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .wf-command-dialog::backdrop {
+            background: rgba(19, 25, 25, 0.42);
+        }
+
+        .wf-command-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--wf-space-4);
+            padding: var(--wf-space-4) var(--wf-space-5) var(--wf-space-3);
+            border-bottom: var(--wf-border) solid var(--wf-rule);
+        }
+
+        .wf-command-header .meta-label {
+            margin: 0 0 var(--wf-space-1);
+        }
+
+        .wf-command-header h2 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+
+        .wf-command-dismiss {
+            width: 30px;
+            height: 30px;
+            flex: none;
+            padding: 0;
+            font-size: 20px;
+            line-height: 1;
+        }
+
+        .wf-command-search {
+            margin: 0;
+            padding: var(--wf-space-4) var(--wf-space-5);
+        }
+
+        .wf-command-search input {
+            width: 100%;
+            font-size: 16px;
+        }
+
+        .wf-command-groups {
+            min-height: 0;
+            overflow-y: auto;
+            padding: 0 var(--wf-space-5) var(--wf-space-5);
+        }
+
+        .wf-command-group + .wf-command-group {
+            margin-top: var(--wf-space-4);
+        }
+
+        .wf-command-group h3 {
+            margin: 0 0 var(--wf-space-2);
+            color: var(--wf-muted);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .wf-command-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--wf-space-1);
+        }
+
+        .wf-command-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--wf-space-3);
+            width: 100%;
+            appearance: none;
+            border: var(--wf-border) solid transparent;
+            border-radius: var(--wf-radius);
+            background: transparent;
+            color: var(--wf-ink);
+            padding: 8px var(--wf-space-3);
+            font: inherit;
+            text-align: left;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .wf-command-item:hover,
+        .wf-command-item:focus-visible {
+            border-color: var(--wf-rule);
+            background: var(--wf-surface-2);
+            outline: none;
+        }
+
+        .wf-command-item[aria-current="page"] {
+            box-shadow: inset 3px 0 0 var(--wf-brand);
+        }
+
+        .wf-command-item[hidden],
+        .wf-command-group[hidden] {
+            display: none;
+        }
+
+        .wf-command-current {
+            color: var(--wf-muted);
+            font-size: 11px;
+        }
+
+        .wf-command-empty {
+            margin: 0 var(--wf-space-5) var(--wf-space-5);
+        }
+
         /* Full bleed rather than a 1120px column, but capped so a line of body
            text does not run the width of an ultrawide display. Left-aligned
            inside the cap on purpose: asymmetry is the point. */
@@ -1411,6 +1584,41 @@
 
             .wf-topbar-search input {
                 width: 140px;
+            }
+
+            .wf-topbar {
+                gap: var(--wf-space-2);
+                padding-inline: var(--wf-space-3);
+            }
+
+            .wf-command-trigger {
+                padding-inline: 7px;
+            }
+
+            .wf-command-trigger-label {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+
+            .wf-command-dialog {
+                width: calc(100vw - 24px);
+                max-height: calc(100vh - 24px);
+            }
+
+            .wf-command-header,
+            .wf-command-search {
+                padding-inline: var(--wf-space-4);
+            }
+
+            .wf-command-groups {
+                padding-inline: var(--wf-space-4);
             }
         }
 
@@ -3026,7 +3234,8 @@
             // the page title. Both are now in the document's own language --
             // the rail was the reason this needed a `lang` of its own, and the
             // rail is extracted.
-            $currentLabel = collect($workItems)->concat($manageItems)->firstWhere('active')['label'] ?? $title;
+            $commandNavigationItems = collect($workItems)->concat($manageItems)->values();
+            $currentLabel = $commandNavigationItems->firstWhere('active')['label'] ?? $title;
         @endphp
 
         <div class="wf-app">
@@ -3092,6 +3301,8 @@
                         <input id="shell_support_code" name="support_code" type="search" placeholder="{{ __('nav.search.placeholder') }}" autocomplete="off" data-agent-shortcut-search>
                         <button type="submit">{{ __('nav.search.submit') }}</button>
                     </form>
+
+                    <x-agent-command-palette :navigation-items="$commandNavigationItems" />
                 </header>
 
                 <main class="page">
@@ -3242,6 +3453,8 @@
             });
         })();
     </script>
-    <x-agent-shortcut-script />
+    @if ($agent && $account)
+        <x-agent-shortcut-script />
+    @endif
 </body>
 </html>

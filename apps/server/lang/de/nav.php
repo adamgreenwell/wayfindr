@@ -40,5 +40,29 @@ return [
         'scope' => 'Einträge außerhalb Ihres Support-Zugriffs bleiben verborgen.',
     ],
 
+    'commands' => [
+        'open' => 'Befehle',
+        'eyebrow' => 'Agent-Arbeitsbereich',
+        'title' => 'Befehlspalette',
+        'dismiss' => 'Befehlspalette schließen',
+        'search_label' => 'Befehl suchen',
+        'search_placeholder' => 'Aktion oder Ziel eingeben',
+        'current' => 'Aktuelle Seite',
+        'empty' => 'Keine Befehle entsprechen dieser Suche.',
+        'groups' => [
+            'actions' => 'Auf dieser Seite',
+            'navigation' => 'Seitennavigation',
+        ],
+        'actions' => [
+            'next' => 'Nächstes Element',
+            'previous' => 'Vorheriges Element',
+            'open' => 'Element öffnen',
+            'claim' => 'Übernehmen',
+            'reply' => 'Antworten',
+            'close' => 'Schließen',
+            'search' => 'Suchen',
+        ],
+    ],
+
     'sign_out' => 'Abmelden',
 ];
