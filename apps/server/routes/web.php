@@ -116,6 +116,9 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/profile/push-subscription', [AgentPushSubscriptionController::class, 'store'])
         ->middleware('throttle:30,1')
         ->name('dashboard.profile.push-subscription.store');
+    Route::post('/dashboard/profile/push-subscription/status', [AgentPushSubscriptionController::class, 'status'])
+        ->middleware('throttle:30,1')
+        ->name('dashboard.profile.push-subscription.status');
     Route::delete('/dashboard/profile/push-subscription', [AgentPushSubscriptionController::class, 'destroy'])
         ->middleware('throttle:30,1')
         ->name('dashboard.profile.push-subscription.destroy');

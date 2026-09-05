@@ -115,7 +115,11 @@
                 body: JSON.stringify(body),
             }).then(function (response) {
                 if (response.ok) {
-                    return;
+                    return response.status === 204
+                        ? {}
+                        : response.json().catch(function () {
+                            return {};
+                        });
                 }
 
                 return response.json().catch(function () {
@@ -145,34 +149,40 @@
         }
 
         function enablePush() {
-            return Notification.requestPermission().then(function (permission) {
-                if (permission !== 'granted') {
-                    throw new Error(config.failedMessage);
-                }
+            return navigator.serviceWorker.register('/wayfindr-sw.js', { scope: '/' })
+                .then(function (registration) {
+                    return registration.pushManager.getSubscription().then(function (subscription) {
+                        if (subscription
+                            && usesCurrentApplicationServerKey(subscription)
+                            && subscriptionOwnership !== 'foreign') {
+                            return storeSubscription(subscription);
+                        }
 
-                return navigator.serviceWorker.register('/wayfindr-sw.js', { scope: '/' });
-            }).then(function (registration) {
-                return registration.pushManager.getSubscription().then(function (subscription) {
-                    if (subscription && usesCurrentApplicationServerKey(subscription)) {
-                        return subscription;
-                    }
+                        var removeStored = subscription && subscriptionOwnership === 'owned'
+                            ? request(config.destroyEndpoint, 'DELETE', {
+                                endpoint: subscription.endpoint,
+                            }).catch(function () {})
+                            : Promise.resolve();
+                        var replace = subscription
+                            ? removeStored.then(function () {
+                                return subscription.unsubscribe();
+                            })
+                            : removeStored;
 
-                    var replace = subscription
-                        ? request(config.destroyEndpoint, 'DELETE', {
-                            endpoint: subscription.endpoint,
-                        }).then(function () {
-                            return subscription.unsubscribe();
-                        })
-                        : Promise.resolve();
+                        return replace.then(function () {
+                            return Notification.requestPermission().then(function (permission) {
+                                if (permission !== 'granted') {
+                                    throw new Error(config.failedMessage);
+                                }
 
-                    return replace.then(function () {
-                        return registration.pushManager.subscribe({
-                            userVisibleOnly: true,
-                            applicationServerKey: applicationServerKey(config.publicKey),
-                        });
+                                return registration.pushManager.subscribe({
+                                    userVisibleOnly: true,
+                                    applicationServerKey: applicationServerKey(config.publicKey),
+                                });
+                            });
+                        }).then(storeSubscription);
                     });
                 });
-            }).then(storeSubscription);
         }
 
         function disablePush() {
@@ -195,7 +205,7 @@
 
                     return request(config.destroyEndpoint, 'DELETE', {
                         endpoint: subscription.endpoint,
-                    }).then(function () {
+                    }).catch(function () {}).then(function () {
                         return subscription.unsubscribe();
                     });
                 });
@@ -207,9 +217,32 @@
                     return registration ? registration.pushManager.getSubscription() : null;
                 })
                 .then(function (subscription) {
-                    initialBrowserEnabled = Boolean(subscription && usesCurrentApplicationServerKey(subscription));
-                    checkbox.checked = initialBrowserEnabled;
-                    checkbox.disabled = false;
+                    if (! subscription) {
+                        subscriptionOwnership = 'missing';
+                        initialBrowserEnabled = false;
+                        checkbox.checked = false;
+                        checkbox.disabled = false;
+
+                        return;
+                    }
+
+                    return request(config.statusEndpoint, 'POST', {
+                        endpoint: subscription.endpoint,
+                    }).then(function (payload) {
+                        if (! ['owned', 'foreign', 'missing'].includes(payload.status)) {
+                            throw new Error(config.failedMessage);
+                        }
+
+                        subscriptionOwnership = payload.status;
+                        initialBrowserEnabled = payload.status === 'owned'
+                            && usesCurrentApplicationServerKey(subscription);
+                        checkbox.checked = initialBrowserEnabled;
+                        checkbox.disabled = false;
+
+                        if (payload.status === 'foreign') {
+                            showError(config.ownedElsewhereMessage);
+                        }
+                    });
                 })
                 .catch(function () {
                     browserStateAvailable = false;
@@ -219,6 +252,7 @@
 
         var browserStateAvailable = true;
         var initialBrowserEnabled = null;
+        var subscriptionOwnership = 'missing';
         var browserStateReady = initializeBrowserState();
 
         form.addEventListener('submit', function (event) {

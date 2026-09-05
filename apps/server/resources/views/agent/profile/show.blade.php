@@ -270,9 +270,11 @@
             <x-agent-push-subscription :config="[
                 'publicKey' => $pushPublicKey,
                 'storeEndpoint' => route('dashboard.profile.push-subscription.store'),
+                'statusEndpoint' => route('dashboard.profile.push-subscription.status'),
                 'destroyEndpoint' => route('dashboard.profile.push-subscription.destroy'),
                 'unsupportedMessage' => __('profile.alerts.push_unsupported'),
                 'failedMessage' => __('profile.alerts.push_failed'),
+                'ownedElsewhereMessage' => __('profile.alerts.push_owned_elsewhere'),
             ]" />
         @endif
     </section>

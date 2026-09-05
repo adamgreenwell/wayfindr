@@ -116,6 +116,7 @@ final class DashboardLanguage
         'dashboard.profile.update',
         'dashboard.profile.alerts.update',
         'dashboard.profile.push-subscription.store',
+        'dashboard.profile.push-subscription.status',
         'dashboard.profile.push-subscription.destroy',
         'dashboard.profile.password.update',
         'dashboard.profile.two-factor.start',

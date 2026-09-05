@@ -89,6 +89,37 @@ test('a browser endpoint is never reassigned from another signed-in profile', fu
         ->and($subscription->public_key)->toBe($payload['keys']['p256dh']);
 });
 
+test('subscription status distinguishes this agent from another profile without exposing keys', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create();
+    $other = User::factory()->for($account)->create();
+    $payload = agentPushPayload();
+    $owner->pushSubscriptions()->create([
+        'endpoint' => $payload['endpoint'],
+        'public_key' => $payload['keys']['p256dh'],
+        'auth_token' => $payload['keys']['auth'],
+        'content_encoding' => 'aes128gcm',
+    ]);
+
+    $this->actingAs($owner)
+        ->postJson(route('dashboard.profile.push-subscription.status'), [
+            'endpoint' => $payload['endpoint'],
+        ])
+        ->assertExactJson(['status' => 'owned']);
+
+    $this->actingAs($other)
+        ->postJson(route('dashboard.profile.push-subscription.status'), [
+            'endpoint' => $payload['endpoint'],
+        ])
+        ->assertExactJson(['status' => 'foreign']);
+
+    $this->actingAs($other)
+        ->postJson(route('dashboard.profile.push-subscription.status'), [
+            'endpoint' => 'https://push.example.test/subscription/missing',
+        ])
+        ->assertExactJson(['status' => 'missing']);
+});
+
 test('unsubscribing deletes only the current agents matching endpoint', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create();

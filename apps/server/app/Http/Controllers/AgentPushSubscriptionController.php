@@ -21,6 +21,28 @@ final class AgentPushSubscriptionController extends Controller
 {
     private const MAX_SUBSCRIPTIONS_PER_AGENT = 10;
 
+    public function status(Request $request): JsonResponse
+    {
+        $agent = $request->user();
+
+        abort_unless($agent?->account_id, 403);
+
+        $validated = $request->validate([
+            'endpoint' => ['required', 'string', 'max:'.PushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
+        ]);
+        $subscription = PushSubscription::query()
+            ->where('endpoint', $validated['endpoint'])
+            ->first();
+
+        if (! $subscription instanceof PushSubscription) {
+            return response()->json(['status' => 'missing']);
+        }
+
+        return response()->json([
+            'status' => $agent->ownsPushSubscription($subscription) ? 'owned' : 'foreign',
+        ]);
+    }
+
     public function store(Request $request, OutboundWebhookDestination $destination): JsonResponse
     {
         $agent = $request->user();
