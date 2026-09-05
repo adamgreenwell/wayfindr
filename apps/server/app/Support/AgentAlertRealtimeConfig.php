@@ -30,6 +30,7 @@ final class AgentAlertRealtimeConfig
      *     reconcileOverlapSeconds: int,
      *     reconcileSince: string,
      *     scheme: string,
+     *     soundGateEndpoint: string,
      *     soundEnabled: bool
      * }|null
      */
@@ -86,6 +87,7 @@ final class AgentAlertRealtimeConfig
             'reconcileOverlapSeconds' => self::RECONCILIATION_OVERLAP_SECONDS,
             'reconcileSince' => $reconcileSince->toJSON(),
             'scheme' => $reverb['scheme'],
+            'soundGateEndpoint' => route('dashboard.alerts.sound-gate'),
             'soundEnabled' => $agent->alertSoundEnabled(),
         ];
     }

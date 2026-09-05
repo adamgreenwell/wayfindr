@@ -17,6 +17,7 @@
         var reconcileCursor = null;
         var reconcileSoundPlayed = false;
         var audioContext = null;
+        var soundGateRequest = null;
 
         (config.knownAlerts || []).forEach(function (alert) {
             rememberAlertVersion(alert.version, alert.alertedAt);
@@ -185,8 +186,50 @@
             }
         }
 
+        function refreshSoundGate() {
+            if (soundGateRequest) {
+                return soundGateRequest;
+            }
+
+            soundGateRequest = window.fetch(config.soundGateEndpoint, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                },
+            }).then(function (response) {
+                if (! response.ok) {
+                    throw new Error('Alert sound preferences could not be refreshed.');
+                }
+
+                return response.json();
+            }).then(function (payload) {
+                var data = payload && payload.data;
+
+                if (! data
+                    || typeof data.interruptions_paused !== 'boolean'
+                    || typeof data.sound_enabled !== 'boolean'
+                    || ! data.quiet_hours
+                    || typeof data.quiet_hours !== 'object') {
+                    throw new Error('Alert sound preferences were invalid.');
+                }
+
+                config.quietHours = data.quiet_hours;
+                config.soundEnabled = data.sound_enabled;
+
+                return config.soundEnabled && ! data.interruptions_paused;
+            }).catch(function () {
+                // An unverified sound decision fails silent. The durable title
+                // and favicon attention cues still update normally.
+                return false;
+            }).finally(function () {
+                soundGateRequest = null;
+            });
+
+            return soundGateRequest;
+        }
+
         function armSound() {
-            if (! config.soundEnabled || audioContext) {
+            if (audioContext) {
                 return;
             }
 
@@ -211,31 +254,35 @@
         }
 
         function playSound() {
-            if (! config.soundEnabled
-                || quietHoursActive()
-                || ! audioContext
+            if (! audioContext
                 || audioContext.state !== 'running') {
                 return;
             }
 
-            try {
-                var oscillator = audioContext.createOscillator();
-                var gain = audioContext.createGain();
-                var startsAt = audioContext.currentTime;
+            refreshSoundGate().then(function (soundAllowed) {
+                if (! soundAllowed || quietHoursActive()) {
+                    return;
+                }
 
-                oscillator.type = 'sine';
-                oscillator.frequency.setValueAtTime(660, startsAt);
-                gain.gain.setValueAtTime(0.0001, startsAt);
-                gain.gain.exponentialRampToValueAtTime(0.055, startsAt + 0.015);
-                gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + 0.16);
-                oscillator.connect(gain);
-                gain.connect(audioContext.destination);
-                oscillator.start(startsAt);
-                oscillator.stop(startsAt + 0.17);
-            } catch (error) {
-                // Sound is optional. Never let an audio implementation fault
-                // suppress the title, favicon, or underlying database alert.
-            }
+                try {
+                    var oscillator = audioContext.createOscillator();
+                    var gain = audioContext.createGain();
+                    var startsAt = audioContext.currentTime;
+
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(660, startsAt);
+                    gain.gain.setValueAtTime(0.0001, startsAt);
+                    gain.gain.exponentialRampToValueAtTime(0.055, startsAt + 0.015);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, startsAt + 0.16);
+                    oscillator.connect(gain);
+                    gain.connect(audioContext.destination);
+                    oscillator.start(startsAt);
+                    oscillator.stop(startsAt + 0.17);
+                } catch (error) {
+                    // Sound is optional. Never let an audio implementation fault
+                    // suppress the title, favicon, or underlying database alert.
+                }
+            });
         }
 
         function announceAlert(alert, audible) {
@@ -282,10 +329,8 @@
         document.addEventListener('visibilitychange', foregroundStateChanged);
         window.addEventListener('focus', foregroundStateChanged);
 
-        if (config.soundEnabled) {
-            document.addEventListener('pointerdown', armSound, { once: true });
-            document.addEventListener('keydown', armSound, { once: true });
-        }
+        document.addEventListener('pointerdown', armSound, { once: true });
+        document.addEventListener('keydown', armSound, { once: true });
 
         if (! window.WebSocket) {
             return;

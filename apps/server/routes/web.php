@@ -17,6 +17,7 @@ use App\Http\Controllers\AgentAccountSlaPolicyController;
 use App\Http\Controllers\AgentAlertController;
 use App\Http\Controllers\AgentAlertRealtimeReceiptController;
 use App\Http\Controllers\AgentAlertReconciliationController;
+use App\Http\Controllers\AgentAlertSoundGateController;
 use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentAutomationMacroController;
 use App\Http\Controllers\AgentAutomationMacroRunController;
@@ -111,6 +112,9 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/alerts/realtime-receipt', AgentAlertRealtimeReceiptController::class)
         ->middleware('throttle:agent-alert-realtime-receipt')
         ->name('dashboard.alerts.realtime-receipt');
+    Route::get('/dashboard/alerts/sound-gate', AgentAlertSoundGateController::class)
+        ->middleware('throttle:120,1')
+        ->name('dashboard.alerts.sound-gate');
     Route::get('/dashboard/profile', [AgentProfileController::class, 'show'])
         ->name('dashboard.profile.show');
     Route::put('/dashboard/profile', [AgentProfileController::class, 'update'])

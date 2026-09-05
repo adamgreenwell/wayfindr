@@ -5,6 +5,7 @@ use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\TicketAssigned;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Str;
@@ -51,9 +52,63 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee("favicon.setAttribute('data-agent-alert-state', 'attention')", false)
         ->assertSee('audioContext.createOscillator()', false)
         ->assertSee('"soundEnabled":true', false)
+        ->assertSee('dashboard\/alerts\/sound-gate', false)
         ->assertSee('"quietHours":{"enabled":false,"start":"22:00","end":"07:00","timezone":"UTC"}', false)
+        ->assertSee('window.fetch(config.soundGateEndpoint', false)
+        ->assertSee('config.quietHours = data.quiet_hours', false)
         ->assertSee('quietHoursActive()', false)
         ->assertSee('timeZone: quietHours.timezone', false);
+});
+
+test('the sound gate returns current preferences to already-open dashboards', function (): void {
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
+    $agent = User::factory()->for(Account::factory())->create([
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'sound' => true,
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->getJson(route('dashboard.alerts.sound-gate'))
+        ->assertOk()
+        ->assertExactJson([
+            'data' => [
+                'interruptions_paused' => true,
+                'quiet_hours' => [
+                    'enabled' => true,
+                    'start' => '22:00',
+                    'end' => '07:00',
+                    'timezone' => 'America/New_York',
+                ],
+                'sound_enabled' => true,
+            ],
+        ]);
+
+    $agent->forceFill([
+        'alert_preferences' => [
+            ...$agent->alert_preferences,
+            'sound' => false,
+            'quiet_hours' => [
+                'enabled' => false,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ])->save();
+
+    $this->actingAs($agent->fresh())
+        ->getJson(route('dashboard.alerts.sound-gate'))
+        ->assertOk()
+        ->assertJsonPath('data.interruptions_paused', false)
+        ->assertJsonPath('data.quiet_hours.enabled', false)
+        ->assertJsonPath('data.sound_enabled', false);
 });
 
 test('the alert stream acknowledges exact live deliveries instead of trusting presence', function (): void {
