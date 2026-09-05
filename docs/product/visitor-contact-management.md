@@ -43,9 +43,26 @@ Deleting a definition removes the friendly display and filter; it does not
 silently delete the underlying host context. Erasing visitor data needs a
 separate, explicit retention or deletion workflow.
 
+## Contact notes
+
+Contact notes are private, append-only team context attached directly to a
+visitor. They remain available when an individual ticket closes or is deleted,
+so a later teammate can understand durable preferences and prior context
+without treating one ticket as the person record.
+
+Anyone authorized to open the visitor profile may read its contact notes.
+Adding or deleting a note requires `manage_contacts`; the same site assignment
+boundary still applies. Notes are never sent to the visitor or relayed to an
+external ticket. Each body is limited to 4,000 characters, and the UI asks
+agents to avoid unnecessary sensitive data.
+
+Notes cannot be edited in place. A teammate can add a correction or delete a
+note. Deletion permanently removes the body from the application database,
+while the account audit retains only the note ID and lifecycle action. The note
+body cascades with visitor, site, or account deletion, though infrastructure
+backups remain subject to the operator's separate backup retention policy.
+
 ## Deliberately not in this slice
 
-Contact notes, identity merge, contact export, CSV import, segmentation, CRM
-sync, and marketing automation are separate decisions and remain outside this
-foundation.
-
+Identity merge, contact export, CSV import, segmentation, CRM sync, and
+marketing automation remain separate decisions.

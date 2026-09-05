@@ -11,6 +11,10 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `site_user`: support-agent access for sites. Empty site membership means account-wide fallback for early installs; explicit rows narrow the support queue to assigned agents.
 - `site_routing_states`: one durable row per configured site containing separate last-agent cursors for conversation and ticket round-robin assignment.
 - `visitors`: anonymous or identified people seen on a site.
+- `visitor_attribute_definitions`: account-owned typed labels for selected safe
+  keys already present in visitor host context.
+- `visitor_notes`: private, visitor-owned team context that survives individual
+  tickets and cascades with the visitor record.
 - `conversations`: chat/support sessions between a visitor and support agents. Each conversation has a unique support code for later lookup.
 - `conversation_messages`: messages or system events inside a conversation. The sender is polymorphic so visitors, agents, and future system actors can share one message stream.
 - `conversation_message_attachments`: private message-scoped files. Rows carry
@@ -67,6 +71,9 @@ operator-facing data inventory and retention posture.
 - Automation rules belong to one account, default to disabled, select a typed event, and keep ordered condition and action lists as JSON. Equal positions are evaluated by row ID so order remains deterministic while an operator is reordering rules. Conditions use a typed field/operator/value vocabulary and actions are limited to assignment, labels, priority, status, agent notification, and private ticket notes; no action in this contract can send a visitor message.
 - Creation and update rules enter through explicit domain events after intake has established its final initial state and after the causal audit event is stored. Eloquent observers still maintain infrastructure such as SLA clocks, routing, and webhook outboxes, but they do not run business automation against half-finished workflows.
 - Visitor identity supports both `anonymous_id` and optional host-provided `external_id`. Public widget requests bootstrap a signed visitor token before they can create conversations or read/write visitor messages.
+- Contact notes are separate from ticket activity so deleting or closing one
+  ticket cannot erase person-level context. Their lifecycle audit events omit
+  note bodies, avoiding a second copy outside the visitor-owned record.
 - Cobrowsing state is separate from conversations because consent, start, end timing, connection telemetry, visitor page state, sanitized page snapshots, and mutation diagnostics need their own lifecycle.
 - Attachments are separate from messages because upload, scan, bind, storage,
   retention, and streaming authorization have their own lifecycle. The row's
