@@ -255,18 +255,26 @@ test('the profile requests push permission directly from the submit gesture', fu
 
 test('the profile discards a browser subscription when server storage fails', function (): void {
     $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
-    $cleanup = Str::before(
-        Str::after($source, 'function storeEnabledSubscription(subscription) {'),
+    $storeLifecycle = Str::before(
+        Str::after($source, 'function awaitPendingOptInStore(subscription) {'),
         'function requestPushPermission()',
     );
 
-    expect($cleanup)
+    expect($storeLifecycle)
+        ->toContain('return waitForPendingOptIn(subscription)')
+        ->toContain("if (payload.status !== 'owned')")
+        ->toContain("subscriptionOwnership = 'owned'")
+        ->toContain('function claimAndStoreEnabledSubscription(subscription)')
+        ->toContain('var existingMarker = pendingOptInMarker(subscription)')
+        ->toContain('existingMarker.agentId === String(config.agentId)')
+        ->toContain('return awaitPendingOptInStore(subscription)')
         ->toContain('var markerToken = markPendingOptIn(subscription)')
         ->toContain('if (! markerToken)')
-        ->toContain('return subscription.unsubscribe().catch(function () {}).then(function ()')
+        ->toContain('return Promise.reject(new Error(config.failedMessage))')
         ->toContain('var markerRenewal = keepPendingOptInAlive(subscription, markerToken)')
         ->toContain('return storeSubscription(subscription).then(function (stored)')
         ->toContain('window.clearInterval(markerRenewal)')
+        ->toContain('if (! marker || marker.token !== markerToken)')
         ->toContain('clearPendingRemoval(subscription.endpoint)')
         ->toContain('clearPendingOptIn(subscription, markerToken)')
         ->toContain('pendingRemoval(subscription.endpoint)')
@@ -285,8 +293,13 @@ test('the profile discards a browser subscription when server storage fails', fu
         ->toContain('return renewed && renewed.token === token')
         ->toContain('function keepPendingOptInAlive(subscription, token)')
         ->toContain('renewPendingOptIn(subscription, token)')
+        ->toContain('if (pendingOptInMarker(subscription))')
         ->toContain('marker.agentId === String(config.agentId)')
         ->toContain('waitForPendingOptIn(subscription)')
+        ->toContain('function storeEnabledSubscription(subscription)')
+        ->toContain("if (payload.status === 'owned')")
+        ->toContain("if (payload.status === 'foreign')")
+        ->toContain('return claimAndStoreEnabledSubscription(subscription)')
         ->toContain('return subscriptionStatus(subscription.endpoint, 2);')
         ->toContain('return storeEnabledSubscription(subscription);')
         ->toContain('}).then(storeEnabledSubscription);');

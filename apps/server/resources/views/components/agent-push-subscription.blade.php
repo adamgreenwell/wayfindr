@@ -88,6 +88,13 @@
         }
 
         function markPendingOptIn(subscription) {
+            // Never replace another live operation's lease. A second profile
+            // tab must observe the result of that operation instead of
+            // becoming entitled to undo it when its own request fails.
+            if (pendingOptInMarker(subscription)) {
+                return null;
+            }
+
             var token = Date.now().toString(36) + Math.random().toString(36).slice(2);
 
             try {
@@ -265,16 +272,43 @@
             });
         }
 
-        function storeEnabledSubscription(subscription) {
+        function awaitPendingOptInStore(subscription) {
+            return waitForPendingOptIn(subscription)
+                .then(function () {
+                    return subscriptionStatus(subscription.endpoint, 2);
+                })
+                .then(function (payload) {
+                    if (payload.status !== 'owned') {
+                        throw new Error(config.failedMessage);
+                    }
+
+                    clearPendingRemoval(subscription.endpoint);
+                    subscriptionOwnership = 'owned';
+
+                    return payload;
+                });
+        }
+
+        function claimAndStoreEnabledSubscription(subscription) {
+            var existingMarker = pendingOptInMarker(subscription);
+
+            if (existingMarker && existingMarker.agentId === String(config.agentId)) {
+                return awaitPendingOptInStore(subscription);
+            }
+
             var markerToken = markPendingOptIn(subscription);
 
             if (! markerToken) {
-                // Without a marker, another same-agent tab can mistake the
-                // newly created browser subscription for an abandoned one.
-                // Fail before storing anything instead of risking a dead row.
-                return subscription.unsubscribe().catch(function () {}).then(function () {
-                    throw new Error(config.failedMessage);
-                });
+                existingMarker = pendingOptInMarker(subscription);
+
+                if (existingMarker && existingMarker.agentId === String(config.agentId)) {
+                    return awaitPendingOptInStore(subscription);
+                }
+
+                // Storage is unavailable or belongs to another signed-in
+                // operation. Leave the shared browser endpoint untouched; a
+                // later ownership check can clean up a genuinely missing row.
+                return Promise.reject(new Error(config.failedMessage));
             }
 
             // Treat the expiry as a crash-recovery lease, not a request
@@ -291,8 +325,16 @@
                 return stored;
             }).catch(function (failure) {
                 var storedRemoved = false;
+                var marker = pendingOptInMarker(subscription);
 
                 window.clearInterval(markerRenewal);
+
+                // A suspended tab can lose an expired lease. Once another tab
+                // owns it, this operation no longer has authority to delete or
+                // unsubscribe the endpoint that the newer operation may use.
+                if (! marker || marker.token !== markerToken) {
+                    throw failure;
+                }
 
                 // The POST may have reached the server even when its response
                 // did not reach this page. Remove both halves so a failed
@@ -314,6 +356,33 @@
                     throw failure;
                 });
             });
+        }
+
+        function storeEnabledSubscription(subscription) {
+            var marker = pendingOptInMarker(subscription);
+
+            if (marker && marker.agentId === String(config.agentId)) {
+                return awaitPendingOptInStore(subscription);
+            }
+
+            // Initialization may have completed before another tab created
+            // this browser subscription. Re-read server ownership before
+            // claiming it so an already successful opt-in is simply reused.
+            return subscriptionStatus(subscription.endpoint, 2)
+                .then(function (payload) {
+                    if (payload.status === 'owned') {
+                        clearPendingRemoval(subscription.endpoint);
+                        subscriptionOwnership = 'owned';
+
+                        return payload;
+                    }
+
+                    if (payload.status === 'foreign') {
+                        throw new Error(config.ownedElsewhereMessage);
+                    }
+
+                    return claimAndStoreEnabledSubscription(subscription);
+                });
         }
 
         function requestPushPermission() {
