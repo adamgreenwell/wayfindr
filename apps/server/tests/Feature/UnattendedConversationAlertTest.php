@@ -23,6 +23,7 @@ use App\Support\Reporting\SupportReport;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
@@ -535,6 +536,53 @@ test('a follow-up message inside the same wait does not re-arm the email', funct
     Artisan::call('wayfindr:send-unattended-conversation-alerts');
 
     Mail::assertSentCount(1);
+});
+
+test('a follow-up retries its refresh when a delivery claim lands after the read', function (): void {
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account);
+    $site = Site::factory()->for($account)->create();
+    $conversation = createUnattendedWait($agent, $site);
+    $notification = $agent->unreadNotifications()->firstOrFail();
+    $racingData = [
+        ...$notification->data,
+        UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY => 'racing-delivery-claim',
+    ];
+    $injected = false;
+    $queries = [];
+
+    DB::listen(function (QueryExecuted $query) use (&$injected, &$queries, $notification, $racingData): void {
+        if ($injected) {
+            return;
+        }
+
+        $queries[] = $query->sql;
+
+        if (! str_contains($query->sql, 'from "notifications"')
+            || ! str_contains($query->sql, 'order by "id"')) {
+            return;
+        }
+
+        // Interleave the worker write after the listener SELECT has returned
+        // stale data but before its compare-and-swap update.
+        $injected = true;
+        DB::table('notifications')
+            ->where('id', $notification->id)
+            ->update(['data' => json_encode($racingData)]);
+    });
+
+    $followUp = ConversationMessage::factory()->for($conversation)->create([
+        'body' => 'Adding a detail while the alert is claimed.',
+        'sender_id' => $conversation->visitor_id,
+        'sender_type' => Visitor::class,
+    ]);
+    app(NotifyAgentsOfVisitorMessage::class)->handle(new ConversationMessageCreated($followUp));
+
+    $refreshed = $notification->fresh();
+
+    expect($injected)->toBeTrue(implode("\n", $queries))
+        ->and(data_get($refreshed->data, UnattendedConversationAlertCollector::UNATTENDED_DELIVERY_CLAIM_KEY))->toBe('racing-delivery-claim')
+        ->and(data_get($refreshed->data, 'message_count'))->toBe(2);
 });
 
 test('a new visitor wait after an agent handled the last one re-arms the email', function (): void {
