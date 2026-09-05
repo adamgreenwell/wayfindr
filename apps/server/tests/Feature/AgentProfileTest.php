@@ -104,6 +104,7 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->toContain("document.querySelector('form.wf-signout')")
         ->toContain("navigator.serviceWorker.getRegistration('/wayfindr-sw.js')")
         ->toContain("endpoint.name = 'push_subscription_endpoint'")
+        ->toContain("var endpoint = form.querySelector('input[name=\"push_subscription_endpoint\"]')")
         ->toContain('endpoint.value = subscription.endpoint')
         ->toContain("form.dataset.pushEndpointCapturePending = 'true'")
         ->toContain('var endpointLookup = captureEndpoint()')

@@ -15,17 +15,20 @@
         }
 
         function appendEndpoint(subscription) {
-            if (! subscription
-                || form.querySelector('input[name="push_subscription_endpoint"]')) {
+            if (! subscription) {
                 return subscription;
             }
 
-            var endpoint = document.createElement('input');
+            var endpoint = form.querySelector('input[name="push_subscription_endpoint"]');
 
-            endpoint.type = 'hidden';
-            endpoint.name = 'push_subscription_endpoint';
+            if (! endpoint) {
+                endpoint = document.createElement('input');
+                endpoint.type = 'hidden';
+                endpoint.name = 'push_subscription_endpoint';
+                form.appendChild(endpoint);
+            }
+
             endpoint.value = subscription.endpoint;
-            form.appendChild(endpoint);
 
             return subscription;
         }

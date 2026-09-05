@@ -39,11 +39,15 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
     public function shouldQueue(AgentAlertStored $event): bool
     {
         try {
-            if (! app(AgentWebPushConfig::class)->isReady()) {
+            $assessment = app(AgentWebPushConfig::class)->assessment();
+
+            if (! in_array($assessment['status'], ['ready', 'unavailable'], true)) {
                 return false;
             }
 
-            AgentPushSubscription::purgeStaleFor($event->recipient);
+            if ($assessment['status'] === 'ready') {
+                AgentPushSubscription::purgeStaleFor($event->recipient);
+            }
 
             return $event->recipient->alertPushEnabled()
                 && $event->recipient->alertMode() !== User::ALERT_MODE_QUIET
@@ -60,7 +64,13 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         AgentWebPushConfig $webPush,
         ?AgentVisibleRealtimePresence $visiblePresence = null,
     ): void {
-        if (! $webPush->isReady()) {
+        $assessment = $webPush->assessment();
+
+        if ($assessment['status'] === 'unavailable') {
+            throw new RetryableAgentWebPushException('Web Push settings are temporarily unavailable.');
+        }
+
+        if ($assessment['status'] !== 'ready') {
             return;
         }
 

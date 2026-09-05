@@ -437,6 +437,26 @@ test('the queued Web Push listener is selected only for ready opted-in recipient
     expect($listener->shouldQueue(new AgentAlertStored($agent->fresh(), $alert)))->toBeFalse();
 });
 
+test('temporarily unavailable Web Push settings retain a retryable delivery attempt', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'settings-recovery');
+    $settings = Mockery::mock(OperatorSettings::class);
+    $settings->shouldReceive('valuesAreAuthoritative')->twice()->andReturnFalse();
+    $webPush = new AgentWebPushConfig($settings);
+    app()->instance(AgentWebPushConfig::class, $webPush);
+    $listener = app(SendAgentAlertWebPush::class);
+    $event = new AgentAlertStored($agent, $alert);
+    Notification::fake();
+
+    expect($listener->shouldQueue($event))->toBeTrue()
+        ->and(fn () => $listener->handle($event, $webPush))
+        ->toThrow(RetryableAgentWebPushException::class, 'temporarily unavailable');
+
+    Notification::assertNothingSent();
+    expect($agent->pushSubscriptions()->count())->toBe(1);
+});
+
 test('the listener sends only the exact current unread alert version to an authorized agent', function (): void {
     readyAgentWebPushConfig();
     [$agent, $site, $alert] = pushAlertFixture();
