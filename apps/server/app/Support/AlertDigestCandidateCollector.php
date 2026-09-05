@@ -50,8 +50,16 @@ class AlertDigestCandidateCollector
             ->latest()
             ->get()
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
-            ->reject(fn (DatabaseNotification $notification): bool => filled(data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY)))
-            ->map(fn (DatabaseNotification $notification): ?array => $this->candidateFor($agent, $notification))
+            ->map(function (DatabaseNotification $notification) use ($agent): ?array {
+                $candidate = $this->candidateFor($agent, $notification);
+
+                if ($candidate === null
+                    || $this->deliveryClaimCovers($notification, $candidate['last_activity_at'])) {
+                    return null;
+                }
+
+                return $candidate;
+            })
             ->filter()
             ->values();
     }
@@ -85,17 +93,20 @@ class AlertDigestCandidateCollector
                     $candidate = $candidateByNotification->get((string) $notification->id);
                     $current = $this->candidateFor($agent, $notification);
 
-                    if (filled(data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY))
-                        || ! is_array($candidate)
+                    if (! is_array($candidate)
                         || $current === null
-                        || $current['last_activity_at'] !== $candidate['last_activity_at']) {
+                        || $current['last_activity_at'] !== $candidate['last_activity_at']
+                        || $this->deliveryClaimCovers($notification, $current['last_activity_at'])) {
                         return;
                     }
 
                     $notification->forceFill([
                         'data' => [
                             ...$notification->data,
-                            self::DIGEST_DELIVERY_CLAIM_KEY => $claim,
+                            self::DIGEST_DELIVERY_CLAIM_KEY => [
+                                'token' => $claim,
+                                'last_activity_at' => $candidate['last_activity_at'],
+                            ],
                         ],
                     ])->save();
                     $claimed->push($candidate);
@@ -121,7 +132,7 @@ class AlertDigestCandidateCollector
                 ->lockForUpdate()
                 ->get()
                 ->each(function (DatabaseNotification $notification) use ($agent, $sentByNotification, $claim, $acceptedAt): void {
-                    if (! hash_equals($claim, (string) data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY))) {
+                    if (! $this->deliveryClaimIsOwnedBy($notification, $claim)) {
                         return;
                     }
 
@@ -151,7 +162,7 @@ class AlertDigestCandidateCollector
                 ->lockForUpdate()
                 ->get()
                 ->each(function (DatabaseNotification $notification) use ($claim): void {
-                    if (! hash_equals($claim, (string) data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY))) {
+                    if (! $this->deliveryClaimIsOwnedBy($notification, $claim)) {
                         return;
                     }
 
@@ -160,6 +171,24 @@ class AlertDigestCandidateCollector
                     $notification->forceFill(['data' => $data])->save();
                 });
         });
+    }
+
+    private function deliveryClaimCovers(DatabaseNotification $notification, ?string $lastActivityAt): bool
+    {
+        $claim = data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY);
+
+        return is_array($claim)
+            && array_key_exists('last_activity_at', $claim)
+            && $claim['last_activity_at'] === $lastActivityAt
+            && is_string(data_get($claim, 'token'))
+            && data_get($claim, 'token') !== '';
+    }
+
+    private function deliveryClaimIsOwnedBy(DatabaseNotification $notification, string $claim): bool
+    {
+        $token = data_get($notification->data, self::DIGEST_DELIVERY_CLAIM_KEY.'.token');
+
+        return is_string($token) && hash_equals($claim, $token);
     }
 
     /**

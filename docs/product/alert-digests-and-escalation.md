@@ -51,8 +51,10 @@ unattended email, and digest delivery. The next scheduled unattended or digest
 sweep can deliver still-current work after the window ends. Their queue jobs
 rebuild the current candidate set, re-check the agent immediately before mail
 transport handoff, and only stamp delivery after that handoff succeeds. Before
-SMTP, each job writes a durable claim over the exact alert state it is about to
-send. A transport rejection releases that claim for a normal retry. If SMTP has
+SMTP, each job writes a durable claim over the exact last-activity version it is
+about to send; later alert activity can replace an older claim without
+resending the uncertain version. A transport rejection releases that claim for
+a normal retry. If SMTP has
 accepted the message but finalizing its delivery stamp fails, Wayfindr keeps the
 claim and logs the uncertain delivery for operator inspection; later jobs skip
 the claimed state instead of risking duplicate customer mail. This at-most-once

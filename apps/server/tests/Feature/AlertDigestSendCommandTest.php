@@ -259,13 +259,51 @@ test('an accepted digest keeps a durable claim when finalization is uncertain', 
 
     Mail::assertSentCount(1);
     $notification = $agent->fresh()->unreadNotifications->firstOrFail();
-    expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY))->toBeString()->not->toBe('')
+    $deliveryClaim = data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY);
+
+    expect($deliveryClaim)->toBeArray()
+        ->and(data_get($deliveryClaim, 'token'))->toBeString()->not->toBe('')
         ->and(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->toBeNull()
         ->and(app(AlertDigestCandidateCollector::class)->forAgent($agent->fresh()))->toBeEmpty();
 
     $job->handle(app(AlertDigestCandidateCollector::class));
     Mail::assertSentCount(1);
     Log::shouldHaveReceived('critical')->once();
+});
+
+test('an uncertain digest claim does not suppress an advanced alert version', function (): void {
+    Mail::fake();
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account);
+    $assigningAgent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($agent, 'assignee')
+        ->create();
+    $agent->notify(new TicketAssigned($ticket, $assigningAgent));
+    $collector = app(AlertDigestCandidateCollector::class);
+    $original = $collector->forAgent($agent);
+
+    expect($original)->toHaveCount(1)
+        ->and($collector->claimForDelivery($agent, $original, 'uncertain-old-version'))->toHaveCount(1)
+        ->and($collector->forAgent($agent->fresh()))->toBeEmpty();
+
+    $this->travel(1)->minutes();
+    $ticket->forceFill(['priority' => 'high'])->save();
+
+    $advanced = $collector->forAgent($agent->fresh());
+
+    expect($advanced)->toHaveCount(1)
+        ->and($advanced->first()['last_activity_at'])->not->toBe($original->first()['last_activity_at']);
+
+    (new SendAgentAlertDigest($agent->id, 1))->handle($collector);
+
+    Mail::assertSentCount(1);
+    $notification = $agent->fresh()->unreadNotifications->firstOrFail();
+    expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_DELIVERY_CLAIM_KEY))->toBeNull()
+        ->and(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->not->toBeNull();
 });
 
 test('alert digest send command records failed delivery attempts', function (): void {

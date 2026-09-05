@@ -350,7 +350,10 @@ test('publication sweep closes the zero downtime writer window without replaying
         DB::table('notifications')->where('id', $alert->id)->update([
             'data' => json_encode([
                 ...$refreshed->data,
-                'digest_delivery_claim' => 'digest-claim',
+                'digest_delivery_claim' => [
+                    'token' => 'digest-claim',
+                    'last_activity_at' => '2026-09-05T12:00:05Z',
+                ],
                 'unattended_emailed_at' => '2026-09-05T12:00:06Z',
                 'unattended_delivery_claim' => 'unattended-claim',
                 'digest_queued_at' => '2026-09-05T12:00:07Z',
