@@ -3,6 +3,10 @@
         <p class="lede"><span lang="">{{ $visitor->site->name }}</span> · <span lang="">{{ $visitorContext['anonymous_id'] }}</span></p>
     </x-page-header>
 
+    @if (session('status'))
+        <p class="status-message" role="status">{{ __(session('status')) }}</p>
+    @endif
+
     <section class="section" aria-labelledby="visitor-profile-heading">
         <div class="section-header">
             <h2 id="visitor-profile-heading">{{ __('visitors.profile.glance.heading') }}</h2>
@@ -214,6 +218,65 @@
                     </tbody>
                 </table>
             </div>
+        @endif
+    </section>
+
+    <section class="section" aria-labelledby="visitor-notes-heading">
+        <div class="section-header">
+            <h2 id="visitor-notes-heading">{{ __('visitor_notes.heading') }}</h2>
+            <span class="lede">{{ trans_choice('visitor_notes.count', $contactNotes->total(), ['count' => \App\Support\ReaderNumber::count($contactNotes->total())]) }}</span>
+        </div>
+
+        <div class="notice-copy notice-copy-bordered">
+            <p><strong>{{ __('visitor_notes.boundary.heading') }}</strong></p>
+            <p>{{ __('visitor_notes.boundary.body') }}</p>
+            <p>{{ __('visitor_notes.boundary.care') }}</p>
+            @if ($canManageContacts)
+                <p>{{ __('visitor_notes.boundary.delete') }}</p>
+            @endif
+        </div>
+
+        @if ($canManageContacts)
+            <form class="section-form" method="POST" action="{{ route('dashboard.visitors.notes.store', $visitor) }}">
+                @csrf
+                <div class="field">
+                    <label for="contact-note-body">{{ __('visitor_notes.form.label') }}</label>
+                    <textarea id="contact-note-body" name="body" rows="5" maxlength="4000" placeholder="{{ __('visitor_notes.form.placeholder') }}" aria-describedby="contact-note-help @error('body') contact-note-error @enderror" @error('body') aria-invalid="true" @enderror required>{{ old('body') }}</textarea>
+                    <p id="contact-note-help" class="field-help">{{ __('visitor_notes.form.help') }}</p>
+                    @error('body')<p id="contact-note-error" class="field-error">{{ $message }}</p>@enderror
+                </div>
+                <button class="button" type="submit">{{ __('visitor_notes.form.submit') }}</button>
+            </form>
+        @endif
+
+        @if ($contactNotes->isEmpty())
+            <div class="empty empty-state">
+                <strong>{{ __('visitor_notes.empty.heading') }}</strong>
+                {{ __('visitor_notes.empty.body') }}
+            </div>
+        @else
+            <div class="timeline-list">
+                @foreach ($contactNotes as $note)
+                    <article class="timeline-item internal-note">
+                        <div class="timeline-content">
+                            <p class="message-body" lang="">{{ $note->body }}</p>
+                            <div class="timeline-meta">
+                                <span @if ($note->author) lang="" @endif>{{ $note->author?->name ?? __('visitor_notes.author_unknown') }}</span>
+                                <time datetime="{{ $note->created_at->toIso8601String() }}">{{ $note->created_at->diffForHumans() }}</time>
+                            </div>
+                            @if ($canManageContacts)
+                                <form method="POST" action="{{ route('dashboard.visitors.notes.destroy', [$visitor, $note]) }}">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="button danger" type="submit">{{ __('visitor_notes.delete') }}</button>
+                                </form>
+                            @endif
+                        </div>
+                    </article>
+                @endforeach
+            </div>
+
+            {{ $contactNotes->onEachSide(1)->links() }}
         @endif
     </section>
 

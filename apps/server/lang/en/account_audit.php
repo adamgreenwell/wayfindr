@@ -92,6 +92,8 @@ return [
         'visitor_attribute_created' => 'Visitor attribute created',
         'visitor_attribute_updated' => 'Visitor attribute updated',
         'visitor_attribute_deleted' => 'Visitor attribute deleted',
+        'visitor_note_added' => 'Contact note added',
+        'visitor_note_deleted' => 'Contact note deleted',
         'api_token_created' => 'API token issued',
         'api_token_revoked' => 'API token revoked',
         'outbound_webhook_created' => 'Outbound webhook created',

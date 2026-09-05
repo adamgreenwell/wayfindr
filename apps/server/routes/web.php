@@ -45,6 +45,7 @@ use App\Http\Controllers\AgentTicketExternalLinkController;
 use App\Http\Controllers\AgentTicketLabelController;
 use App\Http\Controllers\AgentTicketQueueController;
 use App\Http\Controllers\AgentVisitorController;
+use App\Http\Controllers\AgentVisitorNoteController;
 use App\Http\Controllers\Auth\OidcSessionController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\SessionController;
@@ -377,6 +378,13 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.visitors.index');
     Route::get('/dashboard/visitors/{visitor}', [AgentVisitorController::class, 'show'])
         ->name('dashboard.visitors.show');
+    Route::post('/dashboard/visitors/{visitor}/notes', [AgentVisitorNoteController::class, 'store'])
+        ->whereNumber('visitor')
+        ->name('dashboard.visitors.notes.store');
+    Route::delete('/dashboard/visitors/{visitor}/notes/{visitorNote}', [AgentVisitorNoteController::class, 'destroy'])
+        ->whereNumber('visitor')
+        ->whereNumber('visitorNote')
+        ->name('dashboard.visitors.notes.destroy');
     Route::post('/dashboard/conversations/{supportCode}/close', [AgentConversationController::class, 'close'])
         ->name('dashboard.conversations.close');
     Route::post('/dashboard/conversations/{supportCode}/reopen', [AgentConversationController::class, 'reopen'])

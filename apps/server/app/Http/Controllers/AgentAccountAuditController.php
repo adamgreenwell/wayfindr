@@ -275,7 +275,7 @@ class AgentAccountAuditController extends Controller
             'action' => $event->action,
             'label' => $this->translatedAuditLabel($event->action),
             'actor' => $this->auditActorParts($event, $canViewVisitorIdentity),
-            'subject' => $this->auditSubjectParts($event, $canViewConversations, $canManageTickets),
+            'subject' => $this->auditSubjectParts($event, $canViewConversations, $canManageTickets, $canViewVisitorIdentity),
             'site' => $event->site
                 ? ['prefix' => null, 'value' => $event->site->name]
                 : ['prefix' => __('account_audit.references.account'), 'value' => null],
@@ -301,7 +301,7 @@ class AgentAccountAuditController extends Controller
             $event->action,
             $this->auditLabel($event->action),
             $this->auditActor($event, $canViewVisitorIdentity),
-            $this->auditSubject($event, $canViewConversations, $canManageTickets),
+            $this->auditSubject($event, $canViewConversations, $canManageTickets, $canViewVisitorIdentity),
             $event->site?->name ?? 'Account',
         ]);
     }
@@ -365,11 +365,15 @@ class AgentAccountAuditController extends Controller
                         ->orWhereLike('metadata->oidc_provider_name', $searchPattern);
 
                     if ($canViewVisitorIdentity) {
-                        $query->orWhereHasMorph('actor', [Visitor::class], fn (Builder $query) => $query
+                        $visitorSearch = fn (Builder $query) => $query
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern)
                             ->orWhereLike('external_id', $searchPattern)
-                            ->orWhereLike('anonymous_id', $searchPattern));
+                            ->orWhereLike('anonymous_id', $searchPattern);
+
+                        $query
+                            ->orWhereHasMorph('actor', [Visitor::class], $visitorSearch)
+                            ->orWhereHasMorph('subject', [Visitor::class], $visitorSearch);
                     }
 
                     if ($canViewConversations) {
@@ -442,6 +446,8 @@ class AgentAccountAuditController extends Controller
             'visitor_attribute.created' => 'Visitor attribute created',
             'visitor_attribute.updated' => 'Visitor attribute updated',
             'visitor_attribute.deleted' => 'Visitor attribute deleted',
+            'visitor.note_added' => 'Contact note added',
+            'visitor.note_deleted' => 'Contact note deleted',
             'site_access.updated' => 'Site access updated',
             'site.routing_updated' => 'Automatic assignment updated',
             'conversation.assignee_updated' => 'Conversation owner updated',
@@ -519,14 +525,25 @@ class AgentAccountAuditController extends Controller
     }
 
     /** @return array{prefix: string|null, value: string|null} */
-    private function auditSubjectParts(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): array
-    {
+    private function auditSubjectParts(
+        AuditEvent $event,
+        bool $canViewConversations,
+        bool $canManageTickets,
+        bool $canViewVisitorIdentity,
+    ): array {
         if ($event->subject instanceof BreakGlassGrant) {
             return $this->breakGlassReferenceParts($event, $canViewConversations, $canManageTickets);
         }
 
         if ($event->subject instanceof User || $event->subject instanceof Site) {
             return ['prefix' => null, 'value' => $event->subject->name];
+        }
+
+        if ($event->subject instanceof Visitor) {
+            return [
+                'prefix' => __('account_audit.references.visitor'),
+                'value' => $canViewVisitorIdentity ? $this->visitorLabel($event->subject) : null,
+            ];
         }
 
         if ($event->subject instanceof CustomRole || $this->isDeletedCustomRoleSubject($event)) {
@@ -722,8 +739,12 @@ class AgentAccountAuditController extends Controller
         return 'System';
     }
 
-    private function auditSubject(AuditEvent $event, bool $canViewConversations, bool $canManageTickets): string
-    {
+    private function auditSubject(
+        AuditEvent $event,
+        bool $canViewConversations,
+        bool $canManageTickets,
+        bool $canViewVisitorIdentity,
+    ): string {
         if ($event->subject instanceof BreakGlassGrant) {
             // These are references rather than customer-authored content, but
             // a support code or ticket number still belongs to the underlying
@@ -750,6 +771,12 @@ class AgentAccountAuditController extends Controller
 
         if ($event->subject instanceof User) {
             return $event->subject->name;
+        }
+
+        if ($event->subject instanceof Visitor) {
+            return $canViewVisitorIdentity
+                ? 'Visitor '.$this->visitorLabel($event->subject)
+                : 'Visitor';
         }
 
         if ($event->subject instanceof CustomRole || $this->isDeletedCustomRoleSubject($event)) {
