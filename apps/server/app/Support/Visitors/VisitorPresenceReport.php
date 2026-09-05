@@ -194,8 +194,27 @@ final class VisitorPresenceReport
             // save() updates zero rows, Eloquent calls that success, and the
             // endpoint answers 202 having stored nothing -- the visitor
             // vanishes from the board until they happen to be created again.
-            $visitor = $locked
-                ?? $this->resolve($site, $reportedAnonymousId);
+            if ($locked instanceof Visitor) {
+                $visitor = $locked;
+            } else {
+                // An identity merge can be the reason the original row is
+                // gone. Following its alias yields the canonical visitor, but
+                // that model was read without a row lock; lock and re-read it
+                // before merging metadata so a concurrent bootstrap or other
+                // heartbeat cannot have its newer context overwritten.
+                $visitor = $this->resolve($site, $reportedAnonymousId);
+
+                if ($visitor->exists) {
+                    $visitor = Visitor::query()
+                        ->whereKey($visitor->getKey())
+                        ->lockForUpdate()
+                        ->first()
+                        ?? Visitor::query()->newModelInstance([
+                            'site_id' => $site->id,
+                            'anonymous_id' => $reportedAnonymousId,
+                        ]);
+                }
+            }
         }
 
         $now = now();
