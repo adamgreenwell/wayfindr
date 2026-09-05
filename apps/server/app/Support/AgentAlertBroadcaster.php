@@ -36,7 +36,8 @@ final class AgentAlertBroadcaster
         // model instances; only the first callback to record the stored state
         // gets a version and broadcast. Generic read/email writes do not alter
         // the alert-bearing fingerprint and therefore remain silent.
-        $marked = DB::transaction(function () use ($agentId, $notificationId, $notifiableType): bool {
+        /** @var array{fingerprint: string, version: string}|null $claim */
+        $claim = DB::transaction(function () use ($agentId, $notificationId, $notifiableType): ?array {
             $current = DatabaseNotification::query()
                 ->whereKey($notificationId)
                 ->where('notifiable_type', $notifiableType)
@@ -45,7 +46,7 @@ final class AgentAlertBroadcaster
                 ->first();
 
             if (! $current instanceof DatabaseNotification) {
-                return false;
+                return null;
             }
 
             $fingerprint = AgentAlertPublicationFingerprint::for($current->data);
@@ -53,25 +54,30 @@ final class AgentAlertBroadcaster
 
             if (is_string($recordedFingerprint)
                 && hash_equals($recordedFingerprint, $fingerprint)) {
-                return false;
+                return null;
             }
+
+            $version = (string) Str::uuid();
 
             DB::table('notifications')->where('id', $notificationId)->update([
                 'agent_alerted_at' => now(),
-                'agent_alert_version' => (string) Str::uuid(),
+                'agent_alert_version' => $version,
                 'agent_alert_fingerprint' => $fingerprint,
             ]);
 
-            return true;
+            return [
+                'fingerprint' => $fingerprint,
+                'version' => $version,
+            ];
         });
 
-        if (! $marked) {
+        if ($claim === null) {
             return;
         }
 
-        DB::afterCommit(function () use ($accountId, $agentId, $notificationId, $notifiableType): void {
+        DB::afterCommit(function () use ($accountId, $agentId, $claim, $notificationId, $notifiableType): void {
             try {
-                DB::transaction(function () use ($accountId, $agentId, $notificationId, $notifiableType): void {
+                DB::transaction(function () use ($accountId, $agentId, $claim, $notificationId, $notifiableType): void {
                     // The same account-then-user order used by role, site-access
                     // and deactivation writers. Whichever transaction gets the
                     // account lock first defines reality: either this event is
@@ -100,10 +106,22 @@ final class AgentAlertBroadcaster
                         ->lockForUpdate()
                         ->first();
 
+                    $currentFingerprint = $currentNotification instanceof DatabaseNotification
+                        ? $currentNotification->getAttribute('agent_alert_fingerprint')
+                        : null;
+                    $currentVersion = $currentNotification instanceof DatabaseNotification
+                        ? $currentNotification->getAttribute('agent_alert_version')
+                        : null;
+
                     if (! $currentRecipient instanceof User
                         || $currentRecipient->isDeactivated()
                         || ! $currentRecipient->hasAccountPermission(AccountPermission::ViewAlerts)
                         || ! $currentNotification instanceof DatabaseNotification
+                        || ! is_string($currentFingerprint)
+                        || ! hash_equals($claim['fingerprint'], $currentFingerprint)
+                        || ! hash_equals($claim['fingerprint'], AgentAlertPublicationFingerprint::for($currentNotification->data))
+                        || ! is_string($currentVersion)
+                        || ! hash_equals($claim['version'], $currentVersion)
                         || ! Gate::forUser($currentRecipient)->allows('view', $currentNotification)) {
                         return;
                     }

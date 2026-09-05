@@ -95,6 +95,52 @@ test('stale concurrent callbacks publish the current stored state only once', fu
         );
 });
 
+test('an obsolete publication claim cannot broadcast a payload committed before its callback reloads', function (): void {
+    Event::fake([AgentAlertStored::class]);
+
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $alert = $agent->notifications()->create([
+        'id' => (string) Str::uuid(),
+        'type' => ConversationNeedsReply::class,
+        'data' => [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $conversation->id,
+            'message_count' => 1,
+        ],
+        'read_at' => null,
+    ]);
+    $broadcaster = app(AgentAlertBroadcaster::class);
+
+    // Delay the first after-commit callback, then change the payload after its
+    // publication metadata was claimed. The old claim must not publish the new
+    // state under its old version before that state gets its own claim.
+    DB::beginTransaction();
+    $broadcaster->stored($agent, $alert);
+    $alert->forceFill(['data' => [...$alert->data, 'message_count' => 2]])->save();
+    DB::commit();
+
+    Event::assertNotDispatched(AgentAlertStored::class);
+
+    $broadcaster->stored($agent, $alert->fresh());
+
+    Event::assertDispatchedTimes(AgentAlertStored::class, 1);
+
+    $event = Event::dispatched(AgentAlertStored::class)->sole()[0];
+    $current = $alert->fresh();
+
+    expect(data_get($event->alert->data, 'message_count'))->toBe(2)
+        ->and($event->alert->getAttribute('agent_alert_version'))->toBe(
+            $current->getAttribute('agent_alert_version'),
+        )
+        ->and($current->getAttribute('agent_alert_fingerprint'))->toBe(
+            AgentAlertPublicationFingerprint::for($current->data),
+        );
+});
+
 test('new and batched conversation alerts both broadcast their durable database state', function (): void {
     Event::fake([AgentAlertStored::class]);
 
