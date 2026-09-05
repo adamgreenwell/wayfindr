@@ -110,6 +110,7 @@ return [
         'push_unsupported' => 'Dieser Browser oder diese Verbindung unterstützt Web-Push nicht. Ihre aktuelle Einstellung wurde beibehalten.',
         'push_failed' => 'Dieser Browser konnte nicht angemeldet werden. Prüfen Sie die Benachrichtigungsberechtigung und versuchen Sie es erneut.',
         'push_reenroll' => 'Dieser Browser verwendet einen früheren Web-Push-Schlüssel. Aktivieren Sie diese Option und speichern Sie, um die Anmeldung zu erneuern; Wayfindr hat die bestehende Anmeldung während der Bereitstellung nicht verändert.',
+        'push_storage_incompatible' => 'Browser-Anmeldungen müssen die primäre Wayfindr-Datenbank verwenden, bevor Web-Push sicher geändert werden kann.',
         'push_configuration_changed' => 'Die Web-Push-Einstellungen wurden nach dem Laden dieser Seite geändert. Laden Sie das Profil neu und versuchen Sie es erneut.',
         'push_ownership_check_failed' => 'Wayfindr konnte nicht prüfen, wem die Anmeldung dieses Browsers gehört. Zum Schutz der Privatsphäre wurde sie daher in diesem Browser entfernt. Versuchen Sie, sie erneut zu aktivieren.',
         'push_invalid_endpoint' => 'Dieser Browser hat eine Adresse des Push-Dienstes übermittelt, die Wayfindr nicht sicher kontaktieren kann.',

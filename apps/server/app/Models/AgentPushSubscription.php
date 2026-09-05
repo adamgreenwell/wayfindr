@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 use NotificationChannels\WebPush\PushSubscription;
 use Throwable;
 
@@ -42,6 +43,15 @@ final class AgentPushSubscription extends PushSubscription
     public static function currentVapidPublicKeyHash(): string
     {
         return hash('sha256', trim((string) config('webpush.vapid.public_key')));
+    }
+
+    public static function usesPrimaryDatabaseConnection(): bool
+    {
+        try {
+            return (new self)->getConnection()->getName() === DB::connection()->getName();
+        } catch (Throwable) {
+            return false;
+        }
     }
 
     public function usesCurrentVapidGeneration(): bool
@@ -97,6 +107,10 @@ final class AgentPushSubscription extends PushSubscription
     {
         if ($agent->account_id === null) {
             return;
+        }
+
+        if (! self::usesPrimaryDatabaseConnection()) {
+            throw new LogicException('Push subscription mutations require the primary database connection.');
         }
 
         $accountId = (int) $agent->account_id;

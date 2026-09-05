@@ -86,6 +86,11 @@ final class AgentPushSubscriptionController extends Controller
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
+        abort_unless(
+            AgentPushSubscription::usesPrimaryDatabaseConnection(),
+            409,
+            __('profile.alerts.push_storage_incompatible'),
+        );
 
         $validated = $request->validate([
             'endpoint' => [
@@ -221,6 +226,11 @@ final class AgentPushSubscriptionController extends Controller
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
+        abort_unless(
+            AgentPushSubscription::usesPrimaryDatabaseConnection(),
+            409,
+            __('profile.alerts.push_storage_incompatible'),
+        );
 
         $validated = $request->validate([
             'endpoint' => ['required', 'string', 'max:'.AgentPushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],

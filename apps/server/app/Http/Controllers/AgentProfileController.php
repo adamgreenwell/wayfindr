@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 
 class AgentProfileController extends Controller
 {
@@ -38,24 +39,35 @@ class AgentProfileController extends Controller
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
-        DB::transaction(function () use ($agent, $settings): void {
-            // Profile cleanup is destructive, so coordinate with VAPID
-            // rotation and browser enrollment before deciding which
-            // subscription generation is stale.
-            OperatorSetting::query()->insertOrIgnore([
-                'key' => 'webpush.public_key',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            OperatorSetting::query()
-                ->where('key', 'webpush.public_key')
-                ->sharedLock()
-                ->firstOrFail();
-            $settings->refreshFromDatabase();
-            AgentPushSubscription::purgeStaleFor($agent);
-        });
+        $pushStorageCompatible = AgentPushSubscription::usesPrimaryDatabaseConnection();
+
+        if ($pushStorageCompatible) {
+            DB::transaction(function () use ($agent, $settings): void {
+                // Profile cleanup is destructive, so coordinate with VAPID
+                // rotation and browser enrollment before deciding which
+                // subscription generation is stale.
+                OperatorSetting::query()->insertOrIgnore([
+                    'key' => 'webpush.public_key',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                OperatorSetting::query()
+                    ->where('key', 'webpush.public_key')
+                    ->sharedLock()
+                    ->firstOrFail();
+                $settings->refreshFromDatabase();
+                AgentPushSubscription::purgeStaleFor($agent);
+            });
+        }
         $agent->loadMissing('customRole');
-        $agent->loadCount('pushSubscriptions');
+
+        if ($pushStorageCompatible) {
+            $agent->loadCount('pushSubscriptions');
+        } else {
+            // Do not touch an incompatible or unavailable secondary schema
+            // merely to render the fail-closed profile state.
+            $agent->setAttribute('push_subscriptions_count', 0);
+        }
 
         $account = $agent->account()->firstOrFail();
         $mailReadiness = collect($readiness->summary()['checks'])
@@ -78,8 +90,9 @@ class AgentProfileController extends Controller
             'digestDeliveryStatus' => $agent->alertDigestDeliveryStatus(),
             'mailReadiness' => $mailReadiness,
             'alertReadiness' => $this->alertReadiness($agent, $mailReadiness, $webPush->assessment()),
-            'pushAvailable' => $webPush->isReady(),
+            'pushAvailable' => $webPush->isReady() && $pushStorageCompatible,
             'pushPublicKey' => $webPush->publicKeyForBrowser(),
+            'pushStorageCompatible' => $pushStorageCompatible,
             'twoFactorPendingSecret' => $pendingSecret,
             'twoFactorQrCode' => $pendingSecret ? $twoFactor->qrCodeDataUri($agent, $pendingSecret) : null,
             'twoFactorRecoveryCodes' => $this->pullRecoveryCodes($request),
@@ -169,15 +182,21 @@ class AgentProfileController extends Controller
         $email = $request->boolean('email_alerts');
         $sound = $request->boolean('sound_alerts');
         $pushRequested = $request->boolean('push_alerts');
+        $removedEndpoint = trim((string) ($validated['push_subscription_endpoint'] ?? ''));
 
-        DB::transaction(function () use ($accountId, $email, $pushRequested, $sound, $userId, $validated): void {
+        if ($removedEndpoint !== '' && ! AgentPushSubscription::usesPrimaryDatabaseConnection()) {
+            throw ValidationException::withMessages([
+                'push_alerts' => __('profile.alerts.push_storage_incompatible'),
+            ]);
+        }
+
+        DB::transaction(function () use ($accountId, $email, $pushRequested, $removedEndpoint, $sound, $userId, $validated): void {
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()
                 ->whereKey($userId)
                 ->where('account_id', $accountId)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $removedEndpoint = trim((string) ($validated['push_subscription_endpoint'] ?? ''));
             $ownedSubscriptions = fn () => AgentPushSubscription::withoutGlobalScope(
                 AgentPushSubscription::CURRENT_VAPID_SCOPE,
             )

@@ -323,6 +323,27 @@ test('unsubscribing deletes only the current agents matching endpoint', function
         ->and($other->fresh()->alertPushEnabled())->toBeTrue();
 });
 
+test('browser endpoint deletion refuses a separate subscription database', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    config()->set('database.connections.webpush-isolated', [
+        ...config('database.connections.sqlite'),
+        'database' => ':memory:',
+    ]);
+    config()->set('webpush.database_connection', 'webpush-isolated');
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.profile.push-subscription.store'), agentPushPayload())
+        ->assertConflict()
+        ->assertJsonPath('message', __('profile.alerts.push_storage_incompatible'));
+
+    $this->actingAs($agent)
+        ->deleteJson(route('dashboard.profile.push-subscription.destroy'), [
+            'endpoint' => 'https://push.example.test/subscriptions/cross-database',
+        ])
+        ->assertConflict()
+        ->assertJsonPath('message', __('profile.alerts.push_storage_incompatible'));
+});
+
 test('subscription input requires HTTPS and correctly sized Web Push keys', function (array $overrides, array $errors): void {
     $agent = User::factory()->for(Account::factory())->create();
 

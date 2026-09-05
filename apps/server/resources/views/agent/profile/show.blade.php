@@ -211,7 +211,13 @@
                 >
                 <span>{{ __('profile.alerts.push_alerts') }}</span>
             </label>
-            <p class="field-help">{{ $pushAvailable ? __('profile.alerts.push_help') : __('profile.alerts.push_unavailable') }}</p>
+            <p class="field-help">
+                {{ $pushAvailable
+                    ? __('profile.alerts.push_help')
+                    : ($pushStorageCompatible
+                        ? __('profile.alerts.push_unavailable')
+                        : __('profile.alerts.push_storage_incompatible')) }}
+            </p>
             <p class="field-error" data-agent-push-error hidden>{{ __('profile.alerts.push_failed') }}</p>
 
             <div class="field">

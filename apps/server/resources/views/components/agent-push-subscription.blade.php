@@ -136,7 +136,11 @@
                 return response.json().catch(function () {
                     return {};
                 }).then(function (payload) {
-                    throw new Error(payload.message || config.failedMessage);
+                    var failure = new Error(payload.message || config.failedMessage);
+
+                    failure.status = response.status;
+
+                    throw failure;
                 });
             });
         }
@@ -252,7 +256,11 @@
                         var removeStored = subscription && subscriptionOwnership === 'owned'
                             ? request(config.destroyEndpoint, 'DELETE', {
                                 endpoint: subscription.endpoint,
-                            }).catch(function () {})
+                            }).catch(function (failure) {
+                                if (failure.status === 409) {
+                                    throw failure;
+                                }
+                            })
                             : Promise.resolve();
                         var replace = subscription
                             ? removeStored.then(function () {
@@ -296,7 +304,11 @@
 
                     return request(config.destroyEndpoint, 'DELETE', {
                         endpoint: subscription.endpoint,
-                    }).catch(function () {}).then(function () {
+                    }).catch(function (failure) {
+                        if (failure.status === 409) {
+                            throw failure;
+                        }
+                    }).then(function () {
                         return subscription.unsubscribe();
                     });
                 });
@@ -317,7 +329,11 @@
                     endpoint: subscription.endpoint,
                 }).then(function () {
                     storedRemoved = true;
-                }).catch(function () {})
+                }).catch(function (failure) {
+                    if (failure.status === 409) {
+                        throw failure;
+                    }
+                })
                 : Promise.resolve();
 
             return removal

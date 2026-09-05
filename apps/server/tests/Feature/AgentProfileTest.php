@@ -282,6 +282,64 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
         ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
 });
 
+test('the profile fails closed when browser subscriptions use another database connection', function (): void {
+    $keys = VAPID::createVapidKeys();
+    config()->set('webpush.vapid', [
+        'subject' => 'mailto:alerts@example.test',
+        'public_key' => $keys['publicKey'],
+        'private_key' => $keys['privateKey'],
+        'pem_file' => null,
+    ]);
+    config()->set('database.connections.webpush-isolated', [
+        ...config('database.connections.sqlite'),
+        'database' => ':memory:',
+    ]);
+    config()->set('webpush.database_connection', 'webpush-isolated');
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee(__('profile.alerts.push_storage_incompatible'))
+        ->assertDontSee('<script data-agent-push-subscription>', false);
+});
+
+test('profile fallback refuses a cross-database endpoint deletion', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/cross-database',
+        'public_key' => 'public-key',
+        'auth_token' => 'auth-token',
+        'content_encoding' => 'aes128gcm',
+    ]);
+    $primaryConnection = config('webpush.database_connection');
+
+    config()->set('database.connections.webpush-isolated', [
+        ...config('database.connections.sqlite'),
+        'database' => ':memory:',
+    ]);
+    config()->set('webpush.database_connection', 'webpush-isolated');
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => $subscription->endpoint,
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHasErrors('push_alerts');
+
+    config()->set('webpush.database_connection', $primaryConnection);
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and(AgentPushSubscription::withoutGlobalScopes()->sole()->endpoint)
+        ->toBe($subscription->endpoint);
+});
+
 test('profile cleanup refreshes VAPID settings under the rotation lock', function (): void {
     $oldKeys = VAPID::createVapidKeys();
     $newKeys = VAPID::createVapidKeys();
@@ -416,6 +474,8 @@ test('the profile cleans up an owned browser subscription after a VAPID key rota
 
     expect($source)
         ->toContain('application_server_key: config.publicKey')
+        ->toContain('failure.status = response.status')
+        ->toContain('if (failure.status === 409)')
         ->toContain("payload.status === 'foreign'")
         ->toContain("payload.status === 'missing'")
         ->toContain("payload.generation === 'transitional'")

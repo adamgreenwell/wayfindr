@@ -131,7 +131,7 @@ final class OperatorWebPushSettingsController extends Controller
             $nextPublicKey = $clearKeys ? '' : $publicKey;
             $publicKeyChanged = ! hash_equals($currentPublicKey, $nextPublicKey);
 
-            if ($publicKeyChanged && ! $this->subscriptionsUseSettingsTransaction()) {
+            if ($publicKeyChanged && ! AgentPushSubscription::usesPrimaryDatabaseConnection()) {
                 throw ValidationException::withMessages([
                     'public_key' => __('operator.webpush.validation.database_connection'),
                 ]);
@@ -181,10 +181,5 @@ final class OperatorWebPushSettingsController extends Controller
         return redirect()
             ->route('operator.settings.webpush.edit')
             ->with('status', 'operator.webpush.flash.saved');
-    }
-
-    private function subscriptionsUseSettingsTransaction(): bool
-    {
-        return (new AgentPushSubscription)->getConnection()->getName() === DB::connection()->getName();
     }
 }
