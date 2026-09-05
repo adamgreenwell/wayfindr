@@ -211,6 +211,40 @@
                 });
         }
 
+        function cleanStaleSubscription(subscription, removeStored) {
+            var storedRemoved = ! removeStored;
+
+            if (removeStored) {
+                // If the best-effort DELETE is throttled, carry the endpoint
+                // into the next profile save so its locked transaction can
+                // still remove only this agent's unusable subscription.
+                pendingRemoval(subscription.endpoint);
+            }
+
+            var removal = removeStored
+                ? request(config.destroyEndpoint, 'DELETE', {
+                    endpoint: subscription.endpoint,
+                }).then(function () {
+                    storedRemoved = true;
+                }).catch(function () {})
+                : Promise.resolve();
+
+            return removal
+                .then(function () {
+                    return subscription.unsubscribe().catch(function () {});
+                })
+                .then(function () {
+                    if (storedRemoved) {
+                        pendingRemoval(null);
+                    }
+
+                    subscriptionOwnership = 'missing';
+                    initialBrowserEnabled = false;
+                    checkbox.checked = false;
+                    checkbox.disabled = false;
+                });
+        }
+
         function initializeBrowserState() {
             return navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
                 .then(function (registration) {
@@ -236,6 +270,12 @@
                         subscriptionOwnership = payload.status;
                         initialBrowserEnabled = payload.status === 'owned'
                             && usesCurrentApplicationServerKey(subscription);
+
+                        if (payload.status !== 'foreign'
+                            && ! usesCurrentApplicationServerKey(subscription)) {
+                            return cleanStaleSubscription(subscription, payload.status === 'owned');
+                        }
+
                         checkbox.checked = initialBrowserEnabled;
                         checkbox.disabled = false;
 

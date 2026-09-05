@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 use Minishlink\WebPush\VAPID;
 
 uses(RefreshDatabase::class);
@@ -186,6 +187,24 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
     expect($checkbox)->toBeInstanceOf(DOMElement::class)
         ->and($checkbox->getAttribute('name'))->toBe('push_alerts')
         ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
+});
+
+test('the profile cleans up an owned browser subscription after a VAPID key rotation', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $cleanup = Str::before(
+        Str::after($source, 'function cleanStaleSubscription(subscription, removeStored) {'),
+        'function initializeBrowserState()',
+    );
+
+    expect($cleanup)
+        ->toContain('pendingRemoval(subscription.endpoint);')
+        ->toContain("request(config.destroyEndpoint, 'DELETE'")
+        ->toContain('subscription.unsubscribe()');
+
+    expect($source)
+        ->toContain("payload.status !== 'foreign'")
+        ->toContain('! usesCurrentApplicationServerKey(subscription)')
+        ->toContain("cleanStaleSubscription(subscription, payload.status === 'owned')");
 });
 
 test("browser-specific push opt-out keeps the agent's other subscribed browsers active", function (): void {

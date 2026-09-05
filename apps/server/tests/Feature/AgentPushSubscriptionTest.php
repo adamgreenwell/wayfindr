@@ -122,8 +122,12 @@ test('subscription status distinguishes this agent from another profile without 
 
 test('unsubscribing deletes only the current agents matching endpoint', function (): void {
     $account = Account::factory()->create();
-    $agent = User::factory()->for($account)->create();
-    $other = User::factory()->for($account)->create();
+    $agent = User::factory()->for($account)->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+    $other = User::factory()->for($account)->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
     $ownPayload = agentPushPayload('https://push.example.test/subscription/own');
     $otherPayload = agentPushPayload('https://push.example.test/subscription/other', 'b');
 
@@ -143,6 +147,7 @@ test('unsubscribing deletes only the current agents matching endpoint', function
         ->assertNoContent();
 
     expect(PushSubscription::query()->count())->toBe(2);
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue();
 
     $this->actingAs($agent)
         ->deleteJson(route('dashboard.profile.push-subscription.destroy'), [
@@ -151,7 +156,9 @@ test('unsubscribing deletes only the current agents matching endpoint', function
         ->assertNoContent();
 
     expect(PushSubscription::query()->count())->toBe(1)
-        ->and(PushSubscription::query()->sole()->subscribable_id)->toBe($other->id);
+        ->and(PushSubscription::query()->sole()->subscribable_id)->toBe($other->id)
+        ->and($agent->fresh()->alertPushEnabled())->toBeFalse()
+        ->and($other->fresh()->alertPushEnabled())->toBeTrue();
 });
 
 test('subscription input requires HTTPS and correctly sized Web Push keys', function (array $overrides, array $errors): void {
