@@ -9,6 +9,7 @@ use App\Models\Conversation;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\AgentAlertBroadcaster;
 use App\Support\Automation\AutomationRuleEngine;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
@@ -19,6 +20,7 @@ class NotifyAgentsOfVisitorMessage
     public function __construct(
         private readonly UnattendedConversationAlertCollector $unattendedAlerts,
         private readonly AutomationRuleEngine $automationRules,
+        private readonly AgentAlertBroadcaster $alertBroadcaster,
     ) {}
 
     /**
@@ -125,6 +127,7 @@ class NotifyAgentsOfVisitorMessage
         }
 
         $existingNotification->forceFill(['data' => $data])->save();
+        $this->alertBroadcaster->stored($agent, $existingNotification);
     }
 
     private function agentRepliedSince(Conversation $conversation, string $timestamp): bool
