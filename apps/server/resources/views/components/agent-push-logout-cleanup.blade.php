@@ -1,6 +1,7 @@
 <script data-agent-push-logout-cleanup>
     (function () {
         var form = document.querySelector('form.wf-signout');
+        var pushLifecycleLock = 'wayfindr:push-lifecycle';
 
         if (! form
             || ! window.isSecureContext
@@ -9,9 +10,32 @@
             return;
         }
 
-        function submitLogout() {
+        function submitLogoutFallback() {
             form.dataset.pushEndpointCaptured = 'true';
             HTMLFormElement.prototype.submit.call(form);
+        }
+
+        function requestLogout() {
+            form.dataset.pushEndpointCaptured = 'true';
+
+            return fetch(form.action, {
+                method: (form.method || 'POST').toUpperCase(),
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'text/html',
+                },
+                body: new FormData(form),
+                redirect: 'follow',
+            }).then(function (response) {
+                if (! response.ok || ! response.redirected) {
+                    throw new Error();
+                }
+
+                // Keep the browser lock until the authenticated request has
+                // removed the captured endpoint and invalidated the session.
+                // A waiting opt-in tab can only continue after that commit.
+                window.location.assign(response.url);
+            });
         }
 
         function appendEndpoint(subscription) {
@@ -41,20 +65,6 @@
                 .then(appendEndpoint);
         }
 
-        // Start while the authenticated page is idle. In the common case the
-        // exact endpoint is already attached to the form before logout begins.
-        // A rejected lookup remains retryable when the user does sign out.
-        var eagerLookupPending = true;
-        var endpointLookup = captureEndpoint()
-            .catch(function () {
-                return null;
-            })
-            .then(function (subscription) {
-                eagerLookupPending = false;
-
-                return subscription;
-            });
-
         form.addEventListener('submit', function (event) {
             if (form.dataset.pushEndpointCaptured === 'true') {
                 return;
@@ -68,17 +78,38 @@
 
             form.dataset.pushEndpointCapturePending = 'true';
 
-            // If the eager lookup is still running, it is already the freshest
-            // possible answer. Once it has settled, recheck in case this page
-            // opted in or replaced its subscription after the initial capture.
-            var logoutLookup = eagerLookupPending ? endpointLookup : captureEndpoint();
+            var captureAndRequestLogout = function () {
+                return captureEndpoint()
+                    .catch(function () {
+                        // A previously captured endpoint remains on the form.
+                    })
+                    .then(requestLogout);
+            };
 
-            logoutLookup
+            if (! navigator.locks || typeof navigator.locks.request !== 'function') {
+                // Wayfindr does not create new subscriptions without Web Locks,
+                // so this compatibility path has no concurrent in-app opt-in.
+                captureEndpoint()
+                    .catch(function () {
+                        // A previously captured endpoint remains on the form.
+                    })
+                    .then(submitLogoutFallback);
+
+                return;
+            }
+
+            // Use the same origin-wide lifecycle lock as opt-in. Capturing the
+            // current endpoint and completing logout are one serialized unit,
+            // including when no subscription exists at click time.
+            navigator.locks.request(
+                pushLifecycleLock,
+                { mode: 'exclusive' },
+                captureAndRequestLogout
+            )
                 .catch(function () {
-                    // A previously captured endpoint remains on the form. If
-                    // none exists, the logged-out page still cleans up locally.
-                })
-                .then(submitLogout);
+                    form.dataset.pushEndpointCaptured = 'false';
+                    form.dataset.pushEndpointCapturePending = 'false';
+                });
         });
     })();
 </script>

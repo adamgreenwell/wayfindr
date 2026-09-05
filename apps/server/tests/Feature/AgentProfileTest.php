@@ -89,8 +89,9 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->toContain('unsubscribeUnowned(subscription, 2)')
         ->toContain('unsubscribeUnowned(subscription, attemptsRemaining - 1)')
         ->toContain('subscriptionStatus(subscription.endpoint, 2)')
-        ->toContain("var optInLockPrefix = 'wayfindr:push-opt-in:'")
+        ->toContain("var pushLifecycleLock = 'wayfindr:push-lifecycle'")
         ->toContain('navigator.locks.request(')
+        ->toContain('pushLifecycleLock,')
         ->toContain("{ mode: 'exclusive' }")
         ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
         ->toContain('if (! response.ok)')
@@ -109,8 +110,15 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->toContain("var endpoint = form.querySelector('input[name=\"push_subscription_endpoint\"]')")
         ->toContain('endpoint.value = subscription.endpoint')
         ->toContain("form.dataset.pushEndpointCapturePending = 'true'")
-        ->toContain('var endpointLookup = captureEndpoint()')
-        ->toContain('var logoutLookup = eagerLookupPending ? endpointLookup : captureEndpoint()')
+        ->toContain("var pushLifecycleLock = 'wayfindr:push-lifecycle'")
+        ->toContain('navigator.locks.request(')
+        ->toContain('pushLifecycleLock,')
+        ->toContain('captureAndRequestLogout')
+        ->toContain('return fetch(form.action, {')
+        ->toContain('body: new FormData(form)')
+        ->toContain('window.location.assign(response.url)')
+        ->toContain('captureEndpoint()')
+        ->toContain('then(requestLogout)')
         ->not->toContain('Promise.race')
         ->toContain('HTMLFormElement.prototype.submit.call(form)');
 });
@@ -336,7 +344,7 @@ test('the profile serializes opt in for the full request and rechecks a failed r
         ->not->toContain('localStorage');
 
     expect($source)
-        ->toContain("var optInLockPrefix = 'wayfindr:push-opt-in:'")
+        ->toContain("var pushLifecycleLock = 'wayfindr:push-lifecycle'")
         ->toContain("typeof navigator.locks.request !== 'function'")
         ->toContain('function storeEnabledSubscription(subscription)')
         ->toContain('return storeEnabledSubscription(subscription);')

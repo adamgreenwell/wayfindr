@@ -6,7 +6,7 @@
         var form = document.querySelector('[data-agent-push-preferences]');
         var checkbox = document.getElementById('push_alerts');
         var error = document.querySelector('[data-agent-push-error]');
-        var optInLockPrefix = 'wayfindr:push-opt-in:';
+        var pushLifecycleLock = 'wayfindr:push-lifecycle';
 
         if (! form || ! checkbox) {
             return;
@@ -165,7 +165,7 @@
             // promise. It therefore survives timer throttling in a suspended
             // tab and is released automatically if that page is destroyed.
             return navigator.locks.request(
-                optInLockPrefix + subscription.endpoint,
+                pushLifecycleLock,
                 { mode: 'exclusive' },
                 function () {
                     return navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
@@ -384,7 +384,7 @@
                     }
 
                     return navigator.locks.request(
-                        optInLockPrefix + subscription.endpoint,
+                        pushLifecycleLock,
                         { mode: 'exclusive' },
                         function () {
                             return subscriptionStatus(subscription.endpoint, 2)

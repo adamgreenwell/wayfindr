@@ -12,7 +12,7 @@
             return;
         }
 
-        var optInLockPrefix = 'wayfindr:push-opt-in:';
+        var pushLifecycleLock = 'wayfindr:push-lifecycle';
 
         function unsubscribeUnowned(subscription, attemptsRemaining) {
             return subscription.unsubscribe()
@@ -92,7 +92,7 @@
                 };
                 var verification = 'locks' in navigator
                     ? navigator.locks.request(
-                        optInLockPrefix + subscription.endpoint,
+                        pushLifecycleLock,
                         { mode: 'exclusive' },
                         verifyOwnership
                     )
