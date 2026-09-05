@@ -19,9 +19,21 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
+
+test('notifications are indexed for recipient alert reconciliation', function (): void {
+    $indexes = collect(Schema::getIndexes('notifications'))->pluck('columns');
+
+    expect($indexes)->toContain([
+        'notifiable_type',
+        'notifiable_id',
+        'updated_at',
+        'id',
+    ]);
+});
 
 test('agent alert realtime config uses the existing browser transport and recipient channel', function (): void {
     CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
