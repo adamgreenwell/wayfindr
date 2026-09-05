@@ -109,6 +109,7 @@ return [
         'push_unavailable' => 'A platform operator must configure Web Push before browsers can subscribe. Your current preference is preserved.',
         'push_unsupported' => 'This browser or connection cannot use Web Push. Your current preference was preserved.',
         'push_failed' => 'This browser could not be subscribed. Check notification permission and try again.',
+        'push_ownership_check_failed' => "Wayfindr could not verify who owns this browser's subscription, so it was removed here for privacy. Try enabling it again.",
         'push_invalid_endpoint' => 'This browser supplied a push service address that Wayfindr cannot contact safely.',
         'push_limit' => 'This profile already has the maximum of 10 subscribed browsers.',
         'push_owned_elsewhere' => 'A subscription from another signed-in profile was removed from this browser without reassigning its account record.',

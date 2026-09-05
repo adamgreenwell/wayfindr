@@ -229,6 +229,9 @@ test('the profile cleans up an owned browser subscription after a VAPID key rota
 
     expect($source)
         ->toContain("payload.status === 'foreign'")
+        ->toContain('subscriptionStatus(subscription.endpoint, 2)')
+        ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
+        ->toContain('showError(config.ownershipCheckFailedMessage)')
         ->toContain('cleanStaleSubscription(subscription, false, true)')
         ->toContain('config.ownedElsewhereCleanupFailedMessage')
         ->toContain('! usesCurrentApplicationServerKey(subscription)')

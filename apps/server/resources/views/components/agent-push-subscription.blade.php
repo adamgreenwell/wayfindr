@@ -259,6 +259,24 @@
                 });
         }
 
+        function subscriptionStatus(endpoint, attemptsRemaining) {
+            return request(config.statusEndpoint, 'POST', {
+                endpoint: endpoint,
+            }).then(function (payload) {
+                if (! ['owned', 'foreign', 'missing'].includes(payload.status)) {
+                    throw new Error(config.failedMessage);
+                }
+
+                return payload;
+            }).catch(function (failure) {
+                if (attemptsRemaining <= 1) {
+                    throw failure;
+                }
+
+                return subscriptionStatus(endpoint, attemptsRemaining - 1);
+            });
+        }
+
         function initializeBrowserState() {
             return navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
                 .then(function (registration) {
@@ -274,33 +292,36 @@
                         return;
                     }
 
-                    return request(config.statusEndpoint, 'POST', {
-                        endpoint: subscription.endpoint,
-                    }).then(function (payload) {
-                        if (! ['owned', 'foreign', 'missing'].includes(payload.status)) {
-                            throw new Error(config.failedMessage);
-                        }
+                    return subscriptionStatus(subscription.endpoint, 2)
+                        .then(function (payload) {
+                            subscriptionOwnership = payload.status;
+                            initialBrowserEnabled = payload.status === 'owned'
+                                && usesCurrentApplicationServerKey(subscription);
 
-                        subscriptionOwnership = payload.status;
-                        initialBrowserEnabled = payload.status === 'owned'
-                            && usesCurrentApplicationServerKey(subscription);
+                            if (payload.status === 'foreign') {
+                                showError(config.ownedElsewhereMessage);
 
-                        if (payload.status === 'foreign') {
-                            showError(config.ownedElsewhereMessage);
+                                // This endpoint remains owned by the prior agent
+                                // on the server, but it must stop receiving that
+                                // agent's alerts in the browser now in use here.
+                                return cleanStaleSubscription(subscription, false, true);
+                            }
 
-                            // This endpoint remains owned by the prior agent
-                            // on the server, but it must stop receiving that
-                            // agent's alerts in the browser now in use here.
+                            if (! usesCurrentApplicationServerKey(subscription)) {
+                                return cleanStaleSubscription(subscription, payload.status === 'owned');
+                            }
+
+                            checkbox.checked = initialBrowserEnabled;
+                            checkbox.disabled = false;
+                        }).catch(function () {
+                            // This page owns the lifecycle, so the global guard
+                            // deliberately skips it. If ownership is still unknown
+                            // after a bounded retry, remove the local subscription
+                            // here rather than risk showing a prior agent's alerts.
+                            showError(config.ownershipCheckFailedMessage);
+
                             return cleanStaleSubscription(subscription, false, true);
-                        }
-
-                        if (! usesCurrentApplicationServerKey(subscription)) {
-                            return cleanStaleSubscription(subscription, payload.status === 'owned');
-                        }
-
-                        checkbox.checked = initialBrowserEnabled;
-                        checkbox.disabled = false;
-                    });
+                        });
                 })
                 .catch(function (failure) {
                     browserStateAvailable = false;

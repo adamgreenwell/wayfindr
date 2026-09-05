@@ -109,6 +109,7 @@ return [
         'push_unavailable' => 'Ein Plattformbetreiber muss Web-Push einrichten, bevor sich Browser anmelden können. Ihre aktuelle Einstellung bleibt erhalten.',
         'push_unsupported' => 'Dieser Browser oder diese Verbindung unterstützt Web-Push nicht. Ihre aktuelle Einstellung wurde beibehalten.',
         'push_failed' => 'Dieser Browser konnte nicht angemeldet werden. Prüfen Sie die Benachrichtigungsberechtigung und versuchen Sie es erneut.',
+        'push_ownership_check_failed' => 'Wayfindr konnte nicht prüfen, wem die Anmeldung dieses Browsers gehört. Zum Schutz der Privatsphäre wurde sie daher in diesem Browser entfernt. Versuchen Sie, sie erneut zu aktivieren.',
         'push_invalid_endpoint' => 'Dieser Browser hat eine Adresse des Push-Dienstes übermittelt, die Wayfindr nicht sicher kontaktieren kann.',
         'push_limit' => 'Dieses Profil hat bereits die Höchstzahl von 10 angemeldeten Browsern.',
         'push_owned_elsewhere' => 'Eine Anmeldung eines anderen angemeldeten Profils wurde aus diesem Browser entfernt, ohne ihren Kontoeintrag neu zuzuordnen.',
