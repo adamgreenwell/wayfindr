@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Minishlink\WebPush\VAPID;
 
 uses(RefreshDatabase::class);
 
@@ -52,6 +53,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('Mail transport')
         ->assertSee('Queue worker')
         ->assertSee('Realtime broadcasting')
+        ->assertSee('Web Push')
         ->assertSee('Storage paths')
         ->assertSee('Scheduler')
         ->assertSee('Backups and restore')
@@ -257,6 +259,48 @@ test('readiness diagnostics flag missing app key and incomplete realtime setup',
         'label' => 'Realtime broadcasting',
         'status' => 'attention',
         'detail' => 'Add Reverb app credentials and public host settings before enabling live updates.',
+    ]);
+});
+
+test('readiness keeps Web Push optional but flags broken credentials', function (): void {
+    config()->set('webpush.vapid', [
+        'subject' => null,
+        'public_key' => null,
+        'private_key' => null,
+        'pem_file' => null,
+    ]);
+
+    $webPush = collect(app(OperatorReadiness::class)->summary()['checks'])
+        ->firstWhere('key', 'web_push');
+
+    expect($webPush)->toMatchArray([
+        'status' => 'manual',
+        'status_label' => 'Optional',
+        'summary' => 'Web Push is not configured.',
+    ]);
+
+    config()->set('webpush.vapid.subject', 'mailto:alerts@example.test');
+    $webPush = collect(app(OperatorReadiness::class)->summary()['checks'])
+        ->firstWhere('key', 'web_push');
+
+    expect($webPush)->toMatchArray([
+        'status' => 'attention',
+        'summary' => 'Web Push configuration is incomplete.',
+    ]);
+
+    $keys = VAPID::createVapidKeys();
+    config()->set('webpush.vapid', [
+        'subject' => 'mailto:alerts@example.test',
+        'public_key' => $keys['publicKey'],
+        'private_key' => $keys['privateKey'],
+        'pem_file' => null,
+    ]);
+    $webPush = collect(app(OperatorReadiness::class)->summary()['checks'])
+        ->firstWhere('key', 'web_push');
+
+    expect($webPush)->toMatchArray([
+        'status' => 'ready',
+        'summary' => 'Web Push VAPID credentials are ready.',
     ]);
 });
 
@@ -678,7 +722,7 @@ test('readiness diagnostics treat confirmed manual items as ready', function ():
 
     expect($readiness)
         ->attention_count->toBe(0)
-        ->manual_count->toBe(0)
+        ->manual_count->toBe(1)
         ->and($scheduler)->toMatchArray([
             'status' => 'ready',
             'status_label' => 'Ready',
@@ -758,7 +802,7 @@ test('readiness diagnostics mark stale confirmations as refresh due', function (
 
     expect($readiness)
         ->attention_count->toBe(0)
-        ->manual_count->toBe(2)
+        ->manual_count->toBe(3)
         ->and($scheduler)->toMatchArray([
             'status' => 'manual',
             'status_label' => 'Due again',

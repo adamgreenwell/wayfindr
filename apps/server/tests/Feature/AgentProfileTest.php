@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Minishlink\WebPush\VAPID;
 
 uses(RefreshDatabase::class);
 
@@ -136,6 +137,83 @@ test('agent can turn the optional dashboard alert sound off', function (): void 
         'email' => true,
         'sound' => false,
     ]);
+});
+
+test('an agent can save their closed-dashboard alert preference', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'push' => false,
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => User::ALERT_MODE_ALL,
+        'push' => true,
+    ]);
+});
+
+test('the profile exposes only a ready public VAPID key to the agent browser', function (): void {
+    $keys = VAPID::createVapidKeys();
+    config()->set('webpush.vapid', [
+        'subject' => 'mailto:alerts@example.test',
+        'public_key' => $keys['publicKey'],
+        'private_key' => $keys['privateKey'],
+        'pem_file' => null,
+    ]);
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $response = $this->actingAs($agent)->get('/dashboard/profile');
+
+    $response
+        ->assertOk()
+        ->assertSee('Notify this browser after I close the dashboard')
+        ->assertSee('data-agent-push-subscription', false)
+        ->assertSee($keys['publicKey'])
+        ->assertDontSee($keys['privateKey']);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $checkbox = (new DOMXPath($document))->query('//input[@id="push_alerts"]')->item(0);
+
+    expect($checkbox)->toBeInstanceOf(DOMElement::class)
+        ->and($checkbox->getAttribute('name'))->toBe('push_alerts')
+        ->and($checkbox->hasAttribute('disabled'))->toBeFalse();
+});
+
+test('the profile preserves push preference while VAPID configuration is unavailable', function (): void {
+    config()->set('webpush.vapid', [
+        'subject' => null,
+        'public_key' => null,
+        'private_key' => null,
+        'pem_file' => null,
+    ]);
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+
+    $response = $this->actingAs($agent)->get('/dashboard/profile');
+
+    $response
+        ->assertOk()
+        ->assertSee('A platform operator must configure Web Push before browsers can subscribe.')
+        ->assertSee('name="push_alerts" value="1"', false)
+        ->assertDontSee('data-agent-push-subscription', false);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $checkbox = (new DOMXPath($document))->query('//input[@id="push_alerts"]')->item(0);
+
+    expect($checkbox)->toBeInstanceOf(DOMElement::class)
+        ->and($checkbox->hasAttribute('name'))->toBeFalse()
+        ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
 });
 
 test('alert preference changes lock the account before the agent', function (): void {

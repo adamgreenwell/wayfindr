@@ -29,18 +29,19 @@ test('operator pages render inside the application shell', function (): void {
 });
 
 test('every operator section is reachable from every other one', function (): void {
-    // Seven sections navigated by one "back" link is what this replaces.
+    // One contextual rail replaces pages connected only by a "back" link.
     $response = $this->actingAs(platformOperator())->get('/operator/settings/mail')->assertOk();
 
     $response->assertSee('aria-label="Operator sections"', false);
 
-    foreach (['Console', 'Setup checklist', 'Mail', 'Storage', 'Scanning', 'Backups', 'Operator access'] as $section) {
+    foreach (['Console', 'Setup checklist', 'Mail', 'Web Push', 'Storage', 'Scanning', 'Backups', 'Language and region', 'Operator access'] as $section) {
         $response->assertSee($section);
     }
 
     foreach ([
         route('operator.dashboard'),
         route('operator.onboarding'),
+        route('operator.settings.webpush.edit'),
         route('operator.settings.storage.edit'),
         route('operator.settings.scanning.edit'),
         route('operator.settings.backups.edit'),
