@@ -247,7 +247,10 @@ test('the profile discards a browser subscription when server storage fails', fu
 
     expect($cleanup)
         ->toContain('var markerToken = markPendingOptIn(subscription)')
+        ->toContain('if (! markerToken)')
+        ->toContain('return subscription.unsubscribe().catch(function () {}).then(function ()')
         ->toContain('return storeSubscription(subscription).then(function (stored)')
+        ->toContain('clearPendingRemoval(subscription.endpoint)')
         ->toContain('clearPendingOptIn(subscription, markerToken)')
         ->toContain('pendingRemoval(subscription.endpoint)')
         ->toContain("request(config.destroyEndpoint, 'DELETE'")

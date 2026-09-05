@@ -55,6 +55,14 @@
             }
         }
 
+        function clearPendingRemoval(endpoint) {
+            var existing = form.querySelector('input[name="push_subscription_endpoint"]');
+
+            if (existing && existing.value === endpoint) {
+                existing.remove();
+            }
+        }
+
         function pendingOptInMarker(subscription) {
             try {
                 var key = pendingOptInPrefix + subscription.endpoint;
@@ -88,7 +96,9 @@
                     token: token,
                 }));
 
-                return token;
+                var marker = pendingOptInMarker(subscription);
+
+                return marker && marker.token === token ? token : null;
             } catch (error) {
                 return null;
             }
@@ -227,7 +237,17 @@
         function storeEnabledSubscription(subscription) {
             var markerToken = markPendingOptIn(subscription);
 
+            if (! markerToken) {
+                // Without a marker, another same-agent tab can mistake the
+                // newly created browser subscription for an abandoned one.
+                // Fail before storing anything instead of risking a dead row.
+                return subscription.unsubscribe().catch(function () {}).then(function () {
+                    throw new Error(config.failedMessage);
+                });
+            }
+
             return storeSubscription(subscription).then(function (stored) {
+                clearPendingRemoval(subscription.endpoint);
                 clearPendingOptIn(subscription, markerToken);
 
                 return stored;
