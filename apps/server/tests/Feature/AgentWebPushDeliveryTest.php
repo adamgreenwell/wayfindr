@@ -10,7 +10,6 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
 use App\Notifications\TicketAssigned;
-use App\Support\AgentVisibleRealtimePresence;
 use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushConfig;
 use App\Support\AgentWebPushFactory;
@@ -18,15 +17,12 @@ use App\Support\Settings\OperatorSettings;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\Response;
-use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Notifications\DatabaseNotification;
-use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
-use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Minishlink\WebPush\VAPID;
 use NotificationChannels\WebPush\WebPushChannel;
@@ -418,60 +414,39 @@ test('an environment VAPID rotation removes stale subscriptions before delivery'
         ->and($listener->shouldQueue($event))->toBeFalse();
 });
 
-test('a visible realtime dashboard suppresses Web Push before delivery', function (): void {
+test('an exact realtime browser receipt suppresses Web Push before delivery', function (): void {
     readyAgentWebPushConfig();
     [$agent, , $alert] = pushAlertFixture();
-    subscribeAgentForPush($agent, 'visible-dashboard');
-    config()->set('broadcasting.default', 'reverb');
-    Sleep::fake();
-    $pusher = Mockery::mock();
-    $pusher->shouldReceive('getPresenceUsers')
-        ->twice()
-        ->with('presence-visible-agents.'.$agent->id)
-        ->andReturn((object) ['users' => [(object) ['id' => (string) $agent->id]]]);
-    $broadcaster = Mockery::mock(PusherBroadcaster::class);
-    $broadcaster->shouldReceive('getPusher')->twice()->andReturn($pusher);
-    Broadcast::shouldReceive('connection')->twice()->with('reverb')->andReturn($broadcaster);
+    subscribeAgentForPush($agent, 'realtime-received');
+    $alert->forceFill([
+        'agent_alert_realtime_received_version' => $alert->getAttribute('agent_alert_version'),
+    ])->save();
     Http::fake();
 
-    app(SendAgentAlertWebPush::class)->handle(
+    $listener = app(SendAgentAlertWebPush::class);
+    $listener->handle(
         new AgentAlertStored($agent, $alert),
         app(AgentWebPushConfig::class),
-        app(AgentVisibleRealtimePresence::class),
     );
 
     Http::assertNothingSent();
-    expect($agent->pushSubscriptions()->count())->toBe(1);
-    Sleep::assertSequence([Sleep::for(1)->seconds()]);
+    expect($agent->pushSubscriptions()->count())->toBe(1)
+        ->and($listener->withDelay(new AgentAlertStored($agent, $alert)))->toBe(1);
 });
 
-test('Web Push is sent when visible presence disappears during the closing-page grace period', function (): void {
+test('a receipt for an older alert version cannot suppress Web Push', function (): void {
     readyAgentWebPushConfig();
     [$agent, , $alert] = pushAlertFixture();
-    subscribeAgentForPush($agent, 'closing-dashboard');
-    config()->set('broadcasting.default', 'reverb');
-    Sleep::fake();
-    $pusher = Mockery::mock();
-    $pusher->shouldReceive('getPresenceUsers')
-        ->twice()
-        ->with('presence-visible-agents.'.$agent->id)
-        ->andReturn(
-            (object) ['users' => [(object) ['id' => (string) $agent->id]]],
-            (object) ['users' => []],
-        );
-    $broadcaster = Mockery::mock(PusherBroadcaster::class);
-    $broadcaster->shouldReceive('getPusher')->twice()->andReturn($pusher);
-    Broadcast::shouldReceive('connection')->twice()->with('reverb')->andReturn($broadcaster);
+    subscribeAgentForPush($agent, 'stale-receipt');
+    $alert->forceFill(['agent_alert_realtime_received_version' => (string) Str::uuid()])->save();
     Notification::fake();
 
     app(SendAgentAlertWebPush::class)->handle(
         new AgentAlertStored($agent, $alert),
         app(AgentWebPushConfig::class),
-        app(AgentVisibleRealtimePresence::class),
     );
 
     Notification::assertSentTo($agent, AgentAlertWebPush::class);
-    Sleep::assertSequence([Sleep::for(1)->seconds()]);
 });
 
 test('the queued Web Push listener is selected only for ready opted-in recipients', function (): void {

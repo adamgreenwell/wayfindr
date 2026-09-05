@@ -91,10 +91,6 @@
             return document.visibilityState === 'hidden' || ! document.hasFocus();
         }
 
-        function isPageVisible() {
-            return document.visibilityState === 'visible';
-        }
-
         function attentionFavicon() {
             var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
                 + '<rect width="32" height="32" rx="6" fill="#16181A"/>'
@@ -231,7 +227,6 @@
         });
         function foregroundStateChanged() {
             clearAttentionIfForeground();
-            syncVisiblePresence();
         }
 
         document.addEventListener('visibilitychange', foregroundStateChanged);
@@ -350,85 +345,6 @@
                 event: 'pusher:subscribe',
                 data: data,
             }));
-        }
-
-        function unsubscribe(activeSocket, channelName) {
-            if (! activeSocket || activeSocket.readyState !== 1) {
-                return;
-            }
-
-            activeSocket.send(JSON.stringify({
-                event: 'pusher:unsubscribe',
-                data: { channel: channelName },
-            }));
-        }
-
-        function leaveVisiblePresence(activeSocket) {
-            if (! activeSocket) {
-                return;
-            }
-
-            activeSocket.wayfindrVisibleAuthorization++;
-
-            if (activeSocket.wayfindrVisibleChannelState === 'subscribing'
-                || activeSocket.wayfindrVisibleChannelState === 'subscribed') {
-                unsubscribe(activeSocket, config.visibleChannelName);
-            }
-
-            activeSocket.wayfindrVisibleChannelState = 'absent';
-        }
-
-        function joinVisiblePresence(activeSocket) {
-            if (pageClosing
-                || ! isPageVisible()
-                || ! activeSocket
-                || activeSocket.readyState !== 1
-                || ! activeSocket.wayfindrSocketId
-                || activeSocket.wayfindrAlertChannelSubscribed !== true
-                || activeSocket.wayfindrAlertReconciled !== true
-                || activeSocket.wayfindrVisibleChannelState !== 'absent') {
-                return;
-            }
-
-            activeSocket.wayfindrVisibleChannelState = 'authorizing';
-            var attempt = ++activeSocket.wayfindrVisibleAuthorization;
-
-            authorization(activeSocket.wayfindrSocketId, config.visibleChannelName)
-                .then(function (authorized) {
-                    if (activeSocket.wayfindrGeneration !== socketGeneration
-                        || activeSocket.wayfindrVisibleAuthorization !== attempt) {
-                        return;
-                    }
-
-                    if (! isPageVisible()) {
-                        leaveVisiblePresence(activeSocket);
-
-                        return;
-                    }
-
-                    activeSocket.wayfindrVisibleChannelState = 'subscribing';
-                    subscribe(activeSocket, config.visibleChannelName, authorized);
-                })
-                .catch(function (error) {
-                    if (activeSocket.wayfindrVisibleAuthorization !== attempt) {
-                        return;
-                    }
-
-                    activeSocket.wayfindrVisibleChannelState = 'absent';
-                    authorizationFailed(activeSocket, error);
-                });
-        }
-
-        function syncVisiblePresence() {
-            if (! socket || socket.wayfindrGeneration !== socketGeneration) {
-                return;
-            }
-
-            if (! isPageVisible()) {
-                leaveVisiblePresence(socket);
-            } else {
-                joinVisiblePresence(socket);
-            }
         }
 
         function authorizationFailed(activeSocket, error) {
@@ -601,8 +517,6 @@
                     return;
                 }
 
-                activeSocket.wayfindrAlertReconciled = true;
-                joinVisiblePresence(activeSocket);
             }).catch(function (error) {
                 if (error && error.status === 429) {
                     scheduleReconcileRetry(activeSocket, error.retryAfterMilliseconds);
@@ -651,15 +565,7 @@
             if (event.event === 'pusher_internal:subscription_succeeded') {
                 if (event.channel === config.identityChannelName) {
                     authorizeChannel(message.target, config.channelName);
-                } else if (event.channel === config.visibleChannelName) {
-                    if (! isPageVisible()) {
-                        leaveVisiblePresence(message.target);
-                    } else {
-                        message.target.wayfindrVisibleAuthorization++;
-                        message.target.wayfindrVisibleChannelState = 'subscribed';
-                    }
                 } else if (event.channel === config.channelName) {
-                    message.target.wayfindrAlertChannelSubscribed = true;
                     reconnectDelay = 1000;
                     reconcileAlerts(message.target);
                 }
@@ -680,6 +586,30 @@
                     return;
                 }
 
+                if (document.visibilityState === 'visible') {
+                    var csrf = document.querySelector('meta[name="csrf-token"]');
+
+                    // Only an actual, visible socket delivery writes this exact
+                    // alert-version receipt. Presence membership can outlive a
+                    // dead connection, so it is never used to suppress Web Push.
+                    fetch(config.realtimeReceiptEndpoint, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        keepalive: true,
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrf ? csrf.getAttribute('content') : '',
+                        },
+                        body: JSON.stringify({
+                            alert_id: alert.id,
+                            version: alert.version,
+                        }),
+                    }).catch(function () {
+                        // Missing a receipt merely allows the Web Push fallback.
+                    });
+                }
+
                 document.dispatchEvent(new CustomEvent('wayfindr:agent-alert-stored', {
                     detail: { alert: alert },
                 }));
@@ -698,10 +628,6 @@
             }
 
             socket.wayfindrGeneration = generation;
-            socket.wayfindrAlertChannelSubscribed = false;
-            socket.wayfindrAlertReconciled = false;
-            socket.wayfindrVisibleAuthorization = 0;
-            socket.wayfindrVisibleChannelState = 'absent';
             socket.addEventListener('message', handleSocketMessage);
             socket.addEventListener('close', function (event) {
                 clearReconcileRetry(event.currentTarget);
@@ -727,7 +653,6 @@
             }
 
             if (socket) {
-                leaveVisiblePresence(socket);
                 clearReconcileRetry(socket);
 
                 try {

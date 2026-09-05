@@ -13,7 +13,6 @@ use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
 use App\Support\AgentAlertPayload;
-use App\Support\AgentVisibleRealtimePresence;
 use App\Support\AgentWebPushConfig;
 use App\Support\DashboardLanguage;
 use App\Support\Settings\OperatorSettings;
@@ -25,7 +24,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Sleep;
 use NotificationChannels\WebPush\WebPushChannel;
 use Throwable;
 
@@ -38,6 +36,12 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
     /** @var array<int> */
     public array $backoff = [30, 120, 300];
+
+    /** Allow the live browser receipt to arrive before evaluating fallback. */
+    public function withDelay(AgentAlertStored $event): int
+    {
+        return 1;
+    }
 
     public function shouldQueue(AgentAlertStored $event): bool
     {
@@ -76,7 +80,6 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
     public function handle(
         AgentAlertStored $event,
         AgentWebPushConfig $webPush,
-        ?AgentVisibleRealtimePresence $visiblePresence = null,
         ?OperatorSettings $settings = null,
     ): void {
         $accountId = $event->recipient->account_id;
@@ -86,21 +89,7 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         }
 
         $retryableFailure = null;
-        $visiblePresence ??= app(AgentVisibleRealtimePresence::class);
         $settings ??= app(OperatorSettings::class);
-
-        // Leaving a Reverb presence channel is asynchronous. A browser that is
-        // already closing can therefore appear visible for one last lookup even
-        // though it will never render the realtime alert. Confirm a positive
-        // result after a short grace period before suppressing Web Push. The
-        // wait happens before database locks are acquired.
-        if ($visiblePresence->hasVisibleClient($event->recipient)) {
-            Sleep::for(1)->seconds();
-
-            if ($visiblePresence->hasVisibleClient($event->recipient)) {
-                return;
-            }
-        }
 
         DB::transaction(function () use ($accountId, $event, &$retryableFailure, $settings, $webPush): void {
             // Coordinate with operator rotation and subscription enrollment,
@@ -166,6 +155,10 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
             if (! $alert instanceof DatabaseNotification
                 || ! hash_equals($event->version, AgentAlertPayload::version($alert))
+                || hash_equals(
+                    $event->version,
+                    (string) $alert->getAttribute('agent_alert_realtime_received_version'),
+                )
                 || ! Gate::forUser($recipient)->allows('view', $alert)) {
                 return;
             }

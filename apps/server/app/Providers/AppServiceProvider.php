@@ -154,6 +154,10 @@ class AppServiceProvider extends ServiceProvider
             'agent-alert-reconcile-user:'.(string) $request->user()?->getAuthIdentifier()
         ));
 
+        RateLimiter::for('agent-alert-realtime-receipt', fn (Request $request): Limit => Limit::perMinute(120)->by(
+            'agent-alert-realtime-receipt-user:'.(string) $request->user()?->getAuthIdentifier()
+        ));
+
         RateLimiter::for('oidc-redirect', fn (Request $request): array => [
             Limit::perMinute(10)->by('oidc-redirect-ip:'.$request->ip()),
             Limit::perMinutes(15, 20)->by(

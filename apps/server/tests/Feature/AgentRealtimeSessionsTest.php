@@ -3,7 +3,6 @@
 use App\Jobs\EvictAgentRealtimeSessions;
 use App\Models\AgentRealtimeEviction;
 use App\Support\AgentRealtimeSessions;
-use App\Support\AgentVisibleRealtimePresence;
 use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Broadcast;
@@ -11,38 +10,6 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schedule;
 
 uses(RefreshDatabase::class);
-
-test('visible agent presence reads the dedicated Reverb channel', function (): void {
-    config()->set('broadcasting.default', 'reverb');
-    $pusher = Mockery::mock();
-    $pusher->shouldReceive('getPresenceUsers')
-        ->once()
-        ->with('presence-visible-agents.42')
-        ->andReturn((object) ['users' => [(object) ['id' => '42']]]);
-    $broadcaster = Mockery::mock(PusherBroadcaster::class);
-    $broadcaster->shouldReceive('getPusher')->once()->andReturn($pusher);
-    Broadcast::shouldReceive('connection')->once()->with('reverb')->andReturn($broadcaster);
-
-    expect(app(AgentVisibleRealtimePresence::class)->hasVisibleClient(42))->toBeTrue();
-});
-
-test('visible agent presence fails open to Web Push when Reverb is unavailable', function (): void {
-    config()->set('broadcasting.default', 'reverb');
-    $pusher = Mockery::mock();
-    $pusher->shouldReceive('getPresenceUsers')->once()->andThrow(new RuntimeException('Reverb is unavailable.'));
-    $broadcaster = Mockery::mock(PusherBroadcaster::class);
-    $broadcaster->shouldReceive('getPusher')->once()->andReturn($pusher);
-    Broadcast::shouldReceive('connection')->once()->with('reverb')->andReturn($broadcaster);
-
-    expect(app(AgentVisibleRealtimePresence::class)->hasVisibleClient(42))->toBeFalse();
-});
-
-test('visible agent presence is absent without Reverb', function (): void {
-    config()->set('broadcasting.default', 'null');
-    Broadcast::shouldReceive('connection')->never();
-
-    expect(app(AgentVisibleRealtimePresence::class)->hasVisibleClient(42))->toBeFalse();
-});
 
 test('agent realtime sessions terminate every reverb connection for the user', function (): void {
     config()->set('broadcasting.default', 'reverb');
