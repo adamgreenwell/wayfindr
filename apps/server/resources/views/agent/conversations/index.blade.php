@@ -6,6 +6,43 @@
                     ? __('conversations.page_title_closed', ['account' => $account->name])
                     : __('conversations.page_title_active', ['account' => $account->name])" />
 
+            @if (session('conversation_bulk_status'))
+                @php
+                    $bulkStatus = session('conversation_bulk_status');
+                @endphp
+                <div class="status-message wf-bulk-result" role="status">
+                    <span>
+                        @if ($bulkStatus['key'] === 'conversations.bulk.flash.applied')
+                            {{ __('conversations.bulk.flash.applied', ['changed' => $bulkStatus['changed'], 'selected' => $bulkStatus['selected']]) }}
+                        @else
+                            {{ __('conversations.bulk.flash.undone', ['reverted' => $bulkStatus['reverted'], 'skipped' => $bulkStatus['skipped']]) }}
+                        @endif
+                    </span>
+                    @if (($bulkStatus['run_id'] ?? null) !== null)
+                        <form method="POST" action="{{ route('dashboard.conversations.bulk.undo', $bulkStatus['run_id']) }}">
+                            @csrf
+                            <button class="button secondary" type="submit">{{ __('conversations.bulk.undo.submit') }}</button>
+                        </form>
+                    @endif
+                </div>
+            @endif
+
+            @if (session('conversation_bulk_error'))
+                <p class="field-error" role="alert">{{ __(session('conversation_bulk_error')) }}</p>
+            @endif
+
+            @if ($errors->hasAny(['conversation_ids', 'conversation_ids.*', 'action', 'value']))
+                <div class="field-error" role="alert">
+                    @foreach ($errors->getMessages() as $field => $messages)
+                        @if ($field === 'conversation_ids' || str_starts_with($field, 'conversation_ids.') || in_array($field, ['action', 'value'], true))
+                            @foreach ($messages as $message)
+                                <p>{{ $message }}</p>
+                            @endforeach
+                        @endif
+                    @endforeach
+                </div>
+            @endif
+
             @php
                 // The lanes carry their own counts, which is what lets the
                 // separate "Queue snapshot" band go: four of its six chips were
@@ -162,10 +199,64 @@
                         @endif
                     </div>
                 @else
+                    @if ($canManageConversations)
+                        <form method="POST" action="{{ route('dashboard.conversations.bulk.preview') }}" data-queue-bulk-form data-queue-bulk-no-value-actions="close" data-conversation-bulk-form>
+                            @csrf
+                            @foreach ($conversationQuery as $queryKey => $queryValue)
+                                <input type="hidden" name="return_query[{{ $queryKey }}]" value="{{ $queryValue }}">
+                            @endforeach
+
+                            <div class="wf-bulk-toolbar" role="group" aria-label="{{ __('conversations.bulk.region') }}">
+                                <strong data-queue-selected-count data-none="{{ __('conversations.bulk.selected.none') }}" data-one="{{ __('conversations.bulk.selected.one') }}" data-many="{{ __('conversations.bulk.selected.many', ['count' => '__COUNT__']) }}" data-conversation-selected-count>
+                                    {{ __('conversations.bulk.selected.none') }}
+                                </strong>
+
+                                <label for="conversation_bulk_action">{{ __('conversations.bulk.action_label') }}</label>
+                                <select id="conversation_bulk_action" name="action" data-queue-bulk-action data-conversation-bulk-action>
+                                    <option value="">{{ __('conversations.bulk.choose_action') }}</option>
+                                    <option value="assign_agent">{{ __('conversations.bulk.actions.assign_agent') }}</option>
+                                    <option value="set_priority">{{ __('conversations.bulk.actions.set_priority') }}</option>
+                                    <option value="set_status">{{ __('conversations.bulk.actions.set_status') }}</option>
+                                    <option value="close">{{ __('conversations.bulk.actions.close') }}</option>
+                                </select>
+
+                                <label class="sr-only" for="conversation_bulk_assign_agent_value" data-queue-bulk-value-label="assign_agent" hidden>{{ __('conversations.bulk.values.agent') }}</label>
+                                <select id="conversation_bulk_assign_agent_value" name="value" data-queue-bulk-value="assign_agent" disabled hidden>
+                                    <option value="">{{ __('conversations.bulk.values.choose_agent') }}</option>
+                                    @foreach ($bulkActionAgents as $bulkAgent)
+                                        <option value="{{ $bulkAgent->id }}">{{ $bulkAgent->name }}</option>
+                                    @endforeach
+                                </select>
+
+                                <label class="sr-only" for="conversation_bulk_priority_value" data-queue-bulk-value-label="set_priority" hidden>{{ __('conversations.bulk.values.priority') }}</label>
+                                <select id="conversation_bulk_priority_value" name="value" data-queue-bulk-value="set_priority" disabled hidden>
+                                    <option value="">{{ __('conversations.bulk.values.choose_priority') }}</option>
+                                    @foreach (array_keys(\App\Enums\TicketPriority::guidanceOptions()) as $bulkPriority)
+                                        <option value="{{ $bulkPriority }}">{{ __('tickets.priorities.'.$bulkPriority) }}</option>
+                                    @endforeach
+                                </select>
+
+                                <label class="sr-only" for="conversation_bulk_status_value" data-queue-bulk-value-label="set_status" hidden>{{ __('conversations.bulk.values.status') }}</label>
+                                <select id="conversation_bulk_status_value" name="value" data-queue-bulk-value="set_status" disabled hidden>
+                                    <option value="">{{ __('conversations.bulk.values.choose_status') }}</option>
+                                    <option value="open">{{ __('conversations.detail.statuses.open') }}</option>
+                                </select>
+
+                                <button class="button" type="submit" data-queue-bulk-review disabled>{{ __('conversations.bulk.review') }}</button>
+                                <button class="button secondary" type="button" data-queue-bulk-clear disabled>{{ __('conversations.bulk.clear') }}</button>
+                            </div>
+                    @endif
+
                     <div class="table-wrap">
                         <table class="wf-queue">
                             <thead>
                                 <tr>
+                                    @if ($canManageConversations)
+                                        <th class="wf-queue-select" scope="col">
+                                            <input type="checkbox" data-queue-select-all data-conversation-select-all aria-label="{{ __('conversations.bulk.select_all') }}">
+                                            <span class="sr-only" aria-hidden="true">{{ __('conversations.bulk.selection') }}</span>
+                                        </th>
+                                    @endif
                                     <th scope="col">{{ __('conversations.columns.subject') }}</th>
                                     <th scope="col">{{ __('conversations.columns.site') }}</th>
                                     <th scope="col">{{ __('conversations.columns.visitor') }}</th>
@@ -205,7 +296,19 @@
                                             ?: $conversation->visitor?->anonymous_id
                                             ?: __('conversations.row.unknown_visitor');
                                     @endphp
-                                    <tr>
+                                    <tr @if ($canManageConversations) data-queue-bulk-row data-conversation-bulk-row @endif>
+                                        @if ($canManageConversations)
+                                            <td class="wf-queue-select">
+                                                <input
+                                                    type="checkbox"
+                                                    name="conversation_ids[]"
+                                                    value="{{ $conversation->id }}"
+                                                    data-queue-select
+                                                    data-conversation-select
+                                                    aria-label="{{ __('conversations.bulk.select_conversation', ['subject' => filled($conversation->subject) ? $conversation->subject : __('conversations.row.untitled')]) }}"
+                                                >
+                                            </td>
+                                        @endif
                                         <td class="wf-queue-subject" style="--wf-row-site: var({{ $conversation->site->resolvedColor()->cssVariable() }})">
                                             <a href="{{ route('dashboard.conversations.show', ['supportCode' => $conversation->support_code, 'from_queue' => '1'] + $conversationQuery) }}">
                                                 @if (filled($conversation->subject))<span lang="">{{ $conversation->subject }}</span>@else{{ __('conversations.row.untitled') }}@endif
@@ -334,6 +437,10 @@
                             </tbody>
                         </table>
                     </div>
+                    @if ($canManageConversations)
+                        </form>
+                    @endif
                 @endif
             </section>
+            <x-queue-bulk-selector-script />
 </x-layouts.app>

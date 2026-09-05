@@ -130,6 +130,7 @@ return [
         'conversation_closed' => 'Conversazione chiusa',
         'conversation_reopened' => 'Conversazione riaperta',
         'conversation_assignee_updated' => 'Responsabile della conversazione aggiornato',
+        'conversation_priority_updated' => 'Priorità della conversazione aggiornata',
         'inbound_webhook_verified' => 'Webhook in entrata verificato',
         'operator_readiness_confirmed' => 'Preparazione del gestore confermata',
         'operator_settings_backup_restore_triggered' => 'Ripristino del backup avviato',

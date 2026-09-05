@@ -37,14 +37,16 @@ class ConversationLifecycleLog
      * both writes consecutive closes with no reopen between them, which
      * corrupts the close count and every interval derived from it. Only a
      * transition is an event -- the same rule reopens already follow.
+     *
+     * @param  array<string, mixed>  $metadata
      */
-    public function closed(Conversation $conversation, ?Model $actor, string $previousStatus): void
+    public function closed(Conversation $conversation, ?Model $actor, string $previousStatus, array $metadata = []): void
     {
         if ($previousStatus === 'closed') {
             return;
         }
 
-        $this->record($conversation, $actor, self::CLOSED, $previousStatus);
+        $this->record($conversation, $actor, self::CLOSED, $previousStatus, $metadata);
     }
 
     /**
@@ -54,10 +56,12 @@ class ConversationLifecycleLog
      * to open. A visitor reopening one is arguably the most interesting event
      * in the product -- it means the resolution did not hold -- and until now it
      * left no trace distinguishable from any other message.
+     *
+     * @param  array<string, mixed>  $metadata
      */
-    public function reopened(Conversation $conversation, ?Model $actor, string $previousStatus): void
+    public function reopened(Conversation $conversation, ?Model $actor, string $previousStatus, array $metadata = []): void
     {
-        $this->record($conversation, $actor, self::REOPENED, $previousStatus);
+        $this->record($conversation, $actor, self::REOPENED, $previousStatus, $metadata);
     }
 
     /**
@@ -65,16 +69,24 @@ class ConversationLifecycleLog
      *
      * Replying to an already-open conversation is not an event. Only the
      * transition is, which is what keeps this from writing a row per message.
+     *
+     * @param  array<string, mixed>  $metadata
      */
-    public function replyReopenedIfClosed(Conversation $conversation, ?Model $actor, string $previousStatus): void
+    public function replyReopenedIfClosed(Conversation $conversation, ?Model $actor, string $previousStatus, array $metadata = []): void
     {
         if ($previousStatus === 'closed') {
-            $this->reopened($conversation, $actor, $previousStatus);
+            $this->reopened($conversation, $actor, $previousStatus, $metadata);
         }
     }
 
-    private function record(Conversation $conversation, ?Model $actor, string $action, string $previousStatus): void
-    {
+    /** @param array<string, mixed> $metadata */
+    private function record(
+        Conversation $conversation,
+        ?Model $actor,
+        string $action,
+        string $previousStatus,
+        array $metadata,
+    ): void {
         $conversation->auditEvents()->create([
             // Conversations carry no account_id of their own; the site is the
             // only route to one, which is also how every scoped query reaches
@@ -85,6 +97,7 @@ class ConversationLifecycleLog
             'actor_id' => $actor?->getKey(),
             'action' => $action,
             'metadata' => [
+                ...$metadata,
                 'previous_status' => $previousStatus,
                 // Named so a reader can tell an agent closing a thread from a
                 // visitor's reply dragging it back open, without resolving the

@@ -25,6 +25,7 @@ use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
 use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Conversations\ConversationPriorityLog;
 use App\Support\Conversations\ConversationQueueQuery;
 use App\Support\Conversations\ConversationWriteAuthorization;
 use App\Support\DashboardLanguage;
@@ -56,6 +57,7 @@ class AgentConversationController extends Controller
     public function __construct(
         private readonly ConversationWriteAuthorization $conversationWriteAuthorization,
         private readonly AssignmentAuditTrail $assignmentAuditTrail,
+        private readonly ConversationPriorityLog $conversationPriorityLog,
     ) {}
 
     public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization): View
@@ -736,7 +738,15 @@ class AgentConversationController extends Controller
 
         [, $conversation] = DB::transaction(function () use ($agent, $conversation, $validated): array {
             [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'updateStatus');
+            $previousPriority = (string) $conversation->priority;
             $conversation->forceFill(['priority' => $validated['priority']])->save();
+            $this->conversationPriorityLog->updated(
+                $conversation,
+                $agent,
+                $previousPriority,
+                (string) $conversation->priority,
+                'manual',
+            );
 
             return [$agent, $conversation];
         });

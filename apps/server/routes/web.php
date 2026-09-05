@@ -20,6 +20,7 @@ use App\Http\Controllers\AgentAutomationMacroController;
 use App\Http\Controllers\AgentAutomationMacroRunController;
 use App\Http\Controllers\AgentAutomationRuleController;
 use App\Http\Controllers\AgentConversationAttachmentController;
+use App\Http\Controllers\AgentConversationBulkActionController;
 use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentConversationQueueController;
 use App\Http\Controllers\AgentConversationTypingController;
@@ -327,6 +328,13 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.sites.external-issue-projects.destroy');
     Route::get('/dashboard/conversations', AgentConversationQueueController::class)
         ->name('dashboard.conversations.index');
+    Route::post('/dashboard/conversations/bulk/preview', [AgentConversationBulkActionController::class, 'preview'])
+        ->name('dashboard.conversations.bulk.preview');
+    Route::post('/dashboard/conversations/bulk', [AgentConversationBulkActionController::class, 'store'])
+        ->name('dashboard.conversations.bulk.store');
+    Route::post('/dashboard/conversations/bulk/{conversationBulkActionRun}/undo', [AgentConversationBulkActionController::class, 'undo'])
+        ->whereNumber('conversationBulkActionRun')
+        ->name('dashboard.conversations.bulk.undo');
     Route::get('/dashboard/conversations/{supportCode}', [AgentConversationController::class, 'show'])
         ->name('dashboard.conversations.show');
     Route::get('/dashboard/visitors', [AgentVisitorController::class, 'index'])

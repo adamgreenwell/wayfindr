@@ -32,6 +32,14 @@ class AgentConversationQueueController extends Controller
         return view('agent.conversations.index', [
             'account' => $account,
             'agent' => $agent,
+            'bulkActionAgents' => $account->agents()
+                ->whereNull('deactivated_at')
+                ->with('customRole')
+                ->orderBy('name')
+                ->get()
+                ->filter(fn (User $candidate): bool => $candidate->hasAccountPermission(AccountPermission::ViewConversations))
+                ->values(),
+            'canManageConversations' => $agent->hasAccountPermission(AccountPermission::ManageConversations),
             'sites' => $sites,
             ...$this->conversationQueueData($agent, $sites, $request, $cobrowseConsentState, $cobrowseAttentionFinder, $slaStates),
         ]);

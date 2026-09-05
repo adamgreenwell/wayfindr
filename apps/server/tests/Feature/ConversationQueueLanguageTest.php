@@ -1078,7 +1078,7 @@ test('the form labels and the untitled fallback are translated', function (): vo
     expect($german)->toContain('Unterhaltung ohne Betreff')
         ->and($german)->not->toContain('Untitled conversation');
 
-    // The three filter labels are read from the `<label>` elements themselves,
+    // The three filter labels and bulk action label are read from the `<label>` elements themselves,
     // not from the page text. Asserting the German page merely CONTAINS
     // `Suche`, `Website` or `Status` passes while every label is still
     // English -- all three words appear elsewhere on the page, in the search
@@ -1097,8 +1097,8 @@ test('the form labels and the untitled fallback are translated', function (): vo
     $englishLabels = $labelsOf($world['agents']['en']);
     $germanLabels = $labelsOf($world['agents']['de']);
 
-    expect($englishLabels)->toBe(['Search', 'Site', 'Presence'])
-        ->and($germanLabels)->toBe(['Suche', 'Website', 'Präsenzstatus']);
+    expect($englishLabels)->toBe(['Search', 'Site', 'Presence', 'Action'])
+        ->and($germanLabels)->toBe(['Suche', 'Website', 'Präsenzstatus', 'Aktion']);
 
     $english = conversationQueueLanguageVisibleText(
         $this->actingAs($world['agents']['en'])->get(route('dashboard.conversations.index'))->getContent()
@@ -3041,6 +3041,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'tickets.bulk.values.agent = Agent',
         'tickets.bulk.values.label = Label',
         'tickets.bulk.values.status = Status',
+        'conversations.bulk.values.agent = Agent',
+        'conversations.bulk.values.status = Status',
         'tickets.row.actor_system = System',
         'ticket_detail.common.status = Status',
         'ticket_detail.common.agent = Agent',

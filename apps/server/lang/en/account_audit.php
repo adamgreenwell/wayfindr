@@ -133,6 +133,7 @@ return [
         'conversation_closed' => 'Conversation closed',
         'conversation_reopened' => 'Conversation reopened',
         'conversation_assignee_updated' => 'Conversation owner updated',
+        'conversation_priority_updated' => 'Conversation priority updated',
         'inbound_webhook_verified' => 'Inbound webhook verified',
         'operator_readiness_confirmed' => 'Operator readiness confirmed',
         'operator_settings_backup_restore_triggered' => 'Backup restore triggered',

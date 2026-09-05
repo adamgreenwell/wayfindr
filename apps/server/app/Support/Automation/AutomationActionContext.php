@@ -4,6 +4,7 @@ namespace App\Support\Automation;
 
 use App\Models\AutomationMacro;
 use App\Models\AutomationRule;
+use App\Models\ConversationBulkActionRun;
 use App\Models\TicketBulkActionRun;
 use App\Models\TicketLabel;
 use App\Models\User;
@@ -63,6 +64,24 @@ final readonly class AutomationActionContext
         );
     }
 
+    /** @param list<int> $validatedSiteIds */
+    public static function forConversationBulkAction(
+        ConversationBulkActionRun $run,
+        User $actor,
+        ?User $validatedAgent,
+        array $validatedSiteIds,
+    ): self {
+        return new self(
+            accountId: (int) $run->account_id,
+            name: 'Conversation bulk action',
+            kind: 'conversation_bulk_action',
+            id: (int) $run->id,
+            actor: $actor,
+            validatedAgent: $validatedAgent,
+            validatedSiteIds: $validatedSiteIds,
+        );
+    }
+
     public function source(): string
     {
         return match ($this->kind) {
@@ -77,7 +96,8 @@ final readonly class AutomationActionContext
         return match ($this->kind) {
             'rule' => 'automation_rule_id',
             'macro' => 'automation_macro_id',
-            default => 'ticket_bulk_action_run_id',
+            'ticket_bulk_action' => 'ticket_bulk_action_run_id',
+            'conversation_bulk_action' => 'conversation_bulk_action_run_id',
         };
     }
 
@@ -86,7 +106,8 @@ final readonly class AutomationActionContext
         return match ($this->kind) {
             'rule' => 'automation rule',
             'macro' => 'automation macro',
-            default => 'ticket bulk action',
+            'ticket_bulk_action' => 'ticket bulk action',
+            'conversation_bulk_action' => 'conversation bulk action',
         };
     }
 }

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Notifications\AutomationRuleMatched;
 use App\Notifications\TicketAssigned;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\Conversations\ConversationPriorityLog;
 use App\Support\Routing\AssignmentAuditTrail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
@@ -25,6 +26,7 @@ final readonly class AutomationActionExecutor
     public function __construct(
         private AssignmentAuditTrail $assignmentAuditTrail,
         private ConversationLifecycleLog $conversationLifecycleLog,
+        private ConversationPriorityLog $conversationPriorityLog,
     ) {}
 
     /**
@@ -65,9 +67,12 @@ final readonly class AutomationActionExecutor
             return $this->result(AutomationRuleActionType::AssignAgent, 'noop', 'already_assigned');
         }
 
-        $oldAssignee = $currentId === null
-            ? null
-            : User::query()->whereKey($currentId)->first();
+        $oldAssignee = match (true) {
+            $currentId === null => null,
+            $subject instanceof Ticket && $subject->relationLoaded('assignee') => $subject->assignee,
+            $subject instanceof Conversation && $subject->relationLoaded('assignedAgent') => $subject->assignedAgent,
+            default => User::query()->whereKey($currentId)->first(),
+        };
 
         if ($subject instanceof Ticket) {
             $subject->forceFill(['assignee_id' => $agent->id])->save();
@@ -134,6 +139,15 @@ final readonly class AutomationActionExecutor
                     'priority' => ['old' => $previous, 'new' => $priority],
                 ],
             ]);
+        } else {
+            $this->conversationPriorityLog->updated(
+                $subject,
+                $automation->actor,
+                $previous,
+                $priority,
+                $automation->source(),
+                [$automation->idKey() => $automation->id],
+            );
         }
 
         return $this->result(AutomationRuleActionType::SetPriority, 'applied', $previous.'->'.$priority);
@@ -278,10 +292,15 @@ final readonly class AutomationActionExecutor
             'closed_at' => $status === ConversationStatus::Closed ? now() : null,
         ])->save();
 
+        $metadata = [
+            'source' => $automation->source(),
+            $automation->idKey() => $automation->id,
+        ];
+
         if ($status === ConversationStatus::Closed) {
-            $this->conversationLifecycleLog->closed($conversation, $automation->actor, $previous);
+            $this->conversationLifecycleLog->closed($conversation, $automation->actor, $previous, $metadata);
         } else {
-            $this->conversationLifecycleLog->reopened($conversation, $automation->actor, $previous);
+            $this->conversationLifecycleLog->reopened($conversation, $automation->actor, $previous, $metadata);
         }
     }
 
