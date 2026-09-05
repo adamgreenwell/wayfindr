@@ -18,6 +18,7 @@ use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushConfig;
 use App\Support\DashboardLanguage;
 use App\Support\Settings\OperatorSettings;
+use Closure;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueueAfterCommit;
 use Illuminate\Notifications\DatabaseNotification;
@@ -92,28 +93,137 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
             return;
         }
 
-        $retryableFailure = null;
         $settings ??= app(OperatorSettings::class);
         $deliveries ??= app(AgentAlertDeliveryCoordinator::class);
+        $claim = $this->withLockedEligibleAlert(
+            $event,
+            $accountId,
+            $webPush,
+            $settings,
+            $deliveries,
+            null,
+            fn (User $recipient, DatabaseNotification $alert): ?array => $deliveries->beginPushLocked(
+                $alert,
+                $event->version,
+            ),
+        );
 
-        DB::transaction(function () use ($accountId, $channel, $deliveries, $event, &$retryableFailure, $settings, $webPush): void {
+        if (! is_array($claim)) {
+            return;
+        }
+
+        $deliveryChannel = $channel ?? app(WebPushChannel::class);
+
+        if (! $deliveryChannel instanceof AgentWebPushChannel) {
+            $deliveries->releaseKnownFailedPushClaim($claim);
+
+            throw new LogicException('Wayfindr Web Push delivery channel is not configured.');
+        }
+
+        $retryableFailure = null;
+
+        try {
+            $attempted = $this->withLockedEligibleAlert(
+                $event,
+                $accountId,
+                $webPush,
+                $settings,
+                $deliveries,
+                $claim,
+                function (User $recipient, DatabaseNotification $alert) use (
+                    $claim,
+                    $deliveries,
+                    $deliveryChannel,
+                    $event,
+                    &$retryableFailure,
+                ): bool {
+                    try {
+                        $deliveryChannel->send(
+                            $recipient,
+                            new AgentAlertWebPush(
+                                alertId: (string) $alert->id,
+                                version: $event->version,
+                                dashboardLocale: DashboardLanguage::for($recipient),
+                            ),
+                        );
+                    } catch (RetryableAgentWebPushException $exception) {
+                        // Every report has settled. A wholly failed attempt is
+                        // known safe for retry and email fallback; one accepted
+                        // sibling makes Push the winner despite the transient.
+                        if (! $deliveryChannel->deliveryAccepted()) {
+                            $deliveries->releaseKnownFailedPushClaim($claim);
+                            $retryableFailure = $exception;
+
+                            return true;
+                        }
+                    }
+
+                    if ($deliveryChannel->deliveryAccepted()) {
+                        $deliveries->acceptPushClaimLocked($claim);
+                    } else {
+                        $deliveries->releaseKnownFailedPushClaim($claim);
+                    }
+
+                    return true;
+                },
+            );
+        } catch (RetryableAgentWebPushException $exception) {
+            // Settings became unavailable before the external call. This is a
+            // known-unsent outcome, so a retry and mail fallback stay open.
+            $deliveries->releaseKnownFailedPushClaim($claim);
+
+            throw $exception;
+        }
+
+        if ($attempted !== true) {
+            // Eligibility changed between the durable pre-transport claim and
+            // the final locked handoff. No external call occurred.
+            $deliveries->releaseKnownFailedPushClaim($claim);
+
+            return;
+        }
+
+        if ($retryableFailure instanceof RetryableAgentWebPushException) {
+            throw $retryableFailure;
+        }
+    }
+
+    /**
+     * @param  array{notification_id: string, alert_version: string, state_key: string, claim_token: string}|null  $claim
+     */
+    private function withLockedEligibleAlert(
+        AgentAlertStored $event,
+        int $accountId,
+        AgentWebPushConfig $webPush,
+        OperatorSettings $settings,
+        AgentAlertDeliveryCoordinator $deliveries,
+        ?array $claim,
+        Closure $action,
+    ): mixed {
+        return DB::transaction(function () use (
+            $accountId,
+            $action,
+            $claim,
+            $deliveries,
+            $event,
+            $settings,
+            $webPush,
+        ): mixed {
             // Coordinate with operator rotation and subscription enrollment,
             // then bypass the process-local settings cache. A worker that
-            // started this job on the old key must never purge a browser that
-            // enrolled on the newly committed generation.
+            // started on an old key cannot purge a browser enrolled on the
+            // newly committed generation.
             $this->refreshWebPushSettingsUnderLock($settings);
             $assessment = $webPush->assessment();
 
             if ($assessment['status'] === 'unavailable') {
-                $retryableFailure = new RetryableAgentWebPushException(
+                throw new RetryableAgentWebPushException(
                     'Web Push settings are temporarily unavailable.',
                 );
-
-                return;
             }
 
             if ($assessment['status'] !== 'ready') {
-                return;
+                return null;
             }
 
             // Match the account-then-user order used by deactivation, role,
@@ -127,7 +237,7 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
                 ->first();
 
             if (! $account instanceof Account) {
-                return;
+                return null;
             }
 
             $recipient = User::query()
@@ -141,13 +251,13 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
                 || $recipient->alertInterruptionsPaused()
                 || ! $recipient->alertPushEnabled()
                 || ! $recipient->hasAccountPermission(AccountPermission::ViewAlerts)) {
-                return;
+                return null;
             }
 
             AgentPushSubscription::purgeStaleFor($recipient);
 
             if (! $recipient->pushSubscriptions()->exists()) {
-                return;
+                return null;
             }
 
             $alert = DatabaseNotification::query()
@@ -160,46 +270,20 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
             if (! $alert instanceof DatabaseNotification
                 || ! hash_equals($event->version, AgentAlertPayload::version($alert))
-                || $deliveries->versionCovered($alert, $event->version)
                 || ! Gate::forUser($recipient)->allows('view', $alert)) {
-                return;
+                return null;
             }
 
-            $deliveryChannel = $channel ?? app(WebPushChannel::class);
-
-            if (! $deliveryChannel instanceof AgentWebPushChannel) {
-                throw new LogicException('Wayfindr Web Push delivery channel is not configured.');
-            }
-
-            try {
-                $deliveryChannel->send(
-                    $recipient,
-                    new AgentAlertWebPush(
-                        alertId: (string) $alert->id,
-                        version: $event->version,
-                        dashboardLocale: DashboardLanguage::for($recipient),
-                    ),
-                );
-            } catch (RetryableAgentWebPushException $exception) {
-                // The channel has already processed every report. Commit any
-                // expired-subscription deletions before asking the queue to
-                // retry transient siblings. If even one browser accepted this
-                // version, that is the winning channel and no retry is needed.
-                if (! $deliveryChannel->deliveryAccepted()) {
-                    $retryableFailure = $exception;
-
-                    return;
+            if ($claim === null) {
+                if ($deliveries->versionCovered($alert, $event->version)) {
+                    return null;
                 }
+            } elseif (! $deliveries->pushClaimIsCurrentLocked($alert, $claim)) {
+                return null;
             }
 
-            if ($deliveryChannel->deliveryAccepted()) {
-                $deliveries->acceptPushLocked($alert, $event->version);
-            }
+            return $action($recipient, $alert);
         });
-
-        if ($retryableFailure instanceof RetryableAgentWebPushException) {
-            throw $retryableFailure;
-        }
     }
 
     /** Refresh the destructive generation boundary while rotation is excluded. */

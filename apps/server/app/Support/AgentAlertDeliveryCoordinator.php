@@ -42,7 +42,7 @@ final class AgentAlertDeliveryCoordinator
 
     /**
      * @return array{
-     *     status: 'claimed'|'covered'|'unavailable',
+     *     status: 'claimed'|'covered'|'pending'|'unavailable',
      *     claim?: array{notification_id: string, alert_version: string, state_key: string, claim_token: string}
      * }
      */
@@ -76,7 +76,9 @@ final class AgentAlertDeliveryCoordinator
                 self::CHANNEL_IMMEDIATE_MAIL,
                 $claim,
             )) {
-                return ['status' => 'covered'];
+                return ['status' => $this->pushClaimIsInFlight($current, $version)
+                    ? 'pending'
+                    : 'covered'];
             }
 
             return [
@@ -184,26 +186,97 @@ final class AgentAlertDeliveryCoordinator
         return true;
     }
 
-    /** The caller must hold the notification row lock through Web Push. */
-    public function acceptPushLocked(DatabaseNotification $alert, string $version): void
+    /**
+     * The caller must hold the notification row lock.
+     *
+     * @return array{notification_id: string, alert_version: string, state_key: string, claim_token: string}|null
+     */
+    public function beginPushLocked(DatabaseNotification $alert, string $version): ?array
     {
-        if (! hash_equals($version, AgentAlertPayload::version($alert))) {
-            return;
+        $claim = (string) Str::uuid();
+
+        if (! $this->claimLocked($alert, $version, self::CHANNEL_PUSH, $claim)) {
+            return null;
         }
 
-        AgentAlertDelivery::query()->firstOrCreate(
-            [
-                'notification_id' => (string) $alert->id,
-                'alert_version' => $version,
-                'state_key' => self::STATE_EVENT,
-            ],
-            [
-                'channel' => self::CHANNEL_PUSH,
-                'claim_token' => null,
-                'started_at' => now(),
-                'accepted_at' => now(),
-            ],
-        );
+        $started = AgentAlertDelivery::query()
+            ->where('notification_id', $alert->id)
+            ->where('alert_version', $version)
+            ->where('state_key', self::STATE_EVENT)
+            ->where('channel', self::CHANNEL_PUSH)
+            ->where('claim_token', $claim)
+            ->whereNull('started_at')
+            ->whereNull('accepted_at')
+            ->update(['started_at' => now()]);
+
+        if ($started !== 1) {
+            throw new LogicException('The Web Push delivery claim could not cross its transport boundary.');
+        }
+
+        return $this->claimPayload($alert, $version, $claim);
+    }
+
+    /**
+     * The caller must hold the notification row lock through Web Push.
+     *
+     * @param  array{notification_id: string, alert_version: string, state_key: string, claim_token: string}  $claim
+     */
+    public function pushClaimIsCurrentLocked(DatabaseNotification $alert, array $claim): bool
+    {
+        return $alert->read_at === null
+            && hash_equals($claim['alert_version'], AgentAlertPayload::version($alert))
+            && ! $this->realtimeReceiptCovers($alert, $claim['alert_version'])
+            && AgentAlertDelivery::query()
+                ->where('notification_id', $claim['notification_id'])
+                ->where('alert_version', $claim['alert_version'])
+                ->where('state_key', $claim['state_key'])
+                ->where('channel', self::CHANNEL_PUSH)
+                ->where('claim_token', $claim['claim_token'])
+                ->whereNotNull('started_at')
+                ->whereNull('accepted_at')
+                ->exists();
+    }
+
+    /**
+     * The caller must hold the notification row lock through Web Push.
+     *
+     * @param  array{notification_id: string, alert_version: string, state_key: string, claim_token: string}  $claim
+     */
+    public function acceptPushClaimLocked(array $claim): void
+    {
+        $delivery = AgentAlertDelivery::query()
+            ->where('notification_id', $claim['notification_id'])
+            ->where('alert_version', $claim['alert_version'])
+            ->where('state_key', $claim['state_key'])
+            ->where('channel', self::CHANNEL_PUSH)
+            ->where('claim_token', $claim['claim_token'])
+            ->whereNotNull('started_at')
+            ->whereNull('accepted_at')
+            ->lockForUpdate()
+            ->first();
+
+        if (! $delivery instanceof AgentAlertDelivery) {
+            throw new LogicException('The accepted Web Push delivery claim could not be finalized.');
+        }
+
+        $delivery->forceFill(['accepted_at' => now()])->save();
+    }
+
+    /**
+     * Release a push claim only after every delivery report is known to have failed.
+     *
+     * @param  array{notification_id: string, alert_version: string, state_key: string, claim_token: string}  $claim
+     */
+    public function releaseKnownFailedPushClaim(array $claim): void
+    {
+        AgentAlertDelivery::query()
+            ->where('notification_id', $claim['notification_id'])
+            ->where('alert_version', $claim['alert_version'])
+            ->where('state_key', $claim['state_key'])
+            ->where('channel', self::CHANNEL_PUSH)
+            ->where('claim_token', $claim['claim_token'])
+            ->whereNull('accepted_at')
+            ->delete();
     }
 
     /**
@@ -438,6 +511,18 @@ final class AgentAlertDeliveryCoordinator
         $receipt = $alert->getAttribute('agent_alert_realtime_received_version');
 
         return is_string($receipt) && hash_equals($version, $receipt);
+    }
+
+    private function pushClaimIsInFlight(DatabaseNotification $alert, string $version): bool
+    {
+        return AgentAlertDelivery::query()
+            ->where('notification_id', $alert->id)
+            ->where('alert_version', $version)
+            ->where('channel', self::CHANNEL_PUSH)
+            ->whereNotNull('started_at')
+            ->where('started_at', '>', now()->subMinutes(2))
+            ->whereNull('accepted_at')
+            ->exists();
     }
 
     private function realtimeReceiptCoversCandidate(

@@ -1,6 +1,7 @@
 <?php
 
 use App\Events\AgentAlertStored;
+use App\Exceptions\AgentAlertDeliveryPendingException;
 use App\Exceptions\RetryableAgentWebPushException;
 use App\Jobs\SendAgentAlertDigest;
 use App\Jobs\SendSlaDeadlineAlertDelivery;
@@ -127,6 +128,46 @@ test('a successful Web Push suppresses the queued immediate email for the same a
     expect($delivery->channel)->toBe(AgentAlertDeliveryCoordinator::CHANNEL_PUSH)
         ->and($delivery->accepted_at)->not->toBeNull()
         ->and($delivery->notification_id)->toBe((string) $agent->unreadNotifications()->sole()->id);
+});
+
+test('a Web Push accepted before its receipt transaction fails remains an uncertain delivery and suppresses mail', function (): void {
+    configureCrossChannelWebPush();
+    [$agent, $assigner, $ticket] = crossChannelTicketWorld();
+    subscribeCrossChannelAgent($agent);
+    Http::fake(['push.example.test/*' => Http::response('', 201)]);
+    useCrossChannelArrayMailer();
+    $notification = new TicketAssigned($ticket, $assigner);
+    $alert = storeCrossChannelTicketAlert($agent, $notification);
+    $failNextAcceptance = true;
+
+    AgentAlertDelivery::updating(function (AgentAlertDelivery $delivery) use (&$failNextAcceptance): void {
+        if (! $failNextAcceptance || ! $delivery->isDirty('accepted_at')) {
+            return;
+        }
+
+        $failNextAcceptance = false;
+
+        throw new RuntimeException('Simulated receipt transaction failure.');
+    });
+
+    expect(fn () => app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+    ))->toThrow(RuntimeException::class, 'Simulated receipt transaction failure.');
+
+    Http::assertSentCount(1);
+    $delivery = AgentAlertDelivery::query()->sole();
+    expect($delivery->channel)->toBe(AgentAlertDeliveryCoordinator::CHANNEL_PUSH)
+        ->and($delivery->started_at)->not->toBeNull()
+        ->and($delivery->accepted_at)->toBeNull()
+        ->and(fn () => Notification::sendNow($agent, $notification, ['mail']))
+        ->toThrow(AgentAlertDeliveryPendingException::class);
+
+    $this->travel(121)->seconds();
+    Notification::sendNow($agent, $notification, ['mail']);
+
+    expect(Mail::mailer('array')->getSymfonyTransport()->messages())->toHaveCount(0)
+        ->and(AgentAlertDelivery::query()->sole()->accepted_at)->toBeNull();
 });
 
 test('a failed Web Push leaves immediate email available as the fallback channel', function (): void {
@@ -322,9 +363,12 @@ test('an accepted immediate email suppresses Web Push retries but not a later al
 
 test('immediate mail waits behind realtime and Web Push selection', function (): void {
     [$agent, $assigner, $ticket] = crossChannelTicketWorld();
+    $notification = new TicketAssigned($ticket, $assigner);
 
-    expect((new TicketAssigned($ticket, $assigner))->withDelay($agent, 'database'))->toBeNull()
-        ->and((new TicketAssigned($ticket, $assigner))->withDelay($agent, 'mail'))->toBe(5);
+    expect($notification->withDelay($agent, 'database'))->toBeNull()
+        ->and($notification->withDelay($agent, 'mail'))->toBe(5)
+        ->and($notification->tries)->toBe(4)
+        ->and($notification->backoff)->toBe([15, 30, 90]);
 });
 
 test('a delivered interruptive channel keeps the same event out of a later digest', function (): void {

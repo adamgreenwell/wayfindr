@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Listeners;
 
+use App\Exceptions\AgentAlertDeliveryPendingException;
 use App\Models\User;
 use App\Notifications\Concerns\CoordinatesAgentAlertMail;
 use App\Support\AgentAlertDeliveryCoordinator;
@@ -33,6 +34,10 @@ final readonly class ClaimAgentAlertMailDelivery
 
         if ($decision['status'] === 'covered') {
             return false;
+        }
+
+        if ($decision['status'] === 'pending') {
+            throw new AgentAlertDeliveryPendingException;
         }
 
         if ($decision['status'] === 'claimed') {

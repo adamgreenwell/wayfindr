@@ -11,6 +11,12 @@ use Symfony\Component\Mime\Email;
 /** Carries a durable alert-delivery claim from channel selection to SMTP. */
 trait CoordinatesAgentAlertMail
 {
+    /** Retry beyond the bounded Web Push in-flight window. */
+    public int $tries = 4;
+
+    /** @var array<int> */
+    public array $backoff = [15, 30, 90];
+
     /** @var array{notification_id: string, alert_version: string, state_key: string, claim_token: string}|null */
     private ?array $agentAlertMailClaim = null;
 

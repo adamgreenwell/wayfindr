@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\AgentAlertDeliveryPendingException;
 use App\Models\SlaAlertDelivery;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\AgentAlertDeliveryCoordinator;
@@ -198,6 +199,10 @@ class SendSlaDeadlineAlertDelivery implements ShouldBeUnique, ShouldQueue
                 $delivery->forceFill(['deduplicated_at' => now()])->save();
 
                 return ['deduplicated' => true];
+            }
+
+            if ($agentAlertDecision['status'] === 'pending') {
+                throw new AgentAlertDeliveryPendingException;
             }
 
             if ($agentAlertDecision['status'] === 'claimed') {
