@@ -185,7 +185,58 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
 
     expect($checkbox)->toBeInstanceOf(DOMElement::class)
         ->and($checkbox->getAttribute('name'))->toBe('push_alerts')
-        ->and($checkbox->hasAttribute('disabled'))->toBeFalse();
+        ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
+});
+
+test("browser-specific push opt-out keeps the agent's other subscribed browsers active", function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'push' => true,
+        ],
+    ]);
+
+    foreach (['one', 'two'] as $suffix) {
+        $agent->pushSubscriptions()->create([
+            'endpoint' => "https://push.example.test/subscriptions/{$suffix}",
+            'public_key' => 'public-key',
+            'auth_token' => 'auth-token',
+            'content_encoding' => 'aes128gcm',
+        ]);
+    }
+
+    // Saving unrelated alert preferences from a browser with no subscription
+    // must not turn off delivery to the two browsers that are subscribed.
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'email_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and($agent->pushSubscriptions()->count())->toBe(2);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => 'https://push.example.test/subscriptions/one',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and($agent->pushSubscriptions()->pluck('endpoint')->all())
+        ->toBe(['https://push.example.test/subscriptions/two']);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => 'https://push.example.test/subscriptions/two',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeFalse()
+        ->and($agent->pushSubscriptions()->count())->toBe(0);
 });
 
 test('the profile preserves push preference while VAPID configuration is unavailable', function (): void {

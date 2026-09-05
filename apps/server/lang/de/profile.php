@@ -105,7 +105,7 @@ return [
         'sound_alerts' => 'Bei neuen Dashboard-Benachrichtigungen einen Ton abspielen',
         'sound_help' => 'Ein kurzer lokaler Ton wird nur abgespielt, wenn dieses Dashboard im Hintergrund geöffnet ist. Je nach Browser ist vor der Tonwiedergabe möglicherweise eine Interaktion mit der Seite erforderlich.',
         'push_alerts' => 'Diesen Browser nach dem Schließen des Dashboards benachrichtigen',
-        'push_help' => 'Beim Speichern fragt dieser Browser nach der Berechtigung für Benachrichtigungen und meldet sich an. Schalten Sie dies hier aus, um diesen Browser abzumelden.',
+        'push_help' => 'Beim Speichern fragt dieser Browser nach der Berechtigung für Benachrichtigungen und meldet sich an. Schalten Sie dies aus, um diesen Browser abzumelden; Ihre anderen angemeldeten Browser bleiben aktiv.',
         'push_unavailable' => 'Ein Plattformbetreiber muss Web-Push einrichten, bevor sich Browser anmelden können. Ihre aktuelle Einstellung bleibt erhalten.',
         'push_unsupported' => 'Dieser Browser oder diese Verbindung unterstützt Web-Push nicht. Ihre aktuelle Einstellung wurde beibehalten.',
         'push_failed' => 'Dieser Browser konnte nicht angemeldet werden. Prüfen Sie die Benachrichtigungsberechtigung und versuchen Sie es erneut.',

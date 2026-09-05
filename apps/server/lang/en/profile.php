@@ -105,7 +105,7 @@ return [
         'sound_alerts' => 'Play a sound for new dashboard alerts',
         'sound_help' => 'A short local tone plays only while this dashboard is open in the background. Your browser may wait for you to interact with the page before allowing sound.',
         'push_alerts' => 'Notify this browser after I close the dashboard',
-        'push_help' => 'Saving asks this browser for notification permission and subscribes it. Turn this off here to unsubscribe this browser.',
+        'push_help' => 'Saving asks this browser for notification permission and subscribes it. Turn this off to unsubscribe this browser; your other subscribed browsers stay active.',
         'push_unavailable' => 'A platform operator must configure Web Push before browsers can subscribe. Your current preference is preserved.',
         'push_unsupported' => 'This browser or connection cannot use Web Push. Your current preference was preserved.',
         'push_failed' => 'This browser could not be subscribed. Check notification permission and try again.',

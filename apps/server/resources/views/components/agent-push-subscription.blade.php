@@ -31,6 +31,28 @@
             showError(config.unsupportedMessage);
         }
 
+        function pendingRemoval(endpoint) {
+            var existing = form.querySelector('input[name="push_subscription_endpoint"]');
+
+            if (! endpoint) {
+                if (existing) {
+                    existing.remove();
+                }
+
+                return;
+            }
+
+            var input = existing || document.createElement('input');
+
+            input.type = 'hidden';
+            input.name = 'push_subscription_endpoint';
+            input.value = endpoint;
+
+            if (! existing) {
+                form.appendChild(input);
+            }
+        }
+
         if (! window.isSecureContext
             || ! ('serviceWorker' in navigator)
             || ! ('PushManager' in window)
@@ -160,8 +182,16 @@
                 })
                 .then(function (subscription) {
                     if (! subscription) {
+                        pendingRemoval(null);
+
                         return;
                     }
+
+                    // Carry the browser endpoint into the ordinary preference
+                    // update too. If this best-effort request flakes, the
+                    // locked profile transaction can still remove exactly this
+                    // agent's endpoint before checking for other browsers.
+                    pendingRemoval(subscription.endpoint);
 
                     return request(config.destroyEndpoint, 'DELETE', {
                         endpoint: subscription.endpoint,
@@ -170,6 +200,24 @@
                     });
                 });
         }
+
+        function initializeBrowserState() {
+            return navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
+                .then(function (registration) {
+                    return registration ? registration.pushManager.getSubscription() : null;
+                })
+                .then(function (subscription) {
+                    checkbox.checked = Boolean(subscription && usesCurrentApplicationServerKey(subscription));
+                    checkbox.disabled = false;
+                })
+                .catch(function () {
+                    browserStateAvailable = false;
+                    preserveAndDisable();
+                });
+        }
+
+        var browserStateAvailable = true;
+        var browserStateReady = initializeBrowserState();
 
         form.addEventListener('submit', function (event) {
             if (form.dataset.pushSyncing === 'true') {
@@ -189,14 +237,15 @@
                 submitter.disabled = true;
             }
 
-            // Turning delivery off is authoritative even if a flaky browser
-            // cannot clean up its local subscription right now. The profile
-            // preference is rechecked by the queued sender, so submitting the
-            // disabled preference stops delivery while a future save can retry
-            // the harmless stale-subscription cleanup.
-            var synchronization = checkbox.checked
-                ? enablePush()
-                : disablePush().catch(function () {});
+            var synchronization = browserStateReady.then(function () {
+                if (! browserStateAvailable) {
+                    return;
+                }
+
+                return checkbox.checked
+                    ? enablePush()
+                    : disablePush().catch(function () {});
+            });
 
             synchronization
                 .then(function () {

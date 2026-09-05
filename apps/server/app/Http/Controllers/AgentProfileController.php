@@ -141,21 +141,35 @@ class AgentProfileController extends Controller
         $validated = $request->validate([
             'alert_mode' => ['required', Rule::in(array_keys($request->user()::alertModeOptions()))],
             'alert_cadence' => ['sometimes', Rule::in(array_keys($request->user()::alertCadenceOptions()))],
+            'push_subscription_endpoint' => ['nullable', 'string', 'max:1024', 'url', 'starts_with:https://'],
         ]);
 
         $accountId = (int) $request->user()->account_id;
         $userId = (int) $request->user()->id;
         $email = $request->boolean('email_alerts');
         $sound = $request->boolean('sound_alerts');
-        $push = $request->boolean('push_alerts');
+        $pushRequested = $request->boolean('push_alerts');
 
-        DB::transaction(function () use ($accountId, $email, $push, $sound, $userId, $validated): void {
+        DB::transaction(function () use ($accountId, $email, $pushRequested, $sound, $userId, $validated): void {
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()
                 ->whereKey($userId)
                 ->where('account_id', $accountId)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $removedEndpoint = trim((string) ($validated['push_subscription_endpoint'] ?? ''));
+
+            if ($removedEndpoint !== '') {
+                $agent->pushSubscriptions()
+                    ->where('endpoint', $removedEndpoint)
+                    ->delete();
+            }
+
+            // The UI control represents this browser, while `push` remains the
+            // per-agent channel preference required by the alert pipeline. One
+            // browser opting out must not silence the agent's other subscribed
+            // browsers; the channel turns off only after the last one leaves.
+            $push = $pushRequested || $agent->pushSubscriptions()->exists();
             $alertPreferences = $agent->alert_preferences ?? [];
 
             $agent->forceFill([

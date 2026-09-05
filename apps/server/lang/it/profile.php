@@ -113,7 +113,7 @@ return [
         'sound_alerts' => 'Riproduci un suono per i nuovi avvisi della dashboard',
         'sound_help' => 'Un breve tono locale viene riprodotto solo mentre questa dashboard è aperta in background. Il browser potrebbe attendere un’interazione con la pagina prima di consentire l’audio.',
         'push_alerts' => 'Invia notifiche a questo browser dopo la chiusura della dashboard',
-        'push_help' => 'Al salvataggio questo browser chiede il permesso per le notifiche e completa l’iscrizione. Disattivi qui l’opzione per annullare l’iscrizione di questo browser.',
+        'push_help' => 'Al salvataggio questo browser chiede il permesso per le notifiche e completa l’iscrizione. Disattivi l’opzione per annullare l’iscrizione di questo browser; gli altri browser iscritti restano attivi.',
         'push_unavailable' => 'Un gestore della piattaforma deve configurare Web Push prima che i browser possano iscriversi. La preferenza attuale viene mantenuta.',
         'push_unsupported' => 'Questo browser o questa connessione non può usare Web Push. La preferenza attuale è stata mantenuta.',
         'push_failed' => 'Non è stato possibile iscrivere questo browser. Controlli il permesso per le notifiche e riprovi.',

@@ -207,7 +207,7 @@
                     type="checkbox"
                     value="1"
                     @checked(old('push_alerts', $agent->alertPushEnabled()))
-                    @disabled(! $pushAvailable)
+                    disabled
                 >
                 <span>{{ __('profile.alerts.push_alerts') }}</span>
             </label>
