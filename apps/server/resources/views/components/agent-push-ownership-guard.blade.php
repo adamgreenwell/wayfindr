@@ -5,7 +5,7 @@
         // The profile owns the complete opt-in lifecycle and performs the same
         // check with user-facing status. Every other authenticated dashboard
         // page only needs the account-transition privacy guard below.
-        if (document.querySelector('[data-agent-push-preferences]')
+        if (document.querySelector('[data-agent-push-subscription]')
             || ! window.isSecureContext
             || ! ('serviceWorker' in navigator)
             || ! ('PushManager' in window)) {

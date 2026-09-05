@@ -79,6 +79,8 @@ test('every authenticated dashboard page clears a prior agents local push subscr
     $source = file_get_contents(resource_path('views/components/agent-push-ownership-guard.blade.php'));
 
     expect($source)
+        ->toContain("document.querySelector('[data-agent-push-subscription]')")
+        ->not->toContain("document.querySelector('[data-agent-push-preferences]')")
         ->toContain("payload.status !== 'foreign'")
         ->toContain('subscription.unsubscribe()')
         ->toContain('unsubscribeForeign(subscription, 2)')
@@ -307,15 +309,18 @@ test('the profile preserves push preference while VAPID configuration is unavail
         ->assertOk()
         ->assertSee('A platform operator must configure Web Push before browsers can subscribe.')
         ->assertSee('name="push_alerts" value="1"', false)
-        ->assertDontSee('data-agent-push-subscription', false);
+        ->assertSee('data-agent-push-ownership-guard', false);
 
     $document = new DOMDocument;
     @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
-    $checkbox = (new DOMXPath($document))->query('//input[@id="push_alerts"]')->item(0);
+    $xpath = new DOMXPath($document);
+    $checkbox = $xpath->query('//input[@id="push_alerts"]')->item(0);
 
     expect($checkbox)->toBeInstanceOf(DOMElement::class)
         ->and($checkbox->hasAttribute('name'))->toBeFalse()
-        ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
+        ->and($checkbox->hasAttribute('disabled'))->toBeTrue()
+        ->and($xpath->query('//script[@data-agent-push-subscription]')->length)->toBe(0)
+        ->and($xpath->query('//script[@data-agent-push-ownership-guard]')->length)->toBe(1);
 });
 
 test('alert preference changes lock the account before the agent', function (): void {
