@@ -13,6 +13,7 @@ use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorIdentityResolver;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -22,8 +23,12 @@ use Illuminate\Support\Facades\DB;
 
 class BootstrapController extends Controller
 {
-    public function __invoke(Request $request, VisitorSessionToken $visitorSessionToken, VisitorContextSanitizer $visitorContextSanitizer): JsonResponse
-    {
+    public function __invoke(
+        Request $request,
+        VisitorSessionToken $visitorSessionToken,
+        VisitorContextSanitizer $visitorContextSanitizer,
+        VisitorIdentityResolver $visitorIdentityResolver,
+    ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
@@ -57,24 +62,24 @@ class BootstrapController extends Controller
             // every statement. DB::transaction() is a real transaction standing
             // alone and a SAVEPOINT inside a caller's, and either is enough to
             // leave something usable to retry on.
-            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, &$current): Visitor {
+            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, &$current): Visitor {
                 // A real closure with `&$current`, not an arrow function: those
                 // capture by VALUE, so the by-reference parameter would bind to
                 // the closure's own copy and the locked site never reaches the
                 // payload.
-                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $current);
+                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $current);
             });
         } catch (UniqueConstraintViolationException) {
             // Wrapped as well. Outside a transaction every statement
             // autocommits, so the lockForUpdate() inside stampVisitor() is
             // released the moment its select finishes -- which is exactly when
             // it is supposed to still be held.
-            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, &$current): Visitor {
+            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, &$current): Visitor {
                 // A real closure with `&$current`, not an arrow function: those
                 // capture by VALUE, so the by-reference parameter would bind to
                 // the closure's own copy and the locked site never reaches the
                 // payload.
-                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $current);
+                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $current);
             });
         }
 
@@ -82,8 +87,12 @@ class BootstrapController extends Controller
             'data' => [
                 'site' => $this->sitePayload($current, SiteIntake::knownFor($visitor)),
                 'visitor' => [
-                    'anonymous_id' => $visitor->anonymous_id,
-                    'token' => $visitorSessionToken->issue($site, $visitor),
+                    // Echo the browser identity used for this session. After a
+                    // deliberate merge it may be an alias of the canonical
+                    // row, and changing it in the response would disagree with
+                    // every request the already-running widget sends.
+                    'anonymous_id' => $validated['anonymous_id'],
+                    'token' => $visitorSessionToken->issue($site, $visitor, $validated['anonymous_id']),
                     // Whether the host app told us who this is, as the SERVER
                     // sees it. The widget's own option can be set while the
                     // value was rejected -- sanitised away, or already claimed
@@ -102,13 +111,13 @@ class BootstrapController extends Controller
     /**
      * @param  array<string, mixed>  $validated
      */
-    private function stampVisitor(Site $site, array $validated, VisitorContextSanitizer $visitorContextSanitizer, ?Site &$current = null): Visitor
-    {
-        $visitor = Visitor::query()->firstOrNew([
-            'site_id' => $site->id,
-            'anonymous_id' => $validated['anonymous_id'],
-        ]);
-
+    private function stampVisitor(
+        Site $site,
+        array $validated,
+        VisitorContextSanitizer $visitorContextSanitizer,
+        VisitorIdentityResolver $visitorIdentityResolver,
+        ?Site &$current = null,
+    ): Visitor {
         // Locked, and re-created if the lock finds nothing.
         //
         // The pruner deletes visitors who never made contact, and this is the
@@ -139,6 +148,17 @@ class BootstrapController extends Controller
         // exclude each other.
         $current = Site::query()->whereKey($site->getKey())->sharedLock()->first() ?? $site;
         $storePageUrl = SitePresenceReporting::for($current)->pageUrls;
+
+        // Resolved under the site lock shared with the merge writer. An old
+        // browser ID retained as an alias must stamp the canonical contact;
+        // creating a new row here would immediately undo the merge.
+        $visitor = $visitorIdentityResolver->forAnonymousId(
+            (int) $site->id,
+            $validated['anonymous_id'],
+        ) ?? Visitor::query()->newModelInstance([
+            'site_id' => $site->id,
+            'anonymous_id' => $validated['anonymous_id'],
+        ]);
 
         if ($visitor->exists) {
             $locked = Visitor::query()->whereKey($visitor->getKey())->lockForUpdate()->first();

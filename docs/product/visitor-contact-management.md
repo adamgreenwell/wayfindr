@@ -62,7 +62,32 @@ while the account audit retains only the note ID and lifecycle action. The note
 body cascades with visitor, site, or account deletion, though infrastructure
 backups remain subject to the operator's separate backup retention policy.
 
+## Identity merge
+
+A contact manager can search for another visitor on the same site and merge the
+current duplicate into the contact the team chooses to keep. This is an
+explicit human identity decision: a host visitor ID arrives through a public
+browser request and is useful as a reference, but it is not authentication and
+does not silently merge customer history. Different populated host visitor IDs
+therefore block the operation.
+
+The chosen contact keeps populated name, email, host ID, and custom attribute
+values; the duplicate fills only blanks. The newest sightings and page context
+are retained, while conversations, tickets, contact notes, cobrowse sessions,
+visitor-authored messages, and uploads move to the chosen record. The operation
+is permanent and writes a body-free audit receipt containing only internal IDs
+and moved-row counts.
+
+The deleted contact's anonymous browser ID and any earlier merged IDs become
+private aliases of the chosen contact. Widget presence, bootstrap, conversation
+intake, signed sessions, and authorized support search all resolve those
+aliases. Alias token lineage is retained across later merges, but cascades when
+the chosen visitor or site is deleted. Each alias keeps at most the 50 most
+recent prior visitor IDs; an older tab beyond that unusual chain must bootstrap
+again. An old token cannot authenticate a new visitor that later reuses the
+browser ID.
+
 ## Deliberately not in this slice
 
-Identity merge, contact export, CSV import, segmentation, CRM sync, and
-marketing automation remain separate decisions.
+Contact export, CSV import, segmentation, CRM sync, and marketing automation
+remain separate decisions.

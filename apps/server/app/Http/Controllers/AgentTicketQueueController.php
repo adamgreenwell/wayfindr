@@ -211,7 +211,8 @@ class AgentTicketQueueController extends Controller
                             ->whereLike('external_id', $searchPattern)
                             ->orWhereLike('anonymous_id', $searchPattern)
                             ->orWhereLike('name', $searchPattern)
-                            ->orWhereLike('email', $searchPattern));
+                            ->orWhereLike('email', $searchPattern)
+                            ->orWhereHas('identityAliases', fn ($query) => $query->whereLike('anonymous_id', $searchPattern)));
 
                     if ($canViewTicketConversations) {
                         $query->orWhereHas('conversation', fn ($query) => $query->whereLike('support_code', $searchPattern));

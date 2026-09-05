@@ -307,6 +307,7 @@ final class DashboardLanguage
         // only the destination would put a language switch inside the section.
         'dashboard.visitors.index',
         'dashboard.visitors.show',
+        'dashboard.visitors.merge',
         'dashboard.visitors.notes.store',
         'dashboard.visitors.notes.destroy',
 

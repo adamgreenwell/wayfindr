@@ -287,6 +287,71 @@
         @endif
     </section>
 
+    @if ($canManageContacts)
+    <section class="section" aria-labelledby="visitor-merge-heading">
+        <div class="section-header">
+            <h2 id="visitor-merge-heading">{{ __('visitor_merge.heading') }}</h2>
+            <span class="lede">{{ __('visitor_merge.lede') }}</span>
+        </div>
+
+        <div class="notice-copy notice-copy-bordered">
+            <p><strong>{{ __('visitor_merge.boundary.heading') }}</strong></p>
+            <p>{{ __('visitor_merge.boundary.body') }}</p>
+            <p>{{ __('visitor_merge.boundary.precedence') }}</p>
+            <p>{{ __('visitor_merge.boundary.continuity') }}</p>
+        </div>
+
+        <form class="section-form" method="GET" action="{{ route('dashboard.visitors.show', $visitor) }}#visitor-merge-heading">
+            <div class="field">
+                <label for="merge-search">{{ __('visitor_merge.search.label') }}</label>
+                <input id="merge-search" name="merge_search" type="search" maxlength="120" value="{{ $mergeSearch }}" placeholder="{{ __('visitor_merge.search.placeholder') }}" required>
+            </div>
+            <div class="section-actions">
+                <button class="button secondary" type="submit">{{ __('visitor_merge.search.submit') }}</button>
+                @if ($mergeSearch !== '')
+                    <a class="button secondary" href="{{ route('dashboard.visitors.show', $visitor) }}#visitor-merge-heading">{{ __('visitor_merge.search.clear') }}</a>
+                @endif
+            </div>
+        </form>
+
+        @error('target_id')<p class="field-error" role="alert">{{ $message }}</p>@enderror
+        @error('confirmed')<p class="field-error" role="alert">{{ $message }}</p>@enderror
+
+        @if ($mergeSearch !== '')
+            @if ($mergeCandidates->isEmpty())
+                <div class="empty empty-state">{{ __('visitor_merge.search.empty') }}</div>
+            @else
+                <p class="lede">{{ __('visitor_merge.search.limit') }}</p>
+                <div class="timeline-list">
+                    @foreach ($mergeCandidates as $candidate)
+                        @php($candidateLabel = $candidate->name ?: $candidate->email ?: $candidate->external_id ?: $candidate->anonymous_id)
+                        <article class="timeline-item">
+                            <div class="timeline-content">
+                                <strong lang="">{{ $candidateLabel }}</strong>
+                                <div class="timeline-meta">
+                                    <span>{{ __('visitor_merge.candidate.email') }}: @if ($candidate->email)<span lang="">{{ $candidate->email }}</span>@else{{ __('visitor_merge.candidate.not_provided') }}@endif</span>
+                                    <span>{{ __('visitor_merge.candidate.host_id') }}: @if ($candidate->external_id)<span lang="">{{ $candidate->external_id }}</span>@else{{ __('visitor_merge.candidate.not_provided') }}@endif</span>
+                                    <span>{{ __('visitor_merge.candidate.browser_id') }}: <span lang="">{{ $candidate->anonymous_id }}</span></span>
+                                    <span>{{ __('visitor_merge.candidate.last_seen') }}: {{ $candidate->last_seen_at?->diffForHumans() ?? __('visitors.common.not_reported') }}</span>
+                                </div>
+                                <form class="section-form" method="POST" action="{{ route('dashboard.visitors.merge', $visitor) }}">
+                                    @csrf
+                                    <input type="hidden" name="target_id" value="{{ $candidate->id }}">
+                                    <label for="confirm-merge-{{ $candidate->id }}">
+                                        <input id="confirm-merge-{{ $candidate->id }}" name="confirmed" type="checkbox" value="1" required>
+                                        {{ __('visitor_merge.candidate.confirm') }}
+                                    </label>
+                                    <button class="button danger" type="submit">{{ __('visitor_merge.candidate.submit') }}</button>
+                                </form>
+                            </div>
+                        </article>
+                    @endforeach
+                </div>
+            @endif
+        @endif
+    </section>
+    @endif
+
     @if ($canViewConversations || $canManageTickets)
     <section class="section" aria-labelledby="visitor-history-heading">
         <div class="section-header">

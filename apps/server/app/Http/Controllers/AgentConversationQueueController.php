@@ -443,6 +443,7 @@ class AgentConversationQueueController extends Controller
                         $this->whereLiteralLike($query, 'external_id', $searchPattern, 'or');
                         $this->whereLiteralLike($query, 'name', $searchPattern, 'or');
                         $this->whereLiteralLike($query, 'email', $searchPattern, 'or');
+                        $query->orWhereHas('identityAliases', fn (Builder $query) => $this->whereLiteralLike($query, 'anonymous_id', $searchPattern));
                     });
                 });
             });

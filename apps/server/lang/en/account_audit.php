@@ -94,6 +94,7 @@ return [
         'visitor_attribute_deleted' => 'Visitor attribute deleted',
         'visitor_note_added' => 'Contact note added',
         'visitor_note_deleted' => 'Contact note deleted',
+        'visitor_merged' => 'Visitor contact merged',
         'api_token_created' => 'API token issued',
         'api_token_revoked' => 'API token revoked',
         'outbound_webhook_created' => 'Outbound webhook created',

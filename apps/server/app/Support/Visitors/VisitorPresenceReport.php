@@ -23,6 +23,8 @@ use Illuminate\Support\Facades\RateLimiter;
  */
 final class VisitorPresenceReport
 {
+    public function __construct(private readonly VisitorIdentityResolver $identities) {}
+
     public function record(Site $site, string $anonymousId, ?string $pageUrl): Visitor
     {
         try {
@@ -80,7 +82,7 @@ final class VisitorPresenceReport
         $stamped = DB::transaction(function () use (&$resolved, $site, $anonymousId, $pageUrl): ?Visitor {
             $resolved = $this->resolve($site, $anonymousId);
 
-            return $this->stamp($resolved, $pageUrl, $site);
+            return $this->stamp($resolved, $pageUrl, $site, $anonymousId);
         });
 
         if ($stamped === null) {
@@ -116,13 +118,14 @@ final class VisitorPresenceReport
 
     private function resolve(Site $site, string $anonymousId): Visitor
     {
-        return Visitor::query()->firstOrNew([
-            'site_id' => $site->id,
-            'anonymous_id' => $anonymousId,
-        ]);
+        return $this->identities->forAnonymousId((int) $site->id, $anonymousId)
+            ?? Visitor::query()->newModelInstance([
+                'site_id' => $site->id,
+                'anonymous_id' => $anonymousId,
+            ]);
     }
 
-    private function stamp(Visitor $visitor, ?string $pageUrl, Site $site): ?Visitor
+    private function stamp(Visitor $visitor, ?string $pageUrl, Site $site, string $reportedAnonymousId): ?Visitor
     {
         // The site's setting, re-read under a lock, inside the transaction that
         // writes.
@@ -191,10 +194,8 @@ final class VisitorPresenceReport
             // save() updates zero rows, Eloquent calls that success, and the
             // endpoint answers 202 having stored nothing -- the visitor
             // vanishes from the board until they happen to be created again.
-            $visitor = $locked ?? Visitor::query()->newModelInstance([
-                'site_id' => $site->id,
-                'anonymous_id' => $visitor->anonymous_id,
-            ]);
+            $visitor = $locked
+                ?? $this->resolve($site, $reportedAnonymousId);
         }
 
         $now = now();
@@ -228,16 +229,19 @@ final class VisitorPresenceReport
             // takes the lock, so the second still believes it is creating --
             // and would spend both creation counters on an insert that is
             // about to collide and be retried as an update.
-            $existing = Visitor::query()
-                ->where('site_id', $site->id)
-                ->where('anonymous_id', $visitor->anonymous_id)
+            $existing = $this->identities->forAnonymousId(
+                (int) $site->id,
+                (string) $visitor->anonymous_id,
+            );
+
+            if ($existing instanceof Visitor) {
                 // Locked, like the branch above it. Adopting a row found here
                 // without the lock puts this write back in the race the lock
                 // exists to settle: bootstrap or a conversation committing
                 // between this SELECT and the save would have its metadata
                 // overwritten by the copy read here.
-                ->lockForUpdate()
-                ->first();
+                $existing = Visitor::query()->whereKey($existing->id)->lockForUpdate()->first();
+            }
 
             if ($existing !== null) {
                 $visitor = $existing;
