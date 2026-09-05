@@ -30,6 +30,7 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee('agent.alert.stored', false)
         ->assertSee('wayfindr:agent-alert-stored', false)
         ->assertSee('reconcileAlerts(message.target)', false)
+        ->assertSee('reconcileAlertPage(activeSocket)', false)
         ->assertSee('seenAlertVersions', false)
         ->assertSee('dashboard\/alerts\/reconcile', false)
         ->assertSee("document.title = '(' + count + ') ' + originalTitle", false)

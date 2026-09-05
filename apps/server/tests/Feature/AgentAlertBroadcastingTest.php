@@ -270,8 +270,58 @@ test('alert reconciliation returns only recipient alerts that are current and st
             ->assertJsonCount(1, 'data.alerts')
             ->assertJsonPath('data.alerts.0.id', (string) $visibleAlert->id)
             ->assertJsonPath('data.alerts.0.version', AgentAlertPayload::version($visibleAlert))
+            ->assertJsonPath('data.next_cursor', null)
             ->assertJsonPath('data.truncated', false)
             ->assertJsonPath('data.watermark', '2026-09-05T12:00:05.000000Z');
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
+});
+
+test('alert reconciliation pages a fixed outage window without skipping its backlog', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:05Z'));
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $expectedIds = collect();
+
+    try {
+        foreach (range(1, 105) as $sequence) {
+            $expectedIds->push((string) databaseAlertFor($agent, [
+                'kind' => 'conversation_needs_reply',
+                'conversation_id' => $conversation->id,
+                'sequence' => $sequence,
+            ])->id);
+        }
+
+        $receivedIds = collect();
+        $parameters = ['since' => '2026-09-05T12:00:00Z'];
+        $pages = 0;
+
+        do {
+            $response = $this->actingAs($agent)
+                ->getJson(route('dashboard.alerts.reconcile', $parameters))
+                ->assertOk();
+            $data = $response->json('data');
+            $pages++;
+            $receivedIds->push(...collect($data['alerts'])->pluck('id'));
+
+            if ($data['next_cursor'] !== null) {
+                expect($data['truncated'])->toBeTrue();
+                $parameters = [
+                    'since' => '2026-09-05T12:00:00Z',
+                    'through' => $data['watermark'],
+                    'cursor' => $data['next_cursor'],
+                ];
+            }
+        } while ($data['next_cursor'] !== null);
+
+        expect($pages)->toBe(3)
+            ->and($data['truncated'])->toBeFalse()
+            ->and($data['watermark'])->toBe('2026-09-05T12:00:05.000000Z')
+            ->and($receivedIds->sort()->values()->all())->toBe($expectedIds->sort()->values()->all());
     } finally {
         CarbonImmutable::setTestNow();
     }

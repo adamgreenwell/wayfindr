@@ -11,6 +11,9 @@
         var seenAlertVersions = {};
         var seenAlertVersionOrder = [];
         var reconcileSince = config.reconcileSince;
+        var reconcileThrough = null;
+        var reconcileCursor = null;
+        var reconcileSoundPlayed = false;
         var audioContext = null;
 
         (config.knownAlertVersions || []).forEach(function (version) {
@@ -319,11 +322,21 @@
                 });
         }
 
-        function reconcileAlerts(activeSocket) {
-            var endpoint = config.reconcileEndpoint + '?'
-                + new URLSearchParams({ since: reconcileSince }).toString();
+        function reconcileAlertPage(activeSocket) {
+            var parameters = { since: reconcileSince };
 
-            fetch(endpoint, {
+            if (reconcileThrough) {
+                parameters.through = reconcileThrough;
+            }
+
+            if (reconcileCursor) {
+                parameters.cursor = reconcileCursor;
+            }
+
+            var endpoint = config.reconcileEndpoint + '?'
+                + new URLSearchParams(parameters).toString();
+
+            return fetch(endpoint, {
                 method: 'GET',
                 credentials: 'same-origin',
                 headers: { Accept: 'application/json' },
@@ -343,7 +356,12 @@
 
                 var data = response && response.data;
 
-                if (! data || ! Array.isArray(data.alerts) || typeof data.watermark !== 'string') {
+                if (! data
+                    || ! Array.isArray(data.alerts)
+                    || typeof data.truncated !== 'boolean'
+                    || typeof data.watermark !== 'string'
+                    || (data.next_cursor !== null && typeof data.next_cursor !== 'string')
+                    || data.truncated !== (typeof data.next_cursor === 'string')) {
                     throw new Error('Alert reconciliation returned an invalid response.');
                 }
 
@@ -351,16 +369,37 @@
                     return announceAlert(alert, false) || announced;
                 }, false);
 
-                reconcileSince = data.watermark;
+                reconcileThrough = data.watermark;
+                reconcileCursor = data.next_cursor;
 
-                // One catch-up, one tone. A reconnect after a longer outage
-                // must not turn a backlog into a burst of beeps.
-                if (shouldPlaySound) {
+                // One paginated catch-up, one tone. A reconnect after a longer
+                // outage must not turn a backlog into a burst of beeps.
+                if (shouldPlaySound && ! reconcileSoundPlayed) {
                     playSound();
+                    reconcileSoundPlayed = true;
                 }
+
+                if (reconcileCursor) {
+                    return reconcileAlertPage(activeSocket);
+                }
+
+                reconcileSince = data.watermark;
+                reconcileThrough = null;
+                reconcileSoundPlayed = false;
+                activeSocket.wayfindrReconciling = false;
             }).catch(function (error) {
+                activeSocket.wayfindrReconciling = false;
                 authorizationFailed(activeSocket, error);
             });
+        }
+
+        function reconcileAlerts(activeSocket) {
+            if (activeSocket.wayfindrReconciling) {
+                return;
+            }
+
+            activeSocket.wayfindrReconciling = true;
+            reconcileAlertPage(activeSocket);
         }
 
         function handleSocketMessage(message) {
