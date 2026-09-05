@@ -225,8 +225,12 @@
             announceAlert(alert, true);
             pruneAlertVersions(overlappingReconcileSince(new Date().toISOString()));
         });
-        document.addEventListener('visibilitychange', clearAttentionIfForeground);
-        window.addEventListener('focus', clearAttentionIfForeground);
+        function foregroundStateChanged() {
+            clearAttentionIfForeground();
+        }
+
+        document.addEventListener('visibilitychange', foregroundStateChanged);
+        window.addEventListener('focus', foregroundStateChanged);
 
         if (config.soundEnabled) {
             document.addEventListener('pointerdown', armSound, { once: true });
@@ -509,7 +513,10 @@
                 if (activeSocket.wayfindrNeedsFreshReconcile) {
                     activeSocket.wayfindrNeedsFreshReconcile = false;
                     reconcileAlerts(activeSocket);
+
+                    return;
                 }
+
             }).catch(function (error) {
                 if (error && error.status === 429) {
                     scheduleReconcileRetry(activeSocket, error.retryAfterMilliseconds);
@@ -577,6 +584,30 @@
                     || ! alert.data
                     || typeof alert.data !== 'object') {
                     return;
+                }
+
+                if (document.visibilityState === 'visible') {
+                    var csrf = document.querySelector('meta[name="csrf-token"]');
+
+                    // Only an actual, visible socket delivery writes this exact
+                    // alert-version receipt. Presence membership can outlive a
+                    // dead connection, so it is never used to suppress Web Push.
+                    fetch(config.realtimeReceiptEndpoint, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        keepalive: true,
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrf ? csrf.getAttribute('content') : '',
+                        },
+                        body: JSON.stringify({
+                            alert_id: alert.id,
+                            version: alert.version,
+                        }),
+                    }).catch(function () {
+                        // Missing a receipt merely allows the Web Push fallback.
+                    });
                 }
 
                 document.dispatchEvent(new CustomEvent('wayfindr:agent-alert-stored', {

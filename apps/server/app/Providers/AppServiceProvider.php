@@ -11,6 +11,8 @@ use App\Observers\ConversationMessageObserver;
 use App\Observers\ConversationObserver;
 use App\Observers\TicketObserver;
 use App\Policies\AlertPolicy;
+use App\Support\AgentWebPushChannel;
+use App\Support\AgentWebPushFactory;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
 use App\Support\Attachments\Scanning\NullScanner;
@@ -31,6 +33,8 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use NotificationChannels\WebPush\ReportHandler;
+use NotificationChannels\WebPush\WebPushChannel;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -89,6 +93,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Browser subscriptions contain an outbound URL. Replace the package's
+        // stock channel with Wayfindr's DNS-pinned transport and retry-aware
+        // report handling. A transient report must fail the queued listener;
+        // the package otherwise emits an event and silently returns success.
+        $this->app->bind(WebPushChannel::class, fn (): AgentWebPushChannel => new AgentWebPushChannel(
+            $this->app->make(AgentWebPushFactory::class)->make(),
+            $this->app->make(ReportHandler::class),
+        ));
+
         Gate::policy(DatabaseNotification::class, AlertPolicy::class);
 
         Conversation::observe(ConversationObserver::class);
@@ -140,6 +153,27 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('agent-alert-reconcile', fn (Request $request): Limit => Limit::perMinute(30)->by(
             'agent-alert-reconcile-user:'.(string) $request->user()?->getAuthIdentifier()
         ));
+
+        // Every visible tab acknowledges the same live event. Isolate the
+        // quota by exact alert version so duplicate tabs cannot spend the
+        // agent's allowance for later alerts; hash the unvalidated input so
+        // cache keys never retain identifiers or attacker-controlled length.
+        RateLimiter::for('agent-alert-realtime-receipt', function (Request $request): array {
+            $agent = (string) $request->user()?->getAuthIdentifier();
+            $exactAlert = hash('sha256', (string) json_encode([
+                $request->input('alert_id'),
+                $request->input('version'),
+            ]));
+
+            return [
+                // Bound a compromised authenticated browser without making a
+                // normal multi-tab alert burst compete for a tiny global pool.
+                Limit::perMinute(6000)->by('agent-alert-realtime-receipt-user:'.$agent),
+                Limit::perMinute(120)->by(
+                    'agent-alert-realtime-receipt-user:'.$agent.':alert:'.$exactAlert
+                ),
+            ];
+        });
 
         RateLimiter::for('oidc-redirect', fn (Request $request): array => [
             Limit::perMinute(10)->by('oidc-redirect-ip:'.$request->ip()),

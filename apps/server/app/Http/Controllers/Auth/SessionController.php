@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\AgentPushSubscription;
+use App\Models\User;
 use App\Support\Auth\PendingTwoFactorChallenge;
 use App\Support\FirstRunState;
 use Illuminate\Contracts\View\View;
@@ -10,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class SessionController extends Controller
 {
@@ -84,6 +87,22 @@ class SessionController extends Controller
 
     public function destroy(Request $request): RedirectResponse
     {
+        $agent = $request->user();
+        $endpoint = $request->input('push_subscription_endpoint');
+
+        if ($agent instanceof User
+            && is_string($endpoint)
+            && strlen($endpoint) <= AgentPushSubscription::ENDPOINT_MAX_LENGTH
+            && filter_var($endpoint, FILTER_VALIDATE_URL) !== false
+            && parse_url($endpoint, PHP_URL_SCHEME) === 'https') {
+            try {
+                AgentPushSubscription::revokeEndpointFor($agent, $endpoint);
+            } catch (Throwable) {
+                // Subscription cleanup is best effort. Never trap an agent in
+                // a session merely because this optional channel is unhealthy.
+            }
+        }
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

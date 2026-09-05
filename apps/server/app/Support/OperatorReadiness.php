@@ -32,6 +32,7 @@ class OperatorReadiness
     public function __construct(
         private readonly RealtimeHealth $realtimeHealth,
         private readonly CobrowseTransportReadiness $cobrowseTransportReadiness,
+        private readonly AgentWebPushConfig $webPush,
     ) {}
 
     /**
@@ -72,6 +73,7 @@ class OperatorReadiness
             $this->mailTransport(),
             $this->queueWorker(),
             $this->realtimeBroadcasting(),
+            $this->webPush(),
             $this->cobrowseTransportReadiness->check(),
             $this->storagePaths(),
             $this->attachmentStorage(),
@@ -649,6 +651,62 @@ class OperatorReadiness
             'disabled' => 'disabled',
             default => 'incomplete',
         });
+    }
+
+    /**
+     * Optional until an operator elects to offer closed-dashboard alerts;
+     * partial or malformed credentials are actionable because agents may have
+     * opted in while the transport cannot authenticate.
+     *
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function webPush(): array
+    {
+        $assessment = $this->webPush->assessment();
+
+        return match ($assessment['status']) {
+            'ready' => $this->withTranslation($this->check(
+                key: 'web_push',
+                label: 'Web Push',
+                status: 'ready',
+                summary: 'Web Push VAPID credentials are ready.',
+                detail: 'Agents can opt this browser into closed-dashboard alerts from their profile.',
+                action: 'Keep the VAPID key pair stable; rotating it requires every browser to subscribe again.'
+            ), 'ready'),
+            'unset' => $this->withTranslation($this->check(
+                key: 'web_push',
+                label: 'Web Push',
+                status: 'manual',
+                summary: 'Web Push is not configured.',
+                detail: 'This optional channel stays off quietly until an operator supplies a VAPID subject and key pair.',
+                action: 'Open Web Push settings if agents should receive alerts after closing the dashboard.',
+                statusLabel: 'Optional'
+            ), 'unset'),
+            'incomplete' => $this->withTranslation($this->check(
+                key: 'web_push',
+                label: 'Web Push',
+                status: 'attention',
+                summary: 'Web Push configuration is incomplete.',
+                detail: 'A VAPID subject, public key, and private key must be configured together.',
+                action: 'Complete or clear the Web Push credentials in operator settings.'
+            ), 'incomplete'),
+            'unavailable' => $this->withTranslation($this->check(
+                key: 'web_push',
+                label: 'Web Push',
+                status: 'attention',
+                summary: 'Web Push settings are temporarily unavailable.',
+                detail: 'Wayfindr could not read the operator settings store, so Web Push is paused without changing subscriptions.',
+                action: 'Restore database and cache access, then recheck. Do not rotate VAPID keys for this condition.'
+            ), 'unavailable'),
+            default => $this->withTranslation($this->check(
+                key: 'web_push',
+                label: 'Web Push',
+                status: 'attention',
+                summary: 'Web Push credentials are invalid.',
+                detail: 'The configured VAPID subject or key material cannot authenticate a push request.',
+                action: 'Replace the VAPID subject and matched key pair in operator settings.'
+            ), 'invalid'),
+        };
     }
 
     /**

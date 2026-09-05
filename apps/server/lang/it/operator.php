@@ -18,6 +18,7 @@ return [
             'console' => 'Pannello di controllo',
             'onboarding' => 'Checklist di configurazione',
             'mail' => 'Posta',
+            'webpush' => 'Web Push',
             'storage' => 'Archiviazione',
             'scanning' => 'Scansione',
             'backups' => 'Backup',
@@ -57,6 +58,7 @@ return [
             'needs_attention' => 'Richiede attenzione',
             'due_again' => 'Nuova conferma richiesta',
             'no_data' => 'Nessun dato disponibile',
+            'optional' => 'Facoltativo',
         ],
         'commands' => [
             'group' => 'Comandi consigliati',
@@ -233,6 +235,34 @@ return [
                     'summary' => 'Pronta',
                     'detail' => 'Le trasmissioni Reverb sono configurate.',
                     'action' => 'Esegua php artisan reverb:start --host=127.0.0.1 --port=8080 tramite il gestore dei processi e mantenga php artisan reverb:restart nello script di distribuzione affinché i processi persistenti si aggiornino correttamente.',
+                ],
+            ],
+            'web_push' => [
+                'label' => 'Web Push',
+                'ready' => [
+                    'summary' => 'Le credenziali VAPID per Web Push sono pronte.',
+                    'detail' => 'Gli agenti possono abilitare questo browser agli avvisi con la dashboard chiusa dal proprio profilo.',
+                    'action' => 'Mantenga stabile la coppia di chiavi VAPID; la rotazione richiede una nuova iscrizione per ogni browser.',
+                ],
+                'unset' => [
+                    'summary' => 'Web Push non è configurato.',
+                    'detail' => 'Questo canale facoltativo resta disattivato senza errori finché un gestore non fornisce un soggetto VAPID e una coppia di chiavi.',
+                    'action' => 'Apra le impostazioni Web Push se gli agenti devono ricevere avvisi dopo aver chiuso la dashboard.',
+                ],
+                'incomplete' => [
+                    'summary' => 'La configurazione Web Push è incompleta.',
+                    'detail' => 'Il soggetto, la chiave pubblica e la chiave privata VAPID devono essere configurati insieme.',
+                    'action' => 'Completi o cancelli le credenziali Web Push nelle impostazioni del gestore.',
+                ],
+                'unavailable' => [
+                    'summary' => 'Le impostazioni Web Push sono temporaneamente non disponibili.',
+                    'detail' => 'Wayfindr non ha potuto leggere l’archivio delle impostazioni del gestore. Web Push è quindi in pausa senza modificare le iscrizioni.',
+                    'action' => 'Ripristini l’accesso al database e alla cache, quindi verifichi di nuovo. Non ruoti le chiavi VAPID a causa di questa condizione.',
+                ],
+                'invalid' => [
+                    'summary' => 'Le credenziali Web Push non sono valide.',
+                    'detail' => 'Il soggetto VAPID o il materiale delle chiavi configurato non può autenticare una richiesta push.',
+                    'action' => 'Sostituisca il soggetto VAPID e la coppia di chiavi corrispondente nelle impostazioni del gestore.',
                 ],
             ],
             'cobrowse_transport' => [
@@ -849,6 +879,7 @@ return [
             'system' => 'Sistema',
             'labels' => [
                 'mail' => 'Impostazioni della posta aggiornate',
+                'webpush' => 'Impostazioni Web Push aggiornate',
                 'storage' => 'Impostazioni dell’archiviazione aggiornate',
                 'scanning' => 'Impostazioni della scansione aggiornate',
                 'backup' => 'Impostazioni delle copie di sicurezza aggiornate',
@@ -861,6 +892,7 @@ return [
             ],
             'body' => [
                 'mail' => 'Le impostazioni della posta in uscita sono state aggiornate (trasporto: :transport).',
+                'webpush' => 'Le impostazioni Web Push sono state aggiornate (stato: :status).',
                 'storage' => 'L’archiviazione degli allegati è stata aggiornata (disco: :disk).',
                 'scanning' => 'La scansione degli allegati è stata aggiornata (scanner: :scanner).',
                 'backup' => 'Le impostazioni delle copie di sicurezza sono state aggiornate (esterno: :offsite).',
@@ -982,6 +1014,42 @@ return [
             'failed' => 'Invio dell’email di prova tramite :transport non riuscito: :message',
             'may_fall_back' => 'Messaggio di prova inviato tramite la catena :transport. Se il trasporto primario non era disponibile, potrebbe essere stato scritto in un registro locale invece di essere recapitato: confermi che sia arrivato nella casella di posta.',
             'sent' => 'Email di prova inviata a :recipient tramite :transport. Controlli la casella di posta.',
+        ],
+    ],
+
+    'webpush' => [
+        'document_title' => 'Impostazioni Web Push',
+        'title' => 'Web Push',
+        'subtitle' => 'Offra avvisi facoltativi quando un agente chiude la dashboard.',
+        'heading' => 'Credenziali VAPID',
+        'lede' => 'La chiave pubblica viene inviata ai browser autenticati. La chiave privata è cifrata a riposo e non viene mai mostrata di nuovo.',
+        'subject' => 'Soggetto VAPID',
+        'subject_help' => 'Usi un indirizzo mailto: monitorato o un URL HTTPS pubblico. Safari richiede un soggetto valido.',
+        'public_key' => 'Chiave pubblica',
+        'private_key' => 'Chiave privata',
+        'private_placeholder_configured' => 'è configurata una chiave privata',
+        'private_placeholder_unreadable' => 'la chiave privata salvata non può essere decifrata',
+        'private_placeholder_none' => 'nessuna chiave privata configurata',
+        'private_unreadable' => 'La chiave privata salvata non può essere decifrata. Inserisca una nuova coppia o cancelli Web Push.',
+        'private_help' => 'Lasci vuoto per mantenere la chiave privata attuale. Sostituisca insieme le chiavi pubblica e privata.',
+        'clear_keys' => 'Cancella la configurazione VAPID e disattiva le nuove iscrizioni',
+        'generate_help' => 'Generi una coppia stabile con php artisan webpush:vapid, quindi incolli qui soggetto e chiavi. Non ruoti senza motivo una coppia funzionante: i browser esistenti dovrebbero iscriversi di nuovo.',
+        'save' => 'Salva le impostazioni Web Push',
+        'status' => [
+            'ready' => 'Pronto',
+            'unset' => 'Facoltativa — non configurata',
+            'incomplete' => 'Incompleta',
+            'invalid' => 'Non valida',
+            'unavailable' => 'Temporaneamente non disponibile',
+        ],
+        'validation' => [
+            'clear_conflict' => 'Non inserisca una chiave privata durante la cancellazione della coppia attuale.',
+            'pair_required' => 'Sostituisca insieme le chiavi VAPID pubblica e privata.',
+            'invalid_vapid' => 'Inserisca un soggetto HTTPS o mailto: valido e una coppia di chiavi VAPID valida.',
+            'database_connection' => "Prima di modificare le chiavi VAPID, gli abbonamenti Web Push devono usare la stessa connessione al database principale dell'applicazione.",
+        ],
+        'flash' => [
+            'saved' => 'Impostazioni Web Push salvate.',
         ],
     ],
 

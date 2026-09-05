@@ -3507,11 +3507,17 @@
             });
         })();
     </script>
-    @if ($agent && $account)
-        @if ($agentAlertRealtimeConfig = \App\Support\AgentAlertRealtimeConfig::forAgent($agent))
-            <x-agent-alert-stream :config="$agentAlertRealtimeConfig" />
+    @if ($agent)
+        <x-agent-push-logout-cleanup />
+        <x-agent-push-ownership-guard :status-endpoint="route('dashboard.profile.push-subscription.status')" />
+        @if ($account)
+            @if ($agentAlertRealtimeConfig = \App\Support\AgentAlertRealtimeConfig::forAgent($agent))
+                <x-agent-alert-stream :config="$agentAlertRealtimeConfig" />
+            @endif
+            <x-agent-shortcut-script />
         @endif
-        <x-agent-shortcut-script />
+    @else
+        <x-agent-push-guest-cleanup />
     @endif
 </body>
 </html>

@@ -1,11 +1,15 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Minishlink\WebPush\VAPID;
 
 uses(RefreshDatabase::class);
 
@@ -64,6 +68,59 @@ test('agent can view their profile from the application shell', function (): voi
         ->assertSee('ada@example.test')
         ->assertSee('Change password')
         ->assertSee('/dashboard/profile/password', false);
+});
+
+test('every authenticated dashboard page clears a prior agents local push subscription', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->actingAs($agent)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('data-agent-push-logout-cleanup', false)
+        ->assertSee('data-agent-push-ownership-guard', false);
+
+    $source = file_get_contents(resource_path('views/components/agent-push-ownership-guard.blade.php'));
+
+    expect($source)
+        ->toContain("document.querySelector('[data-agent-push-subscription]')")
+        ->not->toContain("document.querySelector('[data-agent-push-preferences]')")
+        ->toContain("payload.status === 'owned'")
+        ->toContain('subscription.unsubscribe()')
+        ->toContain('unsubscribeUnowned(subscription, 2)')
+        ->toContain('unsubscribeUnowned(subscription, attemptsRemaining - 1)')
+        ->toContain('subscriptionStatus(subscription.endpoint, 2)')
+        ->toContain("var pushLifecycleLock = 'wayfindr:push-lifecycle'")
+        ->toContain('navigator.locks.request(')
+        ->toContain('pushLifecycleLock,')
+        ->toContain("{ mode: 'exclusive' }")
+        ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
+        ->toContain('if (! response.ok)')
+        ->toContain('return unsubscribeUnowned(subscription, 2).catch')
+        ->not->toContain('localStorage')
+        ->not->toContain('expiresAt')
+        ->not->toContain('destroyEndpoint')
+        ->not->toContain("method: 'DELETE'");
+
+    $logoutSource = file_get_contents(resource_path('views/components/agent-push-logout-cleanup.blade.php'));
+
+    expect($logoutSource)
+        ->toContain("document.querySelector('form.wf-signout')")
+        ->toContain("navigator.serviceWorker.getRegistration('/wayfindr-sw.js')")
+        ->toContain("endpoint.name = 'push_subscription_endpoint'")
+        ->toContain("var endpoint = form.querySelector('input[name=\"push_subscription_endpoint\"]')")
+        ->toContain('endpoint.value = subscription.endpoint')
+        ->toContain("form.dataset.pushEndpointCapturePending = 'true'")
+        ->toContain("var pushLifecycleLock = 'wayfindr:push-lifecycle'")
+        ->toContain('navigator.locks.request(')
+        ->toContain('pushLifecycleLock,')
+        ->toContain('captureAndRequestLogout')
+        ->toContain('return fetch(form.action, {')
+        ->toContain('body: new FormData(form)')
+        ->toContain('window.location.assign(response.url)')
+        ->toContain('captureEndpoint()')
+        ->toContain('then(requestLogout)')
+        ->not->toContain('Promise.race')
+        ->toContain('HTMLFormElement.prototype.submit.call(form)');
 });
 
 test('agent profile password form includes a hidden username for browser tooling', function (): void {
@@ -136,6 +193,416 @@ test('agent can turn the optional dashboard alert sound off', function (): void 
         'email' => true,
         'sound' => false,
     ]);
+});
+
+test('an agent can save their closed-dashboard alert preference', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'push' => false,
+        ],
+    ]);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => User::ALERT_MODE_ALL,
+        'push' => true,
+    ]);
+});
+
+test('preference saves preserve and can explicitly remove a transitional environment subscription', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'push' => true,
+        ],
+    ]);
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/transitional-profile',
+        'public_key' => 'public-key',
+        'auth_token' => 'auth-token',
+        'content_encoding' => 'aes128gcm',
+    ]);
+    AgentPushSubscription::withoutGlobalScopes()
+        ->whereKey($subscription->id)
+        ->update(['vapid_public_key_hash' => hash('sha256', 'another-environment-generation')]);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'email_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(1);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => $subscription->endpoint,
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeFalse()
+        ->and(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(0);
+});
+
+test('the profile exposes only a ready public VAPID key to the agent browser', function (): void {
+    $keys = VAPID::createVapidKeys();
+    config()->set('webpush.vapid', [
+        'subject' => 'mailto:alerts@example.test',
+        'public_key' => $keys['publicKey'],
+        'private_key' => $keys['privateKey'],
+        'pem_file' => null,
+    ]);
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $response = $this->actingAs($agent)->get('/dashboard/profile');
+
+    $response
+        ->assertOk()
+        ->assertSee('Notify this browser after I close the dashboard')
+        ->assertSee('data-agent-push-subscription', false)
+        ->assertSee($keys['publicKey'])
+        ->assertDontSee($keys['privateKey']);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $checkbox = (new DOMXPath($document))->query('//input[@id="push_alerts"]')->item(0);
+
+    expect($checkbox)->toBeInstanceOf(DOMElement::class)
+        ->and($checkbox->getAttribute('name'))->toBe('push_alerts')
+        ->and($checkbox->hasAttribute('disabled'))->toBeTrue();
+});
+
+test('the profile fails closed when browser subscriptions use another database connection', function (): void {
+    $keys = VAPID::createVapidKeys();
+    config()->set('webpush.vapid', [
+        'subject' => 'mailto:alerts@example.test',
+        'public_key' => $keys['publicKey'],
+        'private_key' => $keys['privateKey'],
+        'pem_file' => null,
+    ]);
+    config()->set('database.connections.webpush-isolated', [
+        ...config('database.connections.sqlite'),
+        'database' => ':memory:',
+    ]);
+    config()->set('webpush.database_connection', 'webpush-isolated');
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee(__('profile.alerts.push_storage_incompatible'))
+        ->assertDontSee('<script data-agent-push-subscription>', false);
+});
+
+test('profile fallback refuses a cross-database endpoint deletion', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/cross-database',
+        'public_key' => 'public-key',
+        'auth_token' => 'auth-token',
+        'content_encoding' => 'aes128gcm',
+    ]);
+    $primaryConnection = config('webpush.database_connection');
+
+    config()->set('database.connections.webpush-isolated', [
+        ...config('database.connections.sqlite'),
+        'database' => ':memory:',
+    ]);
+    config()->set('webpush.database_connection', 'webpush-isolated');
+
+    $this->actingAs($agent)
+        ->from('/dashboard/profile')
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => $subscription->endpoint,
+        ])
+        ->assertRedirect('/dashboard/profile')
+        ->assertSessionHasErrors('push_alerts');
+
+    config()->set('webpush.database_connection', $primaryConnection);
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and(AgentPushSubscription::withoutGlobalScopes()->sole()->endpoint)
+        ->toBe($subscription->endpoint);
+});
+
+test('unrelated preference saves skip incompatible subscription storage', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => false,
+            'push' => false,
+            'sound' => false,
+        ],
+    ]);
+    config()->set('database.connections.webpush-unavailable', [
+        'driver' => 'sqlite',
+        'database' => storage_path('framework/testing/webpush-unavailable/push.sqlite'),
+        'prefix' => '',
+        'foreign_key_constraints' => true,
+    ]);
+    config()->set('webpush.database_connection', 'webpush-unavailable');
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ASSIGNED,
+            'email_alerts' => '1',
+            'sound_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => User::ALERT_MODE_ASSIGNED,
+        'email' => true,
+        'push' => false,
+        'sound' => true,
+    ]);
+});
+
+test('profile cleanup refreshes VAPID settings under the rotation lock', function (): void {
+    $oldKeys = VAPID::createVapidKeys();
+    $newKeys = VAPID::createVapidKeys();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $oldKeys['publicKey'],
+        'webpush.private_key' => $oldKeys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $settings->applyOverrides();
+    $agent = User::factory()->for(Account::factory())->create();
+
+    foreach ([
+        'webpush.public_key' => $newKeys['publicKey'],
+        'webpush.private_key' => $newKeys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/fresh-profile-generation',
+        'public_key' => VAPID::createVapidKeys()['publicKey'],
+        'auth_token' => rtrim(strtr(base64_encode(str_repeat('a', 16)), '+/', '-_'), '='),
+        'content_encoding' => 'aes128gcm',
+    ]);
+    AgentPushSubscription::withoutGlobalScopes()
+        ->whereKey($subscription->id)
+        ->update(['vapid_public_key_hash' => hash('sha256', $newKeys['publicKey'])]);
+
+    expect(config('webpush.vapid.public_key'))->toBe($oldKeys['publicKey']);
+
+    $this->actingAs($agent)
+        ->get('/dashboard/profile')
+        ->assertOk()
+        ->assertSee($newKeys['publicKey'])
+        ->assertDontSee($oldKeys['publicKey']);
+
+    expect(config('webpush.vapid.public_key'))->toBe($newKeys['publicKey'])
+        ->and(AgentPushSubscription::withoutGlobalScopes()->sole()->endpoint)
+        ->toBe('https://push.example.test/subscriptions/fresh-profile-generation');
+
+    $source = file_get_contents(app_path('Http/Controllers/AgentProfileController.php'));
+
+    expect($source)
+        ->toContain("->where('key', 'webpush.public_key')")
+        ->toContain('->sharedLock()')
+        ->toContain('$settings->refreshFromDatabase()')
+        ->and(strpos($source, '$settings->refreshFromDatabase()'))
+        ->toBeLessThan(strpos($source, 'AgentPushSubscription::purgeStaleFor($agent)'));
+});
+
+test('the profile requests push permission directly from the submit gesture', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $submitHandler = Str::after($source, "form.addEventListener('submit'");
+    $enablePush = Str::before(
+        Str::after($source, 'function enablePush(permissionRequest) {'),
+        'function disablePush()',
+    );
+
+    expect($source)
+        ->toContain('function requestPushPermission()')
+        ->and($submitHandler)->toContain('pushPermission = requestPushPermission()')
+        ->and(strpos($submitHandler, 'pushPermission = requestPushPermission()'))
+        ->toBeLessThan(strpos($submitHandler, 'browserStateReady.then'))
+        ->and($enablePush)
+        ->toContain('return permissionRequest.then(function (permission)')
+        ->not->toContain('Notification.requestPermission()');
+});
+
+test('the profile serializes opt in for the full request and rechecks a failed response', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $storeLifecycle = Str::before(
+        Str::after($source, 'function storeEnabledSubscription(subscription) {'),
+        'function requestPushPermission()',
+    );
+
+    expect($storeLifecycle)
+        ->toContain('return navigator.locks.request(')
+        ->toContain("{ mode: 'exclusive' }")
+        ->toContain("navigator.serviceWorker.getRegistration('/wayfindr-sw.js')")
+        ->toContain('current.endpoint !== subscription.endpoint')
+        ->toContain('return subscriptionStatus(current.endpoint, 2)')
+        ->toContain("if (payload.status === 'owned')")
+        ->toContain("if (payload.status === 'foreign')")
+        ->toContain('return storeSubscription(current).then(function (stored)')
+        ->toContain("subscriptionOwnership = 'owned'")
+        ->toContain('return subscriptionStatus(current.endpoint, 2)')
+        ->toContain("if (afterFailure.status === 'owned')")
+        ->toContain("if (afterFailure.status === 'foreign')")
+        ->toContain('throw failure;')
+        ->not->toContain('unsubscribe()')
+        ->not->toContain("request(config.destroyEndpoint, 'DELETE'")
+        ->not->toContain('setInterval')
+        ->not->toContain('localStorage');
+
+    expect($source)
+        ->toContain("var pushLifecycleLock = 'wayfindr:push-lifecycle'")
+        ->toContain("typeof navigator.locks.request !== 'function'")
+        ->toContain('function storeEnabledSubscription(subscription)')
+        ->toContain('return storeEnabledSubscription(subscription);')
+        ->toContain('}).then(storeEnabledSubscription);');
+});
+
+test('the profile surfaces opt out failures until the endpoint is captured', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $submitHandler = Str::after($source, "form.addEventListener('submit'");
+
+    expect($submitHandler)
+        ->toContain(': disablePush().catch(function (failure)')
+        ->toContain("form.querySelector('input[name=\"push_subscription_endpoint\"]')")
+        ->toContain('throw failure;');
+});
+
+test('the profile cleans up an owned browser subscription after a VAPID key rotation', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
+    $cleanup = Str::before(
+        Str::after($source, 'function cleanStaleSubscription(subscription, removeStored, requireLocalRemoval) {'),
+        'function initializeBrowserState()',
+    );
+
+    expect($cleanup)
+        ->toContain('pendingRemoval(subscription.endpoint);')
+        ->toContain("request(config.destroyEndpoint, 'DELETE'")
+        ->toContain('subscription.unsubscribe()')
+        ->toContain('if (! requireLocalRemoval)')
+        ->toContain('if (unsubscribed === false)')
+        ->toContain('throw new Error(config.ownedElsewhereCleanupFailedMessage)');
+
+    expect($source)
+        ->toContain('application_server_key: config.publicKey')
+        ->toContain('failure.status = response.status')
+        ->toContain('if (failure.status === 409)')
+        ->toContain("payload.status === 'foreign'")
+        ->toContain("payload.status === 'missing'")
+        ->toContain("payload.generation === 'transitional'")
+        ->toContain('initialBrowserEnabled = false')
+        ->toContain('showError(config.reenrollMessage)')
+        ->toContain('subscriptionStatus(subscription.endpoint, 2)')
+        ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
+        ->toContain('showError(config.ownershipCheckFailedMessage)')
+        ->toContain('cleanStaleSubscription(subscription, false, true)')
+        ->toContain('config.ownedElsewhereCleanupFailedMessage')
+        ->toContain('! usesCurrentApplicationServerKey(subscription)')
+        ->toContain("cleanStaleSubscription(subscription, payload.status === 'owned')");
+});
+
+test("browser-specific push opt-out keeps the agent's other subscribed browsers active", function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'push' => true,
+        ],
+    ]);
+
+    foreach (['one', 'two'] as $suffix) {
+        $agent->pushSubscriptions()->create([
+            'endpoint' => "https://push.example.test/subscriptions/{$suffix}",
+            'public_key' => 'public-key',
+            'auth_token' => 'auth-token',
+            'content_encoding' => 'aes128gcm',
+        ]);
+    }
+
+    // Saving unrelated alert preferences from a browser with no subscription
+    // must not turn off delivery to the two browsers that are subscribed.
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'email_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and($agent->pushSubscriptions()->count())->toBe(2);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => 'https://push.example.test/subscriptions/one',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and($agent->pushSubscriptions()->pluck('endpoint')->all())
+        ->toBe(['https://push.example.test/subscriptions/two']);
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'push_subscription_endpoint' => 'https://push.example.test/subscriptions/two',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alertPushEnabled())->toBeFalse()
+        ->and($agent->pushSubscriptions()->count())->toBe(0);
+});
+
+test('the profile preserves push preference while VAPID configuration is unavailable', function (): void {
+    config()->set('webpush.vapid', [
+        'subject' => null,
+        'public_key' => null,
+        'private_key' => null,
+        'pem_file' => null,
+    ]);
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+
+    $response = $this->actingAs($agent)->get('/dashboard/profile');
+
+    $response
+        ->assertOk()
+        ->assertSee('A platform operator must configure Web Push before browsers can subscribe.')
+        ->assertSee('name="push_alerts" value="1"', false)
+        ->assertSee('data-agent-push-ownership-guard', false);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.(string) $response->getContent());
+    $xpath = new DOMXPath($document);
+    $checkbox = $xpath->query('//input[@id="push_alerts"]')->item(0);
+
+    expect($checkbox)->toBeInstanceOf(DOMElement::class)
+        ->and($checkbox->hasAttribute('name'))->toBeFalse()
+        ->and($checkbox->hasAttribute('disabled'))->toBeTrue()
+        ->and($xpath->query('//script[@data-agent-push-subscription]')->length)->toBe(0)
+        ->and($xpath->query('//script[@data-agent-push-ownership-guard]')->length)->toBe(1);
 });
 
 test('alert preference changes lock the account before the agent', function (): void {

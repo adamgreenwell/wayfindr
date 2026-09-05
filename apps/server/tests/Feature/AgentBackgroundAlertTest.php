@@ -1,9 +1,13 @@
 <?php
 
 use App\Models\Account;
+use App\Models\Site;
+use App\Models\Ticket;
 use App\Models\User;
+use App\Notifications\TicketAssigned;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -27,6 +31,7 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee('data-agent-alert-stream', false)
         ->assertSee(sprintf('private-accounts.%d.agents.%d.alerts', $account->id, $agent->id), false)
         ->assertSee('presence-agents.'.$agent->id, false)
+        ->assertSee('dashboard\/alerts\/realtime-receipt', false)
         ->assertSee('agent.alert.stored', false)
         ->assertSee('wayfindr:agent-alert-stored', false)
         ->assertSee('reconcileAlerts(message.target)', false)
@@ -46,6 +51,104 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee("favicon.setAttribute('data-agent-alert-state', 'attention')", false)
         ->assertSee('audioContext.createOscillator()', false)
         ->assertSee('"soundEnabled":true', false);
+});
+
+test('the alert stream acknowledges exact live deliveries instead of trusting presence', function (): void {
+    $source = file_get_contents(resource_path('views/components/agent-alert-stream.blade.php'));
+
+    expect($source)
+        ->toContain('fetch(config.realtimeReceiptEndpoint')
+        ->toContain("document.visibilityState === 'visible'")
+        ->toContain('keepalive: true')
+        ->toContain('alert_id: alert.id')
+        ->toContain('version: alert.version')
+        ->toContain("document.addEventListener('visibilitychange', foregroundStateChanged)")
+        ->not->toContain('visibleChannelName')
+        ->not->toContain('presence-visible-agents');
+});
+
+test('an agent can acknowledge only the current version of their own realtime alert', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $other = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+    $version = (string) Str::uuid();
+    $alert = $agent->notifications()->create([
+        'id' => (string) Str::uuid(),
+        'type' => TicketAssigned::class,
+        'data' => ['kind' => 'ticket_assigned', 'ticket_id' => $ticket->id],
+        'agent_alert_version' => $version,
+        'read_at' => null,
+    ]);
+
+    $this->actingAs($other)
+        ->postJson(route('dashboard.alerts.realtime-receipt'), [
+            'alert_id' => $alert->id,
+            'version' => $version,
+        ])
+        ->assertNoContent();
+    expect($alert->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBeNull();
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.alerts.realtime-receipt'), [
+            'alert_id' => $alert->id,
+            'version' => (string) Str::uuid(),
+        ])
+        ->assertNoContent();
+    expect($alert->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBeNull();
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.alerts.realtime-receipt'), [
+            'alert_id' => $alert->id,
+            'version' => $version,
+        ])
+        ->assertNoContent();
+    expect($alert->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBe($version);
+});
+
+test('duplicate tab receipts cannot exhaust the quota for a later alert', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $ticket = Ticket::factory()->for($account)->for($site)->create();
+    $firstVersion = (string) Str::uuid();
+    $secondVersion = (string) Str::uuid();
+    $makeAlert = fn (string $version) => $agent->notifications()->create([
+        'id' => (string) Str::uuid(),
+        'type' => TicketAssigned::class,
+        'data' => ['kind' => 'ticket_assigned', 'ticket_id' => $ticket->id],
+        'agent_alert_version' => $version,
+        'read_at' => null,
+    ]);
+    $first = $makeAlert($firstVersion);
+    $second = $makeAlert($secondVersion);
+
+    foreach (range(1, 120) as $duplicateTabReceipt) {
+        $this->actingAs($agent)
+            ->postJson(route('dashboard.alerts.realtime-receipt'), [
+                'alert_id' => $first->id,
+                'version' => $firstVersion,
+            ])
+            ->assertNoContent();
+    }
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.alerts.realtime-receipt'), [
+            'alert_id' => $first->id,
+            'version' => $firstVersion,
+        ])
+        ->assertStatus(429);
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.alerts.realtime-receipt'), [
+            'alert_id' => $second->id,
+            'version' => $secondVersion,
+        ])
+        ->assertNoContent();
+
+    expect($first->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBe($firstVersion)
+        ->and($second->fresh()->getAttribute('agent_alert_realtime_received_version'))->toBe($secondVersion);
 });
 
 test('visitor index connects the authenticated agent alert stream', function (): void {

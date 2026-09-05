@@ -47,6 +47,7 @@ test('notifications are indexed for recipient alert reconciliation', function ()
             'agent_alert_broadcast_claim_version',
             'agent_alert_broadcast_pending_version',
             'agent_alert_fingerprint',
+            'agent_alert_realtime_received_version',
         ]))->toBeTrue();
 });
 
@@ -73,6 +74,7 @@ test('agent alert realtime config uses the existing browser transport and recipi
             'identityChannelName' => 'presence-agents.'.$agent->id,
             'knownAlerts' => [],
             'port' => '443',
+            'realtimeReceiptEndpoint' => 'http://localhost:8000/dashboard/alerts/realtime-receipt',
             'reconcileEndpoint' => 'http://localhost:8000/dashboard/alerts/reconcile',
             'reconcileOverlapSeconds' => 30,
             'reconcileSince' => '2026-09-05T11:59:35.000000Z',

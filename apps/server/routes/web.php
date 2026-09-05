@@ -15,6 +15,7 @@ use App\Http\Controllers\AgentAccountOutboundWebhookController;
 use App\Http\Controllers\AgentAccountSecurityController;
 use App\Http\Controllers\AgentAccountSlaPolicyController;
 use App\Http\Controllers\AgentAlertController;
+use App\Http\Controllers\AgentAlertRealtimeReceiptController;
 use App\Http\Controllers\AgentAlertReconciliationController;
 use App\Http\Controllers\AgentArticleController;
 use App\Http\Controllers\AgentAutomationMacroController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
 use App\Http\Controllers\AgentProfileTwoFactorController;
+use App\Http\Controllers\AgentPushSubscriptionController;
 use App\Http\Controllers\AgentReplyTemplateController;
 use App\Http\Controllers\AgentReportController;
 use App\Http\Controllers\AgentSiteController;
@@ -56,6 +58,7 @@ use App\Http\Controllers\OperatorOnboardingController;
 use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\OperatorScanningSettingsController;
 use App\Http\Controllers\OperatorStorageSettingsController;
+use App\Http\Controllers\OperatorWebPushSettingsController;
 use App\Http\Controllers\Widget\WidgetScriptController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
@@ -105,12 +108,26 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::get('/dashboard/alerts/reconcile', AgentAlertReconciliationController::class)
         ->middleware('throttle:agent-alert-reconcile')
         ->name('dashboard.alerts.reconcile');
+    Route::post('/dashboard/alerts/realtime-receipt', AgentAlertRealtimeReceiptController::class)
+        ->middleware('throttle:agent-alert-realtime-receipt')
+        ->name('dashboard.alerts.realtime-receipt');
     Route::get('/dashboard/profile', [AgentProfileController::class, 'show'])
         ->name('dashboard.profile.show');
     Route::put('/dashboard/profile', [AgentProfileController::class, 'update'])
         ->name('dashboard.profile.update');
     Route::put('/dashboard/profile/alerts', [AgentProfileController::class, 'updateAlertPreferences'])
         ->name('dashboard.profile.alerts.update');
+    Route::post('/dashboard/profile/push-subscription', [AgentPushSubscriptionController::class, 'store'])
+        ->middleware('throttle:30,1')
+        ->name('dashboard.profile.push-subscription.store');
+    // This authenticated, indexed lookup is a privacy guard on every page.
+    // A navigation quota could make a valid subscription look unverifiable
+    // and force the browser to remove it, so only mutations are throttled.
+    Route::post('/dashboard/profile/push-subscription/status', [AgentPushSubscriptionController::class, 'status'])
+        ->name('dashboard.profile.push-subscription.status');
+    Route::delete('/dashboard/profile/push-subscription', [AgentPushSubscriptionController::class, 'destroy'])
+        ->middleware('throttle:30,1')
+        ->name('dashboard.profile.push-subscription.destroy');
     Route::put('/dashboard/profile/routing-status', [AgentProfileController::class, 'updateRoutingStatus'])
         ->name('dashboard.profile.routing-status.update');
     Route::put('/dashboard/profile/password', [AgentProfileController::class, 'updatePassword'])
@@ -441,6 +458,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
             ->name('settings.mail.update');
         Route::post('/settings/mail/test', [OperatorMailSettingsController::class, 'test'])
             ->name('settings.mail.test');
+        Route::get('/settings/web-push', [OperatorWebPushSettingsController::class, 'edit'])
+            ->name('settings.webpush.edit');
+        Route::post('/settings/web-push', [OperatorWebPushSettingsController::class, 'update'])
+            ->name('settings.webpush.update');
         Route::get('/settings/storage', [OperatorStorageSettingsController::class, 'edit'])
             ->name('settings.storage.edit');
         Route::post('/settings/storage', [OperatorStorageSettingsController::class, 'update'])

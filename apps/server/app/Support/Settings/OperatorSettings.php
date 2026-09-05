@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use Throwable;
@@ -107,6 +108,13 @@ class OperatorSettings
         // formatting them.
         'localization.language' => ['config' => 'wayfindr.dashboard_locale', 'secret' => false, 'group' => 'localization'],
         'localization.timezone' => ['config' => 'wayfindr.dashboard_timezone', 'secret' => false, 'group' => 'localization'],
+
+        // Web Push (#759). Keys can come from the environment or be replaced
+        // live by a platform operator. The public key is sent to authenticated
+        // agent browsers; the private key remains encrypted and write-only.
+        'webpush.subject' => ['config' => 'webpush.vapid.subject', 'secret' => false, 'group' => 'webpush'],
+        'webpush.public_key' => ['config' => 'webpush.vapid.public_key', 'secret' => false, 'group' => 'webpush'],
+        'webpush.private_key' => ['config' => 'webpush.vapid.private_key', 'secret' => true, 'group' => 'webpush'],
     ];
 
     /**
@@ -134,6 +142,12 @@ class OperatorSettings
      * @var array<string, mixed>|null
      */
     private ?array $baseline = null;
+
+    /**
+     * Whether the effective config may be trusted for destructive work. Direct
+     * config is authoritative until an attempted operator-store read fails.
+     */
+    private bool $lastReadWasAuthoritative = true;
 
     /**
      * Apply the stored settings onto config for every managed key. Called at
@@ -171,8 +185,11 @@ class OperatorSettings
     {
         try {
             $stored = $this->storedValues();
+            $this->lastReadWasAuthoritative = true;
         } catch (Throwable) {
             // Store unreachable (DB/cache down, table not migrated): env baseline.
+            $this->lastReadWasAuthoritative = false;
+
             return $this->baseline;
         }
 
@@ -216,13 +233,25 @@ class OperatorSettings
         try {
             $stored = OperatorSetting::query()->pluck('value', 'key')->all();
             $targets = $this->resolveTargetsFrom($stored);
+            $this->lastReadWasAuthoritative = true;
         } catch (Throwable) {
             $targets = $this->baseline;
+            $this->lastReadWasAuthoritative = false;
         }
 
         foreach ($targets as $configPath => $value) {
             config()->set($configPath, $value);
         }
+    }
+
+    /**
+     * Whether destructive consumers may trust the currently applied values.
+     * A fail-safe env fallback keeps the app usable, but must not be mistaken
+     * for an authoritative operator-managed value during cleanup or rotation.
+     */
+    public function valuesAreAuthoritative(): bool
+    {
+        return $this->lastReadWasAuthoritative;
     }
 
     /**
@@ -515,6 +544,11 @@ class OperatorSettings
     private function refreshManagers(): void
     {
         Mail::forgetMailers();
+
+        // The notification manager also caches channel instances. Web Push
+        // channels capture VAPID credentials when they are built, so discard
+        // the old sender before a long-running worker handles its next job.
+        Notification::getFacadeRoot()?->forgetDrivers();
 
         // Storage caches each built disk with its config (endpoint, credentials).
         // Forget the attachment AND backup disks so a changed disk choice or S3

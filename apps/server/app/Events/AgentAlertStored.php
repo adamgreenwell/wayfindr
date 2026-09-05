@@ -19,10 +19,17 @@ final class AgentAlertStored implements ShouldBroadcastNow
 {
     use Dispatchable, SerializesModels;
 
+    public string $version;
+
     public function __construct(
         public User $recipient,
         public DatabaseNotification $alert,
-    ) {}
+    ) {
+        // Queued listeners rehydrate models at execution time. Preserve the
+        // version that was actually claimed for this event so a later alert
+        // refresh cannot turn an old queued push into the new payload.
+        $this->version = AgentAlertPayload::version($alert);
+    }
 
     /** @return array<int, PrivateChannel> */
     public function broadcastOn(): array

@@ -4,12 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
+use App\Models\OperatorSetting;
 use App\Models\User;
+use App\Support\AgentWebPushConfig;
 use App\Support\Auth\TwoFactorAuthentication;
 use App\Support\DashboardLanguage;
 use App\Support\DashboardTimezone;
 use App\Support\OperatorReadiness;
+use App\Support\Settings\OperatorSettings;
 use App\Support\UnattendedConversationAlertCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -21,15 +25,49 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
+use Illuminate\Validation\ValidationException;
 
 class AgentProfileController extends Controller
 {
-    public function show(Request $request, OperatorReadiness $readiness, TwoFactorAuthentication $twoFactor): Response
-    {
+    public function show(
+        Request $request,
+        OperatorReadiness $readiness,
+        TwoFactorAuthentication $twoFactor,
+        AgentWebPushConfig $webPush,
+        OperatorSettings $settings,
+    ): Response {
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
+        $pushStorageCompatible = AgentPushSubscription::usesPrimaryDatabaseConnection();
+
+        if ($pushStorageCompatible) {
+            DB::transaction(function () use ($agent, $settings): void {
+                // Profile cleanup is destructive, so coordinate with VAPID
+                // rotation and browser enrollment before deciding which
+                // subscription generation is stale.
+                OperatorSetting::query()->insertOrIgnore([
+                    'key' => 'webpush.public_key',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+                OperatorSetting::query()
+                    ->where('key', 'webpush.public_key')
+                    ->sharedLock()
+                    ->firstOrFail();
+                $settings->refreshFromDatabase();
+                AgentPushSubscription::purgeStaleFor($agent);
+            });
+        }
         $agent->loadMissing('customRole');
+
+        if ($pushStorageCompatible) {
+            $agent->loadCount('pushSubscriptions');
+        } else {
+            // Do not touch an incompatible or unavailable secondary schema
+            // merely to render the fail-closed profile state.
+            $agent->setAttribute('push_subscriptions_count', 0);
+        }
 
         $account = $agent->account()->firstOrFail();
         $mailReadiness = collect($readiness->summary()['checks'])
@@ -51,7 +89,10 @@ class AgentProfileController extends Controller
             'alertCadenceOptions' => $agent::alertCadenceOptions(),
             'digestDeliveryStatus' => $agent->alertDigestDeliveryStatus(),
             'mailReadiness' => $mailReadiness,
-            'alertReadiness' => $this->alertReadiness($agent, $mailReadiness),
+            'alertReadiness' => $this->alertReadiness($agent, $mailReadiness, $webPush->assessment()),
+            'pushAvailable' => $webPush->isReady() && $pushStorageCompatible,
+            'pushPublicKey' => $webPush->publicKeyForBrowser(),
+            'pushStorageCompatible' => $pushStorageCompatible,
             'twoFactorPendingSecret' => $pendingSecret,
             'twoFactorQrCode' => $pendingSecret ? $twoFactor->qrCodeDataUri($agent, $pendingSecret) : null,
             'twoFactorRecoveryCodes' => $this->pullRecoveryCodes($request),
@@ -133,26 +174,57 @@ class AgentProfileController extends Controller
         $validated = $request->validate([
             'alert_mode' => ['required', Rule::in(array_keys($request->user()::alertModeOptions()))],
             'alert_cadence' => ['sometimes', Rule::in(array_keys($request->user()::alertCadenceOptions()))],
+            'push_subscription_endpoint' => ['nullable', 'string', 'max:1024', 'url', 'starts_with:https://'],
         ]);
 
         $accountId = (int) $request->user()->account_id;
         $userId = (int) $request->user()->id;
         $email = $request->boolean('email_alerts');
         $sound = $request->boolean('sound_alerts');
+        $pushRequested = $request->boolean('push_alerts');
+        $removedEndpoint = trim((string) ($validated['push_subscription_endpoint'] ?? ''));
+        $pushStorageCompatible = AgentPushSubscription::usesPrimaryDatabaseConnection();
 
-        DB::transaction(function () use ($accountId, $email, $sound, $userId, $validated): void {
+        if ($removedEndpoint !== '' && ! $pushStorageCompatible) {
+            throw ValidationException::withMessages([
+                'push_alerts' => __('profile.alerts.push_storage_incompatible'),
+            ]);
+        }
+
+        DB::transaction(function () use ($accountId, $email, $pushRequested, $pushStorageCompatible, $removedEndpoint, $sound, $userId, $validated): void {
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()
                 ->whereKey($userId)
                 ->where('account_id', $accountId)
                 ->lockForUpdate()
                 ->firstOrFail();
+            $ownedSubscriptions = fn () => AgentPushSubscription::withoutGlobalScope(
+                AgentPushSubscription::CURRENT_VAPID_SCOPE,
+            )
+                ->where('subscribable_type', $agent->getMorphClass())
+                ->where('subscribable_id', $agent->getKey());
+
+            if ($removedEndpoint !== '') {
+                $ownedSubscriptions()->where('endpoint', $removedEndpoint)->delete();
+            }
+
+            // The UI control represents this browser, while `push` remains the
+            // per-agent channel preference required by the alert pipeline. One
+            // browser opting out must not silence the agent's other subscribed
+            // browsers; the channel turns off only after the last one leaves.
+            // An environment-key generation can be transitional during a
+            // rolling deploy. Preserve the agent-level channel preference on
+            // unrelated saves while any owned browser generation remains.
+            $push = $pushStorageCompatible
+                ? $pushRequested || $ownedSubscriptions()->exists()
+                : $agent->alertPushEnabled();
             $alertPreferences = $agent->alert_preferences ?? [];
 
             $agent->forceFill([
                 'alert_preferences' => array_merge($alertPreferences, [
                     'mode' => $validated['alert_mode'],
                     'email' => $email,
+                    'push' => $push,
                     'sound' => $sound,
                     'cadence' => $validated['alert_cadence'] ?? $agent->alertCadence(),
                 ]),
@@ -247,9 +319,10 @@ class AgentProfileController extends Controller
 
     /**
      * @param  array{status: string, summary: string, action: string}|null  $mailReadiness
+     * @param  array{status: string}  $pushAssessment
      * @return array<int, array{label: string, status: string, tone: string, detail: string}>
      */
-    private function alertReadiness(User $agent, ?array $mailReadiness): array
+    private function alertReadiness(User $agent, ?array $mailReadiness, array $pushAssessment): array
     {
         $alertCadence = $agent->alertCadence();
         $emailEnabled = $agent->alertEmailEnabled();
@@ -259,7 +332,62 @@ class AgentProfileController extends Controller
             $this->dashboardAlertReadiness($agent),
             $this->alertScopeReadiness($agent),
             $this->emailAlertReadiness($agent, $mailReadiness),
+            $this->pushAlertReadiness($agent, $pushAssessment),
             $this->alertCadenceReadiness($alertCadence, $emailEnabled, $digestDeliveryStatus),
+        ];
+    }
+
+    /**
+     * @param  array{status: string}  $assessment
+     * @return array{label: string, status: string, tone: string, detail: string}
+     */
+    private function pushAlertReadiness(User $agent, array $assessment): array
+    {
+        if (! $agent->alertPushEnabled()) {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_off'),
+                'tone' => 'manual',
+                'detail' => __('profile.readiness_cards.push_off_detail'),
+            ];
+        }
+
+        if ($agent->alertMode() === User::ALERT_MODE_QUIET) {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_paused'),
+                'tone' => 'manual',
+                'detail' => __('profile.readiness_cards.push_paused_detail'),
+            ];
+        }
+
+        if (($assessment['status'] ?? null) !== 'ready') {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_setup'),
+                'tone' => 'attention',
+                'detail' => __('profile.readiness_cards.push_setup_detail'),
+            ];
+        }
+
+        if ((int) $agent->push_subscriptions_count === 0) {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_browser'),
+                'tone' => 'manual',
+                'detail' => __('profile.readiness_cards.push_browser_detail'),
+            ];
+        }
+
+        return [
+            'label' => __('profile.readiness_cards.push_label'),
+            'status' => __('profile.readiness_cards.push_ready'),
+            'tone' => 'ready',
+            'detail' => trans_choice(
+                'profile.readiness_cards.push_ready_detail',
+                (int) $agent->push_subscriptions_count,
+                ['count' => (int) $agent->push_subscriptions_count],
+            ),
         ];
     }
 

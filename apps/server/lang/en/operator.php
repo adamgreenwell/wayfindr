@@ -11,6 +11,7 @@ return [
             'console' => 'Console',
             'onboarding' => 'Setup checklist',
             'mail' => 'Mail',
+            'webpush' => 'Web Push',
             'storage' => 'Storage',
             'scanning' => 'Scanning',
             'backups' => 'Backups',
@@ -50,6 +51,7 @@ return [
             'needs_attention' => 'Needs attention',
             'due_again' => 'Due again',
             'no_data' => 'No data yet',
+            'optional' => 'Optional',
         ],
         'commands' => [
             'group' => 'Recommended commands',
@@ -226,6 +228,34 @@ return [
                     'summary' => 'Ready',
                     'detail' => 'Reverb broadcasts are configured.',
                     'action' => 'Run php artisan reverb:start --host=127.0.0.1 --port=8080 under your process manager, and keep php artisan reverb:restart in the deploy script so long-running workers refresh cleanly.',
+                ],
+            ],
+            'web_push' => [
+                'label' => 'Web Push',
+                'ready' => [
+                    'summary' => 'Web Push VAPID credentials are ready.',
+                    'detail' => 'Agents can opt this browser into closed-dashboard alerts from their profile.',
+                    'action' => 'Keep the VAPID key pair stable; rotating it requires every browser to subscribe again.',
+                ],
+                'unset' => [
+                    'summary' => 'Web Push is not configured.',
+                    'detail' => 'This optional channel stays off quietly until an operator supplies a VAPID subject and key pair.',
+                    'action' => 'Open Web Push settings if agents should receive alerts after closing the dashboard.',
+                ],
+                'incomplete' => [
+                    'summary' => 'Web Push configuration is incomplete.',
+                    'detail' => 'A VAPID subject, public key, and private key must be configured together.',
+                    'action' => 'Complete or clear the Web Push credentials in operator settings.',
+                ],
+                'unavailable' => [
+                    'summary' => 'Web Push settings are temporarily unavailable.',
+                    'detail' => 'Wayfindr could not read the operator settings store, so Web Push is paused without changing subscriptions.',
+                    'action' => 'Restore database and cache access, then recheck. Do not rotate VAPID keys for this condition.',
+                ],
+                'invalid' => [
+                    'summary' => 'Web Push credentials are invalid.',
+                    'detail' => 'The configured VAPID subject or key material cannot authenticate a push request.',
+                    'action' => 'Replace the VAPID subject and matched key pair in operator settings.',
                 ],
             ],
             'cobrowse_transport' => [
@@ -842,6 +872,7 @@ return [
             'system' => 'System',
             'labels' => [
                 'mail' => 'Mail settings updated',
+                'webpush' => 'Web Push settings updated',
                 'storage' => 'Storage settings updated',
                 'scanning' => 'Scanning settings updated',
                 'backup' => 'Backup settings updated',
@@ -854,6 +885,7 @@ return [
             ],
             'body' => [
                 'mail' => 'Outbound mail settings were updated (transport: :transport).',
+                'webpush' => 'Web Push settings were updated (status: :status).',
                 'storage' => 'Attachment storage was updated (disk: :disk).',
                 'scanning' => 'Attachment scanning was updated (scanner: :scanner).',
                 'backup' => 'Backup settings were updated (offsite: :offsite).',
@@ -975,6 +1007,42 @@ return [
             'failed' => 'Test email failed via :transport: :message',
             'may_fall_back' => 'Test message sent via the :transport chain. If the primary transport was unavailable, it may have fallen back to a local log instead of delivering — confirm it actually arrived in the inbox.',
             'sent' => 'Test email sent to :recipient via :transport. Check the inbox.',
+        ],
+    ],
+
+    'webpush' => [
+        'document_title' => 'Web Push settings',
+        'title' => 'Web Push',
+        'subtitle' => 'Offer opt-in alerts when an agent closes the dashboard.',
+        'heading' => 'VAPID credentials',
+        'lede' => 'The public key goes to authenticated browsers. The private key is encrypted at rest and never shown again.',
+        'subject' => 'VAPID subject',
+        'subject_help' => 'Use a monitored mailto: address or a public HTTPS URL. Safari requires a valid subject.',
+        'public_key' => 'Public key',
+        'private_key' => 'Private key',
+        'private_placeholder_configured' => 'a private key is configured',
+        'private_placeholder_unreadable' => 'saved private key cannot be decrypted',
+        'private_placeholder_none' => 'no private key configured',
+        'private_unreadable' => 'The saved private key cannot be decrypted. Enter a replacement pair or clear Web Push.',
+        'private_help' => 'Leave this blank to keep the current private key. Replace public and private keys together.',
+        'clear_keys' => 'Clear the VAPID configuration and disable new subscriptions',
+        'generate_help' => 'Generate a stable pair with php artisan webpush:vapid, then paste the resulting subject and keys here. Do not rotate a working pair casually; existing browsers would need to subscribe again.',
+        'save' => 'Save Web Push settings',
+        'status' => [
+            'ready' => 'Ready',
+            'unset' => 'Optional — not configured',
+            'incomplete' => 'Incomplete',
+            'invalid' => 'Invalid',
+            'unavailable' => 'Temporarily unavailable',
+        ],
+        'validation' => [
+            'clear_conflict' => 'Do not enter a private key while clearing the current pair.',
+            'pair_required' => 'Replace the public and private VAPID keys together.',
+            'invalid_vapid' => 'Enter a valid HTTPS or mailto: subject and a valid VAPID key pair.',
+            'database_connection' => "Web Push subscriptions must use the application's primary database connection before VAPID keys can be changed.",
+        ],
+        'flash' => [
+            'saved' => 'Web Push settings saved.',
         ],
     ],
 
