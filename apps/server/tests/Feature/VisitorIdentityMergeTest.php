@@ -15,13 +15,16 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorIdentityAlias;
 use App\Models\VisitorNote;
+use App\Support\VisitorConversationResolver;
 use App\Support\Visitors\VisitorIdentityMerger;
 use App\Support\Visitors\VisitorIdentityResolver;
 use App\Support\VisitorSessionToken;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
 
@@ -302,6 +305,97 @@ test('a conversation that loses the merge race follows the alias instead of recr
     expect(Visitor::query()->pluck('id')->all())->toBe([$target->id])
         ->and(Conversation::query()->sole()->visitor_id)->toBe($target->id)
         ->and(VisitorIdentityAlias::query()->sole()->visitor_id)->toBe($target->id);
+});
+
+test('a message that loses the merge race uses the canonical sender and pending upload', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-message']);
+    $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-message-canonical']);
+    $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE1']);
+    $attachment = ConversationMessageAttachment::factory()->pendingFor($conversation, $source)->create();
+    $token = app(VisitorSessionToken::class)->issue($site, $source);
+
+    $this->app->extend(VisitorConversationResolver::class, fn ($resolver) => new class($resolver, app(VisitorIdentityMerger::class), $manager, $source, $target) extends VisitorConversationResolver
+    {
+        public function __construct(
+            private $inner,
+            private VisitorIdentityMerger $merger,
+            private User $manager,
+            private Visitor $source,
+            private Visitor $target,
+        ) {}
+
+        public function resolve(Request $request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
+        {
+            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
+            $this->merger->merge($this->manager, $this->source, (int) $this->target->id);
+
+            return $conversation;
+        }
+    });
+
+    $this->postJson('/api/conversations/WF-MERGERACE1/messages', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-racing-message',
+        'visitor_token' => $token,
+        'body' => 'Follow the merge.',
+        'attachment_ids' => [$attachment->id],
+    ])->assertCreated();
+
+    $message = ConversationMessage::query()->sole();
+
+    expect(Visitor::query()->pluck('id')->all())->toBe([$target->id])
+        ->and($conversation->fresh()?->visitor_id)->toBe($target->id)
+        ->and($message->sender_id)->toBe($target->id)
+        ->and($attachment->fresh()?->uploaded_by_id)->toBe($target->id)
+        ->and($attachment->fresh()?->conversation_message_id)->toBe($message->id);
+});
+
+test('an upload that loses the merge race belongs to the canonical visitor', function (): void {
+    Storage::fake('attachments');
+
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-upload']);
+    $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-upload-canonical']);
+    $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE2']);
+    $token = app(VisitorSessionToken::class)->issue($site, $source);
+
+    $this->app->extend(VisitorConversationResolver::class, fn ($resolver) => new class($resolver, app(VisitorIdentityMerger::class), $manager, $source, $target) extends VisitorConversationResolver
+    {
+        public function __construct(
+            private $inner,
+            private VisitorIdentityMerger $merger,
+            private User $manager,
+            private Visitor $source,
+            private Visitor $target,
+        ) {}
+
+        public function resolve(Request $request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
+        {
+            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
+            $this->merger->merge($this->manager, $this->source, (int) $this->target->id);
+
+            return $conversation;
+        }
+    });
+
+    $this->post('/api/conversations/WF-MERGERACE2/attachments', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-racing-upload',
+        'visitor_token' => $token,
+        'file' => UploadedFile::fake()->image('merge-race.png'),
+    ], ['Accept' => 'application/json'])->assertCreated();
+
+    $attachment = ConversationMessageAttachment::query()->sole();
+
+    expect(Visitor::query()->pluck('id')->all())->toBe([$target->id])
+        ->and($conversation->fresh()?->visitor_id)->toBe($target->id)
+        ->and($attachment->uploaded_by_id)->toBe($target->id);
+    Storage::disk('attachments')->assertExists($attachment->storage_key);
 });
 
 test('merge permission site and identity conflicts fail closed', function (): void {

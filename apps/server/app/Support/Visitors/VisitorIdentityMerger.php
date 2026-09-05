@@ -34,9 +34,10 @@ final class VisitorIdentityMerger
 
             abort_unless($actor->hasAccountPermission(AccountPermission::ManageContacts), 403);
 
-            // Public widget writers take a shared site lock before resolving an
-            // alias or visitor. The exclusive partner here makes the merge and
-            // those writes observe one complete identity state or the other.
+            // Public widget paths that create visitor-owned rows take a shared
+            // site lock before their final alias/visitor resolution. The
+            // exclusive partner here makes the merge and those writes observe
+            // one complete identity state or the other.
             $site = Site::query()
                 ->whereKey($source->site_id)
                 ->where('account_id', $accountId)

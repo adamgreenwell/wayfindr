@@ -81,11 +81,13 @@ and moved-row counts.
 The deleted contact's anonymous browser ID and any earlier merged IDs become
 private aliases of the chosen contact. Widget presence, bootstrap, conversation
 intake, signed sessions, and authorized support search all resolve those
-aliases. Alias token lineage is retained across later merges, but cascades when
-the chosen visitor or site is deleted. Each alias keeps at most the 50 most
-recent prior visitor IDs; an older tab beyond that unusual chain must bootstrap
-again. An old token cannot authenticate a new visitor that later reuses the
-browser ID.
+aliases. Conversation creation, visitor messages, and pending uploads resolve
+again after taking the shared site lock, so a request that began just before a
+merge cannot recreate the duplicate or write an orphaned sender. Alias token
+lineage is retained across later merges, but cascades when the chosen visitor or
+site is deleted. Each alias keeps at most the 50 most recent prior visitor IDs;
+an older tab beyond that unusual chain must bootstrap again. An old token cannot
+authenticate a new visitor that later reuses the browser ID.
 
 ## Deliberately not in this slice
 

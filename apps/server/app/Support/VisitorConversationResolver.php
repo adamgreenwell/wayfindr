@@ -38,10 +38,12 @@ class VisitorConversationResolver
 
         abort_unless($conversation, 404, 'Conversation not found.');
 
-        // The site is already loaded and known-good; hand it to the caller so
-        // downstream scoping (e.g. attachment account/site checks) does not
-        // re-query it.
+        // Both principals were already loaded and proved together. Hand them
+        // to the caller so downstream validation/scanning does not re-query a
+        // visitor row that an identity merge may remove before the locked
+        // write boundary re-authorizes the current canonical identity.
         $conversation->setRelation('site', $site);
+        $conversation->setRelation('visitor', $visitor);
 
         return $conversation;
     }

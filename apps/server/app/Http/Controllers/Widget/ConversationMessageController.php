@@ -9,15 +9,14 @@ use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
-use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Conversations\ConversationLifecycleLog;
-use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
+use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -98,7 +97,7 @@ class ConversationMessageController extends Controller
         string $supportCode,
         VisitorConversationResolver $conversations,
         AttachmentBinder $binder,
-        SiteManagerCoverage $siteManagerCoverage,
+        VisitorConversationWriteAuthorization $conversationWrites,
     ): JsonResponse {
         // Identity first: everything after this answers the visitor, and the
         // language they are owed comes from the site.
@@ -123,8 +122,6 @@ class ConversationMessageController extends Controller
             'attachment_ids' => ['nullable', 'array'],
             'attachment_ids.*' => ['integer', 'min:1'],
         ]);
-        $this->recordVisitorPresence($conversation);
-
         $body = trim((string) ($validated['body'] ?? ''));
         $attachmentIds = $validated['attachment_ids'] ?? [];
 
@@ -136,30 +133,20 @@ class ConversationMessageController extends Controller
         }
 
         $clientMessageId = $this->normalizeClientMessageId($validated['client_message_id'] ?? null);
-        $visitor = $conversation->visitor;
-
         try {
-            [$message, $created] = DB::transaction(function () use ($conversation, $body, $attachmentIds, $clientMessageId, $binder, $siteManagerCoverage, $visitor) {
-                $siteManagerCoverage->lockAccount((int) $conversation->site->account_id);
-                $currentSite = Site::query()
-                    ->servable()
-                    ->whereKey($conversation->site_id)
-                    ->sharedLock()
-                    ->first();
+            [$message, $created, $conversation] = DB::transaction(function () use ($conversation, $identity, $body, $attachmentIds, $clientMessageId, $binder, $conversationWrites) {
+                // Token validation happened before validation and file binding,
+                // so identity merge can complete in the gap. Re-authorize from
+                // the reported browser ID only after taking the shared site
+                // lock; this yields the canonical visitor and the conversation
+                // row the merge may just have moved.
+                $conversation = $conversationWrites->lock($conversation, $identity['anonymous_id']);
+                $visitor = $conversation->visitor;
+                abort_unless($visitor instanceof Visitor, 404, 'Conversation not found.');
 
-                // Archive may have committed after the resolver ran. The
-                // account-site-subject order makes that decision stable before
-                // a reopen save asks the SLA observer to start new clocks.
-                abort_unless($currentSite, 404, 'Site not found.');
-
-                // Lock the conversation row so the idempotency check and the insert
-                // are atomic. Without this, two concurrent sends sharing a
-                // client_message_id could both pass the lookup before either row is
-                // visible and both create a message.
-                // Keep the locked row. Reading status off the pre-lock instance means
-                // two concurrent sends on a closed conversation both see "closed"
-                // and both record a reopen, for one transition.
-                $locked = Conversation::query()->whereKey($conversation->getKey())->lockForUpdate()->first();
+                // Sending is presence too, but save it through the canonical
+                // locked visitor so a merge race cannot update a deleted row.
+                $visitor->forceFill(['last_web_seen_at' => now()])->save();
 
                 if ($clientMessageId !== null) {
                     $existing = $conversation->messages()
@@ -171,7 +158,7 @@ class ConversationMessageController extends Controller
                         // Idempotent retry: the message (and any attachments bound to
                         // it on the first accepted send) already exists, so return it
                         // without creating a second row, re-binding, or re-broadcasting.
-                        return [$existing, false];
+                        return [$existing, false, $conversation];
                     }
                 }
 
@@ -198,7 +185,7 @@ class ConversationMessageController extends Controller
                     throw $rejected;
                 }
 
-                $previousStatus = (string) ($locked?->status ?? $conversation->status);
+                $previousStatus = (string) $conversation->status;
 
                 // Written through the LOCKED instance, exactly as the agent
                 // transition path is. Eloquent compares against the attributes THIS
@@ -208,17 +195,11 @@ class ConversationMessageController extends Controller
                 // call below records a reopen that never happened. A history that
                 // reports transitions the database never made is worse than the
                 // absence this PR set out to fix.
-                $target = $locked ?? $conversation;
-
-                $target->forceFill([
+                $conversation->forceFill([
                     'status' => 'open',
                     'closed_at' => null,
                     'last_message_at' => $message->created_at,
                 ])->save();
-
-                // Keep the caller's instance honest: the response reports this
-                // status back to the widget.
-                $conversation->setRawAttributes($target->getAttributes(), true);
 
                 // A visitor replying to a closed conversation is the reopen that
                 // matters most: it means the resolution did not hold. It used to
@@ -226,7 +207,7 @@ class ConversationMessageController extends Controller
                 app(ConversationLifecycleLog::class)
                     ->replyReopenedIfClosed($conversation, $visitor, $previousStatus);
 
-                return [$message, true];
+                return [$message, true, $conversation];
             });
         } catch (AttachmentRejected $rejected) {
             // Caught OUT here, where the transaction has already rolled back.
@@ -238,6 +219,9 @@ class ConversationMessageController extends Controller
         if ($created) {
             event(new ConversationMessageCreated($message));
         }
+
+        $conversation->load('visitor');
+        event(new ConversationPresenceUpdated($conversation));
 
         return $this->storedMessageResponse($conversation, $message->load('attachments'));
     }

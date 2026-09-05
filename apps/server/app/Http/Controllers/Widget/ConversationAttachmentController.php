@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
+use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
+use App\Models\Visitor;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
+use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -33,6 +36,7 @@ class ConversationAttachmentController extends Controller
         string $supportCode,
         VisitorConversationResolver $conversations,
         AttachmentUploadService $uploads,
+        VisitorConversationWriteAuthorization $conversationWrites,
     ): JsonResponse {
         // Identity FIRST, so the site is known before anything can fail in
         // words. Validating the file up here rejected an oversized upload with
@@ -69,7 +73,16 @@ class ConversationAttachmentController extends Controller
         // The uploader is the conversation's own visitor — the same principal
         // the resolver just authenticated.
         try {
-            $attachment = $uploads->store($conversation, $request->file('file'), $conversation->visitor);
+            $attachment = $uploads->store(
+                $conversation,
+                $request->file('file'),
+                $conversation->visitor,
+                function (Visitor $visitor, Conversation $conversation) use ($conversationWrites, $identity): array {
+                    $conversation = $conversationWrites->lock($conversation, $identity['anonymous_id']);
+
+                    return [$conversation->visitor, $conversation];
+                },
+            );
         } catch (AttachmentRejected $rejected) {
             // Keyed, not just worded: this reader's language is the widget's,
             // and on an unpinned site the server does not know it.
