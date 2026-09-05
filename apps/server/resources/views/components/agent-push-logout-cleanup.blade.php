@@ -14,6 +14,44 @@
             HTMLFormElement.prototype.submit.call(form);
         }
 
+        function appendEndpoint(subscription) {
+            if (! subscription
+                || form.querySelector('input[name="push_subscription_endpoint"]')) {
+                return subscription;
+            }
+
+            var endpoint = document.createElement('input');
+
+            endpoint.type = 'hidden';
+            endpoint.name = 'push_subscription_endpoint';
+            endpoint.value = subscription.endpoint;
+            form.appendChild(endpoint);
+
+            return subscription;
+        }
+
+        function captureEndpoint() {
+            return navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
+                .then(function (registration) {
+                    return registration ? registration.pushManager.getSubscription() : null;
+                })
+                .then(appendEndpoint);
+        }
+
+        // Start while the authenticated page is idle. In the common case the
+        // exact endpoint is already attached to the form before logout begins.
+        // A rejected lookup remains retryable when the user does sign out.
+        var eagerLookupPending = true;
+        var endpointLookup = captureEndpoint()
+            .catch(function () {
+                return null;
+            })
+            .then(function (subscription) {
+                eagerLookupPending = false;
+
+                return subscription;
+            });
+
         form.addEventListener('submit', function (event) {
             if (form.dataset.pushEndpointCaptured === 'true') {
                 return;
@@ -27,31 +65,15 @@
 
             form.dataset.pushEndpointCapturePending = 'true';
 
-            var lookup = navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
-                .then(function (registration) {
-                    return registration ? registration.pushManager.getSubscription() : null;
-                });
-            var timeout = new Promise(function (resolve) {
-                window.setTimeout(function () {
-                    resolve(null);
-                }, 1000);
-            });
+            // If the eager lookup is still running, it is already the freshest
+            // possible answer. Otherwise recheck in case this page opted in or
+            // replaced its browser subscription after the initial capture.
+            var logoutLookup = eagerLookupPending ? endpointLookup : captureEndpoint();
 
-            Promise.race([lookup, timeout])
-                .then(function (subscription) {
-                    if (! subscription) {
-                        return;
-                    }
-
-                    var endpoint = document.createElement('input');
-
-                    endpoint.type = 'hidden';
-                    endpoint.name = 'push_subscription_endpoint';
-                    endpoint.value = subscription.endpoint;
-                    form.appendChild(endpoint);
-                })
+            logoutLookup
                 .catch(function () {
-                    // The logged-out page still performs local-only cleanup.
+                    // A previously captured endpoint remains on the form. If
+                    // none exists, the logged-out page still cleans up locally.
                 })
                 .then(submitLogout);
         });

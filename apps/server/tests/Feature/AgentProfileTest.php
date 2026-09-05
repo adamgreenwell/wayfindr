@@ -106,7 +106,9 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->toContain("endpoint.name = 'push_subscription_endpoint'")
         ->toContain('endpoint.value = subscription.endpoint')
         ->toContain("form.dataset.pushEndpointCapturePending = 'true'")
-        ->toContain('Promise.race([lookup, timeout])')
+        ->toContain('var endpointLookup = captureEndpoint()')
+        ->toContain('var logoutLookup = eagerLookupPending ? endpointLookup : captureEndpoint()')
+        ->not->toContain('Promise.race')
         ->toContain('HTMLFormElement.prototype.submit.call(form)');
 });
 

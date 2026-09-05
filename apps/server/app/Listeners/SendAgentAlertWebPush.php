@@ -22,6 +22,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Sleep;
 use NotificationChannels\WebPush\WebPushChannel;
 use Throwable;
 
@@ -72,7 +73,20 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
         $retryableFailure = null;
         $visiblePresence ??= app(AgentVisibleRealtimePresence::class);
 
-        DB::transaction(function () use ($accountId, $event, &$retryableFailure, $visiblePresence): void {
+        // Leaving a Reverb presence channel is asynchronous. A browser that is
+        // already closing can therefore appear visible for one last lookup even
+        // though it will never render the realtime alert. Confirm a positive
+        // result after a short grace period before suppressing Web Push. The
+        // wait happens before database locks are acquired.
+        if ($visiblePresence->hasVisibleClient($event->recipient)) {
+            Sleep::for(1)->seconds();
+
+            if ($visiblePresence->hasVisibleClient($event->recipient)) {
+                return;
+            }
+        }
+
+        DB::transaction(function () use ($accountId, $event, &$retryableFailure): void {
             // Match the account-then-user order used by deactivation, role,
             // site-access, and preference writers. Keep those locks plus the
             // alert row lock through the network send: whichever operation
@@ -103,8 +117,7 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
 
             AgentPushSubscription::purgeStaleFor($recipient);
 
-            if (! $recipient->pushSubscriptions()->exists()
-                || $visiblePresence->hasVisibleClient($recipient)) {
+            if (! $recipient->pushSubscriptions()->exists()) {
                 return;
             }
 

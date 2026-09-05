@@ -26,6 +26,7 @@ use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Minishlink\WebPush\VAPID;
 use NotificationChannels\WebPush\WebPushChannel;
@@ -359,14 +360,15 @@ test('a visible realtime dashboard suppresses Web Push before delivery', functio
     [$agent, , $alert] = pushAlertFixture();
     subscribeAgentForPush($agent, 'visible-dashboard');
     config()->set('broadcasting.default', 'reverb');
+    Sleep::fake();
     $pusher = Mockery::mock();
     $pusher->shouldReceive('getPresenceUsers')
-        ->once()
+        ->twice()
         ->with('presence-visible-agents.'.$agent->id)
         ->andReturn((object) ['users' => [(object) ['id' => (string) $agent->id]]]);
     $broadcaster = Mockery::mock(PusherBroadcaster::class);
-    $broadcaster->shouldReceive('getPusher')->once()->andReturn($pusher);
-    Broadcast::shouldReceive('connection')->once()->with('reverb')->andReturn($broadcaster);
+    $broadcaster->shouldReceive('getPusher')->twice()->andReturn($pusher);
+    Broadcast::shouldReceive('connection')->twice()->with('reverb')->andReturn($broadcaster);
     Http::fake();
 
     app(SendAgentAlertWebPush::class)->handle(
@@ -377,6 +379,36 @@ test('a visible realtime dashboard suppresses Web Push before delivery', functio
 
     Http::assertNothingSent();
     expect($agent->pushSubscriptions()->count())->toBe(1);
+    Sleep::assertSequence([Sleep::for(1)->seconds()]);
+});
+
+test('Web Push is sent when visible presence disappears during the closing-page grace period', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'closing-dashboard');
+    config()->set('broadcasting.default', 'reverb');
+    Sleep::fake();
+    $pusher = Mockery::mock();
+    $pusher->shouldReceive('getPresenceUsers')
+        ->twice()
+        ->with('presence-visible-agents.'.$agent->id)
+        ->andReturn(
+            (object) ['users' => [(object) ['id' => (string) $agent->id]]],
+            (object) ['users' => []],
+        );
+    $broadcaster = Mockery::mock(PusherBroadcaster::class);
+    $broadcaster->shouldReceive('getPusher')->twice()->andReturn($pusher);
+    Broadcast::shouldReceive('connection')->twice()->with('reverb')->andReturn($broadcaster);
+    Notification::fake();
+
+    app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+        app(AgentVisibleRealtimePresence::class),
+    );
+
+    Notification::assertSentTo($agent, AgentAlertWebPush::class);
+    Sleep::assertSequence([Sleep::for(1)->seconds()]);
 });
 
 test('the queued Web Push listener is selected only for ready opted-in recipients', function (): void {
