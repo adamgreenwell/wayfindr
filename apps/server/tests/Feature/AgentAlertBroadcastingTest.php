@@ -74,6 +74,12 @@ test('agent alert realtime config uses the existing browser transport and recipi
             'identityChannelName' => 'presence-agents.'.$agent->id,
             'knownAlerts' => [],
             'port' => '443',
+            'quietHours' => [
+                'enabled' => false,
+                'start' => User::ALERT_QUIET_HOURS_DEFAULT_START,
+                'end' => User::ALERT_QUIET_HOURS_DEFAULT_END,
+                'timezone' => 'UTC',
+            ],
             'realtimeReceiptEndpoint' => 'http://localhost:8000/dashboard/alerts/realtime-receipt',
             'reconcileEndpoint' => 'http://localhost:8000/dashboard/alerts/reconcile',
             'reconcileOverlapSeconds' => 30,

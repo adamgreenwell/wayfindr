@@ -123,7 +123,7 @@ class SendAlertDigestsCommand extends Command
             ->get()
             ->filter(fn (User $agent): bool => ! $agent->isDeactivated()
                 && $agent->alertEmailEnabled()
-                && $agent->alertMode() !== User::ALERT_MODE_QUIET
+                && ! $agent->alertInterruptionsPaused()
                 && $agent->alertCadence() === User::ALERT_CADENCE_DIGEST)
             ->values();
     }

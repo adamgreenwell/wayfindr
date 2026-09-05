@@ -197,6 +197,56 @@
             </label>
             <p class="field-help">{{ __('profile.alerts.sound_help') }}</p>
 
+            <fieldset class="field">
+                <legend>{{ __('profile.alerts.quiet_hours') }}</legend>
+                <input type="hidden" name="quiet_hours_enabled" value="0">
+                <label class="check-row" for="quiet_hours_enabled">
+                    <input
+                        id="quiet_hours_enabled"
+                        name="quiet_hours_enabled"
+                        type="checkbox"
+                        value="1"
+                        @checked(old('quiet_hours_enabled', $alertQuietHours['enabled']))
+                    >
+                    <span>{{ __('profile.alerts.quiet_hours_enabled') }}</span>
+                </label>
+                @error('quiet_hours_enabled')
+                    <p class="field-error">{{ $message }}</p>
+                @enderror
+
+                <div class="meta-grid realtime-grid">
+                    <div class="field">
+                        <label for="quiet_hours_start">{{ __('profile.alerts.quiet_hours_start') }}</label>
+                        <input
+                            id="quiet_hours_start"
+                            name="quiet_hours_start"
+                            type="time"
+                            value="{{ old('quiet_hours_start', $alertQuietHours['start']) }}"
+                            required
+                        >
+                        @error('quiet_hours_start')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+                    <div class="field">
+                        <label for="quiet_hours_end">{{ __('profile.alerts.quiet_hours_end') }}</label>
+                        <input
+                            id="quiet_hours_end"
+                            name="quiet_hours_end"
+                            type="time"
+                            value="{{ old('quiet_hours_end', $alertQuietHours['end']) }}"
+                            required
+                        >
+                        @error('quiet_hours_end')
+                            <p class="field-error">{{ $message }}</p>
+                        @enderror
+                    </div>
+                </div>
+                <p class="field-help">
+                    {{ __('profile.alerts.quiet_hours_help', ['timezone' => $alertQuietHours['timezone']]) }}
+                </p>
+            </fieldset>
+
             @unless ($pushAvailable)
                 <input type="hidden" name="push_alerts" value="{{ $agent->alertPushEnabled() ? '1' : '0' }}">
             @endunless

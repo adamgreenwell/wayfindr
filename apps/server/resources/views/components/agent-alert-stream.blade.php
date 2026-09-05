@@ -138,6 +138,53 @@
             return window.AudioContext || window.webkitAudioContext || null;
         }
 
+        function quietTimeMinutes(value) {
+            var match = typeof value === 'string'
+                ? value.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+                : null;
+
+            return match ? (Number(match[1]) * 60) + Number(match[2]) : null;
+        }
+
+        function quietHoursActive() {
+            var quietHours = config.quietHours;
+
+            if (! quietHours || quietHours.enabled !== true) {
+                return false;
+            }
+
+            try {
+                var parts = new Intl.DateTimeFormat('en-GB', {
+                    hour: '2-digit',
+                    hour12: false,
+                    hourCycle: 'h23',
+                    minute: '2-digit',
+                    timeZone: quietHours.timezone,
+                }).formatToParts(new Date());
+                var values = {};
+
+                parts.forEach(function (part) {
+                    values[part.type] = part.value;
+                });
+
+                var current = quietTimeMinutes(values.hour + ':' + values.minute);
+                var start = quietTimeMinutes(quietHours.start);
+                var end = quietTimeMinutes(quietHours.end);
+
+                if (current === null || start === null || end === null || start === end) {
+                    // A configured quiet period should fail silent in an older
+                    // browser rather than unexpectedly waking the agent.
+                    return true;
+                }
+
+                return start < end
+                    ? current >= start && current < end
+                    : current >= start || current < end;
+            } catch (error) {
+                return true;
+            }
+        }
+
         function armSound() {
             if (! config.soundEnabled || audioContext) {
                 return;
@@ -164,7 +211,10 @@
         }
 
         function playSound() {
-            if (! config.soundEnabled || ! audioContext || audioContext.state !== 'running') {
+            if (! config.soundEnabled
+                || quietHoursActive()
+                || ! audioContext
+                || audioContext.state !== 'running') {
                 return;
             }
 

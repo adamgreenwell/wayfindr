@@ -88,8 +88,7 @@ class SendUnattendedConversationAlertsCommand extends Command
             ->orderBy('email')
             ->get()
             ->filter(fn (User $agent): bool => ! $agent->isDeactivated()
-                && $agent->wantsUnattendedAlertEmail()
-                && $agent->alertMode() !== User::ALERT_MODE_QUIET)
+                && $agent->wantsUnattendedAlertEmail())
             ->values();
     }
 }

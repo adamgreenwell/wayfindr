@@ -15,6 +15,7 @@ use App\Support\AgentWebPushConfig;
 use App\Support\AgentWebPushFactory;
 use App\Support\Settings\OperatorSettings;
 use App\Support\Webhooks\OutboundWebhookDestination;
+use Carbon\CarbonImmutable;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -485,6 +486,44 @@ test('the queued Web Push listener is selected only for ready opted-in recipient
     ])->save();
 
     expect($listener->shouldQueue(new AgentAlertStored($agent->fresh(), $alert)))->toBeFalse();
+});
+
+test('Web Push pauses inside agent quiet hours and resumes at the end boundary', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'quiet-hours');
+    $agent->forceFill([
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            ...$agent->alert_preferences,
+            'push' => true,
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ])->save();
+    $listener = app(SendAgentAlertWebPush::class);
+
+    try {
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
+        $quietEvent = new AgentAlertStored($agent->fresh(), $alert);
+        Notification::fake();
+
+        expect($listener->shouldQueue($quietEvent))->toBeFalse();
+        $listener->handle($quietEvent, app(AgentWebPushConfig::class));
+        Notification::assertNothingSent();
+
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
+        $resumedEvent = new AgentAlertStored($agent->fresh(), $alert);
+
+        expect($listener->shouldQueue($resumedEvent))->toBeTrue();
+        $listener->handle($resumedEvent, app(AgentWebPushConfig::class));
+        Notification::assertSentTo($agent, AgentAlertWebPush::class);
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
 });
 
 test('temporarily unavailable Web Push settings retain a retryable delivery attempt', function (): void {

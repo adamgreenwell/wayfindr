@@ -369,6 +369,33 @@ test('quiet-mode and deactivated agents are skipped', function (): void {
     Mail::assertNothingQueued();
 });
 
+test('unattended email waits until agent quiet hours end', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 01:00:00', 'UTC'));
+    $account = Account::factory()->create();
+    $agent = unattendedAlertAgent($account, [
+        'email' => 'quiet-unattended@example.test',
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create();
+    createUnattendedWait($agent, $site);
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
+    Artisan::call('wayfindr:send-unattended-conversation-alerts', ['--email' => $agent->email]);
+    Mail::assertNothingQueued();
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
+    Artisan::call('wayfindr:send-unattended-conversation-alerts', ['--email' => $agent->email]);
+    Mail::assertQueuedCount(1);
+});
+
 test('a follow-up message inside the same wait does not re-arm the email', function (): void {
     // The listener refreshes the unread notification's data on every new
     // visitor message; the unattended stamp must survive that refresh or a

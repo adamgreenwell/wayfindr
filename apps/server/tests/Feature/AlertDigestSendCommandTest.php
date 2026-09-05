@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -164,6 +165,36 @@ test('alert digest send command reports empty and missing-agent states without q
 
     expect($exitCode)->toBe(1)
         ->and(Artisan::output())->toContain('No agent found for missing@example.test.');
+});
+
+test('alert digest delivery waits until agent quiet hours end', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 02:30:00', 'UTC'));
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account, [
+        'email' => 'quiet-digest@example.test',
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create();
+    createDigestMailConversationAlert(agent: $agent, site: $site);
+
+    expect(Artisan::call('wayfindr:send-alert-digests', ['--email' => $agent->email]))->toBe(0)
+        ->and(Artisan::output())->toContain('Agents scanned: 0. Emails queued: 0. Candidates: 0.');
+    Mail::assertNothingQueued();
+    expect(data_get($agent->fresh()->alert_preferences, 'digest_delivery'))->toBeNull();
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
+
+    expect(Artisan::call('wayfindr:send-alert-digests', ['--email' => $agent->email]))->toBe(0)
+        ->and(Artisan::output())->toContain('Agents scanned: 1. Emails queued: 1. Candidates: 1.');
+    Mail::assertQueuedCount(1);
 });
 
 test('alert digest send command records failed delivery attempts', function (): void {

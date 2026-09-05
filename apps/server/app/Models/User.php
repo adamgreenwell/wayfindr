@@ -7,6 +7,7 @@ use App\Enums\AccountRole;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Enums\PlatformRole;
 use App\Notifications\ResetPasswordLink;
+use App\Support\DashboardTimezone;
 use Carbon\CarbonImmutable;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -45,6 +46,10 @@ class User extends Authenticatable
     public const ALERT_CADENCE_UNATTENDED = 'unattended';
 
     public const ALERT_CADENCE_DIGEST = 'digest';
+
+    public const ALERT_QUIET_HOURS_DEFAULT_START = '22:00';
+
+    public const ALERT_QUIET_HOURS_DEFAULT_END = '07:00';
 
     public const ALERT_DIGEST_DELIVERY_NOT_RUN = 'not_run';
 
@@ -248,6 +253,53 @@ class User extends Authenticatable
         return data_get($this->alert_preferences, 'push') === true;
     }
 
+    /**
+     * @return array{enabled: bool, start: string, end: string, timezone: string}
+     */
+    public function alertQuietHours(): array
+    {
+        $start = data_get($this->alert_preferences, 'quiet_hours.start');
+        $end = data_get($this->alert_preferences, 'quiet_hours.end');
+        $valid = self::isAlertQuietTime($start)
+            && self::isAlertQuietTime($end)
+            && $start !== $end;
+
+        return [
+            // Invalid persisted input must not silently suppress support signals.
+            // The profile renders safe defaults so the agent can repair it.
+            'enabled' => data_get($this->alert_preferences, 'quiet_hours.enabled') === true && $valid,
+            'start' => self::isAlertQuietTime($start) ? $start : self::ALERT_QUIET_HOURS_DEFAULT_START,
+            'end' => self::isAlertQuietTime($end) ? $end : self::ALERT_QUIET_HOURS_DEFAULT_END,
+            'timezone' => DashboardTimezone::forUser($this),
+        ];
+    }
+
+    public function alertQuietHoursActive(?CarbonImmutable $at = null): bool
+    {
+        $quietHours = $this->alertQuietHours();
+
+        if (! $quietHours['enabled']) {
+            return false;
+        }
+
+        $local = ($at ?? CarbonImmutable::now('UTC'))->setTimezone($quietHours['timezone']);
+        $minute = ($local->hour * 60) + $local->minute;
+        $start = self::alertQuietMinutes($quietHours['start']);
+        $end = self::alertQuietMinutes($quietHours['end']);
+
+        // Equal bounds are rejected on write and disable corrupt persisted
+        // input above. An overnight window wraps through midnight.
+        return $start < $end
+            ? $minute >= $start && $minute < $end
+            : $minute >= $start || $minute < $end;
+    }
+
+    public function alertInterruptionsPaused(?CarbonImmutable $at = null): bool
+    {
+        return $this->alertMode() === self::ALERT_MODE_QUIET
+            || $this->alertQuietHoursActive($at);
+    }
+
     public function alertCadence(): string
     {
         $cadence = data_get($this->alert_preferences, 'cadence');
@@ -260,13 +312,15 @@ class User extends Authenticatable
     public function wantsImmediateAlertEmail(): bool
     {
         return $this->alertEmailEnabled()
-            && $this->alertCadence() === self::ALERT_CADENCE_IMMEDIATE;
+            && $this->alertCadence() === self::ALERT_CADENCE_IMMEDIATE
+            && ! $this->alertInterruptionsPaused();
     }
 
     public function wantsUnattendedAlertEmail(): bool
     {
         return $this->alertEmailEnabled()
-            && $this->alertCadence() === self::ALERT_CADENCE_UNATTENDED;
+            && $this->alertCadence() === self::ALERT_CADENCE_UNATTENDED
+            && ! $this->alertInterruptionsPaused();
     }
 
     /**
@@ -435,5 +489,18 @@ class User extends Authenticatable
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private static function isAlertQuietTime(mixed $value): bool
+    {
+        return is_string($value)
+            && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $value) === 1;
+    }
+
+    private static function alertQuietMinutes(string $value): int
+    {
+        [$hour, $minute] = array_map('intval', explode(':', $value, 2));
+
+        return ($hour * 60) + $minute;
     }
 }

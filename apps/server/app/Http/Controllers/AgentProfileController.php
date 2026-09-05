@@ -87,6 +87,7 @@ class AgentProfileController extends Controller
             'alertModeOptions' => $agent::alertModeOptions(),
             'alertCadence' => $agent->alertCadence(),
             'alertCadenceOptions' => $agent::alertCadenceOptions(),
+            'alertQuietHours' => $agent->alertQuietHours(),
             'digestDeliveryStatus' => $agent->alertDigestDeliveryStatus(),
             'mailReadiness' => $mailReadiness,
             'alertReadiness' => $this->alertReadiness($agent, $mailReadiness, $webPush->assessment()),
@@ -174,6 +175,18 @@ class AgentProfileController extends Controller
         $validated = $request->validate([
             'alert_mode' => ['required', Rule::in(array_keys($request->user()::alertModeOptions()))],
             'alert_cadence' => ['sometimes', Rule::in(array_keys($request->user()::alertCadenceOptions()))],
+            'quiet_hours_enabled' => ['sometimes', 'boolean'],
+            'quiet_hours_start' => [
+                Rule::requiredIf(fn (): bool => $request->boolean('quiet_hours_enabled')),
+                'nullable',
+                'date_format:H:i',
+            ],
+            'quiet_hours_end' => [
+                Rule::requiredIf(fn (): bool => $request->boolean('quiet_hours_enabled')),
+                'nullable',
+                'date_format:H:i',
+                'different:quiet_hours_start',
+            ],
             'push_subscription_endpoint' => ['nullable', 'string', 'max:1024', 'url', 'starts_with:https://'],
         ]);
 
@@ -182,6 +195,12 @@ class AgentProfileController extends Controller
         $email = $request->boolean('email_alerts');
         $sound = $request->boolean('sound_alerts');
         $pushRequested = $request->boolean('push_alerts');
+        $quietHoursSubmitted = $request->hasAny([
+            'quiet_hours_enabled',
+            'quiet_hours_start',
+            'quiet_hours_end',
+        ]);
+        $quietHoursEnabled = $request->boolean('quiet_hours_enabled');
         $removedEndpoint = trim((string) ($validated['push_subscription_endpoint'] ?? ''));
         $pushStorageCompatible = AgentPushSubscription::usesPrimaryDatabaseConnection();
 
@@ -191,7 +210,7 @@ class AgentProfileController extends Controller
             ]);
         }
 
-        DB::transaction(function () use ($accountId, $email, $pushRequested, $pushStorageCompatible, $removedEndpoint, $sound, $userId, $validated): void {
+        DB::transaction(function () use ($accountId, $email, $pushRequested, $pushStorageCompatible, $quietHoursEnabled, $quietHoursSubmitted, $removedEndpoint, $sound, $userId, $validated): void {
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()
                 ->whereKey($userId)
@@ -219,6 +238,21 @@ class AgentProfileController extends Controller
                 ? $pushRequested || $ownedSubscriptions()->exists()
                 : $agent->alertPushEnabled();
             $alertPreferences = $agent->alert_preferences ?? [];
+            $quietHours = $agent->alertQuietHours();
+
+            if ($quietHoursSubmitted) {
+                $quietHours = [
+                    'enabled' => $quietHoursEnabled,
+                    'start' => $validated['quiet_hours_start'] ?? $quietHours['start'],
+                    'end' => $validated['quiet_hours_end'] ?? $quietHours['end'],
+                ];
+
+                if ($quietHours['start'] === $quietHours['end']) {
+                    throw ValidationException::withMessages([
+                        'quiet_hours_end' => __('profile.alerts.quiet_hours_same'),
+                    ]);
+                }
+            }
 
             $agent->forceFill([
                 'alert_preferences' => array_merge($alertPreferences, [
@@ -227,6 +261,7 @@ class AgentProfileController extends Controller
                     'push' => $push,
                     'sound' => $sound,
                     'cadence' => $validated['alert_cadence'] ?? $agent->alertCadence(),
+                    ...($quietHoursSubmitted ? ['quiet_hours' => $quietHours] : []),
                 ]),
             ])->save();
         });
@@ -331,6 +366,7 @@ class AgentProfileController extends Controller
         return [
             $this->dashboardAlertReadiness($agent),
             $this->alertScopeReadiness($agent),
+            $this->alertQuietHoursReadiness($agent),
             $this->emailAlertReadiness($agent, $mailReadiness),
             $this->pushAlertReadiness($agent, $pushAssessment),
             $this->alertCadenceReadiness($alertCadence, $emailEnabled, $digestDeliveryStatus),
@@ -352,12 +388,14 @@ class AgentProfileController extends Controller
             ];
         }
 
-        if ($agent->alertMode() === User::ALERT_MODE_QUIET) {
+        if ($agent->alertInterruptionsPaused()) {
             return [
                 'label' => __('profile.readiness_cards.push_label'),
                 'status' => __('profile.readiness_cards.push_paused'),
                 'tone' => 'manual',
-                'detail' => __('profile.readiness_cards.push_paused_detail'),
+                'detail' => __($agent->alertMode() === User::ALERT_MODE_QUIET
+                    ? 'profile.readiness_cards.push_paused_detail'
+                    : 'profile.readiness_cards.push_quiet_hours_detail'),
             ];
         }
 
@@ -441,6 +479,38 @@ class AgentProfileController extends Controller
     }
 
     /**
+     * @return array{label: string, status: string, tone: string, detail: string}
+     */
+    private function alertQuietHoursReadiness(User $agent): array
+    {
+        $quietHours = $agent->alertQuietHours();
+
+        if (! $quietHours['enabled']) {
+            return [
+                'label' => __('profile.readiness_cards.quiet_hours_label'),
+                'status' => __('profile.readiness_cards.quiet_hours_off'),
+                'tone' => 'manual',
+                'detail' => __('profile.readiness_cards.quiet_hours_off_detail'),
+            ];
+        }
+
+        $quietHoursActive = $agent->alertQuietHoursActive();
+
+        return [
+            'label' => __('profile.readiness_cards.quiet_hours_label'),
+            'status' => __($quietHoursActive
+                ? 'profile.readiness_cards.quiet_hours_active'
+                : 'profile.readiness_cards.quiet_hours_scheduled'),
+            'tone' => $quietHoursActive ? 'manual' : 'ready',
+            'detail' => __('profile.readiness_cards.quiet_hours_detail', [
+                'start' => $quietHours['start'],
+                'end' => $quietHours['end'],
+                'timezone' => $quietHours['timezone'],
+            ]),
+        ];
+    }
+
+    /**
      * @param  array{status: string, summary: string, action: string}|null  $mailReadiness
      * @return array{label: string, status: string, tone: string, detail: string}
      */
@@ -452,6 +522,17 @@ class AgentProfileController extends Controller
                 'status' => __('profile.readiness_cards.email_off'),
                 'tone' => 'manual',
                 'detail' => __('profile.readiness_cards.email_off_detail'),
+            ];
+        }
+
+        if ($agent->alertInterruptionsPaused()) {
+            return [
+                'label' => __('profile.readiness_cards.email_label'),
+                'status' => __('profile.readiness_cards.email_paused'),
+                'tone' => 'manual',
+                'detail' => __($agent->alertMode() === User::ALERT_MODE_QUIET
+                    ? 'profile.readiness_cards.email_paused_detail'
+                    : 'profile.readiness_cards.email_quiet_hours_detail'),
             ];
         }
 

@@ -50,7 +50,10 @@ test('authenticated dashboard pages connect the account alert stream when Reverb
         ->assertSee("document.title = '(' + count + ') ' + originalTitle", false)
         ->assertSee("favicon.setAttribute('data-agent-alert-state', 'attention')", false)
         ->assertSee('audioContext.createOscillator()', false)
-        ->assertSee('"soundEnabled":true', false);
+        ->assertSee('"soundEnabled":true', false)
+        ->assertSee('"quietHours":{"enabled":false,"start":"22:00","end":"07:00","timezone":"UTC"}', false)
+        ->assertSee('quietHoursActive()', false)
+        ->assertSee('timeZone: quietHours.timezone', false);
 });
 
 test('the alert stream acknowledges exact live deliveries instead of trusting presence', function (): void {
