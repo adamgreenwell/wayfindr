@@ -1033,6 +1033,7 @@ return [
             'unset' => 'Optional — nicht eingerichtet',
             'incomplete' => 'Unvollständig',
             'invalid' => 'Ungültig',
+            'unavailable' => 'Vorübergehend nicht verfügbar',
         ],
         'validation' => [
             'clear_conflict' => 'Geben Sie beim Löschen des aktuellen Paars keinen privaten Schlüssel ein.',

@@ -1040,6 +1040,7 @@ return [
             'unset' => 'Facoltativa — non configurata',
             'incomplete' => 'Incompleta',
             'invalid' => 'Non valida',
+            'unavailable' => 'Temporaneamente non disponibile',
         ],
         'validation' => [
             'clear_conflict' => 'Non inserisca una chiave privata durante la cancellazione della coppia attuale.',

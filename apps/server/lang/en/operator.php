@@ -1033,6 +1033,7 @@ return [
             'unset' => 'Optional — not configured',
             'incomplete' => 'Incomplete',
             'invalid' => 'Invalid',
+            'unavailable' => 'Temporarily unavailable',
         ],
         'validation' => [
             'clear_conflict' => 'Do not enter a private key while clearing the current pair.',

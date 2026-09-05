@@ -72,6 +72,15 @@ test('an operator can save a valid encrypted VAPID configuration without auditin
         ->and(json_encode($audit->metadata))->not->toContain($keys['publicKey']);
 });
 
+test('the unavailable Web Push status is translated in every dashboard language', function (): void {
+    expect(trans('operator.webpush.status.unavailable', locale: 'en'))
+        ->toBe('Temporarily unavailable')
+        ->and(trans('operator.webpush.status.unavailable', locale: 'de'))
+        ->toBe('Vorübergehend nicht verfügbar')
+        ->and(trans('operator.webpush.status.unavailable', locale: 'it'))
+        ->toBe('Temporaneamente non disponibile');
+});
+
 test('a public key cannot be replaced without its matching private key', function (): void {
     $operator = User::factory()->for(Account::factory())->create([
         'platform_role' => 'operator',
