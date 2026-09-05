@@ -410,6 +410,18 @@ test('a first live publication keeps the version already exposed by concurrent r
         'updated_at' => now(),
     ]);
 
+    // A rolling-deploy sweep may win the row lock before the synchronous
+    // current-release listener. It records the fingerprint for future legacy
+    // refresh detection but must leave first live delivery claimable.
+    expect(AgentAlertPublicationSweep::run())->toBe(1);
+
+    $preclaimed = DatabaseNotification::query()->findOrFail($id);
+
+    expect($preclaimed->getAttribute('agent_alert_version'))->toBeNull()
+        ->and($preclaimed->getAttribute('agent_alert_fingerprint'))->toBe(
+            AgentAlertPublicationFingerprint::for($data),
+        );
+
     $catchUpVersion = $this->actingAs($agent)
         ->getJson(route('dashboard.alerts.reconcile', ['since' => $since]))
         ->assertOk()

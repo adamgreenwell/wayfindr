@@ -77,7 +77,11 @@ final class AgentAlertPublicationSweep
                     ?? $notification->created_at
                     ?? now(),
                 'agent_alert_version' => $firstPublication
-                    ? $id
+                    // Leave the first version unclaimed. Reconciliation already
+                    // exposes its stable ID fallback, while a current-release
+                    // listener that arrives after this sweep can still claim and
+                    // broadcast that same state exactly once.
+                    ? null
                     : (string) Str::uuid(),
                 'agent_alert_fingerprint' => $fingerprint,
             ]);

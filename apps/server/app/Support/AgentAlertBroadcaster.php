@@ -51,17 +51,21 @@ final class AgentAlertBroadcaster
 
             $fingerprint = AgentAlertPublicationFingerprint::for($current->data);
             $recordedFingerprint = $current->getAttribute('agent_alert_fingerprint');
+            $recordedVersion = $current->getAttribute('agent_alert_version');
+            $fingerprintMatches = is_string($recordedFingerprint)
+                && hash_equals($recordedFingerprint, $fingerprint);
 
-            if (is_string($recordedFingerprint)
-                && hash_equals($recordedFingerprint, $fingerprint)) {
+            if ($fingerprintMatches && filled($recordedVersion)) {
                 return null;
             }
 
             // Before the first claim, reconciliation deliberately exposes the
             // notification ID as its stable fallback version. Keep that same
             // version when the listener claims the row so a concurrent catch-up
-            // and live delivery deduplicate. Meaningful later refreshes rotate.
-            $version = blank($recordedFingerprint)
+            // and live delivery deduplicate. A compatibility sweep can already
+            // have fingerprinted that first state without claiming its live
+            // send. Meaningful later refreshes rotate.
+            $version = blank($recordedFingerprint) || $fingerprintMatches
                 ? $notificationId
                 : (string) Str::uuid();
 
