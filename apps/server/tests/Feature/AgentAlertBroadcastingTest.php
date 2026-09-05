@@ -4,6 +4,7 @@ use App\Broadcasting\AccountAgentAlertChannel;
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\AgentAlertStored;
+use App\Jobs\BroadcastReconciledAgentAlert;
 use App\Jobs\ReconcileAgentAlertPublicationsAfterDrain;
 use App\Models\Account;
 use App\Models\Conversation;
@@ -509,6 +510,103 @@ test('deploys can queue a final publication sweep after old workers drain', func
     } finally {
         CarbonImmutable::setTestNow();
     }
+});
+
+test('the post-drain sweep publishes old-writer alerts to already-connected agents', function (): void {
+    Event::fake([AgentAlertStored::class]);
+    Queue::fake();
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $id = (string) Str::uuid();
+    $data = [
+        'kind' => 'conversation_needs_reply',
+        'conversation_id' => $conversation->id,
+        'message_count' => 1,
+    ];
+
+    DB::table('notifications')->insert([
+        'id' => $id,
+        'type' => ConversationNeedsReply::class,
+        'notifiable_type' => $agent->getMorphClass(),
+        'notifiable_id' => $agent->id,
+        'data' => json_encode($data),
+        'read_at' => null,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    (new ReconcileAgentAlertPublicationsAfterDrain)->handle();
+
+    Queue::assertPushed(
+        BroadcastReconciledAgentAlert::class,
+        fn (BroadcastReconciledAgentAlert $job): bool => $job->notificationId === $id,
+    );
+
+    (new BroadcastReconciledAgentAlert($id))->handle(app(AgentAlertBroadcaster::class));
+    (new BroadcastReconciledAgentAlert($id))->handle(app(AgentAlertBroadcaster::class));
+
+    Event::assertDispatchedTimes(AgentAlertStored::class, 1);
+    Event::assertDispatched(
+        AgentAlertStored::class,
+        fn (AgentAlertStored $event): bool => (string) $event->alert->id === $id,
+    );
+
+    $alert = DatabaseNotification::query()->findOrFail($id);
+
+    expect($alert->getAttribute('agent_alert_version'))->toBe($id)
+        ->and($alert->getAttribute('agent_alert_broadcast_claim_version'))->toBe($id)
+        ->and($alert->getAttribute('agent_alert_fingerprint'))->toBe(
+            AgentAlertPublicationFingerprint::for($data),
+        );
+});
+
+test('the post-drain sweep continues through bounded notification pages', function (): void {
+    Queue::fake();
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $data = ['kind' => 'conversation_needs_reply', 'message_count' => 1];
+    $fingerprint = AgentAlertPublicationFingerprint::for($data);
+    $rows = collect(range(1, ReconcileAgentAlertPublicationsAfterDrain::BATCH_SIZE + 1))
+        ->map(function (int $index) use ($agent, $data, $fingerprint): array {
+            $id = sprintf('00000000-0000-4000-8000-%012d', $index);
+
+            return [
+                'id' => $id,
+                'type' => ConversationNeedsReply::class,
+                'notifiable_type' => $agent->getMorphClass(),
+                'notifiable_id' => $agent->id,
+                'data' => json_encode($data),
+                'read_at' => null,
+                'agent_alerted_at' => now(),
+                'agent_alert_version' => $id,
+                'agent_alert_broadcast_claim_version' => $id,
+                'agent_alert_fingerprint' => $fingerprint,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        })
+        ->all();
+
+    DB::table('notifications')->insert($rows);
+
+    (new ReconcileAgentAlertPublicationsAfterDrain)->handle();
+
+    $expectedCursor = sprintf(
+        '00000000-0000-4000-8000-%012d',
+        ReconcileAgentAlertPublicationsAfterDrain::BATCH_SIZE,
+    );
+
+    Queue::assertPushed(
+        ReconcileAgentAlertPublicationsAfterDrain::class,
+        fn (ReconcileAgentAlertPublicationsAfterDrain $job): bool => $job->afterId() === $expectedCursor,
+    );
+
+    (new ReconcileAgentAlertPublicationsAfterDrain($expectedCursor))->handle();
+
+    Queue::assertPushedTimes(ReconcileAgentAlertPublicationsAfterDrain::class, 1);
 });
 
 test('Forge recipes request the delayed publication pass after restarting workers', function (string $recipe): void {

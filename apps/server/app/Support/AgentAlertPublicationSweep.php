@@ -11,11 +11,42 @@ use stdClass;
 /** Reconcile browser-alert metadata written across a release activation. */
 final class AgentAlertPublicationSweep
 {
-    public static function run(): int
+    private const BATCH_SIZE = 500;
+
+    /**
+     * @param  (callable(string): void)|null  $afterReconcile
+     */
+    public static function run(?callable $afterReconcile = null): int
     {
         $reconciled = 0;
+        $afterId = null;
 
-        DB::table('notifications')
+        do {
+            $batch = self::runBatch($afterId, self::BATCH_SIZE, $afterReconcile);
+            $reconciled += $batch['reconciled'];
+            $afterId = $batch['last_id'];
+        } while ($batch['has_more']);
+
+        return $reconciled;
+    }
+
+    /**
+     * Reconcile one restart-safe page for queue workers with finite timeouts.
+     *
+     * @param  (callable(string): void)|null  $afterReconcile
+     * @return array{reconciled: int, last_id: string|null, has_more: bool}
+     */
+    public static function runBatch(
+        ?string $afterId,
+        int $limit,
+        ?callable $afterReconcile = null,
+    ): array {
+        if ($limit < 1) {
+            throw new \InvalidArgumentException('The agent alert reconciliation batch size must be positive.');
+        }
+
+        $reconciled = 0;
+        $notifications = DB::table('notifications')
             ->select([
                 'id',
                 'data',
@@ -25,25 +56,42 @@ final class AgentAlertPublicationSweep
                 'agent_alert_version',
                 'agent_alert_fingerprint',
             ])
+            ->when($afterId !== null, fn ($query) => $query->where('id', '>', $afterId))
             ->orderBy('id')
-            ->chunkById(500, function ($notifications) use (&$reconciled): void {
-                foreach ($notifications as $notification) {
-                    $data = self::decode($notification->data);
+            ->limit($limit + 1)
+            ->get();
 
-                    if ($data === null || hash_equals(
-                        (string) ($notification->agent_alert_fingerprint ?? ''),
-                        AgentAlertPublicationFingerprint::for($data),
-                    )) {
-                        continue;
-                    }
+        $hasMore = $notifications->count() > $limit;
+        $page = $notifications->take($limit);
 
-                    if (self::reconcile((string) $notification->id)) {
-                        $reconciled++;
-                    }
-                }
-            });
+        foreach ($page as $notification) {
+            $data = self::decode($notification->data);
 
-        return $reconciled;
+            if ($data === null || hash_equals(
+                (string) ($notification->agent_alert_fingerprint ?? ''),
+                AgentAlertPublicationFingerprint::for($data),
+            )) {
+                continue;
+            }
+
+            $id = (string) $notification->id;
+
+            if (! self::reconcile($id)) {
+                continue;
+            }
+
+            $reconciled++;
+
+            if ($afterReconcile !== null) {
+                $afterReconcile($id);
+            }
+        }
+
+        return [
+            'reconciled' => $reconciled,
+            'last_id' => $page->isEmpty() ? null : (string) $page->last()->id,
+            'has_more' => $hasMore,
+        ];
     }
 
     private static function reconcile(string $id): bool
