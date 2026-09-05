@@ -1,4 +1,4 @@
-@props(['agentId', 'statusEndpoint'])
+@props(['statusEndpoint'])
 
 <script data-agent-push-ownership-guard>
     (function () {
@@ -12,43 +12,7 @@
             return;
         }
 
-        var currentAgentId = String(@json((string) $agentId));
-        var pendingOptInPrefix = 'wayfindr:push-opt-in:';
-        var pendingOptInLifetimeMilliseconds = 60 * 1000;
-
-        function currentAgentHasPendingOptIn(subscription) {
-            try {
-                var key = pendingOptInPrefix + subscription.endpoint;
-                var marker = JSON.parse(localStorage.getItem(key) || 'null');
-                var now = Date.now();
-
-                if (! marker
-                    || typeof marker.agentId !== 'string'
-                    || typeof marker.expiresAt !== 'number'
-                    || marker.expiresAt <= now
-                    || marker.expiresAt > now + pendingOptInLifetimeMilliseconds) {
-                    localStorage.removeItem(key);
-
-                    return false;
-                }
-
-                return marker.agentId === currentAgentId;
-            } catch (error) {
-                return false;
-            }
-        }
-
-        function waitForPendingOptIn(subscription) {
-            if (! currentAgentHasPendingOptIn(subscription)) {
-                return Promise.resolve();
-            }
-
-            return new Promise(function (resolve) {
-                window.setTimeout(resolve, 250);
-            }).then(function () {
-                return waitForPendingOptIn(subscription);
-            });
-        }
+        var optInLockPrefix = 'wayfindr:push-opt-in:';
 
         function unsubscribeUnowned(subscription, attemptsRemaining) {
             return subscription.unsubscribe()
@@ -108,35 +72,33 @@
                     return;
                 }
 
-                return subscriptionStatus(subscription.endpoint, 2)
-                    .then(function (payload) {
-                        if (payload.status !== 'missing'
-                            || ! currentAgentHasPendingOptIn(subscription)) {
-                            return payload;
-                        }
+                var verifyOwnership = function () {
+                    return subscriptionStatus(subscription.endpoint, 2)
+                        .then(function (payload) {
+                            if (payload.status === 'owned') {
+                                return;
+                            }
 
-                        return waitForPendingOptIn(subscription).then(function () {
-                            return subscriptionStatus(subscription.endpoint, 2);
+                            // Do not delete or reassign a server row; only stop
+                            // this shared browser receiving from an endpoint the
+                            // current agent does not own.
+                            return unsubscribeUnowned(subscription, 2);
+                        })
+                        .catch(function () {
+                            // The lock is still held here. Privacy wins over
+                            // availability when ownership cannot be proven.
+                            return unsubscribeUnowned(subscription, 2).catch(function () {});
                         });
-                    })
-                    .then(function (payload) {
-                        if (payload.status === 'owned') {
-                            return;
-                        }
+                };
+                var verification = 'locks' in navigator
+                    ? navigator.locks.request(
+                        optInLockPrefix + subscription.endpoint,
+                        { mode: 'exclusive' },
+                        verifyOwnership
+                    )
+                    : verifyOwnership();
 
-                        // A missing row may still be an earlier agent's store
-                        // transaction in flight. Do not delete or reassign a
-                        // server row; only stop this shared browser receiving
-                        // from an endpoint the current agent does not own.
-                        return unsubscribeUnowned(subscription, 2);
-                    })
-                    .catch(function () {
-                        // Ownership is unknown after a bounded retry. Privacy
-                        // wins over availability on a shared browser: remove
-                        // the local subscription rather than risk continuing
-                        // to receive a prior agent's locked-screen alerts.
-                        return unsubscribeUnowned(subscription, 2).catch(function () {});
-                    });
+                return verification;
             })
             .catch(function () {
                 // Push is optional. A failed ownership check must not block

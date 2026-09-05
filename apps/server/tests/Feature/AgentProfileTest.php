@@ -77,8 +77,7 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->get('/dashboard')
         ->assertOk()
         ->assertSee('data-agent-push-logout-cleanup', false)
-        ->assertSee('data-agent-push-ownership-guard', false)
-        ->assertSee('var currentAgentId = String("'.$agent->id.'");', false);
+        ->assertSee('data-agent-push-ownership-guard', false);
 
     $source = file_get_contents(resource_path('views/components/agent-push-ownership-guard.blade.php'));
 
@@ -90,13 +89,14 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->toContain('unsubscribeUnowned(subscription, 2)')
         ->toContain('unsubscribeUnowned(subscription, attemptsRemaining - 1)')
         ->toContain('subscriptionStatus(subscription.endpoint, 2)')
-        ->toContain("var pendingOptInPrefix = 'wayfindr:push-opt-in:'")
-        ->toContain('marker.agentId === currentAgentId')
-        ->toContain('waitForPendingOptIn(subscription)')
-        ->toContain('return subscriptionStatus(subscription.endpoint, 2);')
+        ->toContain("var optInLockPrefix = 'wayfindr:push-opt-in:'")
+        ->toContain('navigator.locks.request(')
+        ->toContain("{ mode: 'exclusive' }")
         ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
         ->toContain('if (! response.ok)')
         ->toContain('return unsubscribeUnowned(subscription, 2).catch')
+        ->not->toContain('localStorage')
+        ->not->toContain('expiresAt')
         ->not->toContain('destroyEndpoint')
         ->not->toContain("method: 'DELETE'");
 
@@ -224,7 +224,6 @@ test('the profile exposes only a ready public VAPID key to the agent browser', f
         ->assertOk()
         ->assertSee('Notify this browser after I close the dashboard')
         ->assertSee('data-agent-push-subscription', false)
-        ->assertSee('"agentId":"'.$agent->id.'"', false)
         ->assertSee($keys['publicKey'])
         ->assertDontSee($keys['privateKey']);
 
@@ -310,54 +309,36 @@ test('the profile requests push permission directly from the submit gesture', fu
         ->not->toContain('Notification.requestPermission()');
 });
 
-test('the profile discards a browser subscription when server storage fails', function (): void {
+test('the profile serializes opt in for the full request and rechecks a failed response', function (): void {
     $source = file_get_contents(resource_path('views/components/agent-push-subscription.blade.php'));
     $storeLifecycle = Str::before(
-        Str::after($source, 'function awaitPendingOptInStore(subscription) {'),
+        Str::after($source, 'function storeEnabledSubscription(subscription) {'),
         'function requestPushPermission()',
     );
 
     expect($storeLifecycle)
-        ->toContain('return waitForPendingOptIn(subscription)')
-        ->toContain("if (payload.status !== 'owned')")
-        ->toContain("subscriptionOwnership = 'owned'")
-        ->toContain('function claimAndStoreEnabledSubscription(subscription)')
-        ->toContain('var existingMarker = pendingOptInMarker(subscription)')
-        ->toContain('existingMarker.agentId === String(config.agentId)')
-        ->toContain('return awaitPendingOptInStore(subscription)')
-        ->toContain('var markerToken = markPendingOptIn(subscription)')
-        ->toContain('if (! markerToken)')
-        ->toContain('return Promise.reject(new Error(config.failedMessage))')
-        ->toContain('var markerRenewal = keepPendingOptInAlive(subscription, markerToken)')
-        ->toContain('return storeSubscription(subscription).then(function (stored)')
-        ->toContain('window.clearInterval(markerRenewal)')
-        ->toContain('if (! marker || marker.token !== markerToken)')
-        ->toContain('clearPendingRemoval(subscription.endpoint)')
-        ->toContain('clearPendingOptIn(subscription, markerToken)')
-        ->toContain('pendingRemoval(subscription.endpoint)')
-        ->toContain("request(config.destroyEndpoint, 'DELETE'")
-        ->toContain('subscription.unsubscribe().catch(function () {})')
-        ->toContain('if (storedRemoved)')
-        ->toContain('pendingRemoval(null)')
-        ->toContain('throw failure;');
-
-    expect($source)
-        ->toContain("var pendingOptInPrefix = 'wayfindr:push-opt-in:'")
-        ->toContain('var pendingOptInRenewalMilliseconds = 10 * 1000')
-        ->toContain('agentId: String(config.agentId)')
-        ->toContain('function renewPendingOptIn(subscription, token)')
-        ->toContain('marker.expiresAt = Date.now() + pendingOptInLifetimeMilliseconds')
-        ->toContain('return renewed && renewed.token === token')
-        ->toContain('function keepPendingOptInAlive(subscription, token)')
-        ->toContain('renewPendingOptIn(subscription, token)')
-        ->toContain('if (pendingOptInMarker(subscription))')
-        ->toContain('marker.agentId === String(config.agentId)')
-        ->toContain('waitForPendingOptIn(subscription)')
-        ->toContain('function storeEnabledSubscription(subscription)')
+        ->toContain('return navigator.locks.request(')
+        ->toContain("{ mode: 'exclusive' }")
+        ->toContain("navigator.serviceWorker.getRegistration('/wayfindr-sw.js')")
+        ->toContain('current.endpoint !== subscription.endpoint')
+        ->toContain('return subscriptionStatus(current.endpoint, 2)')
         ->toContain("if (payload.status === 'owned')")
         ->toContain("if (payload.status === 'foreign')")
-        ->toContain('return claimAndStoreEnabledSubscription(subscription)')
-        ->toContain('return subscriptionStatus(subscription.endpoint, 2);')
+        ->toContain('return storeSubscription(current).then(function (stored)')
+        ->toContain("subscriptionOwnership = 'owned'")
+        ->toContain('return subscriptionStatus(current.endpoint, 2)')
+        ->toContain("if (afterFailure.status === 'owned')")
+        ->toContain("if (afterFailure.status === 'foreign')")
+        ->toContain('throw failure;')
+        ->not->toContain('unsubscribe()')
+        ->not->toContain("request(config.destroyEndpoint, 'DELETE'")
+        ->not->toContain('setInterval')
+        ->not->toContain('localStorage');
+
+    expect($source)
+        ->toContain("var optInLockPrefix = 'wayfindr:push-opt-in:'")
+        ->toContain("typeof navigator.locks.request !== 'function'")
+        ->toContain('function storeEnabledSubscription(subscription)')
         ->toContain('return storeEnabledSubscription(subscription);')
         ->toContain('}).then(storeEnabledSubscription);');
 });
