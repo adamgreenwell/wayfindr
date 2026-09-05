@@ -14,7 +14,10 @@ return new class extends Migration
             $table->uuid('alert_version');
             $table->string('state_key', 64)->default('event');
             $table->string('channel');
-            $table->uuid('claim_token')->nullable();
+            // Digest and unattended collectors already treat this as an
+            // opaque ownership token; production uses UUIDs, while keeping
+            // the ledger compatible with every valid existing token shape.
+            $table->string('claim_token', 64)->nullable();
             $table->timestamp('started_at')->nullable();
             $table->timestamp('accepted_at')->nullable();
             $table->timestamps();
