@@ -3508,6 +3508,7 @@
         })();
     </script>
     @if ($agent)
+        <x-agent-push-logout-cleanup />
         <x-agent-push-ownership-guard :agent-id="$agent->id" :status-endpoint="route('dashboard.profile.push-subscription.status')" />
         @if ($account)
             @if ($agentAlertRealtimeConfig = \App\Support\AgentAlertRealtimeConfig::forAgent($agent))

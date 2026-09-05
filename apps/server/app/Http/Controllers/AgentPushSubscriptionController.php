@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
-use App\Models\Account;
 use App\Models\AgentPushSubscription;
 use App\Models\OperatorSetting;
 use App\Models\User;
@@ -202,35 +201,7 @@ final class AgentPushSubscriptionController extends Controller
             'endpoint' => ['required', 'string', 'max:'.AgentPushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
         ]);
 
-        $accountId = (int) $agent->account_id;
-        $userId = (int) $agent->id;
-
-        DB::transaction(function () use ($accountId, $userId, $validated): void {
-            Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
-            $currentAgent = User::query()
-                ->whereKey($userId)
-                ->where('account_id', $accountId)
-                ->lockForUpdate()
-                ->firstOrFail();
-
-            AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
-                ->where('subscribable_type', $currentAgent->getMorphClass())
-                ->where('subscribable_id', $currentAgent->getKey())
-                ->where('endpoint', $validated['endpoint'])
-                ->delete();
-
-            if ($currentAgent->pushSubscriptions()->exists()) {
-                return;
-            }
-
-            $alertPreferences = $currentAgent->alert_preferences ?? [];
-
-            if (($alertPreferences['push'] ?? false) === true) {
-                $currentAgent->forceFill([
-                    'alert_preferences' => array_merge($alertPreferences, ['push' => false]),
-                ])->save();
-            }
-        });
+        AgentPushSubscription::revokeEndpointFor($agent, $validated['endpoint']);
 
         return response()->noContent();
     }

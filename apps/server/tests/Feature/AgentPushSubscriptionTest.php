@@ -5,9 +5,12 @@ use App\Models\Account;
 use App\Models\AgentPushSubscription;
 use App\Models\OperatorSetting;
 use App\Models\User;
+use App\Support\AgentWebPushConfig;
 use App\Support\Settings\OperatorSettings;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use NotificationChannels\WebPush\PushSubscription;
 
 uses(RefreshDatabase::class);
@@ -342,4 +345,26 @@ test('an environment VAPID rotation purges old subscriptions before enforcing th
         ->and($current->endpoint)->toBe($newPayload['endpoint'])
         ->and($current->vapid_public_key_hash)->not->toBe($oldHash)
         ->and($current->vapid_public_key_hash)->toBe(AgentPushSubscription::currentVapidPublicKeyHash());
+});
+
+test('a fallback VAPID value cannot purge subscriptions after the settings store fails', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $payload = agentPushPayload();
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => $payload['endpoint'],
+        'public_key' => $payload['keys']['p256dh'],
+        'auth_token' => $payload['keys']['auth'],
+        'content_encoding' => 'aes128gcm',
+    ]);
+
+    Schema::drop('operator_settings');
+    Cache::flush();
+    app(OperatorSettings::class)->applyOverrides();
+
+    expect(app(OperatorSettings::class)->valuesAreAuthoritative())->toBeFalse()
+        ->and(app(AgentWebPushConfig::class)->assessment()['status'])->toBe('unavailable')
+        ->and(app(AgentWebPushConfig::class)->publicKeyForBrowser())->toBeNull()
+        ->and($subscription->usesCurrentVapidGeneration())->toBeTrue()
+        ->and(AgentPushSubscription::purgeStaleFor($agent))->toBe(0)
+        ->and(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(1);
 });

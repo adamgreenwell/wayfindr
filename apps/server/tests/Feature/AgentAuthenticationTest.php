@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\Site;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
@@ -69,6 +70,33 @@ test('logout ends the agent session', function (): void {
     $this->actingAs($agent)
         ->post('/logout')
         ->assertRedirect('/login');
+
+    $this->assertGuest();
+});
+
+test('logout removes only the current browsers push endpoint before ending the session', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+
+    foreach (['current', 'other'] as $browser) {
+        $agent->pushSubscriptions()->create([
+            'endpoint' => "https://push.example.test/subscriptions/{$browser}",
+            'public_key' => 'public-key',
+            'auth_token' => 'auth-token',
+            'content_encoding' => 'aes128gcm',
+        ]);
+    }
+
+    $this->actingAs($agent)
+        ->post('/logout', [
+            'push_subscription_endpoint' => 'https://push.example.test/subscriptions/current',
+        ])
+        ->assertRedirect('/login');
+
+    expect(AgentPushSubscription::withoutGlobalScopes()->pluck('endpoint')->all())
+        ->toBe(['https://push.example.test/subscriptions/other'])
+        ->and($agent->fresh()->alertPushEnabled())->toBeTrue();
 
     $this->assertGuest();
 });

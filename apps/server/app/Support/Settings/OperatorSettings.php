@@ -144,6 +144,12 @@ class OperatorSettings
     private ?array $baseline = null;
 
     /**
+     * Whether the effective config may be trusted for destructive work. Direct
+     * config is authoritative until an attempted operator-store read fails.
+     */
+    private bool $lastReadWasAuthoritative = true;
+
+    /**
      * Apply the stored settings onto config for every managed key. Called at
      * boot (per web request) and before each queued job, so a change made in the
      * browser is live without a restart. Every managed path is set to the
@@ -179,8 +185,11 @@ class OperatorSettings
     {
         try {
             $stored = $this->storedValues();
+            $this->lastReadWasAuthoritative = true;
         } catch (Throwable) {
             // Store unreachable (DB/cache down, table not migrated): env baseline.
+            $this->lastReadWasAuthoritative = false;
+
             return $this->baseline;
         }
 
@@ -224,13 +233,25 @@ class OperatorSettings
         try {
             $stored = OperatorSetting::query()->pluck('value', 'key')->all();
             $targets = $this->resolveTargetsFrom($stored);
+            $this->lastReadWasAuthoritative = true;
         } catch (Throwable) {
             $targets = $this->baseline;
+            $this->lastReadWasAuthoritative = false;
         }
 
         foreach ($targets as $configPath => $value) {
             config()->set($configPath, $value);
         }
+    }
+
+    /**
+     * Whether destructive consumers may trust the currently applied values.
+     * A fail-safe env fallback keeps the app usable, but must not be mistaken
+     * for an authoritative operator-managed value during cleanup or rotation.
+     */
+    public function valuesAreAuthoritative(): bool
+    {
+        return $this->lastReadWasAuthoritative;
     }
 
     /**

@@ -52,13 +52,15 @@ test('a cleared override reverts config to the env baseline (not left stale on a
 
     settings()->set('mail.host', 'operator-host');
     settings()->applyOverrides();
-    expect(config('mail.mailers.smtp.host'))->toBe('operator-host');
+    expect(config('mail.mailers.smtp.host'))->toBe('operator-host')
+        ->and(settings()->valuesAreAuthoritative())->toBeTrue();
 
     // Operator clears the setting; a later request/job must restore env, not
     // keep the old override the way a plain skip would on a persistent worker.
     settings()->set('mail.host', null);
     settings()->applyOverrides();
-    expect(config('mail.mailers.smtp.host'))->toBe('env-host');
+    expect(config('mail.mailers.smtp.host'))->toBe('env-host')
+        ->and(settings()->valuesAreAuthoritative())->toBeTrue();
 });
 
 test('applying settings forgets cached mailers so a mail config change takes effect', function (): void {
@@ -150,7 +152,8 @@ test('when the settings store is unreadable, config falls back to the env baseli
 
     settings()->applyOverrides();
 
-    expect(config('mail.mailers.smtp.host'))->toBe('env-host');
+    expect(config('mail.mailers.smtp.host'))->toBe('env-host')
+        ->and(settings()->valuesAreAuthoritative())->toBeFalse();
 });
 
 test('configuring mail nulls the smtp url so an env MAIL_URL cannot supersede it', function (): void {

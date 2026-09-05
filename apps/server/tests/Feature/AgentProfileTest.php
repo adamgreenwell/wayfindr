@@ -74,6 +74,7 @@ test('every authenticated dashboard page clears a prior agents local push subscr
     $this->actingAs($agent)
         ->get('/dashboard')
         ->assertOk()
+        ->assertSee('data-agent-push-logout-cleanup', false)
         ->assertSee('data-agent-push-ownership-guard', false)
         ->assertSee('var currentAgentId = String("'.$agent->id.'");', false);
 
@@ -96,6 +97,17 @@ test('every authenticated dashboard page clears a prior agents local push subscr
         ->toContain('return unsubscribeUnowned(subscription, 2).catch')
         ->not->toContain('destroyEndpoint')
         ->not->toContain("method: 'DELETE'");
+
+    $logoutSource = file_get_contents(resource_path('views/components/agent-push-logout-cleanup.blade.php'));
+
+    expect($logoutSource)
+        ->toContain("document.querySelector('form.wf-signout')")
+        ->toContain("navigator.serviceWorker.getRegistration('/wayfindr-sw.js')")
+        ->toContain("endpoint.name = 'push_subscription_endpoint'")
+        ->toContain('endpoint.value = subscription.endpoint')
+        ->toContain("form.dataset.pushEndpointCapturePending = 'true'")
+        ->toContain('Promise.race([lookup, timeout])')
+        ->toContain('HTMLFormElement.prototype.submit.call(form)');
 });
 
 test('agent profile password form includes a hidden username for browser tooling', function (): void {

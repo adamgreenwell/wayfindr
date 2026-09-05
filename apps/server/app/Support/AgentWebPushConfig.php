@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support;
 
+use App\Support\Settings\OperatorSettings;
 use Base64Url\Base64Url;
 use Jose\Component\Core\AlgorithmManager;
 use Jose\Component\Core\JWK;
@@ -18,14 +19,21 @@ use Throwable;
 /** Assess the optional VAPID configuration without ever exposing its secret. */
 final class AgentWebPushConfig
 {
-    /** @return array{status: 'unset'|'incomplete'|'invalid'|'ready', has_subject: bool, has_public_key: bool, has_private_key: bool} */
+    public function __construct(private readonly OperatorSettings $settings) {}
+
+    /** @return array{status: 'unset'|'incomplete'|'invalid'|'ready'|'unavailable', has_subject: bool, has_public_key: bool, has_private_key: bool} */
     public function assessment(): array
     {
         $subject = trim((string) config('webpush.vapid.subject'));
         $publicKey = trim((string) config('webpush.vapid.public_key'));
         $privateKey = trim((string) config('webpush.vapid.private_key'));
+        $assessment = $this->assessValues($subject, $publicKey, $privateKey);
 
-        return $this->assessValues($subject, $publicKey, $privateKey);
+        if (! $this->settings->valuesAreAuthoritative()) {
+            $assessment['status'] = 'unavailable';
+        }
+
+        return $assessment;
     }
 
     /** @return array{status: 'unset'|'incomplete'|'invalid'|'ready', has_subject: bool, has_public_key: bool, has_private_key: bool} */
