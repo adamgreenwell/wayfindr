@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Support\AgentAlertBroadcaster;
+use App\Support\AgentAlertPublicationFingerprint;
 use App\Support\VisitorSessionToken;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
@@ -42,16 +43,56 @@ test('agent alert broadcasts wait for commit and serialize their final send insi
     expect($dispatchLevels)->toBe([1]);
 
     DB::beginTransaction();
+    $alert->forceFill(['data' => [...$alert->data, 'sequence' => 2]])->save();
     $broadcaster->stored($agent, $alert);
     expect($dispatchLevels)->toBe([1]);
     DB::rollBack();
     expect($dispatchLevels)->toBe([1]);
 
     DB::beginTransaction();
+    $alert = $alert->fresh();
+    $alert->forceFill(['data' => [...$alert->data, 'sequence' => 3]])->save();
     $broadcaster->stored($agent, $alert);
     expect($dispatchLevels)->toBe([1]);
     DB::commit();
     expect($dispatchLevels)->toBe([1, 1]);
+});
+
+test('stale concurrent callbacks publish the current stored state only once', function (): void {
+    Event::fake([AgentAlertStored::class]);
+
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    $alert = $agent->notifications()->create([
+        'id' => (string) Str::uuid(),
+        'type' => ConversationNeedsReply::class,
+        'data' => [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $conversation->id,
+            'message_count' => 1,
+        ],
+        'read_at' => null,
+    ]);
+    $stale = $alert->replicate()->setAttribute('id', $alert->id);
+
+    $alert->forceFill(['data' => [...$alert->data, 'message_count' => 2]])->save();
+    $broadcaster = app(AgentAlertBroadcaster::class);
+
+    $broadcaster->stored($agent, $stale);
+    $version = $alert->fresh()->getAttribute('agent_alert_version');
+    $broadcaster->stored($agent, $alert->fresh());
+
+    Event::assertDispatchedTimes(AgentAlertStored::class, 1);
+
+    $current = $alert->fresh();
+
+    expect($current->getAttribute('agent_alert_version'))->toBe($version)
+        ->and($current->getAttribute('agent_alert_fingerprint'))->toBe(
+            AgentAlertPublicationFingerprint::for($current->data),
+        );
 });
 
 test('new and batched conversation alerts both broadcast their durable database state', function (): void {

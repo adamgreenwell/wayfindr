@@ -31,30 +31,43 @@ final class AgentAlertBroadcaster
             return;
         }
 
-        // Keep the browser-alert cursor/version independent from generic
-        // notification writes. Reading an alert or stamping email metadata
-        // must not look like a new alert after a socket reconnect.
-        $alertedAt = now();
-        $alertVersion = (string) Str::uuid();
-        $marked = DB::table('notifications')
-            ->where('id', $notificationId)
-            ->where('notifiable_type', $notifiableType)
-            ->where('notifiable_id', $agentId)
-            ->update([
-                'agent_alerted_at' => $alertedAt,
-                'agent_alert_version' => $alertVersion,
-                'agent_alert_fingerprint' => AgentAlertPublicationFingerprint::for($notification->data),
+        // Derive publication metadata from the CURRENT durable payload while
+        // holding its row lock. Concurrent refresh callbacks may carry stale
+        // model instances; only the first callback to record the stored state
+        // gets a version and broadcast. Generic read/email writes do not alter
+        // the alert-bearing fingerprint and therefore remain silent.
+        $marked = DB::transaction(function () use ($agentId, $notificationId, $notifiableType): bool {
+            $current = DatabaseNotification::query()
+                ->whereKey($notificationId)
+                ->where('notifiable_type', $notifiableType)
+                ->where('notifiable_id', $agentId)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $current instanceof DatabaseNotification) {
+                return false;
+            }
+
+            $fingerprint = AgentAlertPublicationFingerprint::for($current->data);
+            $recordedFingerprint = $current->getAttribute('agent_alert_fingerprint');
+
+            if (is_string($recordedFingerprint)
+                && hash_equals($recordedFingerprint, $fingerprint)) {
+                return false;
+            }
+
+            DB::table('notifications')->where('id', $notificationId)->update([
+                'agent_alerted_at' => now(),
+                'agent_alert_version' => (string) Str::uuid(),
+                'agent_alert_fingerprint' => $fingerprint,
             ]);
 
-        if ($marked !== 1) {
+            return true;
+        });
+
+        if (! $marked) {
             return;
         }
-
-        $notification->forceFill([
-            'agent_alerted_at' => $alertedAt,
-            'agent_alert_version' => $alertVersion,
-            'agent_alert_fingerprint' => AgentAlertPublicationFingerprint::for($notification->data),
-        ]);
 
         DB::afterCommit(function () use ($accountId, $agentId, $notificationId, $notifiableType): void {
             try {
