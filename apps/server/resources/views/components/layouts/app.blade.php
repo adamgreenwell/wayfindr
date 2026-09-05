@@ -589,7 +589,8 @@
         }
 
         .wf-command-trigger kbd,
-        .wf-command-item kbd {
+        .wf-command-item kbd,
+        .wf-shortcut-row kbd {
             border: var(--wf-border) solid var(--wf-rule-firm);
             border-radius: 3px;
             background: var(--wf-surface-2);
@@ -724,6 +725,56 @@
 
         .wf-command-empty {
             margin: 0 var(--wf-space-5) var(--wf-space-5);
+        }
+
+        .wf-shortcut-content {
+            min-height: 0;
+            overflow-y: auto;
+            padding: var(--wf-space-4) var(--wf-space-5) var(--wf-space-5);
+        }
+
+        .wf-shortcut-description {
+            margin: 0 0 var(--wf-space-4);
+            color: var(--wf-muted);
+        }
+
+        .wf-shortcut-group + .wf-shortcut-group {
+            margin-top: var(--wf-space-4);
+        }
+
+        .wf-shortcut-group h3 {
+            margin: 0 0 var(--wf-space-2);
+            color: var(--wf-muted);
+            font-size: 11px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .wf-shortcut-list {
+            margin: 0;
+        }
+
+        .wf-shortcut-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--wf-space-4);
+            padding: 9px var(--wf-space-3);
+            border-top: var(--wf-border) solid var(--wf-rule);
+        }
+
+        .wf-shortcut-row:first-child {
+            border-top: 0;
+        }
+
+        .wf-shortcut-row dt,
+        .wf-shortcut-row dd {
+            margin: 0;
+        }
+
+        .wf-shortcut-row[hidden],
+        .wf-shortcut-group[hidden] {
+            display: none;
         }
 
         /* Full bleed rather than a 1120px column, but capped so a line of body
@@ -1617,7 +1668,8 @@
                 padding-inline: var(--wf-space-4);
             }
 
-            .wf-command-groups {
+            .wf-command-groups,
+            .wf-shortcut-content {
                 padding-inline: var(--wf-space-4);
             }
         }
@@ -3303,6 +3355,7 @@
                     </form>
 
                     <x-agent-command-palette :navigation-items="$commandNavigationItems" />
+                    <x-agent-shortcut-reference />
                 </header>
 
                 <main class="page">

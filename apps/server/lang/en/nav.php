@@ -74,5 +74,20 @@ return [
         ],
     ],
 
+    'shortcuts' => [
+        'eyebrow' => 'Agent workspace',
+        'title' => 'Keyboard shortcuts',
+        'description' => 'Only shortcuts available on this page are shown.',
+        'dismiss' => 'Close keyboard shortcut reference',
+        'groups' => [
+            'general' => 'General',
+            'page' => 'On this page',
+        ],
+        'actions' => [
+            'palette' => 'Command palette',
+            'reference' => 'Keyboard shortcuts',
+        ],
+    ],
+
     'sign_out' => 'Sign out',
 ];

@@ -24,6 +24,7 @@ test('the agent shell exposes an accessible command palette with authorized navi
         ->assertSee('data-command-query', false)
         ->assertSee('data-command-action="next"', false)
         ->assertSee('data-command-action="search"', false)
+        ->assertSee('data-command-action="reference"', false)
         ->assertSee('data-command-label="Dashboard"', false)
         ->assertSee('href="'.route('dashboard.conversations.index').'"', false)
         ->assertSee('href="'.route('dashboard.tickets.index').'"', false)
