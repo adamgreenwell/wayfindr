@@ -99,6 +99,8 @@ return [
         'guidance_quiet' => 'La modalità silenziosa mette in pausa i nuovi avvisi senza modificare le assegnazioni, l’accesso al sito o la responsabilità di supporto.',
         'mode' => 'Modalità avviso',
         'email_alerts' => 'Avvisi email',
+        'sound_alerts' => 'Riproduci un suono per i nuovi avvisi della dashboard',
+        'sound_help' => 'Un breve tono locale viene riprodotto solo mentre questa dashboard è aperta in background. Il browser potrebbe attendere un’interazione con la pagina prima di consentire l’audio.',
         'cadence' => 'Cadenza email',
         'cadence_help' => 'La consegna del riepilogo raggruppa le email di avviso idonee quando viene eseguito il pianificatore. La modalità non presidiata invia email solo quando un messaggio di un visitatore resta non visualizzato. Gli avvisi della dashboard restano immediati.',
         'last_digest' => 'Ultimo riepilogo',

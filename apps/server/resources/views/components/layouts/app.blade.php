@@ -38,6 +38,7 @@
          `<title>`, not `<title >`. Only the attribute is unescaped; its value
          is escaped on the way in. --}}
     <title{!! $titleLang !== null ? ' lang="'.e(str_replace('_', '-', $titleLang)).'"' : '' !!}>{{ $title }}</title>
+    <link rel="icon" href="{{ asset('favicon.ico') }}" data-agent-alert-favicon>
     <script>
         (function () {
             try {
@@ -3507,6 +3508,9 @@
         })();
     </script>
     @if ($agent && $account)
+        @if ($agentAlertRealtimeConfig = \App\Support\AgentAlertRealtimeConfig::forAgent($agent))
+            <x-agent-alert-stream :config="$agentAlertRealtimeConfig" />
+        @endif
         <x-agent-shortcut-script />
     @endif
 </body>

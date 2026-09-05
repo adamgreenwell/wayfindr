@@ -5,6 +5,7 @@ namespace App\Rules;
 use App\Support\DatabaseKey;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Support\Str;
 
 /**
  * A pagination cursor the paginator can actually use.
@@ -50,7 +51,7 @@ class DecodableCursor implements ValidationRule
     private const MAX_OFFSET_HOURS = 15;
 
     /**
-     * @param  array<string, string>  $orderedBy  Column => `key` or `timestamp`.
+     * @param  array<string, string>  $orderedBy  Column => `key`, `uuid`, or `timestamp`.
      */
     public function __construct(
         private readonly array $orderedBy = ['created_at' => 'timestamp', 'id' => 'key'],
@@ -146,6 +147,10 @@ class DecodableCursor implements ValidationRule
             return is_int($value)
                 ? DatabaseKey::isValid((string) $value)
                 : is_string($value) && DatabaseKey::isValid($value);
+        }
+
+        if ($kind === 'uuid') {
+            return is_string($value) && Str::isUuid($value);
         }
 
         // The exact shape the paginator emits, not "something Carbon can

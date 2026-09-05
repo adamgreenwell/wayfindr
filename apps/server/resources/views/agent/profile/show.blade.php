@@ -185,6 +185,18 @@
                 <span>{{ __('profile.alerts.email_alerts') }}</span>
             </label>
 
+            <label class="check-row" for="sound_alerts">
+                <input
+                    id="sound_alerts"
+                    name="sound_alerts"
+                    type="checkbox"
+                    value="1"
+                    @checked(old('sound_alerts', $agent->alertSoundEnabled()))
+                >
+                <span>{{ __('profile.alerts.sound_alerts') }}</span>
+            </label>
+            <p class="field-help">{{ __('profile.alerts.sound_help') }}</p>
+
             <div class="field">
                 <label for="alert_cadence">{{ __('profile.alerts.cadence') }}</label>
                 <select id="alert_cadence" name="alert_cadence" required>

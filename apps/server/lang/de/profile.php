@@ -91,6 +91,8 @@ return [
         'guidance_quiet' => 'Der Ruhemodus pausiert neue Benachrichtigungen, ohne Zuweisungen, Website-Zugriff oder Support-Verantwortung zu ändern.',
         'mode' => 'Benachrichtigungsmodus',
         'email_alerts' => 'E-Mail-Benachrichtigungen',
+        'sound_alerts' => 'Bei neuen Dashboard-Benachrichtigungen einen Ton abspielen',
+        'sound_help' => 'Ein kurzer lokaler Ton wird nur abgespielt, wenn dieses Dashboard im Hintergrund geöffnet ist. Je nach Browser ist vor der Tonwiedergabe möglicherweise eine Interaktion mit der Seite erforderlich.',
         'cadence' => 'E-Mail-Rhythmus',
         'cadence_help' => 'Die Sammelzustellung bündelt geeignete E-Mail-Benachrichtigungen, wenn der Planer läuft. „Unbeantwortet“ sendet nur dann eine E-Mail, wenn eine Besuchernachricht ungesehen wartet. Benachrichtigungen im Dashboard bleiben sofort.',
         'last_digest' => 'Letzte Sammelmeldung',

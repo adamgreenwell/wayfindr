@@ -115,6 +115,12 @@ fi
 forge_php artisan route:cache
 forge_php artisan view:cache
 forge_php artisan queue:restart
+# The immediate pass covers writes already committed. The queued pass runs two
+# minutes later, after the documented 90-second default worker timeout, so an
+# old worker finishing after queue:restart cannot strand its final refresh until
+# the daily compatibility sweep.
+forge_php artisan wayfindr:reconcile-agent-alert-publications
+forge_php artisan wayfindr:reconcile-agent-alert-publications --after-worker-drain
 forge_php artisan reverb:restart
 forge_php artisan up
 maintenance_enabled=0

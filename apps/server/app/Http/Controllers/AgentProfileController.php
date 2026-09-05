@@ -138,8 +138,9 @@ class AgentProfileController extends Controller
         $accountId = (int) $request->user()->account_id;
         $userId = (int) $request->user()->id;
         $email = $request->boolean('email_alerts');
+        $sound = $request->boolean('sound_alerts');
 
-        DB::transaction(function () use ($accountId, $email, $userId, $validated): void {
+        DB::transaction(function () use ($accountId, $email, $sound, $userId, $validated): void {
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()
                 ->whereKey($userId)
@@ -152,6 +153,7 @@ class AgentProfileController extends Controller
                 'alert_preferences' => array_merge($alertPreferences, [
                     'mode' => $validated['alert_mode'],
                     'email' => $email,
+                    'sound' => $sound,
                     'cadence' => $validated['alert_cadence'] ?? $agent->alertCadence(),
                 ]),
             ])->save();

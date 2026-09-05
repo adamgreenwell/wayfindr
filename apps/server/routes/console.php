@@ -82,6 +82,14 @@ Schedule::command('wayfindr:sanitise-page-urls')
     ->daily()
     ->description('Rewrite stored visitor page addresses that still carry a query string.');
 
+// Close the same migrate-before-activate window for browser alert metadata.
+// Once all supported installs have crossed the publication-metadata migration,
+// this compatibility sweep can be retired; until then it also catches a final
+// old queue job that finishes after Forge's immediate post-activation pass.
+Schedule::command('wayfindr:reconcile-agent-alert-publications')
+    ->daily()
+    ->description('Backfill browser alert publications written by a previous release.');
+
 // Retention for presence-only visitors (ADR 0019 §4). Daily, because the window
 // is measured in days and an hourly pass would scan for nothing 23 times over.
 Schedule::command('wayfindr:prune-presence-visitors')

@@ -99,6 +99,13 @@ forge_php artisan wayfindr:sanitise-page-urls
 echo "Restarting Laravel queues."
 forge_php artisan queue:restart
 
+echo "Reconciling agent alert publications."
+# First catch everything already committed, then use the restarted default
+# queue to run one more pass after its old 90-second workers have drained.
+# queue:restart is only a signal; it does not wait for their current jobs.
+forge_php artisan wayfindr:reconcile-agent-alert-publications
+forge_php artisan wayfindr:reconcile-agent-alert-publications --after-worker-drain
+
 echo "Restarting Laravel Reverb."
 forge_php artisan reverb:restart
 

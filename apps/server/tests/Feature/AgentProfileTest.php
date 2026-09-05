@@ -93,13 +93,15 @@ test('agent can update their alert preference mode', function (): void {
         ->assertSee('All site alerts I can support')
         ->assertSee('Only conversations and tickets assigned to me')
         ->assertSee('Quiet mode')
-        ->assertSee('Email alerts');
+        ->assertSee('Email alerts')
+        ->assertSee('Play a sound for new dashboard alerts');
 
     $this->actingAs($agent)
         ->from('/dashboard/profile')
         ->put('/dashboard/profile/alerts', [
             'alert_mode' => 'assigned',
             'email_alerts' => '1',
+            'sound_alerts' => '1',
         ])
         ->assertRedirect('/dashboard/profile')
         ->assertSessionHas('status', 'profile.flash.alerts_updated');
@@ -107,6 +109,32 @@ test('agent can update their alert preference mode', function (): void {
     expect($agent->fresh()->alert_preferences)->toMatchArray([
         'mode' => 'assigned',
         'email' => true,
+        'sound' => true,
+    ]);
+});
+
+test('agent can turn the optional dashboard alert sound off', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_ALL,
+            'email' => true,
+            'sound' => true,
+        ],
+    ]);
+
+    expect($agent->alertSoundEnabled())->toBeTrue();
+
+    $this->actingAs($agent)
+        ->put('/dashboard/profile/alerts', [
+            'alert_mode' => User::ALERT_MODE_ALL,
+            'email_alerts' => '1',
+        ])
+        ->assertRedirect('/dashboard/profile');
+
+    expect($agent->fresh()->alert_preferences)->toMatchArray([
+        'mode' => User::ALERT_MODE_ALL,
+        'email' => true,
+        'sound' => false,
     ]);
 });
 
