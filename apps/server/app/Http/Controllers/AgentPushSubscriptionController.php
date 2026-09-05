@@ -35,7 +35,7 @@ final class AgentPushSubscriptionController extends Controller
         $validated = $request->validate([
             'endpoint' => ['required', 'string', 'max:'.AgentPushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
         ]);
-        $status = DB::transaction(function () use ($agent, $settings, $validated): string {
+        $result = DB::transaction(function () use ($agent, $settings, $validated): array {
             // Status can delete a stale generation, so make that decision from
             // committed VAPID settings while excluding a concurrent rotation.
             // Otherwise a long-running process could delete a freshly enrolled
@@ -57,19 +57,25 @@ final class AgentPushSubscriptionController extends Controller
                 ->first();
 
             if (! $subscription instanceof AgentPushSubscription) {
-                return 'missing';
+                return ['status' => 'missing'];
             }
 
-            if (! $subscription->usesCurrentVapidGeneration()) {
+            $usesCurrentGeneration = $subscription->usesCurrentVapidGeneration();
+
+            if (! $usesCurrentGeneration
+                && AgentPushSubscription::canPurgeOtherVapidGenerations()) {
                 $subscription->delete();
 
-                return 'missing';
+                return ['status' => 'missing'];
             }
 
-            return $agent->ownsPushSubscription($subscription) ? 'owned' : 'foreign';
+            return [
+                'status' => $agent->ownsPushSubscription($subscription) ? 'owned' : 'foreign',
+                ...(! $usesCurrentGeneration ? ['generation' => 'transitional'] : []),
+            ];
         });
 
-        return response()->json(['status' => $status]);
+        return response()->json($result);
     }
 
     public function store(
@@ -162,7 +168,8 @@ final class AgentPushSubscriptionController extends Controller
                     ->first();
 
                 if ($subscription instanceof AgentPushSubscription
-                    && ! $subscription->usesCurrentVapidGeneration()) {
+                    && ! $subscription->usesCurrentVapidGeneration()
+                    && AgentPushSubscription::canPurgeOtherVapidGenerations()) {
                     $subscription->delete();
                     $subscription = null;
                 }

@@ -380,6 +380,8 @@ test('the profile cleans up an owned browser subscription after a VAPID key rota
         ->toContain('application_server_key: config.publicKey')
         ->toContain("payload.status === 'foreign'")
         ->toContain("payload.status === 'missing'")
+        ->toContain("payload.generation === 'transitional'")
+        ->toContain("initialBrowserEnabled = payload.status === 'owned'")
         ->toContain('subscriptionStatus(subscription.endpoint, 2)')
         ->toContain('subscriptionStatus(endpoint, attemptsRemaining - 1)')
         ->toContain('showError(config.ownershipCheckFailedMessage)')

@@ -390,7 +390,7 @@ test('delivery refreshes VAPID settings under the rotation lock before purging s
         ->toBeLessThan(strpos($handle, 'AgentPushSubscription::purgeStaleFor($recipient)'));
 });
 
-test('an environment VAPID rotation removes stale subscriptions before delivery', function (): void {
+test('an environment VAPID rotation retains other live-process generations without delivering them', function (): void {
     readyAgentWebPushConfig();
     [$agent, , $alert] = pushAlertFixture();
     subscribeAgentForPush($agent, 'old-environment');
@@ -409,8 +409,9 @@ test('an environment VAPID rotation removes stale subscriptions before delivery'
     $listener->handle($event, app(AgentWebPushConfig::class));
 
     Http::assertNothingSent();
-    expect(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(0)
+    expect(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(1)
         ->and(AgentPushSubscription::currentVapidPublicKeyHash())->not->toBe($oldHash)
+        ->and(AgentPushSubscription::canPurgeOtherVapidGenerations())->toBeFalse()
         ->and($listener->shouldQueue($event))->toBeFalse();
 });
 

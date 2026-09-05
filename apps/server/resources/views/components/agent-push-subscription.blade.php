@@ -409,6 +409,18 @@
                                         return cleanStaleSubscription(subscription, false, true);
                                     }
 
+                                    if (payload.generation === 'transitional') {
+                                        // Environment keys are process-local. During a
+                                        // rolling deploy, another live process may own
+                                        // this generation, so preserve it until the
+                                        // agent explicitly turns this browser off.
+                                        initialBrowserEnabled = payload.status === 'owned';
+                                        checkbox.checked = initialBrowserEnabled;
+                                        checkbox.disabled = false;
+
+                                        return;
+                                    }
+
                                     if (! usesCurrentApplicationServerKey(subscription)) {
                                         return cleanStaleSubscription(subscription, payload.status === 'owned');
                                     }

@@ -206,6 +206,41 @@ test('subscription status refreshes VAPID settings before deleting a generation'
         ->toBeLessThan(strpos($status, '$subscription->usesCurrentVapidGeneration()'));
 });
 
+test('an environment-backed process cannot purge another rolling-deploy generation', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $payload = agentPushPayload();
+    $subscription = $agent->pushSubscriptions()->create([
+        'endpoint' => $payload['endpoint'],
+        'public_key' => $payload['keys']['p256dh'],
+        'auth_token' => $payload['keys']['auth'],
+        'content_encoding' => 'aes128gcm',
+    ]);
+    $otherProcessKey = 'other-process-environment-vapid-key';
+
+    OperatorSetting::query()->where('key', 'webpush.public_key')->delete();
+    AgentPushSubscription::withoutGlobalScopes()
+        ->whereKey($subscription->id)
+        ->update(['vapid_public_key_hash' => hash('sha256', $otherProcessKey)]);
+
+    $environmentSettings = new OperatorSettings;
+    $environmentSettings->captureBaseline();
+    app()->instance(OperatorSettings::class, $environmentSettings);
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.profile.push-subscription.status'), [
+            'endpoint' => $payload['endpoint'],
+        ])
+        ->assertExactJson([
+            'status' => 'owned',
+            'generation' => 'transitional',
+        ]);
+
+    expect(AgentPushSubscription::canPurgeOtherVapidGenerations())->toBeFalse()
+        ->and(AgentPushSubscription::purgeStaleFor($agent))->toBe(0)
+        ->and(AgentPushSubscription::withoutGlobalScopes()->sole()->endpoint)
+        ->toBe($payload['endpoint']);
+});
+
 test('ownership checks remain available across rapid authenticated navigation', function (): void {
     $agent = User::factory()->for(Account::factory())->create();
     $payload = agentPushPayload();
@@ -351,7 +386,7 @@ test('an agent cannot accumulate more than ten browser subscriptions', function 
     expect($agent->pushSubscriptions()->count())->toBe(10);
 });
 
-test('an environment VAPID rotation purges old subscriptions before enforcing the browser limit', function (): void {
+test('an environment VAPID rotation isolates old subscriptions while enforcing the browser limit', function (): void {
     $agent = User::factory()->for(Account::factory())->create();
 
     foreach (range(1, 10) as $index) {
@@ -383,10 +418,11 @@ test('an environment VAPID rotation purges old subscriptions before enforcing th
 
     $current = AgentPushSubscription::query()->sole();
 
-    expect(PushSubscription::query()->count())->toBe(1)
+    expect(PushSubscription::query()->count())->toBe(11)
         ->and($current->endpoint)->toBe($newPayload['endpoint'])
         ->and($current->vapid_public_key_hash)->not->toBe($oldHash)
-        ->and($current->vapid_public_key_hash)->toBe(AgentPushSubscription::currentVapidPublicKeyHash());
+        ->and($current->vapid_public_key_hash)->toBe(AgentPushSubscription::currentVapidPublicKeyHash())
+        ->and(AgentPushSubscription::canPurgeOtherVapidGenerations())->toBeFalse();
 });
 
 test('a fallback VAPID value cannot purge subscriptions after the settings store fails', function (): void {

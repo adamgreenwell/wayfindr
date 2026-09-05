@@ -8,6 +8,7 @@ use App\Support\Settings\OperatorSettings;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use NotificationChannels\WebPush\PushSubscription;
+use Throwable;
 
 /** Keep browser endpoints bound to the VAPID public key that created them. */
 final class AgentPushSubscription extends PushSubscription
@@ -55,9 +56,29 @@ final class AgentPushSubscription extends PushSubscription
         );
     }
 
-    public static function purgeStaleFor(User $agent): int
+    /** Whether one database-backed key authoritatively supersedes every generation. */
+    public static function canPurgeOtherVapidGenerations(): bool
     {
         if (! app(OperatorSettings::class)->valuesAreAuthoritative()) {
+            return false;
+        }
+
+        try {
+            // An operator override is shared by every process. An environment
+            // baseline is process-local, so two valid generations can coexist
+            // during a rolling deployment and neither may delete the other.
+            return OperatorSetting::query()
+                ->where('key', 'webpush.public_key')
+                ->whereNotNull('value')
+                ->exists();
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    public static function purgeStaleFor(User $agent): int
+    {
+        if (! self::canPurgeOtherVapidGenerations()) {
             return 0;
         }
 
