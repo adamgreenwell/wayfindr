@@ -187,6 +187,62 @@ test('saving the same VAPID public key preserves browser subscriptions', functio
         ]);
 });
 
+test('a stale operator save is revalidated against the latest committed VAPID pair', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+    ]);
+    $old = VAPID::createVapidKeys();
+    $replacement = VAPID::createVapidKeys();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $old['publicKey'],
+        'webpush.private_key' => $old['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $settings->applyOverrides();
+
+    // Another operator committed a complete rotation while this request still
+    // holds the old config/cache snapshot and old form values.
+    OperatorSetting::query()
+        ->where('key', 'webpush.public_key')
+        ->update(['value' => $replacement['publicKey']]);
+    OperatorSetting::query()
+        ->where('key', 'webpush.private_key')
+        ->update(['value' => Crypt::encryptString($replacement['privateKey'])]);
+
+    expect(config('webpush.vapid.public_key'))->toBe($old['publicKey']);
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.webpush.edit'))
+        ->post(route('operator.settings.webpush.update'), [
+            'subject' => 'mailto:new-alerts@example.test',
+            'public_key' => $old['publicKey'],
+        ])
+        ->assertRedirect(route('operator.settings.webpush.edit'))
+        ->assertSessionHasErrors('private_key');
+
+    expect(OperatorSetting::query()->where('key', 'webpush.public_key')->value('value'))
+        ->toBe($replacement['publicKey'])
+        ->and(Crypt::decryptString((string) OperatorSetting::query()
+            ->where('key', 'webpush.private_key')
+            ->value('value')))
+        ->toBe($replacement['privateKey'])
+        ->and(AuditEvent::query()->where('action', 'operator_settings.webpush.updated')->count())
+        ->toBe(0);
+
+    $source = file_get_contents(app_path('Http/Controllers/OperatorWebPushSettingsController.php'));
+
+    expect($source)
+        ->toContain("->where('key', 'webpush.public_key')")
+        ->toContain('->lockForUpdate()')
+        ->toContain('$settings->refreshFromDatabase()');
+});
+
 test('invalid VAPID input is rejected without flashing the private key', function (): void {
     $operator = User::factory()->for(Account::factory())->create([
         'platform_role' => 'operator',

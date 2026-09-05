@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\AuditEvent;
+use App\Models\OperatorSetting;
 use App\Support\AgentWebPushConfig;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\View\View;
@@ -43,11 +44,10 @@ final class OperatorWebPushSettingsController extends Controller
 
         $subject = trim((string) ($validated['subject'] ?? ''));
         $publicKey = trim((string) ($validated['public_key'] ?? ''));
-        $privateProvided = trim((string) ($validated['private_key'] ?? '')) !== '';
+        $privateKey = trim((string) ($validated['private_key'] ?? ''));
+        $privateProvided = $privateKey !== '';
         $clearKeys = (bool) ($validated['clear_keys'] ?? false);
         $privateUnreadable = $settings->secretStatus('webpush.private_key') === 'unreadable';
-        $currentPublicKey = trim((string) config('webpush.vapid.public_key'));
-        $currentPrivateKey = trim((string) config('webpush.vapid.private_key'));
 
         if ($clearKeys && $privateProvided) {
             throw ValidationException::withMessages([
@@ -55,60 +55,77 @@ final class OperatorWebPushSettingsController extends Controller
             ]);
         }
 
-        if (! $clearKeys && $privateUnreadable && ! $privateProvided) {
-            throw ValidationException::withMessages([
-                'private_key' => __('operator.webpush.private_unreadable'),
-            ]);
-        }
-
-        if (! $clearKeys && $publicKey !== $currentPublicKey && $currentPrivateKey !== '' && ! $privateProvided) {
-            throw ValidationException::withMessages([
-                'private_key' => __('operator.webpush.validation.pair_required'),
-            ]);
-        }
-
-        $effectivePrivateKey = $privateProvided
-            ? trim((string) $validated['private_key'])
-            : $currentPrivateKey;
-
-        if (! $clearKeys && (($publicKey === '') !== ($effectivePrivateKey === ''))) {
-            throw ValidationException::withMessages([
-                'private_key' => __('operator.webpush.validation.pair_required'),
-            ]);
-        }
-
-        $assessment = $clearKeys
-            ? $webPush->assessValues('', '', '')
-            : $webPush->assessValues($subject, $publicKey, $effectivePrivateKey);
-
-        if ($assessment['status'] === 'invalid') {
-            throw ValidationException::withMessages([
-                'public_key' => __('operator.webpush.validation.invalid_vapid'),
-            ]);
-        }
-
         $agent = $request->user();
-        $nextPublicKey = $clearKeys ? '' : $publicKey;
-        $publicKeyChanged = ! hash_equals($currentPublicKey, $nextPublicKey);
 
         DB::transaction(function () use (
             $agent,
-            $assessment,
             $clearKeys,
+            $privateKey,
             $privateProvided,
+            $privateUnreadable,
             $publicKey,
-            $publicKeyChanged,
-            $request,
             $settings,
             $subject,
+            $webPush,
         ): void {
+            // All Web Push settings saves and subscription creations coordinate
+            // on this row. Re-read committed settings only after obtaining the
+            // lock so a stale form cannot mix an old public key with a private
+            // key written by a concurrent operator.
+            OperatorSetting::query()->insertOrIgnore([
+                'key' => 'webpush.public_key',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            OperatorSetting::query()
+                ->where('key', 'webpush.public_key')
+                ->lockForUpdate()
+                ->firstOrFail();
+            $settings->refreshFromDatabase();
+
+            $currentPublicKey = trim((string) config('webpush.vapid.public_key'));
+            $currentPrivateKey = trim((string) config('webpush.vapid.private_key'));
+
+            if (! $clearKeys && $privateUnreadable && ! $privateProvided) {
+                throw ValidationException::withMessages([
+                    'private_key' => __('operator.webpush.private_unreadable'),
+                ]);
+            }
+
+            if (! $clearKeys && $publicKey !== $currentPublicKey && $currentPrivateKey !== '' && ! $privateProvided) {
+                throw ValidationException::withMessages([
+                    'private_key' => __('operator.webpush.validation.pair_required'),
+                ]);
+            }
+
+            $effectivePrivateKey = $privateProvided ? $privateKey : $currentPrivateKey;
+
+            if (! $clearKeys && (($publicKey === '') !== ($effectivePrivateKey === ''))) {
+                throw ValidationException::withMessages([
+                    'private_key' => __('operator.webpush.validation.pair_required'),
+                ]);
+            }
+
+            $assessment = $clearKeys
+                ? $webPush->assessValues('', '', '')
+                : $webPush->assessValues($subject, $publicKey, $effectivePrivateKey);
+
+            if ($assessment['status'] === 'invalid') {
+                throw ValidationException::withMessages([
+                    'public_key' => __('operator.webpush.validation.invalid_vapid'),
+                ]);
+            }
+
+            $nextPublicKey = $clearKeys ? '' : $publicKey;
+            $publicKeyChanged = ! hash_equals($currentPublicKey, $nextPublicKey);
+
             $settings->set('webpush.subject', $clearKeys ? '' : $subject);
             $settings->set('webpush.public_key', $clearKeys ? '' : $publicKey);
 
             if ($clearKeys) {
                 $settings->set('webpush.private_key', '');
             } elseif ($privateProvided) {
-                $settings->set('webpush.private_key', trim((string) $request->input('private_key')));
+                $settings->set('webpush.private_key', $privateKey);
             }
 
             // A push subscription is cryptographically bound to the public
