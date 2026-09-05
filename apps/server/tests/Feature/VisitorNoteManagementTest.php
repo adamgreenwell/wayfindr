@@ -228,3 +228,43 @@ test('contact note bodies cascade with the visitor record', function (): void {
 
     expect(VisitorNote::query()->count())->toBe(0);
 });
+
+test('adding a contact note protects a presence-only visitor from both cleanup paths', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => false]],
+    ]);
+    $staleVisitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'presence-note-stale',
+        'presence_only' => true,
+        'last_seen_at' => now()->subDays(40),
+    ]);
+    $disableVisitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'presence-note-disable',
+        'presence_only' => true,
+        'last_seen_at' => now()->subDay(),
+    ]);
+
+    foreach ([$staleVisitor, $disableVisitor] as $visitor) {
+        $this->actingAs($owner)
+            ->post(route('dashboard.visitors.notes.store', $visitor), [
+                'body' => 'This visitor is now an intentional contact record.',
+            ])
+            ->assertSessionHasNoErrors();
+
+        expect($visitor->fresh()->presence_only)->toBeFalse();
+    }
+
+    $this->artisan('wayfindr:prune-presence-visitors')->assertExitCode(0);
+
+    expect($staleVisitor->fresh())->not->toBeNull()
+        ->and($staleVisitor->contactNotes()->count())->toBe(1);
+
+    $this->actingAs($owner)
+        ->put(route('dashboard.sites.presence.update', $site), [])
+        ->assertSessionHasNoErrors();
+
+    expect($disableVisitor->fresh())->not->toBeNull()
+        ->and($disableVisitor->contactNotes()->count())->toBe(1);
+});

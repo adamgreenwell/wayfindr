@@ -37,6 +37,15 @@ final class AgentVisitorNoteController extends Controller
 
         DB::transaction(function () use ($actor, $visitor, $body): void {
             [$actor, $visitor] = $this->lockedWriter($actor, $visitor);
+
+            // A note is intentional person-level contact. Leaving this row
+            // marked as heartbeat-only lets the presence pruner (or turning
+            // presence reporting off) cascade-delete the note as if nobody
+            // had ever used the visitor as a contact record.
+            if ($visitor->presence_only) {
+                $visitor->forceFill(['presence_only' => false])->save();
+            }
+
             $note = VisitorNote::query()->create([
                 'account_id' => $actor->account_id,
                 'visitor_id' => $visitor->id,
