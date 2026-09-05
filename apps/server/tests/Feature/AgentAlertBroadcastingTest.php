@@ -59,7 +59,8 @@ test('agent alert realtime config uses the existing browser transport and recipi
             'knownAlertVersions' => [],
             'port' => '443',
             'reconcileEndpoint' => 'http://localhost:8000/dashboard/alerts/reconcile',
-            'reconcileSince' => '2026-09-05T12:00:05.000000Z',
+            'reconcileOverlapSeconds' => 30,
+            'reconcileSince' => '2026-09-05T11:59:35.000000Z',
             'scheme' => 'https',
             'soundEnabled' => true,
         ]);
@@ -107,9 +108,17 @@ test('agent alert realtime config remembers visible alert versions already prese
             'kind' => 'conversation_needs_reply',
             'conversation_id' => $conversation->id,
         ]);
+        $alert->timestamps = false;
+        $alert->forceFill(['updated_at' => CarbonImmutable::parse('2026-09-05T11:59:36Z')])->saveQuietly();
+        $outsideOverlap = databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $conversation->id,
+        ]);
+        $outsideOverlap->timestamps = false;
+        $outsideOverlap->forceFill(['updated_at' => CarbonImmutable::parse('2026-09-05T11:59:34Z')])->saveQuietly();
 
         expect(AgentAlertRealtimeConfig::forAgent($agent)['knownAlertVersions'] ?? null)
-            ->toBe([AgentAlertPayload::version($alert)]);
+            ->toBe([AgentAlertPayload::version($alert->fresh())]);
     } finally {
         CarbonImmutable::setTestNow();
     }

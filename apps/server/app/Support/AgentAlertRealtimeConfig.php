@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\Gate;
 /** Build the browser-safe settings for one agent's dashboard alert stream. */
 final class AgentAlertRealtimeConfig
 {
+    private const RECONCILIATION_OVERLAP_SECONDS = 30;
+
     /**
      * @return array{
      *     appKey: string,
@@ -23,6 +25,7 @@ final class AgentAlertRealtimeConfig
      *     knownAlertVersions: list<string>,
      *     port: string,
      *     reconcileEndpoint: string,
+     *     reconcileOverlapSeconds: int,
      *     reconcileSince: string,
      *     scheme: string,
      *     soundEnabled: bool
@@ -46,7 +49,9 @@ final class AgentAlertRealtimeConfig
         // boundary. Remember anything already present there so a database
         // whose timestamps have second precision does not turn the overlap
         // into an old-alert cue.
-        $reconcileSince = now()->startOfSecond();
+        $reconcileSince = now()
+            ->subSeconds(self::RECONCILIATION_OVERLAP_SECONDS)
+            ->startOfSecond();
         $knownAlertVersions = $agent->notifications()
             ->where('updated_at', '>=', $reconcileSince)
             ->orderByDesc('updated_at')
@@ -72,6 +77,7 @@ final class AgentAlertRealtimeConfig
             'knownAlertVersions' => $knownAlertVersions,
             'port' => $reverb['port'],
             'reconcileEndpoint' => route('dashboard.alerts.reconcile'),
+            'reconcileOverlapSeconds' => self::RECONCILIATION_OVERLAP_SECONDS,
             'reconcileSince' => $reconcileSince->toJSON(),
             'scheme' => $reverb['scheme'],
             'soundEnabled' => $agent->alertSoundEnabled(),

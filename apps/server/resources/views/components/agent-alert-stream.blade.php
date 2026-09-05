@@ -38,6 +38,19 @@
             return true;
         }
 
+        function overlappingReconcileSince(watermark) {
+            var milliseconds = Date.parse(watermark);
+            var overlapSeconds = Number(config.reconcileOverlapSeconds);
+
+            if (! Number.isFinite(milliseconds)
+                || ! Number.isFinite(overlapSeconds)
+                || overlapSeconds < 0) {
+                throw new Error('Alert reconciliation returned an invalid watermark.');
+            }
+
+            return new Date(milliseconds - (overlapSeconds * 1000)).toISOString();
+        }
+
         function isBackground() {
             return document.visibilityState === 'hidden' || ! document.hasFocus();
         }
@@ -383,7 +396,11 @@
                     return reconcileAlertPage(activeSocket);
                 }
 
-                reconcileSince = data.watermark;
+                // An alert may receive its database timestamp shortly before
+                // its transaction commits. Retain a small overlap so a socket
+                // gap at that boundary cannot strand the durable alert behind
+                // the watermark; payload versions suppress repeated cues.
+                reconcileSince = overlappingReconcileSince(data.watermark);
                 reconcileThrough = null;
                 reconcileSoundPlayed = false;
                 activeSocket.wayfindrReconciling = false;
