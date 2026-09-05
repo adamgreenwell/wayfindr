@@ -1040,6 +1040,7 @@ return [
             'clear_conflict' => 'Non inserisca una chiave privata durante la cancellazione della coppia attuale.',
             'pair_required' => 'Sostituisca insieme le chiavi VAPID pubblica e privata.',
             'invalid_vapid' => 'Inserisca un soggetto HTTPS o mailto: valido e una coppia di chiavi VAPID valida.',
+            'database_connection' => "Prima di modificare le chiavi VAPID, gli abbonamenti Web Push devono usare la stessa connessione al database principale dell'applicazione.",
         ],
         'flash' => [
             'saved' => 'Impostazioni Web Push salvate.',

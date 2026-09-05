@@ -88,7 +88,7 @@ final class OutboundWebhookDestination
         $ips = ($this->resolver)($host);
 
         if ($ips === []) {
-            throw new InvalidArgumentException('The webhook destination did not resolve.');
+            throw new OutboundWebhookResolutionException('The webhook destination did not resolve.');
         }
 
         foreach ($ips as $ip) {

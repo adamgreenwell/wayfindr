@@ -1033,6 +1033,7 @@ return [
             'clear_conflict' => 'Geben Sie beim Löschen des aktuellen Paars keinen privaten Schlüssel ein.',
             'pair_required' => 'Ersetzen Sie öffentlichen und privaten VAPID-Schlüssel gemeinsam.',
             'invalid_vapid' => 'Geben Sie einen gültigen HTTPS- oder mailto:-Betreff und ein gültiges VAPID-Schlüsselpaar ein.',
+            'database_connection' => 'Web-Push-Abonnements müssen dieselbe primäre Datenbankverbindung wie die Anwendung verwenden, bevor VAPID-Schlüssel geändert werden können.',
         ],
         'flash' => [
             'saved' => 'Web-Push-Einstellungen gespeichert.',

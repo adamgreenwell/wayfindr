@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support;
 
 use App\Support\Webhooks\OutboundWebhookDestination;
+use App\Support\Webhooks\OutboundWebhookResolutionException;
 use Closure;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\HttpFactory;
@@ -32,6 +33,12 @@ final readonly class AgentWebPushFactory
                 return function (RequestInterface $request, array $options) use ($handler) {
                     try {
                         $inspected = $this->destination->inspect((string) $request->getUri());
+                    } catch (OutboundWebhookResolutionException) {
+                        // A resolver outage says nothing about whether the
+                        // destination is public. Surface a retryable report so
+                        // sibling endpoint cleanup can commit before the queued
+                        // listener retries after DNS recovers.
+                        return Create::promiseFor(new Response(503));
                     } catch (InvalidArgumentException) {
                         // This is a deterministic local policy rejection, not
                         // a transient connection failure. Return a permanent

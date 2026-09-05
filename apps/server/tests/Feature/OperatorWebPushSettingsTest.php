@@ -187,6 +187,45 @@ test('saving the same VAPID public key preserves browser subscriptions', functio
         ]);
 });
 
+test('VAPID rotation is rejected when subscriptions use another database connection', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+    ]);
+    $current = VAPID::createVapidKeys();
+    $replacement = VAPID::createVapidKeys();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $current['publicKey'],
+        'webpush.private_key' => $current['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $settings->applyOverrides();
+    config()->set('database.connections.webpush-isolated', [
+        ...config('database.connections.sqlite'),
+        'database' => ':memory:',
+    ]);
+    config()->set('webpush.database_connection', 'webpush-isolated');
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.webpush.edit'))
+        ->post(route('operator.settings.webpush.update'), [
+            'subject' => 'mailto:alerts@example.test',
+            'public_key' => $replacement['publicKey'],
+            'private_key' => $replacement['privateKey'],
+        ])
+        ->assertRedirect(route('operator.settings.webpush.edit'))
+        ->assertSessionHasErrors('public_key');
+
+    expect($settings->get('webpush.public_key'))->toBe($current['publicKey'])
+        ->and($settings->get('webpush.private_key'))->toBe($current['privateKey'])
+        ->and(AuditEvent::query()->where('action', 'operator_settings.webpush.updated')->count())->toBe(0);
+});
+
 test('a stale operator save is revalidated against the latest committed VAPID pair', function (): void {
     $operator = User::factory()->for(Account::factory())->create([
         'platform_role' => 'operator',

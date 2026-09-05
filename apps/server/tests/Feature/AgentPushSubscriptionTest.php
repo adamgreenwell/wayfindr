@@ -158,6 +158,26 @@ test('subscription status distinguishes this agent from another profile without 
         ->assertExactJson(['status' => 'missing']);
 });
 
+test('ownership checks remain available across rapid authenticated navigation', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+    $payload = agentPushPayload();
+    $agent->pushSubscriptions()->create([
+        'endpoint' => $payload['endpoint'],
+        'public_key' => $payload['keys']['p256dh'],
+        'auth_token' => $payload['keys']['auth'],
+        'content_encoding' => 'aes128gcm',
+    ]);
+
+    foreach (range(1, 35) as $navigation) {
+        $this->actingAs($agent)
+            ->postJson(route('dashboard.profile.push-subscription.status'), [
+                'endpoint' => $payload['endpoint'],
+            ])
+            ->assertOk()
+            ->assertExactJson(['status' => 'owned']);
+    }
+});
+
 test('an accountless platform operator can identify a prior agents browser subscription', function (): void {
     $owner = User::factory()->for(Account::factory())->create();
     $operator = User::factory()->create([

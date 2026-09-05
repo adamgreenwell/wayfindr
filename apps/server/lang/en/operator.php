@@ -1033,6 +1033,7 @@ return [
             'clear_conflict' => 'Do not enter a private key while clearing the current pair.',
             'pair_required' => 'Replace the public and private VAPID keys together.',
             'invalid_vapid' => 'Enter a valid HTTPS or mailto: subject and a valid VAPID key pair.',
+            'database_connection' => "Web Push subscriptions must use the application's primary database connection before VAPID keys can be changed.",
         ],
         'flash' => [
             'saved' => 'Web Push settings saved.',

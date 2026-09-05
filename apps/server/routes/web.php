@@ -116,8 +116,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/profile/push-subscription', [AgentPushSubscriptionController::class, 'store'])
         ->middleware('throttle:30,1')
         ->name('dashboard.profile.push-subscription.store');
+    // This authenticated, indexed lookup is a privacy guard on every page.
+    // A navigation quota could make a valid subscription look unverifiable
+    // and force the browser to remove it, so only mutations are throttled.
     Route::post('/dashboard/profile/push-subscription/status', [AgentPushSubscriptionController::class, 'status'])
-        ->middleware('throttle:30,1')
         ->name('dashboard.profile.push-subscription.status');
     Route::delete('/dashboard/profile/push-subscription', [AgentPushSubscriptionController::class, 'destroy'])
         ->middleware('throttle:30,1')

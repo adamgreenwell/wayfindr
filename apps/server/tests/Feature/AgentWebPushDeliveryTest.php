@@ -249,6 +249,27 @@ test('the Web Push transport pins public DNS and refuses private destinations', 
     expect($reachedNetwork)->toBeFalse();
 });
 
+test('a temporary Web Push DNS resolution failure reaches the queue retry policy', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'dns-outage');
+    $reachedNetwork = false;
+    $handler = function () use (&$reachedNetwork) {
+        $reachedNetwork = true;
+
+        return Create::promiseFor(new Response(201));
+    };
+    $unresolvedDestination = new OutboundWebhookDestination(fn (): array => []);
+    app()->instance(AgentWebPushFactory::class, new AgentWebPushFactory($unresolvedDestination, $handler));
+    Notification::getFacadeRoot()->forgetDrivers();
+
+    expect(fn () => app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+    ))->toThrow(RetryableAgentWebPushException::class, 'retryable failure')
+        ->and($reachedNetwork)->toBeFalse();
+});
+
 test('a long-running worker rebuilds the Web Push channel after VAPID rotation', function (): void {
     $firstKeys = VAPID::createVapidKeys();
     $secondKeys = VAPID::createVapidKeys();
