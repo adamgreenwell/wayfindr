@@ -8,6 +8,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
 use App\Notifications\TicketAssigned;
+use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushConfig;
 use App\Support\AgentWebPushFactory;
 use App\Support\Settings\OperatorSettings;
@@ -47,9 +48,11 @@ function readyAgentWebPushConfig(): array
 
 function subscribeAgentForPush(User $agent, string $suffix = 'one'): void
 {
+    $subscriptionKeys = VAPID::createVapidKeys();
+
     $agent->pushSubscriptions()->create([
         'endpoint' => "https://push.example.test/subscriptions/{$suffix}",
-        'public_key' => rtrim(strtr(base64_encode("\x04".str_repeat('p', 64)), '+/', '-_'), '='),
+        'public_key' => $subscriptionKeys['publicKey'],
         'auth_token' => rtrim(strtr(base64_encode(str_repeat('a', 16)), '+/', '-_'), '='),
         'content_encoding' => 'aes128gcm',
     ]);
@@ -140,6 +143,37 @@ test('the configured Web Push channel encrypts and posts a notification to the b
         && $request->hasHeader('TTL', '300')
         && $request->hasHeader('Urgency', 'normal')
         && ! str_contains($request->body(), 'New Wayfindr alert'));
+});
+
+test('the configured Web Push channel propagates transient reports to the queued listener', function (int $status): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent);
+    Http::fake(['push.example.test/*' => Http::response('', $status)]);
+
+    expect(app(WebPushChannel::class))->toBeInstanceOf(AgentWebPushChannel::class);
+
+    expect(fn () => app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+    ))->toThrow(RuntimeException::class, 'retryable failure');
+
+    Http::assertSentCount(1);
+})->with([429, 503]);
+
+test('an expired Web Push report removes the endpoint without retrying the queued listener', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent);
+    Http::fake(['push.example.test/*' => Http::response('', 410)]);
+
+    app(SendAgentAlertWebPush::class)->handle(
+        new AgentAlertStored($agent, $alert),
+        app(AgentWebPushConfig::class),
+    );
+
+    Http::assertSentCount(1);
+    expect($agent->pushSubscriptions()->count())->toBe(0);
 });
 
 test('the Web Push transport pins public DNS and refuses private destinations', function (): void {

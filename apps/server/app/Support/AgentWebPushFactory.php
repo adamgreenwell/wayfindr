@@ -6,9 +6,9 @@ namespace App\Support;
 
 use App\Support\Webhooks\OutboundWebhookDestination;
 use Closure;
-use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Promise\Create;
 use GuzzleHttp\Psr7\HttpFactory;
+use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Minishlink\WebPush\WebPush;
@@ -32,12 +32,12 @@ final readonly class AgentWebPushFactory
                 return function (RequestInterface $request, array $options) use ($handler) {
                     try {
                         $inspected = $this->destination->inspect((string) $request->getUri());
-                    } catch (InvalidArgumentException $exception) {
-                        return Create::rejectionFor(new ConnectException(
-                            $exception->getMessage(),
-                            $request,
-                            $exception,
-                        ));
+                    } catch (InvalidArgumentException) {
+                        // This is a deterministic local policy rejection, not
+                        // a transient connection failure. Return a permanent
+                        // report so the queue does not retry an SSRF-blocked
+                        // endpoint on every backoff interval.
+                        return Create::promiseFor(new Response(400));
                     }
 
                     $options['allow_redirects'] = false;

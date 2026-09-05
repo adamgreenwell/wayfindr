@@ -271,17 +271,21 @@
                         initialBrowserEnabled = payload.status === 'owned'
                             && usesCurrentApplicationServerKey(subscription);
 
-                        if (payload.status !== 'foreign'
-                            && ! usesCurrentApplicationServerKey(subscription)) {
+                        if (payload.status === 'foreign') {
+                            showError(config.ownedElsewhereMessage);
+
+                            // This endpoint remains owned by the prior agent
+                            // on the server, but it must stop receiving that
+                            // agent's alerts in the browser now in use here.
+                            return cleanStaleSubscription(subscription, false);
+                        }
+
+                        if (! usesCurrentApplicationServerKey(subscription)) {
                             return cleanStaleSubscription(subscription, payload.status === 'owned');
                         }
 
                         checkbox.checked = initialBrowserEnabled;
                         checkbox.disabled = false;
-
-                        if (payload.status === 'foreign') {
-                            showError(config.ownedElsewhereMessage);
-                        }
                     });
                 })
                 .catch(function () {

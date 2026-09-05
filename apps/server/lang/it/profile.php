@@ -119,7 +119,7 @@ return [
         'push_failed' => 'Non è stato possibile iscrivere questo browser. Controlli il permesso per le notifiche e riprovi.',
         'push_invalid_endpoint' => 'Questo browser ha fornito un indirizzo del servizio push che Wayfindr non può contattare in sicurezza.',
         'push_limit' => 'Questo profilo ha già il massimo di 10 browser iscritti.',
-        'push_owned_elsewhere' => 'Questa iscrizione del browser appartiene a un altro profilo connesso e non è stata riassegnata.',
+        'push_owned_elsewhere' => 'L’iscrizione di un altro profilo connesso è stata rimossa da questo browser senza riassegnarne il record dell’account.',
         'push_notification_title' => 'Nuovo avviso Wayfindr',
         'push_notification_body' => 'Apra Wayfindr per controllarlo.',
         'cadence' => 'Cadenza email',

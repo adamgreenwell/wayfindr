@@ -111,7 +111,7 @@ return [
         'push_failed' => 'This browser could not be subscribed. Check notification permission and try again.',
         'push_invalid_endpoint' => 'This browser supplied a push service address that Wayfindr cannot contact safely.',
         'push_limit' => 'This profile already has the maximum of 10 subscribed browsers.',
-        'push_owned_elsewhere' => 'This browser subscription belongs to another signed-in profile and was not reassigned.',
+        'push_owned_elsewhere' => 'A subscription from another signed-in profile was removed from this browser without reassigning its account record.',
         'push_notification_title' => 'New Wayfindr alert',
         'push_notification_body' => 'Open Wayfindr to review it.',
         'cadence' => 'Email cadence',

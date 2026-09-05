@@ -11,6 +11,7 @@ use App\Observers\ConversationMessageObserver;
 use App\Observers\ConversationObserver;
 use App\Observers\TicketObserver;
 use App\Policies\AlertPolicy;
+use App\Support\AgentWebPushChannel;
 use App\Support\AgentWebPushFactory;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Attachments\Scanning\ClamAvScanner;
@@ -32,7 +33,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
-use Minishlink\WebPush\WebPush;
+use NotificationChannels\WebPush\ReportHandler;
 use NotificationChannels\WebPush\WebPushChannel;
 
 class AppServiceProvider extends ServiceProvider
@@ -93,11 +94,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         // Browser subscriptions contain an outbound URL. Replace the package's
-        // stock client with Wayfindr's public-address, DNS-pinned transport so
-        // an authenticated agent cannot turn alert delivery into SSRF.
-        $this->app->when(WebPushChannel::class)
-            ->needs(WebPush::class)
-            ->give(fn (): WebPush => $this->app->make(AgentWebPushFactory::class)->make());
+        // stock channel with Wayfindr's DNS-pinned transport and retry-aware
+        // report handling. A transient report must fail the queued listener;
+        // the package otherwise emits an event and silently returns success.
+        $this->app->bind(WebPushChannel::class, fn (): AgentWebPushChannel => new AgentWebPushChannel(
+            $this->app->make(AgentWebPushFactory::class)->make(),
+            $this->app->make(ReportHandler::class),
+        ));
 
         Gate::policy(DatabaseNotification::class, AlertPolicy::class);
 

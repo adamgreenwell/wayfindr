@@ -202,7 +202,8 @@ test('the profile cleans up an owned browser subscription after a VAPID key rota
         ->toContain('subscription.unsubscribe()');
 
     expect($source)
-        ->toContain("payload.status !== 'foreign'")
+        ->toContain("payload.status === 'foreign'")
+        ->toContain('cleanStaleSubscription(subscription, false)')
         ->toContain('! usesCurrentApplicationServerKey(subscription)')
         ->toContain("cleanStaleSubscription(subscription, payload.status === 'owned')");
 });

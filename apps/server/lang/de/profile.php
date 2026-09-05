@@ -111,7 +111,7 @@ return [
         'push_failed' => 'Dieser Browser konnte nicht angemeldet werden. Prüfen Sie die Benachrichtigungsberechtigung und versuchen Sie es erneut.',
         'push_invalid_endpoint' => 'Dieser Browser hat eine Adresse des Push-Dienstes übermittelt, die Wayfindr nicht sicher kontaktieren kann.',
         'push_limit' => 'Dieses Profil hat bereits die Höchstzahl von 10 angemeldeten Browsern.',
-        'push_owned_elsewhere' => 'Diese Browseranmeldung gehört zu einem anderen angemeldeten Profil und wurde nicht neu zugeordnet.',
+        'push_owned_elsewhere' => 'Eine Anmeldung eines anderen angemeldeten Profils wurde aus diesem Browser entfernt, ohne ihren Kontoeintrag neu zuzuordnen.',
         'push_notification_title' => 'Neue Wayfindr-Benachrichtigung',
         'push_notification_body' => 'Öffnen Sie Wayfindr, um sie zu prüfen.',
         'cadence' => 'E-Mail-Rhythmus',
