@@ -22,7 +22,7 @@ final class AgentAlertRealtimeConfig
      *     eventName: string,
      *     host: string,
      *     identityChannelName: string,
-     *     knownAlerts: list<array{updatedAt: string, version: string}>,
+     *     knownAlerts: list<array{alertedAt: string, version: string}>,
      *     port: string,
      *     reconcileEndpoint: string,
      *     reconcileOverlapSeconds: int,
@@ -53,13 +53,13 @@ final class AgentAlertRealtimeConfig
             ->subSeconds(self::RECONCILIATION_OVERLAP_SECONDS)
             ->startOfSecond();
         $knownAlerts = $agent->notifications()
-            ->where('updated_at', '>=', $reconcileSince)
-            ->orderBy('updated_at')
+            ->where('agent_alerted_at', '>=', $reconcileSince)
+            ->orderBy('agent_alerted_at')
             ->orderBy('id')
             ->get()
             ->filter(fn (DatabaseNotification $notification): bool => Gate::forUser($agent)->allows('view', $notification))
             ->map(fn (DatabaseNotification $notification): array => [
-                'updatedAt' => $notification->updated_at->toJSON(),
+                'alertedAt' => AgentAlertPayload::alertedAt($notification)?->toJSON(),
                 'version' => AgentAlertPayload::version($notification),
             ])
             ->values()

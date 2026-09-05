@@ -17,11 +17,11 @@
         var audioContext = null;
 
         (config.knownAlerts || []).forEach(function (alert) {
-            rememberAlertVersion(alert.version, alert.updatedAt);
+            rememberAlertVersion(alert.version, alert.alertedAt);
         });
 
-        function rememberAlertVersion(version, updatedAt) {
-            var milliseconds = Date.parse(updatedAt);
+        function rememberAlertVersion(version, alertedAt) {
+            var milliseconds = Date.parse(alertedAt);
 
             if (typeof version !== 'string'
                 || ! Number.isFinite(milliseconds)
@@ -178,7 +178,7 @@
                 || typeof alert.version !== 'string'
                 || ! alert.data
                 || typeof alert.data !== 'object'
-                || ! rememberAlertVersion(alert.version, alert.updated_at)) {
+                || ! rememberAlertVersion(alert.version, alert.alerted_at)) {
                 return false;
             }
 
@@ -484,7 +484,7 @@
                 if (! alert
                     || typeof alert.id !== 'string'
                     || typeof alert.version !== 'string'
-                    || typeof alert.updated_at !== 'string'
+                    || typeof alert.alerted_at !== 'string'
                     || ! alert.data
                     || typeof alert.data !== 'object') {
                     return;

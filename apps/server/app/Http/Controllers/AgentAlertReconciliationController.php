@@ -33,7 +33,7 @@ final class AgentAlertReconciliationController extends Controller
             'since' => ['required', 'date'],
             'through' => ['nullable', 'required_with:cursor', 'date', 'after_or_equal:since'],
             'cursor' => ['nullable', 'string', new DecodableCursor([
-                'updated_at' => 'timestamp',
+                'agent_alerted_at' => 'timestamp',
                 'id' => 'uuid',
             ])],
         ]);
@@ -48,9 +48,9 @@ final class AgentAlertReconciliationController extends Controller
             ? CarbonImmutable::parse($validated['through'])->startOfSecond()
             : CarbonImmutable::now()->startOfSecond();
         $page = $agent->notifications()
-            ->where('updated_at', '>=', $since)
-            ->where('updated_at', '<=', $through->endOfSecond())
-            ->orderBy('updated_at')
+            ->where('agent_alerted_at', '>=', $since)
+            ->where('agent_alerted_at', '<=', $through->endOfSecond())
+            ->orderBy('agent_alerted_at')
             ->orderBy('id')
             ->cursorPaginate(
                 self::PAGE_SIZE,

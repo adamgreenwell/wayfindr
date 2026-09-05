@@ -11,6 +11,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
+use App\Support\AgentAlertBroadcaster;
 use App\Support\AgentAlertPayload;
 use App\Support\AgentAlertRealtimeConfig;
 use Carbon\CarbonImmutable;
@@ -30,9 +31,10 @@ test('notifications are indexed for recipient alert reconciliation', function ()
     expect($indexes)->toContain([
         'notifiable_type',
         'notifiable_id',
-        'updated_at',
+        'agent_alerted_at',
         'id',
-    ]);
+    ])
+        ->and(Schema::hasColumns('notifications', ['agent_alerted_at', 'agent_alert_version']))->toBeTrue();
 });
 
 test('agent alert realtime config uses the existing browser transport and recipient channel', function (): void {
@@ -109,7 +111,7 @@ test('agent alert realtime config remembers visible alert versions already prese
             'conversation_id' => $conversation->id,
         ]);
         $firstAlert->timestamps = false;
-        $firstAlert->forceFill(['updated_at' => CarbonImmutable::parse('2026-09-05T11:59:36Z')])->saveQuietly();
+        $firstAlert->forceFill(['agent_alerted_at' => CarbonImmutable::parse('2026-09-05T11:59:36Z')])->saveQuietly();
 
         $lastAlert = null;
 
@@ -126,7 +128,7 @@ test('agent alert realtime config remembers visible alert versions already prese
             'conversation_id' => $conversation->id,
         ]);
         $outsideOverlap->timestamps = false;
-        $outsideOverlap->forceFill(['updated_at' => CarbonImmutable::parse('2026-09-05T11:59:34Z')])->saveQuietly();
+        $outsideOverlap->forceFill(['agent_alerted_at' => CarbonImmutable::parse('2026-09-05T11:59:34Z')])->saveQuietly();
 
         $knownAlerts = collect(AgentAlertRealtimeConfig::forAgent($agent)['knownAlerts'] ?? []);
 
@@ -245,9 +247,44 @@ test('alert payload versions change when a batched alert is refreshed within the
         ]);
         $firstVersion = AgentAlertPayload::version($alert);
         $alert->forceFill(['data' => array_merge($alert->data, ['message_count' => 2])])->save();
+        app(AgentAlertBroadcaster::class)->stored($agent, $alert);
 
         expect($alert->fresh()->updated_at?->toJSON())->toBe($alert->created_at?->toJSON())
             ->and(AgentAlertPayload::version($alert->fresh()))->not->toBe($firstVersion);
+    } finally {
+        CarbonImmutable::setTestNow();
+    }
+});
+
+test('read state and email bookkeeping do not create reconciliation alert versions', function (): void {
+    CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:00Z'));
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+
+    try {
+        $alert = databaseAlertFor($agent, [
+            'kind' => 'conversation_needs_reply',
+            'conversation_id' => $conversation->id,
+        ]);
+        $version = AgentAlertPayload::version($alert);
+
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-09-05T12:00:10Z'));
+        $alert->markAsRead();
+        $alert->forceFill([
+            'data' => [...$alert->data, 'unattended_emailed_at' => now()->toISOString()],
+        ])->save();
+
+        expect(AgentAlertPayload::version($alert->fresh()))->toBe($version);
+
+        $this->actingAs($agent)
+            ->getJson(route('dashboard.alerts.reconcile', [
+                'since' => '2026-09-05T12:00:09Z',
+            ]))
+            ->assertOk()
+            ->assertJsonCount(0, 'data.alerts');
     } finally {
         CarbonImmutable::setTestNow();
     }
@@ -284,6 +321,7 @@ test('alert reconciliation returns only recipient alerts that are current and st
         $oldAlert->forceFill([
             'created_at' => CarbonImmutable::parse('2026-09-05T11:59:00Z'),
             'updated_at' => CarbonImmutable::parse('2026-09-05T11:59:00Z'),
+            'agent_alerted_at' => CarbonImmutable::parse('2026-09-05T11:59:00Z'),
         ]);
         $oldAlert->timestamps = false;
         $oldAlert->saveQuietly();
@@ -410,6 +448,8 @@ function databaseAlertFor(User $agent, array $data): DatabaseNotification
         'type' => ConversationNeedsReply::class,
         'data' => $data,
         'read_at' => null,
+        'agent_alerted_at' => now(),
+        'agent_alert_version' => (string) Str::uuid(),
     ]);
 
     return $notification;

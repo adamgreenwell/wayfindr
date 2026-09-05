@@ -12,6 +12,7 @@ use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 /** Broadcast a stored alert only after its database transaction is durable. */
@@ -29,6 +30,29 @@ final class AgentAlertBroadcaster
             || (int) $notification->notifiable_id !== $agentId) {
             return;
         }
+
+        // Keep the browser-alert cursor/version independent from generic
+        // notification writes. Reading an alert or stamping email metadata
+        // must not look like a new alert after a socket reconnect.
+        $alertedAt = now();
+        $alertVersion = (string) Str::uuid();
+        $marked = DB::table('notifications')
+            ->where('id', $notificationId)
+            ->where('notifiable_type', $notifiableType)
+            ->where('notifiable_id', $agentId)
+            ->update([
+                'agent_alerted_at' => $alertedAt,
+                'agent_alert_version' => $alertVersion,
+            ]);
+
+        if ($marked !== 1) {
+            return;
+        }
+
+        $notification->forceFill([
+            'agent_alerted_at' => $alertedAt,
+            'agent_alert_version' => $alertVersion,
+        ]);
 
         DB::afterCommit(function () use ($accountId, $agentId, $notificationId, $notifiableType): void {
             try {

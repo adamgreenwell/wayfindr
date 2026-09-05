@@ -61,7 +61,7 @@ final class AgentAlertStored implements ShouldBroadcastNow
             && Gate::forUser($recipient)->allows('view', $currentAlert);
     }
 
-    /** @return array{alert: array{id: string, data: array<string, mixed>, created_at: string|null, updated_at: string|null, version: string}} */
+    /** @return array{alert: array{id: string, data: array<string, mixed>, created_at: string|null, alerted_at: string|null, updated_at: string|null, version: string}} */
     public function broadcastWith(): array
     {
         return [
