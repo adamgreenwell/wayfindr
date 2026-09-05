@@ -10,7 +10,6 @@ use App\Support\Settings\OperatorSettings;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
 use NotificationChannels\WebPush\PushSubscription;
 
 uses(RefreshDatabase::class);
@@ -357,8 +356,10 @@ test('a fallback VAPID value cannot purge subscriptions after the settings store
         'content_encoding' => 'aes128gcm',
     ]);
 
-    Schema::drop('operator_settings');
-    Cache::flush();
+    Cache::partialMock()
+        ->shouldReceive('get')
+        ->once()
+        ->andThrow(new RuntimeException('The operator settings cache is unavailable.'));
     app(OperatorSettings::class)->applyOverrides();
 
     expect(app(OperatorSettings::class)->valuesAreAuthoritative())->toBeFalse()
