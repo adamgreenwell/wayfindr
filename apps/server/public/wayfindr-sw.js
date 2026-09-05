@@ -1,5 +1,22 @@
 'use strict';
 
+function isDashboardUrl(value) {
+    var destination;
+
+    try {
+        destination = new URL(value, self.location.origin);
+    } catch (error) {
+        return false;
+    }
+
+    return destination.origin === self.location.origin
+        && (destination.pathname === '/dashboard' || destination.pathname.startsWith('/dashboard/'));
+}
+
+function isVisibleDashboardClient(client) {
+    return client.visibilityState === 'visible' && isDashboardUrl(client.url);
+}
+
 self.addEventListener('push', function (event) {
     var payload = {};
 
@@ -19,7 +36,14 @@ self.addEventListener('push', function (event) {
         data: payload.data && typeof payload.data === 'object' ? payload.data : {},
     };
 
-    event.waitUntil(self.registration.showNotification(title, options));
+    event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+        .then(function (windows) {
+            if (windows.some(isVisibleDashboardClient)) {
+                return undefined;
+            }
+
+            return self.registration.showNotification(title, options);
+        }));
 });
 
 self.addEventListener('notificationclick', function (event) {
@@ -34,8 +58,7 @@ self.addEventListener('notificationclick', function (event) {
         destination = new URL('/dashboard/alerts', self.location.origin);
     }
 
-    if (destination.origin !== self.location.origin
-        || (destination.pathname !== '/dashboard' && ! destination.pathname.startsWith('/dashboard/'))) {
+    if (! isDashboardUrl(destination.href)) {
         destination = new URL('/dashboard/alerts', self.location.origin);
     }
 
