@@ -12,6 +12,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use NotificationChannels\WebPush\PushSubscription;
 
 /** Platform-operator VAPID configuration; the private key is always write-only. */
 final class OperatorWebPushSettingsController extends Controller
@@ -87,6 +88,8 @@ final class OperatorWebPushSettingsController extends Controller
         }
 
         $agent = $request->user();
+        $nextPublicKey = $clearKeys ? '' : $publicKey;
+        $publicKeyChanged = ! hash_equals($currentPublicKey, $nextPublicKey);
 
         DB::transaction(function () use (
             $agent,
@@ -94,6 +97,7 @@ final class OperatorWebPushSettingsController extends Controller
             $clearKeys,
             $privateProvided,
             $publicKey,
+            $publicKeyChanged,
             $request,
             $settings,
             $subject,
@@ -107,6 +111,15 @@ final class OperatorWebPushSettingsController extends Controller
                 $settings->set('webpush.private_key', trim((string) $request->input('private_key')));
             }
 
+            // A push subscription is cryptographically bound to the public
+            // application-server key used when the browser created it. Once
+            // that key changes (including being cleared), every existing row
+            // is unusable. Purge them in the same transaction as the new pair
+            // so dead endpoints cannot keep failing or consume agent limits.
+            $invalidatedSubscriptions = $publicKeyChanged
+                ? PushSubscription::query()->delete()
+                : 0;
+
             AuditEvent::query()->create([
                 'account_id' => null,
                 'actor_type' => $agent->getMorphClass(),
@@ -115,6 +128,7 @@ final class OperatorWebPushSettingsController extends Controller
                 'metadata' => [
                     'status' => $assessment['status'],
                     'private_key_changed' => $clearKeys ? 'cleared' : ($privateProvided ? 'updated' : 'unchanged'),
+                    'subscriptions_invalidated' => $invalidatedSubscriptions,
                 ],
                 'occurred_at' => now(),
             ]);

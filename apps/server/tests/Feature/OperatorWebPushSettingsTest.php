@@ -9,6 +9,7 @@ use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Minishlink\WebPush\VAPID;
+use NotificationChannels\WebPush\PushSubscription;
 
 uses(RefreshDatabase::class);
 
@@ -94,6 +95,96 @@ test('a public key cannot be replaced without its matching private key', functio
         ->assertSessionHasErrors('private_key');
 
     expect(OperatorSetting::query()->where('key', 'webpush.public_key')->exists())->toBeFalse();
+});
+
+test('replacing the VAPID public key invalidates every old browser subscription', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+    ]);
+    $agent = User::factory()->for(Account::factory())->create([
+        'alert_preferences' => ['mode' => User::ALERT_MODE_ALL, 'push' => true],
+    ]);
+    $current = VAPID::createVapidKeys();
+    $replacement = VAPID::createVapidKeys();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $current['publicKey'],
+        'webpush.private_key' => $current['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $settings->applyOverrides();
+
+    foreach (range(1, 3) as $index) {
+        $agent->pushSubscriptions()->create([
+            'endpoint' => "https://push.example.test/subscriptions/{$index}",
+            'public_key' => 'browser-public-key',
+            'auth_token' => 'browser-auth-token',
+            'content_encoding' => 'aes128gcm',
+        ]);
+    }
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.webpush.update'), [
+            'subject' => 'mailto:alerts@example.test',
+            'public_key' => $replacement['publicKey'],
+            'private_key' => $replacement['privateKey'],
+        ])
+        ->assertRedirect(route('operator.settings.webpush.edit'));
+
+    expect(PushSubscription::query()->count())->toBe(0)
+        ->and($agent->fresh()->alertPushEnabled())->toBeTrue()
+        ->and(AuditEvent::query()->where('action', 'operator_settings.webpush.updated')->sole()->metadata)
+        ->toMatchArray([
+            'status' => 'ready',
+            'private_key_changed' => 'updated',
+            'subscriptions_invalidated' => 3,
+        ]);
+});
+
+test('saving the same VAPID public key preserves browser subscriptions', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+    ]);
+    $agent = User::factory()->for(Account::factory())->create();
+    $keys = VAPID::createVapidKeys();
+    $settings = app(OperatorSettings::class);
+
+    foreach ([
+        'webpush.subject' => 'mailto:alerts@example.test',
+        'webpush.public_key' => $keys['publicKey'],
+        'webpush.private_key' => $keys['privateKey'],
+    ] as $key => $value) {
+        $settings->set($key, $value);
+    }
+
+    $settings->applyOverrides();
+    $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/current',
+        'public_key' => 'browser-public-key',
+        'auth_token' => 'browser-auth-token',
+        'content_encoding' => 'aes128gcm',
+    ]);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.webpush.update'), [
+            'subject' => 'mailto:new-alerts@example.test',
+            'public_key' => $keys['publicKey'],
+        ])
+        ->assertRedirect(route('operator.settings.webpush.edit'));
+
+    expect(PushSubscription::query()->count())->toBe(1)
+        ->and(AuditEvent::query()->where('action', 'operator_settings.webpush.updated')->sole()->metadata)
+        ->toMatchArray([
+            'status' => 'ready',
+            'private_key_changed' => 'unchanged',
+            'subscriptions_invalidated' => 0,
+        ]);
 });
 
 test('invalid VAPID input is rejected without flashing the private key', function (): void {
