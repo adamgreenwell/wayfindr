@@ -348,6 +348,14 @@
                                 return cleanStaleSubscription(subscription, false, true);
                             }
 
+                            if (payload.status === 'missing') {
+                                // A prior agent's store can still be committing
+                                // after this lookup. Remove the browser half so
+                                // a late row cannot restore their locked-screen
+                                // delivery inside the current agent's session.
+                                return cleanStaleSubscription(subscription, false, true);
+                            }
+
                             if (! usesCurrentApplicationServerKey(subscription)) {
                                 return cleanStaleSubscription(subscription, payload.status === 'owned');
                             }

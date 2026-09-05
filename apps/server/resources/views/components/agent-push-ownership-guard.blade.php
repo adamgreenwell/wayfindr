@@ -12,11 +12,11 @@
             return;
         }
 
-        function unsubscribeForeign(subscription, attemptsRemaining) {
+        function unsubscribeUnowned(subscription, attemptsRemaining) {
             return subscription.unsubscribe()
                 .then(function (unsubscribed) {
                     if (unsubscribed === false) {
-                        throw new Error('The foreign browser subscription remains active.');
+                        throw new Error('The unowned browser subscription remains active.');
                     }
                 })
                 .catch(function (failure) {
@@ -24,7 +24,7 @@
                         throw failure;
                     }
 
-                    return unsubscribeForeign(subscription, attemptsRemaining - 1);
+                    return unsubscribeUnowned(subscription, attemptsRemaining - 1);
                 });
         }
 
@@ -72,20 +72,22 @@
 
                 return subscriptionStatus(subscription.endpoint, 2)
                     .then(function (payload) {
-                        if (payload.status !== 'foreign') {
+                        if (payload.status === 'owned') {
                             return;
                         }
 
-                        // Do not delete or reassign the prior agent's server
-                        // row. Only stop this shared browser from receiving it.
-                        return unsubscribeForeign(subscription, 2);
+                        // A missing row may still be an earlier agent's store
+                        // transaction in flight. Do not delete or reassign a
+                        // server row; only stop this shared browser receiving
+                        // from an endpoint the current agent does not own.
+                        return unsubscribeUnowned(subscription, 2);
                     })
                     .catch(function () {
                         // Ownership is unknown after a bounded retry. Privacy
                         // wins over availability on a shared browser: remove
                         // the local subscription rather than risk continuing
                         // to receive a prior agent's locked-screen alerts.
-                        return unsubscribeForeign(subscription, 2).catch(function () {});
+                        return unsubscribeUnowned(subscription, 2).catch(function () {});
                     });
             })
             .catch(function () {
