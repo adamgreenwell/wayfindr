@@ -8,6 +8,7 @@
         var error = document.querySelector('[data-agent-push-error]');
         var pendingOptInPrefix = 'wayfindr:push-opt-in:';
         var pendingOptInLifetimeMilliseconds = 60 * 1000;
+        var pendingOptInRenewalMilliseconds = 10 * 1000;
 
         if (! form || ! checkbox) {
             return;
@@ -118,6 +119,36 @@
             } catch (error) {
                 // The marker expires on its own when browser storage is lost.
             }
+        }
+
+        function renewPendingOptIn(subscription, token) {
+            try {
+                var marker = pendingOptInMarker(subscription);
+
+                if (! marker
+                    || marker.token !== token
+                    || marker.agentId !== String(config.agentId)) {
+                    return false;
+                }
+
+                marker.expiresAt = Date.now() + pendingOptInLifetimeMilliseconds;
+                localStorage.setItem(
+                    pendingOptInPrefix + subscription.endpoint,
+                    JSON.stringify(marker)
+                );
+
+                var renewed = pendingOptInMarker(subscription);
+
+                return renewed && renewed.token === token;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        function keepPendingOptInAlive(subscription, token) {
+            return window.setInterval(function () {
+                renewPendingOptIn(subscription, token);
+            }, pendingOptInRenewalMilliseconds);
         }
 
         function currentAgentHasPendingOptIn(subscription) {
@@ -246,13 +277,22 @@
                 });
             }
 
+            // Treat the expiry as a crash-recovery lease, not a request
+            // timeout. Renew it until the POST settles so another tab cannot
+            // remove the browser subscription while a slow store can still
+            // commit a row for that endpoint.
+            var markerRenewal = keepPendingOptInAlive(subscription, markerToken);
+
             return storeSubscription(subscription).then(function (stored) {
+                window.clearInterval(markerRenewal);
                 clearPendingRemoval(subscription.endpoint);
                 clearPendingOptIn(subscription, markerToken);
 
                 return stored;
             }).catch(function (failure) {
                 var storedRemoved = false;
+
+                window.clearInterval(markerRenewal);
 
                 // The POST may have reached the server even when its response
                 // did not reach this page. Remove both halves so a failed

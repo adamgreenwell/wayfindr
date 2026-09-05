@@ -19,7 +19,18 @@ test('login form renders', function (): void {
 
     $this->get('/login')
         ->assertOk()
-        ->assertSee('Agent Login');
+        ->assertSee('Agent Login')
+        ->assertSee('data-agent-push-guest-cleanup', false)
+        ->assertDontSee('data-agent-push-ownership-guard', false);
+
+    $source = file_get_contents(resource_path('views/components/agent-push-guest-cleanup.blade.php'));
+
+    expect($source)
+        ->toContain("navigator.serviceWorker.getRegistration('/wayfindr-sw.js')")
+        ->toContain('registration.pushManager.getSubscription()')
+        ->toContain('subscription.unsubscribe()')
+        ->toContain('unsubscribe(subscription, 2)')
+        ->toContain('unsubscribe(subscription, attemptsRemaining - 1)');
 });
 
 test('agent can log in and view account scoped dashboard', function (): void {

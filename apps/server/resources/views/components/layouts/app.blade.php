@@ -3515,6 +3515,8 @@
             @endif
             <x-agent-shortcut-script />
         @endif
+    @else
+        <x-agent-push-guest-cleanup />
     @endif
 </body>
 </html>
