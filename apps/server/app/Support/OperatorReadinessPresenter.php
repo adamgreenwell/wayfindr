@@ -108,6 +108,11 @@ final class OperatorReadinessPresenter
             return __('operator.readiness.status.no_data');
         }
 
+        if (($check['key'] ?? null) === 'web_push'
+            && ($check['translation']['variant'] ?? null) === 'unset') {
+            return __('operator.readiness.status.optional');
+        }
+
         return match ($check['status'] ?? null) {
             'ready' => __('operator.readiness.status.ready'),
             'manual' => __('operator.readiness.status.confirm_this'),

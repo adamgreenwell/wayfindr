@@ -6,6 +6,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\AgentWebPushConfig;
 use App\Support\Auth\TwoFactorAuthentication;
 use App\Support\DashboardLanguage;
 use App\Support\DashboardTimezone;
@@ -24,12 +25,17 @@ use Illuminate\Validation\Rules\Password;
 
 class AgentProfileController extends Controller
 {
-    public function show(Request $request, OperatorReadiness $readiness, TwoFactorAuthentication $twoFactor): Response
-    {
+    public function show(
+        Request $request,
+        OperatorReadiness $readiness,
+        TwoFactorAuthentication $twoFactor,
+        AgentWebPushConfig $webPush,
+    ): Response {
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
         $agent->loadMissing('customRole');
+        $agent->loadCount('pushSubscriptions');
 
         $account = $agent->account()->firstOrFail();
         $mailReadiness = collect($readiness->summary()['checks'])
@@ -51,7 +57,9 @@ class AgentProfileController extends Controller
             'alertCadenceOptions' => $agent::alertCadenceOptions(),
             'digestDeliveryStatus' => $agent->alertDigestDeliveryStatus(),
             'mailReadiness' => $mailReadiness,
-            'alertReadiness' => $this->alertReadiness($agent, $mailReadiness),
+            'alertReadiness' => $this->alertReadiness($agent, $mailReadiness, $webPush->assessment()),
+            'pushAvailable' => $webPush->isReady(),
+            'pushPublicKey' => $webPush->publicKeyForBrowser(),
             'twoFactorPendingSecret' => $pendingSecret,
             'twoFactorQrCode' => $pendingSecret ? $twoFactor->qrCodeDataUri($agent, $pendingSecret) : null,
             'twoFactorRecoveryCodes' => $this->pullRecoveryCodes($request),
@@ -139,8 +147,9 @@ class AgentProfileController extends Controller
         $userId = (int) $request->user()->id;
         $email = $request->boolean('email_alerts');
         $sound = $request->boolean('sound_alerts');
+        $push = $request->boolean('push_alerts');
 
-        DB::transaction(function () use ($accountId, $email, $sound, $userId, $validated): void {
+        DB::transaction(function () use ($accountId, $email, $push, $sound, $userId, $validated): void {
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $agent = User::query()
                 ->whereKey($userId)
@@ -153,6 +162,7 @@ class AgentProfileController extends Controller
                 'alert_preferences' => array_merge($alertPreferences, [
                     'mode' => $validated['alert_mode'],
                     'email' => $email,
+                    'push' => $push,
                     'sound' => $sound,
                     'cadence' => $validated['alert_cadence'] ?? $agent->alertCadence(),
                 ]),
@@ -247,9 +257,10 @@ class AgentProfileController extends Controller
 
     /**
      * @param  array{status: string, summary: string, action: string}|null  $mailReadiness
+     * @param  array{status: string}  $pushAssessment
      * @return array<int, array{label: string, status: string, tone: string, detail: string}>
      */
-    private function alertReadiness(User $agent, ?array $mailReadiness): array
+    private function alertReadiness(User $agent, ?array $mailReadiness, array $pushAssessment): array
     {
         $alertCadence = $agent->alertCadence();
         $emailEnabled = $agent->alertEmailEnabled();
@@ -259,7 +270,62 @@ class AgentProfileController extends Controller
             $this->dashboardAlertReadiness($agent),
             $this->alertScopeReadiness($agent),
             $this->emailAlertReadiness($agent, $mailReadiness),
+            $this->pushAlertReadiness($agent, $pushAssessment),
             $this->alertCadenceReadiness($alertCadence, $emailEnabled, $digestDeliveryStatus),
+        ];
+    }
+
+    /**
+     * @param  array{status: string}  $assessment
+     * @return array{label: string, status: string, tone: string, detail: string}
+     */
+    private function pushAlertReadiness(User $agent, array $assessment): array
+    {
+        if (! $agent->alertPushEnabled()) {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_off'),
+                'tone' => 'manual',
+                'detail' => __('profile.readiness_cards.push_off_detail'),
+            ];
+        }
+
+        if ($agent->alertMode() === User::ALERT_MODE_QUIET) {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_paused'),
+                'tone' => 'manual',
+                'detail' => __('profile.readiness_cards.push_paused_detail'),
+            ];
+        }
+
+        if (($assessment['status'] ?? null) !== 'ready') {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_setup'),
+                'tone' => 'attention',
+                'detail' => __('profile.readiness_cards.push_setup_detail'),
+            ];
+        }
+
+        if ((int) $agent->push_subscriptions_count === 0) {
+            return [
+                'label' => __('profile.readiness_cards.push_label'),
+                'status' => __('profile.readiness_cards.push_browser'),
+                'tone' => 'manual',
+                'detail' => __('profile.readiness_cards.push_browser_detail'),
+            ];
+        }
+
+        return [
+            'label' => __('profile.readiness_cards.push_label'),
+            'status' => __('profile.readiness_cards.push_ready'),
+            'tone' => 'ready',
+            'detail' => trans_choice(
+                'profile.readiness_cards.push_ready_detail',
+                (int) $agent->push_subscriptions_count,
+                ['count' => (int) $agent->push_subscriptions_count],
+            ),
         ];
     }
 

@@ -77,6 +77,7 @@ class OperatorDashboardController extends Controller
         return [
             'operator_readiness.confirmed',
             'operator_settings.mail.updated',
+            'operator_settings.webpush.updated',
             'operator_settings.storage.updated',
             'operator_settings.scanning.updated',
             'operator_settings.backup.updated',
@@ -99,6 +100,7 @@ class OperatorDashboardController extends Controller
         return match ($event->action) {
             'operator_readiness.confirmed' => $this->readinessConfirmationLabel($event),
             'operator_settings.mail.updated' => __('operator.dashboard.activity.labels.mail'),
+            'operator_settings.webpush.updated' => __('operator.dashboard.activity.labels.webpush'),
             'operator_settings.storage.updated' => __('operator.dashboard.activity.labels.storage'),
             'operator_settings.scanning.updated' => __('operator.dashboard.activity.labels.scanning'),
             'operator_settings.backup.updated' => __('operator.dashboard.activity.labels.backup'),
@@ -113,6 +115,12 @@ class OperatorDashboardController extends Controller
         if ($event->action === 'operator_settings.mail.updated') {
             return $this->feedback('operator.dashboard.activity.body.mail', [
                 'transport' => (string) data_get($event->metadata, 'mailer', 'unknown'),
+            ]);
+        }
+
+        if ($event->action === 'operator_settings.webpush.updated') {
+            return $this->feedback('operator.dashboard.activity.body.webpush', [
+                'status' => (string) data_get($event->metadata, 'status', 'unknown'),
             ]);
         }
 
@@ -190,6 +198,16 @@ class OperatorDashboardController extends Controller
                         'removed' => __('operator.dashboard.activity.values.removed'),
                         default => __('operator.dashboard.activity.values.unchanged'),
                     },
+                ],
+                [
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.settings_change'),
+                ],
+            ],
+            'operator_settings.webpush.updated' => [
+                [
+                    'label' => __('operator.dashboard.activity.details.credentials'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'status', 'unknown')),
                 ],
                 [
                     'label' => __('operator.dashboard.activity.details.event_type'),

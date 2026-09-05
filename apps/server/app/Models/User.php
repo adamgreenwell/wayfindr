@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\DB;
+use NotificationChannels\WebPush\HasPushSubscriptions;
 use Throwable;
 
 #[Fillable(['account_id', 'account_role', 'custom_role_id', 'oidc_provisioned_at', 'platform_role', 'name', 'email', 'password', 'deactivated_at', 'alert_preferences', 'locale', 'timezone', 'routing_status', 'routing_status_changed_at'])]
@@ -26,7 +27,7 @@ use Throwable;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable;
+    use HasFactory, HasPushSubscriptions, Notifiable;
 
     /** @var array<string, mixed> */
     protected $attributes = [
@@ -240,6 +241,11 @@ class User extends Authenticatable
     public function alertSoundEnabled(): bool
     {
         return data_get($this->alert_preferences, 'sound') === true;
+    }
+
+    public function alertPushEnabled(): bool
+    {
+        return data_get($this->alert_preferences, 'push') === true;
     }
 
     public function alertCadence(): string

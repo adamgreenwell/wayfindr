@@ -156,7 +156,7 @@
             <p>{{ __('profile.alerts.guidance_quiet') }}</p>
         </div>
 
-        <form class="section-form" method="POST" action="{{ route('dashboard.profile.alerts.update') }}">
+        <form class="section-form" method="POST" action="{{ route('dashboard.profile.alerts.update') }}" data-agent-push-preferences>
             @csrf
             @method('PUT')
 
@@ -196,6 +196,23 @@
                 <span>{{ __('profile.alerts.sound_alerts') }}</span>
             </label>
             <p class="field-help">{{ __('profile.alerts.sound_help') }}</p>
+
+            @unless ($pushAvailable)
+                <input type="hidden" name="push_alerts" value="{{ $agent->alertPushEnabled() ? '1' : '0' }}">
+            @endunless
+            <label class="check-row" for="push_alerts">
+                <input
+                    id="push_alerts"
+                    @if ($pushAvailable) name="push_alerts" @endif
+                    type="checkbox"
+                    value="1"
+                    @checked(old('push_alerts', $agent->alertPushEnabled()))
+                    @disabled(! $pushAvailable)
+                >
+                <span>{{ __('profile.alerts.push_alerts') }}</span>
+            </label>
+            <p class="field-help">{{ $pushAvailable ? __('profile.alerts.push_help') : __('profile.alerts.push_unavailable') }}</p>
+            <p class="field-error" data-agent-push-error hidden>{{ __('profile.alerts.push_failed') }}</p>
 
             <div class="field">
                 <label for="alert_cadence">{{ __('profile.alerts.cadence') }}</label>
@@ -248,6 +265,16 @@
 
             <button class="button" type="submit">{{ __('profile.alerts.save') }}</button>
         </form>
+
+        @if ($pushAvailable && $pushPublicKey)
+            <x-agent-push-subscription :config="[
+                'publicKey' => $pushPublicKey,
+                'storeEndpoint' => route('dashboard.profile.push-subscription.store'),
+                'destroyEndpoint' => route('dashboard.profile.push-subscription.destroy'),
+                'unsupportedMessage' => __('profile.alerts.push_unsupported'),
+                'failedMessage' => __('profile.alerts.push_failed'),
+            ]" />
+        @endif
     </section>
 
     <section class="section" aria-labelledby="two-factor-heading">

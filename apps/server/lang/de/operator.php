@@ -11,6 +11,7 @@ return [
             'console' => 'Konsole',
             'onboarding' => 'Einrichtungscheckliste',
             'mail' => 'E-Mail',
+            'webpush' => 'Web-Push',
             'storage' => 'Speicher',
             'scanning' => 'Dateiprüfung',
             'backups' => 'Sicherungen',
@@ -50,6 +51,7 @@ return [
             'needs_attention' => 'Eingriff erforderlich',
             'due_again' => 'Erneut fällig',
             'no_data' => 'Noch keine Daten',
+            'optional' => 'Bei Bedarf',
         ],
         'commands' => [
             'group' => 'Empfohlene Befehle',
@@ -226,6 +228,29 @@ return [
                     'summary' => 'Bereit',
                     'detail' => 'Reverb-Übertragungen sind konfiguriert.',
                     'action' => 'Führen Sie php artisan reverb:start --host=127.0.0.1 --port=8080 unter Ihrer Prozessverwaltung aus und belassen Sie php artisan reverb:restart im Bereitstellungsskript, damit langlebige Worker sauber aktualisiert werden.',
+                ],
+            ],
+            'web_push' => [
+                'label' => 'Web-Push',
+                'ready' => [
+                    'summary' => 'Die VAPID-Zugangsdaten für Web-Push sind bereit.',
+                    'detail' => 'Agenten können diesen Browser in ihrem Profil für Benachrichtigungen bei geschlossenem Dashboard anmelden.',
+                    'action' => 'Halten Sie das VAPID-Schlüsselpaar stabil; nach einem Wechsel muss jeder Browser erneut angemeldet werden.',
+                ],
+                'unset' => [
+                    'summary' => 'Web-Push ist nicht eingerichtet.',
+                    'detail' => 'Dieser optionale Kanal bleibt still deaktiviert, bis ein Betreiber einen VAPID-Betreff und ein Schlüsselpaar hinterlegt.',
+                    'action' => 'Öffnen Sie die Web-Push-Einstellungen, wenn Agenten nach dem Schließen des Dashboards Benachrichtigungen erhalten sollen.',
+                ],
+                'incomplete' => [
+                    'summary' => 'Die Web-Push-Konfiguration ist unvollständig.',
+                    'detail' => 'VAPID-Betreff, öffentlicher Schlüssel und privater Schlüssel müssen gemeinsam eingerichtet werden.',
+                    'action' => 'Vervollständigen oder löschen Sie die Web-Push-Zugangsdaten in den Betreiber-Einstellungen.',
+                ],
+                'invalid' => [
+                    'summary' => 'Die Web-Push-Zugangsdaten sind ungültig.',
+                    'detail' => 'Der eingerichtete VAPID-Betreff oder das Schlüsselmaterial kann eine Push-Anfrage nicht authentifizieren.',
+                    'action' => 'Ersetzen Sie den VAPID-Betreff und das passende Schlüsselpaar in den Betreiber-Einstellungen.',
                 ],
             ],
             'cobrowse_transport' => [
@@ -842,6 +867,7 @@ return [
             'system' => 'System',
             'labels' => [
                 'mail' => 'E-Mail-Einstellungen aktualisiert',
+                'webpush' => 'Web-Push-Einstellungen aktualisiert',
                 'storage' => 'Speichereinstellungen aktualisiert',
                 'scanning' => 'Einstellungen der Dateiprüfung aktualisiert',
                 'backup' => 'Sicherungseinstellungen aktualisiert',
@@ -854,6 +880,7 @@ return [
             ],
             'body' => [
                 'mail' => 'Die Einstellungen für ausgehende E-Mails wurden aktualisiert (Versand: :transport).',
+                'webpush' => 'Die Web-Push-Einstellungen wurden aktualisiert (Status: :status).',
                 'storage' => 'Der Anhangsspeicher wurde aktualisiert (Datenträger: :disk).',
                 'scanning' => 'Die Anhangsprüfung wurde aktualisiert (Scanner: :scanner).',
                 'backup' => 'Die Sicherungseinstellungen wurden aktualisiert (extern: :offsite).',
@@ -975,6 +1002,40 @@ return [
             'failed' => 'Test-E-Mail über :transport fehlgeschlagen: :message',
             'may_fall_back' => 'Testnachricht über die Kette :transport gesendet. Wenn der primäre Transport nicht verfügbar war, wurde möglicherweise auf ein lokales Protokoll ausgewichen, statt zuzustellen — bestätigen Sie, dass die Nachricht im Posteingang angekommen ist.',
             'sent' => 'Test-E-Mail an :recipient über :transport gesendet. Prüfen Sie den Posteingang.',
+        ],
+    ],
+
+    'webpush' => [
+        'document_title' => 'Web-Push-Einstellungen',
+        'title' => 'Web-Push',
+        'subtitle' => 'Bieten Sie optionale Benachrichtigungen an, wenn ein Agent das Dashboard schließt.',
+        'heading' => 'VAPID-Zugangsdaten',
+        'lede' => 'Der öffentliche Schlüssel wird an authentifizierte Browser gesendet. Der private Schlüssel wird verschlüsselt gespeichert und nie wieder angezeigt.',
+        'subject' => 'VAPID-Betreff',
+        'subject_help' => 'Verwenden Sie eine überwachte mailto:-Adresse oder eine öffentliche HTTPS-URL. Safari erfordert einen gültigen Betreff.',
+        'public_key' => 'Öffentlicher Schlüssel',
+        'private_key' => 'Privater Schlüssel',
+        'private_placeholder_configured' => 'ein privater Schlüssel ist eingerichtet',
+        'private_placeholder_unreadable' => 'gespeicherter privater Schlüssel kann nicht entschlüsselt werden',
+        'private_placeholder_none' => 'kein privater Schlüssel eingerichtet',
+        'private_unreadable' => 'Der gespeicherte private Schlüssel kann nicht entschlüsselt werden. Geben Sie ein neues Paar ein oder löschen Sie Web-Push.',
+        'private_help' => 'Lassen Sie dieses Feld leer, um den aktuellen privaten Schlüssel beizubehalten. Ersetzen Sie öffentlichen und privaten Schlüssel gemeinsam.',
+        'clear_keys' => 'VAPID-Konfiguration löschen und neue Anmeldungen deaktivieren',
+        'generate_help' => 'Erzeugen Sie mit php artisan webpush:vapid ein stabiles Paar und fügen Sie Betreff und Schlüssel hier ein. Wechseln Sie ein funktionierendes Paar nicht beiläufig; vorhandene Browser müssten erneut angemeldet werden.',
+        'save' => 'Web-Push-Einstellungen speichern',
+        'status' => [
+            'ready' => 'Bereit',
+            'unset' => 'Optional — nicht eingerichtet',
+            'incomplete' => 'Unvollständig',
+            'invalid' => 'Ungültig',
+        ],
+        'validation' => [
+            'clear_conflict' => 'Geben Sie beim Löschen des aktuellen Paars keinen privaten Schlüssel ein.',
+            'pair_required' => 'Ersetzen Sie öffentlichen und privaten VAPID-Schlüssel gemeinsam.',
+            'invalid_vapid' => 'Geben Sie einen gültigen HTTPS- oder mailto:-Betreff und ein gültiges VAPID-Schlüsselpaar ein.',
+        ],
+        'flash' => [
+            'saved' => 'Web-Push-Einstellungen gespeichert.',
         ],
     ],
 

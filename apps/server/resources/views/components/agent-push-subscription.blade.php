@@ -1,0 +1,216 @@
+@props(['config'])
+
+<script data-agent-push-subscription>
+    (function () {
+        var config = @json($config);
+        var form = document.querySelector('[data-agent-push-preferences]');
+        var checkbox = document.getElementById('push_alerts');
+        var error = document.querySelector('[data-agent-push-error]');
+
+        if (! form || ! checkbox) {
+            return;
+        }
+
+        function showError(message) {
+            if (! error) {
+                return;
+            }
+
+            error.textContent = message || config.failedMessage;
+            error.hidden = false;
+        }
+
+        function preserveAndDisable() {
+            var preserved = document.createElement('input');
+
+            preserved.type = 'hidden';
+            preserved.name = 'push_alerts';
+            preserved.value = checkbox.checked ? '1' : '0';
+            form.appendChild(preserved);
+            checkbox.disabled = true;
+            showError(config.unsupportedMessage);
+        }
+
+        if (! window.isSecureContext
+            || ! ('serviceWorker' in navigator)
+            || ! ('PushManager' in window)
+            || ! ('Notification' in window)) {
+            preserveAndDisable();
+
+            return;
+        }
+
+        function applicationServerKey(value) {
+            var padding = '='.repeat((4 - value.length % 4) % 4);
+            var base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+            var raw = window.atob(base64);
+
+            return Uint8Array.from(raw, function (character) {
+                return character.charCodeAt(0);
+            });
+        }
+
+        function base64Url(buffer) {
+            var bytes = new Uint8Array(buffer);
+            var binary = '';
+
+            bytes.forEach(function (byte) {
+                binary += String.fromCharCode(byte);
+            });
+
+            return window.btoa(binary)
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
+        }
+
+        function usesCurrentApplicationServerKey(subscription) {
+            var existing = subscription.options && subscription.options.applicationServerKey;
+
+            if (! existing) {
+                return false;
+            }
+
+            var expected = applicationServerKey(config.publicKey);
+            var actual = new Uint8Array(existing);
+
+            return actual.length === expected.length && actual.every(function (byte, index) {
+                return byte === expected[index];
+            });
+        }
+
+        function request(endpoint, method, body) {
+            var csrf = document.querySelector('meta[name="csrf-token"]');
+
+            return fetch(endpoint, {
+                method: method,
+                credentials: 'same-origin',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf ? csrf.getAttribute('content') : '',
+                },
+                body: JSON.stringify(body),
+            }).then(function (response) {
+                if (response.ok) {
+                    return;
+                }
+
+                return response.json().catch(function () {
+                    return {};
+                }).then(function (payload) {
+                    throw new Error(payload.message || config.failedMessage);
+                });
+            });
+        }
+
+        function storeSubscription(subscription) {
+            var key = subscription.getKey('p256dh');
+            var token = subscription.getKey('auth');
+
+            if (! key || ! token) {
+                return Promise.reject(new Error(config.failedMessage));
+            }
+
+            return request(config.storeEndpoint, 'POST', {
+                endpoint: subscription.endpoint,
+                keys: {
+                    p256dh: base64Url(key),
+                    auth: base64Url(token),
+                },
+                content_encoding: 'aes128gcm',
+            });
+        }
+
+        function enablePush() {
+            return Notification.requestPermission().then(function (permission) {
+                if (permission !== 'granted') {
+                    throw new Error(config.failedMessage);
+                }
+
+                return navigator.serviceWorker.register('/wayfindr-sw.js', { scope: '/' });
+            }).then(function (registration) {
+                return registration.pushManager.getSubscription().then(function (subscription) {
+                    if (subscription && usesCurrentApplicationServerKey(subscription)) {
+                        return subscription;
+                    }
+
+                    var replace = subscription
+                        ? request(config.destroyEndpoint, 'DELETE', {
+                            endpoint: subscription.endpoint,
+                        }).then(function () {
+                            return subscription.unsubscribe();
+                        })
+                        : Promise.resolve();
+
+                    return replace.then(function () {
+                        return registration.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: applicationServerKey(config.publicKey),
+                        });
+                    });
+                });
+            }).then(storeSubscription);
+        }
+
+        function disablePush() {
+            return navigator.serviceWorker.getRegistration('/wayfindr-sw.js')
+                .then(function (registration) {
+                    return registration ? registration.pushManager.getSubscription() : null;
+                })
+                .then(function (subscription) {
+                    if (! subscription) {
+                        return;
+                    }
+
+                    return request(config.destroyEndpoint, 'DELETE', {
+                        endpoint: subscription.endpoint,
+                    }).then(function () {
+                        return subscription.unsubscribe();
+                    });
+                });
+        }
+
+        form.addEventListener('submit', function (event) {
+            if (form.dataset.pushSyncing === 'true') {
+                return;
+            }
+
+            event.preventDefault();
+            form.dataset.pushSyncing = 'true';
+
+            if (error) {
+                error.hidden = true;
+            }
+
+            var submitter = event.submitter;
+
+            if (submitter) {
+                submitter.disabled = true;
+            }
+
+            // Turning delivery off is authoritative even if a flaky browser
+            // cannot clean up its local subscription right now. The profile
+            // preference is rechecked by the queued sender, so submitting the
+            // disabled preference stops delivery while a future save can retry
+            // the harmless stale-subscription cleanup.
+            var synchronization = checkbox.checked
+                ? enablePush()
+                : disablePush().catch(function () {});
+
+            synchronization
+                .then(function () {
+                    HTMLFormElement.prototype.submit.call(form);
+                })
+                .catch(function (failure) {
+                    form.dataset.pushSyncing = 'false';
+
+                    if (submitter) {
+                        submitter.disabled = false;
+                    }
+
+                    showError(failure.message);
+                });
+        });
+    })();
+</script>

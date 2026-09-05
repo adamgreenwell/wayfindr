@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 use Throwable;
@@ -107,6 +108,13 @@ class OperatorSettings
         // formatting them.
         'localization.language' => ['config' => 'wayfindr.dashboard_locale', 'secret' => false, 'group' => 'localization'],
         'localization.timezone' => ['config' => 'wayfindr.dashboard_timezone', 'secret' => false, 'group' => 'localization'],
+
+        // Web Push (#759). Keys can come from the environment or be replaced
+        // live by a platform operator. The public key is sent to authenticated
+        // agent browsers; the private key remains encrypted and write-only.
+        'webpush.subject' => ['config' => 'webpush.vapid.subject', 'secret' => false, 'group' => 'webpush'],
+        'webpush.public_key' => ['config' => 'webpush.vapid.public_key', 'secret' => false, 'group' => 'webpush'],
+        'webpush.private_key' => ['config' => 'webpush.vapid.private_key', 'secret' => true, 'group' => 'webpush'],
     ];
 
     /**
@@ -515,6 +523,11 @@ class OperatorSettings
     private function refreshManagers(): void
     {
         Mail::forgetMailers();
+
+        // The notification manager also caches channel instances. Web Push
+        // channels capture VAPID credentials when they are built, so discard
+        // the old sender before a long-running worker handles its next job.
+        Notification::getFacadeRoot()?->forgetDrivers();
 
         // Storage caches each built disk with its config (endpoint, credentials).
         // Forget the attachment AND backup disks so a changed disk choice or S3
