@@ -21,6 +21,7 @@ return new class extends Migration
             $table->string('public_key')->nullable();
             $table->string('auth_token')->nullable();
             $table->string('content_encoding')->nullable();
+            $table->string('vapid_public_key_hash', 64)->charset('ascii')->index();
             $table->timestamps();
         });
     }

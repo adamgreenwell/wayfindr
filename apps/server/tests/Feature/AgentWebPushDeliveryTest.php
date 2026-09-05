@@ -4,6 +4,7 @@ use App\Events\AgentAlertStored;
 use App\Exceptions\RetryableAgentWebPushException;
 use App\Listeners\SendAgentAlertWebPush;
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -311,6 +312,8 @@ test('a long-running worker rebuilds the Web Push channel after VAPID rotation',
     }
 
     $settings->applyOverrides();
+    AgentPushSubscription::purgeStaleFor($agent);
+    subscribeAgentForPush($agent, 'rotated-new');
     Notification::sendNow(
         $agent,
         new AgentAlertWebPush('alert-second', 'version-second', 'en'),
@@ -325,6 +328,30 @@ test('a long-running worker rebuilds the Web Push channel after VAPID rotation',
         ->and($authorization[0])->toContain('k='.$firstKeys['publicKey'])
         ->and($authorization[1])->toContain('k='.$secondKeys['publicKey'])
         ->and($authorization[1])->not->toContain('k='.$firstKeys['publicKey']);
+});
+
+test('an environment VAPID rotation removes stale subscriptions before delivery', function (): void {
+    readyAgentWebPushConfig();
+    [$agent, , $alert] = pushAlertFixture();
+    subscribeAgentForPush($agent, 'old-environment');
+    $oldHash = AgentPushSubscription::currentVapidPublicKeyHash();
+    $replacement = VAPID::createVapidKeys();
+    config()->set('webpush.vapid', [
+        'subject' => 'mailto:alerts@example.test',
+        'public_key' => $replacement['publicKey'],
+        'private_key' => $replacement['privateKey'],
+        'pem_file' => null,
+    ]);
+    Http::fake();
+    $listener = app(SendAgentAlertWebPush::class);
+    $event = new AgentAlertStored($agent, $alert);
+
+    $listener->handle($event, app(AgentWebPushConfig::class));
+
+    Http::assertNothingSent();
+    expect(AgentPushSubscription::withoutGlobalScopes()->count())->toBe(0)
+        ->and(AgentPushSubscription::currentVapidPublicKeyHash())->not->toBe($oldHash)
+        ->and($listener->shouldQueue($event))->toBeFalse();
 });
 
 test('a visible realtime dashboard suppresses Web Push before delivery', function (): void {

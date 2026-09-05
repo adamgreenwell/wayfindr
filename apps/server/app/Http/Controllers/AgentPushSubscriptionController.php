@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Settings\OperatorSettings;
@@ -17,7 +18,6 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use InvalidArgumentException;
-use NotificationChannels\WebPush\PushSubscription;
 
 /** Store only the signed-in agent's browser subscription. */
 final class AgentPushSubscriptionController extends Controller
@@ -34,13 +34,19 @@ final class AgentPushSubscriptionController extends Controller
         abort_unless($agent instanceof User, 403);
 
         $validated = $request->validate([
-            'endpoint' => ['required', 'string', 'max:'.PushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
+            'endpoint' => ['required', 'string', 'max:'.AgentPushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
         ]);
-        $subscription = PushSubscription::query()
+        $subscription = AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
             ->where('endpoint', $validated['endpoint'])
             ->first();
 
-        if (! $subscription instanceof PushSubscription) {
+        if (! $subscription instanceof AgentPushSubscription) {
+            return response()->json(['status' => 'missing']);
+        }
+
+        if (! $subscription->usesCurrentVapidGeneration()) {
+            $subscription->delete();
+
             return response()->json(['status' => 'missing']);
         }
 
@@ -62,7 +68,7 @@ final class AgentPushSubscriptionController extends Controller
             'endpoint' => [
                 'required',
                 'string',
-                'max:'.PushSubscription::ENDPOINT_MAX_LENGTH,
+                'max:'.AgentPushSubscription::ENDPOINT_MAX_LENGTH,
                 'url',
                 'starts_with:https://',
                 function (string $attribute, mixed $value, Closure $fail) use ($destination): void {
@@ -132,17 +138,24 @@ final class AgentPushSubscriptionController extends Controller
                     ->where('account_id', $agent->account_id)
                     ->lockForUpdate()
                     ->firstOrFail();
-                $subscription = PushSubscription::query()
+                AgentPushSubscription::purgeStaleFor($currentAgent);
+                $subscription = AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
                     ->where('endpoint', $validated['endpoint'])
                     ->lockForUpdate()
                     ->first();
 
-                if ($subscription instanceof PushSubscription
+                if ($subscription instanceof AgentPushSubscription
+                    && ! $subscription->usesCurrentVapidGeneration()) {
+                    $subscription->delete();
+                    $subscription = null;
+                }
+
+                if ($subscription instanceof AgentPushSubscription
                     && ! $currentAgent->ownsPushSubscription($subscription)) {
                     return 'foreign';
                 }
 
-                if (! $subscription instanceof PushSubscription
+                if (! $subscription instanceof AgentPushSubscription
                     && $currentAgent->pushSubscriptions()->count() >= self::MAX_SUBSCRIPTIONS_PER_AGENT) {
                     return 'limit';
                 }
@@ -153,7 +166,7 @@ final class AgentPushSubscriptionController extends Controller
                     'content_encoding' => $validated['content_encoding'] ?? 'aes128gcm',
                 ];
 
-                if ($subscription instanceof PushSubscription) {
+                if ($subscription instanceof AgentPushSubscription) {
                     $subscription->forceFill($attributes)->save();
                 } else {
                     $currentAgent->pushSubscriptions()->create([
@@ -186,7 +199,7 @@ final class AgentPushSubscriptionController extends Controller
         abort_unless($agent?->account_id, 403);
 
         $validated = $request->validate([
-            'endpoint' => ['required', 'string', 'max:'.PushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
+            'endpoint' => ['required', 'string', 'max:'.AgentPushSubscription::ENDPOINT_MAX_LENGTH, 'url', 'starts_with:https://'],
         ]);
 
         $accountId = (int) $agent->account_id;
@@ -200,7 +213,9 @@ final class AgentPushSubscriptionController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $currentAgent->pushSubscriptions()
+            AgentPushSubscription::withoutGlobalScope(AgentPushSubscription::CURRENT_VAPID_SCOPE)
+                ->where('subscribable_type', $currentAgent->getMorphClass())
+                ->where('subscribable_id', $currentAgent->getKey())
                 ->where('endpoint', $validated['endpoint'])
                 ->delete();
 

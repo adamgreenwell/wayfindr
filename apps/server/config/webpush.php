@@ -1,6 +1,6 @@
 <?php
 
-use NotificationChannels\WebPush\PushSubscription;
+use App\Models\AgentPushSubscription;
 
 return [
     // Environment values are the boot-safe baseline. Platform operators can
@@ -13,7 +13,7 @@ return [
         'pem_file' => null,
     ],
 
-    'model' => PushSubscription::class,
+    'model' => AgentPushSubscription::class,
     'table_name' => env('WEBPUSH_DB_TABLE', 'push_subscriptions'),
     'database_connection' => env('WEBPUSH_DB_CONNECTION', env('DB_CONNECTION', 'sqlite')),
     'client_options' => [],

@@ -8,6 +8,7 @@ use App\Enums\AccountPermission;
 use App\Events\AgentAlertStored;
 use App\Exceptions\RetryableAgentWebPushException;
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\User;
 use App\Notifications\AgentAlertWebPush;
 use App\Support\AgentAlertPayload;
@@ -37,8 +38,13 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
     public function shouldQueue(AgentAlertStored $event): bool
     {
         try {
-            return app(AgentWebPushConfig::class)->isReady()
-                && $event->recipient->alertPushEnabled()
+            if (! app(AgentWebPushConfig::class)->isReady()) {
+                return false;
+            }
+
+            AgentPushSubscription::purgeStaleFor($event->recipient);
+
+            return $event->recipient->alertPushEnabled()
                 && $event->recipient->alertMode() !== User::ALERT_MODE_QUIET
                 && $event->recipient->pushSubscriptions()->exists();
         } catch (Throwable) {
@@ -91,8 +97,13 @@ final class SendAgentAlertWebPush implements ShouldQueueAfterCommit
                 || $recipient->isDeactivated()
                 || $recipient->alertMode() === User::ALERT_MODE_QUIET
                 || ! $recipient->alertPushEnabled()
-                || ! $recipient->hasAccountPermission(AccountPermission::ViewAlerts)
-                || ! $recipient->pushSubscriptions()->exists()
+                || ! $recipient->hasAccountPermission(AccountPermission::ViewAlerts)) {
+                return;
+            }
+
+            AgentPushSubscription::purgeStaleFor($recipient);
+
+            if (! $recipient->pushSubscriptions()->exists()
                 || $visiblePresence->hasVisibleClient($recipient)) {
                 return;
             }

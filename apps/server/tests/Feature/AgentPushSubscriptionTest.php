@@ -2,6 +2,7 @@
 
 use App\Enums\PlatformRole;
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\OperatorSetting;
 use App\Models\User;
 use App\Support\Settings\OperatorSettings;
@@ -63,7 +64,9 @@ test('an agent can store and refresh only their own browser subscription', funct
         ->and($subscription->subscribable_id)->toBe($agent->id)
         ->and($subscription->subscribable_type)->toBe($agent->getMorphClass())
         ->and($subscription->public_key)->toBe($payload['keys']['p256dh'])
-        ->and($subscription->auth_token)->toBe($payload['keys']['auth']);
+        ->and($subscription->auth_token)->toBe($payload['keys']['auth'])
+        ->and(AgentPushSubscription::query()->sole()->vapid_public_key_hash)
+        ->toBe(AgentPushSubscription::currentVapidPublicKeyHash());
 
     $refreshed = agentPushPayload(seed: 'b');
 
@@ -301,4 +304,42 @@ test('an agent cannot accumulate more than ten browser subscriptions', function 
         ->assertUnprocessable();
 
     expect($agent->pushSubscriptions()->count())->toBe(10);
+});
+
+test('an environment VAPID rotation purges old subscriptions before enforcing the browser limit', function (): void {
+    $agent = User::factory()->for(Account::factory())->create();
+
+    foreach (range(1, 10) as $index) {
+        $payload = agentPushPayload("https://push.example.test/subscription/old-{$index}");
+        $agent->pushSubscriptions()->create([
+            'endpoint' => $payload['endpoint'],
+            'public_key' => $payload['keys']['p256dh'],
+            'auth_token' => $payload['keys']['auth'],
+            'content_encoding' => 'aes128gcm',
+        ]);
+    }
+
+    $oldHash = AgentPushSubscription::currentVapidPublicKeyHash();
+    OperatorSetting::query()->where('key', 'webpush.public_key')->delete();
+    config()->set('webpush.vapid.public_key', 'rotated-environment-vapid-public-key');
+
+    // Model a fresh process after environment rotation: its settings baseline
+    // is the new environment, with no operator override pinning the old key.
+    $freshSettings = new OperatorSettings;
+    $freshSettings->captureBaseline();
+    app()->instance(OperatorSettings::class, $freshSettings);
+
+    $newPayload = agentPushPayload('https://push.example.test/subscription/new', 'b');
+
+    $this->actingAs($agent)
+        ->postJson(route('dashboard.profile.push-subscription.store'), $newPayload)
+        ->assertOk()
+        ->assertExactJson(['stored' => true]);
+
+    $current = AgentPushSubscription::query()->sole();
+
+    expect(PushSubscription::query()->count())->toBe(1)
+        ->and($current->endpoint)->toBe($newPayload['endpoint'])
+        ->and($current->vapid_public_key_hash)->not->toBe($oldHash)
+        ->and($current->vapid_public_key_hash)->toBe(AgentPushSubscription::currentVapidPublicKeyHash());
 });

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
 use App\Models\User;
 use App\Support\AgentWebPushConfig;
@@ -34,6 +35,7 @@ class AgentProfileController extends Controller
         $agent = $request->user();
 
         abort_unless($agent?->account_id, 403);
+        AgentPushSubscription::purgeStaleFor($agent);
         $agent->loadMissing('customRole');
         $agent->loadCount('pushSubscriptions');
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
 use App\Models\OperatorSetting;
 use App\Support\AgentWebPushConfig;
@@ -13,7 +14,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use NotificationChannels\WebPush\PushSubscription;
 
 /** Platform-operator VAPID configuration; the private key is always write-only. */
 final class OperatorWebPushSettingsController extends Controller
@@ -85,6 +85,18 @@ final class OperatorWebPushSettingsController extends Controller
 
             $currentPublicKey = trim((string) config('webpush.vapid.public_key'));
             $currentPrivateKey = trim((string) config('webpush.vapid.private_key'));
+            $subjectIsOverridden = OperatorSetting::query()
+                ->where('key', 'webpush.subject')
+                ->whereNotNull('value')
+                ->exists();
+            $publicKeyIsOverridden = OperatorSetting::query()
+                ->where('key', 'webpush.public_key')
+                ->whereNotNull('value')
+                ->exists();
+            $privateKeyIsOverridden = OperatorSetting::query()
+                ->where('key', 'webpush.private_key')
+                ->whereNotNull('value')
+                ->exists();
 
             if (! $clearKeys && $privateUnreadable && ! $privateProvided) {
                 throw ValidationException::withMessages([
@@ -125,8 +137,17 @@ final class OperatorWebPushSettingsController extends Controller
                 ]);
             }
 
-            $settings->set('webpush.subject', $clearKeys ? '' : $subject);
-            $settings->set('webpush.public_key', $clearKeys ? '' : $publicKey);
+            $inheritSubject = ! $clearKeys
+                && ! $subjectIsOverridden
+                && hash_equals(trim((string) config('webpush.vapid.subject')), $subject);
+            $inheritPublicKey = ! $clearKeys
+                && ! $publicKeyIsOverridden
+                && ! $privateKeyIsOverridden
+                && ! $privateProvided
+                && hash_equals($currentPublicKey, $publicKey);
+
+            $settings->set('webpush.subject', $inheritSubject ? null : ($clearKeys ? '' : $subject));
+            $settings->set('webpush.public_key', $inheritPublicKey ? null : ($clearKeys ? '' : $publicKey));
 
             if ($clearKeys) {
                 $settings->set('webpush.private_key', '');
@@ -140,7 +161,7 @@ final class OperatorWebPushSettingsController extends Controller
             // is unusable. Purge them in the same transaction as the new pair
             // so dead endpoints cannot keep failing or consume agent limits.
             $invalidatedSubscriptions = $publicKeyChanged
-                ? PushSubscription::query()->delete()
+                ? AgentPushSubscription::withoutGlobalScopes()->delete()
                 : 0;
 
             AuditEvent::query()->create([
@@ -164,6 +185,6 @@ final class OperatorWebPushSettingsController extends Controller
 
     private function subscriptionsUseSettingsTransaction(): bool
     {
-        return (new PushSubscription)->getConnection()->getName() === DB::connection()->getName();
+        return (new AgentPushSubscription)->getConnection()->getName() === DB::connection()->getName();
     }
 }

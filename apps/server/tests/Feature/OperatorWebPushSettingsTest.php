@@ -2,6 +2,7 @@
 
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\AgentPushSubscription;
 use App\Models\AuditEvent;
 use App\Models\OperatorSetting;
 use App\Models\User;
@@ -179,6 +180,50 @@ test('saving the same VAPID public key preserves browser subscriptions', functio
         ->assertRedirect(route('operator.settings.webpush.edit'));
 
     expect(PushSubscription::query()->count())->toBe(1)
+        ->and(AuditEvent::query()->where('action', 'operator_settings.webpush.updated')->sole()->metadata)
+        ->toMatchArray([
+            'status' => 'ready',
+            'private_key_changed' => 'unchanged',
+            'subscriptions_invalidated' => 0,
+        ]);
+});
+
+test('saving environment VAPID values preserves environment inheritance and subscriptions', function (): void {
+    $operator = User::factory()->for(Account::factory())->create([
+        'platform_role' => 'operator',
+        'account_role' => AccountRole::Owner,
+    ]);
+    $agent = User::factory()->for(Account::factory())->create();
+    $keys = VAPID::createVapidKeys();
+    config()->set('webpush.vapid', [
+        'subject' => 'mailto:environment-alerts@example.test',
+        'public_key' => $keys['publicKey'],
+        'private_key' => $keys['privateKey'],
+        'pem_file' => null,
+    ]);
+    $settings = app(OperatorSettings::class);
+    $settings->captureBaseline();
+    $agent->pushSubscriptions()->create([
+        'endpoint' => 'https://push.example.test/subscriptions/environment',
+        'public_key' => 'browser-public-key',
+        'auth_token' => 'browser-auth-token',
+        'content_encoding' => 'aes128gcm',
+    ]);
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.webpush.update'), [
+            'subject' => 'mailto:environment-alerts@example.test',
+            'public_key' => $keys['publicKey'],
+        ])
+        ->assertRedirect(route('operator.settings.webpush.edit'));
+
+    expect(OperatorSetting::query()->whereIn('key', [
+        'webpush.subject',
+        'webpush.public_key',
+        'webpush.private_key',
+    ])->count())->toBe(0)
+        ->and(PushSubscription::query()->count())->toBe(1)
+        ->and(AgentPushSubscription::query()->count())->toBe(1)
         ->and(AuditEvent::query()->where('action', 'operator_settings.webpush.updated')->sole()->metadata)
         ->toMatchArray([
             'status' => 'ready',
