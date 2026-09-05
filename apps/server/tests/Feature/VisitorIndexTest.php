@@ -167,13 +167,18 @@ test('defined visitor attributes filter by an exact typed value within the accou
         'label' => 'Seat count',
         'type' => VisitorAttributeType::Number,
     ]);
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'vip',
+        'label' => 'VIP customer',
+        'type' => VisitorAttributeType::Boolean,
+    ]);
     Visitor::factory()->for($w['site'])->create([
         'name' => 'Enterprise Contact',
-        'metadata' => ['context' => ['plan' => 'Enterprise', 'seats' => '25']],
+        'metadata' => ['context' => ['plan' => 'Enterprise', 'seats' => '25', 'vip' => 'YeS']],
     ]);
     Visitor::factory()->for($w['site'])->create([
         'name' => 'Starter Contact',
-        'metadata' => ['context' => ['plan' => 'Starter', 'seats' => '3']],
+        'metadata' => ['context' => ['plan' => 'Starter', 'seats' => '3', 'vip' => 'off']],
     ]);
 
     $this->actingAs($w['agent'])
@@ -193,6 +198,24 @@ test('defined visitor attributes filter by an exact typed value within the accou
         ->assertOk()
         ->assertSee('Enterprise Contact')
         ->assertDontSee('Starter Contact');
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'vip',
+            'attribute_value' => 'true',
+        ]))
+        ->assertOk()
+        ->assertSee('Enterprise Contact')
+        ->assertDontSee('Starter Contact');
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', [
+            'attribute' => 'vip',
+            'attribute_value' => 'false',
+        ]))
+        ->assertOk()
+        ->assertSee('Starter Contact')
+        ->assertDontSee('Enterprise Contact');
 });
 
 test('unknown malformed and invalid visitor attribute filters never widen account scope or fail the page', function (): void {

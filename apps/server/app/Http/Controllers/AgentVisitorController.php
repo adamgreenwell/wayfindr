@@ -114,7 +114,10 @@ class AgentVisitorController extends Controller
         }
 
         if ($attributeDefinition !== null && $normalizedAttributeValue !== null) {
-            $query->where('metadata->context->'.$attributeDefinition->key, $normalizedAttributeValue);
+            $query->whereIn(
+                'metadata->context->'.$attributeDefinition->key,
+                $attributeDefinition->type->storedValuesMatching($normalizedAttributeValue),
+            );
         }
 
         if ($canViewConversations) {
