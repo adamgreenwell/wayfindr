@@ -207,7 +207,8 @@
                     return registration ? registration.pushManager.getSubscription() : null;
                 })
                 .then(function (subscription) {
-                    checkbox.checked = Boolean(subscription && usesCurrentApplicationServerKey(subscription));
+                    initialBrowserEnabled = Boolean(subscription && usesCurrentApplicationServerKey(subscription));
+                    checkbox.checked = initialBrowserEnabled;
                     checkbox.disabled = false;
                 })
                 .catch(function () {
@@ -217,6 +218,7 @@
         }
 
         var browserStateAvailable = true;
+        var initialBrowserEnabled = null;
         var browserStateReady = initializeBrowserState();
 
         form.addEventListener('submit', function (event) {
@@ -239,6 +241,12 @@
 
             var synchronization = browserStateReady.then(function () {
                 if (! browserStateAvailable) {
+                    return;
+                }
+
+                // Email, sound, or cadence saves must not touch browser push.
+                // Synchronize only when this browser's own checkbox changed.
+                if (checkbox.checked === initialBrowserEnabled) {
                     return;
                 }
 
