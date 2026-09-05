@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\SendAgentAlertDigest;
 use App\Mail\AlertDigestMessage;
 use App\Models\Account;
 use App\Models\Conversation;
@@ -10,6 +11,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\TicketAssigned;
+use App\Support\AlertDigestCandidateCollector;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
@@ -69,7 +71,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->and($deliveryStatus['message'])->toBe('Queued digest email with 2 alerts.')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 
-    Mail::assertQueued(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
+    Mail::assertSent(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
         $renderedMail = $mail->render();
 
         return $mail->hasTo($agent->email)
@@ -97,7 +99,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->and(Artisan::output())->toContain('No alert digest emails queued.')
         ->toContain('Alert digest delivery complete. Agents scanned: 1. Emails queued: 0. Candidates: 0.');
 
-    Mail::assertQueuedCount(1);
+    Mail::assertSentCount(1);
 
     $this->travelTo(now()->addMinutes(5));
     $ticket->forceFill([
@@ -119,7 +121,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
         ->and($deliveryStatus['message'])->toBe('Queued digest email with 1 alert.')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 
-    Mail::assertQueued(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
+    Mail::assertSent(AlertDigestMessage::class, function (AlertDigestMessage $mail) use ($agent, $ticket): bool {
         $renderedMail = $mail->render();
 
         return $mail->hasTo($agent->email)
@@ -130,7 +132,7 @@ test('alert digest send command queues metadata-only digest mail', function (): 
             && ! str_contains($renderedMail, 'Checkout trouble');
     });
 
-    Mail::assertQueuedCount(2);
+    Mail::assertSentCount(2);
 });
 
 test('alert digest send command reports empty and missing-agent states without queueing mail', function (): void {
@@ -157,7 +159,7 @@ test('alert digest send command reports empty and missing-agent states without q
         ->and($deliveryStatus['message'])->toBe('No digest-ready alerts found.')
         ->and($deliveryStatus['last_attempted_at'])->toBeString()->not->toBe('');
 
-    Mail::assertNothingQueued();
+    Mail::assertNothingSent();
 
     $exitCode = Artisan::call('wayfindr:send-alert-digests', [
         '--email' => 'missing@example.test',
@@ -187,14 +189,51 @@ test('alert digest delivery waits until agent quiet hours end', function (): voi
 
     expect(Artisan::call('wayfindr:send-alert-digests', ['--email' => $agent->email]))->toBe(0)
         ->and(Artisan::output())->toContain('Agents scanned: 0. Emails queued: 0. Candidates: 0.');
-    Mail::assertNothingQueued();
+    Mail::assertNothingSent();
     expect(data_get($agent->fresh()->alert_preferences, 'digest_delivery'))->toBeNull();
 
     $this->travelTo(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
 
     expect(Artisan::call('wayfindr:send-alert-digests', ['--email' => $agent->email]))->toBe(0)
         ->and(Artisan::output())->toContain('Agents scanned: 1. Emails queued: 1. Candidates: 1.');
-    Mail::assertQueuedCount(1);
+    Mail::assertSentCount(1);
+});
+
+test('a queued digest rechecks quiet hours before sending or stamping candidates', function (): void {
+    Mail::fake();
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 01:59:00', 'UTC'));
+    $account = Account::factory()->create();
+    $agent = digestMailAgent($account, [
+        'timezone' => 'America/New_York',
+        'alert_preferences' => [
+            'quiet_hours' => [
+                'enabled' => true,
+                'start' => '22:00',
+                'end' => '07:00',
+            ],
+        ],
+    ]);
+    $site = Site::factory()->for($account)->create();
+    createDigestMailConversationAlert(agent: $agent, site: $site);
+    $job = new SendAgentAlertDigest($agent->id, 1);
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 02:00:00', 'UTC'));
+    $job->handle(app(AlertDigestCandidateCollector::class));
+
+    Mail::assertNothingSent();
+    expect(data_get($agent->fresh()->alert_preferences, 'digest_delivery'))->toBeNull();
+    $agent->fresh()->unreadNotifications->each(function ($notification): void {
+        expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->toBeNull();
+    });
+
+    $this->travelTo(CarbonImmutable::parse('2026-09-06 11:00:00', 'UTC'));
+    $job->handle(app(AlertDigestCandidateCollector::class));
+
+    Mail::assertSentCount(1);
+    expect(data_get($agent->fresh()->alert_preferences, 'digest_delivery.status'))->toBe(User::ALERT_DIGEST_DELIVERY_QUEUED);
+    $agent->fresh()->unreadNotifications->each(function ($notification): void {
+        expect(data_get($notification->data, AlertDigestCandidateCollector::DIGEST_QUEUED_AT_KEY))->not->toBeNull();
+    });
 });
 
 test('alert digest send command records failed delivery attempts', function (): void {

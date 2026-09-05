@@ -68,8 +68,7 @@ class UnattendedConversationAlertCollector
     private function agentWantsUnattendedAlerts(User $agent): bool
     {
         return ! $agent->isDeactivated()
-            && $agent->wantsUnattendedAlertEmail()
-            && $agent->alertMode() !== User::ALERT_MODE_QUIET;
+            && $agent->wantsUnattendedAlertEmail();
     }
 
     /** Keep the shared queue/alert clock aligned with human message episodes. */

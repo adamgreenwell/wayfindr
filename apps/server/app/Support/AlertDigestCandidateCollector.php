@@ -56,8 +56,39 @@ class AlertDigestCandidateCollector
     {
         return ! $agent->isDeactivated()
             && $agent->alertEmailEnabled()
-            && $agent->alertMode() !== User::ALERT_MODE_QUIET
+            && ! $agent->alertInterruptionsPaused()
             && $agent->alertCadence() === User::ALERT_CADENCE_DIGEST;
+    }
+
+    /**
+     * Mark only the exact alert states accepted by the mail transport.
+     *
+     * @param  Collection<int, array{last_activity_at: string|null, notification_id: string}>  $candidates
+     */
+    public function stampQueued(User $agent, Collection $candidates, CarbonInterface $queuedAt): void
+    {
+        $sentByNotification = $candidates->keyBy('notification_id');
+
+        DatabaseNotification::query()
+            ->whereIn('id', $candidates->pluck('notification_id')->all())
+            ->get()
+            ->each(function (DatabaseNotification $notification) use ($agent, $queuedAt, $sentByNotification): void {
+                $sent = $sentByNotification->get((string) $notification->id);
+                $current = $this->candidateFor($agent, $notification);
+
+                if (! is_array($sent)
+                    || $current === null
+                    || $current['last_activity_at'] !== $sent['last_activity_at']) {
+                    return;
+                }
+
+                $notification->forceFill([
+                    'data' => [
+                        ...$notification->data,
+                        self::DIGEST_QUEUED_AT_KEY => $queuedAt->toISOString(),
+                    ],
+                ])->save();
+            });
     }
 
     /**

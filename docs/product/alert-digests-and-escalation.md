@@ -46,8 +46,10 @@ than the start wraps through midnight. During that window Wayfindr still stores
 and renders eligible dashboard alerts, but pauses the interruptive copies: local
 sound, Web Push, immediate email, unattended email, and digest delivery. The
 next scheduled unattended or digest sweep can deliver still-current work after
-the window ends. This is deliberately different from manual quiet mode, which
-suppresses new support alerts until the agent turns it off.
+the window ends. Their queue jobs rebuild the current candidate set, re-check
+the agent immediately before mail transport handoff, and only stamp delivery
+after that handoff succeeds. This is deliberately different from manual quiet
+mode, which suppresses new support alerts until the agent turns it off.
 
 Suggested preference shape:
 
