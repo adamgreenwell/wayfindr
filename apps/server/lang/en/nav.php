@@ -50,5 +50,29 @@ return [
         'scope' => 'Records outside your support access stay hidden.',
     ],
 
+    'commands' => [
+        'open' => 'Commands',
+        'eyebrow' => 'Agent workspace',
+        'title' => 'Command palette',
+        'dismiss' => 'Close command palette',
+        'search_label' => 'Find a command',
+        'search_placeholder' => 'Type an action or destination',
+        'current' => 'Current page',
+        'empty' => 'No commands match that search.',
+        'groups' => [
+            'actions' => 'On this page',
+            'navigation' => 'Navigation',
+        ],
+        'actions' => [
+            'next' => 'Next item',
+            'previous' => 'Previous item',
+            'open' => 'Open item',
+            'claim' => 'Claim',
+            'reply' => 'Reply',
+            'close' => 'Close',
+            'search' => 'Search',
+        ],
+    ],
+
     'sign_out' => 'Sign out',
 ];
