@@ -3,7 +3,9 @@
 namespace App\Support;
 
 use App\Models\Conversation;
+use App\Models\Site;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Resolves the one conversation a widget request is allowed to touch.
@@ -25,26 +27,54 @@ class VisitorConversationResolver
         string $supportCode,
         string $sitePublicKey,
         string $anonymousId,
+        int $missingStatus = 404,
+        string $missingMessage = 'Conversation not found.',
     ): Conversation {
         $site = WidgetSiteResolver::resolveOrFail($sitePublicKey);
 
-        $visitor = $this->visitorSessionToken->visitorFromRequest($request, $site, $anonymousId);
+        return DB::transaction(function () use ($request, $supportCode, $site, $anonymousId, $missingStatus, $missingMessage): Conversation {
+            // Identity merge takes the exclusive partner of this lock. Keep
+            // token/alias resolution and conversation matching in one stable
+            // identity view so a merge cannot move the conversation between
+            // those two reads and turn an authorized request into a false 404.
+            $site = Site::query()
+                ->servable()
+                ->whereKey($site->id)
+                ->sharedLock()
+                ->first();
+            abort_unless($site instanceof Site, 404, 'Site not found.');
 
-        $conversation = Conversation::query()
+            $visitor = $this->visitorSessionToken->visitorFromRequest($request, $site, $anonymousId);
+            $conversation = $this->conversation($supportCode, $site, $visitor->id);
+
+            if (! $conversation instanceof Conversation) {
+                // A test double can deliberately commit a merge after token
+                // resolution to prove this fallback. In production the shared
+                // site lock prevents that ordering; retrying through the alias
+                // is still cheap and makes the boundary robust if a caller is
+                // already inside a transaction whose snapshot predates it.
+                $visitor = $this->visitorSessionToken->visitorFromRequest($request, $site, $anonymousId);
+                $conversation = $this->conversation($supportCode, $site, $visitor->id);
+            }
+
+            abort_unless($conversation instanceof Conversation, $missingStatus, $missingMessage);
+
+            // Both principals were loaded and proved together under the same
+            // site lock. Hand them to callers that need a later, exclusive
+            // write-boundary reauthorization after payload validation.
+            $conversation->setRelation('site', $site);
+            $conversation->setRelation('visitor', $visitor);
+
+            return $conversation;
+        });
+    }
+
+    private function conversation(string $supportCode, Site $site, int $visitorId): ?Conversation
+    {
+        return Conversation::query()
             ->where('support_code', $supportCode)
             ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
+            ->where('visitor_id', $visitorId)
             ->first();
-
-        abort_unless($conversation, 404, 'Conversation not found.');
-
-        // Both principals were already loaded and proved together. Hand them
-        // to the caller so downstream validation/scanning does not re-query a
-        // visitor row that an identity merge may remove before the locked
-        // write boundary re-authorizes the current canonical identity.
-        $conversation->setRelation('site', $site);
-        $conversation->setRelation('visitor', $visitor);
-
-        return $conversation;
     }
 }

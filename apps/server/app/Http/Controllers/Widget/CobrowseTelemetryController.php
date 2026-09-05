@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Widget;
 
 use App\Events\CobrowseStateUpdated;
 use App\Http\Controllers\Controller;
-use App\Models\CobrowseSession;
 use App\Models\Visitor;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowsePayloadBudget;
@@ -58,19 +57,7 @@ class CobrowseTelemetryController extends Controller
             $visitor = $conversation->visitor;
             abort_unless($visitor instanceof Visitor, 404, 'Conversation not found.');
 
-            $cobrowseSession = CobrowseSession::query()
-                ->where('conversation_id', $conversation->id)
-                ->where('site_id', $conversation->site_id)
-                ->where('visitor_id', $visitor->id)
-                ->where('status', 'granted')
-                ->whereNull('ended_at')
-                ->latest('id')
-                ->lockForUpdate()
-                ->first();
-            abort_unless($cobrowseSession instanceof CobrowseSession, 404, 'Cobrowse session not active.');
-
-            $cobrowseSession->setRelation('conversation', $conversation);
-            $cobrowseSession->setRelation('site', $conversation->site);
+            $cobrowseSession = $conversationWrites->lockCobrowseSession($conversation);
             $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, $hasTransportMetrics, &$telemetry, &$resyncExhaustedTransition): array {
                 $previousTelemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
 

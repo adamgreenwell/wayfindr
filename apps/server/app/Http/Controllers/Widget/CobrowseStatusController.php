@@ -7,8 +7,7 @@ use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Support\CobrowseConsentState;
 use App\Support\CobrowseResyncRequestPolicy;
-use App\Support\VisitorSessionToken;
-use App\Support\WidgetSiteResolver;
+use App\Support\VisitorConversationResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -19,7 +18,7 @@ class CobrowseStatusController extends Controller
         private readonly CobrowseConsentState $cobrowseConsentState,
     ) {}
 
-    public function __invoke(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
+    public function __invoke(Request $request, string $supportCode, VisitorConversationResolver $conversations): JsonResponse
     {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -27,23 +26,17 @@ class CobrowseStatusController extends Controller
             'visitor_token' => ['nullable', 'string', 'max:4096'],
         ]);
 
-        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
-
-        $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
-
-        $conversation = Conversation::query()
-            ->where('support_code', $supportCode)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->first();
-
-        abort_unless($conversation, 404, 'Conversation not found.');
+        $conversation = $conversations->resolve(
+            $request,
+            $supportCode,
+            $validated['site_public_key'],
+            $validated['anonymous_id'],
+        );
 
         $cobrowseSession = CobrowseSession::query()
             ->with('requestedBy')
             ->where('conversation_id', $conversation->id)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
+            ->where('site_id', $conversation->site_id)
             ->latest('id')
             ->first();
 

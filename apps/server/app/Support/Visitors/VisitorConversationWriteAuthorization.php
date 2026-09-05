@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Support\Visitors;
 
+use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Visitor;
@@ -59,5 +60,28 @@ final class VisitorConversationWriteAuthorization
         $conversation->setRelation('visitor', $visitor);
 
         return $conversation;
+    }
+
+    public function lockCobrowseSession(Conversation $conversation, bool $grantedOnly = true): CobrowseSession
+    {
+        abort_unless(DB::transactionLevel() > 0, 500, 'Cobrowse write authorization requires a transaction.');
+
+        $query = CobrowseSession::query()
+            ->where('conversation_id', $conversation->id)
+            ->where('site_id', $conversation->site_id)
+            ->where('visitor_id', $conversation->visitor_id)
+            ->whereNull('ended_at');
+
+        if ($grantedOnly) {
+            $query->where('status', 'granted');
+        }
+
+        $session = $query->latest('id')->lockForUpdate()->first();
+        abort_unless($session instanceof CobrowseSession, 404, 'Cobrowse session not active.');
+
+        $session->setRelation('conversation', $conversation);
+        $session->setRelation('site', $conversation->site);
+
+        return $session;
     }
 }

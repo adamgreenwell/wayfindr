@@ -25,8 +25,12 @@ use Illuminate\Validation\ValidationException;
 
 class ConversationMessageController extends Controller
 {
-    public function index(Request $request, string $supportCode, VisitorConversationResolver $conversations): JsonResponse
-    {
+    public function index(
+        Request $request,
+        string $supportCode,
+        VisitorConversationResolver $conversations,
+        VisitorConversationWriteAuthorization $conversationWrites,
+    ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
@@ -41,11 +45,21 @@ class ConversationMessageController extends Controller
             $validated['site_public_key'],
             $validated['anonymous_id'],
         );
-        $this->recordVisitorPresence($conversation);
+        [$conversation, $messagesSeen] = DB::transaction(function () use ($conversation, $conversationWrites, $validated): array {
+            $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
+            $this->recordVisitorPresence($conversation);
 
-        if ((bool) ($validated['mark_seen'] ?? false) && $this->markAgentMessagesSeen($conversation, $validated['seen_message_id'] ?? null)) {
+            $messagesSeen = (bool) ($validated['mark_seen'] ?? false)
+                && $this->markAgentMessagesSeen($conversation, $validated['seen_message_id'] ?? null);
+
+            return [$conversation, $messagesSeen];
+        });
+
+        if ($messagesSeen) {
             event(new ConversationReadReceiptUpdated($conversation->load('latestAgentMessage')));
         }
+
+        event(new ConversationPresenceUpdated($conversation));
 
         $messages = $conversation->messages()
             ->with(['sender', 'attachments', 'conversation.site'])
@@ -278,8 +292,6 @@ class ConversationMessageController extends Controller
         }
 
         $conversation->load('visitor');
-
-        event(new ConversationPresenceUpdated($conversation));
     }
 
     private function markAgentMessagesSeen(Conversation $conversation, ?int $seenMessageId = null): bool

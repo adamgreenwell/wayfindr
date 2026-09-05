@@ -100,6 +100,7 @@ class ConversationAttachmentController extends Controller
         int $attachment,
         VisitorConversationResolver $conversations,
         AttachmentResponder $responder,
+        VisitorConversationWriteAuthorization $conversationWrites,
     ): StreamedResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -114,15 +115,19 @@ class ConversationAttachmentController extends Controller
             $validated['anonymous_id'],
         );
 
-        $record = ConversationMessageAttachment::query()
-            ->forConversation($conversation)
-            ->whereKey($attachment)
-            ->first();
+        $record = DB::transaction(function () use ($conversation, $conversationWrites, $validated, $attachment): ConversationMessageAttachment {
+            $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
+            $record = ConversationMessageAttachment::query()
+                ->forConversation($conversation)
+                ->whereKey($attachment)
+                ->first();
 
-        // The conversation was matched to this visitor, so the conversation's
-        // visitor IS the authenticated principal — used to gate preview of a
-        // not-yet-sent upload to its uploader only.
-        abort_unless($record && $record->isDownloadableBy($conversation->visitor), 404);
+            // Re-authorize under the merge lock before checking ownership: a
+            // pending upload moves to the canonical visitor during a merge.
+            abort_unless($record && $record->isDownloadableBy($conversation->visitor), 404);
+
+            return $record;
+        });
 
         return $responder->stream($record);
     }
@@ -139,6 +144,7 @@ class ConversationAttachmentController extends Controller
         string $supportCode,
         int $attachment,
         VisitorConversationResolver $conversations,
+        VisitorConversationWriteAuthorization $conversationWrites,
     ): Response {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -153,13 +159,15 @@ class ConversationAttachmentController extends Controller
             $validated['anonymous_id'],
         );
 
-        $visitor = $conversation->visitor;
-
         // Lock the row and re-assert unbound under the lock so a concurrent send
         // that binds this attachment cannot race the delete — the binder locks
         // the same row, so the delete either wins (still unbound) or 404s (a send
         // bound it first) rather than deleting a just-sent attachment.
-        DB::transaction(function () use ($conversation, $attachment, $visitor): void {
+        DB::transaction(function () use ($conversation, $conversationWrites, $validated, $attachment): void {
+            $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
+            $visitor = $conversation->visitor;
+            abort_unless($visitor instanceof Visitor, 404);
+
             $record = ConversationMessageAttachment::query()
                 ->forConversation($conversation)
                 ->whereKey($attachment)

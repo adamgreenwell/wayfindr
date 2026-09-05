@@ -283,9 +283,9 @@ test('a visitor reply that lost the race to a close still opens the row it repor
     {
         public function __construct(private $inner) {}
 
-        public function resolve($request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
+        public function resolve($request, string $supportCode, string $sitePublicKey, string $anonymousId, int $missingStatus = 404, string $missingMessage = 'Conversation not found.'): Conversation
         {
-            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
+            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId, $missingStatus, $missingMessage);
 
             // The close lands after this request read the row and before it
             // reaches the lock. Written straight to the database so the handed

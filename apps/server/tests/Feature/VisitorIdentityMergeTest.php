@@ -42,9 +42,9 @@ function mergeAfterVisitorConversationResolution(User $manager, Visitor $source,
             private Visitor $target,
         ) {}
 
-        public function resolve(Request $request, string $supportCode, string $sitePublicKey, string $anonymousId): Conversation
+        public function resolve(Request $request, string $supportCode, string $sitePublicKey, string $anonymousId, int $missingStatus = 404, string $missingMessage = 'Conversation not found.'): Conversation
         {
-            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId);
+            $conversation = $this->inner->resolve($request, $supportCode, $sitePublicKey, $anonymousId, $missingStatus, $missingMessage);
             $this->merger->merge($this->manager, $this->source, (int) $this->target->id);
 
             return $conversation;
@@ -359,6 +359,44 @@ test('a conversation that loses the merge race follows the alias instead of recr
         ->and(VisitorIdentityAlias::query()->sole()->visitor_id)->toBe($target->id);
 });
 
+test('conversation resolution retries through the alias when a merge lands after token lookup', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-resolution']);
+    $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-resolution-canonical']);
+    $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-RESOLVERACE']);
+    $realSessionTokens = app(VisitorSessionToken::class);
+    $token = $realSessionTokens->issue($site, $source);
+
+    $sessionTokens = Mockery::mock(VisitorSessionToken::class, [app(VisitorIdentityResolver::class)])
+        ->makePartial();
+    $sessionTokens->shouldReceive('visitorFromRequest')
+        ->once()
+        ->ordered()
+        ->andReturnUsing(function (Request $request, Site $resolvedSite, string $anonymousId) use ($manager, $source, $target): Visitor {
+            app(VisitorIdentityMerger::class)->merge($manager, $source, (int) $target->id);
+
+            // The first token lookup completed against the source just before
+            // the merge moved the conversation and deleted that row.
+            return $source;
+        });
+    $sessionTokens->shouldReceive('visitorFromRequest')
+        ->once()
+        ->ordered()
+        ->andReturnUsing(fn (Request $request, Site $resolvedSite, string $anonymousId): Visitor => $realSessionTokens->visitorFromRequest($request, $resolvedSite, $anonymousId));
+    $this->app->instance(VisitorSessionToken::class, $sessionTokens);
+
+    $this->getJson('/api/conversations/WF-RESOLVERACE/messages?'.http_build_query([
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-racing-resolution',
+        'visitor_token' => $token,
+    ]))->assertOk();
+
+    expect($conversation->fresh()?->visitor_id)->toBe($target->id)
+        ->and(Visitor::query()->pluck('id')->all())->toBe([$target->id]);
+});
+
 test('a message that loses the merge race uses the canonical sender and pending upload', function (): void {
     $account = Account::factory()->create();
     $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
@@ -386,6 +424,35 @@ test('a message that loses the merge race uses the canonical sender and pending 
         ->and($message->sender_id)->toBe($target->id)
         ->and($attachment->fresh()?->uploaded_by_id)->toBe($target->id)
         ->and($attachment->fresh()?->conversation_message_id)->toBe($message->id);
+});
+
+test('a typing write that loses the merge race updates the canonical visitor', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-racing-typing',
+        'last_web_seen_at' => now()->subHour(),
+    ]);
+    $target = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-racing-typing-canonical',
+        'last_web_seen_at' => now()->subHour(),
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGETYPING']);
+    $token = app(VisitorSessionToken::class)->issue($site, $source);
+
+    mergeAfterVisitorConversationResolution($manager, $source, $target);
+
+    $this->postJson('/api/conversations/WF-MERGETYPING/typing', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-racing-typing',
+        'visitor_token' => $token,
+        'is_typing' => true,
+    ])->assertOk();
+
+    expect($conversation->fresh()?->visitor_id)->toBe($target->id)
+        ->and($conversation->fresh()?->metadata['visitor_typing_at'])->not->toBeNull()
+        ->and($target->fresh()?->last_web_seen_at?->gt(now()->subMinute()))->toBeTrue();
 });
 
 test('an upload that loses the merge race belongs to the canonical visitor', function (): void {
