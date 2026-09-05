@@ -28,6 +28,10 @@ test('conversation and ticket queues expose one guarded keyboard navigation laye
             ->assertSee('window.WayfindrAgentShortcuts', false)
             ->assertSee("next: 'Alt+J'", false)
             ->assertSee("search: 'Alt+/'", false)
+            ->assertSee('actionsByKey', false)
+            ->assertSee('navigator.keyboard.getLayoutMap()', false)
+            ->assertSee('! isPlainLayoutCharacter && layoutMap', false)
+            ->assertSee("event.shiftKey && action !== 'search'", false)
             ->assertSee('event.isComposing', false)
             ->assertSee('eventOwnsText(event)', false)
             ->assertSee("target.closest('[role=\"dialog\"], [aria-modal=\"true\"]')", false);

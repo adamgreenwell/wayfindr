@@ -9,18 +9,38 @@
             close: 'Alt+X',
             search: 'Alt+/'
         });
-        var actionsByCode = Object.freeze({
-            KeyJ: 'next',
-            KeyK: 'previous',
-            KeyO: 'open',
-            KeyA: 'claim',
-            KeyR: 'reply',
-            KeyX: 'close',
-            Slash: 'search'
+        var actionsByKey = Object.freeze({
+            j: 'next',
+            k: 'previous',
+            o: 'open',
+            a: 'claim',
+            r: 'reply',
+            x: 'close',
+            '/': 'search'
+        });
+        var macOptionActions = Object.freeze({
+            '∆': 'next',
+            '˚': 'previous',
+            'ø': 'open',
+            'å': 'claim',
+            '®': 'reply',
+            '≈': 'close',
+            '÷': 'search'
         });
         var queue = document.querySelector('[data-agent-shortcut-queue]');
         var rows = queue ? Array.from(queue.querySelectorAll('[data-agent-shortcut-row]')) : [];
         var activeIndex = -1;
+        var layoutMap = null;
+
+        if (navigator.keyboard && typeof navigator.keyboard.getLayoutMap === 'function') {
+            navigator.keyboard.getLayoutMap()
+                .then(function (map) {
+                    layoutMap = map;
+                })
+                .catch(function () {
+                    // The character reported by the event remains the safe fallback.
+                });
+        }
 
         function markActiveRow(index) {
             rows.forEach(function (row, rowIndex) {
@@ -151,6 +171,22 @@
                     || target.closest('[role="dialog"], [aria-modal="true"]'));
         }
 
+        function actionForEvent(event) {
+            var eventKey = typeof event.key === 'string' ? event.key.toLocaleLowerCase('en-US') : '';
+            var action = actionsByKey[eventKey];
+            var isPlainLayoutCharacter = /^[a-z0-9/]$/.test(eventKey);
+
+            if (! action && ! isPlainLayoutCharacter && layoutMap && typeof event.code === 'string') {
+                var layoutKey = layoutMap.get(event.code);
+
+                if (typeof layoutKey === 'string') {
+                    action = actionsByKey[layoutKey.toLocaleLowerCase('en-US')];
+                }
+            }
+
+            return action || macOptionActions[event.key];
+        }
+
         if (queue) {
             queue.addEventListener('focusin', function (event) {
                 var row = event.target instanceof Element
@@ -170,13 +206,16 @@
                 || event.isComposing
                 || event.ctrlKey
                 || event.metaKey
-                || event.shiftKey
                 || ! event.altKey
                 || eventOwnsText(event)) {
                 return;
             }
 
-            var action = actionsByCode[event.code];
+            var action = actionForEvent(event);
+
+            if (event.shiftKey && action !== 'search') {
+                return;
+            }
 
             if (action && run(action)) {
                 event.preventDefault();
