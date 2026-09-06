@@ -72,12 +72,16 @@ reviews and submits ticket creation separately.
 
 The first provider-free evaluation layer is documented in
 [AI Evaluation](../development/ai-evaluation.md). It scores versioned synthetic
-grounded-answer fixtures and recorded outputs for answer accuracy, refusal,
-citations, and fact coverage. Its strict loader, aggregate report, and
-regression thresholds run without a provider key or customer data.
+grounded-answer fixtures and recorded outputs for answer accuracy, confidence,
+refusal reasons, citations, fact coverage, unsafe answers, and overconfident
+errors. The scoring path runs without a provider key or customer data. A
+separate explicit capture command can record provider/model-tagged output from
+synthetic fixtures into a private file outside the repository.
 
 This is evidence infrastructure, not an autonomous answer feature or an ADR
 change. A green bundled baseline proves that the deterministic scorer works; it
-does not prove a live model is suitable for visitors. Confidence and refusal
-evidence still comes next, followed by an explicit decision to amend, supersede,
-or reaffirm ADR 0004 before any customer-facing implementation begins.
+does not prove a live model is suitable for visitors, and the bundled 80%
+confidence threshold is not production approval. Representative provider runs
+and human review still come before an explicit decision to amend, supersede, or
+reaffirm ADR 0004. No customer-facing implementation begins before that
+decision.
