@@ -117,6 +117,11 @@ final class CaptureAiEvaluationResponsesCommand extends Command
                 $responseSet,
                 JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
             ).PHP_EOL;
+
+            if (strlen($contents) > GroundedAnswerEvaluationDatasetLoader::MAX_RESPONSE_FILE_BYTES) {
+                throw new RuntimeException('The completed capture exceeds the 2 MiB response-file limit.');
+            }
+
             $this->writeExclusive($outputPath, $contents);
         } catch (Throwable $exception) {
             Log::warning('Grounded-answer evaluation capture could not be persisted.', [
@@ -203,7 +208,13 @@ final class CaptureAiEvaluationResponsesCommand extends Command
 
     private function writeExclusive(string $path, string $contents): void
     {
-        $handle = @fopen($path, 'x');
+        $previousUmask = umask(0077);
+
+        try {
+            $handle = @fopen($path, 'x');
+        } finally {
+            umask($previousUmask);
+        }
 
         if ($handle === false) {
             throw new RuntimeException('The capture output could not be created exclusively.');

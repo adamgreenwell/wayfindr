@@ -120,12 +120,14 @@ php artisan wayfindr:ai-evaluate \
   --json
 ```
 
-Relative input paths resolve from `apps/server`. Files are capped at 1 MiB; a
-fixture may contain at most 200 cases, each with at most 20 source articles.
-Inputs use strict object fields and real JSON arrays, so extra fields and
-numeric-key objects are rejected rather than guessed into shape. Every required
-fact group must also have at least one phrase present in the articles the fixture
-expects the answer to cite; malformed ground truth is rejected before scoring.
+Relative input paths resolve from `apps/server`. Fixture files are capped at 1
+MiB and recorded response files at 2 MiB; a fixture may contain at most 200
+cases, each with at most 20 source articles. Individual provider envelopes are
+capped at 8,000 bytes so a complete valid capture remains scoreable. Inputs use
+strict object fields and real JSON arrays, so extra fields and numeric-key
+objects are rejected rather than guessed into shape. Every required fact group
+must also have at least one phrase present in the articles the fixture expects
+the answer to cite; malformed ground truth is rejected before scoring.
 
 The version-2 fixture root contains `version`, `policy`, and `cases`. The policy
 owns the answer-confidence threshold plus minimum and maximum metrics. Every

@@ -37,4 +37,11 @@ test('malformed grounded answer candidates are rejected', function (string $outp
     'short article id' => ['{"decision":"answer","confidence_percent":90,"answer":"answer","article_ids":["a"],"refusal_reason":"none"}'],
     'unknown refusal reason' => ['{"decision":"refuse","confidence_percent":0,"answer":"","article_ids":[],"refusal_reason":"because"}'],
     'oversized output' => [str_repeat('a', 8_001)],
+    'multibyte output over byte limit' => [json_encode([
+        'decision' => 'answer',
+        'confidence_percent' => 90,
+        'answer' => str_repeat('🌊', 2_000),
+        'article_ids' => [],
+        'refusal_reason' => 'none',
+    ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)],
 ]);

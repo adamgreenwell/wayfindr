@@ -14,7 +14,9 @@ final class GroundedAnswerEvaluationDatasetLoader
 {
     private const VERSION = 2;
 
-    private const MAX_FILE_BYTES = 1_048_576;
+    private const MAX_FIXTURE_FILE_BYTES = 1_048_576;
+
+    public const MAX_RESPONSE_FILE_BYTES = 2_097_152;
 
     private const MAX_CASES = 200;
 
@@ -449,8 +451,13 @@ final class GroundedAnswerEvaluationDatasetLoader
 
         $size = filesize($path);
 
-        if (! is_int($size) || $size < 2 || $size > self::MAX_FILE_BYTES) {
-            throw new RuntimeException(sprintf('The evaluation %s file must be between 2 bytes and 1 MiB.', $kind));
+        $maximumBytes = $kind === 'fixture'
+            ? self::MAX_FIXTURE_FILE_BYTES
+            : self::MAX_RESPONSE_FILE_BYTES;
+        $maximumLabel = $kind === 'fixture' ? '1 MiB' : '2 MiB';
+
+        if (! is_int($size) || $size < 2 || $size > $maximumBytes) {
+            throw new RuntimeException(sprintf('The evaluation %s file must be between 2 bytes and %s.', $kind, $maximumLabel));
         }
 
         $json = file_get_contents($path);

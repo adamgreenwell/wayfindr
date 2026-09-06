@@ -50,6 +50,7 @@ test('provider capture is explicit complete private and scoreable', function ():
     app()->instance(AgentCopilotProvider::class, $fake);
     $outputPath = sys_get_temp_dir().'/wayfindr-ai-provider-capture-'.Str::uuid().'.json';
     $canonicalOutputPath = realpath(dirname($outputPath)).DIRECTORY_SEPARATOR.basename($outputPath);
+    $originalUmask = umask(0022);
 
     try {
         $exitCode = Artisan::call('wayfindr:ai-evaluate:capture', [
@@ -69,6 +70,7 @@ test('provider capture is explicit complete private and scoreable', function ():
             ])
             ->and(is_file($outputPath))->toBeTrue()
             ->and(fileperms($outputPath) & 0777)->toBe(0600)
+            ->and(umask())->toBe(0022)
             ->and($fake->prompts)->toHaveCount(9);
 
         $captured = json_decode(file_get_contents($outputPath), associative: true, flags: JSON_THROW_ON_ERROR);
@@ -105,6 +107,7 @@ test('provider capture is explicit complete private and scoreable', function ():
             ->and($report['run']['source'])->toBe('provider')
             ->and($report['cases']['passed'])->toBe(9);
     } finally {
+        umask($originalUmask);
         CarbonImmutable::setTestNow();
 
         if (is_file($outputPath)) {

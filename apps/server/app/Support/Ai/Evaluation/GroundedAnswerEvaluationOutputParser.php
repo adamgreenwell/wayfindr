@@ -10,11 +10,11 @@ use stdClass;
 /** Reject malformed provider candidates without guessing at safety fields. */
 final class GroundedAnswerEvaluationOutputParser
 {
-    private const MAX_OUTPUT_CHARACTERS = 8_000;
+    private const MAX_OUTPUT_BYTES = 8_000;
 
     public function parse(string $output): ?GroundedAnswerEvaluationOutput
     {
-        if (mb_strlen($output) > self::MAX_OUTPUT_CHARACTERS) {
+        if (strlen($output) > self::MAX_OUTPUT_BYTES) {
             return null;
         }
 

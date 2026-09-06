@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Support\Ai\AgentCopilotProvider;
+use App\Support\Ai\Evaluation\GroundedAnswerEvaluationDatasetLoader;
 use Illuminate\Support\Facades\Artisan;
 
 test('the bundled grounded answer evaluation passes without resolving a live provider', function (): void {
@@ -416,6 +417,55 @@ test('response objects cannot masquerade as the required response array', functi
                 'result' => 'invalid',
                 'error' => 'The evaluation responses must use version 2 with a run object and an array of responses.',
             ]);
+    } finally {
+        unlink($path);
+    }
+});
+
+test('response files may use their larger scoreable capture allowance', function (): void {
+    $caseIds = [];
+    $responses = [];
+    $articleIds = array_map(
+        fn (int $index): string => sprintf('article-%02d-%s', $index, str_repeat('a', 52)),
+        range(1, 20),
+    );
+
+    foreach (range(1, 200) as $index) {
+        $caseId = sprintf('case-%03d', $index);
+        $caseIds[] = $caseId;
+        $responses[] = [
+            'case_id' => $caseId,
+            'decision' => 'answer',
+            'confidence_percent' => 80,
+            'answer' => str_repeat('a', 4_000),
+            'article_ids' => $articleIds,
+            'refusal_reason' => 'none',
+        ];
+    }
+
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-large-response-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode([
+        'version' => 2,
+        'run' => [
+            'source' => 'provider',
+            'provider' => 'fixture-provider',
+            'model' => 'fixture-model',
+            'recorded_at' => '2026-09-06T00:00:00Z',
+            'prompt_tokens' => 0,
+            'completion_tokens' => 0,
+        ],
+        'responses' => $responses,
+    ], JSON_THROW_ON_ERROR));
+
+    try {
+        $size = filesize($path);
+        $loaded = app(GroundedAnswerEvaluationDatasetLoader::class)->responses($path, $caseIds);
+
+        expect($size)->toBeGreaterThan(1_048_576)
+            ->and($size)->toBeLessThanOrEqual(GroundedAnswerEvaluationDatasetLoader::MAX_RESPONSE_FILE_BYTES)
+            ->and($loaded['responses'])->toHaveCount(200);
     } finally {
         unlink($path);
     }
