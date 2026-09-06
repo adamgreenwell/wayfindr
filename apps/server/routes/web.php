@@ -32,6 +32,7 @@ use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
 use App\Http\Controllers\AgentProfileController;
 use App\Http\Controllers\AgentProfileTwoFactorController;
+use App\Http\Controllers\AgentProactiveMessageRuleController;
 use App\Http\Controllers\AgentPushSubscriptionController;
 use App\Http\Controllers\AgentReplyTemplateController;
 use App\Http\Controllers\AgentReportController;
@@ -325,6 +326,21 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.sites.show');
     Route::get('/dashboard/sites/{site}/tester', [AgentSiteController::class, 'tester'])
         ->name('dashboard.sites.tester');
+    Route::get('/dashboard/sites/{site}/proactive-messages', [AgentProactiveMessageRuleController::class, 'index'])
+        ->name('dashboard.sites.proactive-messages.index');
+    Route::get('/dashboard/sites/{site}/proactive-messages/new', [AgentProactiveMessageRuleController::class, 'create'])
+        ->name('dashboard.sites.proactive-messages.create');
+    Route::post('/dashboard/sites/{site}/proactive-messages', [AgentProactiveMessageRuleController::class, 'store'])
+        ->name('dashboard.sites.proactive-messages.store');
+    Route::get('/dashboard/sites/{site}/proactive-messages/{proactiveMessageRule}', [AgentProactiveMessageRuleController::class, 'edit'])
+        ->whereNumber('proactiveMessageRule')
+        ->name('dashboard.sites.proactive-messages.edit');
+    Route::put('/dashboard/sites/{site}/proactive-messages/{proactiveMessageRule}', [AgentProactiveMessageRuleController::class, 'update'])
+        ->whereNumber('proactiveMessageRule')
+        ->name('dashboard.sites.proactive-messages.update');
+    Route::delete('/dashboard/sites/{site}/proactive-messages/{proactiveMessageRule}', [AgentProactiveMessageRuleController::class, 'destroy'])
+        ->whereNumber('proactiveMessageRule')
+        ->name('dashboard.sites.proactive-messages.destroy');
     Route::put('/dashboard/sites/{site}', [AgentSiteController::class, 'update'])
         ->name('dashboard.sites.update');
     Route::put('/dashboard/sites/{site}/intake', [AgentSiteController::class, 'updateIntake'])
