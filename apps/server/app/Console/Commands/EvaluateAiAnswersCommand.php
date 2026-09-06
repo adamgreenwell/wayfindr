@@ -58,6 +58,8 @@ final class EvaluateAiAnswersCommand extends Command
     /**
      * @param  array{
      *   result: 'passed'|'failed',
+     *   run: array{source: string, provider: string, model: string, recorded_at: string},
+     *   policy: array{answer_confidence_threshold_percent: float},
      *   cases: array{total: int, answerable: int, refusal: int, passed: int},
      *   metrics: array<string, float>,
      *   failures: list<array{case_id: string, reasons: list<string>}>
@@ -67,20 +69,42 @@ final class EvaluateAiAnswersCommand extends Command
     {
         $this->info('Wayfindr grounded-answer evaluation');
         $this->line(sprintf(
+            'Run: %s · %s / %s · %s',
+            $report['run']['source'],
+            $report['run']['provider'],
+            $report['run']['model'],
+            $report['run']['recorded_at'],
+        ));
+        $this->line(sprintf(
+            'Answer confidence threshold: %.2f%%',
+            $report['policy']['answer_confidence_threshold_percent'],
+        ));
+        $this->line(sprintf(
             'Cases: %d total · %d answerable · %d refusal · %d passed',
             $report['cases']['total'],
             $report['cases']['answerable'],
             $report['cases']['refusal'],
             $report['cases']['passed'],
         ));
+        $this->line(sprintf('Candidate / policy decision accuracy: %.2f%% / %.2f%%',
+            $report['metrics']['candidate_decision_accuracy_percent'],
+            $report['metrics']['policy_decision_accuracy_percent'],
+        ));
+        $this->line(sprintf('Candidate answer accuracy: %.2f%%', $report['metrics']['candidate_answer_accuracy_percent']));
         $this->line(sprintf('Answer accuracy: %.2f%%', $report['metrics']['answer_accuracy_percent']));
+        $this->line(sprintf('Answer coverage: %.2f%%', $report['metrics']['answer_coverage_percent']));
+        $this->line(sprintf('Selective answer accuracy: %.2f%%', $report['metrics']['selective_answer_accuracy_percent']));
         $this->line(sprintf('Refusal recall: %.2f%%', $report['metrics']['refusal_recall_percent']));
+        $this->line(sprintf('Refusal reason accuracy: %.2f%%', $report['metrics']['refusal_reason_accuracy_percent']));
         $this->line(sprintf('Citation precision / recall: %.2f%% / %.2f%%',
             $report['metrics']['citation_precision_percent'],
             $report['metrics']['citation_recall_percent'],
         ));
         $this->line(sprintf('Fact coverage: %.2f%%', $report['metrics']['fact_coverage_percent']));
         $this->line(sprintf('Unsafe answer rate: %.2f%%', $report['metrics']['unsafe_answer_rate_percent']));
+        $this->line(sprintf('Overconfident error rate: %.2f%%', $report['metrics']['overconfident_error_rate_percent']));
+        $this->line(sprintf('Unwarranted handoff rate: %.2f%%', $report['metrics']['unwarranted_handoff_rate_percent']));
+        $this->line(sprintf('Confidence Brier score: %.2f', $report['metrics']['confidence_brier_score']));
 
         foreach ($report['failures'] as $failure) {
             $this->warn(sprintf('%s: %s', $failure['case_id'], implode(', ', $failure['reasons'])));
