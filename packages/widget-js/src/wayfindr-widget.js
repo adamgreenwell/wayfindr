@@ -46,6 +46,9 @@
       'presence.decline': 'Stop sharing',
       'presence.declined': 'Not sharing which pages you visit.',
       'presence.declinedNoPage': 'Not letting this site know you are here.',
+      'proactive.aria': 'Support invitation',
+      'proactive.open': 'Open chat',
+      'proactive.dismiss': 'Dismiss support invitation',
       'notice.retry': 'Try again',
       'form.label': 'How can we help?',
       'form.placeholder': 'Type your message...',
@@ -147,6 +150,9 @@
       'presence.decline': 'Nicht mehr teilen',
       'presence.declined': 'Es wird nicht geteilt, welche Seiten Sie besuchen.',
       'presence.declinedNoPage': 'Diese Website erfährt nicht mehr, dass Sie hier sind.',
+      'proactive.aria': 'Support-Einladung',
+      'proactive.open': 'Chat öffnen',
+      'proactive.dismiss': 'Support-Einladung schließen',
       'notice.retry': 'Erneut versuchen',
       'form.label': 'Wie können wir helfen?',
       'form.placeholder': 'Nachricht eingeben …',
@@ -624,6 +630,20 @@
           page_url: sanitisePageUrl(pageUrl),
         }));
       },
+      authorizeProactiveMessage: function (rulePublicId, claimKey) {
+        return postJson(fetcher, apiBaseUrl + '/api/widget/proactive-messages/' + encodeURIComponent(rulePublicId) + '/authorize', {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          claim_key: claimKey,
+        });
+      },
+      reportProactiveOutcome: function (deliveryPublicId, outcome) {
+        return postJson(fetcher, apiBaseUrl + '/api/widget/proactive-messages/' + encodeURIComponent(deliveryPublicId) + '/outcomes', {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          outcome: outcome,
+        });
+      },
       startConversation: function (body, details) {
         details = details || {};
         var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
@@ -635,6 +655,10 @@
           subject: details.subject || summarize(body),
           page_url: details.pageUrl || null,
         }, details.context, externalId);
+
+        if (details.proactiveMessageDeliveryId) {
+          payload.proactive_message_delivery_id = details.proactiveMessageDeliveryId;
+        }
 
         // The FIRST conversation runs the site's intake rules, and their
         // failures are the first words a new visitor ever reads from us.
@@ -994,6 +1018,13 @@
       '  <p class="wayfindr-widget__presence-copy">' + escapeHtml(t('presence.disclosure')) + '</p>',
       '  <button class="wayfindr-widget__presence-decline" type="button">' + escapeHtml(t('presence.decline')) + '</button>',
       '</div>',
+      '<div class="wayfindr-widget__proactive" role="dialog" aria-label="' + escapeHtml(t('proactive.aria')) + '" hidden>',
+      '  <button class="wayfindr-widget__proactive-open" type="button">',
+      '    <span class="wayfindr-widget__proactive-copy" aria-live="polite" aria-atomic="true"></span>',
+      '    <span class="wayfindr-widget__proactive-cta">' + escapeHtml(t('proactive.open')) + '</span>',
+      '  </button>',
+      '  <button class="wayfindr-widget__proactive-dismiss" type="button" aria-label="' + escapeHtml(t('proactive.dismiss')) + '">&times;</button>',
+      '</div>',
       '<section id="' + escapeHtml(panelId) + '" class="wayfindr-widget__panel" aria-label="' + escapeHtml(t('panel.aria')) + '" hidden>',
       '  <header class="wayfindr-widget__header">',
       '    <strong>' + escapeHtml(options.title || t('header.title')) + '</strong>',
@@ -1108,6 +1139,11 @@
     var presenceEl = rootEl.querySelector('.wayfindr-widget__presence');
     var presenceCopyEl = rootEl.querySelector('.wayfindr-widget__presence-copy');
     var presenceDeclineEl = rootEl.querySelector('.wayfindr-widget__presence-decline');
+    var proactiveEl = rootEl.querySelector('.wayfindr-widget__proactive');
+    var proactiveOpenEl = rootEl.querySelector('.wayfindr-widget__proactive-open');
+    var proactiveCopyEl = rootEl.querySelector('.wayfindr-widget__proactive-copy');
+    var proactiveCtaEl = rootEl.querySelector('.wayfindr-widget__proactive-cta');
+    var proactiveDismissEl = rootEl.querySelector('.wayfindr-widget__proactive-dismiss');
     var presenceConfig = null;
     var presenceTimer = null;
     // An override, the way messagePollMs and cobrowseStatusPollMs already work.
@@ -1116,6 +1152,17 @@
     // that only cares about arrival could ask for.
     var presencePollMs = typeof options.presencePollMs === 'number' ? Math.max(0, options.presencePollMs) : null;
     var storage = resolveStorageOption(options);
+    var proactiveCandidates = [];
+    var proactiveCandidateIndex = 0;
+    var proactiveTimer = null;
+    var proactiveExpiryTimer = null;
+    var proactiveSequence = 0;
+    var proactivePageStartedAt = Date.now();
+    var proactiveVisitCount = recordProactiveVisit(storage, options.sitePublicKey);
+    var proactivePresenceAccepted = false;
+    var activeProactive = null;
+    var proactiveEngagementPromise = null;
+    var engagedProactiveDeliveryId = null;
     var ratingConfig = null;
     var ratingScore = null;
     var ratingAnswered = false;
@@ -1270,6 +1317,9 @@
       }
 
       panel.setAttribute('aria-label', t('panel.aria'));
+      proactiveEl.setAttribute('aria-label', t('proactive.aria'));
+      proactiveCtaEl.textContent = t('proactive.open');
+      proactiveDismissEl.setAttribute('aria-label', t('proactive.dismiss'));
       close.setAttribute('aria-label', t('header.close'));
       timeline.setAttribute('aria-label', t('timeline.aria'));
       jump.textContent = t('timeline.jump');
@@ -1830,6 +1880,13 @@
       // registering a second, anonymous one -- an anonymous listener cannot be
       // removed, so a destroyed widget would keep waking up and reporting.
       handlePresenceVisibility();
+
+      if (presenceHidden()) {
+        clearProactiveTimer();
+      } else {
+        expireProactiveInvitation();
+        scheduleNextProactiveCandidate();
+      }
 
       if (canMarkRenderedMessagesSeen()) {
         scheduleRenderedReadReceipt();
@@ -2732,6 +2789,10 @@
     function open() {
       var wasHidden = panel.hidden;
 
+      proactiveSequence++;
+      clearProactiveTimer();
+      hideProactiveInvitation();
+
       panel.hidden = false;
       launcher.hidden = true;
       launcher.setAttribute('aria-expanded', 'true');
@@ -3241,7 +3302,11 @@
      * being hidden, and the whole widget being removed between frames.
      */
     function presenceNoticeVisible() {
-      if (!presenceEl || !rootEl.contains(presenceEl) || presenceEl.hidden) {
+      return elementVisible(presenceEl);
+    }
+
+    function elementVisible(element) {
+      if (!element || !rootEl.contains(element) || element.hidden) {
         return false;
       }
 
@@ -3250,7 +3315,7 @@
       // layout to ask -- a non-visual environment reports no geometry for
       // everything, so a check that only asked geometry would either refuse to
       // report at all or, read the other way round, wave everything through.
-      var node = presenceEl;
+      var node = element;
 
       while (node && node !== rootEl.parentNode) {
         if (node.hidden === true) {
@@ -3275,7 +3340,7 @@
         // not inherit and an invisible descendant still has client rects, so a
         // host wrapper styled `opacity: 0` ABOVE the mount hid the notice while
         // every check inside the root said it was fine.
-        var styled = presenceEl;
+        var styled = element;
 
         while (styled) {
           var style = view.getComputedStyle(styled);
@@ -3291,11 +3356,11 @@
       // Then geometry, which is what catches being hidden by the HOST page's
       // stylesheet rather than by us -- a class we never see, on an element we
       // do not own.
-      if (typeof presenceEl.getClientRects !== 'function') {
+      if (typeof element.getClientRects !== 'function') {
         return true;
       }
 
-      var rects = presenceEl.getClientRects();
+      var rects = element.getClientRects();
 
       if (rects.length > 0) {
         // ON SCREEN, not merely laid out. Host CSS can translate the notice off
@@ -3357,6 +3422,242 @@
       });
     }
 
+    function applyProactiveRules(rules) {
+      proactiveCandidates = (Array.isArray(rules) ? rules : []).filter(proactiveRuleMatches);
+      proactiveCandidateIndex = 0;
+      clearProactiveTimer();
+
+      if (!activeProactive) {
+        scheduleNextProactiveCandidate();
+      }
+    }
+
+    function proactiveRuleMatches(rule) {
+      if (!rule || typeof rule.id !== 'string' || typeof rule.message !== 'string' || !rule.message.trim()) {
+        return false;
+      }
+
+      if (proactiveVisitCount < Math.max(1, Number(rule.minimum_visit_count) || 1)) {
+        return false;
+      }
+
+      var page = urlForProactiveMatch(currentHref());
+      var referrer = urlForProactiveMatch(doc.referrer || '');
+      var pageNeedle = String(rule.url_contains || '').trim().toLowerCase();
+      var referrerNeedle = String(rule.referrer_contains || '').trim().toLowerCase();
+
+      if (pageNeedle && page.indexOf(pageNeedle) === -1) {
+        return false;
+      }
+
+      if (referrerNeedle && referrer.indexOf(referrerNeedle) === -1) {
+        return false;
+      }
+
+      return proactiveLocalCapsAllow(rule);
+    }
+
+    function proactiveLocalCapsAllow(rule) {
+      var shownAt = Number(storageGet(storage, proactiveShownAtStorageKey(options.sitePublicKey)) || 0);
+      var dismissedAt = Number(storageGet(storage, proactiveDismissedAtStorageKey(options.sitePublicKey)) || 0);
+      var nowMs = Date.now();
+      var frequencyMs = Math.max(1, Number(rule.frequency_cap_minutes) || 1) * 60000;
+      var dismissalMs = Math.max(1, Number(rule.dismissal_snooze_minutes) || 1) * 60000;
+
+      return !(shownAt > 0 && nowMs - shownAt < frequencyMs)
+        && !(dismissedAt > 0 && nowMs - dismissedAt < dismissalMs);
+    }
+
+    function scheduleNextProactiveCandidate() {
+      clearProactiveTimer();
+
+      if (!proactivePresenceAccepted
+        || !presenceConfig
+        || declineRecorded()
+        || !panel.hidden
+        || supportCode
+        || storedSupportCode
+        || resumePending
+        || activeProactive
+        || proactiveCandidateIndex >= proactiveCandidates.length
+        || presenceHidden()) {
+        return;
+      }
+
+      var rule = proactiveCandidates[proactiveCandidateIndex];
+      var dueAt = proactivePageStartedAt + Math.max(0, Number(rule.delay_seconds) || 0) * 1000;
+      var waitMs = Math.max(0, dueAt - Date.now());
+
+      proactiveTimer = setTimeout(function () {
+        proactiveTimer = null;
+        attemptProactiveCandidate(rule);
+      }, waitMs);
+    }
+
+    function attemptProactiveCandidate(rule) {
+      if (!proactivePresenceAccepted
+        || !presenceConfig
+        || declineRecorded()
+        || !panel.hidden
+        || supportCode
+        || storedSupportCode
+        || resumePending
+        || presenceHidden()) {
+        return;
+      }
+
+      proactiveCandidateIndex++;
+      var seq = ++proactiveSequence;
+      var claimKey = generateClientMessageId();
+
+      client.authorizeProactiveMessage(rule.id, claimKey).then(function (result) {
+        if (seq !== proactiveSequence || !result || result.authorized !== true) {
+          scheduleNextProactiveCandidate();
+
+          return;
+        }
+
+        renderProactiveInvitation(rule, result);
+      }).catch(function (error) {
+        reportSuppressed('proactive authorization', error);
+      });
+    }
+
+    function renderProactiveInvitation(rule, result) {
+      var expiresAt = Date.parse(result.expires_at || '');
+
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        scheduleNextProactiveCandidate();
+
+        return;
+      }
+
+      activeProactive = {
+        deliveryId: result.delivery_id,
+        message: String(result.message || rule.message),
+        rule: rule,
+        expiresAt: expiresAt,
+        shownPromise: null,
+      };
+      proactiveCopyEl.textContent = activeProactive.message;
+      proactiveEl.hidden = false;
+      clearProactiveExpiryTimer();
+      proactiveExpiryTimer = setTimeout(expireProactiveInvitation, Math.max(0, expiresAt - Date.now()));
+
+      var invitation = activeProactive;
+
+      afterNextPaint(function () {
+        if (activeProactive !== invitation || !elementVisible(proactiveEl)) {
+          hideProactiveInvitation();
+
+          return;
+        }
+
+        storageSet(storage, proactiveShownAtStorageKey(options.sitePublicKey), String(Date.now()));
+        invitation.shownPromise = reportProactiveOutcome(invitation, 'shown');
+      });
+    }
+
+    function reportProactiveOutcome(invitation, outcome) {
+      return client.reportProactiveOutcome(invitation.deliveryId, outcome).then(function () {
+        return true;
+      }).catch(function (error) {
+        reportSuppressed('proactive ' + outcome + ' receipt', error);
+
+        return false;
+      });
+    }
+
+    function ensureProactiveShown(invitation) {
+      return Promise.resolve(invitation.shownPromise).then(function (recorded) {
+        return recorded === true ? true : reportProactiveOutcome(invitation, 'shown');
+      });
+    }
+
+    function dismissProactiveInvitation() {
+      var invitation = activeProactive;
+
+      if (!invitation) {
+        return;
+      }
+
+      storageSet(storage, proactiveDismissedAtStorageKey(options.sitePublicKey), String(Date.now()));
+      hideProactiveInvitation();
+      ensureProactiveShown(invitation).then(function (shown) {
+        if (shown) {
+          reportProactiveOutcome(invitation, 'dismissed');
+        }
+      });
+    }
+
+    function engageProactiveInvitation() {
+      var invitation = activeProactive;
+
+      if (!invitation) {
+        open();
+
+        return;
+      }
+
+      hideProactiveInvitation();
+      proactiveEngagementPromise = ensureProactiveShown(invitation).then(function (shown) {
+        return shown ? reportProactiveOutcome(invitation, 'engaged') : false;
+      }).then(function (engaged) {
+        if (!engaged) {
+          return false;
+        }
+
+        engagedProactiveDeliveryId = invitation.deliveryId;
+        renderMessages([{
+          id: 'proactive-' + invitation.deliveryId,
+          sender: { kind: 'agent', name: t('sender.support') },
+          type: 'text',
+          body: invitation.message,
+          attachments: [],
+          created_at: new Date().toISOString(),
+        }]);
+
+        return true;
+      });
+      open();
+    }
+
+    function expireProactiveInvitation() {
+      if (!activeProactive || activeProactive.expiresAt > Date.now()) {
+        return;
+      }
+
+      hideProactiveInvitation();
+    }
+
+    function hideProactiveInvitation() {
+      clearProactiveExpiryTimer();
+      activeProactive = null;
+      proactiveEl.hidden = true;
+      proactiveCopyEl.textContent = '';
+    }
+
+    function clearProactiveTimer() {
+      if (proactiveTimer) {
+        clearTimeout(proactiveTimer);
+        proactiveTimer = null;
+      }
+    }
+
+    function clearProactiveExpiryTimer() {
+      if (proactiveExpiryTimer) {
+        clearTimeout(proactiveExpiryTimer);
+        proactiveExpiryTimer = null;
+      }
+    }
+
+    function stopProactiveMessages() {
+      proactiveSequence++;
+      proactivePresenceAccepted = false;
+      clearProactiveTimer();
+      hideProactiveInvitation();
+    }
+
     /**
      * Another tab wrote the decline key for this site.
      *
@@ -3365,7 +3666,20 @@
      * make an unrelated host application able to stop reporting by accident.
      */
     function handlePresenceStorageChange(event) {
-      if (!event || event.key !== presenceStorageKey(options.sitePublicKey)) {
+      if (!event) {
+        return;
+      }
+
+      if (event.key === proactiveShownAtStorageKey(options.sitePublicKey)
+        || event.key === proactiveDismissedAtStorageKey(options.sitePublicKey)) {
+        proactiveSequence++;
+        clearProactiveTimer();
+        hideProactiveInvitation();
+
+        return;
+      }
+
+      if (event.key !== presenceStorageKey(options.sitePublicKey)) {
         return;
       }
 
@@ -3379,6 +3693,7 @@
 
         stopPresenceTimer();
         presenceConfig = null;
+        stopProactiveMessages();
         renderPresenceDeclined();
       }
     }
@@ -3428,6 +3743,7 @@
       if (declineRecorded()) {
         stopPresenceTimer();
         presenceConfig = null;
+        stopProactiveMessages();
         renderPresenceDeclined();
 
         return;
@@ -3458,6 +3774,8 @@
         // left exactly the visitors this feature is about reporting until they
         // navigated away.
         refreshPresenceSettings(result);
+        proactivePresenceAccepted = Boolean(presenceConfig && result && result.reports === true);
+        scheduleNextProactiveCandidate();
       }).catch(function (error) {
         // A site that is GONE stops the tab, rather than leaving it posting for
         // as long as somebody keeps the page open. Archiving a site makes every
@@ -3531,6 +3849,7 @@
     function stopPresence() {
       stopPresenceTimer();
       presenceConfig = null;
+      stopProactiveMessages();
 
       if (presenceEl) {
         presenceEl.hidden = true;
@@ -3656,6 +3975,7 @@
       storageSet(storage, presenceStorageKey(options.sitePublicKey), 'declined');
       stopPresenceTimer();
       presenceConfig = null;
+      stopProactiveMessages();
       renderPresenceDeclined();
     }
 
@@ -3834,6 +4154,7 @@
           : true;
 
         applyPresence(presence);
+        applyProactiveRules(result && result.proactive_messages);
       }).catch(function () {
         // Retired or superseded: this failure is not about the policy in
         // force. A timed-out page-load read rejecting after a bootstrap has
@@ -3877,6 +4198,7 @@
         // on the next thing it does, reaching the server before the answer that
         // would have stopped it.
         presenceReportedPageUrls = null;
+        stopProactiveMessages();
 
         siteConfigSettledAt = Date.now();
 
@@ -4407,7 +4729,17 @@
       }
     }
 
-    launcher.addEventListener('click', open);
+    launcher.addEventListener('click', function () {
+      if (activeProactive) {
+        engageProactiveInvitation();
+
+        return;
+      }
+
+      open();
+    });
+    proactiveOpenEl.addEventListener('click', engageProactiveInvitation);
+    proactiveDismissEl.addEventListener('click', dismissProactiveInvitation);
     close.addEventListener('click', closePanel);
     panel.addEventListener('keydown', function (event) {
       if (event.key === 'Escape') {
@@ -4563,6 +4895,16 @@
           resumePromise = null;
         }
 
+        if (proactiveEngagementPromise) {
+          var engagementRecorded = await proactiveEngagementPromise;
+
+          proactiveEngagementPromise = null;
+
+          if (!engagementRecorded) {
+            engagedProactiveDeliveryId = null;
+          }
+        }
+
         // The rules behind the gate belong to the server and can change
         // between the panel opening and this send -- a closing time crossed,
         // an operator editing what the site asks. A conversation created on a
@@ -4608,10 +4950,12 @@
             pageUrl: pageUrlForReporting(),
             context: visitorContext,
             intake: intakeAnswers(),
+            proactiveMessageDeliveryId: engagedProactiveDeliveryId,
           });
 
           applyConversationStatus(conversation);
           supportCode = conversation.support_code;
+          engagedProactiveDeliveryId = null;
           refreshIntakeGate();
           storageSet(widgetStorage, supportCodeStorageKey(options.sitePublicKey), supportCode);
           // Don't activate (polling/realtime/refresh) until the message actually
@@ -6890,6 +7234,50 @@
     return 'wayfindr:' + sitePublicKey + ':presence-declined';
   }
 
+  function proactiveVisitCountStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':proactive-visit-count';
+  }
+
+  function proactiveShownAtStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':proactive-shown-at';
+  }
+
+  function proactiveDismissedAtStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':proactive-dismissed-at';
+  }
+
+  function recordProactiveVisit(storage, sitePublicKey) {
+    var key = proactiveVisitCountStorageKey(sitePublicKey);
+
+    // Frequency and dismissal promises have to survive navigation. Presence
+    // already fails closed without durable storage; proactive messaging does
+    // the same rather than remembering a visitor only when convenient.
+    if (!storageRemembers(storage, key)) {
+      return 0;
+    }
+
+    var previous = Math.max(0, Number(storageGet(storage, key)) || 0);
+    var next = Math.min(previous + 1, 1000000);
+
+    storageSet(storage, key, String(next));
+
+    return Number(storageGet(storage, key)) === next ? next : 0;
+  }
+
+  function urlForProactiveMatch(value) {
+    if (typeof value !== 'string' || value === '') {
+      return '';
+    }
+
+    try {
+      var parsed = new URL(value);
+
+      return (parsed.protocol + '//' + parsed.host + parsed.pathname).toLowerCase();
+    } catch (error) {
+      return value.split('#')[0].split('?')[0].toLowerCase();
+    }
+  }
+
   // The same rule the server applies, applied before the request is built.
   //
   // Not redundant with the server pass: sanitising on arrival means the raw URL
@@ -7133,6 +7521,13 @@
       '.wayfindr-widget__presence{display:flex;flex:0 0 auto;gap:8px;align-items:center;justify-content:flex-end;width:max-content;max-width:min(280px,calc(100vw - 40px));padding:6px 10px;border:var(--wf-border) solid var(--wf-rule);border-radius:var(--wf-radius);background:var(--wf-surface);color:var(--wf-muted);font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(8,37,34,.10)}',
       '.wayfindr-widget__presence-copy{margin:0}',
       '.wayfindr-widget__presence-decline{background:none;border:0;padding:0;font:inherit;text-decoration:underline;cursor:pointer;color:inherit;white-space:nowrap}',
+      '.wayfindr-widget__proactive{position:relative;display:flex;width:min(320px,calc(100vw - 40px));border:var(--wf-border) solid var(--wf-rule);border-inline-start:var(--wf-rail) solid var(--wf-site-accent,var(--wf-brand));border-radius:8px;background:var(--wf-surface);box-shadow:0 12px 30px rgba(8,37,34,.18);overflow:hidden}',
+      '.wayfindr-widget__proactive-open{display:grid;flex:1 1 auto;gap:8px;min-width:0;border:0;background:transparent;color:var(--wf-ink);cursor:pointer;padding:14px 42px 14px 16px;text-align:start;font:inherit}',
+      '.wayfindr-widget__proactive-open:hover{background:color-mix(in srgb,var(--wf-brand) 7%,var(--wf-surface))}',
+      '.wayfindr-widget__proactive-copy{white-space:pre-wrap;font-size:14px;line-height:1.4}',
+      '.wayfindr-widget__proactive-cta{color:var(--wf-brand);font-size:12px;font-weight:700}',
+      '.wayfindr-widget__proactive-dismiss{position:absolute;top:8px;inset-inline-end:8px;width:28px;height:28px;border:0;border-radius:999px;background:transparent;color:var(--wf-muted);cursor:pointer;font:700 20px/1 var(--wf-font-sans)}',
+      '.wayfindr-widget__proactive-dismiss:hover{background:var(--wf-surface-2);color:var(--wf-ink)}',
       '.wayfindr-widget__notice-retry{justify-self:start;min-height:34px;border:1px solid var(--wf-rule);border-radius:6px;background:var(--wf-surface);color:var(--wf-ink);cursor:pointer;padding:0 12px;font:700 13px/1 var(--wf-font-sans)}',
       '.wayfindr-widget__notice-retry:hover{border-color:var(--wf-brand);color:var(--wf-brand)}',
       '.wayfindr-widget__notice-retry:disabled{cursor:wait;opacity:.7}',
