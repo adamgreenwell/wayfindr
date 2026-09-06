@@ -15,6 +15,7 @@ use App\Models\CustomRole;
 use App\Models\OidcConnection;
 use App\Models\OidcIdentity;
 use App\Models\OutboundWebhookEndpoint;
+use App\Models\ProactiveMessageRule;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -466,6 +467,9 @@ class AgentAccountAuditController extends Controller
             'automation_rule.created' => 'Automation rule created',
             'automation_rule.updated' => 'Automation rule updated',
             'automation_rule.deleted' => 'Automation rule deleted',
+            'proactive_message_rule.created' => 'Proactive message rule created',
+            'proactive_message_rule.updated' => 'Proactive message rule updated',
+            'proactive_message_rule.deleted' => 'Proactive message rule deleted',
             'automation_macro.created' => 'Automation macro created',
             'automation_macro.updated' => 'Automation macro updated',
             'automation_macro.deleted' => 'Automation macro deleted',
@@ -569,6 +573,15 @@ class AgentAccountAuditController extends Controller
             return [
                 'prefix' => __('account_audit.references.automation_rule'),
                 'value' => $event->subject instanceof AutomationRule
+                    ? $event->subject->name
+                    : data_get($event->metadata, 'name'),
+            ];
+        }
+
+        if ($event->subject instanceof ProactiveMessageRule || str_starts_with($event->action, 'proactive_message_rule.')) {
+            return [
+                'prefix' => __('account_audit.references.proactive_message_rule'),
+                'value' => $event->subject instanceof ProactiveMessageRule
                     ? $event->subject->name
                     : data_get($event->metadata, 'name'),
             ];
@@ -794,6 +807,14 @@ class AgentAccountAuditController extends Controller
 
         if ($event->subject instanceof Site) {
             return $event->subject->name;
+        }
+
+        if ($event->subject instanceof ProactiveMessageRule || str_starts_with($event->action, 'proactive_message_rule.')) {
+            $name = $event->subject instanceof ProactiveMessageRule
+                ? $event->subject->name
+                : data_get($event->metadata, 'name');
+
+            return 'Proactive message rule'.(is_string($name) && $name !== '' ? ' '.$name : '');
         }
 
         if ($event->subject instanceof ApiToken) {

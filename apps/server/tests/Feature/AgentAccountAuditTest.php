@@ -8,6 +8,7 @@ use App\Models\BreakGlassGrant;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\CustomRole;
+use App\Models\ProactiveMessageRule;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
@@ -391,6 +392,43 @@ test('account audit export includes scoped safe fields without raw metadata', fu
         ->not->toContain('24. Aug 2026')
         ->not->toContain('Restricted Store')
         ->not->toContain('should-not-render');
+});
+
+test('proactive rule audit subjects remain specific in the dashboard and export after deletion', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $existing = ProactiveMessageRule::factory()->for($site)->create(['name' => 'Pricing invitation']);
+    $deleted = ProactiveMessageRule::factory()->for($site)->create(['name' => 'Checkout invitation']);
+
+    foreach ([$existing, $deleted] as $rule) {
+        AuditEvent::factory()->for($account)->for($site)->create([
+            'actor_type' => $admin->getMorphClass(),
+            'actor_id' => $admin->id,
+            'subject_type' => $rule->getMorphClass(),
+            'subject_id' => $rule->id,
+            'action' => 'proactive_message_rule.updated',
+            'metadata' => ['name' => $rule->name],
+        ]);
+    }
+
+    $deleted->delete();
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->assertSee('Proactive message rule')
+        ->assertSee('Pricing invitation')
+        ->assertSee('Checkout invitation');
+
+    $content = $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.export'))
+        ->streamedContent();
+
+    expect($content)
+        ->toContain('Proactive message rule updated')
+        ->toContain('Proactive message rule Pricing invitation')
+        ->toContain('Proactive message rule Checkout invitation');
 });
 
 test('account audit export can be scoped to an exact visible site', function (): void {

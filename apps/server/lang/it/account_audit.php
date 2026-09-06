@@ -71,6 +71,7 @@ return [
         'custom_role' => 'Ruolo personalizzato',
         'visitor_attribute' => 'Attributo del visitatore',
         'automation_rule' => 'Regola di automazione',
+        'proactive_message_rule' => 'Regola per i messaggi proattivi',
         'automation_macro' => 'Macro di automazione',
         'conversation' => 'Conversazione',
         'cobrowse' => 'Cobrowse',

@@ -74,6 +74,7 @@ return [
         'custom_role' => 'Custom role',
         'visitor_attribute' => 'Visitor attribute',
         'automation_rule' => 'Automation rule',
+        'proactive_message_rule' => 'Proactive message rule',
         'automation_macro' => 'Automation macro',
         'conversation' => 'Conversation',
         'cobrowse' => 'Cobrowse',
