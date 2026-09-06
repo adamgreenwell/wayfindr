@@ -328,10 +328,12 @@ test('invalid knowledge search output becomes a retryable failure', function (st
     'not json' => 'renewal checkout',
     'wrong shape' => '{"query":"renewal"}',
     'extra key' => '{"queries":["renewal"],"answer":"yes"}',
+    'object masquerading as an array' => '{"queries":{"0":"renewal"}}',
     'empty list' => '{"queries":[]}',
     'too many queries' => '{"queries":["one","two","three","four","five","six"]}',
     'short query' => '{"queries":["x"]}',
     'oversized query' => json_encode(['queries' => [str_repeat('a', 81)]], JSON_THROW_ON_ERROR),
+    'oversized output with a valid prefix' => '{"queries":["renewal"]}'.str_repeat(' ', 8_000).'forbidden trailing prose',
     'non-string query' => '{"queries":[42]}',
 ]);
 

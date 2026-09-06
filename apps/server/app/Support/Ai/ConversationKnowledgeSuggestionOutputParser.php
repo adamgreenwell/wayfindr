@@ -5,23 +5,30 @@ declare(strict_types=1);
 namespace App\Support\Ai;
 
 use JsonException;
+use stdClass;
 
 /** Validate a small set of provider-suggested local article search phrases. */
 final class ConversationKnowledgeSuggestionOutputParser
 {
+    private const MAX_OUTPUT_CHARACTERS = 8_000;
+
     public function parse(string $output): ?ConversationKnowledgeSuggestionOutput
     {
+        if (mb_strlen($output) > self::MAX_OUTPUT_CHARACTERS) {
+            return null;
+        }
+
         try {
-            $decoded = json_decode(trim($output), true, 8, JSON_THROW_ON_ERROR);
+            $decoded = json_decode(trim($output), false, 8, JSON_THROW_ON_ERROR);
         } catch (JsonException) {
             return null;
         }
 
-        if (! is_array($decoded) || array_is_list($decoded) || array_keys($decoded) !== ['queries']) {
+        if (! $decoded instanceof stdClass || array_keys(get_object_vars($decoded)) !== ['queries']) {
             return null;
         }
 
-        $rawQueries = $decoded['queries'];
+        $rawQueries = $decoded->queries;
 
         if (! is_array($rawQueries) || ! array_is_list($rawQueries) || count($rawQueries) < 1 || count($rawQueries) > 5) {
             return null;

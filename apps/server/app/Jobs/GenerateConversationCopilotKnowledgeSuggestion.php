@@ -119,7 +119,7 @@ final class GenerateConversationCopilotKnowledgeSuggestion implements ShouldBeUn
             }
 
             $result = $provider->generate($context->prompt);
-            $output = $outputParser->parse(mb_substr(trim($result->text), 0, 8_000));
+            $output = $outputParser->parse($result->text);
 
             if ($output === null) {
                 $this->recordFailure($suggestion, 'invalid_output');
