@@ -227,6 +227,35 @@ test('required answer facts must be grounded in expected articles', function ():
     }
 });
 
+test('fixture identifiers enforce the documented minimum length', function (): void {
+    $fixtures = json_decode(
+        file_get_contents(resource_path('evaluations/grounded-answers/fixtures.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $fixtures['cases'][0]['id'] = 'a';
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-short-id-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode($fixtures, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', [
+            '--fixtures' => $path,
+            '--json' => true,
+        ]);
+        $report = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(2)
+            ->and($report)->toBe([
+                'result' => 'invalid',
+                'error' => 'The evaluation case 1 ID must be a lowercase hyphenated ID between 3 and 64 characters.',
+            ]);
+    } finally {
+        unlink($path);
+    }
+});
+
 test('response objects cannot masquerade as the required response array', function (): void {
     $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-invalid-');
 

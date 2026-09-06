@@ -362,7 +362,7 @@ final class GroundedAnswerEvaluationDatasetLoader
 
     private function identifier(mixed $value, string $label): string
     {
-        if (! is_string($value) || preg_match('/\A[a-z0-9](?:[a-z0-9-]{1,62}[a-z0-9])?\z/', $value) !== 1) {
+        if (! is_string($value) || preg_match('/\A[a-z0-9][a-z0-9-]{1,62}[a-z0-9]\z/', $value) !== 1) {
             throw new RuntimeException(sprintf('The %s must be a lowercase hyphenated ID between 3 and 64 characters.', $label));
         }
 
