@@ -4,9 +4,8 @@ Wayfindr's agent copilot is optional and disabled on a new installation. Leaving
 it unconfigured keeps every support workflow manual; chat, tickets, cobrowse,
 mail, and the operator console do not depend on a model provider.
 
-The first runtime slice establishes the provider and privacy boundary used by
-later agent-facing summaries and drafts. It does not add autonomous replies or
-customer-facing AI.
+The provider boundary powers an on-demand conversation summary for agent
+handoff. It does not add autonomous replies or customer-facing AI.
 
 ## Configure it in the operator console
 
@@ -96,13 +95,43 @@ privacy notice.
 Generated output is a suggestion for an agent to review. This boundary cannot
 send a visitor reply or automatically change a support record.
 
+### Conversation summaries
+
+When the provider assessment is ready, a conversation with at least one text
+message shows **Conversation summary**. An agent must request each summary. The
+feature selects only the conversation subject and a bounded, newest-first set of
+message bodies, labels senders by generic role, and applies the common scrubber
+before provider delivery. It omits visitor and agent names, visitor fields,
+message metadata, timestamps, attachments, and all cobrowse data.
+
+The worker reads newest message bodies in fixed-size chunks with a per-row
+database cap and stops fetching as soon as the prompt budget is full; it never
+queries an unbounded transcript result. A claimed job receives its own freshness
+timestamp, so a delayed queue item cannot be replaced while its provider call is
+active.
+
+Generation runs on Wayfindr's default queue. The queue payload contains only a
+local summary-row ID and opaque generation UUID; it does not contain transcript
+text. The worker rechecks the requesting agent's current conversation access
+before calling the provider. A new message marks the displayed suggestion as
+stale but never triggers automatic regeneration.
+
+The provider call has a 75-second timeout inside an 85-second job budget, which
+fits the shipped default worker's 90-second timeout. Keep a custom default worker
+at 90 seconds or longer.
+
+Wayfindr stores only the latest generated suggestion for that conversation in
+`conversation_copilot_summaries`. Refreshing replaces it, and deleting the
+conversation deletes it. Request, completion, and failure audit events contain
+IDs, state, provider/model names, and token counts where available—never prompt
+or generated text.
+
 ## Runtime and testing
 
-The provider boundary uses Laravel's first-party AI SDK. The current connection
-probe runs inside the operator request with a 20-second application timeout and
-does not require another queue worker. Later heavy product actions should use
-Wayfindr's existing queue infrastructure rather than holding an agent request
-open.
+The provider boundary uses Laravel's first-party AI SDK. The connection probe
+runs inside the operator request with a 20-second application timeout. Summary
+generation uses Wayfindr's existing default queue, so at least one normal queue
+worker must be running; the agent request only records and queues the action.
 
 The automated suite uses the SDK fake gateway and synthetic fixtures. CI and
 contributors do not need live provider keys, and a test must never call an

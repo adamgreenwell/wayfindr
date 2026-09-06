@@ -210,6 +210,24 @@ return [
             'not_seen' => 'Noch nicht gesehen',
         ],
 
+        'copilot' => [
+            'heading' => 'Zusammenfassung der Unterhaltung',
+            'suggested' => 'Vorschlag',
+            'lede' => 'Erzeugen Sie eine kurze Übergabezusammenfassung aus dieser Unterhaltung, wenn eine andere zuständige Person den Verlauf schnell erfassen muss.',
+            'generate' => 'Unterhaltung zusammenfassen',
+            'regenerate' => 'Zusammenfassung aktualisieren',
+            'retry' => 'Zusammenfassung erneut versuchen',
+            'pending' => 'Ein Vorschlag wird erzeugt …',
+            'pending_detail' => 'Die Anfrage befindet sich in der Warteschlange. Dieser Bereich wird aktualisiert, sobald die Zusammenfassung bereit ist.',
+            'generated' => 'Erzeugt :elapsed.',
+            'source_count' => '{1} Basiert auf 1 Textnachricht.|[2,*] Basiert auf :count Textnachrichten.',
+            'stale' => 'Nach dieser Zusammenfassung sind neue Nachrichten eingegangen.',
+            'stale_detail' => 'Prüfen Sie vor der Übergabe den Verlauf oder aktualisieren Sie den Vorschlag.',
+            'failed' => 'Die Zusammenfassung konnte nicht erzeugt werden.',
+            'failed_detail' => 'Es wurden weder eine Antwort noch ein Supportdatensatz geändert. Sie können es erneut versuchen.',
+            'privacy' => 'Es werden nur der Betreff und begrenzter Nachrichtentext ausgewählt. Profilfelder von Agenten und Besuchern, Metadaten, Anhänge und Cobrowse-Daten werden ausgelassen; gängige sensible Muster werden vor der Übermittlung an den Anbieter entfernt.',
+        ],
+
         'context' => [
             'heading' => 'Besucher auf einen Blick',
             'about' => 'Worum es geht',
@@ -444,6 +462,9 @@ return [
         'cobrowse_needed_for_snapshot' => 'Cobrowse muss aktiv sein, bevor ein neuer Snapshot angefordert werden kann.',
         'snapshot_already_requested' => 'Ein neuer Cobrowse-Snapshot wurde bereits angefordert.',
         'snapshot_requested' => 'Neuer Cobrowse-Snapshot angefordert.',
+        'ai_summary_queued' => 'Zusammenfassung der Unterhaltung in die Warteschlange gestellt.',
+        'ai_summary_pending' => 'Eine Zusammenfassung dieser Unterhaltung wird bereits erzeugt.',
+        'ai_summary_failed' => 'Die Zusammenfassung konnte nicht in die Warteschlange gestellt werden. Es wurden keine Supportdaten gesendet.',
     ],
 
     'row' => [

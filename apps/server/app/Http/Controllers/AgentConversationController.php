@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
+use App\Support\Ai\AgentCopilotConfiguration;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Automation\AutomationMacroAuthorization;
@@ -27,6 +28,7 @@ use App\Support\Conversations\CobrowseAttentionFinder;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\Conversations\ConversationPriorityLog;
 use App\Support\Conversations\ConversationQueueQuery;
+use App\Support\Conversations\ConversationReturnPath;
 use App\Support\Conversations\ConversationWriteAuthorization;
 use App\Support\DashboardLanguage;
 use App\Support\Mail\ConversationReplyMailer;
@@ -58,16 +60,17 @@ class AgentConversationController extends Controller
         private readonly ConversationWriteAuthorization $conversationWriteAuthorization,
         private readonly AssignmentAuditTrail $assignmentAuditTrail,
         private readonly ConversationPriorityLog $conversationPriorityLog,
+        private readonly ConversationReturnPath $conversationReturnPath,
     ) {}
 
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization, AgentCopilotConfiguration $copilotConfiguration): View
     {
         $agent = $request->user();
 
         $conversation = $this->conversationForAgent($agent, $supportCode, 'view')
             ->load(['assignedAgent', 'latestAgentMessage', 'latestMessage', 'latestNonIntegrationMessage', 'site', 'slaClocks', 'visitor']);
 
-        $conversationReturnQuery = $this->conversationQueueReturnQuery($request);
+        $conversationReturnQuery = $this->conversationReturnPath->query($request);
         $canReply = Gate::forUser($agent)->allows('reply', $conversation);
         $canManageTickets = Gate::forUser($agent)->allows('createTicket', $conversation);
 
@@ -90,6 +93,13 @@ class AgentConversationController extends Controller
             ->orderBy('created_at')
             ->orderBy('id')
             ->get();
+        $latestSummarizableMessageId = $messages
+            ->filter(fn ($message): bool => filled($message->body))
+            ->max('id');
+        $copilotSummaryAvailable = $copilotConfiguration->isReady() && $latestSummarizableMessageId !== null;
+        $copilotSummary = $copilotSummaryAvailable
+            ? $conversation->copilotSummary()->first()
+            : null;
         $tickets = $canManageTickets
             ? $conversation->tickets()
                 ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'conversation.latestNonIntegrationMessage'])
@@ -236,6 +246,9 @@ class AgentConversationController extends Controller
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
             'conversationSiblings' => $conversationSiblings,
+            'copilotSummary' => $copilotSummary,
+            'copilotSummaryAvailable' => $copilotSummaryAvailable,
+            'latestSummarizableMessageId' => $latestSummarizableMessageId,
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation, $canManageTickets),
             'realtime' => $this->realtimeConfig($conversation, $agent),
@@ -387,68 +400,12 @@ class AgentConversationController extends Controller
         ];
     }
 
-    private function conversationQueueReturnQuery(Request $request): array
-    {
-        $params = [];
-
-        // Explicit, so an absent query is never mistaken for "the all-open
-        // queue". Only links rendered BY a queue carry it.
-        if ($request->input('from_queue') === '1' || $request->input('from_queue') === 1) {
-            $params['from_queue'] = '1';
-        }
-        $conversationFilters = [
-            'new_activity',
-            'needs_reply',
-            'assigned_to_me',
-            'unassigned',
-            'cobrowse_attention',
-            'closed',
-        ];
-
-        $conversationFilter = $request->input('conversation_filter');
-
-        if (is_string($conversationFilter) && in_array($conversationFilter, $conversationFilters, true)) {
-            $params['conversation_filter'] = $conversationFilter;
-        }
-
-        $conversationSearch = $request->input('conversation_search');
-        $conversationSearch = is_string($conversationSearch)
-            ? mb_substr(trim($conversationSearch), 0, 120)
-            : '';
-
-        if ($conversationSearch !== '') {
-            $params['conversation_search'] = $conversationSearch;
-        }
-
-        $conversationSite = $request->input('conversation_site');
-
-        if (is_int($conversationSite) && $conversationSite > 0) {
-            $params['conversation_site'] = $conversationSite;
-        } elseif (is_string($conversationSite) && ctype_digit($conversationSite)) {
-            $params['conversation_site'] = (int) $conversationSite;
-        }
-
-        $conversationPresenceFilters = [
-            'active',
-            'recent',
-            'quiet',
-            'not_reported',
-        ];
-        $conversationPresence = $request->input('conversation_presence');
-
-        if (is_string($conversationPresence) && in_array($conversationPresence, $conversationPresenceFilters, true)) {
-            $params['conversation_presence'] = $conversationPresence;
-        }
-
-        return $params;
-    }
-
     /**
      * @return array<string, string|int>
      */
     private function conversationShowRouteParams(Conversation $conversation, Request $request): array
     {
-        return ['supportCode' => $conversation->support_code] + $this->conversationQueueReturnQuery($request);
+        return $this->conversationReturnPath->routeParameters($conversation, $request);
     }
 
     public function storeMessage(Request $request, string $supportCode, ReplyTemplateOptions $replyTemplateOptions, AttachmentBinder $binder): RedirectResponse

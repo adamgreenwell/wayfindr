@@ -226,6 +226,24 @@ return [
             'not_seen' => 'Not seen yet',
         ],
 
+        'copilot' => [
+            'heading' => 'Conversation summary',
+            'suggested' => 'Suggested',
+            'lede' => 'Generate a short handoff summary from this conversation when another agent needs the thread quickly.',
+            'generate' => 'Summarize conversation',
+            'regenerate' => 'Refresh summary',
+            'retry' => 'Try summary again',
+            'pending' => 'Generating a suggestion…',
+            'pending_detail' => 'The request is queued. This panel updates when the summary is ready.',
+            'generated' => 'Generated :elapsed.',
+            'source_count' => '{1} Based on 1 text message.|[2,*] Based on :count text messages.',
+            'stale' => 'New messages arrived after this summary.',
+            'stale_detail' => 'Review the transcript or refresh the suggestion before using it for handoff.',
+            'failed' => 'The summary could not be generated.',
+            'failed_detail' => 'No reply or support record changed. You can try again.',
+            'privacy' => 'Only the subject and bounded message text are selected. Agent and visitor profile fields, metadata, attachments, and cobrowse data are omitted; common sensitive patterns are scrubbed before provider delivery.',
+        ],
+
         'context' => [
             'heading' => 'Visitor at a glance',
             'about' => 'What this is about',
@@ -460,6 +478,9 @@ return [
         'cobrowse_needed_for_snapshot' => 'Cobrowse must be active before requesting a fresh snapshot.',
         'snapshot_already_requested' => 'Fresh cobrowse snapshot already requested.',
         'snapshot_requested' => 'Fresh cobrowse snapshot requested.',
+        'ai_summary_queued' => 'Conversation summary queued.',
+        'ai_summary_pending' => 'A conversation summary is already being generated.',
+        'ai_summary_failed' => 'The conversation summary could not be queued. No support data was sent.',
     ],
 
     'row' => [

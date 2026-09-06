@@ -16,8 +16,9 @@ final class AiContextSanitizer
     {
         $sanitized = $this->stripPrivateKeyBlocks($input);
         $sanitized = $this->stripUrlSecrets($sanitized);
+        $sanitized = $this->stripQuotedCredentialAssignments($sanitized);
         $sanitized = $this->replace(
-            '/\b(password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\s*[:=]\s*((?:Bearer\s+)?[^\s,;]{4,})/i',
+            '/\b(password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\s*[:=]\s*(?!\[REDACTED\])((?:Bearer\s+)?[^\s,;"\']{4,})/i',
             '$1=[REDACTED]',
             $sanitized,
         );
@@ -62,10 +63,109 @@ final class AiContextSanitizer
         ) ?? $sanitized;
     }
 
+    private function stripQuotedCredentialAssignments(string $input): string
+    {
+        $pattern = '/(?<prefix>(?:(?<key_delimiter>(?:\x5c)*[\x22\x27])\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b\k<key_delimiter>|\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b)\s*[:=]\s*)(?<delimiter>(?:\x5c)*[\x22\x27])/i';
+        $cursor = 0;
+        $sanitized = '';
+
+        while (preg_match($pattern, $input, $match, PREG_OFFSET_CAPTURE, $cursor) === 1) {
+            [$matched, $matchStart] = $match[0];
+            $prefix = $match['prefix'][0];
+            $delimiter = $match['delimiter'][0];
+            $quote = substr($delimiter, -1);
+            $delimiterEscapeDepth = strlen($delimiter) - 1;
+            $serializationEscapeDepth = $delimiterEscapeDepth;
+
+            if ($quote === "'" && ($enclosingEscapeDepth = $this->enclosingEscapeDepth($input, $matchStart)) !== null) {
+                // JSON does not escape apostrophes, but it does multiply the
+                // backslashes inside the enclosing double-quoted string.
+                $serializationEscapeDepth = max(
+                    $serializationEscapeDepth,
+                    (2 * $enclosingEscapeDepth) + 1,
+                );
+            }
+            $valueStart = $matchStart + strlen($matched);
+            $valueEnd = $this->findClosingQuote(
+                $input,
+                $valueStart,
+                $quote,
+                $delimiterEscapeDepth,
+                $serializationEscapeDepth,
+            );
+
+            $sanitized .= substr($input, $cursor, $matchStart - $cursor)
+                .$prefix.$delimiter.'[REDACTED]'.$delimiter;
+
+            if ($valueEnd === null) {
+                return $sanitized;
+            }
+
+            $cursor = $valueEnd + 1;
+        }
+
+        return $sanitized.substr($input, $cursor);
+    }
+
+    private function enclosingEscapeDepth(string $input, int $offset): ?int
+    {
+        $inside = [];
+        $position = 0;
+
+        while (($quotePosition = strpos($input, '"', $position)) !== false && $quotePosition < $offset) {
+            $position = $quotePosition + 1;
+
+            $precedingBackslashes = 0;
+
+            for ($index = $quotePosition - 1; $index >= 0 && $input[$index] === '\\'; $index--) {
+                $precedingBackslashes++;
+            }
+
+            for ($escapeDepth = 0; $escapeDepth <= $precedingBackslashes; $escapeDepth = (2 * $escapeDepth) + 1) {
+                $modulus = 2 * ($escapeDepth + 1);
+
+                if ($precedingBackslashes % $modulus === $escapeDepth) {
+                    $inside[$escapeDepth] = ! ($inside[$escapeDepth] ?? false);
+                }
+            }
+        }
+
+        $activeDepths = array_keys(array_filter($inside));
+
+        return $activeDepths === [] ? null : max($activeDepths);
+    }
+
+    private function findClosingQuote(
+        string $input,
+        int $valueStart,
+        string $quote,
+        int $delimiterEscapeDepth,
+        int $serializationEscapeDepth,
+    ): ?int {
+        $position = $valueStart;
+        $modulus = 2 * ($serializationEscapeDepth + 1);
+
+        while (($quotePosition = strpos($input, $quote, $position)) !== false) {
+            $precedingBackslashes = 0;
+
+            for ($index = $quotePosition - 1; $index >= $valueStart && $input[$index] === '\\'; $index--) {
+                $precedingBackslashes++;
+            }
+
+            if ($precedingBackslashes % $modulus === $delimiterEscapeDepth) {
+                return $quotePosition;
+            }
+
+            $position = $quotePosition + 1;
+        }
+
+        return null;
+    }
+
     private function stripPrivateKeyBlocks(string $input): string
     {
         return $this->replace(
-            '/-----BEGIN [^-\r\n]*PRIVATE KEY-----.*?-----END [^-\r\n]*PRIVATE KEY-----/si',
+            '/-----BEGIN [^-\r\n]*PRIVATE KEY-----.*?(?:-----END [^-\r\n]*PRIVATE KEY-----|\z)/si',
             '[PRIVATE KEY REDACTED]',
             $input,
         );
