@@ -328,6 +328,10 @@ test('invalid structured provider output becomes a retryable failure', function 
     'unknown priority' => '{"title":"Checkout issue","priority":"critical"}',
     'extra key' => '{"title":"Checkout issue","priority":"high","labels":[]}',
     'blank title' => '{"title":" ","priority":"normal"}',
+    'title longer than the prompt contract' => json_encode([
+        'title' => str_repeat('a', 121),
+        'priority' => 'normal',
+    ], JSON_THROW_ON_ERROR),
 ]);
 
 test('provider failures stay generic in storage logs and the agent surface', function (): void {
@@ -479,6 +483,21 @@ test('a new attachment-only message visibly stales a ticket suggestion and block
         ->assertSee('data-copilot-ticket-suggestion-use', false)
         ->assertSee('disabled', false)
         ->assertSee('useButton.disabled = true', false);
+});
+
+test('realtime message events invalidate ticket suggestions before refreshing the transcript', function (): void {
+    $source = file_get_contents(resource_path('views/agent/conversations/show.blade.php'));
+    $messageEventHandler = Str::between(
+        $source,
+        'if (event.event === config.messageEventName) {',
+        'if (event.event === config.typingEventName)',
+    );
+    $invalidateAt = strpos($messageEventHandler, 'window.wayfindrConversationTicketSuggestionTranscriptUpdated();');
+    $refreshAt = strpos($messageEventHandler, 'refreshTranscript();');
+
+    expect($invalidateAt)->toBeInt()
+        ->and($refreshAt)->toBeInt()
+        ->and($invalidateAt)->toBeLessThan($refreshAt);
 });
 
 test('ticket creation accepts an edited title and existing account labels atomically', function (): void {

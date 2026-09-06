@@ -32,7 +32,7 @@ final class ConversationTicketSuggestionOutputParser
         $title = trim((string) preg_replace('/\s+/u', ' ', $decoded['title']));
         $priority = TicketPriority::tryFrom($decoded['priority']);
 
-        if ($title === '' || mb_strlen($title) > 255 || $priority === null) {
+        if ($title === '' || mb_strlen($title) > 120 || $priority === null) {
             return null;
         }
 

@@ -2292,6 +2292,13 @@
                     }
 
                     if (event.event === config.messageEventName) {
+                        // Invalidate provider suggestions at event receipt so a
+                        // slow or failed transcript fetch cannot leave stale
+                        // ticket details available for insertion.
+                        if (typeof window.wayfindrConversationTicketSuggestionTranscriptUpdated === 'function') {
+                            window.wayfindrConversationTicketSuggestionTranscriptUpdated();
+                        }
+
                         refreshTranscript();
                     }
 
