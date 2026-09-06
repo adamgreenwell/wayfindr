@@ -90,7 +90,7 @@ class ConversationController extends Controller
             // policy. Join the account-first protocol before taking the shared
             // site lock so an availability or archive write cannot deadlock
             // with this visitor request.
-            $siteManagerCoverage->lockAccount((int) $site->account_id);
+            $siteManagerCoverage->shareAccount((int) $site->account_id);
 
             // Same lock `updatePresence()` takes, for the same reason as
             // bootstrap: the page-address setting has to be the one in force

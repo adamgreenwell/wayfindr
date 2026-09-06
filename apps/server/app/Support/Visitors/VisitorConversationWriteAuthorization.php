@@ -30,7 +30,7 @@ final class VisitorConversationWriteAuthorization
         // Match the account -> site -> subject order used by account/site
         // mutations and by identity merge. The shared site lock makes the
         // alias, visitor, and conversation below one stable identity view.
-        $this->siteManagerCoverage->lockAccount((int) $site->account_id);
+        $this->siteManagerCoverage->shareAccount((int) $site->account_id);
         $site = Site::query()
             ->servable()
             ->whereKey($resolved->site_id)

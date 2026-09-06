@@ -90,8 +90,9 @@ cobrowse and rejected attachment-scan audit receipts use the same locked
 re-resolution, keeping their actor attached to the chosen contact. All widget
 conversation authorization resolves the token, alias, and conversation under
 that same site lock; writes that persist visitor ownership or presence then
-re-resolve at their final write boundary, so a merge cannot create a false 404
-or leave a stale owner. Alias token
+re-resolve at their final write boundary under shared account and site locks,
+so a merge cannot create a false 404 or leave a stale owner without serializing
+independent widget traffic across the account. Alias token
 lineage is retained across later merges, but cascades when the chosen visitor or
 site is deleted. Each alias keeps at most the 50 most recent prior visitor IDs;
 an older tab beyond that unusual chain must bootstrap again. An old token cannot
