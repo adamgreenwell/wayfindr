@@ -78,10 +78,14 @@ final class AiContextSanitizer
             function (array $match): string {
                 $url = rtrim($match[0], '.,;:!?)]}');
                 $suffix = substr($match[0], strlen($url));
-                $parts = parse_url($url);
+                $secretOffset = strcspn($url, '?#');
+                $urlWithoutSecrets = substr($url, 0, $secretOffset);
+                $parts = parse_url($urlWithoutSecrets);
 
                 if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
-                    return $match[0];
+                    // Even malformed URL-shaped text must not retain query or
+                    // fragment data: parser failure cannot bypass the boundary.
+                    return $urlWithoutSecrets.$suffix;
                 }
 
                 $authority = $parts['scheme'].'://'.$parts['host'];
@@ -115,12 +119,25 @@ final class AiContextSanitizer
         return preg_replace_callback(
             '/(?<![0-9a-z:.])([0-9a-f:.]*:[0-9a-f:.]+)(?![0-9a-z:.])/i',
             function (array $match): string {
-                $candidate = rtrim($match[1], '.');
-                $suffix = substr($match[1], strlen($candidate));
+                $candidate = $match[1];
+                $suffix = '';
 
-                return filter_var($candidate, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
-                    ? '[IP ADDRESS REDACTED]'.$suffix
-                    : $match[0];
+                while ($candidate !== '') {
+                    if (filter_var($candidate, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false) {
+                        return '[IP ADDRESS REDACTED]'.$suffix;
+                    }
+
+                    $punctuation = substr($candidate, -1);
+
+                    if (! in_array($punctuation, ['.', ':'], true)) {
+                        break;
+                    }
+
+                    $candidate = substr($candidate, 0, -1);
+                    $suffix = $punctuation.$suffix;
+                }
+
+                return $match[0];
             },
             $sanitized,
         ) ?? $sanitized;
