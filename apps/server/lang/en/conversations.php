@@ -266,6 +266,29 @@ return [
             'privacy' => 'Only bounded subject and message text are sent after common sensitive patterns are scrubbed. Profiles, metadata, attachments, and cobrowse data are omitted. You review and send every reply.',
         ],
 
+        'knowledge_copilot' => [
+            'heading' => 'Suggested knowledge',
+            'suggested' => 'Suggested',
+            'lede' => 'Find relevant published articles from this conversation. A snippet enters the composer only when you choose it.',
+            'generate' => 'Suggest knowledge',
+            'regenerate' => 'Refresh suggestions',
+            'retry' => 'Try suggestions again',
+            'use' => 'Insert snippet',
+            'pending' => 'Finding suggestions…',
+            'pending_detail' => 'The request is queued. Reply assist updates when the article suggestions are ready.',
+            'generated' => 'Generated :elapsed.',
+            'source_count' => '{1} Based on 1 text message.|[2,*] Based on :count text messages.',
+            'no_matches' => 'No matching published articles were found.',
+            'stale' => 'New messages arrived after these suggestions.',
+            'stale_detail' => 'Refresh the suggestions before adding a snippet to the composer.',
+            'failed' => 'Knowledge suggestions could not be generated.',
+            'failed_detail' => 'Nothing was added to the composer or sent. You can try again.',
+            'used' => 'Knowledge snippet added. Review and edit it before sending.',
+            'use_blocked' => 'Your current message was kept. Clear it before inserting a knowledge snippet.',
+            'use_stale' => 'Refresh these suggestions before using one.',
+            'privacy' => 'Only bounded subject and message text are sent after common sensitive patterns are scrubbed. The provider returns search phrases; article titles, content, and the catalogue stay inside Wayfindr. Only published articles from this account are matched locally. You review and send every reply.',
+        ],
+
         'ticket_copilot' => [
             'heading' => 'Suggested ticket details',
             'suggested' => 'Suggested',
@@ -538,6 +561,9 @@ return [
         'ai_reply_draft_queued' => 'Suggested reply queued.',
         'ai_reply_draft_pending' => 'A suggested reply is already being generated.',
         'ai_reply_draft_failed' => 'The suggested reply could not be queued. No support data was sent.',
+        'ai_knowledge_suggestion_queued' => 'Knowledge suggestions queued.',
+        'ai_knowledge_suggestion_pending' => 'Knowledge suggestions are already being generated.',
+        'ai_knowledge_suggestion_failed' => 'Knowledge suggestions could not be queued. No support data was sent.',
     ],
 
     'row' => [

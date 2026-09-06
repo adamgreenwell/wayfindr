@@ -150,6 +150,10 @@
                 @include('agent.conversations.partials.copilot-reply-draft')
             @endif
 
+            @if ($copilotKnowledgeSuggestionAvailable)
+                @include('agent.conversations.partials.copilot-knowledge-suggestion')
+            @endif
+
             <div class="reply-template-preview" data-template-preview>
                 <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
                     <strong>{{ __('conversations.detail.reply.writing_own') }}</strong>
@@ -182,5 +186,8 @@
 @include('agent.partials.reply-composer-script')
 @if ($copilotReplyDraftAvailable)
     @include('agent.conversations.partials.copilot-reply-draft-script')
+@endif
+@if ($copilotKnowledgeSuggestionAvailable)
+    @include('agent.conversations.partials.copilot-knowledge-suggestion-script')
 @endif
 @endif

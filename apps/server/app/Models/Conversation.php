@@ -218,6 +218,11 @@ class Conversation extends Model
         return $this->hasOne(ConversationCopilotTicketSuggestion::class);
     }
 
+    public function copilotKnowledgeSuggestion(): HasOne
+    {
+        return $this->hasOne(ConversationCopilotKnowledgeSuggestion::class);
+    }
+
     public function latestMessage(): HasOne
     {
         return $this->hasOne(ConversationMessage::class)->ofMany([
