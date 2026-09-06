@@ -2,6 +2,9 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Events\ConversationMessageCreated;
+use App\Events\TicketUpdated;
+use App\Listeners\ReopenPendingTicketsForVisitorReply;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
@@ -26,6 +29,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -469,6 +473,45 @@ test('conversation resolution retries through the alias when a merge lands after
 
     expect($conversation->fresh()?->visitor_id)->toBe($target->id)
         ->and(Visitor::query()->pluck('id')->all())->toBe([$target->id]);
+});
+
+test('a pending ticket listener that loses the merge race audits the canonical visitor', function (): void {
+    Event::fake([TicketUpdated::class]);
+
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-pending-ticket-source',
+        'email' => null,
+    ]);
+    $target = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-pending-ticket-target',
+        'email' => null,
+    ]);
+    $conversation = Conversation::factory()->for($site)->for($source)->create();
+    $ticket = Ticket::factory()
+        ->for($account)
+        ->for($site)
+        ->for($conversation)
+        ->for($source, 'requester')
+        ->create(['status' => 'pending']);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $source->id,
+    ]);
+    $event = new ConversationMessageCreated($message);
+
+    app(VisitorIdentityMerger::class)->merge($manager, $source, (int) $target->id);
+    app(ReopenPendingTicketsForVisitorReply::class)->handle($event);
+
+    $audit = AuditEvent::query()->where('action', 'ticket.visitor_replied')->sole();
+
+    expect($ticket->fresh()?->status)->toBe('open')
+        ->and($message->fresh()?->sender_id)->toBe($target->id)
+        ->and($audit->actor_id)->toBe($target->id)
+        ->and($audit->actor?->is($target))->toBeTrue();
+    Event::assertDispatched(TicketUpdated::class, fn (TicketUpdated $updated): bool => $updated->ticket->is($ticket));
 });
 
 test('a message that loses the merge race uses the canonical sender and pending upload', function (): void {
