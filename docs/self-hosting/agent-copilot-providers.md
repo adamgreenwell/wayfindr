@@ -104,6 +104,11 @@ message bodies, labels senders by generic role, and applies the common scrubber
 before provider delivery. It omits visitor and agent names, visitor fields,
 message metadata, timestamps, attachments, and all cobrowse data.
 
+The worker streams newest message bodies with a per-row database cap and stops
+reading as soon as the prompt budget is full; it never materializes the whole
+transcript. A claimed job receives its own freshness timestamp, so a delayed
+queue item cannot be replaced while its provider call is active.
+
 Generation runs on Wayfindr's default queue. The queue payload contains only a
 local summary-row ID and opaque generation UUID; it does not contain transcript
 text. The worker rechecks the requesting agent's current conversation access
