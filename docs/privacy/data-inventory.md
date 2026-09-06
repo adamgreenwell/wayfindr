@@ -23,7 +23,8 @@ document, not a complete compliance register.
 | SLA policies and clocks | Priority targets, work-item links, elapsed business time, warning/breach/completion timestamps, alert handoff recipient IDs and timestamps | `sla_policies`, `sla_clocks` | Operational metadata only; clocks inherit the account and site visibility of their conversation or ticket and are not included in alert email with visitor content. Alert handoff fields prevent retrying recipients whose notification was already queued. |
 | Support notifications | Alert kind, work-item references, subject or message preview, read/delivery timestamps | `notifications` | Notification metadata inherits the recipient's account and site access. Some existing conversation alerts include a short visitor-message preview, so operators should handle notification rows as support content. |
 | Automation rules and executions | Event conditions, ordered actions, target agent/label IDs, private note actions, matched work-item references, outcomes, errors, timestamps | `automation_rules`, `automation_rule_executions` | Account-owned operational data. Execution rows snapshot matched rule definitions so deleting a rule does not erase why prior work changed; private-note action text should be handled as support content. Visitor message bodies are evaluated in place and are not copied into execution logs. |
-| Proactive message rules | Internal name, visitor-facing message, URL/referrer substring conditions, timing, visit and availability conditions, frequency limits, dismissal limits, order, enabled state | `proactive_message_rules` | Site-owned configuration. The message is public widget copy. URL and referrer conditions are also intended for public widget configuration, while the visitor's actual matched URL and referrer remain in the browser and must not be copied into delivery or audit records. Audit metadata omits the message and match strings. Delivery receipts are not part of the current model. |
+| Proactive message rules | Internal name, visitor-facing message, URL/referrer substring conditions, timing, visit and availability conditions, frequency limits, dismissal limits, order, enabled state | `proactive_message_rules` | Site-owned configuration. The message is public widget copy. URL and referrer conditions are also intended for public widget configuration, while the visitor's actual matched URL and referrer remain in the browser and must not be copied into delivery or audit records. Audit metadata omits the message and match strings. |
+| Proactive message deliveries | Site, visitor, optional rule and conversation links, opaque claim and public IDs, rule public ID, exact message snapshot, claim/expiry time, optional shown/engaged/dismissed times | `proactive_message_deliveries` | Site-scoped evidence for cross-tab caps, dismissal handling, transcript handoff, and 90-day aggregate results. It deliberately stores no matched URL or referrer. The exact public message is retained so a later rule edit or deletion cannot rewrite what the visitor actually saw. |
 | External provider connections | Provider name, base URL, encrypted credentials, capability flags | `external_issue_provider_connections` | Credentials are account-owned and should be rotated in the external provider if compromised. |
 | Site external project mappings | Site, provider connection, project or repository key, optional project URL | `site_external_issue_projects` | Mappings decide where a site's tickets may be sent. Operators should avoid mapping private visitor-heavy support to public projects unless they have explicit export controls. |
 | Ticket external links | Provider, project or repository key, external ID/key, URL, sync status, last sync time, metadata | `ticket_external_links` | External links point to third-party systems. Operators should assume linked providers have their own access, retention, and privacy rules. |
@@ -47,7 +48,7 @@ Wayfindr should not intentionally collect or store:
 
 ## Retention Posture
 
-**One automatic retention control ships, and it covers one data class.**
+**Two automatic retention controls ship for browsing-derived data.**
 Visitors who have never made contact — no conversation, no ticket, no message —
 are deleted 30 days after their last sighting. That is measured from activity
 rather than from creation, so a row is only ever removed once nobody has been
@@ -59,6 +60,13 @@ clamped rather than honoured. It exists because presence reporting
 ([ADR 0019](../decisions/0019-presence-for-visitors-who-have-not-made-contact.md))
 changes `visitors` from *people who opened the chat* to *people on the site*,
 which turns the absence of pruning from a gap into a defect.
+
+Proactive-message delivery evidence is deleted 90 days after its claim. An
+operator may shorten that maximum with
+`WAYFINDR_PROACTIVE_MESSAGE_RETENTION_DAYS`; a longer value is clamped. This
+removes the message snapshot and outcome receipts even when the visitor later
+starts a conversation. The ordinary conversation message created after an
+engagement is support history and follows the conversation's retention posture.
 
 **Everything else still persists indefinitely.** Conversations, messages,
 tickets, ratings, SLA history, automation execution history, and audit events have no automatic retention, and operators

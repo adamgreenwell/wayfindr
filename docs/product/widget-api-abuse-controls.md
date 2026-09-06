@@ -19,6 +19,8 @@ below.
 | Site configuration | `GET /api/widget/appearance` | IP + site | 3000 |
 | Presence heartbeats | `POST /api/widget/presence` | anonymous ID + site | 30 |
 | Presence heartbeats, ceiling | `POST /api/widget/presence` | IP + site | 1200 |
+| Proactive authorization and outcomes | `POST /api/widget/proactive-messages/{id}/authorize`, `POST /api/widget/proactive-messages/{id}/outcomes` | anonymous ID + site | 120 |
+| Proactive authorization and outcomes, ceiling | Same routes | IP + site | 1200 |
 | Realtime auth | `POST /api/widget/broadcasting/auth` | IP + site | 120 |
 | Conversation starts | `POST /api/conversations` | IP + site | 30 |
 | Messages, polling, typing, read receipts | `GET/POST /api/conversations/{supportCode}/messages`, `POST /api/conversations/{supportCode}/typing` | IP + site | 240 |
@@ -69,6 +71,8 @@ Operators can tune the defaults per install:
 ```dotenv
 WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT=120
 WAYFINDR_WIDGET_CONFIG_RATE_LIMIT=3000
+WAYFINDR_WIDGET_PROACTIVE_RATE_LIMIT=120
+WAYFINDR_WIDGET_PROACTIVE_PER_IP_RATE_LIMIT=1200
 WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT=120
 WAYFINDR_WIDGET_CONVERSATION_RATE_LIMIT=30
 WAYFINDR_WIDGET_MESSAGE_RATE_LIMIT=240
@@ -80,6 +84,9 @@ WAYFINDR_WIDGET_PRESENCE_PER_MINUTE=30
 WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE=1200
 WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE=30
 WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY=20000
+
+# Delivery receipts are deleted after at most 90 days; lower values are valid.
+WAYFINDR_PROACTIVE_MESSAGE_RETENTION_DAYS=90
 ```
 
 Use lower values for tightly controlled demos or test installs. Use higher
