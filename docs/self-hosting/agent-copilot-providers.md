@@ -214,3 +214,9 @@ The automated suite uses fake providers and synthetic fixtures for summaries,
 reply drafts, knowledge suggestions, and ticket suggestions. CI and contributors
 do not need live provider keys, and a test must never call an external model
 endpoint.
+
+The separate [grounded-answer evaluation harness](../development/ai-evaluation.md)
+is offline by design. It scores versioned fixtures and recorded responses and
+does not resolve this configured provider, send a prompt, or read support data.
+Its green bundled baseline is a check of the evaluator—not approval for an
+autonomous visitor-facing agent.

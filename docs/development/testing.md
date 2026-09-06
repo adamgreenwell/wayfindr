@@ -19,6 +19,12 @@ public APIs, dashboard flows, commands, authorization, and persistence behavior.
 Use architecture tests for durable project rules that should stay true across
 many future slices.
 
+The provider-free grounded-answer regression is documented in
+[AI Evaluation](ai-evaluation.md). Run `php artisan wayfindr:ai-evaluate` from
+`apps/server` to score the bundled synthetic fixture and recorded baseline. The
+Pest suite also invokes that command, so no live model key or network call is
+part of CI.
+
 ## Database Drivers in Tests
 
 The suite defaults to SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,
