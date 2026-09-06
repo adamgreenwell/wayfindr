@@ -5,7 +5,8 @@ it unconfigured keeps every support workflow manual; chat, tickets, cobrowse,
 mail, and the operator console do not depend on a model provider.
 
 The provider boundary powers an on-demand conversation summary for agent
-handoff. It does not add autonomous replies or customer-facing AI.
+handoff and an on-demand editable reply draft. It does not add autonomous
+replies or customer-facing AI.
 
 ## Configure it in the operator console
 
@@ -126,6 +127,27 @@ conversation deletes it. Request, completion, and failure audit events contain
 IDs, state, provider/model names, and token counts where available—never prompt
 or generated text.
 
+### Suggested reply drafts
+
+An agent with current reply permission can request a reply suggestion from the
+existing **Reply assist** area. It uses the same bounded, scrubbed subject and
+message selection as conversation summaries, with a separate instruction that
+asks for one plain-text visitor reply. Profiles, metadata, timestamps,
+attachments, and cobrowse data remain outside the provider path.
+
+Generation is queued and the worker rechecks reply permission before provider
+delivery. The queue payload contains only a local draft-row ID and opaque
+generation UUID. Wayfindr stores only the latest suggestion in
+`conversation_copilot_reply_drafts`; its prompt is never stored, and audit
+metadata excludes both prompt and output text.
+
+The suggestion is visibly labelled **Suggested**. It is never placed in the
+composer automatically. **Use suggested draft** fills an empty composer but
+refuses to overwrite an agent's existing message, and it never submits the
+reply form. New transcript activity marks the draft stale and blocks insertion
+until the agent explicitly refreshes it. The agent remains responsible for
+reviewing, editing, and separately sending every reply.
+
 ## Runtime and testing
 
 The provider boundary uses Laravel's first-party AI SDK. The connection probe
@@ -133,6 +155,6 @@ runs inside the operator request with a 20-second application timeout. Summary
 generation uses Wayfindr's existing default queue, so at least one normal queue
 worker must be running; the agent request only records and queues the action.
 
-The automated suite uses the SDK fake gateway and synthetic fixtures. CI and
-contributors do not need live provider keys, and a test must never call an
-external model endpoint.
+The automated suite uses fake providers and synthetic fixtures for both
+summaries and reply drafts. CI and contributors do not need live provider keys,
+and a test must never call an external model endpoint.
