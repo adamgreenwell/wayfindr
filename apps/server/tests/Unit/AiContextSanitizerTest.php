@@ -1,0 +1,42 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Support\Ai\AiContextSanitizer;
+
+test('copilot context removes common credentials and identifiers', function (): void {
+    $input = <<<'TEXT'
+    Contact Ada at ada@example.test, phone: +1 (555) 867-5309.
+    Authorization: Bearer abcdefghijklmnop==
+    Opaque header Bearer abcdefghijklmnop==
+    api_key=sk-examplecredential123456
+    Visitor 019c1234-abcd-4abc-8abc-0123456789ab from 192.168.10.24.
+    Card 4242 4242 4242 4242.
+    See https://support.example.test/ticket/4?token=secret#private.
+    -----BEGIN PRIVATE KEY-----
+    extremely-secret-material
+    -----END PRIVATE KEY-----
+    TEXT;
+
+    $sanitized = (new AiContextSanitizer)->sanitize($input);
+
+    expect($sanitized)
+        ->toContain('[EMAIL REDACTED]')
+        ->toContain('phone=[PHONE REDACTED]')
+        ->toContain('Bearer [REDACTED]')
+        ->toContain('api_key=[REDACTED]')
+        ->toContain('[IDENTIFIER REDACTED]')
+        ->toContain('[IP ADDRESS REDACTED]')
+        ->toContain('[PAYMENT CARD REDACTED]')
+        ->toContain('https://support.example.test/ticket/4')
+        ->toContain('[PRIVATE KEY REDACTED]')
+        ->not->toContain('ada@example.test')
+        ->not->toContain('secret#private')
+        ->not->toContain('extremely-secret-material');
+});
+
+test('ordinary numeric support context is preserved', function (): void {
+    $input = 'The visitor retried order 123456 on step 3 and received status 422.';
+
+    expect((new AiContextSanitizer)->sanitize($input))->toBe($input);
+});

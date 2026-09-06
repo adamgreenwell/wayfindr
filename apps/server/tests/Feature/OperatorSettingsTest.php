@@ -134,7 +134,13 @@ test('a corrupt secret reverts only its own key to env, not half-applying the se
     settings()->applyOverrides();
 
     expect(config('mail.mailers.smtp.host'))->toBe('operator-host')  // good override still applies
-        ->and(config('mail.mailers.smtp.password'))->toBe('env-pw'); // corrupt secret → its env baseline
+        ->and(config('mail.mailers.smtp.password'))->toBe('env-pw') // corrupt secret → its env baseline
+        ->and(settings()->hasUnreadableValue('mail.password'))->toBeTrue();
+
+    settings()->set('mail.password', 'repaired-password');
+    settings()->applyOverrides();
+
+    expect(settings()->hasUnreadableValue('mail.password'))->toBeFalse();
 });
 
 test('when the settings store is unreadable, config falls back to the env baseline', function (): void {
