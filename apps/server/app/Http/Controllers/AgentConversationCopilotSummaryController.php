@@ -158,9 +158,7 @@ final class AgentConversationCopilotSummaryController extends Controller
         $latestMessageId = $conversation->messages()
             ->whereNotNull('body')
             ->whereRaw("TRIM(body) <> ''")
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->value('id');
+            ->max('id');
 
         if ($latestMessageId === null) {
             return response('', 204)->header('Cache-Control', 'no-store, private');

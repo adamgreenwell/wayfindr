@@ -22,6 +22,8 @@ final readonly class ConversationSummaryPromptBuilder
 
     private const MAX_SUBJECT_CHARACTERS = 255;
 
+    private const MESSAGE_CHUNK_SIZE = 25;
+
     private const PREFERRED_CONTEXT_CHARACTERS = 20_000;
 
     public function __construct(private AiContextSanitizer $sanitizer) {}
@@ -48,9 +50,7 @@ final readonly class ConversationSummaryPromptBuilder
         $messages = $messageQuery
             ->select(['id', 'sender_type'])
             ->selectRaw('SUBSTR(body, 1, ?) AS body', [self::MAX_RAW_MESSAGE_CHARACTERS])
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->cursor();
+            ->lazyByIdDesc(self::MESSAGE_CHUNK_SIZE);
 
         foreach ($messages as $message) {
             $rawBody = trim((string) $message->body);

@@ -95,7 +95,7 @@ class AgentConversationController extends Controller
             ->get();
         $latestSummarizableMessageId = $messages
             ->filter(fn ($message): bool => filled($message->body))
-            ->last()?->id;
+            ->max('id');
         $copilotSummaryAvailable = $copilotConfiguration->isReady() && $latestSummarizableMessageId !== null;
         $copilotSummary = $copilotSummaryAvailable
             ? $conversation->copilotSummary()->first()

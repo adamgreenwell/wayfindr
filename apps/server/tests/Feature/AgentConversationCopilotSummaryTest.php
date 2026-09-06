@@ -19,6 +19,7 @@ use App\Support\Ai\ConversationSummaryPromptBuilder;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -414,17 +415,28 @@ test('summary context is bounded and prioritizes the newest text', function (): 
         'body' => 'OLD-CONTEXT '.str_repeat('older details ', 400),
         'created_at' => now()->subMinute(),
     ]);
+    ConversationMessage::factory()->count(30)->for($world['conversation'])->create([
+        'body' => str_repeat('older bounded details ', 400),
+        'created_at' => now()->subSeconds(30),
+    ]);
     $latest = ConversationMessage::factory()->for($world['conversation'])->create([
         'body' => 'LATEST-CONTEXT '.str_repeat('newest details ', 200),
         'created_at' => now(),
     ]);
 
+    DB::enableQueryLog();
     $context = app(ConversationSummaryPromptBuilder::class)->build($world['conversation']);
+    $transcriptQueries = collect(DB::getQueryLog())
+        ->filter(fn (array $query): bool => str_contains(strtoupper($query['query']), 'SUBSTR'))
+        ->values();
+    DB::disableQueryLog();
     $payload = json_decode($context->prompt->input, true, flags: JSON_THROW_ON_ERROR);
 
     expect($context)->not->toBeNull()
         ->and(mb_strlen($context->prompt->input))->toBeLessThanOrEqual(1_000)
         ->and($payload['context_truncated'])->toBeTrue()
+        ->and($transcriptQueries)->toHaveCount(1)
+        ->and(strtolower($transcriptQueries->first()['query']))->toContain('limit 25')
         ->and($context->prompt->input)->toContain('LATEST-CONTEXT')
         ->and($context->prompt->input)->not->toContain('OLD-CONTEXT')
         ->and($context->messageCount)->toBe(1)
