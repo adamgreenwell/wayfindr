@@ -82,7 +82,7 @@ test('quoted json credentials remain valid json after scrubbing', function (): v
 });
 
 test('an unterminated quoted credential is redacted through the end of the bounded input', function (): void {
-    $input = '{"token":"'.str_repeat('bounded-secret-material', 500);
+    $input = '{"token":"'.str_repeat("bounded-secret-material\n", 500);
 
     expect((new AiContextSanitizer)->sanitize($input))
         ->toBe('{"token":"[REDACTED]"')

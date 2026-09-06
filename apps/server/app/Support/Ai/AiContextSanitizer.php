@@ -66,8 +66,8 @@ final class AiContextSanitizer
     private function stripQuotedCredentialAssignments(string $input): string
     {
         $patterns = [
-            '/(?<prefix>(?:\x22|\x27)?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:\x22|\x27)?\s*[:=]\s*)\x22(?:\\\\.|[^\x22\\\\\r\n])*+(?:\x22|\z)/i' => '"',
-            '/(?<prefix>(?:\x22|\x27)?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:\x22|\x27)?\s*[:=]\s*)\x27(?:\\\\.|[^\x27\\\\\r\n])*+(?:\x27|\z)/i' => "'",
+            '/(?<prefix>(?:\x22|\x27)?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:\x22|\x27)?\s*[:=]\s*)\x22(?:\\\\.|[^\x22\\\\])*+(?:\x22|\z)/i' => '"',
+            '/(?<prefix>(?:\x22|\x27)?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:\x22|\x27)?\s*[:=]\s*)\x27(?:\\\\.|[^\x27\\\\])*+(?:\x27|\z)/i' => "'",
         ];
 
         foreach ($patterns as $pattern => $quote) {
