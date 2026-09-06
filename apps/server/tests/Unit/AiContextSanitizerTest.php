@@ -49,6 +49,14 @@ test('ordinary numeric support context is preserved', function (): void {
     expect((new AiContextSanitizer)->sanitize($input))->toBe($input);
 });
 
+test('an unterminated private key block is redacted through the end of the bounded input', function (): void {
+    $input = "Visible support context.\n-----BEGIN PRIVATE KEY-----\n".str_repeat('private-key-material', 500);
+
+    expect((new AiContextSanitizer)->sanitize($input))
+        ->toBe("Visible support context.\n[PRIVATE KEY REDACTED]")
+        ->not->toContain('private-key-material');
+});
+
 test('scrubbing an already scrubbed json prompt preserves its structure', function (): void {
     $sanitizer = new AiContextSanitizer;
     $firstPass = $sanitizer->sanitize('The final value is token=visitor-secret');

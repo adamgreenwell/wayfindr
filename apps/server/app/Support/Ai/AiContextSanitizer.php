@@ -65,7 +65,7 @@ final class AiContextSanitizer
     private function stripPrivateKeyBlocks(string $input): string
     {
         return $this->replace(
-            '/-----BEGIN [^-\r\n]*PRIVATE KEY-----.*?-----END [^-\r\n]*PRIVATE KEY-----/si',
+            '/-----BEGIN [^-\r\n]*PRIVATE KEY-----.*?(?:-----END [^-\r\n]*PRIVATE KEY-----|\z)/si',
             '[PRIVATE KEY REDACTED]',
             $input,
         );

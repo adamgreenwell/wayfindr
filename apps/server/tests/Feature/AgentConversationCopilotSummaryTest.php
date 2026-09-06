@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
@@ -441,6 +442,27 @@ test('summary context is bounded and prioritizes the newest text', function (): 
         ->and($context->prompt->input)->not->toContain('OLD-CONTEXT')
         ->and($context->messageCount)->toBe(1)
         ->and($context->lastMessageId)->toBe($latest->id);
+});
+
+test('summary context redacts a private key whose end marker falls beyond the database prefix', function (): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create([
+        'body' => "Visible support context.\n-----BEGIN PRIVATE KEY-----\n"
+            .str_repeat('private-key-material', 500)
+            ."\n-----END PRIVATE KEY-----",
+    ]);
+
+    $context = app(ConversationSummaryPromptBuilder::class)->build($world['conversation']);
+
+    expect($context)->not->toBeNull()
+        ->and($context->prompt->input)->toContain('[PRIVATE KEY REDACTED]')
+        ->and($context->prompt->input)->not->toContain('private-key-material');
+});
+
+test('conversation messages are indexed for bounded id-ordered summary reads', function (): void {
+    $indexes = collect(Schema::getIndexes('conversation_messages'))->pluck('columns');
+
+    expect($indexes)->toContain(['conversation_id', 'id']);
 });
 
 test('another account cannot request or read a conversation summary', function (): void {
