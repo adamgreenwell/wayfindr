@@ -1848,6 +1848,7 @@
 
                             var items = transcript.querySelectorAll('[data-message-id]');
                             var total = items.length;
+                            var hasNewMessages = total > previousCount;
 
                             if (transcriptCount) {
                                 transcriptCount.textContent = (total === 1
@@ -1858,8 +1859,12 @@
                             // Only a genuinely new message means the visitor stopped
                             // typing. A plain catch-up refresh (e.g. on first subscribe)
                             // must not clear the seeded/live typing indicator.
-                            if (visitorTyping && total > previousCount) {
+                            if (visitorTyping && hasNewMessages) {
                                 visitorTyping.hidden = true;
+                            }
+
+                            if (hasNewMessages && typeof window.wayfindrConversationSummaryTranscriptUpdated === 'function') {
+                                window.wayfindrConversationSummaryTranscriptUpdated();
                             }
 
                             if (stickToBottom) {

@@ -25,14 +25,17 @@
             </div>
         </div>
     @elseif ($copilotSummaryState === \App\Models\ConversationCopilotSummary::STATUS_READY)
-        @if ($copilotSummaryIsStale)
-            <div class="live-update" data-state="stale">
-                <div>
-                    <strong>{{ __('conversations.detail.copilot.stale') }}</strong>
-                    <p class="lede">{{ __('conversations.detail.copilot.stale_detail') }}</p>
-                </div>
+        <div
+            class="live-update"
+            data-state="stale"
+            data-copilot-summary-stale
+            @unless ($copilotSummaryIsStale) hidden @endunless
+        >
+            <div>
+                <strong>{{ __('conversations.detail.copilot.stale') }}</strong>
+                <p class="lede">{{ __('conversations.detail.copilot.stale_detail') }}</p>
             </div>
-        @endif
+        </div>
 
         <p class="message-body" lang="">{{ $copilotSummary->summary }}</p>
         <p class="lede">

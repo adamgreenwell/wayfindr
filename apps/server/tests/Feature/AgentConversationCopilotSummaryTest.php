@@ -233,6 +233,13 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
 
     app()->call([$job, 'handle']);
     $promptPayload = json_decode($fake->prompt->input, true, flags: JSON_THROW_ON_ERROR);
+    config()->set([
+        'broadcasting.default' => 'reverb',
+        'broadcasting.connections.reverb.key' => 'reverb-key',
+        'broadcasting.connections.reverb.options.client_host' => 'desk.example.test',
+        'broadcasting.connections.reverb.options.client_port' => 443,
+        'broadcasting.connections.reverb.options.client_scheme' => 'https',
+    ]);
 
     expect($fake->prompt)->not->toBeNull()
         ->and($fake->prompt->purpose)->toBe('conversation_summary')
@@ -270,7 +277,10 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
         ->assertSee($summary->summary)
         ->assertSee('Suggested')
         ->assertSee('Based on 2 text messages.')
-        ->assertSee('Refresh summary');
+        ->assertSee('Refresh summary')
+        ->assertSee('data-copilot-summary-stale', false)
+        ->assertSee('window.wayfindrConversationSummaryTranscriptUpdated', false)
+        ->assertSee("if (hasNewMessages && typeof window.wayfindrConversationSummaryTranscriptUpdated === 'function')", false);
 
     ConversationMessage::factory()->for($world['conversation'])->create([
         'sender_type' => Visitor::class,

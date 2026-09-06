@@ -1,16 +1,29 @@
 <script>
     (() => {
         let attempts = 0;
+        let refreshInFlight = false;
+        let forcedRefreshQueued = false;
         const maximumAttempts = 60;
 
-        const refresh = async () => {
+        const refresh = async (force = false) => {
             const panel = document.querySelector('[data-copilot-summary]');
+            const pending = panel?.dataset.state === 'pending';
 
-            if (!panel || panel.dataset.state !== 'pending' || attempts >= maximumAttempts) {
+            if (!panel || (!pending && !force) || (pending && attempts >= maximumAttempts)) {
                 return;
             }
 
-            attempts += 1;
+            if (refreshInFlight) {
+                forcedRefreshQueued = forcedRefreshQueued || force;
+
+                return;
+            }
+
+            if (pending) {
+                attempts += 1;
+            }
+
+            refreshInFlight = true;
 
             try {
                 const response = await fetch(panel.dataset.statusUrl, {
@@ -36,11 +49,41 @@
                 // Keep the queued state intact. A normal page refresh can
                 // recover it without turning a transient poll failure into a
                 // false provider failure.
-            }
+            } finally {
+                refreshInFlight = false;
 
-            window.setTimeout(refresh, 2000);
+                if (forcedRefreshQueued) {
+                    forcedRefreshQueued = false;
+                    void refresh(true);
+
+                    return;
+                }
+
+                const currentPanel = document.querySelector('[data-copilot-summary]');
+
+                if (currentPanel?.dataset.state === 'pending') {
+                    window.setTimeout(() => refresh(), 2000);
+                }
+            }
         };
 
-        window.setTimeout(refresh, 1200);
+        window.wayfindrConversationSummaryTranscriptUpdated = () => {
+            const panel = document.querySelector('[data-copilot-summary]');
+
+            if (!panel || panel.dataset.state !== 'ready') {
+                return;
+            }
+
+            const staleNotice = panel.querySelector('[data-copilot-summary-stale]');
+
+            if (staleNotice) {
+                staleNotice.hidden = false;
+            }
+
+            attempts = 0;
+            void refresh(true);
+        };
+
+        window.setTimeout(() => refresh(), 1200);
     })();
 </script>
