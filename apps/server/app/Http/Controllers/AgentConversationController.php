@@ -11,8 +11,10 @@ use App\Events\TicketCreated;
 use App\Models\ApiToken;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\ConversationCopilotTicketSuggestion;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\TicketLabel;
 use App\Models\User;
 use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
@@ -114,6 +116,19 @@ class AgentConversationController extends Controller
                 ->get()
             : collect();
         $account = $agent->account()->firstOrFail();
+        $ticketLabelOptions = $canManageTickets
+            ? $account->ticketLabels()->orderBy('name')->get()
+            : collect();
+        $copilotTicketSuggestionAvailable = $copilotConfiguration->isReady()
+            && $canManageTickets
+            && $tickets->isEmpty()
+            && $latestSummarizableMessageId !== null;
+        $copilotTicketSuggestion = $copilotTicketSuggestionAvailable
+            ? $conversation->copilotTicketSuggestion()->first()
+            : null;
+        $suggestedTicketLabels = $copilotTicketSuggestion?->displayStatus() === ConversationCopilotTicketSuggestion::STATUS_READY
+            ? $ticketLabelOptions->whereIn('id', $copilotTicketSuggestion->suggestedLabelIds())->values()
+            : collect();
         $automationMacros = $account->automationMacros()
             ->enabled()
             ->forSubjectType('conversation')
@@ -257,6 +272,8 @@ class AgentConversationController extends Controller
             'copilotReplyDraftAvailable' => $copilotReplyDraftAvailable,
             'copilotSummary' => $copilotSummary,
             'copilotSummaryAvailable' => $copilotSummaryAvailable,
+            'copilotTicketSuggestion' => $copilotTicketSuggestion,
+            'copilotTicketSuggestionAvailable' => $copilotTicketSuggestionAvailable,
             'latestSummarizableMessageId' => $latestSummarizableMessageId,
             'latestConversationMessageId' => $latestConversationMessageId,
             'messages' => $messages,
@@ -266,9 +283,15 @@ class AgentConversationController extends Controller
             'slaStates' => $slaStates->all($conversation),
             'tickets' => $tickets,
             'ticketCategories' => TicketCategory::options(),
+            'ticketLabelOptions' => $ticketLabelOptions,
             'ticketPriorities' => TicketPriority::options(),
             'ticketCategoryGuidance' => TicketCategory::options(),
             'ticketPriorityGuidance' => TicketPriority::guidanceOptions(),
+            'ticketSubjectDefault' => filled($conversation->subject)
+                ? $conversation->subject
+                : __('conversations.detail.ticket_subject_fallback',
+                    ['code' => $conversation->support_code], DashboardLanguage::forStoredContent()),
+            'suggestedTicketLabels' => $suggestedTicketLabels,
             'visitorContext' => $this->visitorContext($conversation, $visitorContextSanitizer),
         ]);
     }
@@ -730,16 +753,42 @@ class AgentConversationController extends Controller
             ->load(['site', 'visitor']);
 
         $validated = $request->validate([
+            'subject' => ['nullable', 'string', 'max:255'],
             'category' => ['nullable', 'string', Rule::in(TicketCategory::values())],
             'priority' => ['nullable', 'string', Rule::enum(TicketPriority::class)],
+            'label_ids' => ['nullable', 'array'],
+            'label_ids.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('ticket_labels', 'id')->where('account_id', $agent->account_id),
+            ],
         ]);
 
-        [$ticket, $agent, $conversation] = DB::transaction(function () use ($conversation, $agent, $validated, $visitorContextSanitizer): array {
+        $subject = trim((string) ($validated['subject'] ?? ''));
+        $labelIds = collect($validated['label_ids'] ?? [])
+            ->map(fn (int|string $id): int => (int) $id)
+            ->values()
+            ->all();
+
+        [$ticket, $agent, $conversation] = DB::transaction(function () use ($conversation, $agent, $labelIds, $subject, $validated, $visitorContextSanitizer): array {
             [$agent, $conversation] = $this->conversationWriteAuthorization->lock($agent, $conversation, 'createTicket');
             $conversation->load(['site', 'visitor']);
 
             if ($conversation->tickets()->exists()) {
                 return [null, $agent, $conversation];
+            }
+
+            $labels = TicketLabel::query()
+                ->where('account_id', $conversation->site->account_id)
+                ->whereKey($labelIds)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            if ($labels->count() !== count($labelIds)) {
+                throw ValidationException::withMessages([
+                    'label_ids' => __('conversations.validation.ticket_labels'),
+                ]);
             }
 
             // The ticket and its webhook outbox rows must share this outer
@@ -754,8 +803,10 @@ class AgentConversationController extends Controller
                 'priority' => $validated['priority'] ?? 'normal',
                 'category' => $validated['category'] ?? null,
                 // Stored, not rendered: see DashboardLanguage::forStoredContent().
-                'subject' => filled($conversation->subject) ? $conversation->subject : __('conversations.detail.ticket_subject_fallback',
-                    ['code' => $conversation->support_code], DashboardLanguage::forStoredContent()),
+                'subject' => $subject !== ''
+                    ? $subject
+                    : (filled($conversation->subject) ? $conversation->subject : __('conversations.detail.ticket_subject_fallback',
+                        ['code' => $conversation->support_code], DashboardLanguage::forStoredContent())),
                 'description' => $this->ticketDescription($conversation),
                 'metadata' => [
                     'source' => 'conversation',
@@ -764,6 +815,10 @@ class AgentConversationController extends Controller
                     'visitor_context' => $this->ticketVisitorContext($conversation, $visitorContextSanitizer),
                 ],
             ]);
+
+            if ($labels->isNotEmpty()) {
+                $ticket->labels()->attach($labels->modelKeys());
+            }
 
             $ticket->auditEvents()->create([
                 'account_id' => $ticket->account_id,
@@ -777,6 +832,23 @@ class AgentConversationController extends Controller
                 ],
                 'occurred_at' => now(),
             ]);
+
+            foreach ($labels as $label) {
+                $ticket->auditEvents()->create([
+                    'account_id' => $ticket->account_id,
+                    'site_id' => $ticket->site_id,
+                    'actor_type' => User::class,
+                    'actor_id' => $agent->id,
+                    'action' => 'ticket.label_added',
+                    'metadata' => [
+                        'label_id' => $label->id,
+                        'label_name' => $label->name,
+                        'label_slug' => $label->slug,
+                    ],
+                    'occurred_at' => now(),
+                ]);
+            }
+
             event(new TicketCreated($ticket));
 
             if (! $conversation->assigned_agent_id && Gate::forUser($agent)->allows('claim', $conversation)) {

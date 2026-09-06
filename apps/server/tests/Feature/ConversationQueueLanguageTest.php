@@ -3029,6 +3029,8 @@ test('every catalogue file answers the same set of keys', function (): void {
         'conversations.detail.headings.ticket = Ticket',
         'conversations.detail.tabs.ticket = Ticket',
         'conversations.detail.tabs.cobrowse = Cobrowse',
+        'conversations.detail.ticket_copilot.labels = Labels',
+        'conversations.detail.ticket.labels = Labels',
         'conversations.detail.cobrowse.heading = Cobrowse',
         'conversations.detail.cobrowse.url = URL',
         'conversations.detail.roles.agent = Agent',

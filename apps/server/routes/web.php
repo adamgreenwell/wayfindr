@@ -28,6 +28,7 @@ use App\Http\Controllers\AgentConversationBulkActionController;
 use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\AgentConversationCopilotReplyDraftController;
 use App\Http\Controllers\AgentConversationCopilotSummaryController;
+use App\Http\Controllers\AgentConversationCopilotTicketSuggestionController;
 use App\Http\Controllers\AgentConversationQueueController;
 use App\Http\Controllers\AgentConversationTypingController;
 use App\Http\Controllers\AgentDashboardController;
@@ -443,6 +444,12 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/conversations/{supportCode}/copilot-reply-draft', [AgentConversationCopilotReplyDraftController::class, 'store'])
         ->middleware('throttle:6,1')
         ->name('dashboard.conversations.copilot-reply-draft.store');
+    Route::get('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion', [AgentConversationCopilotTicketSuggestionController::class, 'show'])
+        ->middleware('throttle:60,1')
+        ->name('dashboard.conversations.copilot-ticket-suggestion.show');
+    Route::post('/dashboard/conversations/{supportCode}/copilot-ticket-suggestion', [AgentConversationCopilotTicketSuggestionController::class, 'store'])
+        ->middleware('throttle:6,1')
+        ->name('dashboard.conversations.copilot-ticket-suggestion.store');
     Route::post('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'storeMessage'])
         ->name('dashboard.conversations.messages.store');
     Route::post('/dashboard/conversations/{supportCode}/typing', AgentConversationTypingController::class)
