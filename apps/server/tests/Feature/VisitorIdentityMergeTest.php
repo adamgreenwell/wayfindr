@@ -234,6 +234,35 @@ test('a merge moves person-owned support records and retains canonical values', 
         ->not->toContain('river@example.test', 'Private continuity note', 'customer-42');
 });
 
+test('bootstrap accepts a current browser id under the configured database collation', function (): void {
+    if (! in_array(DB::getDriverName(), ['mysql', 'mariadb'], true)) {
+        $this->markTestSkipped('MySQL and MariaDB expose the configured case-insensitive identity collation.');
+    }
+
+    $site = Site::factory()->create();
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'Anon-Current-Collation',
+    ]);
+
+    $response = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-current-collation',
+    ])->assertOk()
+        ->assertJsonPath('data.visitor.anonymous_id', 'anon-current-collation');
+
+    $request = Request::create('/api/widget/bootstrap', 'POST', [
+        'visitor_token' => $response->json('data.visitor.token'),
+    ]);
+
+    expect(app(VisitorSessionToken::class)->visitorFromRequest(
+        $request,
+        $site,
+        'anon-current-collation',
+    )->is($visitor))->toBeTrue()
+        ->and(Visitor::query()->where('site_id', $site->id)->count())->toBe(1)
+        ->and(VisitorIdentityAlias::query()->where('site_id', $site->id)->count())->toBe(0);
+});
+
 test('merged browser identities continue through presence bootstrap and old signed tokens', function (): void {
     $account = Account::factory()->create();
     $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);

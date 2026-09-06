@@ -18,7 +18,8 @@ class VisitorSessionToken
     {
         $anonymousId ??= (string) $visitor->anonymous_id;
 
-        if ($anonymousId !== (string) $visitor->anonymous_id) {
+        if ($anonymousId !== (string) $visitor->anonymous_id
+            && ! $this->isCurrentAnonymousId($site, $visitor, $anonymousId)) {
             $alias = $this->identities->aliasForAnonymousId((int) $site->id, $anonymousId);
             $allowedVisitorIds = [
                 (int) ($alias?->visitor_id ?? 0),
@@ -36,6 +37,18 @@ class VisitorSessionToken
             'anonymous_id' => $anonymousId,
             'issued_at' => now()->toJSON(),
         ], JSON_THROW_ON_ERROR));
+    }
+
+    private function isCurrentAnonymousId(Site $site, Visitor $visitor, string $anonymousId): bool
+    {
+        // MySQL and MariaDB use the configured column collation for identity
+        // lookup. Let that same collation decide whether a differently-cased
+        // request still names this current row before treating it as an alias.
+        return Visitor::query()
+            ->whereKey($visitor->id)
+            ->where('site_id', $site->id)
+            ->where('anonymous_id', $anonymousId)
+            ->exists();
     }
 
     public function visitorFromRequest(Request $request, Site $site, string $anonymousId): Visitor
