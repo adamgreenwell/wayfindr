@@ -24,6 +24,29 @@
         </div>
     </section>
 
+    <section class="section" aria-labelledby="proactive-sites-heading">
+        <div class="section-header">
+            <h2 id="proactive-sites-heading">{{ __('proactive_messages.account.heading') }}</h2>
+            <span class="lede">{{ __('proactive_messages.account.lede') }}</span>
+        </div>
+
+        @if ($proactiveSites->isEmpty())
+            <p class="empty">{{ __('proactive_messages.account.empty') }}</p>
+        @else
+            <div class="management-list">
+                @foreach ($proactiveSites as $proactiveSite)
+                    <a class="management-link" href="{{ route('dashboard.sites.proactive-messages.index', $proactiveSite) }}">
+                        <span>
+                            <strong lang="">{{ $proactiveSite->name }}</strong>
+                            <small>{{ __('proactive_messages.account.site_hint') }}</small>
+                        </span>
+                        <x-icon name="chevron-right" :size="18" />
+                    </a>
+                @endforeach
+            </div>
+        @endif
+    </section>
+
     <section class="section" aria-labelledby="automation-macros-heading">
         <div class="section-header">
             <h2 id="automation-macros-heading">{{ __('automation_macros.list.heading') }}</h2>

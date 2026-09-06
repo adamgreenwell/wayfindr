@@ -215,6 +215,11 @@ class Site extends Model
         return $this->hasMany(Visitor::class);
     }
 
+    public function proactiveMessageRules(): HasMany
+    {
+        return $this->hasMany(ProactiveMessageRule::class);
+    }
+
     public function latestVisitor(): HasOne
     {
         return $this->hasOne(Visitor::class)

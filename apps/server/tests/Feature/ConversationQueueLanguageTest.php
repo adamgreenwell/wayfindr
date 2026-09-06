@@ -17,6 +17,7 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use App\Models\ExternalIssueProviderConnection;
+use App\Models\ProactiveMessageRule;
 use App\Models\ReplyTemplate;
 use App\Models\Site;
 use App\Models\SlaClock;
@@ -507,6 +508,7 @@ function conversationQueueLanguageReaderForUrl(array $world, string $url, string
         str_starts_with($path, '/dashboard/account')
         || str_starts_with($path, '/dashboard/reports')
         || $routeName === 'dashboard.sites.show'
+        || str_starts_with((string) $routeName, 'dashboard.sites.proactive-messages.')
     ) {
         return $world['admins'][$locale];
     }
@@ -1617,6 +1619,12 @@ test('no English is rendered as German on any extracted surface', function (): v
         'subject_type' => 'ticket',
         'actions' => [['type' => 'set_priority', 'value' => 'urgent']],
     ]);
+    $proactiveMessageRule = ProactiveMessageRule::factory()->for($world['site'])->create([
+        'name' => 'Datenpunkt proactive rule',
+        'message' => 'Datenpunkt visitor invitation',
+        'url_contains' => '/datenpunkt',
+        'referrer_contains' => 'datenpunkt.example',
+    ]);
 
     // Alerts need populated states for BOTH readers. Comparing a populated
     // German page with an empty English page would let untranslated card copy
@@ -1692,6 +1700,9 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.automation-rules.edit', $automationRule),
         route('dashboard.account.automation-macros.create'),
         route('dashboard.account.automation-macros.edit', $automationMacro),
+        route('dashboard.sites.proactive-messages.index', $world['site']),
+        route('dashboard.sites.proactive-messages.create', $world['site']),
+        route('dashboard.sites.proactive-messages.edit', [$world['site'], $proactiveMessageRule]),
         route('dashboard.account.labels.index'),
         route('dashboard.account.visitor-attributes.index'),
         route('dashboard.account.api-tokens.index'),
@@ -3073,6 +3084,7 @@ test('every catalogue file answers the same set of keys', function (): void {
         'automation_rules.condition_fields.status = Status',
         'automation_macros.list.status = Status',
         'automation_macros.subject_types.ticket = Ticket',
+        'proactive_messages.list.columns.status = Status',
         'operator.scanning.driver = Scanner',
         'operator.mail.transport = Transport',
         'operator.backups.history.status = Status',

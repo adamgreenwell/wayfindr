@@ -237,6 +237,16 @@ final class DashboardLanguage
         'dashboard.tickets.macros.run',
         'dashboard.conversations.macros.run',
 
+        // Site-owned proactive-message configuration is part of the same
+        // automation workflow. Its visitor-facing message and match strings
+        // remain authored data; the controls around them follow the agent.
+        'dashboard.sites.proactive-messages.index',
+        'dashboard.sites.proactive-messages.create',
+        'dashboard.sites.proactive-messages.store',
+        'dashboard.sites.proactive-messages.edit',
+        'dashboard.sites.proactive-messages.update',
+        'dashboard.sites.proactive-messages.destroy',
+
         // The account ticket-labels page. Reached from the ticket queue, which
         // is extracted, and it links straight back there -- so English here put
         // two languages either side of one click.

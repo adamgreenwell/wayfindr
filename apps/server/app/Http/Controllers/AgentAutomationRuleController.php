@@ -50,6 +50,10 @@ final class AgentAutomationRuleController extends Controller
                 ]),
             'executions' => $executions,
             'macros' => $account->automationMacros()->inDisplayOrder()->get(),
+            'proactiveSites' => $account->sites()
+                ->visibleToAgent($agent)
+                ->orderBy('name')
+                ->get(),
             'referenceLabels' => $this->referenceLabels($account),
             'rules' => $account->automationRules()->inEvaluationOrder()->get(),
         ]);
