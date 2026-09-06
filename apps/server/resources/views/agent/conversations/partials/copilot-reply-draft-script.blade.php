@@ -3,10 +3,9 @@
         let attempts = 0;
         let refreshInFlight = false;
         let forcedRefreshQueued = false;
-        // Server-side pending freshness lasts five minutes. Six minutes of
-        // polling guarantees a delayed but valid job can still replace this
-        // panel with its terminal state.
-        const maximumAttempts = 180;
+        // Cover the five-minute queued freshness window plus the 85-second
+        // running-job budget, with enough room for the terminal poll.
+        const maximumAttempts = 210;
 
         const refresh = async (force = false) => {
             const panel = document.querySelector('[data-copilot-reply-draft]');

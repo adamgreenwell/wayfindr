@@ -288,7 +288,7 @@ test('the queued job sends scrubbed bounded text and stores an editable suggesti
         ->assertSee('data-copilot-reply-draft-use', false)
         ->assertSee('body.value.trim() !==', false)
         ->assertSee("body.dispatchEvent(new Event('input'", false)
-        ->assertSee('const maximumAttempts = 180;', false);
+        ->assertSee('const maximumAttempts = 210;', false);
 });
 
 test('a new attachment-only message visibly stales a reply suggestion and blocks composer insertion', function (): void {
