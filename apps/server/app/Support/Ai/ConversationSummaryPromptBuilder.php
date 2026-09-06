@@ -17,7 +17,7 @@ final readonly class ConversationSummaryPromptBuilder
 {
     private const MAX_MESSAGE_CHARACTERS = 4_000;
 
-    private const MAX_SUBJECT_CHARACTERS = 500;
+    private const MAX_SUBJECT_CHARACTERS = 255;
 
     private const PREFERRED_CONTEXT_CHARACTERS = 20_000;
 

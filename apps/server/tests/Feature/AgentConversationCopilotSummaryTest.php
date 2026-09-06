@@ -401,7 +401,9 @@ test('the worker rechecks current access before sending any transcript text', fu
 test('summary context is bounded and prioritizes the newest text', function (): void {
     $world = conversationCopilotSummaryWorld();
     config()->set('wayfindr.ai.max_context_characters', 1_000);
-    $world['conversation']->forceFill(['subject' => str_repeat('\\', 500)])->save();
+    // The full varchar-sized subject still expands beyond its JSON budget,
+    // without relying on SQLite's permissive varchar handling.
+    $world['conversation']->forceFill(['subject' => str_repeat('\\', 255)])->save();
     ConversationMessage::factory()->for($world['conversation'])->create([
         'body' => 'OLD-CONTEXT '.str_repeat('older details ', 400),
         'created_at' => now()->subMinute(),
