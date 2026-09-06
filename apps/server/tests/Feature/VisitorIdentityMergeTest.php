@@ -58,8 +58,13 @@ test('a contact manager can find a same-site contact to keep', function (): void
     $site = Site::factory()->for($account)->create();
     $source = Visitor::factory()->for($site)->create(['name' => 'Duplicate Contact']);
     $target = Visitor::factory()->for($site)->create([
+        'anonymous_id' => null,
         'name' => 'River Canonical',
         'email' => 'river@example.test',
+    ]);
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'tester-site-'.$site->id.'-merge',
+        'name' => 'River Tester',
     ]);
     $foreign = Visitor::factory()->for(Site::factory()->for($account))->create(['name' => 'River Elsewhere']);
 
@@ -70,6 +75,7 @@ test('a contact manager can find a same-site contact to keep', function (): void
         ->assertSee('River Canonical')
         ->assertSee('river@example.test')
         ->assertSee(route('dashboard.visitors.merge', $source), false)
+        ->assertDontSee('River Tester')
         ->assertDontSee('River Elsewhere');
 
     expect($target->site_id)->toBe($site->id)

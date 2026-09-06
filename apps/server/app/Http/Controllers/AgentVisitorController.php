@@ -90,7 +90,9 @@ class AgentVisitorController extends Controller
             // The hosted tester page creates real visitor rows. Without this an
             // agent watches themselves browse, which Site::latestVisitor()
             // already learned to exclude.
-            ->where('anonymous_id', 'not like', 'tester-site-%');
+            ->where(fn (Builder $query) => $query
+                ->whereNull('anonymous_id')
+                ->orWhere('anonymous_id', 'not like', 'tester-site-%'));
 
         if ($siteId !== null) {
             $query->where('site_id', $siteId);
@@ -197,7 +199,9 @@ class AgentVisitorController extends Controller
             $mergeCandidates = Visitor::query()
                 ->where('site_id', $visitor->site_id)
                 ->whereKeyNot($visitor->id)
-                ->where('anonymous_id', 'not like', 'tester-site-%')
+                ->where(fn (Builder $query) => $query
+                    ->whereNull('anonymous_id')
+                    ->orWhere('anonymous_id', 'not like', 'tester-site-%'))
                 ->where(fn (Builder $query) => $query
                     ->whereLike('name', $pattern)
                     ->orWhereLike('email', $pattern)
