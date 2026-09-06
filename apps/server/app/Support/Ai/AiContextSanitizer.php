@@ -16,6 +16,7 @@ final class AiContextSanitizer
     {
         $sanitized = $this->stripPrivateKeyBlocks($input);
         $sanitized = $this->stripUrlSecrets($sanitized);
+        $sanitized = $this->stripEscapedQuotedCredentialAssignments($sanitized);
         $sanitized = $this->stripQuotedCredentialAssignments($sanitized);
         $sanitized = $this->replace(
             '/\b(password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\s*[:=]\s*(?!\[REDACTED\])((?:Bearer\s+)?[^\s,;"\']{4,})/i',
@@ -61,6 +62,25 @@ final class AiContextSanitizer
                 : $match[0],
             $sanitized,
         ) ?? $sanitized;
+    }
+
+    private function stripEscapedQuotedCredentialAssignments(string $input): string
+    {
+        $patterns = [
+            '/(?<prefix>(?:(?<!\x5c)\x5c(?:\x22|\x27))?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:(?<!\x5c)\x5c(?:\x22|\x27))?\s*[:=]\s*)(?<!\x5c)\x5c\x22(?:(?!(?<!\x5c)\x5c\x22).)*+(?:(?<!\x5c)\x5c\x22|\z)/is' => '"',
+            '/(?<prefix>(?:(?<!\x5c)\x5c(?:\x22|\x27))?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:(?<!\x5c)\x5c(?:\x22|\x27))?\s*[:=]\s*)(?<!\x5c)\x5c\x27(?:(?!(?<!\x5c)\x5c\x27).)*+(?:(?<!\x5c)\x5c\x27|\z)/is' => "'",
+        ];
+
+        foreach ($patterns as $pattern => $quote) {
+            $delimiter = '\\'.$quote;
+            $input = preg_replace_callback(
+                $pattern,
+                fn (array $match): string => $match['prefix'].$delimiter.'[REDACTED]'.$delimiter,
+                $input,
+            ) ?? $input;
+        }
+
+        return $input;
     }
 
     private function stripQuotedCredentialAssignments(string $input): string

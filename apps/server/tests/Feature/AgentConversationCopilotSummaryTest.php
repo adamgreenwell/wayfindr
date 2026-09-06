@@ -191,7 +191,7 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
     $visitorMessage = ConversationMessage::factory()->for($world['conversation'])->create([
         'sender_type' => Visitor::class,
         'sender_id' => $world['visitor']->id,
-        'body' => 'Email ada@example.test {"token":"visitor-secret","api_key":"provider-secret"}. Checkout stalls after payment.',
+        'body' => 'Email ada@example.test {\"token\":\"visitor-secret\",\"api_key\":\"provider-secret\"}. Checkout stalls after payment.',
         'metadata' => ['private_trace' => 'metadata-must-not-leave'],
         'created_at' => now()->subMinute(),
     ]);
@@ -239,8 +239,7 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
         ->and($fake->prompt->timeoutSeconds)->toBe(75)
         ->and($job->timeout)->toBe(85)
         ->and($fake->prompt->input)->toContain('[EMAIL REDACTED]')
-        ->and($promptPayload['messages'][0]['body'])->toContain('"token":"[REDACTED]"')
-        ->and($promptPayload['messages'][0]['body'])->toContain('"api_key":"[REDACTED]"')
+        ->and($promptPayload['messages'][0]['body'])->toContain('{\"token\":\"[REDACTED]\",\"api_key\":\"[REDACTED]\"}')
         ->and($fake->prompt->input)->toContain('private window')
         ->and($fake->prompt->input)->not->toContain('visitor-secret')
         ->and($fake->prompt->input)->not->toContain('provider-secret')

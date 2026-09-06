@@ -98,3 +98,22 @@ test('quoted credentials redact escaped newlines and a trailing escape', functio
         ->not->toContain('second-secret')
         ->not->toContain('trailing-secret');
 });
+
+test('serialized json credential fragments are scrubbed without breaking their escaping', function (): void {
+    $sanitizer = new AiContextSanitizer;
+    $input = <<<'TEXT'
+    {\"token\":\"first-secret\\\"second-secret\",\"api_key\":\"provider-secret\"}
+    TEXT;
+    $firstPass = $sanitizer->sanitize($input);
+    $encoded = json_encode(['body' => $firstPass], JSON_THROW_ON_ERROR);
+    $secondPass = $sanitizer->sanitize($encoded);
+    $truncated = $sanitizer->sanitize('{\\"token\\":\\"'.str_repeat('bounded-secret', 500));
+
+    expect($firstPass)->toBe('{\"token\":\"[REDACTED]\",\"api_key\":\"[REDACTED]\"}')
+        ->and(json_decode($secondPass, true, flags: JSON_THROW_ON_ERROR))->toBe(['body' => $firstPass])
+        ->and($truncated)->toBe('{\\"token\\":\\"[REDACTED]\\"')
+        ->and($secondPass)->not->toContain('first-secret')
+        ->and($secondPass)->not->toContain('second-secret')
+        ->and($secondPass)->not->toContain('provider-secret')
+        ->and($truncated)->not->toContain('bounded-secret');
+});
