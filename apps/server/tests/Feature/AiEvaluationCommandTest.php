@@ -156,6 +156,46 @@ test('a refusal label cannot hide an unsafe answer payload', function (): void {
     }
 });
 
+test('required facts match whole normalized tokens instead of numeric substrings', function (): void {
+    $responses = json_decode(
+        file_get_contents(resource_path('evaluations/grounded-answers/baseline-responses.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    foreach ($responses['responses'] as &$response) {
+        if ($response['case_id'] === 'password-reset-link') {
+            $response['answer'] = 'Choose Forgotten password on the sign-in page. The reset link expires after 115 minutes.';
+        }
+    }
+    unset($response);
+
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-boundary-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode($responses, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', [
+            '--responses' => $path,
+            '--json' => true,
+        ]);
+        $output = Artisan::output();
+        $report = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($report['metrics']['answer_accuracy_percent'])->toBe(80)
+            ->and($report['metrics']['fact_coverage_percent'])->toBe(92.31)
+            ->and($report['failures'])->toContain([
+                'case_id' => 'password-reset-link',
+                'reasons' => ['missing_required_fact'],
+            ])
+            ->and($output)->not->toContain('115 minutes');
+    } finally {
+        unlink($path);
+    }
+});
+
 test('required answer facts must be grounded in expected articles', function (): void {
     $fixtures = json_decode(
         file_get_contents(resource_path('evaluations/grounded-answers/fixtures.json')),

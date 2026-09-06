@@ -229,7 +229,7 @@ final class GroundedAnswerEvaluationDatasetLoader
             foreach ($requiredFacts as $phraseGroup) {
                 $isGrounded = collect($phraseGroup)
                     ->contains(fn (string $phrase): bool => $sourceTexts->contains(
-                        fn (string $sourceText): bool => str_contains($sourceText, $this->normalize($phrase)),
+                        fn (string $sourceText): bool => $this->containsPhrase($sourceText, $phrase),
                     ));
 
                 if (! $isGrounded) {
@@ -387,5 +387,10 @@ final class GroundedAnswerEvaluationDatasetLoader
     private function normalize(string $value): string
     {
         return trim((string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($value)));
+    }
+
+    private function containsPhrase(string $normalizedText, string $phrase): bool
+    {
+        return str_contains(' '.$normalizedText.' ', ' '.$this->normalize($phrase).' ');
     }
 }

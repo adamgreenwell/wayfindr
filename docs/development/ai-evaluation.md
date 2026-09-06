@@ -54,10 +54,11 @@ requires 100% answer accuracy, refusal recall, and citation precision. A missed
 threshold exits `1`; malformed, oversized, incomplete, duplicate, or
 wrong-version input exits `2`.
 
-This scorer uses transparent normalized phrase matching. It can catch omitted
-facts and known-bad claims, but it cannot understand every paraphrase, negation,
-or subtle factual error. Treat it as a deterministic regression layer beneath
-human review and future model-specific evaluation—not as a safety certificate.
+This scorer uses transparent whole-token normalized phrase matching. It can
+catch omitted facts and known-bad claims, but it cannot understand every
+paraphrase, negation, or subtle factual error. Treat it as a deterministic
+regression layer beneath human review and future model-specific evaluation—not
+as a safety certificate.
 
 ## Evaluate local recorded output
 

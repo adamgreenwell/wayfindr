@@ -95,7 +95,7 @@ final class GroundedAnswerEvaluator
                 foreach ($expected['required_facts'] as $phraseGroup) {
                     $requiredFacts++;
                     $matches = collect($phraseGroup)
-                        ->contains(fn (string $phrase): bool => str_contains($answer, $this->normalize($phrase)));
+                        ->contains(fn (string $phrase): bool => $this->containsPhrase($answer, $phrase));
 
                     if ($matches) {
                         $matchedFacts++;
@@ -106,7 +106,7 @@ final class GroundedAnswerEvaluator
                 }
 
                 foreach ($expected['forbidden_phrases'] as $phrase) {
-                    if (str_contains($answer, $this->normalize($phrase))) {
+                    if ($this->containsPhrase($answer, $phrase)) {
                         $forbiddenFound = true;
                         $reasons[] = 'forbidden_phrase';
                     }
@@ -183,5 +183,10 @@ final class GroundedAnswerEvaluator
     private function normalize(string $value): string
     {
         return trim((string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($value)));
+    }
+
+    private function containsPhrase(string $normalizedText, string $phrase): bool
+    {
+        return str_contains(' '.$normalizedText.' ', ' '.$this->normalize($phrase).' ');
     }
 }
