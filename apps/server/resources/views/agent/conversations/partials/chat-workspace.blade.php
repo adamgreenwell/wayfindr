@@ -146,6 +146,10 @@
         <aside class="reply-assist" aria-labelledby="reply-assist-heading">
             <h3 id="reply-assist-heading">{{ __('conversations.detail.reply.assist') }}</h3>
 
+            @if ($copilotReplyDraftAvailable)
+                @include('agent.conversations.partials.copilot-reply-draft')
+            @endif
+
             <div class="reply-template-preview" data-template-preview>
                 <div data-template-preview-empty @if ($selectedReplyTemplate !== '') hidden @endif>
                     <strong>{{ __('conversations.detail.reply.writing_own') }}</strong>
@@ -176,4 +180,7 @@
 </section>
 
 @include('agent.partials.reply-composer-script')
+@if ($copilotReplyDraftAvailable)
+    @include('agent.conversations.partials.copilot-reply-draft-script')
+@endif
 @endif

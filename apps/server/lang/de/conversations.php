@@ -228,6 +228,28 @@ return [
             'privacy' => 'Es werden nur der Betreff und begrenzter Nachrichtentext ausgewählt. Profilfelder von Agenten und Besuchern, Metadaten, Anhänge und Cobrowse-Daten werden ausgelassen; gängige sensible Muster werden vor der Übermittlung an den Anbieter entfernt.',
         ],
 
+        'reply_copilot' => [
+            'heading' => 'Antwortvorschlag',
+            'suggested' => 'Vorschlag',
+            'lede' => 'Erzeugen Sie aus dieser Unterhaltung einen bearbeitbaren Ausgangspunkt. Erst nach Ihrer Auswahl wird etwas in den Editor übernommen; gesendet wird nichts automatisch.',
+            'generate' => 'Antwort entwerfen',
+            'regenerate' => 'Entwurf aktualisieren',
+            'retry' => 'Entwurf erneut versuchen',
+            'use' => 'Antwortvorschlag verwenden',
+            'pending' => 'Ein Vorschlag wird entworfen …',
+            'pending_detail' => 'Die Anfrage befindet sich in der Warteschlange. Der Antwortassistent wird aktualisiert, sobald der Entwurf bereit ist.',
+            'generated' => 'Erzeugt :elapsed.',
+            'source_count' => '{1} Basiert auf 1 Textnachricht.|[2,*] Basiert auf :count Textnachrichten.',
+            'stale' => 'Nach diesem Entwurf sind neue Nachrichten eingegangen.',
+            'stale_detail' => 'Aktualisieren Sie den Antwortvorschlag vor der Übernahme in den Editor.',
+            'failed' => 'Der Antwortentwurf konnte nicht erzeugt werden.',
+            'failed_detail' => 'Es wurde nichts in den Editor übernommen oder gesendet. Sie können es erneut versuchen.',
+            'used' => 'Antwortvorschlag übernommen. Vor dem Senden prüfen und bearbeiten.',
+            'use_blocked' => 'Ihre aktuelle Nachricht wurde beibehalten. Leeren Sie sie, bevor Sie den Antwortvorschlag verwenden.',
+            'use_stale' => 'Dieser Vorschlag muss vor der Verwendung aktualisiert werden.',
+            'privacy' => 'Nur begrenzter Betreff- und Nachrichtentext wird nach Entfernung gängiger sensibler Muster gesendet. Profile, Metadaten, Anhänge und Cobrowse-Daten werden ausgelassen. Jede Antwort wird von Ihnen geprüft und gesendet.',
+        ],
+
         'context' => [
             'heading' => 'Besucher auf einen Blick',
             'about' => 'Worum es geht',
@@ -465,6 +487,9 @@ return [
         'ai_summary_queued' => 'Zusammenfassung der Unterhaltung in die Warteschlange gestellt.',
         'ai_summary_pending' => 'Eine Zusammenfassung dieser Unterhaltung wird bereits erzeugt.',
         'ai_summary_failed' => 'Die Zusammenfassung konnte nicht in die Warteschlange gestellt werden. Es wurden keine Supportdaten gesendet.',
+        'ai_reply_draft_queued' => 'Antwortvorschlag in die Warteschlange gestellt.',
+        'ai_reply_draft_pending' => 'Ein Antwortvorschlag wird bereits erzeugt.',
+        'ai_reply_draft_failed' => 'Der Antwortvorschlag konnte nicht in die Warteschlange gestellt werden. Es wurden keine Supportdaten gesendet.',
     ],
 
     'row' => [

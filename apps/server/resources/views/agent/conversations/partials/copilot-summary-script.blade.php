@@ -3,7 +3,9 @@
         let attempts = 0;
         let refreshInFlight = false;
         let forcedRefreshQueued = false;
-        const maximumAttempts = 60;
+        // Cover the five-minute queued freshness window plus the 85-second
+        // running-job budget, with enough room for the terminal poll.
+        const maximumAttempts = 210;
 
         const refresh = async (force = false) => {
             const panel = document.querySelector('[data-copilot-summary]');

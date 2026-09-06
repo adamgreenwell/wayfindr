@@ -96,9 +96,16 @@ class AgentConversationController extends Controller
         $latestSummarizableMessageId = $messages
             ->filter(fn ($message): bool => filled($message->body))
             ->max('id');
+        $latestConversationMessageId = $messages->max('id');
         $copilotSummaryAvailable = $copilotConfiguration->isReady() && $latestSummarizableMessageId !== null;
         $copilotSummary = $copilotSummaryAvailable
             ? $conversation->copilotSummary()->first()
+            : null;
+        $copilotReplyDraftAvailable = $copilotConfiguration->isReady()
+            && $canReply
+            && $latestSummarizableMessageId !== null;
+        $copilotReplyDraft = $copilotReplyDraftAvailable
+            ? $conversation->copilotReplyDraft()->first()
             : null;
         $tickets = $canManageTickets
             ? $conversation->tickets()
@@ -246,9 +253,12 @@ class AgentConversationController extends Controller
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
             'conversationSiblings' => $conversationSiblings,
+            'copilotReplyDraft' => $copilotReplyDraft,
+            'copilotReplyDraftAvailable' => $copilotReplyDraftAvailable,
             'copilotSummary' => $copilotSummary,
             'copilotSummaryAvailable' => $copilotSummaryAvailable,
             'latestSummarizableMessageId' => $latestSummarizableMessageId,
+            'latestConversationMessageId' => $latestConversationMessageId,
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation, $canManageTickets),
             'realtime' => $this->realtimeConfig($conversation, $agent),
