@@ -34,6 +34,7 @@ return [
         'boundary_lede' => 'Gefiltert und auf Websites beschränkt',
         'boundary_fields' => 'Exporte enthalten Kontaktidentität, Zeitstempel und Werte definierter Attribute. Roher Host-Kontext, Kontaktnotizen, Unterhaltungen, Tickets und der Verlauf der Browser-IDs werden bewusst ausgelassen.',
         'boundary_scope' => 'Die Datei enthält höchstens die :count zuletzt gesehenen Besuchenden, die den aktuellen Filtern auf Websites entsprechen, die Sie betreuen dürfen.',
+        'invalid_filters' => 'Aktualisieren Sie die Besucherliste und wenden Sie gültige Filter an, bevor Sie exportieren.',
     ],
 
     'list' => [

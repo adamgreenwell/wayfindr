@@ -113,7 +113,7 @@ test('contact managers export the filtered directory without adjacent private su
 
     $content = $response->streamedContent();
     $rows = collect(explode("\n", trim($content)))
-        ->map(fn (string $row): array => str_getcsv($row))
+        ->map(fn (string $row): array => str_getcsv($row, ',', '"', ''))
         ->values();
 
     expect($response->headers->get('Content-Disposition'))->toContain('wayfindr-visitors-20260905-163000.csv')
@@ -174,7 +174,7 @@ test('contact export neutralizes spreadsheet formulas in every visitor supplied 
     $content = $this->actingAs($w['agent'])
         ->get(route('dashboard.visitors.export'))
         ->streamedContent();
-    $row = str_getcsv(explode("\n", trim($content))[1]);
+    $row = str_getcsv(explode("\n", trim($content))[1], ',', '"', '');
 
     expect($row[2])->toBe("'@Formula Site")
         ->and($row[3])->toBe("'=HYPERLINK(\"https://bad.test\",\"click\")")
@@ -182,6 +182,19 @@ test('contact export neutralizes spreadsheet formulas in every visitor supplied 
         ->and($row[5])->toBe("'-external")
         ->and($row[6])->toBe("'@anonymous")
         ->and($row[10])->toBe("'=SUM(1,1)");
+});
+
+test('contact export uses portable csv quoting for a backslash before a quote', function (): void {
+    $w = visitorIndexWorld();
+    $name = 'Backslash \\" quote';
+    Visitor::factory()->for($w['site'])->create(['name' => $name]);
+
+    $content = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.export'))
+        ->streamedContent();
+    $row = str_getcsv(explode("\n", trim($content))[1], ',', '"', '');
+
+    expect($row[3])->toBe($name);
 });
 
 test('directory readers without contact management cannot make a bulk export', function (): void {
@@ -226,6 +239,41 @@ test('an invalid typed filter cannot widen a contact export', function (): void 
             'attribute_value' => 'many',
         ]))
         ->assertStatus(422);
+});
+
+test('a deleted attribute or unavailable site filter cannot widen a contact export', function (): void {
+    $w = visitorIndexWorld();
+    $unavailableSite = Site::factory()->for($w['account'])->create();
+    $otherAgent = User::factory()->for($w['account'])->create();
+    $unavailableSite->supportAgents()->attach($otherAgent);
+    Visitor::factory()->for($w['site'])->create(['name' => 'Do Not Export Broadly']);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.export', [
+            'attribute' => 'deleted_definition',
+            'attribute_value' => 'Enterprise',
+        ]))
+        ->assertStatus(422);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.export', ['site' => $unavailableSite->id]))
+        ->assertStatus(422);
+});
+
+test('malformed contact export filters fail closed instead of being discarded', function (): void {
+    $w = visitorIndexWorld();
+    Visitor::factory()->for($w['site'])->create(['name' => 'Do Not Export Broadly']);
+
+    foreach ([
+        ['presence' => 'nonsense'],
+        ['search' => ['broad']],
+        ['attribute_value' => 'orphaned'],
+        ['site' => ['1']],
+    ] as $filters) {
+        $this->actingAs($w['agent'])
+            ->get(route('dashboard.visitors.export', $filters))
+            ->assertStatus(422);
+    }
 });
 
 test('contact export uses the same five hundred row cap as account audit export', function (): void {

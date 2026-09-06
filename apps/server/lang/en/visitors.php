@@ -37,6 +37,7 @@ return [
         'boundary_lede' => 'Filtered and site-scoped',
         'boundary_fields' => 'Exports include contact identity, timestamps, and defined attribute values. Raw host context, contact notes, conversations, tickets, and browser-ID history are intentionally omitted.',
         'boundary_scope' => 'The file includes at most the :count most recent visitors matching the current filters on sites you are allowed to support.',
+        'invalid_filters' => 'Refresh the visitor directory and apply valid filters before exporting.',
     ],
 
     'list' => [

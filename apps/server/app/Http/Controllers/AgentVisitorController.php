@@ -64,6 +64,7 @@ class AgentVisitorController extends Controller
             $normalizedAttributeValue,
             $attributeFilterInvalid,
             $siteId,
+            ,
         ] = $this->filters($request, $attributeDefinitions, $siteIds);
 
         $visitors = $this->visitorQuery(
@@ -132,11 +133,17 @@ class AgentVisitorController extends Controller
             $normalizedAttributeValue,
             $attributeFilterInvalid,
             $siteId,
+            $filterScopeInvalid,
         ] = $this->filters($request, $attributeDefinitions, $siteIds);
 
-        // A typed filter that cannot be interpreted must never turn into a
-        // broader bulk download than the person asked for.
-        abort_if($attributeFilterInvalid, 422, __('visitor_attributes.filters.invalid'));
+        // Any filter that cannot be interpreted must never turn into a broader
+        // bulk download than the person asked for. This includes a saved URL
+        // whose attribute was deleted or whose site assignment was removed.
+        abort_if(
+            $attributeFilterInvalid || $filterScopeInvalid,
+            422,
+            __('visitors.export.invalid_filters'),
+        );
 
         $visitors = $this->visitorQuery(
             $siteIds,
@@ -169,10 +176,19 @@ class AgentVisitorController extends Controller
                 'last_web_seen_at',
                 'created_at',
                 ...$attributeDefinitions->map(fn (VisitorAttributeDefinition $definition): string => 'attribute.'.$definition->key)->all(),
-            ]);
+            ], ',', '"', '');
 
             foreach ($visitors as $visitor) {
-                fputcsv($stream, $this->visitorCsvRow($visitor, $attributeDefinitions, $agent));
+                // Empty escape means RFC-style doubled enclosure characters.
+                // PHP's proprietary backslash escape changes a value when a
+                // standards-compatible CSV reader opens `x\"y`.
+                fputcsv(
+                    $stream,
+                    $this->visitorCsvRow($visitor, $attributeDefinitions, $agent),
+                    ',',
+                    '"',
+                    '',
+                );
             }
 
             fclose($stream);
@@ -184,38 +200,52 @@ class AgentVisitorController extends Controller
     /**
      * @param  Collection<int, VisitorAttributeDefinition>  $attributeDefinitions
      * @param  array<int, int>  $siteIds
-     * @return array{0: string, 1: string, 2: string, 3: string, 4: VisitorAttributeDefinition|null, 5: string|null, 6: bool, 7: int|null}
+     * @return array{0: string, 1: string, 2: string, 3: string, 4: VisitorAttributeDefinition|null, 5: string|null, 6: bool, 7: int|null, 8: bool}
      */
     private function filters(Request $request, Collection $attributeDefinitions, array $siteIds): array
     {
         // Read before narrowing. Casting first makes `?presence[]=active` an
         // Array-to-string warning, which Laravel promotes to a 500.
-        $presence = $request->query('presence', 'all');
-        $presence = is_string($presence) && in_array($presence, VisitorPresence::states(), true)
-            ? $presence
+        $requestedPresence = $request->query('presence', 'all');
+        $presenceFilterInvalid = ! is_string($requestedPresence)
+            || ($requestedPresence !== 'all' && ! in_array($requestedPresence, VisitorPresence::states(), true));
+        $presence = ! $presenceFilterInvalid
+            ? $requestedPresence
             : 'all';
 
-        $search = $request->query('search', '');
-        $search = is_string($search) ? mb_substr(trim($search), 0, 120) : '';
+        $requestedSearch = $request->query('search', '');
+        $searchFilterInvalid = ! is_string($requestedSearch)
+            || mb_strlen(trim($requestedSearch)) > 120;
+        $search = is_string($requestedSearch) ? mb_substr(trim($requestedSearch), 0, 120) : '';
 
-        $attributeKey = $request->query('attribute', '');
-        $attributeKey = is_string($attributeKey) ? mb_substr(trim($attributeKey), 0, 64) : '';
+        $requestedAttributeKey = $request->query('attribute', '');
+        $attributeKeyInputInvalid = ! is_string($requestedAttributeKey)
+            || mb_strlen(trim($requestedAttributeKey)) > 64;
+        $attributeKey = is_string($requestedAttributeKey) ? mb_substr(trim($requestedAttributeKey), 0, 64) : '';
         $attributeDefinition = $attributeDefinitions->firstWhere('key', $attributeKey);
+        $attributeUnavailable = $attributeKey !== '' && $attributeDefinition === null;
         $attributeKey = $attributeDefinition?->key ?? '';
 
-        $attributeValue = $request->query('attribute_value', '');
-        $attributeValue = is_string($attributeValue) ? mb_substr(trim($attributeValue), 0, 160) : '';
+        $requestedAttributeValue = $request->query('attribute_value', '');
+        $attributeValueInputInvalid = ! is_string($requestedAttributeValue)
+            || mb_strlen(trim($requestedAttributeValue)) > 160;
+        $attributeValue = is_string($requestedAttributeValue) ? mb_substr(trim($requestedAttributeValue), 0, 160) : '';
+        $orphanedAttributeValue = $attributeKey === '' && $attributeValue !== '';
         $normalizedAttributeValue = $attributeDefinition?->type->normalize($attributeValue);
         $attributeFilterInvalid = $attributeDefinition !== null
             && $attributeValue !== ''
             && $normalizedAttributeValue === null;
 
-        $site = $request->query('site', '');
+        $requestedSite = $request->query('site', '');
         // A site id from the query string can never widen the scope: it is
         // checked against what this agent may already see.
-        $siteId = is_string($site) && ctype_digit($site) && in_array((int) $site, $siteIds, true)
-            ? (int) $site
+        $siteId = is_string($requestedSite)
+            && ctype_digit($requestedSite)
+            && in_array((int) $requestedSite, $siteIds, true)
+            ? (int) $requestedSite
             : null;
+        $siteFilterInvalid = ! is_string($requestedSite)
+            || ($requestedSite !== '' && $siteId === null);
 
         return [
             $presence,
@@ -226,6 +256,13 @@ class AgentVisitorController extends Controller
             $normalizedAttributeValue,
             $attributeFilterInvalid,
             $siteId,
+            $presenceFilterInvalid
+                || $searchFilterInvalid
+                || $attributeKeyInputInvalid
+                || $attributeUnavailable
+                || $attributeValueInputInvalid
+                || $orphanedAttributeValue
+                || $siteFilterInvalid,
         ];
     }
 
