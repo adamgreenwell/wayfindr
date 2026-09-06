@@ -59,14 +59,32 @@ test('an unterminated private key block is redacted through the end of the bound
 
 test('scrubbing an already scrubbed json prompt preserves its structure', function (): void {
     $sanitizer = new AiContextSanitizer;
-    $firstPass = $sanitizer->sanitize('Credentials are token="visitor-secret", api_key=\'provider-secret\', and secret="provider-\\"quoted\\"-secret".');
+    $firstPass = $sanitizer->sanitize('Credentials are {"token":"visitor-secret","api_key":"provider-secret"}, password=\'single-secret\', plus secret="provider-\\"quoted\\"-secret".');
     $encoded = json_encode(['body' => $firstPass], JSON_THROW_ON_ERROR);
     $secondPass = $sanitizer->sanitize($encoded);
 
     expect(json_decode($secondPass, true, flags: JSON_THROW_ON_ERROR))->toBe([
-        'body' => 'Credentials are token=[REDACTED], api_key=[REDACTED], and secret=[REDACTED].',
+        'body' => 'Credentials are {"token":"[REDACTED]","api_key":"[REDACTED]"}, password=\'[REDACTED]\', plus secret="[REDACTED]".',
     ])
         ->and($secondPass)->not->toContain('visitor-secret')
         ->and($secondPass)->not->toContain('provider-secret')
+        ->and($secondPass)->not->toContain('single-secret')
         ->and($secondPass)->not->toContain('quoted');
+});
+
+test('quoted json credentials remain valid json after scrubbing', function (): void {
+    $sanitized = (new AiContextSanitizer)->sanitize('{"token":"visitor-secret","api_key":"provider-secret"}');
+
+    expect(json_decode($sanitized, true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'token' => '[REDACTED]',
+        'api_key' => '[REDACTED]',
+    ]);
+});
+
+test('an unterminated quoted credential is redacted through the end of the bounded input', function (): void {
+    $input = '{"token":"'.str_repeat('bounded-secret-material', 500);
+
+    expect((new AiContextSanitizer)->sanitize($input))
+        ->toBe('{"token":"[REDACTED]"')
+        ->not->toContain('bounded-secret-material');
 });

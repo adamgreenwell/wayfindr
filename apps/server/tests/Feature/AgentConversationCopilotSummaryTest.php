@@ -191,7 +191,7 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
     $visitorMessage = ConversationMessage::factory()->for($world['conversation'])->create([
         'sender_type' => Visitor::class,
         'sender_id' => $world['visitor']->id,
-        'body' => 'Email ada@example.test token="visitor-secret" api_key=\'provider-secret\'. Checkout stalls after payment.',
+        'body' => 'Email ada@example.test {"token":"visitor-secret","api_key":"provider-secret"}. Checkout stalls after payment.',
         'metadata' => ['private_trace' => 'metadata-must-not-leave'],
         'created_at' => now()->subMinute(),
     ]);
@@ -232,14 +232,15 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
     app()->instance(AgentCopilotProvider::class, $fake);
 
     app()->call([$job, 'handle']);
+    $promptPayload = json_decode($fake->prompt->input, true, flags: JSON_THROW_ON_ERROR);
 
     expect($fake->prompt)->not->toBeNull()
         ->and($fake->prompt->purpose)->toBe('conversation_summary')
         ->and($fake->prompt->timeoutSeconds)->toBe(75)
         ->and($job->timeout)->toBe(85)
         ->and($fake->prompt->input)->toContain('[EMAIL REDACTED]')
-        ->and($fake->prompt->input)->toContain('token=[REDACTED]')
-        ->and($fake->prompt->input)->toContain('api_key=[REDACTED]')
+        ->and($promptPayload['messages'][0]['body'])->toContain('"token":"[REDACTED]"')
+        ->and($promptPayload['messages'][0]['body'])->toContain('"api_key":"[REDACTED]"')
         ->and($fake->prompt->input)->toContain('private window')
         ->and($fake->prompt->input)->not->toContain('visitor-secret')
         ->and($fake->prompt->input)->not->toContain('provider-secret')
@@ -460,6 +461,19 @@ test('summary context redacts a private key whose end marker falls beyond the da
     expect($context)->not->toBeNull()
         ->and($context->prompt->input)->toContain('[PRIVATE KEY REDACTED]')
         ->and($context->prompt->input)->not->toContain('private-key-material');
+});
+
+test('summary context redacts a quoted credential whose closing quote falls beyond the database prefix', function (): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create([
+        'body' => '{"token":"'.str_repeat('bounded-secret-material', 500).'"}',
+    ]);
+
+    $context = app(ConversationSummaryPromptBuilder::class)->build($world['conversation']);
+
+    expect($context)->not->toBeNull()
+        ->and($context->prompt->input)->toContain('[REDACTED]')
+        ->and($context->prompt->input)->not->toContain('bounded-secret-material');
 });
 
 test('conversation messages are indexed for bounded id-ordered summary reads', function (): void {
