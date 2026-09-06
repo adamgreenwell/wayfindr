@@ -54,6 +54,14 @@ final class LiveVisitorBoard
         return self::present($site)->count();
     }
 
+    /** Whether one row belongs on the live board at this moment. */
+    public static function includes(Visitor $visitor): bool
+    {
+        return $visitor->last_web_seen_at !== null
+            && $visitor->last_web_seen_at->greaterThanOrEqualTo(now()->subMinutes(self::PRESENT_MINUTES))
+            && ($visitor->anonymous_id === null || ! str_starts_with($visitor->anonymous_id, 'tester-site-'));
+    }
+
     /**
      * The rows and the total that describes them, together.
      *

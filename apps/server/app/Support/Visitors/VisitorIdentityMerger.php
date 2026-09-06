@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Visitors;
 
 use App\Enums\AccountPermission;
+use App\Events\VisitorPresenceUpdated;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Site;
@@ -23,7 +24,7 @@ final class VisitorIdentityMerger
 
     public function merge(User $actor, Visitor $source, int $targetId): Visitor
     {
-        return DB::transaction(function () use ($actor, $source, $targetId): Visitor {
+        [$target, $site, $sourceId] = DB::transaction(function () use ($actor, $source, $targetId): array {
             $accountId = (int) $actor->account_id;
             Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
             $actor = User::query()
@@ -111,8 +112,21 @@ final class VisitorIdentityMerger
                 'occurred_at' => now(),
             ]);
 
-            return $target;
+            return [$target, $site, $sourceId];
         });
+
+        // The source row can already be rendered on an agent's live board.
+        // Announce only after the identity transaction has committed so no
+        // subscriber can observe the destination before its relationships and
+        // aliases move. Realtime failure never undoes the durable merge; the
+        // periodic board resync remains the fallback.
+        try {
+            event(new VisitorPresenceUpdated($site, $target, $sourceId));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $target;
     }
 
     /** @return array<string, int> */

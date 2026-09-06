@@ -252,6 +252,32 @@
                     }
                 }
 
+                // A merge permanently retires one database id. Keep that fact
+                // for this page's lifetime so a heartbeat or snapshot that was
+                // already in flight cannot put the deleted source row back.
+                var retiredVisitorIds = Object.create(null);
+
+                function retireVisitor(visitorId) {
+                    if (visitorId === null || typeof visitorId === 'undefined') {
+                        return;
+                    }
+
+                    var key = String(visitorId);
+
+                    retiredVisitorIds[key] = true;
+
+                    var existing = rows.querySelector('[data-visitor-id="' + CSS.escape(key) + '"]');
+
+                    if (existing) {
+                        existing.remove();
+                        refreshCount();
+                    }
+                }
+
+                function dropRetiredVisitors() {
+                    Object.keys(retiredVisitorIds).forEach(retireVisitor);
+                }
+
                 // The agent's clock is not the one that stamped these rows.
                 //
                 // Every timestamp on this board is server-stamped, and two of
@@ -412,7 +438,9 @@
                 }
 
                 function applyVisitor(visitor) {
-                    if (!visitor || typeof visitor.id === 'undefined') {
+                    if (!visitor
+                        || typeof visitor.id === 'undefined'
+                        || retiredVisitorIds[String(visitor.id)]) {
                         return;
                     }
 
@@ -795,6 +823,11 @@
                         // on every resync rather than only on page load.
                         refreshCount(freshCount ? Number(freshCount.getAttribute('data-live-total')) || 0 : undefined);
 
+                        // A merge event can beat the snapshot it raced. Its
+                        // tombstone is newer than that markup, so remove the
+                        // retired source again before replaying buffered rows.
+                        dropRetiredVisitors();
+
                         // Re-applied on top, in arrival order, so the newer
                         // state wins over the snapshot that did not have it.
                         pending.forEach(applyVisitor);
@@ -1115,6 +1148,10 @@
                         }
 
                         var visitor = payload && payload.visitor;
+
+                        if (payload) {
+                            retireVisitor(payload.removed_visitor_id);
+                        }
 
                         // Buffered as well as applied. A resync in flight is
                         // about to overwrite this row with older markup, and

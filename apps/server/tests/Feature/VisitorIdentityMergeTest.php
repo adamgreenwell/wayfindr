@@ -4,6 +4,7 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Events\ConversationMessageCreated;
 use App\Events\TicketUpdated;
+use App\Events\VisitorPresenceUpdated;
 use App\Listeners\ReopenPendingTicketsForVisitorReply;
 use App\Models\Account;
 use App\Models\AuditEvent;
@@ -87,6 +88,8 @@ test('a contact manager can find a same-site contact to keep', function (): void
 });
 
 test('a merge moves person-owned support records and retains canonical values', function (): void {
+    Event::fake([VisitorPresenceUpdated::class]);
+
     $account = Account::factory()->create();
     $manager = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
@@ -236,6 +239,12 @@ test('a merge moves person-owned support records and retains canonical values', 
         ])
         ->and(json_encode($event->metadata, JSON_THROW_ON_ERROR))
         ->not->toContain('river@example.test', 'Private continuity note', 'customer-42');
+
+    Event::assertDispatched(
+        VisitorPresenceUpdated::class,
+        fn (VisitorPresenceUpdated $presence): bool => $presence->visitor->is($target)
+            && $presence->removedVisitorId === (int) $source->id
+    );
 });
 
 test('bootstrap accepts a current browser id under the configured database collation', function (): void {
