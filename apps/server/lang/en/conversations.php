@@ -244,6 +244,28 @@ return [
             'privacy' => 'Only the subject and bounded message text are selected. Agent and visitor profile fields, metadata, attachments, and cobrowse data are omitted; common sensitive patterns are scrubbed before provider delivery.',
         ],
 
+        'reply_copilot' => [
+            'heading' => 'Suggested reply',
+            'suggested' => 'Suggested',
+            'lede' => 'Generate an editable starting point from this conversation. Nothing is added to the composer or sent until you choose it.',
+            'generate' => 'Draft a reply',
+            'regenerate' => 'Refresh draft',
+            'retry' => 'Try draft again',
+            'use' => 'Use suggested draft',
+            'pending' => 'Drafting a suggestion…',
+            'pending_detail' => 'The request is queued. Reply assist updates when the draft is ready.',
+            'generated' => 'Generated :elapsed.',
+            'source_count' => '{1} Based on 1 text message.|[2,*] Based on :count text messages.',
+            'stale' => 'New messages arrived after this draft.',
+            'stale_detail' => 'Refresh the suggestion before adding it to the composer.',
+            'failed' => 'The reply draft could not be generated.',
+            'failed_detail' => 'Nothing was added to the composer or sent. You can try again.',
+            'used' => 'Suggested reply added. Review and edit it before sending.',
+            'use_blocked' => 'Your current message was kept. Clear it before using the suggested draft.',
+            'use_stale' => 'Refresh this suggestion before using it.',
+            'privacy' => 'Only bounded subject and message text are sent after common sensitive patterns are scrubbed. Profiles, metadata, attachments, and cobrowse data are omitted. You review and send every reply.',
+        ],
+
         'context' => [
             'heading' => 'Visitor at a glance',
             'about' => 'What this is about',
@@ -481,6 +503,9 @@ return [
         'ai_summary_queued' => 'Conversation summary queued.',
         'ai_summary_pending' => 'A conversation summary is already being generated.',
         'ai_summary_failed' => 'The conversation summary could not be queued. No support data was sent.',
+        'ai_reply_draft_queued' => 'Suggested reply queued.',
+        'ai_reply_draft_pending' => 'A suggested reply is already being generated.',
+        'ai_reply_draft_failed' => 'The suggested reply could not be queued. No support data was sent.',
     ],
 
     'row' => [

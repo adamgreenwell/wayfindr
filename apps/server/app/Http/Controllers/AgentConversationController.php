@@ -100,6 +100,12 @@ class AgentConversationController extends Controller
         $copilotSummary = $copilotSummaryAvailable
             ? $conversation->copilotSummary()->first()
             : null;
+        $copilotReplyDraftAvailable = $copilotConfiguration->isReady()
+            && $canReply
+            && $latestSummarizableMessageId !== null;
+        $copilotReplyDraft = $copilotReplyDraftAvailable
+            ? $conversation->copilotReplyDraft()->first()
+            : null;
         $tickets = $canManageTickets
             ? $conversation->tickets()
                 ->with(['assignee', 'conversation.latestAgentMessage', 'conversation.latestMessage', 'conversation.latestNonIntegrationMessage'])
@@ -246,6 +252,8 @@ class AgentConversationController extends Controller
             'conversationBackUrl' => route('dashboard.conversations.index', $conversationReturnQuery),
             'conversationReturnQuery' => $conversationReturnQuery,
             'conversationSiblings' => $conversationSiblings,
+            'copilotReplyDraft' => $copilotReplyDraft,
+            'copilotReplyDraftAvailable' => $copilotReplyDraftAvailable,
             'copilotSummary' => $copilotSummary,
             'copilotSummaryAvailable' => $copilotSummaryAvailable,
             'latestSummarizableMessageId' => $latestSummarizableMessageId,

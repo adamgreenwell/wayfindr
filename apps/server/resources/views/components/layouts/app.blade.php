@@ -3083,6 +3083,18 @@
             white-space: pre-wrap;
         }
 
+        .reply-copilot-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .reply-template-preview .section-actions {
+            justify-content: flex-start;
+            margin-top: 14px;
+        }
+
         .timeline-list {
             display: grid;
             gap: 0;

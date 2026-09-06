@@ -1867,6 +1867,10 @@
                                 window.wayfindrConversationSummaryTranscriptUpdated();
                             }
 
+                            if (hasNewMessages && typeof window.wayfindrConversationReplyDraftTranscriptUpdated === 'function') {
+                                window.wayfindrConversationReplyDraftTranscriptUpdated();
+                            }
+
                             if (stickToBottom) {
                                 var last = items[items.length - 1];
 
