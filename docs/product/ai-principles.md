@@ -36,3 +36,17 @@ or boring deterministic code.
 
 When in doubt, build the normal workflow first. Add AI only when it makes that
 workflow more useful, clearer, faster, or easier to operate.
+
+## Implemented Provider Boundary
+
+The runtime boundary is documented in
+[Agent Copilot Providers](../self-hosting/agent-copilot-providers.md). Product
+features depend on Wayfindr's text-only provider contract rather than a vendor
+SDK directly. The operator chooses the driver, exact model, credential, and
+optional endpoint; an unset provider removes the capability without degrading
+the underlying support workflow.
+
+Every request is deterministically scrubbed and bounded at the last point before
+the Laravel AI SDK. That is defense in depth: feature code still owns minimum
+context selection, must omit attachments and cobrowse state, and must present
+output as a suggestion a human reviews.

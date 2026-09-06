@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
+use Laravel\Ai\AiManager;
 use Throwable;
 
 /**
@@ -115,6 +116,14 @@ class OperatorSettings
         'webpush.subject' => ['config' => 'webpush.vapid.subject', 'secret' => false, 'group' => 'webpush'],
         'webpush.public_key' => ['config' => 'webpush.vapid.public_key', 'secret' => false, 'group' => 'webpush'],
         'webpush.private_key' => ['config' => 'webpush.vapid.private_key', 'secret' => true, 'group' => 'webpush'],
+
+        // Agent copilot (#763). Product code always addresses the stable
+        // `wayfindr` provider; these settings choose the SDK driver/model and
+        // optional compatible endpoint behind it. The credential is write-only.
+        'ai.provider' => ['config' => 'ai.providers.wayfindr.driver', 'secret' => false, 'group' => 'ai'],
+        'ai.model' => ['config' => 'ai.providers.wayfindr.models.text.default', 'secret' => false, 'group' => 'ai'],
+        'ai.endpoint' => ['config' => 'ai.providers.wayfindr.url', 'secret' => false, 'group' => 'ai', 'cast' => 'null_if_blank'],
+        'ai.api_key' => ['config' => 'ai.providers.wayfindr.key', 'secret' => true, 'group' => 'ai'],
     ];
 
     /**
@@ -148,6 +157,9 @@ class OperatorSettings
      * config is authoritative until an attempted operator-store read fails.
      */
     private bool $lastReadWasAuthoritative = true;
+
+    /** @var array<string, true> */
+    private array $unreadableValues = [];
 
     /**
      * Apply the stored settings onto config for every managed key. Called at
@@ -254,6 +266,14 @@ class OperatorSettings
         return $this->lastReadWasAuthoritative;
     }
 
+    /** Whether the latest override application had to reject one stored value. */
+    public function hasUnreadableValue(string $key): bool
+    {
+        $this->assertManaged($key);
+
+        return isset($this->unreadableValues[$key]);
+    }
+
     /**
      * The config value to apply for every managed path from a given stored map —
      * the operator's value when readable, else the env baseline. Never throws and
@@ -265,6 +285,7 @@ class OperatorSettings
     private function resolveTargetsFrom(array $stored): array
     {
         $targets = [];
+        $this->unreadableValues = [];
 
         foreach (self::MANAGED as $key => $meta) {
             $baseline = $this->baseline[$meta['config']];
@@ -281,6 +302,7 @@ class OperatorSettings
                 // A single corrupt/undecryptable secret reverts only its own key
                 // to env; the rest of the override set still applies.
                 $targets[$meta['config']] = $baseline;
+                $this->unreadableValues[$key] = true;
             }
         }
 
@@ -558,6 +580,11 @@ class OperatorSettings
         // The scanner is a config-built singleton (driver, clamd socket). Forget
         // it so a changed scanning config rebuilds the right scanner.
         app()->forgetInstance(AttachmentScanner::class);
+
+        // AI providers capture their driver, endpoint and credential when they
+        // are built. Discard the named adapter after an operator change so a
+        // persistent worker never keeps sending to the previous destination.
+        app(AiManager::class)->forgetInstance('wayfindr');
     }
 
     private function decode(string $key, ?string $raw): ?string

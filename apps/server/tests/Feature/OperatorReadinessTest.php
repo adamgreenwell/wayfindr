@@ -326,6 +326,46 @@ test('readiness distinguishes an unavailable Web Push settings store from invali
     ])->and($webPush['summary'])->not->toContain('invalid');
 });
 
+test('readiness treats an unset copilot as optional and a partial one as actionable', function (): void {
+    $settings = app(OperatorSettings::class);
+    $settings->applyOverrides();
+
+    $copilot = collect(app(OperatorReadiness::class)->summary()['checks'])
+        ->firstWhere('key', 'agent_copilot');
+
+    expect($copilot)->toMatchArray([
+        'status' => 'manual',
+        'status_label' => 'Optional',
+        'summary' => 'The agent copilot is not configured.',
+        'translation' => ['variant' => 'unset', 'parameters' => []],
+    ]);
+
+    $settings->set('ai.provider', 'openai');
+    $settings->set('ai.model', 'gpt-5-mini');
+    $settings->applyOverrides();
+
+    $copilot = collect(app(OperatorReadiness::class)->summary()['checks'])
+        ->firstWhere('key', 'agent_copilot');
+
+    expect($copilot)->toMatchArray([
+        'status' => 'attention',
+        'summary' => 'The agent copilot configuration is incomplete.',
+        'translation' => ['variant' => 'incomplete', 'parameters' => []],
+    ]);
+
+    $settings->set('ai.api_key', 'test-provider-key');
+    $settings->applyOverrides();
+
+    $copilot = collect(app(OperatorReadiness::class)->summary()['checks'])
+        ->firstWhere('key', 'agent_copilot');
+
+    expect($copilot)->toMatchArray([
+        'status' => 'ready',
+        'summary' => 'The optional agent copilot provider is configured.',
+        'translation' => ['variant' => 'ready', 'parameters' => []],
+    ]);
+});
+
 test('readiness diagnostics recommend the first attention item as the next step', function (): void {
     config([
         'app.key' => null,
@@ -744,7 +784,7 @@ test('readiness diagnostics treat confirmed manual items as ready', function ():
 
     expect($readiness)
         ->attention_count->toBe(0)
-        ->manual_count->toBe(1)
+        ->manual_count->toBe(2)
         ->and($scheduler)->toMatchArray([
             'status' => 'ready',
             'status_label' => 'Ready',
@@ -824,7 +864,7 @@ test('readiness diagnostics mark stale confirmations as refresh due', function (
 
     expect($readiness)
         ->attention_count->toBe(0)
-        ->manual_count->toBe(3)
+        ->manual_count->toBe(4)
         ->and($scheduler)->toMatchArray([
             'status' => 'manual',
             'status_label' => 'Due again',

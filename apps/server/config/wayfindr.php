@@ -4,6 +4,12 @@ use App\Support\ReleaseIdentity;
 
 return [
 
+    'ai' => [
+        // Applied after deterministic secret/identifier scrubbing. Features
+        // should still select the narrowest useful context before this guard.
+        'max_context_characters' => (int) env('WAYFINDR_AI_MAX_CONTEXT_CHARACTERS', 30000),
+    ],
+
     'mail' => [
         // Shared with the mail provider that posts inbound messages. Empty
         // means the channel is off, and the endpoint answers 404 rather than

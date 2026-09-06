@@ -13,6 +13,7 @@
         ['label' => __('operator.shell.sections.onboarding'), 'href' => route('operator.onboarding'), 'active' => request()->routeIs('operator.onboarding')],
         ['label' => __('operator.shell.sections.mail'), 'href' => route('operator.settings.mail.edit'), 'active' => request()->routeIs('operator.settings.mail.*')],
         ['label' => __('operator.shell.sections.webpush'), 'href' => route('operator.settings.webpush.edit'), 'active' => request()->routeIs('operator.settings.webpush.*')],
+        ['label' => __('operator.shell.sections.ai'), 'href' => route('operator.settings.ai.edit'), 'active' => request()->routeIs('operator.settings.ai.*')],
         ['label' => __('operator.shell.sections.storage'), 'href' => route('operator.settings.storage.edit'), 'active' => request()->routeIs('operator.settings.storage.*')],
         ['label' => __('operator.shell.sections.scanning'), 'href' => route('operator.settings.scanning.edit'), 'active' => request()->routeIs('operator.settings.scanning.*')],
         ['label' => __('operator.shell.sections.backups'), 'href' => route('operator.settings.backups.edit'), 'active' => request()->routeIs('operator.settings.backups.*')],
