@@ -88,3 +88,13 @@ test('an unterminated quoted credential is redacted through the end of the bound
         ->toBe('{"token":"[REDACTED]"')
         ->not->toContain('bounded-secret-material');
 });
+
+test('quoted credentials redact escaped newlines and a trailing escape', function (): void {
+    $input = "token=\"first-secret\\\nsecond-secret\"\n".'password="trailing-secret'.'\\';
+
+    expect((new AiContextSanitizer)->sanitize($input))
+        ->toBe("token=\"[REDACTED]\"\npassword=\"[REDACTED]\"")
+        ->not->toContain('first-secret')
+        ->not->toContain('second-secret')
+        ->not->toContain('trailing-secret');
+});

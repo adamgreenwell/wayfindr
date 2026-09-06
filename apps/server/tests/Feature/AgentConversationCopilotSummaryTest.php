@@ -465,8 +465,11 @@ test('summary context redacts a private key whose end marker falls beyond the da
 
 test('summary context redacts a quoted credential whose closing quote falls beyond the database prefix', function (): void {
     $world = conversationCopilotSummaryWorld();
+    $opening = '{"token":"';
+    $secretPrefix = str_pad('bounded-secret-material', 8_000 - strlen($opening) - 1, 'x');
     ConversationMessage::factory()->for($world['conversation'])->create([
-        'body' => '{"token":"'.str_repeat('bounded-secret-material', 500).'"}',
+        // The SQL prefix ends on the escape immediately before the unseen tail.
+        'body' => $opening.$secretPrefix.'\\'.str_repeat('unselected-tail', 100).'"}',
     ]);
 
     $context = app(ConversationSummaryPromptBuilder::class)->build($world['conversation']);
