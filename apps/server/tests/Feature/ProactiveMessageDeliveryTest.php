@@ -67,7 +67,9 @@ test('the delivery factory creates one internally consistent site scope', functi
 
     expect($delivery->site_id)->toBe($delivery->rule()->value('site_id'))
         ->and($delivery->site_id)->toBe($delivery->visitor()->value('site_id'))
-        ->and($delivery->rule_public_id)->toBe($delivery->rule()->value('public_id'));
+        ->and($delivery->rule_public_id)->toBe($delivery->rule()->value('public_id'))
+        ->and($delivery->visitor_key)->toHaveLength(64)
+        ->and($delivery->visitor_key)->not->toBe($delivery->visitor()->value('anonymous_id'));
 });
 
 test('appearance publishes enabled rules in stable order only while presence is on', function (): void {
@@ -287,14 +289,34 @@ test('engagement becomes one exact support-side opening in the ordinary conversa
     ])->assertCreated();
 
     $conversation = Conversation::query()->where('support_code', $response->json('data.support_code'))->firstOrFail();
-    $opening = ConversationMessage::query()->where('conversation_id', $conversation->id)->sole();
 
-    expect($opening->sender_type)->toBe(ProactiveMessageRule::class)
+    // The reservation is single-use immediately, but no support-side opener
+    // exists until the visitor's first message commits with it.
+    expect($conversation->messages()->count())->toBe(0)
+        ->and(ProactiveMessageDelivery::query()->where('public_id', $deliveryId)->sole()->conversation_id)
+        ->toBe($conversation->id);
+
+    $this->postJson('/api/conversations/'.$conversation->support_code.'/messages', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => $token,
+        'body' => 'Yes please, which plan fits us?',
+        'client_message_id' => 'proactive-first-reply',
+    ])->assertCreated();
+
+    $messages = ConversationMessage::query()
+        ->where('conversation_id', $conversation->id)
+        ->orderBy('id')
+        ->get();
+    $opening = $messages->first();
+
+    expect($messages)->toHaveCount(2)
+        ->and($opening?->sender_type)->toBe(ProactiveMessageRule::class)
         ->and($opening->sender_id)->toBe($rule->id)
         ->and($opening->body)->toBe($shownMessage)
         ->and($opening->metadata['proactive_delivery_id'])->toBe($deliveryId)
-        ->and(ProactiveMessageDelivery::query()->where('public_id', $deliveryId)->sole()->conversation_id)
-        ->toBe($conversation->id);
+        ->and($messages->last()?->sender_type)->toBe(Visitor::class)
+        ->and($messages->last()?->body)->toBe('Yes please, which plan fits us?');
 
     $this->getJson('/api/conversations/'.$conversation->support_code.'/messages?'.http_build_query([
         'site_public_key' => $site->public_key,
@@ -315,6 +337,47 @@ test('engagement becomes one exact support-side opening in the ordinary conversa
     ])->assertNotFound();
 
     expect(Conversation::query()->count())->toBe(1);
+});
+
+test('a failed first visitor message leaves no invitation-only transcript', function (): void {
+    [$site, $visitor, $rule] = proactiveDeliveryWorld();
+    $deliveryId = claimProactiveDelivery($site, $rule, 'failed-first-reply')->assertCreated()->json('data.delivery_id');
+    recordProactiveOutcome($site, $deliveryId, 'shown')->assertAccepted();
+    recordProactiveOutcome($site, $deliveryId, 'engaged')->assertAccepted();
+    $token = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+    ])->assertSuccessful()->json('data.visitor.token');
+    $response = $this->postJson(route('conversations.store'), [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => $token,
+        'proactive_message_delivery_id' => $deliveryId,
+    ])->assertCreated();
+    $conversation = Conversation::query()->where('support_code', $response->json('data.support_code'))->firstOrFail();
+
+    $this->postJson('/api/conversations/'.$conversation->support_code.'/messages', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => $token,
+        'body' => 'This send must roll back.',
+        'attachment_ids' => [999999],
+    ])->assertStatus(422);
+
+    expect($conversation->messages()->count())->toBe(0)
+        ->and($conversation->fresh()?->last_message_at)->toBeNull();
+
+    $this->postJson('/api/conversations/'.$conversation->support_code.'/messages', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $visitor->anonymous_id,
+        'visitor_token' => $token,
+        'body' => 'This one commits.',
+    ])->assertCreated();
+
+    expect($conversation->messages()->orderBy('id')->pluck('body')->all())->toBe([
+        $rule->message,
+        'This one commits.',
+    ]);
 });
 
 test('an unshown or foreign delivery cannot open a conversation', function (): void {
@@ -363,6 +426,50 @@ test('dashboard metrics use the bounded evidence window', function (): void {
         ->assertOk()
         ->assertSee('1 shown · 1 engaged · 0 dismissed')
         ->assertSee('Last 90 days');
+});
+
+test('presence pruning keeps a still-active dismissal without retaining the raw visitor id', function (): void {
+    [$site, $visitor, $rule] = proactiveDeliveryWorld([
+        'frequency_cap_minutes' => 1,
+        'dismissal_snooze_minutes' => 90 * 1440,
+    ]);
+    $visitor->forceFill([
+        'last_seen_at' => now(),
+        'last_web_seen_at' => now(),
+        'presence_only' => true,
+    ])->save();
+    $deliveryId = claimProactiveDelivery($site, $rule, 'survive-presence-prune')->assertCreated()->json('data.delivery_id');
+    recordProactiveOutcome($site, $deliveryId, 'shown')->assertAccepted();
+    recordProactiveOutcome($site, $deliveryId, 'dismissed')->assertAccepted();
+
+    $this->travel(31)->days();
+    $this->artisan('wayfindr:prune-presence-visitors')->assertSuccessful();
+
+    $delivery = ProactiveMessageDelivery::query()->where('public_id', $deliveryId)->sole();
+
+    expect($visitor->fresh())->toBeNull()
+        ->and($delivery->visitor_id)->toBeNull()
+        ->and($delivery->visitor_key)->toHaveLength(64)
+        ->and($delivery->getAttributes())->not->toHaveKey('anonymous_id');
+
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-proactive',
+        'last_seen_at' => now(),
+        'last_web_seen_at' => now(),
+        'presence_only' => true,
+    ]);
+    $otherRule = ProactiveMessageRule::factory()->for($site)->create([
+        'is_enabled' => true,
+        'requires_available_agent' => false,
+        'frequency_cap_minutes' => 1,
+        'dismissal_snooze_minutes' => 90 * 1440,
+    ]);
+
+    claimProactiveDelivery($site, $otherRule, 'still-dismissed')
+        ->assertOk()
+        ->assertJsonPath('data.authorized', false);
+
+    $this->travelBack();
 });
 
 test('delivery evidence is pruned daily after no more than ninety days', function (): void {

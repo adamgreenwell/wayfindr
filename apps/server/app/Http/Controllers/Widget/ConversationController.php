@@ -221,7 +221,7 @@ class ConversationController extends Controller
             ]);
 
             if ($proactiveDelivery instanceof ProactiveMessageDelivery) {
-                $proactiveOpening->attach($proactiveDelivery, $conversation);
+                $proactiveOpening->reserve($proactiveDelivery, $conversation);
             }
 
             return $conversation;

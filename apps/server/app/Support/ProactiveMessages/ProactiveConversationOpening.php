@@ -41,9 +41,28 @@ final class ProactiveConversationOpening
         return $delivery;
     }
 
-    public function attach(ProactiveMessageDelivery $delivery, Conversation $conversation): void
+    public function reserve(ProactiveMessageDelivery $delivery, Conversation $conversation): void
     {
-        $message = $conversation->messages()->create([
+        $delivery->forceFill(['conversation_id' => $conversation->id])->save();
+    }
+
+    /** Attach the reserved opener only inside the first successful send. */
+    public function attachReserved(Conversation $conversation): void
+    {
+        if ($conversation->messages()->exists()) {
+            return;
+        }
+
+        $delivery = ProactiveMessageDelivery::query()
+            ->where('conversation_id', $conversation->id)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $delivery instanceof ProactiveMessageDelivery) {
+            return;
+        }
+
+        $conversation->messages()->create([
             // A real support-side opening, but not credited to a human agent.
             // The default API presentation already calls an unknown sender
             // `system`; the dashboard and widget give this specific class a
@@ -54,8 +73,5 @@ final class ProactiveConversationOpening
             'body' => $delivery->message,
             'metadata' => ['proactive_delivery_id' => $delivery->public_id],
         ]);
-
-        $conversation->forceFill(['last_message_at' => $message->created_at])->save();
-        $delivery->forceFill(['conversation_id' => $conversation->id])->save();
     }
 }

@@ -12,10 +12,14 @@ return new class extends Migration
             $table->id();
             $table->foreignId('site_id')->constrained()->cascadeOnDelete();
             $table->foreignId('proactive_message_rule_id')->nullable()->constrained()->nullOnDelete();
-            $table->foreignId('visitor_id')->constrained()->cascadeOnDelete();
+            // Presence-only visitors have a stricter 30-day deletion promise.
+            // Keep the bounded cap receipt after that row is gone without
+            // retaining the browser's raw anonymous ID here.
+            $table->foreignId('visitor_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('conversation_id')->nullable()->constrained()->nullOnDelete();
             $table->uuid('public_id')->unique();
             $table->uuid('rule_public_id');
+            $table->char('visitor_key', 64);
             $table->string('claim_key', 128);
             $table->string('message', 500);
             $table->timestamp('claimed_at');
@@ -26,6 +30,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['site_id', 'claim_key']);
+            $table->index(['site_id', 'visitor_key']);
             $table->index(['visitor_id', 'claimed_at']);
             $table->index(['visitor_id', 'shown_at']);
             $table->index(['visitor_id', 'dismissed_at']);

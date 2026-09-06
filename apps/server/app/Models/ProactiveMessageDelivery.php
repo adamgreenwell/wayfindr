@@ -15,6 +15,7 @@ use Illuminate\Support\Str;
     'visitor_id',
     'conversation_id',
     'rule_public_id',
+    'visitor_key',
     'claim_key',
     'message',
     'claimed_at',

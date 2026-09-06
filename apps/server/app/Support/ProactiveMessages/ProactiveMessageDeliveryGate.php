@@ -77,6 +77,8 @@ final readonly class ProactiveMessageDeliveryGate
                 return null;
             }
 
+            $visitorKey = ProactiveVisitorKey::for((int) $site->id, $anonymousId);
+
             $existing = ProactiveMessageDelivery::query()
                 ->where('site_id', $site->id)
                 ->where('claim_key', $claimKey)
@@ -94,7 +96,13 @@ final readonly class ProactiveMessageDeliveryGate
             $now = now();
             $deliveries = ProactiveMessageDelivery::query()
                 ->where('site_id', $site->id)
-                ->where('visitor_id', $visitor->id);
+                ->where(function ($query) use ($visitor, $visitorKey): void {
+                    // The relationship preserves caps across an agent merge;
+                    // the digest preserves them after the shorter-lived
+                    // presence-only visitor row is pruned.
+                    $query->where('visitor_id', $visitor->id)
+                        ->orWhere('visitor_key', $visitorKey);
+                });
 
             $frequencyBlocked = (clone $deliveries)
                 ->whereNotNull('shown_at')
@@ -118,6 +126,7 @@ final readonly class ProactiveMessageDeliveryGate
                 'proactive_message_rule_id' => $rule->id,
                 'visitor_id' => $visitor->id,
                 'rule_public_id' => $rule->public_id,
+                'visitor_key' => $visitorKey,
                 'claim_key' => $claimKey,
                 // Snapshot the exact invitation this claim authorized. A rule
                 // edit must not make the later conversation transcript say

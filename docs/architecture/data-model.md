@@ -45,9 +45,10 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   frequency and dismissal limits.
 - `proactive_message_deliveries`: bounded, site-and-visitor-scoped display
   claims and shown/engaged/dismissed receipts. They snapshot the exact public
-  invitation, may link to the conversation created after engagement, omit
-  matched browsing values, and are automatically deleted 90 days after their
-  last recorded outcome (or claim when no outcome exists).
+  invitation, may link to the conversation created after engagement, and use a
+  keyed visitor digest to preserve caps after the shorter-lived presence row is
+  pruned. They omit matched browsing values and are automatically deleted 90
+  days after their last recorded outcome (or claim when no outcome exists).
 - `reply_templates`: account-owned snippets that help agents answer common
   support questions without changing the ticket model.
 - `ticket_external_links`: provider-neutral records that connect a local
