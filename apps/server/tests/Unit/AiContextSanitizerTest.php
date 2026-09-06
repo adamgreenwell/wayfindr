@@ -59,11 +59,14 @@ test('an unterminated private key block is redacted through the end of the bound
 
 test('scrubbing an already scrubbed json prompt preserves its structure', function (): void {
     $sanitizer = new AiContextSanitizer;
-    $firstPass = $sanitizer->sanitize('The final value is token=visitor-secret');
+    $firstPass = $sanitizer->sanitize('Credentials are token="visitor-secret", api_key=\'provider-secret\', and secret="provider-\\"quoted\\"-secret".');
     $encoded = json_encode(['body' => $firstPass], JSON_THROW_ON_ERROR);
     $secondPass = $sanitizer->sanitize($encoded);
 
     expect(json_decode($secondPass, true, flags: JSON_THROW_ON_ERROR))->toBe([
-        'body' => 'The final value is token=[REDACTED]',
-    ]);
+        'body' => 'Credentials are token=[REDACTED], api_key=[REDACTED], and secret=[REDACTED].',
+    ])
+        ->and($secondPass)->not->toContain('visitor-secret')
+        ->and($secondPass)->not->toContain('provider-secret')
+        ->and($secondPass)->not->toContain('quoted');
 });
