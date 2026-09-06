@@ -80,11 +80,13 @@ function proactiveWidget({ href, outcomeStatuses, referrer, rules, storage } = {
       }
 
       if (url.includes('/api/widget/proactive-messages/') && url.endsWith('/authorize')) {
+        const authorizedRule = configuredRules.find((rule) => url.includes(encodeURIComponent(rule.id))) || configuredRules[0];
+
         return jsonResponse(201, {
           data: {
             authorized: true,
             delivery_id: deliveryId,
-            message: configuredRules[0].message,
+            message: authorizedRule.message,
             expires_at: new Date(Date.now() + 60_000).toISOString(),
           },
         });
@@ -202,6 +204,38 @@ test('never sends page or referrer values and ignores query-string-only matches'
 
   assert.equal(callsEnding(calls, '/authorize').length, 0);
   assert.equal(widget.root.querySelector('.wayfindr-widget__proactive').hidden, true);
+
+  widget.destroy();
+});
+
+test('an eligible later rule is not blocked by an earlier rule whose delay has not elapsed', async () => {
+  const delayedRuleId = '13f56531-b243-4fd0-a01c-e140c5df6e79';
+  const readyRuleId = '39cfac36-0daa-493a-a8d8-a477c1f70916';
+  const { calls, widget } = proactiveWidget({
+    rules: [{
+      id: delayedRuleId,
+      message: 'Not for five minutes.',
+      delay_seconds: 300,
+      minimum_visit_count: 1,
+      frequency_cap_minutes: 60,
+      dismissal_snooze_minutes: 1440,
+    }, {
+      id: readyRuleId,
+      message: 'Ready now.',
+      delay_seconds: 0,
+      minimum_visit_count: 1,
+      frequency_cap_minutes: 60,
+      dismissal_snooze_minutes: 1440,
+    }],
+  });
+
+  await settle();
+
+  const authorization = callsEnding(calls, '/authorize');
+
+  assert.equal(authorization.length, 1);
+  assert.match(authorization[0].url, new RegExp(readyRuleId));
+  assert.match(widget.root.querySelector('.wayfindr-widget__proactive').textContent, /Ready now/);
 
   widget.destroy();
 });

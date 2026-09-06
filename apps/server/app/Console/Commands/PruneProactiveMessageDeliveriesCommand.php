@@ -10,18 +10,21 @@ use Illuminate\Console\Command;
 /** Delete bounded delivery evidence once it can no longer affect any cap. */
 final class PruneProactiveMessageDeliveriesCommand extends Command
 {
-    protected $signature = 'wayfindr:prune-proactive-message-deliveries {--days= : Override the retention window}';
+    protected $signature = 'wayfindr:prune-proactive-message-deliveries';
 
     protected $description = 'Delete proactive-message delivery evidence past the retention window';
 
     public function handle(): int
     {
-        $days = $this->retentionDays();
+        $days = ProactiveMessageDelivery::RETENTION_DAYS;
         $cutoff = now()->subDays($days);
         $deleted = 0;
 
         ProactiveMessageDelivery::query()
             ->where('claimed_at', '<', $cutoff)
+            ->where(fn ($query) => $query->whereNull('shown_at')->orWhere('shown_at', '<', $cutoff))
+            ->where(fn ($query) => $query->whereNull('engaged_at')->orWhere('engaged_at', '<', $cutoff))
+            ->where(fn ($query) => $query->whereNull('dismissed_at')->orWhere('dismissed_at', '<', $cutoff))
             ->orderBy('id')
             ->chunkById(500, function ($deliveries) use (&$deleted): void {
                 $ids = $deliveries->modelKeys();
@@ -39,13 +42,5 @@ final class PruneProactiveMessageDeliveriesCommand extends Command
         ));
 
         return self::SUCCESS;
-    }
-
-    private function retentionDays(): int
-    {
-        $configured = (int) ($this->option('days')
-            ?: config('wayfindr.proactive_messages.retention_days', ProactiveMessageDelivery::RETENTION_DAYS));
-
-        return max(1, min($configured, ProactiveMessageDelivery::RETENTION_DAYS));
     }
 }

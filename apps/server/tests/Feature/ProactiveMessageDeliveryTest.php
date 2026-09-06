@@ -236,6 +236,19 @@ test('outcomes are monotonic visitor scoped and dismissal is honored across rule
         ->assertJsonPath('data.authorized', true);
 });
 
+test('a new dismissal cannot be forged after the short display claim expires', function (): void {
+    [$site, $visitor, $rule] = proactiveDeliveryWorld();
+    $deliveryId = claimProactiveDelivery($site, $rule, 'late-dismissal')->assertCreated()->json('data.delivery_id');
+
+    recordProactiveOutcome($site, $deliveryId, 'shown')->assertAccepted();
+
+    $this->travel(6)->minutes();
+    $visitor->forceFill(['last_web_seen_at' => now()])->save();
+
+    recordProactiveOutcome($site, $deliveryId, 'dismissed')->assertNotFound();
+    expect(ProactiveMessageDelivery::query()->where('public_id', $deliveryId)->sole()->dismissed_at)->toBeNull();
+});
+
 test('a recorded engagement remains idempotent after its display claim expires', function (): void {
     [$site, $visitor, $rule] = proactiveDeliveryWorld();
     $deliveryId = claimProactiveDelivery($site, $rule, 'engagement-retry')->assertCreated()->json('data.delivery_id');
@@ -366,15 +379,22 @@ test('delivery evidence is pruned daily after no more than ninety days', functio
         'claimed_at' => now()->subDays(89),
         'expires_at' => now()->subDays(89)->addMinutes(5),
     ]);
-
-    config(['wayfindr.proactive_messages.retention_days' => 900]);
+    $recentOutcome = ProactiveMessageDelivery::factory()->for($site)->for($visitor)->create([
+        'proactive_message_rule_id' => $rule->id,
+        'rule_public_id' => $rule->public_id,
+        'claimed_at' => now()->subDays(91),
+        'expires_at' => now()->subDays(91)->addMinutes(5),
+        'shown_at' => now()->subDays(91),
+        'dismissed_at' => now()->subDays(89),
+    ]);
 
     $this->artisan('wayfindr:prune-proactive-message-deliveries')
         ->expectsOutputToContain('Pruned 1 proactive-message delivery older than 90 days.')
         ->assertSuccessful();
 
     expect($old->fresh())->toBeNull()
-        ->and($recent->fresh())->not->toBeNull();
+        ->and($recent->fresh())->not->toBeNull()
+        ->and($recentOutcome->fresh())->not->toBeNull();
 
     $pruneEvent = collect(app(Schedule::class)->events())
         ->first(fn (Event $event): bool => str_contains((string) $event->command, 'wayfindr:prune-proactive-message-deliveries'));

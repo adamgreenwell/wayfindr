@@ -1153,10 +1153,10 @@
     var presencePollMs = typeof options.presencePollMs === 'number' ? Math.max(0, options.presencePollMs) : null;
     var storage = resolveStorageOption(options);
     var proactiveCandidates = [];
-    var proactiveCandidateIndex = 0;
     var proactiveTimer = null;
     var proactiveExpiryTimer = null;
     var proactiveSequence = 0;
+    var proactiveAuthorizationPending = false;
     var proactivePageStartedAt = Date.now();
     var proactiveVisitCount = recordProactiveVisit(storage, options.sitePublicKey);
     var proactivePresenceAccepted = false;
@@ -3424,10 +3424,11 @@
 
     function applyProactiveRules(rules) {
       proactiveCandidates = (Array.isArray(rules) ? rules : []).filter(proactiveRuleMatches);
-      proactiveCandidateIndex = 0;
       clearProactiveTimer();
 
       if (!activeProactive) {
+        proactiveSequence++;
+        proactiveAuthorizationPending = false;
         scheduleNextProactiveCandidate();
       }
     }
@@ -3479,19 +3480,41 @@
         || storedSupportCode
         || resumePending
         || activeProactive
-        || proactiveCandidateIndex >= proactiveCandidates.length
+        || proactiveAuthorizationPending
+        || proactiveCandidates.length === 0
         || presenceHidden()) {
         return;
       }
 
-      var rule = proactiveCandidates[proactiveCandidateIndex];
-      var dueAt = proactivePageStartedAt + Math.max(0, Number(rule.delay_seconds) || 0) * 1000;
-      var waitMs = Math.max(0, dueAt - Date.now());
+      var nowMs = Date.now();
+      var eligibleIndex = -1;
+      var nextDueAt = Infinity;
+
+      for (var i = 0; i < proactiveCandidates.length; i++) {
+        var candidateDueAt = proactivePageStartedAt
+          + Math.max(0, Number(proactiveCandidates[i].delay_seconds) || 0) * 1000;
+
+        if (candidateDueAt <= nowMs) {
+          // The server supplied stable evaluation order, so the first rule
+          // whose own delay has elapsed wins among the rules eligible NOW.
+          eligibleIndex = i;
+
+          break;
+        }
+
+        nextDueAt = Math.min(nextDueAt, candidateDueAt);
+      }
+
+      if (eligibleIndex >= 0) {
+        attemptProactiveCandidate(proactiveCandidates.splice(eligibleIndex, 1)[0]);
+
+        return;
+      }
 
       proactiveTimer = setTimeout(function () {
         proactiveTimer = null;
-        attemptProactiveCandidate(rule);
-      }, waitMs);
+        scheduleNextProactiveCandidate();
+      }, Math.max(0, nextDueAt - nowMs));
     }
 
     function attemptProactiveCandidate(rule) {
@@ -3506,12 +3529,18 @@
         return;
       }
 
-      proactiveCandidateIndex++;
       var seq = ++proactiveSequence;
       var claimKey = generateClientMessageId();
+      proactiveAuthorizationPending = true;
 
       client.authorizeProactiveMessage(rule.id, claimKey).then(function (result) {
-        if (seq !== proactiveSequence || !result || result.authorized !== true) {
+        if (seq !== proactiveSequence) {
+          return;
+        }
+
+        proactiveAuthorizationPending = false;
+
+        if (!result || result.authorized !== true) {
           scheduleNextProactiveCandidate();
 
           return;
@@ -3519,6 +3548,11 @@
 
         renderProactiveInvitation(rule, result);
       }).catch(function (error) {
+        if (seq !== proactiveSequence) {
+          return;
+        }
+
+        proactiveAuthorizationPending = false;
         reportSuppressed('proactive authorization', error);
       });
     }
@@ -3654,6 +3688,7 @@
     function stopProactiveMessages() {
       proactiveSequence++;
       proactivePresenceAccepted = false;
+      proactiveAuthorizationPending = false;
       clearProactiveTimer();
       hideProactiveInvitation();
     }

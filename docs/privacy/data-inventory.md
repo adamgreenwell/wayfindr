@@ -61,12 +61,13 @@ clamped rather than honoured. It exists because presence reporting
 changes `visitors` from *people who opened the chat* to *people on the site*,
 which turns the absence of pruning from a gap into a defect.
 
-Proactive-message delivery evidence is deleted 90 days after its claim. An
-operator may shorten that maximum with
-`WAYFINDR_PROACTIVE_MESSAGE_RETENTION_DAYS`; a longer value is clamped. This
-removes the message snapshot and outcome receipts even when the visitor later
-starts a conversation. The ordinary conversation message created after an
-engagement is support history and follows the conversation's retention posture.
+Proactive-message delivery evidence is deleted 90 days after its last recorded
+outcome (or claim when no outcome exists). This fixed window is long enough to
+enforce the product's maximum dismissal cap without quietly turning a 90-day
+promise into a shorter server-side limit. It removes the message snapshot and
+outcome receipts even when the visitor later starts a conversation. The
+ordinary conversation message created after an engagement is support history
+and follows the conversation's retention posture.
 
 **Everything else still persists indefinitely.** Conversations, messages,
 tickets, ratings, SLA history, automation execution history, and audit events have no automatic retention, and operators

@@ -60,8 +60,8 @@ Those receipts are bounded, site-scoped records used for caps and aggregate
 reporting. They do not store the matched URL, referrer, or a sequence of pages.
 The dashboard reports per-rule shown, engaged, and dismissed counts for the
 latest 90 days, and a daily scheduled command deletes the underlying evidence
-after that maximum. Operators may configure a shorter window but not a longer
-one.
+90 days after its last outcome. The fixed window preserves the full server-side
+dismissal promise while keeping this browsing-adjacent evidence bounded.
 
 ## Current implementation boundary
 

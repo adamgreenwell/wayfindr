@@ -35,14 +35,11 @@ final class AgentProactiveMessageRuleController extends Controller
             'rules' => $site->proactiveMessageRules()
                 ->withCount([
                     'deliveries as shown_count' => fn (Builder $query): Builder => $query
-                        ->where('claimed_at', '>=', $evidenceCutoff)
-                        ->whereNotNull('shown_at'),
+                        ->where('shown_at', '>=', $evidenceCutoff),
                     'deliveries as engaged_count' => fn (Builder $query): Builder => $query
-                        ->where('claimed_at', '>=', $evidenceCutoff)
-                        ->whereNotNull('engaged_at'),
+                        ->where('engaged_at', '>=', $evidenceCutoff),
                     'deliveries as dismissed_count' => fn (Builder $query): Builder => $query
-                        ->where('claimed_at', '>=', $evidenceCutoff)
-                        ->whereNotNull('dismissed_at'),
+                        ->where('dismissed_at', '>=', $evidenceCutoff),
                 ])
                 ->inEvaluationOrder()
                 ->get(),

@@ -172,13 +172,6 @@ return [
         'retention_days' => (int) env('WAYFINDR_PRESENCE_RETENTION_DAYS', 30),
     ],
 
-    'proactive_messages' => [
-        // Delivery evidence is deliberately shorter-lived than support
-        // history. Operators may shorten this window, but the pruner clamps a
-        // longer setting to the product's documented maximum.
-        'retention_days' => (int) env('WAYFINDR_PROACTIVE_MESSAGE_RETENTION_DAYS', 90),
-    ],
-
     'attachments' => [
         // Which filesystem disk NEW uploads land on: 'attachments' (local
         // private disk, the default) or 'attachments-s3' (S3-compatible).

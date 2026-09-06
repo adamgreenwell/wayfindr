@@ -188,7 +188,13 @@ final readonly class ProactiveMessageDeliveryGate
 
                 $delivery->engaged_at ??= $now;
             } elseif ($outcome === 'dismissed') {
-                if ($delivery->shown_at === null || $delivery->engaged_at !== null) {
+                if ($delivery->dismissed_at !== null) {
+                    return $delivery;
+                }
+
+                if ($delivery->shown_at === null
+                    || $delivery->engaged_at !== null
+                    || $delivery->expires_at->lessThan($now)) {
                     return null;
                 }
 
