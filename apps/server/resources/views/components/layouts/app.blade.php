@@ -2111,6 +2111,16 @@
             white-space: nowrap;
         }
 
+        .proactive-rules-table th,
+        .proactive-rules-table td,
+        .proactive-rules-table .table-note {
+            white-space: normal;
+        }
+
+        .proactive-rules-table td {
+            vertical-align: top;
+        }
+
         .queue-activity-preview,
         .ticket-activity-preview {
             max-width: 340px;

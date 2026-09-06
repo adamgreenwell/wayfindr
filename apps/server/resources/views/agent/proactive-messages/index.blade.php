@@ -39,21 +39,20 @@
             </div>
         @else
             <div class="table-wrap">
-                <table>
+                <table class="proactive-rules-table">
                     <thead>
                         <tr>
                             <th scope="col">{{ __('proactive_messages.list.columns.rule') }}</th>
                             <th scope="col">{{ __('proactive_messages.list.columns.when') }}</th>
                             <th scope="col">{{ __('proactive_messages.list.columns.caps') }}</th>
-                            <th scope="col">{{ __('proactive_messages.list.columns.status') }}</th>
-                            <th scope="col">{{ __('proactive_messages.list.columns.action') }}</th>
+                            <th scope="col">{{ __('proactive_messages.list.columns.status_results') }}</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($rules as $rule)
                             <tr>
                                 <td>
-                                    <strong lang="">{{ $rule->name }}</strong>
+                                    <a href="{{ route('dashboard.sites.proactive-messages.edit', [$site, $rule]) }}"><strong lang="">{{ $rule->name }}</strong></a>
                                     <span class="table-note" lang="">{{ $rule->message }}</span>
                                 </td>
                                 <td>
@@ -67,8 +66,8 @@
                                     @endif
                                 </td>
                                 <td>
-                                    {{ __('proactive_messages.list.frequency', ['hours' => \App\Support\ReaderNumber::count(intdiv($rule->frequency_cap_minutes, 60))]) }}
-                                    <span class="table-note">{{ __('proactive_messages.list.dismissal', ['days' => \App\Support\ReaderNumber::count(intdiv($rule->dismissal_snooze_minutes, 1440))]) }}</span>
+                                    {{ trans_choice('proactive_messages.list.frequency', intdiv($rule->frequency_cap_minutes, 60), ['hours' => \App\Support\ReaderNumber::count(intdiv($rule->frequency_cap_minutes, 60))]) }}
+                                    <span class="table-note">{{ trans_choice('proactive_messages.list.dismissal', intdiv($rule->dismissal_snooze_minutes, 1440), ['days' => \App\Support\ReaderNumber::count(intdiv($rule->dismissal_snooze_minutes, 1440))]) }}</span>
                                 </td>
                                 <td>
                                     <span class="readiness-status" data-status="{{ $rule->is_enabled ? 'ready' : 'manual' }}">
@@ -77,8 +76,13 @@
                                     @if ($rule->requires_available_agent)
                                         <span class="table-note">{{ __('proactive_messages.status.agent_required') }}</span>
                                     @endif
+                                    <span class="table-note">{{ __('proactive_messages.list.results', [
+                                        'shown' => \App\Support\ReaderNumber::count($rule->shown_count),
+                                        'engaged' => \App\Support\ReaderNumber::count($rule->engaged_count),
+                                        'dismissed' => \App\Support\ReaderNumber::count($rule->dismissed_count),
+                                    ]) }}</span>
+                                    <span class="table-note">{{ __('proactive_messages.list.results_window', ['days' => \App\Support\ReaderNumber::count(\App\Models\ProactiveMessageDelivery::RETENTION_DAYS)]) }}</span>
                                 </td>
-                                <td><a class="button secondary" href="{{ route('dashboard.sites.proactive-messages.edit', [$site, $rule]) }}">{{ __('proactive_messages.list.edit') }}</a></td>
                             </tr>
                         @endforeach
                     </tbody>

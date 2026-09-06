@@ -129,6 +129,11 @@ class Visitor extends Model
         return $this->hasMany(VisitorNote::class);
     }
 
+    public function proactiveMessageDeliveries(): HasMany
+    {
+        return $this->hasMany(ProactiveMessageDelivery::class);
+    }
+
     public function identityAliases(): HasMany
     {
         return $this->hasMany(VisitorIdentityAlias::class);

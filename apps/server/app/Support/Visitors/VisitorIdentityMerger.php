@@ -185,6 +185,7 @@ final class VisitorIdentityMerger
             'tickets' => DB::table('tickets')->where('requester_id', $sourceId)->update(['requester_id' => $targetId]),
             'cobrowse_sessions' => DB::table('cobrowse_sessions')->where('visitor_id', $sourceId)->update(['visitor_id' => $targetId]),
             'contact_notes' => DB::table('visitor_notes')->where('visitor_id', $sourceId)->update(['visitor_id' => $targetId]),
+            'proactive_message_deliveries' => DB::table('proactive_message_deliveries')->where('visitor_id', $sourceId)->update(['visitor_id' => $targetId]),
             'messages' => DB::table('conversation_messages')
                 ->where('sender_type', $visitorType)
                 ->where('sender_id', $sourceId)

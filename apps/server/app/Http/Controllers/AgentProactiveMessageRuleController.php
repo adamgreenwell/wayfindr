@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Enums\AccountPermission;
 use App\Models\AuditEvent;
+use App\Models\ProactiveMessageDelivery;
 use App\Models\ProactiveMessageRule;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\SitePresenceReporting;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -24,12 +26,23 @@ final class AgentProactiveMessageRuleController extends Controller
     public function index(Request $request, Site $site): View
     {
         $agent = $this->manager($request, $site);
+        $evidenceCutoff = now()->subDays(ProactiveMessageDelivery::RETENTION_DAYS);
 
         return view('agent.proactive-messages.index', [
             'account' => $agent->account()->firstOrFail(),
             'agent' => $agent,
             'presenceEnabled' => SitePresenceReporting::for($site)->enabled,
-            'rules' => $site->proactiveMessageRules()->inEvaluationOrder()->get(),
+            'rules' => $site->proactiveMessageRules()
+                ->withCount([
+                    'deliveries as shown_count' => fn (Builder $query): Builder => $query
+                        ->where('shown_at', '>=', $evidenceCutoff),
+                    'deliveries as engaged_count' => fn (Builder $query): Builder => $query
+                        ->where('engaged_at', '>=', $evidenceCutoff),
+                    'deliveries as dismissed_count' => fn (Builder $query): Builder => $query
+                        ->where('dismissed_at', '>=', $evidenceCutoff),
+                ])
+                ->inEvaluationOrder()
+                ->get(),
             'site' => $site,
         ]);
     }

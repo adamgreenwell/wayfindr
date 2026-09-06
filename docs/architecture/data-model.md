@@ -43,6 +43,12 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   definitions with stable order, browser-evaluated URL/referrer conditions,
   timing and visit thresholds, agent-availability gating, and mandatory
   frequency and dismissal limits.
+- `proactive_message_deliveries`: bounded, site-and-visitor-scoped display
+  claims and shown/engaged/dismissed receipts. They snapshot the exact public
+  invitation, may link to the conversation created after engagement, and use a
+  keyed visitor digest to preserve caps after the shorter-lived presence row is
+  pruned. They omit matched browsing values and are automatically deleted 90
+  days after their last recorded outcome (or claim when no outcome exists).
 - `reply_templates`: account-owned snippets that help agents answer common
   support questions without changing the ticket model.
 - `ticket_external_links`: provider-neutral records that connect a local
@@ -79,9 +85,10 @@ operator-facing data inventory and retention posture.
 - Proactive message rules are a separate site-owned contract because they are
   evaluated before a conversation exists. Equal positions are resolved by row
   ID. Page and referrer matching stays in the browser; those matched values are
-  not copied into server-side delivery evidence. Server authorization, delivery
-  receipts, conversation handoff, and aggregate effectiveness reporting are a
-  later slice described in
+  not copied into server-side delivery evidence. A short server claim protects
+  live availability and cross-tab caps; a shown receipt spends the cap; an
+  engaged receipt may be used once to copy the saved message snapshot into a
+  normal conversation. See
   [Proactive messaging](../product/proactive-messaging.md).
 - Creation and update rules enter through explicit domain events after intake has established its final initial state and after the causal audit event is stored. Eloquent observers still maintain infrastructure such as SLA clocks, routing, and webhook outboxes, but they do not run business automation against half-finished workflows.
 - Visitor identity supports both `anonymous_id` and optional host-provided

@@ -13,6 +13,8 @@ use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
 use App\Models\CustomRole;
+use App\Models\ProactiveMessageDelivery;
+use App\Models\ProactiveMessageRule;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -149,6 +151,11 @@ test('a merge moves person-owned support records and retains canonical values', 
         'author_id' => $manager->id,
         'body' => 'Private continuity note',
     ]);
+    $proactiveRule = ProactiveMessageRule::factory()->for($site)->create();
+    $proactiveDelivery = ProactiveMessageDelivery::factory()->for($site)->for($source)->create([
+        'proactive_message_rule_id' => $proactiveRule->id,
+        'rule_public_id' => $proactiveRule->public_id,
+    ]);
     $message = ConversationMessage::factory()->for($conversation)->create([
         'sender_type' => Visitor::class,
         'sender_id' => $source->id,
@@ -204,6 +211,7 @@ test('a merge moves person-owned support records and retains canonical values', 
         ->and($ticket->fresh()?->requester_id)->toBe($target->id)
         ->and($cobrowse->fresh()?->visitor_id)->toBe($target->id)
         ->and($note->fresh()?->visitor_id)->toBe($target->id)
+        ->and($proactiveDelivery->fresh()?->visitor_id)->toBe($target->id)
         ->and($message->fresh()?->sender_id)->toBe($target->id)
         ->and($attachment->fresh()?->uploaded_by_id)->toBe($target->id)
         ->and($visitorSubjectEvent->fresh()?->subject_id)->toBe($target->id)
@@ -231,6 +239,7 @@ test('a merge moves person-owned support records and retains canonical values', 
                 'tickets' => 1,
                 'cobrowse_sessions' => 1,
                 'contact_notes' => 1,
+                'proactive_message_deliveries' => 1,
                 'messages' => 1,
                 'attachments' => 1,
                 'audit_subjects' => 1,

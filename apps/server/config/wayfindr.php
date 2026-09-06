@@ -152,6 +152,8 @@ return [
         // an install that genuinely has more raises it rather than watching
         // its board flicker.
         'presence_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE', 1200),
+        'proactive_per_minute' => (int) env('WAYFINDR_WIDGET_PROACTIVE_RATE_LIMIT', 120),
+        'proactive_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PROACTIVE_PER_IP_RATE_LIMIT', 1200),
         'broadcast_auth_per_minute' => (int) env('WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT', 120),
         'conversation_per_minute' => (int) env('WAYFINDR_WIDGET_CONVERSATION_RATE_LIMIT', 30),
         'message_per_minute' => (int) env('WAYFINDR_WIDGET_MESSAGE_RATE_LIMIT', 240),

@@ -9,11 +9,13 @@ use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ProactiveMessageRule;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Conversations\ConversationLifecycleLog;
+use App\Support\ProactiveMessages\ProactiveConversationOpening;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use App\Support\Visitors\VisitorConversationWriteAuthorization;
@@ -112,6 +114,7 @@ class ConversationMessageController extends Controller
         VisitorConversationResolver $conversations,
         AttachmentBinder $binder,
         VisitorConversationWriteAuthorization $conversationWrites,
+        ProactiveConversationOpening $proactiveOpening,
     ): JsonResponse {
         // Identity first: everything after this answers the visitor, and the
         // language they are owed comes from the site.
@@ -148,7 +151,7 @@ class ConversationMessageController extends Controller
 
         $clientMessageId = $this->normalizeClientMessageId($validated['client_message_id'] ?? null);
         try {
-            [$message, $created, $conversation] = DB::transaction(function () use ($conversation, $identity, $body, $attachmentIds, $clientMessageId, $binder, $conversationWrites) {
+            [$message, $created, $conversation] = DB::transaction(function () use ($conversation, $identity, $body, $attachmentIds, $clientMessageId, $binder, $conversationWrites, $proactiveOpening) {
                 // Token validation happened before validation and file binding,
                 // so identity merge can complete in the gap. Re-authorize from
                 // the reported browser ID only after taking the shared site
@@ -175,6 +178,11 @@ class ConversationMessageController extends Controller
                         return [$existing, false, $conversation];
                     }
                 }
+
+                // The conversation shell exists before uploads can bind to it,
+                // but the invitation must not become a support-side message
+                // unless this first visitor message commits with it.
+                $proactiveOpening->attachReserved($conversation);
 
                 $message = $conversation->messages()->create([
                     'sender_type' => Visitor::class,
@@ -338,6 +346,13 @@ class ConversationMessageController extends Controller
         }
 
         if ($message->sender_type === ApiToken::class) {
+            return [
+                'kind' => 'agent',
+                'name' => $message->conversation?->site?->name ?? 'Support',
+            ];
+        }
+
+        if ($message->sender_type === ProactiveMessageRule::class) {
             return [
                 'kind' => 'agent',
                 'name' => $message->conversation?->site?->name ?? 'Support',

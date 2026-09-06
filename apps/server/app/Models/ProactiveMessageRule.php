@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 #[Fillable([
@@ -52,6 +53,32 @@ class ProactiveMessageRule extends Model
     public function site(): BelongsTo
     {
         return $this->belongsTo(Site::class);
+    }
+
+    public function deliveries(): HasMany
+    {
+        return $this->hasMany(ProactiveMessageDelivery::class);
+    }
+
+    /**
+     * Public configuration evaluated in the browser. No observed page or
+     * referrer comes back with it; those comparisons stay on the page.
+     *
+     * @return array<string, bool|int|string|null>
+     */
+    public function toWidgetPayload(): array
+    {
+        return [
+            'id' => $this->public_id,
+            'message' => $this->message,
+            'url_contains' => $this->url_contains,
+            'referrer_contains' => $this->referrer_contains,
+            'delay_seconds' => $this->delay_seconds,
+            'minimum_visit_count' => $this->minimum_visit_count,
+            'requires_available_agent' => $this->requires_available_agent,
+            'frequency_cap_minutes' => $this->frequency_cap_minutes,
+            'dismissal_snooze_minutes' => $this->dismissal_snooze_minutes,
+        ];
     }
 
     public function scopeEnabled(Builder $query): Builder

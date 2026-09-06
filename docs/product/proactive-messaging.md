@@ -41,17 +41,39 @@ A display is not a conversation. The normal conversation opening should happen
 only when the visitor engages with the invitation, avoiding empty conversations
 and preserving the distinction between browsing and asking for support.
 
+Authorization is a five-minute, idempotent claim. It is intentionally separate
+from the shown receipt: a response lost before rendering must not spend the
+visitor's display cap. Claims and caps are serialized through the visitor row,
+so simultaneous tabs cannot both win. Once shown, the frequency cap applies
+site-wide across rules; a dismissal likewise snoozes every rule for the
+configured window. Browser storage mirrors those controls for an immediate
+cross-tab experience, while the server remains authoritative.
+
+“Available” means an active account agent who can view conversations, is in the
+site's explicit support roster when one exists, and has marked their routing
+status online. Support hours reuse the site's ordinary availability result.
+
 ## Delivery evidence
 
 Effectiveness needs three explicit outcomes: shown, engaged, and dismissed.
-Those receipts should be bounded, site-scoped records used for caps and
-aggregate reporting. They must not become a browsing-history log: do not store
-the matched URL, referrer, or a sequence of pages.
+Those receipts are bounded, site-scoped records used for caps and aggregate
+reporting. They do not store the matched URL, referrer, or a sequence of pages.
+The dashboard reports per-rule shown, engaged, and dismissed counts for the
+latest 90 days, and a daily scheduled command deletes the underlying evidence
+90 days after its last outcome. The fixed window preserves the full server-side
+dismissal promise while keeping this browsing-adjacent evidence bounded.
 
 ## Current implementation boundary
 
-The first slice provides the site-scoped rule model and dashboard management
-surface. It does not yet publish rules to the widget, authorize a display,
-render an invitation, create a conversation from engagement, enforce a cap, or
-record delivery evidence. Until that delivery slice lands, saved rules are
-configuration only even when marked enabled.
+The delivery slice publishes enabled rules only while opted-in presence is on.
+The stock widget matches page, referrer, visit count, and delay locally; asks
+the server to authorize the first eligible rule; renders one plain-text
+invitation; and records shown, engaged, or dismissed outcomes. Viewing an
+invitation does not create a conversation. If the visitor opens it and sends a
+reply, the server inserts the exact invitation snapshot as the support-side
+opening in the ordinary conversation, then the visitor's message follows it.
+
+This remains a small invitation system rather than a campaign engine: there
+are no chatbot branches, variants, inferred audiences, or automatic empty
+conversations. A visitor action is required before anything enters the support
+queue.

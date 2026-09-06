@@ -226,6 +226,12 @@ class AppServiceProvider extends ServiceProvider
             $this->widgetLimit($request, 'presence_per_ip_per_minute', 'presence-ip'),
         ]);
 
+        RateLimiter::for('widget-proactive', fn (Request $request): array => [
+            $this->widgetLimit($request, 'proactive_per_minute', 'proactive')
+                ->by($this->widgetVisitorKey($request, 'proactive-visitor')),
+            $this->widgetLimit($request, 'proactive_per_ip_per_minute', 'proactive-ip'),
+        ]);
+
         RateLimiter::for(
             'widget-broadcast-auth',
             fn (Request $request): Limit => $this->widgetLimit($request, 'broadcast_auth_per_minute', 'broadcast-auth')
@@ -306,14 +312,19 @@ class AppServiceProvider extends ServiceProvider
      */
     private function widgetPresenceVisitorKey(Request $request): string
     {
+        return $this->widgetVisitorKey($request, 'presence-visitor');
+    }
+
+    private function widgetVisitorKey(Request $request, string $scope): string
+    {
         $anonymousId = $request->input('anonymous_id');
 
         if (! is_scalar($anonymousId) || (string) $anonymousId === '') {
-            return $this->widgetRateLimitKey($request, 'presence-anonymous');
+            return $this->widgetRateLimitKey($request, $scope.'-anonymous');
         }
 
         return implode('|', [
-            'presence-visitor',
+            $scope,
             hash('sha256', $this->widgetSitePublicKeyForRateLimit($request)),
             hash('sha256', (string) $anonymousId),
         ]);

@@ -5,6 +5,7 @@ namespace App\Events;
 use App\Events\Concerns\NotBroadcastForArchivedSites;
 use App\Models\ApiToken;
 use App\Models\ConversationMessage;
+use App\Models\ProactiveMessageRule;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Broadcasting\InteractsWithSockets;
@@ -85,6 +86,13 @@ class ConversationMessageCreated implements ShouldBroadcastNow
                 // Support-side to the visitor, but deliberately not called an
                 // agent in storage or reporting. The site's own name is safe
                 // visitor-facing copy; an internal token name is not.
+                'kind' => 'agent',
+                'name' => $this->message->conversation?->site?->name ?? 'Support',
+            ];
+        }
+
+        if ($this->message->sender_type === ProactiveMessageRule::class) {
+            return [
                 'kind' => 'agent',
                 'name' => $this->message->conversation?->site?->name ?? 'Support',
             ];

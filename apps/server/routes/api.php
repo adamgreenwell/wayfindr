@@ -24,6 +24,7 @@ use App\Http\Controllers\Widget\ConversationMessageController;
 use App\Http\Controllers\Widget\ConversationRatingController;
 use App\Http\Controllers\Widget\ConversationTypingController;
 use App\Http\Controllers\Widget\PresenceController;
+use App\Http\Controllers\Widget\ProactiveMessageController;
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
 use Illuminate\Support\Facades\Route;
@@ -45,6 +46,14 @@ Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)
 Route::get('/widget/appearance', AppearanceController::class)
     ->middleware('throttle:widget-config')
     ->name('widget.appearance');
+Route::post('/widget/proactive-messages/{rulePublicId}/authorize', [ProactiveMessageController::class, 'authorizeDisplay'])
+    ->whereUuid('rulePublicId')
+    ->middleware('throttle:widget-proactive')
+    ->name('widget.proactive-messages.authorize');
+Route::post('/widget/proactive-messages/{deliveryPublicId}/outcomes', [ProactiveMessageController::class, 'recordOutcome'])
+    ->whereUuid('deliveryPublicId')
+    ->middleware('throttle:widget-proactive')
+    ->name('widget.proactive-messages.outcomes.store');
 
 Route::middleware('throttle:widget-bootstrap')->group(function (): void {
     Route::get('/widget/articles', [ArticleController::class, 'index'])

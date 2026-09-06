@@ -163,6 +163,8 @@ test('widget bootstrap validates non scalar public keys after rate limit hashing
 test('public widget api routes declare named rate limiters', function (): void {
     $expectedMiddlewareByRoute = [
         'widget.bootstrap' => 'throttle:widget-bootstrap',
+        'widget.proactive-messages.authorize' => 'throttle:widget-proactive',
+        'widget.proactive-messages.outcomes.store' => 'throttle:widget-proactive',
         'widget.broadcasting.auth' => 'throttle:widget-broadcast-auth',
         'conversations.store' => 'throttle:widget-conversation',
         'conversations.cobrowse.show' => 'throttle:widget-cobrowse',
