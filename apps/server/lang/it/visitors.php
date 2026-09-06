@@ -28,6 +28,14 @@ return [
         'clear' => 'Azzera',
     ],
 
+    'export' => [
+        'csv' => 'Esporta CSV',
+        'boundary_heading' => 'Limiti dell’esportazione',
+        'boundary_lede' => 'Filtrata e limitata ai siti',
+        'boundary_fields' => 'Le esportazioni includono identità del contatto, data e ora e valori degli attributi definiti. Il contesto host grezzo, le note di contatto, le conversazioni, i ticket e la cronologia degli ID del browser sono esclusi intenzionalmente.',
+        'boundary_scope' => 'Il file include al massimo i :count visitatori più recenti che corrispondono ai filtri attuali sui siti per cui Lei può fornire assistenza.',
+    ],
+
     'list' => [
         'heading' => 'Visitatori',
         'columns' => [

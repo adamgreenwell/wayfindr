@@ -1,13 +1,16 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Enums\VisitorAttributeType;
 use App\Models\Account;
 use App\Models\Conversation;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorAttributeDefinition;
+use App\Models\VisitorNote;
 use App\Support\Visitors\VisitorPresence;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -47,6 +50,193 @@ test('the index lists visitors this agent may see, most recent first', function 
         ->assertSeeInOrder(['Newer Visitor', 'Older Visitor'])
         ->assertSee(route('dashboard.visitors.show', $newer), false)
         ->assertSee(route('dashboard.visitors.show', $older), false);
+});
+
+test('contact managers export the filtered directory without adjacent private support data', function (): void {
+    $this->travelTo(Carbon::parse('2026-09-05 16:30:00', 'UTC'));
+    $w = visitorIndexWorld();
+    $w['agent']->forceFill(['timezone' => 'Europe/Berlin'])->save();
+    $definition = VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'plan',
+        'label' => 'Customer plan',
+        'type' => VisitorAttributeType::Text,
+    ]);
+    $visitor = Visitor::factory()->for($w['site'])->create([
+        'anonymous_id' => 'anon-exportable',
+        'external_id' => 'customer-7',
+        'name' => 'Exportable Contact',
+        'email' => 'exportable@example.test',
+        'metadata' => [
+            'context' => ['plan' => 'Enterprise', 'unstructured_secret' => 'keep-me-out'],
+            'last_page_url' => 'https://northwind.test/private',
+        ],
+        'last_seen_at' => Carbon::parse('2026-09-05 14:00:00', 'UTC'),
+        'last_web_seen_at' => Carbon::parse('2026-09-05 13:55:00', 'UTC'),
+        'created_at' => Carbon::parse('2026-09-01 12:00:00', 'UTC'),
+    ]);
+    Visitor::factory()->for($w['site'])->create([
+        'name' => 'Filtered Out Contact',
+        'metadata' => ['context' => ['plan' => 'Starter']],
+    ]);
+    $conversation = Conversation::factory()->for($w['site'])->for($visitor)->create([
+        'subject' => 'Private support subject',
+    ]);
+    VisitorNote::factory()->create([
+        'account_id' => $w['account']->id,
+        'visitor_id' => $visitor->id,
+        'author_id' => $w['agent']->id,
+        'body' => 'Private contact note',
+    ]);
+
+    $restrictedSite = Site::factory()->for($w['account'])->create(['name' => 'Restricted Site']);
+    $restrictedAgent = User::factory()->for($w['account'])->create();
+    $restrictedSite->supportAgents()->attach($restrictedAgent);
+    Visitor::factory()->for($restrictedSite)->create(['name' => 'Exportable Restricted']);
+    Visitor::factory()->for(Site::factory()->for(Account::factory()))->create(['name' => 'Exportable Outsider']);
+
+    $filters = [
+        'search' => 'Exportable',
+        'site' => $w['site']->id,
+        'attribute' => $definition->key,
+        'attribute_value' => 'Enterprise',
+    ];
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index', $filters))
+        ->assertOk()
+        ->assertSee(route('dashboard.visitors.export', $filters));
+
+    $response = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.export', $filters))
+        ->assertOk()
+        ->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+
+    $content = $response->streamedContent();
+    $rows = collect(explode("\n", trim($content)))
+        ->map(fn (string $row): array => str_getcsv($row))
+        ->values();
+
+    expect($response->headers->get('Content-Disposition'))->toContain('wayfindr-visitors-20260905-163000.csv')
+        ->and($rows)->toHaveCount(2)
+        ->and($rows[0])->toBe([
+            'visitor_id',
+            'site_id',
+            'site',
+            'name',
+            'email',
+            'external_id',
+            'anonymous_id',
+            'last_seen_at',
+            'last_web_seen_at',
+            'created_at',
+            'attribute.plan',
+        ])
+        ->and($rows[1])->toBe([
+            (string) $visitor->id,
+            (string) $w['site']->id,
+            'Northwind Docs',
+            'Exportable Contact',
+            'exportable@example.test',
+            'customer-7',
+            'anon-exportable',
+            '2026-09-05 16:00:00',
+            '2026-09-05 15:55:00',
+            '2026-09-01 14:00:00',
+            'Enterprise',
+        ])
+        ->and($content)->not->toContain(
+            'Filtered Out Contact',
+            'Exportable Restricted',
+            'Exportable Outsider',
+            'keep-me-out',
+            'northwind.test/private',
+            $conversation->subject,
+            'Private contact note',
+        );
+});
+
+test('contact export neutralizes spreadsheet formulas in every visitor supplied column', function (): void {
+    $w = visitorIndexWorld();
+    $w['site']->forceFill(['name' => '@Formula Site'])->save();
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'formula',
+        'label' => 'Formula',
+        'type' => VisitorAttributeType::Text,
+    ]);
+    Visitor::factory()->for($w['site'])->create([
+        'anonymous_id' => '@anonymous',
+        'external_id' => '-external',
+        'name' => '=HYPERLINK("https://bad.test","click")',
+        'email' => '+email@example.test',
+        'metadata' => ['context' => ['formula' => '=SUM(1,1)']],
+    ]);
+
+    $content = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.export'))
+        ->streamedContent();
+    $row = str_getcsv(explode("\n", trim($content))[1]);
+
+    expect($row[2])->toBe("'@Formula Site")
+        ->and($row[3])->toBe("'=HYPERLINK(\"https://bad.test\",\"click\")")
+        ->and($row[4])->toBe("'+email@example.test")
+        ->and($row[5])->toBe("'-external")
+        ->and($row[6])->toBe("'@anonymous")
+        ->and($row[10])->toBe("'=SUM(1,1)");
+});
+
+test('directory readers without contact management cannot make a bulk export', function (): void {
+    $account = Account::factory()->create();
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [AccountPermission::ViewConversations->value],
+    ]);
+    $agent = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Agent,
+        'custom_role_id' => $role->id,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $site->supportAgents()->attach($agent);
+    Visitor::factory()->for($site)->create(['name' => 'Visible Contact']);
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->assertSee('Visible Contact')
+        ->assertDontSee('Export CSV');
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.visitors.export'))
+        ->assertForbidden();
+});
+
+test('an invalid typed filter cannot widen a contact export', function (): void {
+    $w = visitorIndexWorld();
+    VisitorAttributeDefinition::factory()->for($w['account'])->create([
+        'key' => 'seats',
+        'label' => 'Seat count',
+        'type' => VisitorAttributeType::Number,
+    ]);
+    Visitor::factory()->for($w['site'])->create([
+        'name' => 'Should Not Be Exported',
+        'metadata' => ['context' => ['seats' => '25']],
+    ]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.export', [
+            'attribute' => 'seats',
+            'attribute_value' => 'many',
+        ]))
+        ->assertStatus(422);
+});
+
+test('contact export uses the same five hundred row cap as account audit export', function (): void {
+    $w = visitorIndexWorld();
+    Visitor::factory()->count(501)->for($w['site'])->create();
+
+    $content = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.export'))
+        ->streamedContent();
+
+    expect(array_values(array_filter(explode("\n", trim($content)))))->toHaveCount(501);
 });
 
 test('the index includes contacts that originated outside a browser', function (): void {
