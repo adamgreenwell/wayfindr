@@ -137,3 +137,28 @@ test('nested serialized credentials ending in backslashes preserve following fie
         $expected = substr(json_encode($expected, JSON_THROW_ON_ERROR), 1, -1);
     }
 });
+
+test('serialized single-quoted credentials use their enclosing escape depth', function (): void {
+    $serialized = json_encode(['body' => "token='first\\'second-secret'", 'message' => 'keep'], JSON_THROW_ON_ERROR);
+    $expected = json_encode(['body' => "token='[REDACTED]'", 'message' => 'keep'], JSON_THROW_ON_ERROR);
+
+    for ($depth = 1; $depth <= 3; $depth++) {
+        $serialized = substr(json_encode($serialized, JSON_THROW_ON_ERROR), 1, -1);
+        $expected = substr(json_encode($expected, JSON_THROW_ON_ERROR), 1, -1);
+        $sanitized = (new AiContextSanitizer)->sanitize($serialized);
+
+        expect($sanitized)
+            ->toBe($expected)
+            ->toContain('message')
+            ->toContain('keep')
+            ->not->toContain('first')
+            ->not->toContain('second-secret');
+    }
+});
+
+test('a completed earlier quote does not change later single-quote escaping', function (): void {
+    $input = "\"past quote\" token='secret\\\\', message=keep";
+
+    expect((new AiContextSanitizer)->sanitize($input))
+        ->toBe('"past quote" token=\'[REDACTED]\', message=keep');
+});

@@ -65,7 +65,7 @@ final class AiContextSanitizer
 
     private function stripQuotedCredentialAssignments(string $input): string
     {
-        $pattern = '/(?<prefix>(?:(?:\x5c)*[\x22\x27])?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:(?:\x5c)*[\x22\x27])?\s*[:=]\s*)(?<delimiter>(?:\x5c)*[\x22\x27])/i';
+        $pattern = '/(?<prefix>(?:(?<key_delimiter>(?:\x5c)*[\x22\x27])\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b\k<key_delimiter>|\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b)\s*[:=]\s*)(?<delimiter>(?:\x5c)*[\x22\x27])/i';
         $cursor = 0;
         $sanitized = '';
 
@@ -74,9 +74,25 @@ final class AiContextSanitizer
             $prefix = $match['prefix'][0];
             $delimiter = $match['delimiter'][0];
             $quote = substr($delimiter, -1);
-            $escapeDepth = strlen($delimiter) - 1;
+            $delimiterEscapeDepth = strlen($delimiter) - 1;
+            $serializationEscapeDepth = $delimiterEscapeDepth;
+
+            if ($quote === "'" && ($enclosingEscapeDepth = $this->enclosingEscapeDepth($input, $matchStart)) !== null) {
+                // JSON does not escape apostrophes, but it does multiply the
+                // backslashes inside the enclosing double-quoted string.
+                $serializationEscapeDepth = max(
+                    $serializationEscapeDepth,
+                    (2 * $enclosingEscapeDepth) + 1,
+                );
+            }
             $valueStart = $matchStart + strlen($matched);
-            $valueEnd = $this->findClosingQuote($input, $valueStart, $quote, $escapeDepth);
+            $valueEnd = $this->findClosingQuote(
+                $input,
+                $valueStart,
+                $quote,
+                $delimiterEscapeDepth,
+                $serializationEscapeDepth,
+            );
 
             $sanitized .= substr($input, $cursor, $matchStart - $cursor)
                 .$prefix.$delimiter.'[REDACTED]'.$delimiter;
@@ -91,10 +107,43 @@ final class AiContextSanitizer
         return $sanitized.substr($input, $cursor);
     }
 
-    private function findClosingQuote(string $input, int $valueStart, string $quote, int $escapeDepth): ?int
+    private function enclosingEscapeDepth(string $input, int $offset): ?int
     {
+        $inside = [];
+        $position = 0;
+
+        while (($quotePosition = strpos($input, '"', $position)) !== false && $quotePosition < $offset) {
+            $position = $quotePosition + 1;
+
+            $precedingBackslashes = 0;
+
+            for ($index = $quotePosition - 1; $index >= 0 && $input[$index] === '\\'; $index--) {
+                $precedingBackslashes++;
+            }
+
+            for ($escapeDepth = 0; $escapeDepth <= $precedingBackslashes; $escapeDepth = (2 * $escapeDepth) + 1) {
+                $modulus = 2 * ($escapeDepth + 1);
+
+                if ($precedingBackslashes % $modulus === $escapeDepth) {
+                    $inside[$escapeDepth] = ! ($inside[$escapeDepth] ?? false);
+                }
+            }
+        }
+
+        $activeDepths = array_keys(array_filter($inside));
+
+        return $activeDepths === [] ? null : max($activeDepths);
+    }
+
+    private function findClosingQuote(
+        string $input,
+        int $valueStart,
+        string $quote,
+        int $delimiterEscapeDepth,
+        int $serializationEscapeDepth,
+    ): ?int {
         $position = $valueStart;
-        $modulus = 2 * ($escapeDepth + 1);
+        $modulus = 2 * ($serializationEscapeDepth + 1);
 
         while (($quotePosition = strpos($input, $quote, $position)) !== false) {
             $precedingBackslashes = 0;
@@ -103,7 +152,7 @@ final class AiContextSanitizer
                 $precedingBackslashes++;
             }
 
-            if ($precedingBackslashes % $modulus === $escapeDepth) {
+            if ($precedingBackslashes % $modulus === $delimiterEscapeDepth) {
                 return $quotePosition;
             }
 
