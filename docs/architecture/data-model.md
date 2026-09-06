@@ -39,6 +39,10 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `automation_rule_executions`: append-style success and failure records with
   the rule definition snapshot and per-action outcomes. The rule reference may
   be cleared later without erasing the historical explanation.
+- `proactive_message_rules`: disabled-by-default, site-owned visitor invitation
+  definitions with stable order, browser-evaluated URL/referrer conditions,
+  timing and visit thresholds, agent-availability gating, and mandatory
+  frequency and dismissal limits.
 - `reply_templates`: account-owned snippets that help agents answer common
   support questions without changing the ticket model.
 - `ticket_external_links`: provider-neutral records that connect a local
@@ -72,6 +76,13 @@ operator-facing data inventory and retention posture.
 
 - Support lifecycle fields stay portable strings in the database, while PHP-backed enums validate every `Conversation` and `Ticket` status or priority model write. Automation rules can therefore persist stable scalar values without accepting typo-only states.
 - Automation rules belong to one account, default to disabled, select a typed event, and keep ordered condition and action lists as JSON. Equal positions are evaluated by row ID so order remains deterministic while an operator is reordering rules. Conditions use a typed field/operator/value vocabulary and actions are limited to assignment, labels, priority, status, agent notification, and private ticket notes; no action in this contract can send a visitor message.
+- Proactive message rules are a separate site-owned contract because they are
+  evaluated before a conversation exists. Equal positions are resolved by row
+  ID. Page and referrer matching stays in the browser; those matched values are
+  not copied into server-side delivery evidence. Server authorization, delivery
+  receipts, conversation handoff, and aggregate effectiveness reporting are a
+  later slice described in
+  [Proactive messaging](../product/proactive-messaging.md).
 - Creation and update rules enter through explicit domain events after intake has established its final initial state and after the causal audit event is stored. Eloquent observers still maintain infrastructure such as SLA clocks, routing, and webhook outboxes, but they do not run business automation against half-finished workflows.
 - Visitor identity supports both `anonymous_id` and optional host-provided
   `external_id`. Public widget requests bootstrap a signed visitor token before
