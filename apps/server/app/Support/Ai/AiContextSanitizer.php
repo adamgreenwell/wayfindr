@@ -79,7 +79,7 @@ final class AiContextSanitizer
                 $url = rtrim($match[0], '.,;:!?)]}');
                 $suffix = substr($match[0], strlen($url));
                 $secretOffset = strcspn($url, '?#');
-                $urlWithoutSecrets = substr($url, 0, $secretOffset);
+                $urlWithoutSecrets = $this->stripUrlUserinfo(substr($url, 0, $secretOffset));
                 $parts = parse_url($urlWithoutSecrets);
 
                 if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
@@ -98,6 +98,29 @@ final class AiContextSanitizer
             },
             $input,
         ) ?? $input;
+    }
+
+    private function stripUrlUserinfo(string $url): string
+    {
+        $schemeEnd = strpos($url, '://');
+
+        if ($schemeEnd === false) {
+            return $url;
+        }
+
+        $authorityStart = $schemeEnd + 3;
+        $pathStart = strpos($url, '/', $authorityStart);
+        $authorityEnd = $pathStart === false ? strlen($url) : $pathStart;
+        $authority = substr($url, $authorityStart, $authorityEnd - $authorityStart);
+        $userinfoEnd = strrpos($authority, '@');
+
+        if ($userinfoEnd === false) {
+            return $url;
+        }
+
+        return substr($url, 0, $authorityStart)
+            .substr($authority, $userinfoEnd + 1)
+            .substr($url, $authorityEnd);
     }
 
     private function stripIpAddresses(string $input): string
