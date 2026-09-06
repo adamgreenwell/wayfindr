@@ -4,9 +4,9 @@ Wayfindr's agent copilot is optional and disabled on a new installation. Leaving
 it unconfigured keeps every support workflow manual; chat, tickets, cobrowse,
 mail, and the operator console do not depend on a model provider.
 
-The provider boundary powers an on-demand conversation summary for agent
-handoff and an on-demand editable reply draft. It does not add autonomous
-replies or customer-facing AI.
+The provider boundary powers an on-demand conversation summary, an editable
+reply draft, and suggested ticket details during conversation-to-ticket
+conversion. It does not add autonomous replies or customer-facing AI.
 
 ## Configure it in the operator console
 
@@ -148,6 +148,34 @@ reply form. New transcript activity marks the draft stale and blocks insertion
 until the agent explicitly refreshes it. The agent remains responsible for
 reviewing, editing, and separately sending every reply.
 
+### Suggested ticket details
+
+An agent with ticket-management permission can request suggested details while
+creating a ticket from a conversation. The queued worker uses the shared
+bounded, scrubbed subject and message selection and asks the provider for a
+strict JSON object containing only a title and one of Wayfindr's four existing
+priority values. Wayfindr rejects malformed, blank, oversized, extra-field, or
+unknown-priority output rather than guessing at a support-record value.
+
+Existing account labels are matched locally against the same bounded text. The
+label catalogue never enters the provider prompt, and a suggestion can only
+refer to labels that still belong to the account when the worker stores it.
+This keeps the deterministic part of routing deterministic while reserving the
+provider for the language-dependent title and priority judgment.
+
+The queue payload contains only the local suggestion-row ID and opaque
+generation UUID. The worker rechecks ticket-management permission and confirms
+that no linked ticket exists before provider delivery. Wayfindr stores only the
+latest suggestion in `conversation_copilot_ticket_suggestions`; prompts and
+provider output are excluded from audit metadata.
+
+The panel is visibly labelled **Suggested**. **Use suggested details** copies
+the title, priority, and local label matches into an untouched ticket-creation
+form but never submits it. It refuses to replace agent edits. New transcript
+activity marks the result stale and disables insertion until the agent requests
+a refresh. The ticket is created only after the agent reviews the ordinary form
+and submits **Create ticket** separately.
+
 ## Runtime and testing
 
 The provider boundary uses Laravel's first-party AI SDK. The connection probe
@@ -155,6 +183,6 @@ runs inside the operator request with a 20-second application timeout. Summary
 generation uses Wayfindr's existing default queue, so at least one normal queue
 worker must be running; the agent request only records and queues the action.
 
-The automated suite uses fake providers and synthetic fixtures for both
-summaries and reply drafts. CI and contributors do not need live provider keys,
-and a test must never call an external model endpoint.
+The automated suite uses fake providers and synthetic fixtures for summaries,
+reply drafts, and ticket suggestions. CI and contributors do not need live
+provider keys, and a test must never call an external model endpoint.
