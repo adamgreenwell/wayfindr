@@ -53,9 +53,10 @@ The product has moved past a spine. It now includes:
   is a separate catalogue for a separate audience.
 - A visitor directory and profile with account-defined typed attributes over
   existing safe host context, exact-value filtering, private person-level
-  contact notes, and a contacts-only custom role boundary; agent-initiated
-  password recovery; and a public API with a decided isolation model, scoped
-  reads, and a narrow write surface.
+  contact notes, explicit same-site identity merge with durable browser-ID
+  aliases, and a contacts-only custom role boundary; agent-initiated password
+  recovery; and a public API with a decided isolation model, scoped reads, and
+  a narrow write surface.
 - TOTP two-factor authentication with one-time recovery codes, replay-safe
   challenges, and an admin-controlled account requirement; OIDC federation;
   account-owned custom roles; and owner-controlled, deny-by-default JIT role

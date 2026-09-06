@@ -71,7 +71,7 @@ test('widget conversation creation locks the account before the site', function 
     $queries = collect(DB::getQueryLog())->pluck('query')->values();
     DB::disableQueryLog();
     $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
-        && str_contains($query, 'for update'));
+        && str_contains($query, 'for share'));
     $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
         && str_contains($query, 'for share'));
     $siteLockQuery = $siteLock === false ? null : $queries->get($siteLock);

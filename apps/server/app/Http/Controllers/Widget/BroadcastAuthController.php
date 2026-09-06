@@ -2,10 +2,8 @@
 
 namespace App\Http\Controllers\Widget;
 
-use App\Broadcasting\ConversationChannel;
 use App\Http\Controllers\Controller;
-use App\Support\VisitorSessionToken;
-use App\Support\WidgetSiteResolver;
+use App\Support\VisitorConversationResolver;
 use Illuminate\Broadcasting\Broadcasters\PusherBroadcaster;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,8 +13,7 @@ class BroadcastAuthController extends Controller
 {
     public function __invoke(
         Request $request,
-        VisitorSessionToken $visitorSessionToken,
-        ConversationChannel $conversationChannel
+        VisitorConversationResolver $conversations,
     ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -39,14 +36,13 @@ class BroadcastAuthController extends Controller
 
         abort_if($supportCode === '' || str_contains($supportCode, '.'), 403, 'Conversation channel is not available.');
 
-        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
-
-        $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
-
-        abort_unless(
-            $conversationChannel->join($visitor, $supportCode),
+        $conversations->resolve(
+            $request,
+            $supportCode,
+            $validated['site_public_key'],
+            $validated['anonymous_id'],
             403,
-            'Conversation channel is not available.'
+            'Conversation channel is not available.',
         );
 
         abort_unless(

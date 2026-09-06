@@ -91,6 +91,7 @@ return [
         'visitor_attribute_deleted' => 'Attributo del visitatore eliminato',
         'visitor_note_added' => 'Nota sul contatto aggiunta',
         'visitor_note_deleted' => 'Nota sul contatto eliminata',
+        'visitor_merged' => 'Contatto visitatore unito',
         'api_token_created' => 'Token API emesso',
         'api_token_revoked' => 'Token API revocato',
         'outbound_webhook_created' => 'Webhook in uscita creato',

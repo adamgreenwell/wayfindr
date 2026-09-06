@@ -4,18 +4,21 @@ namespace App\Http\Controllers\Widget;
 
 use App\Events\CobrowseStateUpdated;
 use App\Http\Controllers\Controller;
-use App\Models\CobrowseSession;
-use App\Models\Conversation;
+use App\Support\VisitorConversationResolver;
+use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use App\Support\Visitors\VisitorPageUrl;
-use App\Support\VisitorSessionToken;
-use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CobrowsePageStateController extends Controller
 {
-    public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
-    {
+    public function store(
+        Request $request,
+        string $supportCode,
+        VisitorConversationResolver $conversations,
+        VisitorConversationWriteAuthorization $conversationWrites,
+    ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
@@ -30,28 +33,12 @@ class CobrowsePageStateController extends Controller
             'focused' => ['nullable', 'boolean'],
         ]);
 
-        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
-
-        $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
-
-        $conversation = Conversation::query()
-            ->where('support_code', $supportCode)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->first();
-
-        abort_unless($conversation, 404, 'Conversation not found.');
-
-        $cobrowseSession = CobrowseSession::query()
-            ->where('conversation_id', $conversation->id)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->where('status', 'granted')
-            ->whereNull('ended_at')
-            ->latest('id')
-            ->first();
-
-        abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
+        $conversation = $conversations->resolve(
+            $request,
+            $supportCode,
+            $validated['site_public_key'],
+            $validated['anonymous_id'],
+        );
 
         $pageState = [
             // Reduced here as well as in the model hook. The hook is the
@@ -70,10 +57,16 @@ class CobrowsePageStateController extends Controller
             'reported_at' => now()->toJSON(),
         ];
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($pageState): array {
-            $metadata['page_state'] = $pageState;
+        [$conversation, $cobrowseSession] = DB::transaction(function () use ($conversation, $conversationWrites, $validated, $pageState): array {
+            $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
+            $cobrowseSession = $conversationWrites->lockCobrowseSession($conversation);
+            $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($pageState): array {
+                $metadata['page_state'] = $pageState;
 
-            return $metadata;
+                return $metadata;
+            });
+
+            return [$conversation, $cobrowseSession];
         });
 
         event(new CobrowseStateUpdated($cobrowseSession, 'page_state'));

@@ -25,6 +25,17 @@ final class SiteManagerCoverage
         Account::query()->whereKey($accountId)->lockForUpdate()->firstOrFail();
     }
 
+    /**
+     * Join the account-first lock order without serializing independent public
+     * requests. Account mutations and visitor merges keep the exclusive
+     * partner, while widget writers may proceed together under this shared
+     * lock before taking their site and subject locks.
+     */
+    public function shareAccount(int $accountId): void
+    {
+        Account::query()->whereKey($accountId)->sharedLock()->firstOrFail();
+    }
+
     /** @param list<string> $permissions */
     public function ensureRolePermissionsCanChange(CustomRole $role, array $permissions): void
     {

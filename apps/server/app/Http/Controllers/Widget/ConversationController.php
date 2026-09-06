@@ -13,6 +13,7 @@ use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorIdentityResolver;
 use App\Support\Visitors\VisitorPageUrl;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
@@ -28,6 +29,7 @@ class ConversationController extends Controller
         VisitorSessionToken $visitorSessionToken,
         VisitorContextSanitizer $visitorContextSanitizer,
         SiteManagerCoverage $siteManagerCoverage,
+        VisitorIdentityResolver $visitorIdentityResolver,
     ): JsonResponse {
         // The site has to be resolved before the intake rules are known, and the
         // intake rules are part of validation -- so this runs in two passes
@@ -44,10 +46,10 @@ class ConversationController extends Controller
         // What we already hold for this visitor, read from the record rather
         // than from the request -- the same answer bootstrap gave the widget
         // when it said which fields to draw.
-        $known = SiteIntake::knownFor(Visitor::query()
-            ->where('site_id', $site->id)
-            ->where('anonymous_id', (string) $request->input('anonymous_id'))
-            ->first());
+        $known = SiteIntake::knownFor($visitorIdentityResolver->forAnonymousId(
+            (int) $site->id,
+            (string) $request->input('anonymous_id'),
+        ));
 
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -81,13 +83,14 @@ class ConversationController extends Controller
             $siteManagerCoverage,
             $validated,
             $visitorContextSanitizer,
+            $visitorIdentityResolver,
             $visitor,
         ): Conversation {
             // The synchronous conversation observer snapshots the account SLA
             // policy. Join the account-first protocol before taking the shared
             // site lock so an availability or archive write cannot deadlock
             // with this visitor request.
-            $siteManagerCoverage->lockAccount((int) $site->account_id);
+            $siteManagerCoverage->shareAccount((int) $site->account_id);
 
             // Same lock `updatePresence()` takes, for the same reason as
             // bootstrap: the page-address setting has to be the one in force
@@ -122,10 +125,22 @@ class ConversationController extends Controller
             // unconditional insert collides with the replacement on
             // `(site_id, anonymous_id)` and the visitor is told their message
             // could not be sent.
-            $visitor = $locked ?? Visitor::query()->firstOrCreate([
-                'site_id' => $site->id,
-                'anonymous_id' => $validated['anonymous_id'],
-            ]);
+            if ($locked instanceof Visitor) {
+                $visitor = $locked;
+            } else {
+                // An agent merge may have won the exclusive site lock after
+                // token validation but before this transaction took its shared
+                // lock. Re-resolve the browser ID here so the request follows
+                // the newly-created alias instead of recreating the duplicate
+                // row that the agent just removed.
+                $visitor = $visitorIdentityResolver->forAnonymousId(
+                    (int) $site->id,
+                    $validated['anonymous_id'],
+                ) ?? Visitor::query()->firstOrCreate([
+                    'site_id' => $site->id,
+                    'anonymous_id' => $validated['anonymous_id'],
+                ]);
+            }
 
             // Lock whatever that returned, unless we just made it. firstOrCreate
             // can hand back a row somebody else recreated under the same
@@ -204,7 +219,7 @@ class ConversationController extends Controller
                 'status' => $conversation->status,
                 'subject' => $conversation->subject,
                 'visitor' => [
-                    'anonymous_id' => $visitor->anonymous_id,
+                    'anonymous_id' => $validated['anonymous_id'],
                 ],
             ],
         ], 201);
@@ -260,7 +275,7 @@ class ConversationController extends Controller
         $belongsToAnotherVisitor = Visitor::query()
             ->where('site_id', $site->id)
             ->where('external_id', $externalId)
-            ->where('anonymous_id', '!=', $visitor->anonymous_id)
+            ->when($visitor->exists, fn ($query) => $query->where('id', '!=', $visitor->getKey()))
             ->exists();
 
         return $belongsToAnotherVisitor ? [] : ['external_id' => $externalId];

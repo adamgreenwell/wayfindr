@@ -6,6 +6,7 @@ namespace App\Events;
 
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Models\VisitorIdentityAlias;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Visitors\LiveVisitorBoard;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -42,7 +43,35 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow
     public function __construct(
         public Site $site,
         public Visitor $visitor,
+        public ?int $removedVisitorId = null,
     ) {}
+
+    /**
+     * Re-resolve the row at broadcast time.
+     *
+     * A heartbeat announces after its write commits. An identity merge can
+     * retire that visitor in the gap, so the model carried by the event is not
+     * proof that the row still exists. The alias is the durable statement of
+     * where the old browser identity went.
+     */
+    private function currentVisitor(): ?Visitor
+    {
+        $current = Visitor::query()
+            ->whereKey($this->visitor->getKey())
+            ->where('site_id', $this->site->getKey())
+            ->first();
+
+        if ($current !== null || $this->visitor->anonymous_id === null) {
+            return $current;
+        }
+
+        return VisitorIdentityAlias::query()
+            ->where('site_id', $this->site->getKey())
+            ->where('anonymous_id', $this->visitor->anonymous_id)
+            ->with('visitor')
+            ->first()
+            ?->visitor;
+    }
 
     private function currentSite(): ?Site
     {
@@ -68,7 +97,7 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow
     }
 
     /**
-     * @return array{visitor: array<string, mixed>}
+     * @return array{visitor: array<string, mixed>|null, removed_visitor_id?: int}
      */
     public function broadcastWith(): array
     {
@@ -77,15 +106,35 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow
         // entirely withholds, which is the same direction every other unknown
         // fails in here.
         $current = $this->currentSite();
+        $visitor = $this->currentVisitor();
+        $removedVisitorId = $this->removedVisitorId;
 
-        return ['visitor' => LiveVisitorBoard::row(
-            $this->visitor,
-            $current !== null && SitePresenceReporting::for($current)->pageUrls,
-            // This channel is shared by conversation and ticket roles. A
-            // broadcast cannot tailor a payload per subscriber, so support
-            // history totals stay in permission-scoped page snapshots only.
-            false,
-        )];
+        if ($visitor !== null && ! $visitor->is($this->visitor)) {
+            $removedVisitorId ??= (int) $this->visitor->getKey();
+        }
+
+        $payload = [
+            // A merge can concern two quiet contacts. The source still needs
+            // removing from a stale board, but its quiet destination must not
+            // be introduced as though it were browsing now.
+            'visitor' => $visitor !== null
+                && ($removedVisitorId === null || LiveVisitorBoard::includes($visitor))
+                    ? LiveVisitorBoard::row(
+                        $visitor,
+                        $current !== null && SitePresenceReporting::for($current)->pageUrls,
+                        // This channel is shared by conversation and ticket roles. A
+                        // broadcast cannot tailor a payload per subscriber, so support
+                        // history totals stay in permission-scoped page snapshots only.
+                        false,
+                    )
+                    : null,
+        ];
+
+        if ($removedVisitorId !== null) {
+            $payload['removed_visitor_id'] = $removedVisitorId;
+        }
+
+        return $payload;
     }
 
     /**
@@ -110,6 +159,7 @@ class VisitorPresenceUpdated implements ShouldBroadcastNow
 
         return $site !== null
             && ! $site->isArchived()
-            && SitePresenceReporting::for($site)->enabled;
+            && SitePresenceReporting::for($site)->enabled
+            && $this->currentVisitor() !== null;
     }
 }

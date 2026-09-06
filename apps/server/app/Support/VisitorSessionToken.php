@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Visitors\VisitorIdentityResolver;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -11,14 +12,43 @@ use JsonException;
 
 class VisitorSessionToken
 {
-    public function issue(Site $site, Visitor $visitor): string
+    public function __construct(private readonly VisitorIdentityResolver $identities) {}
+
+    public function issue(Site $site, Visitor $visitor, ?string $anonymousId = null): string
     {
+        $anonymousId ??= (string) $visitor->anonymous_id;
+
+        if ($anonymousId !== (string) $visitor->anonymous_id
+            && ! $this->isCurrentAnonymousId($site, $visitor, $anonymousId)) {
+            $alias = $this->identities->aliasForAnonymousId((int) $site->id, $anonymousId);
+            $allowedVisitorIds = [
+                (int) ($alias?->visitor_id ?? 0),
+                ...array_map('intval', is_array($alias?->previous_visitor_ids) ? $alias->previous_visitor_ids : []),
+            ];
+
+            if (! $alias || ! in_array((int) $visitor->id, $allowedVisitorIds, true)) {
+                throw new \LogicException('Visitor session alias does not belong to this visitor.');
+            }
+        }
+
         return Crypt::encryptString(json_encode([
             'site_id' => $site->id,
             'visitor_id' => $visitor->id,
-            'anonymous_id' => $visitor->anonymous_id,
+            'anonymous_id' => $anonymousId,
             'issued_at' => now()->toJSON(),
         ], JSON_THROW_ON_ERROR));
+    }
+
+    private function isCurrentAnonymousId(Site $site, Visitor $visitor, string $anonymousId): bool
+    {
+        // MySQL and MariaDB use the configured column collation for identity
+        // lookup. Let that same collation decide whether a differently-cased
+        // request still names this current row before treating it as an alias.
+        return Visitor::query()
+            ->whereKey($visitor->id)
+            ->where('site_id', $site->id)
+            ->where('anonymous_id', $anonymousId)
+            ->exists();
     }
 
     public function visitorFromRequest(Request $request, Site $site, string $anonymousId): Visitor
@@ -32,13 +62,33 @@ class VisitorSessionToken
         abort_if((int) ($payload['site_id'] ?? 0) !== $site->id, 403, 'Visitor token does not match this site.');
         abort_if(! hash_equals((string) ($payload['anonymous_id'] ?? ''), $anonymousId), 403, 'Visitor token does not match this visitor.');
 
+        $tokenVisitorId = (int) ($payload['visitor_id'] ?? 0);
         $visitor = Visitor::query()
-            ->whereKey((int) ($payload['visitor_id'] ?? 0))
+            ->whereKey($tokenVisitorId)
             ->where('site_id', $site->id)
             ->where('anonymous_id', $anonymousId)
             ->first();
 
-        abort_unless($visitor, 401, 'Visitor token is invalid.');
+        if ($visitor instanceof Visitor) {
+            return $visitor;
+        }
+
+        $alias = $this->identities->aliasForAnonymousId((int) $site->id, $anonymousId);
+        $allowedVisitorIds = [
+            (int) ($alias?->visitor_id ?? 0),
+            ...array_map('intval', is_array($alias?->previous_visitor_ids) ? $alias->previous_visitor_ids : []),
+        ];
+
+        abort_unless($alias && in_array($tokenVisitorId, $allowedVisitorIds, true), 401, 'Visitor token is invalid.');
+
+        $visitor = $alias->visitor;
+        abort_unless($visitor instanceof Visitor, 401, 'Visitor token is invalid.');
+
+        // The encrypted visitor id used to be the row itself. A deliberate
+        // agent merge deletes that row, so aliases carry only the ids that
+        // previously owned this browser identity. Keeping the lineage explicit
+        // lets an old tab follow the merge without making its token valid for
+        // an unrelated row that later reuses the anonymous id.
 
         return $visitor;
     }

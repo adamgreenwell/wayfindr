@@ -205,7 +205,8 @@ class AgentSupportCodeLookupController extends Controller
             ->where(function (Builder $query) use ($lookupReference): void {
                 $query
                     ->where('anonymous_id', $lookupReference)
-                    ->orWhere('external_id', $lookupReference);
+                    ->orWhere('external_id', $lookupReference)
+                    ->orWhereHas('identityAliases', fn (Builder $query) => $query->where('anonymous_id', $lookupReference));
             })
             ->whereHas('site', fn (Builder $query) => $query->visibleToAgent($agent))
             ->latest('last_seen_at')

@@ -90,7 +90,9 @@ class AgentVisitorController extends Controller
             // The hosted tester page creates real visitor rows. Without this an
             // agent watches themselves browse, which Site::latestVisitor()
             // already learned to exclude.
-            ->where('anonymous_id', 'not like', 'tester-site-%');
+            ->where(fn (Builder $query) => $query
+                ->whereNull('anonymous_id')
+                ->orWhere('anonymous_id', 'not like', 'tester-site-%'));
 
         if ($siteId !== null) {
             $query->where('site_id', $siteId);
@@ -110,7 +112,8 @@ class AgentVisitorController extends Controller
                 ->whereLike('name', $pattern)
                 ->orWhereLike('email', $pattern)
                 ->orWhereLike('external_id', $pattern)
-                ->orWhereLike('anonymous_id', $pattern));
+                ->orWhereLike('anonymous_id', $pattern)
+                ->orWhereHas('identityAliases', fn (Builder $alias) => $alias->whereLike('anonymous_id', $pattern)));
         }
 
         if ($attributeDefinition !== null && $normalizedAttributeValue !== null) {
@@ -187,6 +190,29 @@ class AgentVisitorController extends Controller
             ->latest('id')
             ->paginate(10, ['*'], 'notes_page')
             ->withQueryString();
+        $mergeSearch = $request->query('merge_search', '');
+        $mergeSearch = is_string($mergeSearch) ? mb_substr(trim($mergeSearch), 0, 120) : '';
+        $mergeCandidates = collect();
+
+        if ($canManageContacts && $mergeSearch !== '') {
+            $pattern = '%'.$mergeSearch.'%';
+            $mergeCandidates = Visitor::query()
+                ->where('site_id', $visitor->site_id)
+                ->whereKeyNot($visitor->id)
+                ->where(fn (Builder $query) => $query
+                    ->whereNull('anonymous_id')
+                    ->orWhere('anonymous_id', 'not like', 'tester-site-%'))
+                ->where(fn (Builder $query) => $query
+                    ->whereLike('name', $pattern)
+                    ->orWhereLike('email', $pattern)
+                    ->orWhereLike('external_id', $pattern)
+                    ->orWhereLike('anonymous_id', $pattern)
+                    ->orWhereHas('identityAliases', fn (Builder $query) => $query->whereLike('anonymous_id', $pattern)))
+                ->latest('last_seen_at')
+                ->latest('id')
+                ->limit(10)
+                ->get();
+        }
 
         return view('agent.visitors.show', [
             'account' => $agent->account()->firstOrFail(),
@@ -197,6 +223,8 @@ class AgentVisitorController extends Controller
             'contactNotes' => $contactNotes,
             'conversations' => $conversations,
             'customAttributes' => $customAttributes,
+            'mergeCandidates' => $mergeCandidates,
+            'mergeSearch' => $mergeSearch,
             'supportSnapshot' => $this->supportSnapshot(
                 $visitor,
                 $canViewConversations,

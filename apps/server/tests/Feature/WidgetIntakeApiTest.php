@@ -545,8 +545,12 @@ test('visitor message reopens a closed conversation', function (): void {
 
     if (DB::getDriverName() === 'pgsql') {
         $accountLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "accounts"')
-            && str_contains($query, 'for update'));
-        $siteLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "sites"')
+            && str_contains($query, 'for share'));
+        // Conversation authorization now takes its own short shared-site lock
+        // before this write transaction. Select the write-boundary site lock
+        // that follows the account lock rather than that earlier read lock.
+        $siteLock = $queries->search(fn (string $query, int $index): bool => $index > $accountLock
+            && str_contains($query, 'from "sites"')
             && str_contains($query, 'for share'));
         $conversationLock = $queries->search(fn (string $query): bool => str_contains($query, 'from "conversations"')
             && str_contains($query, 'for update'));

@@ -10,6 +10,7 @@ use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Models\VisitorIdentityAlias;
 use App\Support\Visitors\LiveVisitorBoard;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -317,6 +318,41 @@ test('a heartbeat announces the visitor to the board', function (): void {
         fn (VisitorPresenceUpdated $event): bool => $event->visitor->anonymous_id === 'anon-announced'
             && $event->site->is($f['site']),
     );
+});
+
+test('a presence event follows a visitor merged after its heartbeat committed', function (): void {
+    $f = boardFixture();
+    $source = presentVisitor($f['site'], 'anon-presence-merge-source');
+    $target = presentVisitor($f['site'], 'anon-presence-merge-target');
+    $staleSource = $source->replicate()->setRawAttributes($source->getAttributes(), true);
+    $staleSource->exists = true;
+
+    VisitorIdentityAlias::query()->create([
+        'site_id' => $f['site']->id,
+        'visitor_id' => $target->id,
+        'anonymous_id' => $source->anonymous_id,
+        'previous_visitor_ids' => [$source->id],
+    ]);
+    $source->delete();
+
+    $event = new VisitorPresenceUpdated($f['site'], $staleSource);
+    $payload = $event->broadcastWith();
+
+    expect($event->broadcastWhen())->toBeTrue()
+        ->and($payload['removed_visitor_id'])->toBe((int) $source->id)
+        ->and($payload['visitor']['id'])->toBe($target->id);
+});
+
+test('the live board tombstones a visitor retired by an identity merge', function (): void {
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+    $apply = Str::before(Str::after($source, 'function applyVisitor(visitor) {'), 'function dropDeparted');
+    $handler = Str::before(Str::after($source, 'function handleSocketMessage(message) {'), 'function ');
+    $resync = Str::before(Str::after($source, 'function resyncBoard() {'), '// Holds events');
+
+    expect($source)->toContain('retiredVisitorIds[key] = true;')
+        ->and($apply)->toContain('retiredVisitorIds[String(visitor.id)]')
+        ->and($handler)->toContain('retireVisitor(payload.removed_visitor_id);')
+        ->and($resync)->toContain('dropRetiredVisitors();');
 });
 
 test('the board subscribes when the install runs realtime', function (): void {

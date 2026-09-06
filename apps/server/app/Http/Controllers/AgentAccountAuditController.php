@@ -369,7 +369,8 @@ class AgentAccountAuditController extends Controller
                             ->whereLike('name', $searchPattern)
                             ->orWhereLike('email', $searchPattern)
                             ->orWhereLike('external_id', $searchPattern)
-                            ->orWhereLike('anonymous_id', $searchPattern);
+                            ->orWhereLike('anonymous_id', $searchPattern)
+                            ->orWhereHas('identityAliases', fn (Builder $query) => $query->whereLike('anonymous_id', $searchPattern));
 
                         $query
                             ->orWhereHasMorph('actor', [Visitor::class], $visitorSearch)

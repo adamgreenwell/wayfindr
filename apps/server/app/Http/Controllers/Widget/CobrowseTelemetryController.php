@@ -4,19 +4,24 @@ namespace App\Http\Controllers\Widget;
 
 use App\Events\CobrowseStateUpdated;
 use App\Http\Controllers\Controller;
-use App\Models\CobrowseSession;
-use App\Models\Conversation;
+use App\Models\Visitor;
 use App\Support\CobrowseAuditTrail;
 use App\Support\CobrowsePayloadBudget;
-use App\Support\VisitorSessionToken;
-use App\Support\WidgetSiteResolver;
+use App\Support\VisitorConversationResolver;
+use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CobrowseTelemetryController extends Controller
 {
-    public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken, CobrowseAuditTrail $cobrowseAuditTrail): JsonResponse
-    {
+    public function store(
+        Request $request,
+        string $supportCode,
+        VisitorConversationResolver $conversations,
+        VisitorConversationWriteAuthorization $conversationWrites,
+        CobrowseAuditTrail $cobrowseAuditTrail,
+    ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
@@ -29,28 +34,12 @@ class CobrowseTelemetryController extends Controller
             'resync_attempts_exhausted' => ['nullable', 'boolean'],
         ]);
 
-        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
-
-        $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
-
-        $conversation = Conversation::query()
-            ->where('support_code', $supportCode)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->first();
-
-        abort_unless($conversation, 404, 'Conversation not found.');
-
-        $cobrowseSession = CobrowseSession::query()
-            ->where('conversation_id', $conversation->id)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->where('status', 'granted')
-            ->whereNull('ended_at')
-            ->latest('id')
-            ->first();
-
-        abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
+        $conversation = $conversations->resolve(
+            $request,
+            $supportCode,
+            $validated['site_public_key'],
+            $validated['anonymous_id'],
+        );
 
         $rttMs = $validated['rtt_ms'] ?? null;
         $payloadBytes = $validated['payload_bytes'] ?? null;
@@ -63,61 +52,70 @@ class CobrowseTelemetryController extends Controller
         $telemetry = [];
         $resyncExhaustedTransition = null;
 
-        $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, $hasTransportMetrics, &$telemetry, &$resyncExhaustedTransition): array {
-            $previousTelemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
+        [$conversation, $cobrowseSession] = DB::transaction(function () use ($conversation, $conversationWrites, $validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, $hasTransportMetrics, $cobrowseAuditTrail, &$telemetry, &$resyncExhaustedTransition): array {
+            $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
+            $visitor = $conversation->visitor;
+            abort_unless($visitor instanceof Visitor, 404, 'Conversation not found.');
 
-            if ($hasTransportMetrics) {
-                $telemetry = [
-                    'rtt_ms' => $rttMs,
-                    'max_rtt_ms' => $rttMs === null
-                        ? ($previousTelemetry['max_rtt_ms'] ?? null)
-                        : max((int) ($previousTelemetry['max_rtt_ms'] ?? $rttMs), $rttMs),
-                    'payload_bytes' => $payloadBytes,
-                    'max_payload_bytes' => $payloadBytes === null
-                        ? ($previousTelemetry['max_payload_bytes'] ?? null)
-                        : max((int) ($previousTelemetry['max_payload_bytes'] ?? $payloadBytes), $payloadBytes),
-                    'dropped_batches' => $validated['dropped_batches'] ?? 0,
-                    'reconnects' => $validated['reconnects'] ?? 0,
-                    'samples' => ((int) ($previousTelemetry['samples'] ?? 0)) + 1,
-                    'reported_at' => now()->toJSON(),
-                ];
-            } else {
-                $telemetry = $previousTelemetry;
-            }
+            $cobrowseSession = $conversationWrites->lockCobrowseSession($conversation);
+            $cobrowseSession = $cobrowseSession->updateMetadataAtomically(function (array $metadata) use ($validated, $rttMs, $payloadBytes, $resyncRequestId, $resyncAttemptsExhausted, $hasTransportMetrics, &$telemetry, &$resyncExhaustedTransition): array {
+                $previousTelemetry = is_array($metadata['telemetry'] ?? null) ? $metadata['telemetry'] : [];
 
-            $telemetry['resync_request_id'] = $resyncRequestId;
-            $telemetry['resync_attempts_exhausted'] = $resyncAttemptsExhausted;
-
-            $metadata['telemetry'] = $telemetry;
-            $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
-
-            if ($resyncAttemptsExhausted && $resyncRequestId !== null) {
-                $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : null;
-
-                if (
-                    $resyncRequest !== null
-                    && ($resyncRequest['id'] ?? null) === $resyncRequestId
-                    && blank($resyncRequest['fulfilled_at'] ?? null)
-                    && blank($resyncRequest['attempts_exhausted_at'] ?? null)
-                ) {
-                    $attemptsExhaustedAt = now()->toJSON();
-                    $resyncRequest['attempts_exhausted_at'] = $attemptsExhaustedAt;
-                    $metadata['resync_request'] = $resyncRequest;
-                    $resyncExhaustedTransition = [
-                        'request_id' => $resyncRequestId,
-                        'attempts_exhausted_at' => $attemptsExhaustedAt,
-                        'dropped_batches' => $validated['dropped_batches'] ?? null,
-                        'reconnects' => $validated['reconnects'] ?? null,
+                if ($hasTransportMetrics) {
+                    $telemetry = [
+                        'rtt_ms' => $rttMs,
+                        'max_rtt_ms' => $rttMs === null
+                            ? ($previousTelemetry['max_rtt_ms'] ?? null)
+                            : max((int) ($previousTelemetry['max_rtt_ms'] ?? $rttMs), $rttMs),
+                        'payload_bytes' => $payloadBytes,
+                        'max_payload_bytes' => $payloadBytes === null
+                            ? ($previousTelemetry['max_payload_bytes'] ?? null)
+                            : max((int) ($previousTelemetry['max_payload_bytes'] ?? $payloadBytes), $payloadBytes),
+                        'dropped_batches' => $validated['dropped_batches'] ?? 0,
+                        'reconnects' => $validated['reconnects'] ?? 0,
+                        'samples' => ((int) ($previousTelemetry['samples'] ?? 0)) + 1,
+                        'reported_at' => now()->toJSON(),
                     ];
+                } else {
+                    $telemetry = $previousTelemetry;
                 }
+
+                $telemetry['resync_request_id'] = $resyncRequestId;
+                $telemetry['resync_attempts_exhausted'] = $resyncAttemptsExhausted;
+
+                $metadata['telemetry'] = $telemetry;
+                $metadata['payload_budget'] = CobrowsePayloadBudget::limits();
+
+                if ($resyncAttemptsExhausted && $resyncRequestId !== null) {
+                    $resyncRequest = is_array($metadata['resync_request'] ?? null) ? $metadata['resync_request'] : null;
+
+                    if (
+                        $resyncRequest !== null
+                        && ($resyncRequest['id'] ?? null) === $resyncRequestId
+                        && blank($resyncRequest['fulfilled_at'] ?? null)
+                        && blank($resyncRequest['attempts_exhausted_at'] ?? null)
+                    ) {
+                        $attemptsExhaustedAt = now()->toJSON();
+                        $resyncRequest['attempts_exhausted_at'] = $attemptsExhaustedAt;
+                        $metadata['resync_request'] = $resyncRequest;
+                        $resyncExhaustedTransition = [
+                            'request_id' => $resyncRequestId,
+                            'attempts_exhausted_at' => $attemptsExhaustedAt,
+                            'dropped_batches' => $validated['dropped_batches'] ?? null,
+                            'reconnects' => $validated['reconnects'] ?? null,
+                        ];
+                    }
+                }
+
+                return $metadata;
+            });
+
+            if (is_array($resyncExhaustedTransition)) {
+                $cobrowseAuditTrail->resyncExhausted($cobrowseSession, $visitor, $resyncExhaustedTransition);
             }
 
-            return $metadata;
+            return [$conversation, $cobrowseSession];
         });
-
-        if (is_array($resyncExhaustedTransition)) {
-            $cobrowseAuditTrail->resyncExhausted($cobrowseSession, $visitor, $resyncExhaustedTransition);
-        }
 
         event(new CobrowseStateUpdated($cobrowseSession, 'telemetry'));
 

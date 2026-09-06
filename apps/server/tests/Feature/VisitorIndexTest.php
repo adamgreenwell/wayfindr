@@ -49,6 +49,21 @@ test('the index lists visitors this agent may see, most recent first', function 
         ->assertSee(route('dashboard.visitors.show', $older), false);
 });
 
+test('the index includes contacts that originated outside a browser', function (): void {
+    $w = visitorIndexWorld();
+    $emailContact = Visitor::factory()->for($w['site'])->create([
+        'anonymous_id' => null,
+        'name' => 'Email Contact',
+        'email' => 'email-contact@example.test',
+    ]);
+
+    $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->assertSee('Email Contact')
+        ->assertSee(route('dashboard.visitors.show', $emailContact), false);
+});
+
 test('another account\'s visitors never appear', function (): void {
     $w = visitorIndexWorld();
     $otherSite = Site::factory()->for(Account::factory())->create();

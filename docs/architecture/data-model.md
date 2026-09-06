@@ -11,6 +11,9 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
 - `site_user`: support-agent access for sites. Empty site membership means account-wide fallback for early installs; explicit rows narrow the support queue to assigned agents.
 - `site_routing_states`: one durable row per configured site containing separate last-agent cursors for conversation and ticket round-robin assignment.
 - `visitors`: anonymous or identified people seen on a site.
+- `visitor_identity_aliases`: browser IDs retained by an explicit same-site
+  contact merge, including the internal visitor-ID lineage needed to keep old
+  signed sessions valid without authorizing later ID reuse.
 - `visitor_attribute_definitions`: account-owned typed labels for selected safe
   keys already present in visitor host context.
 - `visitor_notes`: private, visitor-owned team context that survives individual
@@ -70,7 +73,16 @@ operator-facing data inventory and retention posture.
 - Support lifecycle fields stay portable strings in the database, while PHP-backed enums validate every `Conversation` and `Ticket` status or priority model write. Automation rules can therefore persist stable scalar values without accepting typo-only states.
 - Automation rules belong to one account, default to disabled, select a typed event, and keep ordered condition and action lists as JSON. Equal positions are evaluated by row ID so order remains deterministic while an operator is reordering rules. Conditions use a typed field/operator/value vocabulary and actions are limited to assignment, labels, priority, status, agent notification, and private ticket notes; no action in this contract can send a visitor message.
 - Creation and update rules enter through explicit domain events after intake has established its final initial state and after the causal audit event is stored. Eloquent observers still maintain infrastructure such as SLA clocks, routing, and webhook outboxes, but they do not run business automation against half-finished workflows.
-- Visitor identity supports both `anonymous_id` and optional host-provided `external_id`. Public widget requests bootstrap a signed visitor token before they can create conversations or read/write visitor messages.
+- Visitor identity supports both `anonymous_id` and optional host-provided
+  `external_id`. Public widget requests bootstrap a signed visitor token before
+  they can create conversations or read/write visitor messages. Because the
+  host identifier arrives through a public browser request, it is not proof
+  that two rows are one human. A `manage_contacts` agent makes that merge
+  explicitly within one site; different populated external IDs or email
+  addresses fail closed so later inbound mail cannot recreate the duplicate.
+  The source browser IDs become aliases of the chosen contact, and their prior
+  internal visitor IDs form a token lineage capped at the 50 most recent rows
+  across later merges.
 - Contact notes are separate from ticket activity so deleting or closing one
   ticket cannot erase person-level context. Their lifecycle audit events omit
   note bodies, avoiding a second copy outside the visitor-owned record.

@@ -73,7 +73,7 @@ class AttachmentUploadService
 
         // Scan the bytes before they are stored, so an infected file never
         // reaches the disk.
-        $this->scan($file, $conversation, $site, $uploader, $filename, $mimeType);
+        $this->scan($file, $conversation, $site, $uploader, $filename, $mimeType, $authorizeWrite);
 
         $checksum = hash_file('sha256', $file->getRealPath()) ?: null;
         $maxConversationBytes = (int) config('wayfindr.attachments.max_conversation_bytes');
@@ -86,9 +86,10 @@ class AttachmentUploadService
             $conversation, $site, $file, $uploader, $sizeBytes, $mimeType, $checksum, $filename, $storageKey, $maxConversationBytes, $diskName, $authorizeWrite
         ): ConversationMessageAttachment {
             // Scanning deliberately finishes before this callback. Rejected
-            // scans write security audit events and throw; wrapping them in the
-            // storage transaction would roll those records back. Successful
-            // scans reauthorize immediately before any binary or row persists.
+            // scans write security audit events in their own short authorized
+            // transaction and throw; wrapping them in the storage transaction
+            // would roll those records back. Successful scans reauthorize here
+            // immediately before any binary or row persists.
             if ($authorizeWrite !== null) {
                 [$uploader, $conversation] = $authorizeWrite($uploader, $conversation);
                 $conversation->loadMissing('site');
@@ -186,8 +187,15 @@ class AttachmentUploadService
      * scanner is rejected under the default fail-closed policy (logged and
      * audited so the operator sees it) or, if fail-open, accepted with a warning.
      */
-    private function scan(UploadedFile $file, Conversation $conversation, Site $site, Model $uploader, string $filename, string $mimeType): void
-    {
+    private function scan(
+        UploadedFile $file,
+        Conversation $conversation,
+        Site $site,
+        Model $uploader,
+        string $filename,
+        string $mimeType,
+        ?Closure $authorizeWrite,
+    ): void {
         if (! $this->scanner->isConfigured()) {
             // No scanner: accept with defense-in-depth (the standing allowlist,
             // private storage, forced-download, and nosniff protections).
@@ -201,11 +209,18 @@ class AttachmentUploadService
         }
 
         if ($result->isInfected()) {
-            $this->recordScanAudit($conversation, $site, $uploader, 'attachment.quarantined', [
-                'filename' => $filename,
-                'mime_type' => $mimeType,
-                'threat' => $result->threat,
-            ]);
+            $this->recordScanAudit(
+                $conversation,
+                $site,
+                $uploader,
+                'attachment.quarantined',
+                [
+                    'filename' => $filename,
+                    'mime_type' => $mimeType,
+                    'threat' => $result->threat,
+                ],
+                $authorizeWrite,
+            );
 
             throw AttachmentRejected::file('composer.rejected.infected');
         }
@@ -217,10 +232,17 @@ class AttachmentUploadService
         ]);
 
         if ((bool) config('wayfindr.attachments.scanner.fail_closed', true)) {
-            $this->recordScanAudit($conversation, $site, $uploader, 'attachment.scan_unavailable', [
-                'filename' => $filename,
-                'error' => $result->error,
-            ]);
+            $this->recordScanAudit(
+                $conversation,
+                $site,
+                $uploader,
+                'attachment.scan_unavailable',
+                [
+                    'filename' => $filename,
+                    'error' => $result->error,
+                ],
+                $authorizeWrite,
+            );
 
             throw AttachmentRejected::file('composer.rejected.unscannable');
         }
@@ -235,17 +257,33 @@ class AttachmentUploadService
     /**
      * @param  array<string, mixed>  $metadata
      */
-    private function recordScanAudit(Conversation $conversation, Site $site, Model $uploader, string $action, array $metadata): void
-    {
-        $conversation->auditEvents()->create([
-            'account_id' => $site->account_id,
-            'site_id' => $site->id,
-            'actor_type' => $uploader->getMorphClass(),
-            'actor_id' => $uploader->getKey(),
-            'action' => $action,
-            'metadata' => $metadata,
-            'occurred_at' => now(),
-        ]);
+    private function recordScanAudit(
+        Conversation $conversation,
+        Site $site,
+        Model $uploader,
+        string $action,
+        array $metadata,
+        ?Closure $authorizeWrite,
+    ): void {
+        DB::transaction(function () use ($conversation, $site, $uploader, $action, $metadata, $authorizeWrite): void {
+            if ($authorizeWrite !== null) {
+                [$uploader, $conversation] = $authorizeWrite($uploader, $conversation);
+                $conversation->loadMissing('site');
+                $site = $conversation->site;
+
+                abort_unless($site instanceof Site, 404);
+            }
+
+            $conversation->auditEvents()->create([
+                'account_id' => $site->account_id,
+                'site_id' => $site->id,
+                'actor_type' => $uploader->getMorphClass(),
+                'actor_id' => $uploader->getKey(),
+                'action' => $action,
+                'metadata' => $metadata,
+                'occurred_at' => now(),
+            ]);
+        });
     }
 
     private function sanitizeFilename(?string $name): string

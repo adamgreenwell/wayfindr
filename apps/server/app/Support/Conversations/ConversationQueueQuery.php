@@ -75,6 +75,7 @@ final class ConversationQueueQuery
                 self::whereLiteralLike($query, 'external_id', $pattern, 'or');
                 self::whereLiteralLike($query, 'name', $pattern, 'or');
                 self::whereLiteralLike($query, 'email', $pattern, 'or');
+                $query->orWhereHas('identityAliases', fn (Builder $query) => self::whereLiteralLike($query, 'anonymous_id', $pattern));
             });
         });
     }

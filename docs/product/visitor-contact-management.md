@@ -62,7 +62,43 @@ while the account audit retains only the note ID and lifecycle action. The note
 body cascades with visitor, site, or account deletion, though infrastructure
 backups remain subject to the operator's separate backup retention policy.
 
+## Identity merge
+
+A contact manager can search for another visitor on the same site and merge the
+current duplicate into the contact the team chooses to keep. This is an
+explicit human identity decision: a host visitor ID arrives through a public
+browser request and is useful as a reference, but it is not authentication and
+does not silently merge customer history. Different populated host visitor IDs
+therefore block the operation.
+
+The chosen contact keeps populated name, email, host ID, and custom attribute
+values; the duplicate fills only blanks. The newest sightings and page context
+are retained, while conversations, tickets, contact notes, cobrowse sessions,
+visitor-authored messages, and uploads move to the chosen record. The operation
+is permanent. Existing audit facts keep their action, type, time, and metadata;
+only visitor actor/subject row IDs are re-anchored to the chosen contact so the
+events remain labeled and searchable. The merge writes a body-free audit receipt
+containing only internal IDs and moved-row counts.
+
+The deleted contact's anonymous browser ID and any earlier merged IDs become
+private aliases of the chosen contact. Widget presence, bootstrap, conversation
+intake, signed sessions, and authorized support search all resolve those
+aliases. Conversation creation, visitor messages, and pending uploads resolve
+again after taking the shared site lock, so a request that began just before a
+merge cannot recreate the duplicate or write an orphaned sender. Visitor-authored
+cobrowse and rejected attachment-scan audit receipts use the same locked
+re-resolution, keeping their actor attached to the chosen contact. All widget
+conversation authorization resolves the token, alias, and conversation under
+that same site lock; writes that persist visitor ownership or presence then
+re-resolve at their final write boundary under shared account and site locks,
+so a merge cannot create a false 404 or leave a stale owner without serializing
+independent widget traffic across the account. Alias token
+lineage is retained across later merges, but cascades when the chosen visitor or
+site is deleted. Each alias keeps at most the 50 most recent prior visitor IDs;
+an older tab beyond that unusual chain must bootstrap again. An old token cannot
+authenticate a new visitor that later reuses the browser ID.
+
 ## Deliberately not in this slice
 
-Identity merge, contact export, CSV import, segmentation, CRM sync, and
-marketing automation remain separate decisions.
+Contact export, CSV import, segmentation, CRM sync, and marketing automation
+remain separate decisions.

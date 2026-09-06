@@ -129,6 +129,11 @@ class Visitor extends Model
         return $this->hasMany(VisitorNote::class);
     }
 
+    public function identityAliases(): HasMany
+    {
+        return $this->hasMany(VisitorIdentityAlias::class);
+    }
+
     public function requestedTickets(): HasMany
     {
         return $this->hasMany(Ticket::class, 'requester_id');

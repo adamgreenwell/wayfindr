@@ -4,16 +4,20 @@ namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
-use App\Models\Conversation;
-use App\Support\VisitorSessionToken;
-use App\Support\WidgetSiteResolver;
+use App\Support\VisitorConversationResolver;
+use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CobrowseConsentController extends Controller
 {
-    public function store(Request $request, string $supportCode, VisitorSessionToken $visitorSessionToken): JsonResponse
-    {
+    public function store(
+        Request $request,
+        string $supportCode,
+        VisitorConversationResolver $conversations,
+        VisitorConversationWriteAuthorization $conversationWrites,
+    ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
@@ -21,49 +25,41 @@ class CobrowseConsentController extends Controller
             'granted' => ['required', 'boolean'],
         ]);
 
-        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
+        $conversation = $conversations->resolve(
+            $request,
+            $supportCode,
+            $validated['site_public_key'],
+            $validated['anonymous_id'],
+        );
 
-        $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
+        [$conversation, $cobrowseSession] = DB::transaction(function () use ($conversation, $conversationWrites, $validated): array {
+            $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
+            $cobrowseSession = $conversationWrites->lockCobrowseSession($conversation, grantedOnly: false);
 
-        $conversation = Conversation::query()
-            ->where('support_code', $supportCode)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->first();
+            if ($validated['granted']) {
+                $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
+                    $session->forceFill([
+                        'status' => 'granted',
+                        'consented_at' => now(),
+                        'ended_at' => null,
+                    ]);
+                });
+            } else {
+                $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
+                    $metadata = $session->metadata ?? [];
+                    $metadata['ended_by_name'] = 'Visitor';
+                    $metadata['ended_by_type'] = 'visitor';
 
-        abort_unless($conversation, 404, 'Conversation not found.');
+                    $session->forceFill([
+                        'status' => 'revoked',
+                        'metadata' => $metadata,
+                        'ended_at' => now(),
+                    ]);
+                });
+            }
 
-        $cobrowseSession = CobrowseSession::query()
-            ->where('conversation_id', $conversation->id)
-            ->where('site_id', $site->id)
-            ->where('visitor_id', $visitor->id)
-            ->whereNull('ended_at')
-            ->latest('id')
-            ->first();
-
-        abort_unless($cobrowseSession, 404, 'Cobrowse session not active.');
-
-        if ($validated['granted']) {
-            $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
-                $session->forceFill([
-                    'status' => 'granted',
-                    'consented_at' => now(),
-                    'ended_at' => null,
-                ]);
-            });
-        } else {
-            $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
-                $metadata = $session->metadata ?? [];
-                $metadata['ended_by_name'] = 'Visitor';
-                $metadata['ended_by_type'] = 'visitor';
-
-                $session->forceFill([
-                    'status' => 'revoked',
-                    'metadata' => $metadata,
-                    'ended_at' => now(),
-                ]);
-            });
-        }
+            return [$conversation, $cobrowseSession];
+        });
 
         return response()->json([
             'data' => [

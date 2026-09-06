@@ -11,6 +11,7 @@ use App\Models\Visitor;
 use App\Support\Mail\InboundMailRouter;
 use App\Support\Mail\InboundMessage;
 use App\Support\Sites\SitePresenceReporting;
+use App\Support\Visitors\VisitorIdentityMerger;
 use App\Support\Visitors\VisitorPresence;
 use App\Support\VisitorSessionToken;
 use Illuminate\Console\Scheduling\Schedule;
@@ -1036,6 +1037,54 @@ test('a heartbeat does not undo context written while it was in flight', functio
 
     expect($metadata['plan'] ?? null)->toBe('pro', 'the heartbeat erased context written while it was in flight')
         ->and($metadata['last_page_url'])->toBe('https://shop.test/checkout');
+});
+
+test('a heartbeat locks the canonical visitor after following a merge alias', function (): void {
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'domain' => 'shop.test',
+        'settings' => ['presence' => ['enabled' => true, 'page_urls' => true]],
+    ]);
+    $source = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-presence-merge-source',
+        'metadata' => ['last_page_url' => 'https://shop.test/pricing'],
+    ]);
+    $target = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-presence-merge-target',
+        'metadata' => ['tier' => 'gold'],
+    ]);
+    $mergeStarted = false;
+    $mergeComplete = false;
+    $contextWritten = false;
+
+    Visitor::retrieved(function (Visitor $read) use ($manager, $source, $target, &$mergeStarted, &$mergeComplete, &$contextWritten): void {
+        if (! $mergeStarted && $read->id === $source->id) {
+            $mergeStarted = true;
+            app(VisitorIdentityMerger::class)->merge($manager, $source, (int) $target->id);
+            $mergeComplete = true;
+
+            return;
+        }
+
+        if ($mergeComplete && ! $contextWritten && $read->id === $target->id) {
+            $contextWritten = true;
+            DB::table('visitors')->where('id', $target->id)->update([
+                'metadata' => json_encode([...($read->metadata ?? []), 'plan' => 'pro']),
+            ]);
+        }
+    });
+
+    reportPresence($site, 'anon-presence-merge-source', 'https://shop.test/checkout')->assertSuccessful();
+
+    $canonical = $target->fresh();
+
+    expect($mergeComplete)->toBeTrue('the merge race never happened, so this proves nothing')
+        ->and($contextWritten)->toBeTrue('the competing context write never happened, so this proves nothing')
+        ->and(Visitor::query()->count())->toBe(1)
+        ->and($canonical?->metadata['tier'] ?? null)->toBe('gold')
+        ->and($canonical?->metadata['plan'] ?? null)->toBe('pro')
+        ->and($canonical?->metadata['last_page_url'] ?? null)->toBe('https://shop.test/checkout');
 });
 
 test('the retention sweep is actually scheduled and resolvable', function (): void {
