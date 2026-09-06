@@ -963,9 +963,27 @@
                 </div>
 
                 @if ($canCreateTicket && $tickets->isEmpty())
-                    <form class="section-form" method="POST" action="{{ route('dashboard.conversations.tickets.store', $conversation->support_code) }}">
+                    @if ($copilotTicketSuggestionAvailable)
+                        @include('agent.conversations.partials.copilot-ticket-suggestion')
+                    @endif
+
+                    <form
+                        class="section-form"
+                        method="POST"
+                        action="{{ route('dashboard.conversations.tickets.store', $conversation->support_code) }}"
+                        data-ticket-creation-form
+                        data-ticket-suggestion-dirty="{{ old('subject') !== null || old('priority') !== null || old('label_ids') !== null ? 'true' : 'false' }}"
+                    >
                         @csrf
                         @include('agent.conversations.partials.return-query-fields')
+
+                        <div class="field">
+                            <label for="ticket_subject">{{ __('conversations.detail.ticket.title') }}</label>
+                            <input id="ticket_subject" name="subject" type="text" value="{{ old('subject', $ticketSubjectDefault) }}" maxlength="255" lang="" data-ticket-subject required>
+                            @error('subject')
+                                <p class="field-error">{{ $message }}</p>
+                            @enderror
+                        </div>
 
                         <div class="field">
                             <label for="category">{{ __('conversations.detail.ticket.category') }}</label>
@@ -983,7 +1001,7 @@
 
                         <div class="field">
                             <label for="priority">{{ __('conversations.detail.ticket.priority') }}</label>
-                            <select id="priority" name="priority">
+                            <select id="priority" name="priority" data-ticket-priority>
                                 @foreach ($ticketPriorities as $value => $priority)
                                     <option value="{{ $value }}" @selected(old('priority', 'normal') === $value)>{{ __('tickets.priorities.'.$value) }}</option>
                                 @endforeach
@@ -993,6 +1011,35 @@
                                 <p class="field-error">{{ $message }}</p>
                             @enderror
                         </div>
+
+                        @if ($ticketLabelOptions->isNotEmpty())
+                            @php
+                                $selectedTicketLabelIds = array_map('strval', (array) old('label_ids', []));
+                            @endphp
+                            <fieldset class="field">
+                                <legend>{{ __('conversations.detail.ticket.labels') }}</legend>
+                                <p class="field-help">{{ __('conversations.detail.ticket.labels_help') }}</p>
+                                @foreach ($ticketLabelOptions as $ticketLabel)
+                                    <label class="check-row" for="ticket_label_{{ $ticketLabel->id }}">
+                                        <input
+                                            id="ticket_label_{{ $ticketLabel->id }}"
+                                            name="label_ids[]"
+                                            type="checkbox"
+                                            value="{{ $ticketLabel->id }}"
+                                            data-ticket-label-id
+                                            @checked(in_array((string) $ticketLabel->id, $selectedTicketLabelIds, true))
+                                        >
+                                        <span lang="">{{ $ticketLabel->name }}</span>
+                                    </label>
+                                @endforeach
+                                @error('label_ids')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                                @error('label_ids.*')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </fieldset>
+                        @endif
 
                         <button class="button" type="submit">{{ __('conversations.detail.ticket.create') }}</button>
                     </form>
@@ -1871,6 +1918,10 @@
                                 window.wayfindrConversationReplyDraftTranscriptUpdated();
                             }
 
+                            if (hasNewMessages && typeof window.wayfindrConversationTicketSuggestionTranscriptUpdated === 'function') {
+                                window.wayfindrConversationTicketSuggestionTranscriptUpdated();
+                            }
+
                             if (stickToBottom) {
                                 var last = items[items.length - 1];
 
@@ -2241,6 +2292,13 @@
                     }
 
                     if (event.event === config.messageEventName) {
+                        // Invalidate provider suggestions at event receipt so a
+                        // slow or failed transcript fetch cannot leave stale
+                        // ticket details available for insertion.
+                        if (typeof window.wayfindrConversationTicketSuggestionTranscriptUpdated === 'function') {
+                            window.wayfindrConversationTicketSuggestionTranscriptUpdated();
+                        }
+
                         refreshTranscript();
                     }
 
@@ -2294,5 +2352,9 @@
                 connect();
             })();
         </script>
+    @endif
+
+    @if ($copilotTicketSuggestionAvailable)
+        @include('agent.conversations.partials.copilot-ticket-suggestion-script')
     @endif
 </x-layouts.app>

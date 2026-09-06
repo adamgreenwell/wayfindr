@@ -51,10 +51,15 @@ the Laravel AI SDK. That is defense in depth: feature code still owns minimum
 context selection, must omit attachments and cobrowse state, and must present
 output as a suggestion a human reviews.
 
-The first product uses are an on-demand conversation summary for agent handoff
-and an editable suggested reply. Both run through the default queue, recheck
+The first product uses are an on-demand conversation summary for agent handoff,
+an editable suggested reply, and suggested ticket details at
+conversation-to-ticket conversion. All run through the default queue, recheck
 the requesting agent's current authority at execution time, select only bounded
 subject/message text, and store only the latest suggestion with its source
 position. New conversation activity marks output stale; it never causes
-automatic regeneration or a customer-facing action. A reply suggestion only
+automatic regeneration or a support-record action. A reply suggestion only
 fills an empty composer after an explicit agent choice and never submits it.
+Ticket suggestions use strictly validated title/priority output, while existing
+labels are matched deterministically inside the install without exposing the
+account label catalogue. Applying ticket details only fills an untouched form;
+the agent reviews and submits ticket creation separately.
