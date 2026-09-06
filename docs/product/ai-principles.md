@@ -67,3 +67,17 @@ validated title/priority output, while existing labels are matched
 deterministically inside the install without exposing the account label
 catalogue. Applying ticket details only fills an untouched form; the agent
 reviews and submits ticket creation separately.
+
+## Evaluation Gate
+
+The first provider-free evaluation layer is documented in
+[AI Evaluation](../development/ai-evaluation.md). It scores versioned synthetic
+grounded-answer fixtures and recorded outputs for answer accuracy, refusal,
+citations, and fact coverage. Its strict loader, aggregate report, and
+regression thresholds run without a provider key or customer data.
+
+This is evidence infrastructure, not an autonomous answer feature or an ADR
+change. A green bundled baseline proves that the deterministic scorer works; it
+does not prove a live model is suitable for visitors. Confidence and refusal
+evidence still comes next, followed by an explicit decision to amend, supersede,
+or reaffirm ADR 0004 before any customer-facing implementation begins.
