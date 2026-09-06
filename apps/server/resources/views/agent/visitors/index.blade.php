@@ -8,7 +8,7 @@
             ? __('visitors.subtitle.browsers')
             : __('visitors.subtitle.contacts')"
     >
-        @if ($canManageContacts && ! $attributeFilterInvalid)
+        @if ($canManageContacts && ! $attributeFilterInvalid && ! $filterScopeInvalid)
             <x-slot:actions>
                 <a class="button secondary" href="{{ route('dashboard.visitors.export', $exportQuery) }}">{{ __('visitors.export.csv') }}</a>
             </x-slot:actions>

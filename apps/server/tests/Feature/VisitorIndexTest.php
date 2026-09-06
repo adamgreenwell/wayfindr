@@ -260,6 +260,26 @@ test('a deleted attribute or unavailable site filter cannot widen a contact expo
         ->assertStatus(422);
 });
 
+test('the directory never offers a broader export after a saved filter becomes unavailable', function (): void {
+    $w = visitorIndexWorld();
+    $unavailableSite = Site::factory()->for($w['account'])->create();
+    $otherAgent = User::factory()->for($w['account'])->create();
+    $unavailableSite->supportAgents()->attach($otherAgent);
+
+    foreach ([
+        [
+            'attribute' => 'deleted_definition',
+            'attribute_value' => 'Enterprise',
+        ],
+        ['site' => $unavailableSite->id],
+    ] as $filters) {
+        $this->actingAs($w['agent'])
+            ->get(route('dashboard.visitors.index', $filters))
+            ->assertOk()
+            ->assertDontSee(route('dashboard.visitors.export'));
+    }
+});
+
 test('malformed contact export filters fail closed instead of being discarded', function (): void {
     $w = visitorIndexWorld();
     Visitor::factory()->for($w['site'])->create(['name' => 'Do Not Export Broadly']);

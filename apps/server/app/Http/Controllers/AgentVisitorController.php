@@ -64,7 +64,7 @@ class AgentVisitorController extends Controller
             $normalizedAttributeValue,
             $attributeFilterInvalid,
             $siteId,
-            ,
+            $filterScopeInvalid,
         ] = $this->filters($request, $attributeDefinitions, $siteIds);
 
         $visitors = $this->visitorQuery(
@@ -97,6 +97,7 @@ class AgentVisitorController extends Controller
             'canManageContacts' => $canManageContacts,
             'canViewConversations' => $canViewConversations,
             'exportQuery' => $this->queryParams($presence, $search, $attributeKey, $attributeValue, $siteId),
+            'filterScopeInvalid' => $filterScopeInvalid,
             'listsBrowsers' => $listsBrowsers,
             'presence' => $presence,
             'search' => $search,
