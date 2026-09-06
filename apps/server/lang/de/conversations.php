@@ -250,6 +250,29 @@ return [
             'privacy' => 'Nur begrenzter Betreff- und Nachrichtentext wird nach Entfernung gängiger sensibler Muster gesendet. Profile, Metadaten, Anhänge und Cobrowse-Daten werden ausgelassen. Jede Antwort wird von Ihnen geprüft und gesendet.',
         ],
 
+        'knowledge_copilot' => [
+            'heading' => 'Wissensvorschläge',
+            'suggested' => 'Vorschlag',
+            'lede' => 'Finden Sie aus dieser Unterhaltung relevante veröffentlichte Artikel. Ein Ausschnitt wird erst nach Ihrer Auswahl in den Editor übernommen.',
+            'generate' => 'Wissen vorschlagen',
+            'regenerate' => 'Vorschläge aktualisieren',
+            'retry' => 'Vorschläge erneut versuchen',
+            'use' => 'Ausschnitt einfügen',
+            'pending' => 'Vorschläge werden gesucht …',
+            'pending_detail' => 'Die Anfrage befindet sich in der Warteschlange. Der Antwortassistent wird aktualisiert, sobald die Artikelvorschläge bereit sind.',
+            'generated' => 'Erzeugt :elapsed.',
+            'source_count' => '{1} Basiert auf 1 Textnachricht.|[2,*] Basiert auf :count Textnachrichten.',
+            'no_matches' => 'Es wurden keine passenden veröffentlichten Artikel gefunden.',
+            'stale' => 'Nach diesen Vorschlägen sind neue Nachrichten eingegangen.',
+            'stale_detail' => 'Aktualisieren Sie die Vorschläge, bevor Sie einen Ausschnitt in den Editor übernehmen.',
+            'failed' => 'Die Wissensvorschläge konnten nicht erzeugt werden.',
+            'failed_detail' => 'Es wurde nichts in den Editor übernommen oder gesendet. Sie können es erneut versuchen.',
+            'used' => 'Wissensausschnitt übernommen. Vor dem Senden prüfen und bearbeiten.',
+            'use_blocked' => 'Ihre aktuelle Nachricht wurde beibehalten. Leeren Sie sie, bevor Sie einen Wissensausschnitt einfügen.',
+            'use_stale' => 'Aktualisieren Sie diese Vorschläge vor der Verwendung.',
+            'privacy' => 'Nur begrenzter Betreff- und Nachrichtentext wird nach Entfernung gängiger sensibler Muster gesendet. Der Anbieter liefert Suchbegriffe zurück; Artikeltitel, Inhalte und der Katalog bleiben in Wayfindr. Nur veröffentlichte Artikel dieses Kontos werden lokal abgeglichen. Jede Antwort wird von Ihnen geprüft und gesendet.',
+        ],
+
         'ticket_copilot' => [
             'heading' => 'Vorgeschlagene Ticketdetails',
             'suggested' => 'Vorschlag',
@@ -522,6 +545,9 @@ return [
         'ai_reply_draft_queued' => 'Antwortvorschlag in die Warteschlange gestellt.',
         'ai_reply_draft_pending' => 'Ein Antwortvorschlag wird bereits erzeugt.',
         'ai_reply_draft_failed' => 'Der Antwortvorschlag konnte nicht in die Warteschlange gestellt werden. Es wurden keine Supportdaten gesendet.',
+        'ai_knowledge_suggestion_queued' => 'Wissensvorschläge in die Warteschlange gestellt.',
+        'ai_knowledge_suggestion_pending' => 'Wissensvorschläge werden bereits erzeugt.',
+        'ai_knowledge_suggestion_failed' => 'Die Wissensvorschläge konnten nicht in die Warteschlange gestellt werden. Es wurden keine Supportdaten gesendet.',
     ],
 
     'row' => [

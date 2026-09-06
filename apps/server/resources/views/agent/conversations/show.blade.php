@@ -1922,6 +1922,10 @@
                                 window.wayfindrConversationTicketSuggestionTranscriptUpdated();
                             }
 
+                            if (hasNewMessages && typeof window.wayfindrConversationKnowledgeSuggestionTranscriptUpdated === 'function') {
+                                window.wayfindrConversationKnowledgeSuggestionTranscriptUpdated();
+                            }
+
                             if (stickToBottom) {
                                 var last = items[items.length - 1];
 
@@ -2292,11 +2296,19 @@
                     }
 
                     if (event.event === config.messageEventName) {
-                        // Invalidate provider suggestions at event receipt so a
-                        // slow or failed transcript fetch cannot leave stale
-                        // ticket details available for insertion.
+                        // Invalidate insertable provider suggestions at event
+                        // receipt so a slow or failed transcript fetch cannot
+                        // leave stale content available for insertion.
+                        if (typeof window.wayfindrConversationReplyDraftTranscriptUpdated === 'function') {
+                            window.wayfindrConversationReplyDraftTranscriptUpdated();
+                        }
+
                         if (typeof window.wayfindrConversationTicketSuggestionTranscriptUpdated === 'function') {
                             window.wayfindrConversationTicketSuggestionTranscriptUpdated();
+                        }
+
+                        if (typeof window.wayfindrConversationKnowledgeSuggestionTranscriptUpdated === 'function') {
+                            window.wayfindrConversationKnowledgeSuggestionTranscriptUpdated();
                         }
 
                         refreshTranscript();

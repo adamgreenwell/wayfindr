@@ -11,6 +11,7 @@ use App\Events\TicketCreated;
 use App\Models\ApiToken;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
+use App\Models\ConversationCopilotKnowledgeSuggestion;
 use App\Models\ConversationCopilotTicketSuggestion;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -20,6 +21,7 @@ use App\Notifications\AutomationRuleMatched;
 use App\Notifications\ConversationNeedsReply;
 use App\Notifications\SlaDeadlineAlert;
 use App\Support\Ai\AgentCopilotConfiguration;
+use App\Support\Ai\KnowledgeArticleSuggestionMatcher;
 use App\Support\Attachments\AttachmentBinder;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Automation\AutomationMacroAuthorization;
@@ -65,7 +67,7 @@ class AgentConversationController extends Controller
         private readonly ConversationReturnPath $conversationReturnPath,
     ) {}
 
-    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization, AgentCopilotConfiguration $copilotConfiguration): View
+    public function show(Request $request, string $supportCode, CobrowseConsentState $cobrowseConsentState, CobrowseAttentionFinder $cobrowseAttentionFinder, VisitorContextSanitizer $visitorContextSanitizer, ReplyTemplateOptions $replyTemplateOptions, CobrowseAuditTrail $cobrowseAuditTrail, SlaStatePresenter $slaStates, AutomationMacroAuthorization $macroAuthorization, AgentCopilotConfiguration $copilotConfiguration, KnowledgeArticleSuggestionMatcher $knowledgeArticleMatcher): View
     {
         $agent = $request->user();
 
@@ -116,6 +118,16 @@ class AgentConversationController extends Controller
                 ->get()
             : collect();
         $account = $agent->account()->firstOrFail();
+        $copilotKnowledgeSuggestionAvailable = $copilotConfiguration->isReady()
+            && $canReply
+            && $latestSummarizableMessageId !== null
+            && $account->articles()->published()->exists();
+        $copilotKnowledgeSuggestion = $copilotKnowledgeSuggestionAvailable
+            ? $conversation->copilotKnowledgeSuggestion()->first()
+            : null;
+        $suggestedKnowledgeArticles = $copilotKnowledgeSuggestion?->displayStatus() === ConversationCopilotKnowledgeSuggestion::STATUS_READY
+            ? $knowledgeArticleMatcher->present($account, $copilotKnowledgeSuggestion->suggestedArticleIds())
+            : collect();
         $ticketLabelOptions = $canManageTickets
             ? $account->ticketLabels()->orderBy('name')->get()
             : collect();
@@ -270,6 +282,9 @@ class AgentConversationController extends Controller
             'conversationSiblings' => $conversationSiblings,
             'copilotReplyDraft' => $copilotReplyDraft,
             'copilotReplyDraftAvailable' => $copilotReplyDraftAvailable,
+            'copilotKnowledgeSuggestion' => $copilotKnowledgeSuggestion,
+            'copilotKnowledgeSuggestionAvailable' => $copilotKnowledgeSuggestionAvailable,
+            'suggestedKnowledgeArticles' => $suggestedKnowledgeArticles,
             'copilotSummary' => $copilotSummary,
             'copilotSummaryAvailable' => $copilotSummaryAvailable,
             'copilotTicketSuggestion' => $copilotTicketSuggestion,
