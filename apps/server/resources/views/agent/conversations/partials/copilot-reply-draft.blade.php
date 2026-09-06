@@ -1,6 +1,6 @@
 @php
     $copilotReplyDraftState = $copilotReplyDraft?->displayStatus();
-    $copilotReplyDraftIsStale = $copilotReplyDraft?->isStaleComparedTo($latestSummarizableMessageId) ?? false;
+    $copilotReplyDraftIsStale = $copilotReplyDraft?->isStaleComparedTo($latestConversationMessageId) ?? false;
     $copilotReplyDraftRoute = ['supportCode' => $conversation->support_code] + $conversationReturnQuery;
 @endphp
 

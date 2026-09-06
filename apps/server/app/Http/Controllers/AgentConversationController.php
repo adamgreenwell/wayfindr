@@ -96,6 +96,7 @@ class AgentConversationController extends Controller
         $latestSummarizableMessageId = $messages
             ->filter(fn ($message): bool => filled($message->body))
             ->max('id');
+        $latestConversationMessageId = $messages->max('id');
         $copilotSummaryAvailable = $copilotConfiguration->isReady() && $latestSummarizableMessageId !== null;
         $copilotSummary = $copilotSummaryAvailable
             ? $conversation->copilotSummary()->first()
@@ -257,6 +258,7 @@ class AgentConversationController extends Controller
             'copilotSummary' => $copilotSummary,
             'copilotSummaryAvailable' => $copilotSummaryAvailable,
             'latestSummarizableMessageId' => $latestSummarizableMessageId,
+            'latestConversationMessageId' => $latestConversationMessageId,
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation, $canManageTickets),
             'realtime' => $this->realtimeConfig($conversation, $agent),

@@ -155,20 +155,22 @@ final class AgentConversationCopilotReplyDraftController extends Controller
         abort_unless($configuration->isReady(), 404);
 
         $conversation = $this->conversationForAgent($request->user(), $supportCode);
-        $latestMessageId = $conversation->messages()
+        $latestTextMessageId = $conversation->messages()
             ->whereNotNull('body')
             ->whereRaw("TRIM(body) <> ''")
             ->max('id');
 
-        if ($latestMessageId === null) {
+        if ($latestTextMessageId === null) {
             return response('', 204)->header('Cache-Control', 'no-store, private');
         }
+
+        $latestConversationMessageId = $conversation->messages()->max('id');
 
         return response()->view('agent.conversations.partials.copilot-reply-draft', [
             'conversation' => $conversation,
             'conversationReturnQuery' => $returnPath->query($request),
             'copilotReplyDraft' => $conversation->copilotReplyDraft()->first(),
-            'latestSummarizableMessageId' => (int) $latestMessageId,
+            'latestConversationMessageId' => (int) $latestConversationMessageId,
         ])->header('Cache-Control', 'no-store, private');
     }
 

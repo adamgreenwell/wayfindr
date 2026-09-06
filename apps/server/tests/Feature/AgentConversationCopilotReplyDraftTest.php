@@ -209,11 +209,20 @@ test('the queued job sends scrubbed bounded text and stores an editable suggesti
     ConversationMessageAttachment::factory()->forMessage($visitorMessage)->create([
         'original_filename' => 'private-bank-statement.pdf',
     ]);
-    $latest = ConversationMessage::factory()->for($world['conversation'])->create([
+    ConversationMessage::factory()->for($world['conversation'])->create([
         'sender_type' => User::class,
         'sender_id' => $world['agent']->id,
         'body' => 'Asked the visitor to retry in a private window.',
         'created_at' => now(),
+    ]);
+    $attachmentOnly = ConversationMessage::factory()->for($world['conversation'])->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $world['visitor']->id,
+        'body' => null,
+        'created_at' => now()->addSecond(),
+    ]);
+    ConversationMessageAttachment::factory()->forMessage($attachmentOnly)->create([
+        'original_filename' => 'latest-private-screenshot.png',
     ]);
     configureConversationCopilotReplyDraft();
     $job = queueConversationCopilotReplyDraft($world);
@@ -254,12 +263,13 @@ test('the queued job sends scrubbed bounded text and stores an editable suggesti
         ->and($fake->prompt->input)->not->toContain('Private Visitor Name')
         ->and($fake->prompt->input)->not->toContain('private-visitor@example.test')
         ->and($fake->prompt->input)->not->toContain('metadata-must-not-leave')
-        ->and($fake->prompt->input)->not->toContain('private-bank-statement.pdf');
+        ->and($fake->prompt->input)->not->toContain('private-bank-statement.pdf')
+        ->and($fake->prompt->input)->not->toContain('latest-private-screenshot.png');
 
     $draft = ConversationCopilotReplyDraft::query()->sole();
     expect($draft->status)->toBe(ConversationCopilotReplyDraft::STATUS_READY)
         ->and($draft->source_message_count)->toBe(2)
-        ->and($draft->source_last_message_id)->toBe($latest->id)
+        ->and($draft->source_last_message_id)->toBe($attachmentOnly->id)
         ->and($draft->provider)->toBe('fake-provider')
         ->and($draft->model)->toBe('fake-model')
         ->and($draft->prompt_tokens)->toBe(120)
@@ -277,10 +287,11 @@ test('the queued job sends scrubbed bounded text and stores an editable suggesti
         ->assertSee('Use suggested draft')
         ->assertSee('data-copilot-reply-draft-use', false)
         ->assertSee('body.value.trim() !==', false)
-        ->assertSee("body.dispatchEvent(new Event('input'", false);
+        ->assertSee("body.dispatchEvent(new Event('input'", false)
+        ->assertSee('const maximumAttempts = 180;', false);
 });
 
-test('new messages visibly stale a reply suggestion and block composer insertion until refresh', function (): void {
+test('a new attachment-only message visibly stales a reply suggestion and blocks composer insertion', function (): void {
     $world = conversationCopilotReplyDraftWorld();
     $source = ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Can you help?']);
     configureConversationCopilotReplyDraft();
@@ -295,7 +306,10 @@ test('new messages visibly stale a reply suggestion and block composer insertion
         'requested_at' => now()->subMinute(),
         'completed_at' => now()->subMinute(),
     ]);
-    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Never mind, I fixed it.']);
+    $attachmentOnly = ConversationMessage::factory()->for($world['conversation'])->create(['body' => null]);
+    ConversationMessageAttachment::factory()->forMessage($attachmentOnly)->create([
+        'original_filename' => 'new-context.png',
+    ]);
 
     $this->actingAs($world['agent'])
         ->get(route('dashboard.conversations.show', $world['conversation']->support_code))

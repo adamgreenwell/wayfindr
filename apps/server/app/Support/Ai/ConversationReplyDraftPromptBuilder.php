@@ -13,9 +13,13 @@ final readonly class ConversationReplyDraftPromptBuilder
 
     public function build(Conversation $conversation): ?ConversationReplyDraftContext
     {
+        // Capture every message as the freshness boundary before selecting
+        // text. Attachments never enter the prompt, but an attachment-only
+        // follow-up still makes a previously generated reply unsafe to insert.
+        $latestMessageId = $conversation->messages()->max('id');
         $context = $this->contextSelector->select($conversation);
 
-        if ($context === null) {
+        if ($context === null || $latestMessageId === null) {
             return null;
         }
 
@@ -35,7 +39,7 @@ final readonly class ConversationReplyDraftPromptBuilder
                 timeoutSeconds: 75,
             ),
             messageCount: $context->messageCount,
-            lastMessageId: $context->lastMessageId,
+            lastMessageId: (int) $latestMessageId,
         );
     }
 }
