@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\OperatorReadinessConfirmation;
 use App\Models\User;
+use App\Support\Ai\AgentCopilotConfiguration;
 use App\Support\Attachments\AttachmentStorage;
 use App\Support\Attachments\Scanning\AttachmentScanner;
 use App\Support\Settings\OperatorSettings;
@@ -33,6 +34,7 @@ class OperatorReadiness
         private readonly RealtimeHealth $realtimeHealth,
         private readonly CobrowseTransportReadiness $cobrowseTransportReadiness,
         private readonly AgentWebPushConfig $webPush,
+        private readonly AgentCopilotConfiguration $agentCopilot,
     ) {}
 
     /**
@@ -74,6 +76,7 @@ class OperatorReadiness
             $this->queueWorker(),
             $this->realtimeBroadcasting(),
             $this->webPush(),
+            $this->agentCopilot(),
             $this->cobrowseTransportReadiness->check(),
             $this->storagePaths(),
             $this->attachmentStorage(),
@@ -706,6 +709,62 @@ class OperatorReadiness
                 detail: 'The configured VAPID subject or key material cannot authenticate a push request.',
                 action: 'Replace the VAPID subject and matched key pair in operator settings.'
             ), 'invalid'),
+        };
+    }
+
+    /**
+     * The copilot is deliberately optional. An unset provider leaves every
+     * support workflow manual; partial, unsupported, or unreadable settings are
+     * visible because an operator has attempted to enable the boundary.
+     *
+     * @return array{action: string, detail: string, key: string, label: string, status: string, status_label: string, summary: string}
+     */
+    private function agentCopilot(): array
+    {
+        $assessment = $this->agentCopilot->assessment();
+
+        return match ($assessment['status']) {
+            'ready' => $this->withTranslation($this->check(
+                key: 'agent_copilot',
+                label: 'Agent copilot',
+                status: 'ready',
+                summary: 'The optional agent copilot provider is configured.',
+                detail: 'Agent-facing assistive features may send explicitly selected, scrubbed text to the configured provider.',
+                action: 'Run the synthetic connection test after changing the provider, model, endpoint, or credential.'
+            ), 'ready'),
+            'unset' => $this->withTranslation($this->check(
+                key: 'agent_copilot',
+                label: 'Agent copilot',
+                status: 'manual',
+                summary: 'The agent copilot is not configured.',
+                detail: 'This optional boundary stays off and all support workflows remain manual until an operator selects a provider.',
+                action: 'Open Agent copilot settings only if this installation should use assistive AI.',
+                statusLabel: 'Optional'
+            ), 'unset'),
+            'unsupported' => $this->withTranslation($this->check(
+                key: 'agent_copilot',
+                label: 'Agent copilot',
+                status: 'attention',
+                summary: 'The configured agent copilot provider is unsupported.',
+                detail: 'The environment names a provider driver this Wayfindr release cannot safely expose.',
+                action: 'Select a supported provider in Agent copilot settings.'
+            ), 'unsupported'),
+            'unavailable' => $this->withTranslation($this->check(
+                key: 'agent_copilot',
+                label: 'Agent copilot',
+                status: 'attention',
+                summary: 'Agent copilot settings are temporarily unavailable.',
+                detail: 'Wayfindr could not safely read the operator settings store or configured credential, so copilot requests are disabled.',
+                action: 'Restore database, cache, and APP_KEY access, then recheck the settings without sending support data.'
+            ), 'unavailable'),
+            default => $this->withTranslation($this->check(
+                key: 'agent_copilot',
+                label: 'Agent copilot',
+                status: 'attention',
+                summary: 'The agent copilot configuration is incomplete.',
+                detail: 'A provider needs a model and, where required, a credential or compatible endpoint before requests can run.',
+                action: 'Complete or clear the Agent copilot settings.'
+            ), 'incomplete'),
         };
     }
 

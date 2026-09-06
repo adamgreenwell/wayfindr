@@ -34,7 +34,7 @@ test('every operator section is reachable from every other one', function (): vo
 
     $response->assertSee('aria-label="Operator sections"', false);
 
-    foreach (['Console', 'Setup checklist', 'Mail', 'Web Push', 'Storage', 'Scanning', 'Backups', 'Language and region', 'Operator access'] as $section) {
+    foreach (['Console', 'Setup checklist', 'Mail', 'Web Push', 'Agent copilot', 'Storage', 'Scanning', 'Backups', 'Language and region', 'Operator access'] as $section) {
         $response->assertSee($section);
     }
 
@@ -42,6 +42,7 @@ test('every operator section is reachable from every other one', function (): vo
         route('operator.dashboard'),
         route('operator.onboarding'),
         route('operator.settings.webpush.edit'),
+        route('operator.settings.ai.edit'),
         route('operator.settings.storage.edit'),
         route('operator.settings.scanning.edit'),
         route('operator.settings.backups.edit'),

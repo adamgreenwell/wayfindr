@@ -108,7 +108,7 @@ final class OperatorReadinessPresenter
             return __('operator.readiness.status.no_data');
         }
 
-        if (($check['key'] ?? null) === 'web_push'
+        if (in_array(($check['key'] ?? null), ['web_push', 'agent_copilot'], true)
             && ($check['translation']['variant'] ?? null) === 'unset') {
             return __('operator.readiness.status.optional');
         }

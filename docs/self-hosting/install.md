@@ -155,6 +155,11 @@ Then work through the readiness screens:
   a guarded `wayfindr:restore` for the round trip —
   [backup-restore.md](backup-restore.md) — but scheduling them and copying
   archives offsite is yours to own.
+- **Agent copilot is optional.** Leave it unset to keep every workflow manual,
+  or configure a hosted, local, or self-hosted provider in the operator console
+  and run its synthetic connection test. Review the context and processor
+  boundary in [agent-copilot-providers.md](agent-copilot-providers.md) before
+  enabling it for real support data.
 - Before routing real visitor traffic, review
   [MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md).
 

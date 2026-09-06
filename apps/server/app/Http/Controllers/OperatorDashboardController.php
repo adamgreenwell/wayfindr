@@ -78,6 +78,7 @@ class OperatorDashboardController extends Controller
             'operator_readiness.confirmed',
             'operator_settings.mail.updated',
             'operator_settings.webpush.updated',
+            'operator_settings.ai.updated',
             'operator_settings.storage.updated',
             'operator_settings.scanning.updated',
             'operator_settings.backup.updated',
@@ -101,6 +102,7 @@ class OperatorDashboardController extends Controller
             'operator_readiness.confirmed' => $this->readinessConfirmationLabel($event),
             'operator_settings.mail.updated' => __('operator.dashboard.activity.labels.mail'),
             'operator_settings.webpush.updated' => __('operator.dashboard.activity.labels.webpush'),
+            'operator_settings.ai.updated' => __('operator.dashboard.activity.labels.ai'),
             'operator_settings.storage.updated' => __('operator.dashboard.activity.labels.storage'),
             'operator_settings.scanning.updated' => __('operator.dashboard.activity.labels.scanning'),
             'operator_settings.backup.updated' => __('operator.dashboard.activity.labels.backup'),
@@ -120,6 +122,13 @@ class OperatorDashboardController extends Controller
 
         if ($event->action === 'operator_settings.webpush.updated') {
             return $this->feedback('operator.dashboard.activity.body.webpush', [
+                'status' => (string) data_get($event->metadata, 'status', 'unknown'),
+            ]);
+        }
+
+        if ($event->action === 'operator_settings.ai.updated') {
+            return $this->feedback('operator.dashboard.activity.body.ai', [
+                'provider' => (string) data_get($event->metadata, 'provider', 'unknown'),
                 'status' => (string) data_get($event->metadata, 'status', 'unknown'),
             ]);
         }
@@ -208,6 +217,34 @@ class OperatorDashboardController extends Controller
                 [
                     'label' => __('operator.dashboard.activity.details.credentials'),
                     'value' => $this->raw((string) data_get($event->metadata, 'status', 'unknown')),
+                ],
+                [
+                    'label' => __('operator.dashboard.activity.details.event_type'),
+                    'value' => __('operator.dashboard.activity.values.settings_change'),
+                ],
+            ],
+            'operator_settings.ai.updated' => [
+                [
+                    'label' => __('operator.dashboard.activity.details.provider'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'provider', 'unknown')),
+                ],
+                [
+                    'label' => __('operator.dashboard.activity.details.model'),
+                    'value' => $this->raw((string) data_get($event->metadata, 'model', 'unknown')),
+                ],
+                [
+                    'label' => __('operator.dashboard.activity.details.endpoint'),
+                    'value' => data_get($event->metadata, 'endpoint_configured')
+                        ? __('operator.dashboard.activity.values.configured')
+                        : __('operator.dashboard.activity.values.default'),
+                ],
+                [
+                    'label' => __('operator.dashboard.activity.details.credentials'),
+                    'value' => match (data_get($event->metadata, 'api_key_changed')) {
+                        'updated' => __('operator.dashboard.activity.values.updated'),
+                        'cleared' => __('operator.dashboard.activity.values.cleared'),
+                        default => __('operator.dashboard.activity.values.unchanged'),
+                    },
                 ],
                 [
                     'label' => __('operator.dashboard.activity.details.event_type'),

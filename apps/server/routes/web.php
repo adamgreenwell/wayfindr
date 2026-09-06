@@ -30,9 +30,9 @@ use App\Http\Controllers\AgentConversationQueueController;
 use App\Http\Controllers\AgentConversationTypingController;
 use App\Http\Controllers\AgentDashboardController;
 use App\Http\Controllers\AgentExternalIssueProviderConnectionController;
+use App\Http\Controllers\AgentProactiveMessageRuleController;
 use App\Http\Controllers\AgentProfileController;
 use App\Http\Controllers\AgentProfileTwoFactorController;
-use App\Http\Controllers\AgentProactiveMessageRuleController;
 use App\Http\Controllers\AgentPushSubscriptionController;
 use App\Http\Controllers\AgentReplyTemplateController;
 use App\Http\Controllers\AgentReportController;
@@ -53,6 +53,7 @@ use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\Auth\TwoFactorChallengeController;
 use App\Http\Controllers\FirstRunSetupController;
+use App\Http\Controllers\OperatorAiSettingsController;
 use App\Http\Controllers\OperatorBackupSettingsController;
 use App\Http\Controllers\OperatorBreakGlassController;
 use App\Http\Controllers\OperatorBreakGlassViewerController;
@@ -504,6 +505,13 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
             ->name('settings.mail.update');
         Route::post('/settings/mail/test', [OperatorMailSettingsController::class, 'test'])
             ->name('settings.mail.test');
+        Route::get('/settings/agent-copilot', [OperatorAiSettingsController::class, 'edit'])
+            ->name('settings.ai.edit');
+        Route::post('/settings/agent-copilot', [OperatorAiSettingsController::class, 'update'])
+            ->name('settings.ai.update');
+        Route::post('/settings/agent-copilot/test', [OperatorAiSettingsController::class, 'test'])
+            ->middleware('throttle:10,1')
+            ->name('settings.ai.test');
         Route::get('/settings/web-push', [OperatorWebPushSettingsController::class, 'edit'])
             ->name('settings.webpush.edit');
         Route::post('/settings/web-push', [OperatorWebPushSettingsController::class, 'update'])
