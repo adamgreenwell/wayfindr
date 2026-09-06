@@ -23,6 +23,11 @@
     <p class="realtime-note" data-visitor-typing aria-live="polite" {{ $conversation->visitorTypingState() === 'typing' ? '' : 'hidden' }}>{{ __('conversations.detail.reply.typing') }}</p>
 </section>
 
+@if ($copilotSummaryAvailable)
+    @include('agent.conversations.partials.copilot-summary')
+    @include('agent.conversations.partials.copilot-summary-script')
+@endif
+
 @if ($canReply)
 <section class="section" aria-labelledby="reply-heading">
     <div class="section-header">

@@ -203,6 +203,11 @@ class Conversation extends Model
         return $this->hasMany(ConversationMessage::class);
     }
 
+    public function copilotSummary(): HasOne
+    {
+        return $this->hasOne(ConversationCopilotSummary::class);
+    }
+
     public function latestMessage(): HasOne
     {
         return $this->hasOne(ConversationMessage::class)->ofMany([
