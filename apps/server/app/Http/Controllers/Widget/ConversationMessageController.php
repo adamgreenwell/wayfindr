@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ProactiveMessageRule;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
@@ -338,6 +339,13 @@ class ConversationMessageController extends Controller
         }
 
         if ($message->sender_type === ApiToken::class) {
+            return [
+                'kind' => 'agent',
+                'name' => $message->conversation?->site?->name ?? 'Support',
+            ];
+        }
+
+        if ($message->sender_type === ProactiveMessageRule::class) {
             return [
                 'kind' => 'agent',
                 'name' => $message->conversation?->site?->name ?? 'Support',

@@ -17,7 +17,8 @@
             @php
                 $isAgent = $transcriptMessage->sender_type === \App\Models\User::class;
                 $isIntegration = $transcriptMessage->sender_type === \App\Models\ApiToken::class;
-                $isSupportSide = $isAgent || $isIntegration;
+                $isProactive = $transcriptMessage->sender_type === \App\Models\ProactiveMessageRule::class;
+                $isSupportSide = $isAgent || $isIntegration || $isProactive;
                 // Shared by the translated conversation and ticket pages. A
                 // shared VIEW may read the catalogue because it only renders
                 // inside a request.
@@ -25,7 +26,9 @@
                     ? ($transcriptMessage->sender?->name ?? __('conversations.detail.roles.agent'))
                     : ($isIntegration
                         ? __('conversations.detail.roles.integration')
-                        : __('conversations.detail.roles.visitor'));
+                        : ($isProactive
+                            ? __('conversations.detail.roles.proactive')
+                            : __('conversations.detail.roles.visitor')));
                 $integrationName = $isIntegration ? $transcriptMessage->sender?->name : null;
                 $senderNameIsAuthored = $isAgent && $transcriptMessage->sender?->name !== null;
                 $secondsSincePrevious = $previousTranscriptMessage?->created_at?->diffInSeconds($transcriptMessage->created_at, false);

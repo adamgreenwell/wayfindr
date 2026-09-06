@@ -181,6 +181,7 @@ return [
         'roles' => [
             'agent' => 'Agent',
             'integration' => 'Integration',
+            'proactive' => 'Proaktive Nachricht',
             'visitor' => 'Besucher',
         ],
 

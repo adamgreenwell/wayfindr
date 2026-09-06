@@ -160,6 +160,7 @@ return [
         'roles' => [
             'agent' => 'Agente',
             'integration' => 'Integrazione',
+            'proactive' => 'Messaggio proattivo',
             'visitor' => 'Visitatore',
         ],
         'reply' => [

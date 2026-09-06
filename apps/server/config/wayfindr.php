@@ -152,6 +152,8 @@ return [
         // an install that genuinely has more raises it rather than watching
         // its board flicker.
         'presence_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE', 1200),
+        'proactive_per_minute' => (int) env('WAYFINDR_WIDGET_PROACTIVE_RATE_LIMIT', 120),
+        'proactive_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_PROACTIVE_PER_IP_RATE_LIMIT', 1200),
         'broadcast_auth_per_minute' => (int) env('WAYFINDR_WIDGET_BROADCAST_AUTH_RATE_LIMIT', 120),
         'conversation_per_minute' => (int) env('WAYFINDR_WIDGET_CONVERSATION_RATE_LIMIT', 30),
         'message_per_minute' => (int) env('WAYFINDR_WIDGET_MESSAGE_RATE_LIMIT', 240),
@@ -168,6 +170,13 @@ return [
         // not, and the command clamps to the stated maximum regardless of what
         // is set here.
         'retention_days' => (int) env('WAYFINDR_PRESENCE_RETENTION_DAYS', 30),
+    ],
+
+    'proactive_messages' => [
+        // Delivery evidence is deliberately shorter-lived than support
+        // history. Operators may shorten this window, but the pruner clamps a
+        // longer setting to the product's documented maximum.
+        'retention_days' => (int) env('WAYFINDR_PROACTIVE_MESSAGE_RETENTION_DAYS', 90),
     ],
 
     'attachments' => [

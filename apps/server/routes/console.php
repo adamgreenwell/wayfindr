@@ -95,3 +95,7 @@ Schedule::command('wayfindr:reconcile-agent-alert-publications')
 Schedule::command('wayfindr:prune-presence-visitors')
     ->daily()
     ->description('Delete visitors who never made contact and whose last heartbeat is past the retention window.');
+
+Schedule::command('wayfindr:prune-proactive-message-deliveries')
+    ->daily()
+    ->description('Delete proactive-message delivery evidence past its bounded retention window.');

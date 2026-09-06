@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Widget;
 use App\Events\ConversationCreated;
 use App\Http\Controllers\Controller;
 use App\Models\Conversation;
+use App\Models\ProactiveMessageDelivery;
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\ProactiveMessages\ProactiveConversationOpening;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
 use App\Support\Sites\SiteManagerCoverage;
@@ -30,6 +32,7 @@ class ConversationController extends Controller
         VisitorContextSanitizer $visitorContextSanitizer,
         SiteManagerCoverage $siteManagerCoverage,
         VisitorIdentityResolver $visitorIdentityResolver,
+        ProactiveConversationOpening $proactiveOpening,
     ): JsonResponse {
         // The site has to be resolved before the intake rules are known, and the
         // intake rules are part of validation -- so this runs in two passes
@@ -59,6 +62,7 @@ class ConversationController extends Controller
             'subject' => ['nullable', 'string', 'max:255'],
             'page_url' => ['nullable', 'url', 'max:2048'],
             'context' => ['nullable', 'array', 'max:50'],
+            'proactive_message_delivery_id' => ['nullable', 'uuid'],
         ] + $intake->validationRules($away, $known));
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
@@ -84,6 +88,7 @@ class ConversationController extends Controller
             $validated,
             $visitorContextSanitizer,
             $visitorIdentityResolver,
+            $proactiveOpening,
             $visitor,
         ): Conversation {
             // The synchronous conversation observer snapshots the account SLA
@@ -182,7 +187,12 @@ class ConversationController extends Controller
                 + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
                 + $this->intakeAnswers($validated))->save();
 
-            return Conversation::query()->create([
+            $proactiveDelivery = $proactiveOpening->lockForVisitor(
+                $validated['proactive_message_delivery_id'] ?? null,
+                $current,
+                $visitor,
+            );
+            $conversation = Conversation::query()->create([
                 'site_id' => $site->id,
                 'visitor_id' => $visitor->id,
                 'support_code' => Conversation::generateSupportCode(),
@@ -209,6 +219,12 @@ class ConversationController extends Controller
                     'reason' => $this->trimmedOrNull($validated['visitor_reason'] ?? null),
                 ], fn ($value): bool => $value !== null),
             ]);
+
+            if ($proactiveDelivery instanceof ProactiveMessageDelivery) {
+                $proactiveOpening->attach($proactiveDelivery, $conversation);
+            }
+
+            return $conversation;
         });
 
         event(new ConversationCreated($conversation));

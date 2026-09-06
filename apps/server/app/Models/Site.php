@@ -63,6 +63,11 @@ class Site extends Model
         return $this->belongsToMany(User::class)->withTimestamps();
     }
 
+    public function proactiveMessageDeliveries(): HasMany
+    {
+        return $this->hasMany(ProactiveMessageDelivery::class);
+    }
+
     public function eligibleSupportAgents(): BelongsToMany
     {
         return $this->supportAgents()

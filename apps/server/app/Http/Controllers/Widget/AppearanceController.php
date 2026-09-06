@@ -37,6 +37,7 @@ class AppearanceController extends Controller
         ]);
 
         $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
+        $presence = SitePresenceReporting::for($site);
 
         // Presence rides along here for the same reason the launcher position
         // does, and it is the same sentence twice: bootstrap does not run until
@@ -49,7 +50,18 @@ class AppearanceController extends Controller
         return response()->json([
             'data' => [
                 'appearance' => WidgetAppearance::for($site)->toPayload(),
-                'presence' => SitePresenceReporting::for($site)->toPayload(),
+                'presence' => $presence->toPayload(),
+                // Published only while presence is active. The browser keeps
+                // page/referrer/visit matching local, then asks the server for
+                // a fresh authorization before it renders the winning rule.
+                'proactive_messages' => $presence->enabled
+                    ? $site->proactiveMessageRules()
+                        ->enabled()
+                        ->inEvaluationOrder()
+                        ->get()
+                        ->map->toWidgetPayload()
+                        ->all()
+                    : [],
                 // The site's configured language, for the same reason as the
                 // rest of this response. It only matters when neither the host
                 // page nor the browser has expressed a preference -- and in
