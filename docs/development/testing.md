@@ -25,6 +25,10 @@ The provider-free grounded-answer regression is documented in
 Pest suite also invokes that command, so no live model key or network call is
 part of CI.
 
+`wayfindr:ai-evaluate:capture` is separately covered with a fake provider. It
+requires `--allow-provider` outside tests, writes only to a new private file
+outside the repository, and is never invoked by CI against a live endpoint.
+
 ## Database Drivers in Tests
 
 The suite defaults to SQLite (`phpunit.xml` pins `DB_CONNECTION=sqlite`,

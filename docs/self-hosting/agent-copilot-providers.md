@@ -220,3 +220,15 @@ is offline by design. It scores versioned fixtures and recorded responses and
 does not resolve this configured provider, send a prompt, or read support data.
 Its green bundled baseline is a check of the evaluator—not approval for an
 autonomous visitor-facing agent.
+
+Operators may explicitly capture a synthetic provider run:
+
+```bash
+php artisan wayfindr:ai-evaluate:capture \
+  --allow-provider \
+  --output=/absolute/outside/repository/run.json
+```
+
+The command makes one request per fixture case, records provider/model and
+token metadata, refuses to overwrite, and keeps the response file outside the
+public checkout. It does not run automatically and may consume provider tokens.
