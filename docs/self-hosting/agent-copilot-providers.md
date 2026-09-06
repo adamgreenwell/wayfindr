@@ -5,8 +5,9 @@ it unconfigured keeps every support workflow manual; chat, tickets, cobrowse,
 mail, and the operator console do not depend on a model provider.
 
 The provider boundary powers an on-demand conversation summary, an editable
-reply draft, and suggested ticket details during conversation-to-ticket
-conversion. It does not add autonomous replies or customer-facing AI.
+reply draft, suggested knowledge snippets, and suggested ticket details during
+conversation-to-ticket conversion. It does not add autonomous replies or
+customer-facing AI.
 
 ## Configure it in the operator console
 
@@ -176,6 +177,32 @@ activity marks the result stale and disables insertion until the agent requests
 a refresh. The ticket is created only after the agent reviews the ordinary form
 and submits **Create ticket** separately.
 
+### Suggested knowledge snippets
+
+An agent with current reply permission can request knowledge suggestions from
+the existing **Reply assist** area when the account has at least one published
+article. The queued worker uses the shared bounded, scrubbed subject and message
+selection. It asks the provider for one to five short search phrases in a strict
+JSON object; it does not send article titles, bodies, IDs, or the account's
+knowledge catalogue to the provider.
+
+Wayfindr ranks the returned phrases against published articles from that account
+inside the install. At most three matches are kept, and only their local article
+IDs are stored in `conversation_copilot_knowledge_suggestions`. Search phrases,
+prompts, article bodies, and rendered snippets are not stored in that row or in
+AI audit metadata. The queue payload contains only the local suggestion-row ID
+and opaque generation UUID. The worker rechecks reply permission and the
+presence of published knowledge before and after provider delivery.
+
+The panel is visibly labelled **Suggested**. Each **Insert snippet** action
+copies one locally resolved article excerpt into an empty reply composer. It
+refuses to overwrite agent text and never submits the reply. Articles are
+re-resolved against the current account and published state for every display,
+so an unpublished or deleted article disappears immediately. New transcript
+activity marks the result stale and disables insertion until the agent requests
+a refresh. A no-match result is safe and explicit; the ordinary reply workflow
+continues unchanged.
+
 ## Runtime and testing
 
 The provider boundary uses Laravel's first-party AI SDK. The connection probe
@@ -184,5 +211,6 @@ generation uses Wayfindr's existing default queue, so at least one normal queue
 worker must be running; the agent request only records and queues the action.
 
 The automated suite uses fake providers and synthetic fixtures for summaries,
-reply drafts, and ticket suggestions. CI and contributors do not need live
-provider keys, and a test must never call an external model endpoint.
+reply drafts, knowledge suggestions, and ticket suggestions. CI and contributors
+do not need live provider keys, and a test must never call an external model
+endpoint.

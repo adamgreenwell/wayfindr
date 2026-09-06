@@ -23,7 +23,7 @@ or boring deterministic code.
 - Reply drafts that an agent reviews before sending.
 - Conversation summaries for handoff or ticket creation.
 - Suggested ticket titles, priorities, tags, and next steps.
-- Knowledge-base answer suggestions once knowledge sources exist.
+- Knowledge-base snippets that an agent chooses before inserting.
 - Development helpers that expose safe local project context through MCP.
 
 ## Poor Fits For Now
@@ -52,14 +52,18 @@ context selection, must omit attachments and cobrowse state, and must present
 output as a suggestion a human reviews.
 
 The first product uses are an on-demand conversation summary for agent handoff,
-an editable suggested reply, and suggested ticket details at
-conversation-to-ticket conversion. All run through the default queue, recheck
-the requesting agent's current authority at execution time, select only bounded
-subject/message text, and store only the latest suggestion with its source
-position. New conversation activity marks output stale; it never causes
-automatic regeneration or a support-record action. A reply suggestion only
-fills an empty composer after an explicit agent choice and never submits it.
-Ticket suggestions use strictly validated title/priority output, while existing
-labels are matched deterministically inside the install without exposing the
-account label catalogue. Applying ticket details only fills an untouched form;
-the agent reviews and submits ticket creation separately.
+an editable suggested reply, suggested knowledge snippets, and suggested ticket
+details at conversation-to-ticket conversion. All run through the default
+queue, recheck the requesting agent's current authority at execution time,
+select only bounded subject/message text, and store only the latest suggestion
+with its source position. New conversation activity marks output stale; it
+never causes automatic regeneration or a support-record action. A reply
+suggestion only fills an empty composer after an explicit agent choice and never
+submits it. Knowledge suggestions ask the provider only for validated search
+phrases, then rank published same-account articles inside the install without
+exposing the knowledge catalogue; the agent explicitly inserts one locally
+resolved snippet into an empty composer. Ticket suggestions use strictly
+validated title/priority output, while existing labels are matched
+deterministically inside the install without exposing the account label
+catalogue. Applying ticket details only fills an untouched form; the agent
+reviews and submits ticket creation separately.
