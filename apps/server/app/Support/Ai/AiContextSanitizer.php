@@ -16,7 +16,6 @@ final class AiContextSanitizer
     {
         $sanitized = $this->stripPrivateKeyBlocks($input);
         $sanitized = $this->stripUrlSecrets($sanitized);
-        $sanitized = $this->stripEscapedQuotedCredentialAssignments($sanitized);
         $sanitized = $this->stripQuotedCredentialAssignments($sanitized);
         $sanitized = $this->replace(
             '/\b(password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\s*[:=]\s*(?!\[REDACTED\])((?:Bearer\s+)?[^\s,;"\']{4,})/i',
@@ -64,41 +63,54 @@ final class AiContextSanitizer
         ) ?? $sanitized;
     }
 
-    private function stripEscapedQuotedCredentialAssignments(string $input): string
-    {
-        $patterns = [
-            '/(?<prefix>(?:(?<!\x5c)\x5c(?:\x22|\x27))?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:(?<!\x5c)\x5c(?:\x22|\x27))?\s*[:=]\s*)(?<!\x5c)\x5c\x22(?:(?!(?<!\x5c)\x5c\x22).)*+(?:(?<!\x5c)\x5c\x22|\z)/is' => '"',
-            '/(?<prefix>(?:(?<!\x5c)\x5c(?:\x22|\x27))?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:(?<!\x5c)\x5c(?:\x22|\x27))?\s*[:=]\s*)(?<!\x5c)\x5c\x27(?:(?!(?<!\x5c)\x5c\x27).)*+(?:(?<!\x5c)\x5c\x27|\z)/is' => "'",
-        ];
-
-        foreach ($patterns as $pattern => $quote) {
-            $delimiter = '\\'.$quote;
-            $input = preg_replace_callback(
-                $pattern,
-                fn (array $match): string => $match['prefix'].$delimiter.'[REDACTED]'.$delimiter,
-                $input,
-            ) ?? $input;
-        }
-
-        return $input;
-    }
-
     private function stripQuotedCredentialAssignments(string $input): string
     {
-        $patterns = [
-            '/(?<prefix>(?:\x22|\x27)?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:\x22|\x27)?\s*[:=]\s*)\x22(?:\\\\(?:.|\z)|[^\x22\\\\])*+(?:\x22|\z)/is' => '"',
-            '/(?<prefix>(?:\x22|\x27)?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:\x22|\x27)?\s*[:=]\s*)\x27(?:\\\\(?:.|\z)|[^\x27\\\\])*+(?:\x27|\z)/is' => "'",
-        ];
+        $pattern = '/(?<prefix>(?:(?:\x5c)*[\x22\x27])?\b(?:password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\b(?:(?:\x5c)*[\x22\x27])?\s*[:=]\s*)(?<delimiter>(?:\x5c)*[\x22\x27])/i';
+        $cursor = 0;
+        $sanitized = '';
 
-        foreach ($patterns as $pattern => $quote) {
-            $input = preg_replace_callback(
-                $pattern,
-                fn (array $match): string => $match['prefix'].$quote.'[REDACTED]'.$quote,
-                $input,
-            ) ?? $input;
+        while (preg_match($pattern, $input, $match, PREG_OFFSET_CAPTURE, $cursor) === 1) {
+            [$matched, $matchStart] = $match[0];
+            $prefix = $match['prefix'][0];
+            $delimiter = $match['delimiter'][0];
+            $quote = substr($delimiter, -1);
+            $escapeDepth = strlen($delimiter) - 1;
+            $valueStart = $matchStart + strlen($matched);
+            $valueEnd = $this->findClosingQuote($input, $valueStart, $quote, $escapeDepth);
+
+            $sanitized .= substr($input, $cursor, $matchStart - $cursor)
+                .$prefix.$delimiter.'[REDACTED]'.$delimiter;
+
+            if ($valueEnd === null) {
+                return $sanitized;
+            }
+
+            $cursor = $valueEnd + 1;
         }
 
-        return $input;
+        return $sanitized.substr($input, $cursor);
+    }
+
+    private function findClosingQuote(string $input, int $valueStart, string $quote, int $escapeDepth): ?int
+    {
+        $position = $valueStart;
+        $modulus = 2 * ($escapeDepth + 1);
+
+        while (($quotePosition = strpos($input, $quote, $position)) !== false) {
+            $precedingBackslashes = 0;
+
+            for ($index = $quotePosition - 1; $index >= $valueStart && $input[$index] === '\\'; $index--) {
+                $precedingBackslashes++;
+            }
+
+            if ($precedingBackslashes % $modulus === $escapeDepth) {
+                return $quotePosition;
+            }
+
+            $position = $quotePosition + 1;
+        }
+
+        return null;
     }
 
     private function stripPrivateKeyBlocks(string $input): string

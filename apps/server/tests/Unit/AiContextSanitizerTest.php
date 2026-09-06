@@ -117,3 +117,23 @@ test('serialized json credential fragments are scrubbed without breaking their e
         ->and($secondPass)->not->toContain('provider-secret')
         ->and($truncated)->not->toContain('bounded-secret');
 });
+
+test('nested serialized credentials ending in backslashes preserve following fields', function (): void {
+    $serialized = json_encode(['token' => 'first"second\\', 'message' => 'keep'], JSON_THROW_ON_ERROR);
+    $expectedRaw = json_encode(['token' => '[REDACTED]', 'message' => 'keep'], JSON_THROW_ON_ERROR);
+    $expected = substr(json_encode($expectedRaw, JSON_THROW_ON_ERROR), 1, -1);
+
+    for ($depth = 1; $depth <= 3; $depth++) {
+        $serialized = substr(json_encode($serialized, JSON_THROW_ON_ERROR), 1, -1);
+        $sanitized = (new AiContextSanitizer)->sanitize($serialized);
+
+        expect($sanitized)
+            ->toBe($expected)
+            ->toContain('message')
+            ->toContain('keep')
+            ->not->toContain('first')
+            ->not->toContain('second');
+
+        $expected = substr(json_encode($expected, JSON_THROW_ON_ERROR), 1, -1);
+    }
+});
