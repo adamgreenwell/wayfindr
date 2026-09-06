@@ -78,7 +78,8 @@ operator-facing data inventory and retention posture.
   they can create conversations or read/write visitor messages. Because the
   host identifier arrives through a public browser request, it is not proof
   that two rows are one human. A `manage_contacts` agent makes that merge
-  explicitly within one site; different populated external IDs fail closed.
+  explicitly within one site; different populated external IDs or email
+  addresses fail closed so later inbound mail cannot recreate the duplicate.
   The source browser IDs become aliases of the chosen contact, and their prior
   internal visitor IDs form a token lineage capped at the 50 most recent rows
   across later merges.

@@ -672,6 +672,8 @@ test('merge permission site and identity conflicts fail closed', function (): vo
     $otherSite->supportAgents()->attach($manager);
     $source = Visitor::factory()->for($site)->create(['external_id' => 'customer-one']);
     $target = Visitor::factory()->for($site)->create(['external_id' => 'customer-two']);
+    $emailSource = Visitor::factory()->for($site)->create(['email' => 'source@example.test']);
+    $emailTarget = Visitor::factory()->for($site)->create(['email' => 'target@example.test']);
     $otherSiteTarget = Visitor::factory()->for($otherSite)->create();
 
     $this->actingAs($viewer)
@@ -697,6 +699,16 @@ test('merge permission site and identity conflicts fail closed', function (): vo
         ->assertSessionHasErrors('target_id');
 
     $this->actingAs($manager)
+        ->from(route('dashboard.visitors.show', $emailSource))
+        ->post(route('dashboard.visitors.merge', $emailSource), [
+            'target_id' => (string) $emailTarget->id,
+            'confirmed' => '1',
+        ])
+        ->assertSessionHasErrors([
+            'target_id' => __('visitor_merge.errors.email_conflict'),
+        ]);
+
+    $this->actingAs($manager)
         ->from(route('dashboard.visitors.show', $source))
         ->post(route('dashboard.visitors.merge', $source), [
             'target_id' => (string) $target->id,
@@ -719,7 +731,13 @@ test('merge permission site and identity conflicts fail closed', function (): vo
         ])
         ->assertSessionHasErrors('confirmed');
 
-    expect(Visitor::query()->whereIn('id', [$source->id, $target->id, $otherSiteTarget->id])->count())->toBe(3)
+    expect(Visitor::query()->whereIn('id', [
+        $source->id,
+        $target->id,
+        $emailSource->id,
+        $emailTarget->id,
+        $otherSiteTarget->id,
+    ])->count())->toBe(5)
         ->and(AuditEvent::query()->where('action', 'visitor.merged')->count())->toBe(0);
 });
 

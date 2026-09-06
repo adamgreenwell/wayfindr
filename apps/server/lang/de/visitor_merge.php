@@ -7,7 +7,7 @@ return [
     'boundary' => [
         'heading' => 'Dauerhafte Identitätsentscheidung',
         'body' => 'Der aktuelle Kontakt wird gelöscht, nachdem Unterhaltungen, Tickets, Kontaktnotizen, Uploads und Browser-IDs zum ausgewählten Kontakt verschoben wurden.',
-        'precedence' => 'Beim ausgewählten Kontakt bleiben ausgefüllte Identitäts- und benutzerdefinierte Attributwerte erhalten; der aktuelle Kontakt füllt Lücken. Unterschiedliche ausgefüllte Besucher-IDs des Hostsystems können nicht zusammengeführt werden.',
+        'precedence' => 'Beim ausgewählten Kontakt bleiben ausgefüllte Identitäts- und benutzerdefinierte Attributwerte erhalten; der aktuelle Kontakt füllt Lücken. Unterschiedliche ausgefüllte Besucher-IDs des Hostsystems oder E-Mail-Adressen können nicht zusammengeführt werden.',
         'continuity' => 'Alte Browser-IDs bleiben private Aliasse des ausgewählten Kontakts, damit offene Tabs und wiederkehrende Browser das Duplikat nicht neu erstellen.',
     ],
     'search' => [
@@ -32,6 +32,7 @@ return [
         'target_required' => 'Wählen Sie einen gültigen Kontakt zum Behalten aus.',
         'same_contact' => 'Wählen Sie einen anderen Kontakt zum Behalten aus.',
         'external_id_conflict' => 'Diese Kontakte haben unterschiedliche Besucher-IDs des Hostsystems. Klären Sie diesen Identitätskonflikt vor der Zusammenführung.',
+        'email_conflict' => 'Diese Kontakte haben unterschiedliche E-Mail-Adressen. Klären Sie diesen Identitätskonflikt vor der Zusammenführung.',
         'alias_conflict' => 'Eine Browser-ID gehört bereits zu einem anderen Kontakt. Es wurden keine Datensätze geändert.',
     ],
     'flash' => [

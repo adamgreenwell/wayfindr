@@ -6,7 +6,7 @@ return [
     'boundary' => [
         'heading' => 'Permanent identity decision',
         'body' => 'The current contact will be deleted after its conversations, tickets, contact notes, uploads, and browser IDs move to the contact you choose.',
-        'precedence' => 'The chosen contact keeps its populated identity and custom attribute values; the current contact fills blanks. Different populated host visitor IDs cannot be merged.',
+        'precedence' => 'The chosen contact keeps its populated identity and custom attribute values; the current contact fills blanks. Different populated host visitor IDs or email addresses cannot be merged.',
         'continuity' => 'Old browser IDs remain private aliases of the chosen contact so open tabs and returning browsers do not recreate the duplicate.',
     ],
     'search' => [
@@ -31,6 +31,7 @@ return [
         'target_required' => 'Choose a valid contact to keep.',
         'same_contact' => 'Choose a different contact to keep.',
         'external_id_conflict' => 'These contacts have different host visitor IDs. Resolve that identity conflict before merging them.',
+        'email_conflict' => 'These contacts have different email addresses. Resolve that identity conflict before merging them.',
         'alias_conflict' => 'One browser ID already belongs to another contact. No records were changed.',
     ],
     'flash' => [

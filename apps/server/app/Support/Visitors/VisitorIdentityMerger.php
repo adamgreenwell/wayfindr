@@ -70,6 +70,12 @@ final class VisitorIdentityMerger
                 ]);
             }
 
+            if ($this->hasConflictingEmails($source, $target)) {
+                throw ValidationException::withMessages([
+                    'target_id' => __('visitor_merge.errors.email_conflict'),
+                ]);
+            }
+
             $mergedAttributes = $this->mergedAttributes($source, $target);
             $counts = $this->moveRelationships($source, $target, $site);
 
@@ -219,6 +225,15 @@ final class VisitorIdentityMerger
         return $this->isFilled($source->external_id)
             && $this->isFilled($target->external_id)
             && ! hash_equals((string) $source->external_id, (string) $target->external_id);
+    }
+
+    private function hasConflictingEmails(Visitor $source, Visitor $target): bool
+    {
+        return $this->isFilled($source->email)
+            && $this->isFilled($target->email)
+            // Inbound mail resolves a visitor case-insensitively by email.
+            // Reject only addresses that would take different routing paths.
+            && mb_strtolower(trim((string) $source->email)) !== mb_strtolower(trim((string) $target->email));
     }
 
     /** @return array<int, int> */
