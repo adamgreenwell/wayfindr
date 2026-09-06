@@ -6,10 +6,13 @@ use App\Enums\AccountPermission;
 use App\Models\Conversation;
 use App\Models\Site;
 use App\Models\Ticket;
+use App\Models\User;
 use App\Models\Visitor;
 use App\Models\VisitorAttributeDefinition;
+use App\Support\ReaderClock;
 use App\Support\ReaderNumber;
 use App\Support\Sites\SitePresenceReporting;
+use App\Support\SpreadsheetSafeCsv;
 use App\Support\VisitorContextSanitizer;
 use App\Support\Visitors\VisitorPresence;
 use Carbon\CarbonInterface;
@@ -18,9 +21,12 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AgentVisitorController extends Controller
 {
+    private const EXPORT_LIMIT = 500;
+
     /**
      * Everyone this desk has heard from, most recently seen first.
      *
@@ -28,11 +34,9 @@ class AgentVisitorController extends Controller
      * or a support-code lookup, so an agent could answer "tell me about this
      * visitor" and not "who has been here".
      *
-     * Deliberately scoped to visitors who made contact. Wayfindr records a
-     * visitor when the widget is opened, a conversation starts, a message moves,
-     * or somebody types -- never on page load -- so this lists people who
-     * reached out, not people who were watched. Whether it should ever mean the
-     * latter is ADR 0016, and undecided.
+     * Presence-enabled sites can also contribute people who only browsed. The
+     * screen and export share one query so search, site access, tester removal,
+     * presence buckets, and defined-attribute filters cannot drift apart.
      */
     public function index(Request $request): View
     {
@@ -49,47 +53,238 @@ class AgentVisitorController extends Controller
             ->orderBy('label')
             ->orderBy('id')
             ->get();
+        $visibleSites = $account->sites()->visibleToAgent($agent)->orderBy('name')->get();
+        $siteIds = $visibleSites->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        [
+            $presence,
+            $search,
+            $attributeKey,
+            $attributeValue,
+            $attributeDefinition,
+            $normalizedAttributeValue,
+            $attributeFilterInvalid,
+            $siteId,
+            $filterScopeInvalid,
+        ] = $this->filters($request, $attributeDefinitions, $siteIds);
 
-        // Read before narrowing, exactly as the search and site filters below
-        // do. Casting first meant `?presence[]=active` raised an "Array to
-        // string conversion" warning, which Laravel turns into an
-        // ErrorException -- a 500 from a query string anybody can type.
-        $presence = $request->query('presence', 'all');
-        $presence = is_string($presence) && in_array($presence, VisitorPresence::states(), true)
-            ? $presence
+        $visitors = $this->visitorQuery(
+            $siteIds,
+            $siteId,
+            $presence,
+            $search,
+            $attributeDefinition,
+            $normalizedAttributeValue,
+            $canViewConversations,
+        )
+            ->paginate(25)
+            ->withQueryString();
+
+        // Whether this screen can contain people who never made contact, which
+        // decides what its empty state is allowed to claim. Scoped to what the
+        // filter selects rather than the account, so an agent looking at one
+        // site is told how THAT site behaves -- and computed from the sites
+        // already loaded for the filter, so it costs no query.
+        $listsBrowsers = ($siteId !== null ? $visibleSites->where('id', $siteId) : $visibleSites)
+            ->contains(fn (Site $site): bool => SitePresenceReporting::for($site)->enabled);
+
+        return view('agent.visitors.index', [
+            'account' => $account,
+            'agent' => $agent,
+            'attributeDefinitions' => $attributeDefinitions,
+            'attributeFilterInvalid' => $attributeFilterInvalid,
+            'attributeKey' => $attributeKey,
+            'attributeValue' => $attributeValue,
+            'canManageContacts' => $canManageContacts,
+            'canViewConversations' => $canViewConversations,
+            'exportQuery' => $this->queryParams($presence, $search, $attributeKey, $attributeValue, $siteId),
+            'filterScopeInvalid' => $filterScopeInvalid,
+            'listsBrowsers' => $listsBrowsers,
+            'presence' => $presence,
+            'search' => $search,
+            'siteId' => $siteId,
+            'sites' => $visibleSites,
+            'visitors' => $visitors,
+        ]);
+    }
+
+    /**
+     * Download the current directory slice without exporting adjacent support
+     * content or the host's unstructured context wholesale.
+     */
+    public function export(Request $request): StreamedResponse
+    {
+        $agent = $request->user();
+
+        abort_unless($agent?->account_id && $agent->hasAccountPermission(AccountPermission::ManageContacts), 403);
+
+        $account = $agent->account()->firstOrFail();
+        // Machine-facing attribute columns follow immutable keys rather than
+        // mutable reader labels, so the same export stays scriptable.
+        $attributeDefinitions = $account->visitorAttributeDefinitions()
+            ->orderBy('key')
+            ->get();
+        $visibleSites = $account->sites()->visibleToAgent($agent)->get();
+        $siteIds = $visibleSites->pluck('id')->map(fn ($id): int => (int) $id)->all();
+        [
+            $presence,
+            $search,
+            ,
+            ,
+            $attributeDefinition,
+            $normalizedAttributeValue,
+            $attributeFilterInvalid,
+            $siteId,
+            $filterScopeInvalid,
+        ] = $this->filters($request, $attributeDefinitions, $siteIds);
+
+        // Any filter that cannot be interpreted must never turn into a broader
+        // bulk download than the person asked for. This includes a saved URL
+        // whose attribute was deleted or whose site assignment was removed.
+        abort_if(
+            $attributeFilterInvalid || $filterScopeInvalid,
+            422,
+            __('visitors.export.invalid_filters'),
+        );
+
+        $visitors = $this->visitorQuery(
+            $siteIds,
+            $siteId,
+            $presence,
+            $search,
+            $attributeDefinition,
+            $normalizedAttributeValue,
+            false,
+        )
+            ->limit(self::EXPORT_LIMIT)
+            ->get();
+
+        return response()->streamDownload(function () use ($agent, $attributeDefinitions, $visitors): void {
+            $stream = fopen('php://output', 'w');
+
+            if ($stream === false) {
+                return;
+            }
+
+            fputcsv($stream, [
+                'visitor_id',
+                'site_id',
+                'site',
+                'name',
+                'email',
+                'external_id',
+                'anonymous_id',
+                'last_seen_at',
+                'last_web_seen_at',
+                'created_at',
+                ...$attributeDefinitions->map(fn (VisitorAttributeDefinition $definition): string => 'attribute.'.$definition->key)->all(),
+            ], ',', '"', '');
+
+            foreach ($visitors as $visitor) {
+                // Empty escape means RFC-style doubled enclosure characters.
+                // PHP's proprietary backslash escape changes a value when a
+                // standards-compatible CSV reader opens `x\"y`.
+                fputcsv(
+                    $stream,
+                    $this->visitorCsvRow($visitor, $attributeDefinitions, $agent),
+                    ',',
+                    '"',
+                    '',
+                );
+            }
+
+            fclose($stream);
+        }, 'wayfindr-visitors-'.now()->format('Ymd-His').'.csv', [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
+    /**
+     * @param  Collection<int, VisitorAttributeDefinition>  $attributeDefinitions
+     * @param  array<int, int>  $siteIds
+     * @return array{0: string, 1: string, 2: string, 3: string, 4: VisitorAttributeDefinition|null, 5: string|null, 6: bool, 7: int|null, 8: bool}
+     */
+    private function filters(Request $request, Collection $attributeDefinitions, array $siteIds): array
+    {
+        // Read before narrowing. Casting first makes `?presence[]=active` an
+        // Array-to-string warning, which Laravel promotes to a 500.
+        $requestedPresence = $request->query('presence', 'all');
+        $presenceFilterInvalid = ! is_string($requestedPresence)
+            || ($requestedPresence !== 'all' && ! in_array($requestedPresence, VisitorPresence::states(), true));
+        $presence = ! $presenceFilterInvalid
+            ? $requestedPresence
             : 'all';
 
-        $search = $request->query('search', '');
-        $search = is_string($search) ? mb_substr(trim($search), 0, 120) : '';
+        $requestedSearch = $request->query('search', '');
+        $searchFilterInvalid = ! is_string($requestedSearch)
+            || mb_strlen(trim($requestedSearch)) > 120;
+        $search = is_string($requestedSearch) ? mb_substr(trim($requestedSearch), 0, 120) : '';
 
-        $attributeKey = $request->query('attribute', '');
-        $attributeKey = is_string($attributeKey) ? mb_substr(trim($attributeKey), 0, 64) : '';
+        $requestedAttributeKey = $request->query('attribute', '');
+        $attributeKeyInputInvalid = ! is_string($requestedAttributeKey)
+            || mb_strlen(trim($requestedAttributeKey)) > 64;
+        $attributeKey = is_string($requestedAttributeKey) ? mb_substr(trim($requestedAttributeKey), 0, 64) : '';
         $attributeDefinition = $attributeDefinitions->firstWhere('key', $attributeKey);
+        $attributeUnavailable = $attributeKey !== '' && $attributeDefinition === null;
         $attributeKey = $attributeDefinition?->key ?? '';
 
-        $attributeValue = $request->query('attribute_value', '');
-        $attributeValue = is_string($attributeValue) ? mb_substr(trim($attributeValue), 0, 160) : '';
+        $requestedAttributeValue = $request->query('attribute_value', '');
+        $attributeValueInputInvalid = ! is_string($requestedAttributeValue)
+            || mb_strlen(trim($requestedAttributeValue)) > 160;
+        $attributeValue = is_string($requestedAttributeValue) ? mb_substr(trim($requestedAttributeValue), 0, 160) : '';
+        $orphanedAttributeValue = $attributeKey === '' && $attributeValue !== '';
         $normalizedAttributeValue = $attributeDefinition?->type->normalize($attributeValue);
         $attributeFilterInvalid = $attributeDefinition !== null
             && $attributeValue !== ''
             && $normalizedAttributeValue === null;
 
-        $siteId = $request->query('site', '');
-        $visibleSites = $account->sites()->visibleToAgent($agent)->orderBy('name')->get();
-        $siteIds = $visibleSites->pluck('id')->map(fn ($id): int => (int) $id)->all();
-
+        $requestedSite = $request->query('site', '');
         // A site id from the query string can never widen the scope: it is
         // checked against what this agent may already see.
-        $siteId = is_string($siteId) && ctype_digit($siteId) && in_array((int) $siteId, $siteIds, true)
-            ? (int) $siteId
+        $siteId = is_string($requestedSite)
+            && ctype_digit($requestedSite)
+            && in_array((int) $requestedSite, $siteIds, true)
+            ? (int) $requestedSite
             : null;
+        $siteFilterInvalid = ! is_string($requestedSite)
+            || ($requestedSite !== '' && $siteId === null);
 
+        return [
+            $presence,
+            $search,
+            $attributeKey,
+            $attributeValue,
+            $attributeDefinition,
+            $normalizedAttributeValue,
+            $attributeFilterInvalid,
+            $siteId,
+            $presenceFilterInvalid
+                || $searchFilterInvalid
+                || $attributeKeyInputInvalid
+                || $attributeUnavailable
+                || $attributeValueInputInvalid
+                || $orphanedAttributeValue
+                || $siteFilterInvalid,
+        ];
+    }
+
+    /**
+     * @param  array<int, int>  $siteIds
+     * @return Builder<Visitor>
+     */
+    private function visitorQuery(
+        array $siteIds,
+        ?int $siteId,
+        string $presence,
+        string $search,
+        ?VisitorAttributeDefinition $attributeDefinition,
+        ?string $normalizedAttributeValue,
+        bool $withConversationCount,
+    ): Builder {
         $query = Visitor::query()
             ->with('site')
             ->whereIn('site_id', $siteIds)
-            // The hosted tester page creates real visitor rows. Without this an
-            // agent watches themselves browse, which Site::latestVisitor()
-            // already learned to exclude.
+            // The hosted tester creates real rows. Agents should not export
+            // themselves browsing any more than they should see it onscreen.
             ->where(fn (Builder $query) => $query
                 ->whereNull('anonymous_id')
                 ->orWhere('anonymous_id', 'not like', 'tester-site-%'));
@@ -99,9 +294,6 @@ class AgentVisitorController extends Controller
         }
 
         if ($presence !== 'all') {
-            // The website sighting, matching presenceState() and the queue. Left on
-            // the shared default, the directory's Active filter answered a
-            // different question from the badge printed next to each row.
             VisitorPresence::constrain($query, $presence, 'last_web_seen_at');
         }
 
@@ -123,40 +315,59 @@ class AgentVisitorController extends Controller
             );
         }
 
-        if ($canViewConversations) {
+        if ($withConversationCount) {
             $query->withCount('conversations');
         }
 
-        $visitors = $query->orderByRaw('last_seen_at is null')
+        return $query
+            ->orderByRaw('last_seen_at is null')
             ->latest('last_seen_at')
-            ->latest('id')
-            ->paginate(25)
-            ->withQueryString();
+            ->latest('id');
+    }
 
-        // Whether this screen can contain people who never made contact, which
-        // decides what its empty state is allowed to claim. Scoped to what the
-        // filter selects rather than the account, so an agent looking at one
-        // site is told how THAT site behaves -- and computed from the sites
-        // already loaded for the filter, so it costs no query.
-        $listsBrowsers = ($siteId !== null ? $visibleSites->where('id', $siteId) : $visibleSites)
-            ->contains(fn (Site $site): bool => SitePresenceReporting::for($site)->enabled);
-
-        return view('agent.visitors.index', [
-            'account' => $account,
-            'agent' => $agent,
-            'attributeDefinitions' => $attributeDefinitions,
-            'attributeFilterInvalid' => $attributeFilterInvalid,
-            'attributeKey' => $attributeKey,
-            'attributeValue' => $attributeValue,
-            'canManageContacts' => $canManageContacts,
-            'canViewConversations' => $canViewConversations,
-            'listsBrowsers' => $listsBrowsers,
-            'presence' => $presence,
+    /** @return array<string, int|string> */
+    private function queryParams(
+        string $presence,
+        string $search,
+        string $attributeKey,
+        string $attributeValue,
+        ?int $siteId,
+    ): array {
+        return array_filter([
             'search' => $search,
-            'siteId' => $siteId,
-            'sites' => $visibleSites,
-            'visitors' => $visitors,
+            'site' => $siteId,
+            'presence' => $presence === 'all' ? null : $presence,
+            'attribute' => $attributeKey,
+            'attribute_value' => $attributeKey === '' ? '' : $attributeValue,
+        ], fn ($value): bool => $value !== null && $value !== '');
+    }
+
+    /**
+     * @param  Collection<int, VisitorAttributeDefinition>  $attributeDefinitions
+     * @return list<string>
+     */
+    private function visitorCsvRow(Visitor $visitor, Collection $attributeDefinitions, User $reader): array
+    {
+        return SpreadsheetSafeCsv::row([
+            (string) $visitor->id,
+            (string) $visitor->site_id,
+            $visitor->site?->name ?? '',
+            $visitor->name ?? '',
+            $visitor->email ?? '',
+            $visitor->external_id ?? '',
+            $visitor->anonymous_id ?? '',
+            $this->csvMoment($visitor->last_seen_at, $reader),
+            $this->csvMoment($visitor->last_web_seen_at, $reader),
+            $this->csvMoment($visitor->created_at, $reader),
+            ...$attributeDefinitions->map(
+                fn (VisitorAttributeDefinition $definition): string => $definition->valueFor($visitor) ?? ''
+            )->all(),
         ]);
+    }
+
+    private function csvMoment(?CarbonInterface $at, User $reader): string
+    {
+        return $at === null ? '' : ReaderClock::moment($at, $reader)->toDateTimeString();
     }
 
     public function show(Request $request, Visitor $visitor, VisitorContextSanitizer $visitorContextSanitizer): View

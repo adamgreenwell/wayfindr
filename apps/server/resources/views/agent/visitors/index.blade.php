@@ -7,7 +7,26 @@
         :subtitle="$listsBrowsers
             ? __('visitors.subtitle.browsers')
             : __('visitors.subtitle.contacts')"
-    />
+    >
+        @if ($canManageContacts && ! $attributeFilterInvalid && ! $filterScopeInvalid)
+            <x-slot:actions>
+                <a class="button secondary" href="{{ route('dashboard.visitors.export', $exportQuery) }}">{{ __('visitors.export.csv') }}</a>
+            </x-slot:actions>
+        @endif
+    </x-page-header>
+
+    @if ($canManageContacts)
+        <section class="section" aria-labelledby="visitor-export-boundary-heading">
+            <div class="section-header">
+                <h2 id="visitor-export-boundary-heading">{{ __('visitors.export.boundary_heading') }}</h2>
+                <span class="lede">{{ __('visitors.export.boundary_lede') }}</span>
+            </div>
+            <div class="notice-copy">
+                <p>{{ __('visitors.export.boundary_fields') }}</p>
+                <p>{{ __('visitors.export.boundary_scope', ['count' => 500]) }}</p>
+            </div>
+        </section>
+    @endif
 
     <section class="section" aria-labelledby="visitor-filters-heading">
         <div class="section-header">

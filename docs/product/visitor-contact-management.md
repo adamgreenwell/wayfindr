@@ -98,7 +98,24 @@ site is deleted. Each alias keeps at most the 50 most recent prior visitor IDs;
 an older tab beyond that unusual chain must bootstrap again. An old token cannot
 authenticate a new visitor that later reuses the browser ID.
 
+## Contact export
+
+A contact manager can export up to the 500 most recent visitors matching the
+directory's current search, site, presence, and defined-attribute filters. The
+same supported-site scope used by the screen is applied again by the download;
+the URL cannot widen it. CSV headers are stable English machine fields, dates
+use the downloading agent's timezone in a sortable format, and values are
+neutralized before a spreadsheet can interpret visitor content as a formula.
+
+The export contains internal visitor and site IDs, site name, the visitor's
+name, email, host and anonymous IDs, contact and web-sighting timestamps,
+creation time, and normalized values for the account's currently defined
+attributes. Raw host context, page addresses, contact notes, support history,
+and browser-ID alias lineage are intentionally omitted. Export requires the
+delegable `manage_contacts` permission; directory readers who have only ticket
+or conversation access cannot make a bulk download.
+
 ## Deliberately not in this slice
 
-Contact export, CSV import, segmentation, CRM sync, and marketing automation
-remain separate decisions.
+CSV import, segmentation, CRM sync, and marketing automation remain separate
+decisions.

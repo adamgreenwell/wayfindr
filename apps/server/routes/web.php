@@ -377,7 +377,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.conversations.show');
     Route::get('/dashboard/visitors', [AgentVisitorController::class, 'index'])
         ->name('dashboard.visitors.index');
+    Route::get('/dashboard/visitors/export', [AgentVisitorController::class, 'export'])
+        ->name('dashboard.visitors.export');
     Route::get('/dashboard/visitors/{visitor}', [AgentVisitorController::class, 'show'])
+        ->whereNumber('visitor')
         ->name('dashboard.visitors.show');
     Route::post('/dashboard/visitors/{visitor}/notes', [AgentVisitorNoteController::class, 'store'])
         ->whereNumber('visitor')
