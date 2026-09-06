@@ -53,6 +53,31 @@ test('an unset or partial provider fails closed before the sdk is called', funct
     CopilotAgent::assertNeverPrompted();
 });
 
+test('the provider preserves structured prompts after their feature scrub pass', function (): void {
+    $settings = app(OperatorSettings::class);
+    $settings->set('ai.provider', 'ollama');
+    $settings->set('ai.model', 'qwen3.5:4b');
+    $settings->set('ai.endpoint', 'http://localhost:11434');
+    $settings->applyOverrides();
+
+    CopilotAgent::fake(['A concise summary.']);
+    $input = json_encode([
+        'messages' => [['role' => 'visitor', 'body' => 'The final value is token=[REDACTED]']],
+    ], JSON_THROW_ON_ERROR);
+
+    app(AgentCopilotProvider::class)->generate(new AgentCopilotPrompt(
+        purpose: 'conversation_summary',
+        instructions: 'Summarize for an agent to review.',
+        input: $input,
+    ));
+
+    CopilotAgent::assertPrompted(function (AgentPrompt $prompt): bool {
+        return json_decode($prompt->prompt, true, flags: JSON_THROW_ON_ERROR) === [
+            'messages' => [['role' => 'visitor', 'body' => 'The final value is token=[REDACTED]']],
+        ];
+    });
+});
+
 test('provider credentials are encrypted in the shared settings store', function (): void {
     app(OperatorSettings::class)->set('ai.api_key', 'super-secret-provider-key');
 

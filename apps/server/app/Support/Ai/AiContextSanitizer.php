@@ -17,7 +17,7 @@ final class AiContextSanitizer
         $sanitized = $this->stripPrivateKeyBlocks($input);
         $sanitized = $this->stripUrlSecrets($sanitized);
         $sanitized = $this->replace(
-            '/\b(password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\s*[:=]\s*((?:Bearer\s+)?[^\s,;]{4,})/i',
+            '/\b(password|passwd|api[ _-]?key|secret|token|access[ _-]?token|refresh[ _-]?token|authorization)\s*[:=]\s*((?:Bearer\s+)?[^\s,;"\']{4,})/i',
             '$1=[REDACTED]',
             $sanitized,
         );

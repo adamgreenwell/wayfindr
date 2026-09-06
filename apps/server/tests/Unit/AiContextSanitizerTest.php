@@ -48,3 +48,14 @@ test('ordinary numeric support context is preserved', function (): void {
 
     expect((new AiContextSanitizer)->sanitize($input))->toBe($input);
 });
+
+test('scrubbing an already scrubbed json prompt preserves its structure', function (): void {
+    $sanitizer = new AiContextSanitizer;
+    $firstPass = $sanitizer->sanitize('The final value is token=visitor-secret');
+    $encoded = json_encode(['body' => $firstPass], JSON_THROW_ON_ERROR);
+    $secondPass = $sanitizer->sanitize($encoded);
+
+    expect(json_decode($secondPass, true, flags: JSON_THROW_ON_ERROR))->toBe([
+        'body' => 'The final value is token=[REDACTED]',
+    ]);
+});

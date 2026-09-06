@@ -170,7 +170,10 @@ test('requesting a summary queues one id-only job and records safe audit metadat
     expect($event->account_id)->toBe($world['account']->id)
         ->and($event->site_id)->toBe($world['site']->id)
         ->and($event->subject_id)->toBe($world['conversation']->id)
-        ->and($event->metadata)->toBe(['summary_id' => $summary->id])
+        ->and($event->metadata)->toBe([
+            'summary_id' => $summary->id,
+            'generation' => $summary->generation,
+        ])
         ->and(json_encode($event->metadata))->not->toContain('checkout button');
 
     $this->actingAs($world['agent'])
@@ -242,6 +245,7 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
 
     $summary = ConversationCopilotSummary::query()->sole();
     expect($summary->status)->toBe(ConversationCopilotSummary::STATUS_READY)
+        ->and($summary->started_at)->not->toBeNull()
         ->and($summary->source_message_count)->toBe(2)
         ->and($summary->source_last_message_id)->toBe($lastMessage->id)
         ->and($summary->provider)->toBe('fake-provider')
@@ -250,7 +254,8 @@ test('the queued job selects scrubbed bounded text only and stores a reviewable 
         ->and($summary->completion_tokens)->toBe(24);
 
     $generated = AuditEvent::query()->where('action', 'conversation.ai_summary.generated')->sole();
-    expect(json_encode($generated->metadata))
+    expect($generated->metadata['generation'])->toBe($summary->generation)
+        ->and(json_encode($generated->metadata))
         ->not->toContain($summary->summary)
         ->not->toContain('Checkout stalls after payment');
 
@@ -343,6 +348,7 @@ test('worker failures become generic retryable audited state', function (): void
     $failed = AuditEvent::query()->where('action', 'conversation.ai_summary.failed')->sole();
     expect($failed->metadata)->toBe([
         'summary_id' => $summary->id,
+        'generation' => $summary->generation,
         'failure_code' => 'job',
     ]);
 
@@ -414,9 +420,11 @@ test('summary context is bounded and prioritizes the newest text', function (): 
     ]);
 
     $context = app(ConversationSummaryPromptBuilder::class)->build($world['conversation']);
+    $payload = json_decode($context->prompt->input, true, flags: JSON_THROW_ON_ERROR);
 
     expect($context)->not->toBeNull()
         ->and(mb_strlen($context->prompt->input))->toBeLessThanOrEqual(1_000)
+        ->and($payload['context_truncated'])->toBeTrue()
         ->and($context->prompt->input)->toContain('LATEST-CONTEXT')
         ->and($context->prompt->input)->not->toContain('OLD-CONTEXT')
         ->and($context->messageCount)->toBe(1)
@@ -463,6 +471,36 @@ test('an expired pending marker can be replaced instead of trapping the panel fo
         expect($expired->fresh()->generation)->not->toBe($expired->generation)
             ->and($expired->fresh()->hasFreshPendingRequest())->toBeTrue();
         Queue::assertPushed(GenerateConversationCopilotSummary::class, 1);
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('a delayed request cannot be replaced after its worker claims it', function (): void {
+    $world = conversationCopilotSummaryWorld();
+    ConversationMessage::factory()->for($world['conversation'])->create(['body' => 'Please summarize this.']);
+    configureConversationCopilotSummary();
+    Carbon::setTestNow('2026-09-06 12:00:00');
+    $running = ConversationCopilotSummary::query()->create([
+        'conversation_id' => $world['conversation']->id,
+        'requested_by_id' => $world['agent']->id,
+        'generation' => (string) Str::uuid(),
+        'status' => ConversationCopilotSummary::STATUS_RUNNING,
+        'requested_at' => now()->subMinutes(10),
+        'started_at' => now(),
+    ]);
+    Queue::fake();
+
+    try {
+        expect($running->hasFreshPendingRequest())->toBeTrue()
+            ->and($running->displayStatus())->toBe(ConversationCopilotSummary::STATUS_PENDING);
+
+        $this->actingAs($world['agent'])
+            ->post(route('dashboard.conversations.copilot-summary.store', $world['conversation']->support_code))
+            ->assertSessionHas('status', 'conversations.flash.ai_summary_pending');
+
+        expect($running->fresh()->generation)->toBe($running->generation);
+        Queue::assertNothingPushed();
     } finally {
         Carbon::setTestNow();
     }

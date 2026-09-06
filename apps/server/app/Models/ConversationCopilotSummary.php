@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'completion_tokens',
     'failure_code',
     'requested_at',
+    'started_at',
     'completed_at',
 ])]
 final class ConversationCopilotSummary extends Model
@@ -44,6 +45,7 @@ final class ConversationCopilotSummary extends Model
             'prompt_tokens' => 'integer',
             'completion_tokens' => 'integer',
             'requested_at' => 'datetime',
+            'started_at' => 'datetime',
             'completed_at' => 'datetime',
         ];
     }
@@ -60,8 +62,13 @@ final class ConversationCopilotSummary extends Model
 
     public function hasFreshPendingRequest(): bool
     {
-        return in_array($this->status, [self::STATUS_PENDING, self::STATUS_RUNNING], true)
-            && $this->requested_at?->isAfter(now()->subMinutes(self::PENDING_FRESH_MINUTES)) === true;
+        $freshnessClock = match ($this->status) {
+            self::STATUS_PENDING => $this->requested_at,
+            self::STATUS_RUNNING => $this->started_at,
+            default => null,
+        };
+
+        return $freshnessClock?->isAfter(now()->subMinutes(self::PENDING_FRESH_MINUTES)) === true;
     }
 
     public function displayStatus(): string

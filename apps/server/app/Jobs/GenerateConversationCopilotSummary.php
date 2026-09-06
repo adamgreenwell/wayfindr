@@ -14,6 +14,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -80,7 +81,10 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
                 ->whereKey($summary->id)
                 ->where('generation', $this->generation)
                 ->where('status', ConversationCopilotSummary::STATUS_PENDING)
-                ->update(['status' => ConversationCopilotSummary::STATUS_RUNNING]);
+                ->update([
+                    'status' => ConversationCopilotSummary::STATUS_RUNNING,
+                    'started_at' => now(),
+                ]);
 
             // A replacement generation won while this job was waiting or
             // selecting context. Its transcript must not be sent by stale work.
@@ -113,32 +117,34 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
             $result = $provider->generate($context->prompt);
             $maximum = 4_000;
-            $updated = ConversationCopilotSummary::query()
-                ->whereKey($summary->id)
-                ->where('generation', $this->generation)
-                ->where('status', ConversationCopilotSummary::STATUS_RUNNING)
-                ->update([
-                    'status' => ConversationCopilotSummary::STATUS_READY,
-                    'summary' => mb_substr(trim($result->text), 0, $maximum),
-                    'source_last_message_id' => $context->lastMessageId,
-                    'source_message_count' => $context->messageCount,
-                    'provider' => mb_substr($result->provider, 0, 64),
-                    'model' => mb_substr($result->model, 0, 255),
-                    'prompt_tokens' => max(0, $result->promptTokens),
-                    'completion_tokens' => max(0, $result->completionTokens),
-                    'failure_code' => null,
-                    'completed_at' => now(),
-                ]);
+            DB::transaction(function () use ($context, $maximum, $result, $summary): void {
+                $updated = ConversationCopilotSummary::query()
+                    ->whereKey($summary->id)
+                    ->where('generation', $this->generation)
+                    ->where('status', ConversationCopilotSummary::STATUS_RUNNING)
+                    ->update([
+                        'status' => ConversationCopilotSummary::STATUS_READY,
+                        'summary' => mb_substr(trim($result->text), 0, $maximum),
+                        'source_last_message_id' => $context->lastMessageId,
+                        'source_message_count' => $context->messageCount,
+                        'provider' => mb_substr($result->provider, 0, 64),
+                        'model' => mb_substr($result->model, 0, 255),
+                        'prompt_tokens' => max(0, $result->promptTokens),
+                        'completion_tokens' => max(0, $result->completionTokens),
+                        'failure_code' => null,
+                        'completed_at' => now(),
+                    ]);
 
-            if ($updated === 1) {
-                $this->audit($summary, 'conversation.ai_summary.generated', [
-                    'source_message_count' => $context->messageCount,
-                    'provider' => mb_substr($result->provider, 0, 64),
-                    'model' => mb_substr($result->model, 0, 255),
-                    'prompt_tokens' => max(0, $result->promptTokens),
-                    'completion_tokens' => max(0, $result->completionTokens),
-                ]);
-            }
+                if ($updated === 1) {
+                    $this->audit($summary, 'conversation.ai_summary.generated', [
+                        'source_message_count' => $context->messageCount,
+                        'provider' => mb_substr($result->provider, 0, 64),
+                        'model' => mb_substr($result->model, 0, 255),
+                        'prompt_tokens' => max(0, $result->promptTokens),
+                        'completion_tokens' => max(0, $result->completionTokens),
+                    ]);
+                }
+            });
         } catch (Throwable $exception) {
             // Provider exceptions can contain endpoints, account identifiers,
             // or echoed prompt text. Keep the host log diagnostic-only.
@@ -178,24 +184,26 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
 
     private function recordFailure(ConversationCopilotSummary $summary, string $code): void
     {
-        $updated = ConversationCopilotSummary::query()
-            ->whereKey($summary->id)
-            ->where('generation', $this->generation)
-            ->whereIn('status', [
-                ConversationCopilotSummary::STATUS_PENDING,
-                ConversationCopilotSummary::STATUS_RUNNING,
-            ])
-            ->update([
-                'status' => ConversationCopilotSummary::STATUS_FAILED,
-                'failure_code' => $code,
-                'completed_at' => now(),
-            ]);
+        DB::transaction(function () use ($code, $summary): void {
+            $updated = ConversationCopilotSummary::query()
+                ->whereKey($summary->id)
+                ->where('generation', $this->generation)
+                ->whereIn('status', [
+                    ConversationCopilotSummary::STATUS_PENDING,
+                    ConversationCopilotSummary::STATUS_RUNNING,
+                ])
+                ->update([
+                    'status' => ConversationCopilotSummary::STATUS_FAILED,
+                    'failure_code' => $code,
+                    'completed_at' => now(),
+                ]);
 
-        if ($updated === 1) {
-            $this->audit($summary, 'conversation.ai_summary.failed', [
-                'failure_code' => $code,
-            ]);
-        }
+            if ($updated === 1) {
+                $this->audit($summary, 'conversation.ai_summary.failed', [
+                    'failure_code' => $code,
+                ]);
+            }
+        });
     }
 
     /** @param  array<string, int|string>  $metadata */
@@ -215,7 +223,11 @@ final class GenerateConversationCopilotSummary implements ShouldBeUnique, Should
             'subject_type' => $conversation->getMorphClass(),
             'subject_id' => $conversation->id,
             'action' => $action,
-            'metadata' => ['summary_id' => $summary->id, ...$metadata],
+            'metadata' => [
+                'summary_id' => $summary->id,
+                'generation' => $this->generation,
+                ...$metadata,
+            ],
             'occurred_at' => now(),
         ]);
     }

@@ -63,6 +63,7 @@ final class AgentConversationCopilotSummaryController extends Controller
                 'completion_tokens' => null,
                 'failure_code' => null,
                 'requested_at' => now(),
+                'started_at' => null,
                 'completed_at' => null,
             ];
 
@@ -83,7 +84,10 @@ final class AgentConversationCopilotSummaryController extends Controller
                 'subject_type' => $conversation->getMorphClass(),
                 'subject_id' => $conversation->id,
                 'action' => 'conversation.ai_summary.requested',
-                'metadata' => ['summary_id' => $summary->id],
+                'metadata' => [
+                    'summary_id' => $summary->id,
+                    'generation' => $summary->generation,
+                ],
                 'occurred_at' => now(),
             ]);
 
@@ -99,32 +103,35 @@ final class AgentConversationCopilotSummaryController extends Controller
                     'summary_id' => $summary->id,
                     'conversation_id' => $conversation->id,
                 ]);
-                $markedFailed = ConversationCopilotSummary::query()
-                    ->whereKey($summary->id)
-                    ->where('generation', $summary->generation)
-                    ->where('status', ConversationCopilotSummary::STATUS_PENDING)
-                    ->update([
-                        'status' => ConversationCopilotSummary::STATUS_FAILED,
-                        'failure_code' => 'queue',
-                        'completed_at' => now(),
-                    ]);
-
-                if ($markedFailed === 1) {
-                    AuditEvent::query()->create([
-                        'account_id' => $conversation->site->account_id,
-                        'site_id' => $conversation->site_id,
-                        'actor_type' => $agent->getMorphClass(),
-                        'actor_id' => $agent->id,
-                        'subject_type' => $conversation->getMorphClass(),
-                        'subject_id' => $conversation->id,
-                        'action' => 'conversation.ai_summary.failed',
-                        'metadata' => [
-                            'summary_id' => $summary->id,
+                DB::transaction(function () use ($agent, $conversation, $summary): void {
+                    $markedFailed = ConversationCopilotSummary::query()
+                        ->whereKey($summary->id)
+                        ->where('generation', $summary->generation)
+                        ->where('status', ConversationCopilotSummary::STATUS_PENDING)
+                        ->update([
+                            'status' => ConversationCopilotSummary::STATUS_FAILED,
                             'failure_code' => 'queue',
-                        ],
-                        'occurred_at' => now(),
-                    ]);
-                }
+                            'completed_at' => now(),
+                        ]);
+
+                    if ($markedFailed === 1) {
+                        AuditEvent::query()->create([
+                            'account_id' => $conversation->site->account_id,
+                            'site_id' => $conversation->site_id,
+                            'actor_type' => $agent->getMorphClass(),
+                            'actor_id' => $agent->id,
+                            'subject_type' => $conversation->getMorphClass(),
+                            'subject_id' => $conversation->id,
+                            'action' => 'conversation.ai_summary.failed',
+                            'metadata' => [
+                                'summary_id' => $summary->id,
+                                'generation' => $summary->generation,
+                                'failure_code' => 'queue',
+                            ],
+                            'occurred_at' => now(),
+                        ]);
+                    }
+                });
 
                 return redirect()
                     ->route('dashboard.conversations.show', $returnPath->routeParameters($conversation, $request))
@@ -151,7 +158,9 @@ final class AgentConversationCopilotSummaryController extends Controller
         $latestMessageId = $conversation->messages()
             ->whereNotNull('body')
             ->whereRaw("TRIM(body) <> ''")
-            ->max('id');
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->value('id');
 
         if ($latestMessageId === null) {
             return response('', 204)->header('Cache-Control', 'no-store, private');

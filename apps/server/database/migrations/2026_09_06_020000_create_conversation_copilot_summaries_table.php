@@ -23,6 +23,7 @@ return new class extends Migration
             $table->unsignedInteger('completion_tokens')->nullable();
             $table->string('failure_code', 64)->nullable();
             $table->timestamp('requested_at');
+            $table->timestamp('started_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
         });
