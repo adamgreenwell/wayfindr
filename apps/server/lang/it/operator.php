@@ -1134,6 +1134,7 @@ return [
             'unreadable' => 'La chiave API salvata non può essere letta. Inserisca una sostituzione o la cancelli prima di abilitare il fornitore.',
             'model' => 'Inserisca un modello quando è selezionato un fornitore.',
             'endpoint' => 'Inserisca per questo fornitore un endpoint HTTP o HTTPS valido.',
+            'endpoint_secrets' => 'Inserisca un endpoint senza credenziali, parametri di query o frammenti.',
             'api_key' => 'Inserisca una chiave API per questo fornitore ospitato.',
         ],
         'flash' => [

@@ -10,7 +10,8 @@ test('copilot context removes common credentials and identifiers', function (): 
     Authorization: Bearer abcdefghijklmnop==
     Opaque header Bearer abcdefghijklmnop==
     api_key=sk-examplecredential123456
-    Visitor 019c1234-abcd-4abc-8abc-0123456789ab from 192.168.10.24.
+    Visitor 019c1234-abcd-4abc-8abc-0123456789ab from 192.168.10.24 or 2001:db8::1.
+    Internal trace https://[2001:db8:85a3::8a2e:370:7334]/span?token=secret.
     Card 4242 4242 4242 4242.
     See https://support.example.test/ticket/4?token=secret#private.
     -----BEGIN PRIVATE KEY-----
@@ -31,6 +32,7 @@ test('copilot context removes common credentials and identifiers', function (): 
         ->toContain('https://support.example.test/ticket/4')
         ->toContain('[PRIVATE KEY REDACTED]')
         ->not->toContain('ada@example.test')
+        ->not->toContain('2001:db8')
         ->not->toContain('secret#private')
         ->not->toContain('extremely-secret-material');
 });

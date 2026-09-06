@@ -46,11 +46,7 @@ final class AiContextSanitizer
             '$1=[PHONE REDACTED]',
             $sanitized,
         );
-        $sanitized = $this->replace(
-            '/\b(?:\d{1,3}\.){3}\d{1,3}\b/',
-            '[IP ADDRESS REDACTED]',
-            $sanitized,
-        );
+        $sanitized = $this->stripIpAddresses($sanitized);
         $sanitized = $this->replace(
             '/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/i',
             '[IDENTIFIER REDACTED]',
@@ -98,6 +94,36 @@ final class AiContextSanitizer
             },
             $input,
         ) ?? $input;
+    }
+
+    private function stripIpAddresses(string $input): string
+    {
+        $sanitized = $this->replace(
+            '/\b(?:\d{1,3}\.){3}\d{1,3}\b/',
+            '[IP ADDRESS REDACTED]',
+            $input,
+        );
+
+        $sanitized = preg_replace_callback(
+            '/\[([0-9a-f:.]+)\]/i',
+            fn (array $match): string => filter_var($match[1], FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+                ? '[IP ADDRESS REDACTED]'
+                : $match[0],
+            $sanitized,
+        ) ?? $sanitized;
+
+        return preg_replace_callback(
+            '/(?<![0-9a-z:.])([0-9a-f:.]*:[0-9a-f:.]+)(?![0-9a-z:.])/i',
+            function (array $match): string {
+                $candidate = rtrim($match[1], '.');
+                $suffix = substr($match[1], strlen($candidate));
+
+                return filter_var($candidate, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== false
+                    ? '[IP ADDRESS REDACTED]'.$suffix
+                    : $match[0];
+            },
+            $sanitized,
+        ) ?? $sanitized;
     }
 
     private function looksLikePaymentCard(string $candidate): bool

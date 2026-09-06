@@ -109,6 +109,26 @@ test('local and openai-compatible providers have the intended credential rules',
         ->toBe('https://models.example.test/v1');
 });
 
+test('custom endpoints cannot persist secret-bearing URL components', function (string $endpoint): void {
+    $operator = aiSettingsOperator();
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.ai.edit'))
+        ->post(route('operator.settings.ai.update'), [
+            'provider' => 'openai-compatible',
+            'model' => 'local-model',
+            'endpoint' => $endpoint,
+        ])
+        ->assertRedirect(route('operator.settings.ai.edit'))
+        ->assertSessionHasErrors('endpoint');
+
+    expect(OperatorSetting::query()->where('key', 'ai.endpoint')->exists())->toBeFalse();
+})->with([
+    'username and password' => 'https://operator:secret@models.example.test/v1',
+    'query parameters' => 'https://models.example.test/v1?api_key=secret',
+    'fragment' => 'https://models.example.test/v1#secret',
+]);
+
 test('hosted provider validation neither stores nor flashes a submitted key', function (): void {
     $secret = 'never-put-this-key-in-the-session';
 

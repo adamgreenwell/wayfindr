@@ -1127,6 +1127,7 @@ return [
             'unreadable' => 'Der gespeicherte API-Schlüssel kann nicht gelesen werden. Geben Sie einen Ersatz ein oder löschen Sie den Schlüssel, bevor Sie den Anbieter aktivieren.',
             'model' => 'Geben Sie ein Modell ein, wenn ein Anbieter ausgewählt ist.',
             'endpoint' => 'Geben Sie für diesen Anbieter einen gültigen HTTP- oder HTTPS-Endpunkt ein.',
+            'endpoint_secrets' => 'Geben Sie einen Endpunkt ohne Zugangsdaten, Abfrageparameter oder Fragment ein.',
             'api_key' => 'Geben Sie für diesen gehosteten Anbieter einen API-Schlüssel ein.',
         ],
         'flash' => [

@@ -1127,6 +1127,7 @@ return [
             'unreadable' => 'The saved API key cannot be read. Enter a replacement or clear it before enabling the provider.',
             'model' => 'Enter a model when a provider is selected.',
             'endpoint' => 'Enter a valid HTTP or HTTPS endpoint for this provider.',
+            'endpoint_secrets' => 'Enter an endpoint without credentials, query parameters, or a fragment.',
             'api_key' => 'Enter an API key for this hosted provider.',
         ],
         'flash' => [

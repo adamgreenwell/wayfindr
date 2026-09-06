@@ -8,6 +8,7 @@ use App\Models\AuditEvent;
 use App\Support\Ai\AgentCopilotConfiguration;
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Settings\OperatorSettings;
+use Closure;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -58,7 +59,26 @@ final class OperatorAiSettingsController extends Controller
         $validated = $request->validate([
             'provider' => ['nullable', Rule::in($allowedProviders)],
             'model' => ['nullable', 'string', 'max:255'],
-            'endpoint' => ['nullable', 'url:http,https', 'max:2048'],
+            'endpoint' => [
+                'bail',
+                'nullable',
+                'url:http,https',
+                'max:2048',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (! is_string($value) || $value === '') {
+                        return;
+                    }
+
+                    $parts = parse_url($value);
+
+                    // Endpoints are rendered back to operators and stored as
+                    // ordinary settings. Refuse URL components that commonly
+                    // carry credentials instead of persisting them as plaintext.
+                    if (! is_array($parts) || array_intersect(['user', 'pass', 'query', 'fragment'], array_keys($parts)) !== []) {
+                        $fail(__('operator.ai.validation.endpoint_secrets'));
+                    }
+                },
+            ],
             // Registered with dontFlash in bootstrap/app.php. This value is
             // write-only and must never appear in old input or audit metadata.
             'api_key' => ['nullable', 'string', 'max:4096'],
