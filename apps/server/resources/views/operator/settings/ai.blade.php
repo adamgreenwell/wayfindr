@@ -50,6 +50,13 @@
             </div>
 
             <div class="field">
+                <label for="openrouter_provider">{{ __('operator.ai.openrouter_provider') }}</label>
+                <input id="openrouter_provider" name="openrouter_provider" lang="" value="{{ old('openrouter_provider', $openRouterProvider) }}" autocomplete="off" placeholder="amazon-bedrock">
+                @error('openrouter_provider')<p class="field-error">{{ $message }}</p>@enderror
+                <p class="field-help">{{ __('operator.ai.openrouter_provider_help') }}</p>
+            </div>
+
+            <div class="field">
                 <label for="endpoint">{{ __('operator.ai.endpoint') }}</label>
                 <input id="endpoint" name="endpoint" lang="" value="{{ old('endpoint', $endpoint) }}" autocomplete="off" placeholder="http://localhost:11434">
                 @error('endpoint')<p class="field-error">{{ $message }}</p>@enderror

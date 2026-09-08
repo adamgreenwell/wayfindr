@@ -11,6 +11,12 @@ return [
             'key' => env('WAYFINDR_AI_API_KEY'),
             'url' => env('WAYFINDR_AI_ENDPOINT'),
 
+            // OpenRouter calls are pinned to one named upstream endpoint. The
+            // agent adds ZDR and disables fallback routing on every request.
+            'openrouter' => [
+                'provider' => env('WAYFINDR_AI_OPENROUTER_PROVIDER'),
+            ],
+
             // Provider-side retention is not part of an assistive request.
             // Drivers that understand this option therefore receive false.
             'store' => false,

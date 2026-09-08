@@ -9,6 +9,8 @@ use App\Support\Ai\AgentCopilotUnavailable;
 use App\Support\Ai\CopilotAgent;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Prompts\AgentPrompt;
 
 uses(RefreshDatabase::class);
@@ -31,7 +33,7 @@ test('the provider boundary sanitizes and bounds text without attachments', func
     ));
 
     expect($result->text)->toBe('A concise draft.')
-        ->and($result->provider)->toBe('wayfindr')
+        ->and($result->provider)->toBe('ollama')
         ->and($result->model)->toBe('qwen3.5:4b');
 
     CopilotAgent::assertPrompted(function (AgentPrompt $prompt): bool {
@@ -42,6 +44,55 @@ test('the provider boundary sanitizes and bounds text without attachments', func
             && ! str_contains($prompt->prompt, 'ada@example.test')
             && $prompt->model === 'qwen3.5:4b';
     });
+});
+
+test('openrouter calls require zero retention and stay on one upstream provider', function (): void {
+    $settings = app(OperatorSettings::class);
+    $settings->set('ai.provider', 'openrouter');
+    $settings->set('ai.model', 'anthropic/claude-sonnet-4.5');
+    $settings->set('ai.openrouter_provider', 'amazon-bedrock');
+    $settings->set('ai.api_key', 'openrouter-test-key');
+    $settings->applyOverrides();
+
+    Http::fake([
+        'openrouter.ai/api/v1/chat/completions' => Http::response([
+            'id' => 'generation-test',
+            'model' => 'anthropic/claude-sonnet-4.5',
+            'choices' => [[
+                'message' => ['role' => 'assistant', 'content' => 'A grounded candidate.'],
+                'finish_reason' => 'stop',
+            ]],
+            'usage' => ['prompt_tokens' => 12, 'completion_tokens' => 4],
+        ]),
+    ]);
+
+    $result = app(AgentCopilotProvider::class)->generate(new AgentCopilotPrompt(
+        purpose: 'grounded_answer_evaluation',
+        instructions: 'Answer only from the supplied synthetic article.',
+        input: 'Synthetic question and article.',
+    ));
+
+    expect($result->text)->toBe('A grounded candidate.')
+        ->and($result->provider)->toBe('openrouter/amazon-bedrock')
+        ->and($result->model)->toBe('anthropic/claude-sonnet-4.5');
+
+    Http::assertSent(function (Request $request): bool {
+        return $request->url() === 'https://openrouter.ai/api/v1/chat/completions'
+            && $request['model'] === 'anthropic/claude-sonnet-4.5'
+            && $request['provider'] === [
+                'order' => ['amazon-bedrock'],
+                'allow_fallbacks' => false,
+                'zdr' => true,
+            ];
+    });
+});
+
+test('provider-specific routing options do not leak into direct provider calls', function (): void {
+    $agent = new CopilotAgent('Answer briefly.');
+
+    expect($agent->providerOptions('openai'))->toBe([])
+        ->and($agent->providerOptions('anthropic'))->toBe([])
+        ->and($agent->providerOptions('gemini'))->toBe([]);
 });
 
 test('an unset or partial provider fails closed before the sdk is called', function (): void {

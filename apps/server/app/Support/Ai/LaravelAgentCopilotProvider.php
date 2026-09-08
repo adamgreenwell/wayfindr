@@ -36,9 +36,18 @@ final readonly class LaravelAgentCopilotProvider implements AgentCopilotProvider
             throw new UnexpectedValueException('The configured AI provider returned an empty response.');
         }
 
+        $provider = $assessment['provider'];
+
+        if ($provider === 'openrouter') {
+            $provider .= '/'.$assessment['openrouter_provider'];
+        }
+
         return new AgentCopilotResult(
             text: $text,
-            provider: $response->meta->provider ?? $assessment['provider'],
+            // The SDK names this configured adapter `wayfindr`. Persist the
+            // selected driver instead so audit/evaluation provenance identifies
+            // the actual processor rather than our internal alias.
+            provider: $provider,
             model: $response->meta->model ?? $assessment['model'],
             promptTokens: $response->usage->promptTokens,
             completionTokens: $response->usage->completionTokens,

@@ -41,8 +41,44 @@ test('only a platform operator can reach agent copilot settings', function (): v
         ->assertOk()
         ->assertSee('Agent copilot')
         ->assertSee('Provider boundary')
+        ->assertSee('OpenRouter upstream provider')
         ->assertSee('Data boundary')
         ->assertSee('Test the connection');
+});
+
+test('openrouter requires and stores one exact upstream provider', function (): void {
+    $operator = aiSettingsOperator();
+
+    $this->actingAs($operator)
+        ->from(route('operator.settings.ai.edit'))
+        ->post(route('operator.settings.ai.update'), [
+            'provider' => 'openrouter',
+            'model' => 'anthropic/claude-sonnet-4.5',
+            'api_key' => 'openrouter-test-key',
+        ])
+        ->assertRedirect(route('operator.settings.ai.edit'))
+        ->assertSessionHasErrors('openrouter_provider');
+
+    $this->actingAs($operator)
+        ->post(route('operator.settings.ai.update'), [
+            'provider' => 'openrouter',
+            'model' => 'anthropic/claude-sonnet-4.5',
+            'openrouter_provider' => 'amazon-bedrock',
+            'api_key' => 'openrouter-test-key',
+        ])
+        ->assertRedirect(route('operator.settings.ai.edit'))
+        ->assertSessionDoesntHaveErrors();
+
+    $settings = app(OperatorSettings::class);
+    $event = AuditEvent::query()->where('action', 'operator_settings.ai.updated')->sole();
+
+    expect($settings->get('ai.openrouter_provider'))->toBe('amazon-bedrock')
+        ->and($event->metadata)->toMatchArray([
+            'provider' => 'openrouter',
+            'model' => 'anthropic/claude-sonnet-4.5',
+            'openrouter_provider' => 'amazon-bedrock',
+            'status' => 'ready',
+        ]);
 });
 
 test('an operator can save a hosted provider with a write-only encrypted key', function (): void {
@@ -279,5 +315,14 @@ test('configuration assessment distinguishes optional, incomplete, and ready sta
             'status' => 'incomplete',
             'missing' => ['endpoint'],
         ])
+        ->and($configuration->assessValues('openrouter', 'anthropic/claude-sonnet-4.5', '', true))->toMatchArray([
+            'status' => 'incomplete',
+            'missing' => ['openrouter_provider'],
+        ])
+        ->and($configuration->assessValues('openrouter', 'anthropic/claude-sonnet-4.5', '', true, 'bad provider'))->toMatchArray([
+            'status' => 'incomplete',
+            'missing' => ['openrouter_provider'],
+        ])
+        ->and($configuration->assessValues('openrouter', 'anthropic/claude-sonnet-4.5', '', true, 'amazon-bedrock')['status'])->toBe('ready')
         ->and($configuration->assessValues('future-provider', 'future-model', '', true)['status'])->toBe('unsupported');
 });
