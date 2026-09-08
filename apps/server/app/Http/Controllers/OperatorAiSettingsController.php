@@ -39,6 +39,7 @@ final class OperatorAiSettingsController extends Controller
                 : null,
             'model' => (string) $settings->effective('ai.model'),
             'endpoint' => (string) $settings->effective('ai.endpoint'),
+            'openRouterProvider' => (string) $settings->effective('ai.openrouter_provider'),
             'apiKeyIsSet' => $settings->effectiveSecretStatus('ai.api_key') === 'set',
             'apiKeyUnreadable' => $settings->secretStatus('ai.api_key') === 'unreadable',
             'assessment' => $configuration->assessment(),
@@ -79,6 +80,14 @@ final class OperatorAiSettingsController extends Controller
                     }
                 },
             ],
+            'openrouter_provider' => [
+                'bail',
+                'nullable',
+                Rule::requiredIf(fn (): bool => strtolower(trim((string) $request->input('provider'))) === 'openrouter'),
+                'string',
+                'max:53',
+                'regex:/\A[a-z0-9]+(?:[._-][a-z0-9]+)*(?:\/[a-z0-9]+(?:[._-][a-z0-9]+)*)?\z/',
+            ],
             // Registered with dontFlash in bootstrap/app.php. This value is
             // write-only and must never appear in old input or audit metadata.
             'api_key' => ['nullable', 'string', 'max:4096'],
@@ -88,6 +97,7 @@ final class OperatorAiSettingsController extends Controller
         $provider = strtolower(trim((string) ($validated['provider'] ?? '')));
         $model = trim((string) ($validated['model'] ?? ''));
         $endpoint = rtrim(trim((string) ($validated['endpoint'] ?? '')), '/');
+        $openRouterProvider = strtolower(trim((string) ($validated['openrouter_provider'] ?? '')));
         $apiKey = trim((string) ($validated['api_key'] ?? ''));
         $apiKeyProvided = $apiKey !== '';
         $clearApiKey = (bool) ($validated['clear_api_key'] ?? false);
@@ -107,14 +117,16 @@ final class OperatorAiSettingsController extends Controller
         }
 
         $hasApiKey = $apiKeyProvided || (! $clearApiKey && $currentKeyStatus === 'set');
-        $assessment = $configuration->assessValues($provider, $model, $endpoint, $hasApiKey);
+        $assessment = $configuration->assessValues($provider, $model, $endpoint, $hasApiKey, $openRouterProvider);
 
         if ($assessment['status'] === 'incomplete') {
             $field = in_array('model', $assessment['missing'], true)
                 ? 'model'
+                : (in_array('openrouter_provider', $assessment['missing'], true)
+                    ? 'openrouter_provider'
                 : (in_array('endpoint', $assessment['missing'], true) || in_array('valid_endpoint', $assessment['missing'], true)
                     ? 'endpoint'
-                    : 'api_key');
+                    : 'api_key'));
 
             throw ValidationException::withMessages([
                 $field => __('operator.ai.validation.'.$field),
@@ -131,12 +143,14 @@ final class OperatorAiSettingsController extends Controller
             $clearApiKey,
             $endpoint,
             $model,
+            $openRouterProvider,
             $provider,
             $settings,
         ): void {
             $settings->set('ai.provider', $provider);
             $settings->set('ai.model', $model);
             $settings->set('ai.endpoint', $endpoint);
+            $settings->set('ai.openrouter_provider', $openRouterProvider);
 
             if ($clearApiKey) {
                 $settings->set('ai.api_key', '');
@@ -152,6 +166,7 @@ final class OperatorAiSettingsController extends Controller
                 'metadata' => [
                     'provider' => $provider === '' ? 'none' : $provider,
                     'model' => $model === '' ? 'none' : $model,
+                    'openrouter_provider' => $provider === 'openrouter' ? $openRouterProvider : 'none',
                     'endpoint_configured' => $endpoint !== '',
                     'status' => $assessment['status'],
                     'api_key_changed' => $clearApiKey ? 'cleared' : ($apiKeyProvided ? 'updated' : 'unchanged'),

@@ -21,6 +21,11 @@ Every enabled provider needs an exact text-model identifier. Hosted providers
 also need an API key. Ollama and OpenAI-compatible endpoints may omit a key when
 their own network boundary supplies the protection. OpenAI-compatible always
 needs an HTTP or HTTPS endpoint; Ollama defaults to `http://localhost:11434`.
+OpenRouter also needs one exact upstream provider slug. Wayfindr pins every
+OpenRouter request to that endpoint, requires zero data retention, and disables
+fallback routing so the processor and evaluation evidence do not change between
+requests. Saved suggestion and evaluation metadata identifies the route as
+`openrouter/<upstream-provider>` rather than the internal `wayfindr` alias.
 
 API keys are encrypted in the operator-settings table, treated as write-only,
 excluded from validation old input, and omitted from audit metadata. A custom
@@ -46,6 +51,7 @@ WAYFINDR_AI_PROVIDER=
 WAYFINDR_AI_MODEL=
 WAYFINDR_AI_ENDPOINT=
 WAYFINDR_AI_API_KEY=
+WAYFINDR_AI_OPENROUTER_PROVIDER=
 WAYFINDR_AI_MAX_CONTEXT_CHARACTERS=30000
 ```
 
@@ -69,6 +75,15 @@ WAYFINDR_AI_ENDPOINT=https://models.internal.example/v1
 WAYFINDR_AI_API_KEY=
 ```
 
+```dotenv
+# OpenRouter with one attributable zero-retention upstream. The named endpoint
+# must offer the selected model under OpenRouter's ZDR policy.
+WAYFINDR_AI_PROVIDER=openrouter
+WAYFINDR_AI_MODEL=anthropic/claude-sonnet-4.5
+WAYFINDR_AI_API_KEY=
+WAYFINDR_AI_OPENROUTER_PROVIDER=amazon-bedrock
+```
+
 Use TLS and network access controls for a model endpoint on another host. A
 loopback endpoint is private only when the PHP process and model server really
 share that network namespace; in containers, `localhost` usually means the PHP
@@ -85,7 +100,9 @@ Before text reaches Laravel's AI SDK, Wayfindr:
    Luhn-valid payment-card numbers, and URL query strings/fragments;
 2. truncates the result to `WAYFINDR_AI_MAX_CONTEXT_CHARACTERS`; and
 3. sends it through the stable `wayfindr` provider name with provider-side
-   storage disabled where the selected driver supports that option.
+   storage disabled where the selected driver supports that option. OpenRouter
+   requests additionally require ZDR, name one allowed upstream provider, and
+   disable fallbacks.
 
 Redaction is defense in depth, not a claim that arbitrary prose can be perfectly
 classified. Each product feature must still select the minimum useful context

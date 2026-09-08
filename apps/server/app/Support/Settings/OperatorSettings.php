@@ -123,6 +123,7 @@ class OperatorSettings
         'ai.provider' => ['config' => 'ai.providers.wayfindr.driver', 'secret' => false, 'group' => 'ai'],
         'ai.model' => ['config' => 'ai.providers.wayfindr.models.text.default', 'secret' => false, 'group' => 'ai'],
         'ai.endpoint' => ['config' => 'ai.providers.wayfindr.url', 'secret' => false, 'group' => 'ai', 'cast' => 'null_if_blank'],
+        'ai.openrouter_provider' => ['config' => 'ai.providers.wayfindr.openrouter.provider', 'secret' => false, 'group' => 'ai'],
         'ai.api_key' => ['config' => 'ai.providers.wayfindr.key', 'secret' => true, 'group' => 'ai'],
     ];
 
