@@ -92,6 +92,41 @@ AI can also improve how Wayfindr is built and operated:
 Development-facing AI tools should default to read-only access. Any write or
 mutation capability must be explicit, narrow, and documented.
 
+## Reassessment On 2026-09-08
+
+[Issue #764](https://github.com/adamgreenwell/wayfindr/issues/764) completed the
+evaluation preconditions for reconsidering autonomous visitor replies. Wayfindr
+now has a provider-free regression harness, an explicit confidence and refusal
+policy, and a private opt-in provider-capture path. On the controlled Forge
+stage, a fresh nine-case synthetic run through `openrouter/azure` with
+`openai/gpt-5.2` passed every fixture and policy threshold: answer and refusal
+metrics were 100%, unsafe and overconfident-answer rates were 0%, and the Brier
+score was 0.31.
+
+That is materially better evidence than existed when this ADR was written, but
+it is not production approval. It is one complete run of one model and route
+over nine synthetic cases. It does not measure model drift, wider adversarial
+coverage, multilingual behavior, stale or conflicting knowledge, or operation
+by a representative set of self-hosters. The product roadmap also keeps the AI
+tier behind the core support product and 1.0 hardening work.
+
+**Decision: reaffirm the deferral of autonomous visitor replies.** No
+visitor-facing answer-agent implementation should begin from this evaluation
+result. This is not a permanent prohibition; a future ADR may permit a bounded
+slice after the 1.0 core is proven and the proposed runtime design can show:
+
+- answers grounded only in published same-site articles, with citations;
+- default human handoff when confidence or grounding is insufficient;
+- per-site enablement that is off by default and plainly disclosed to visitors;
+- an account-visible audit record for every autonomous reply;
+- no customer-side effects, transcript corpus, or training workflow; and
+- a broader versioned suite with repeated current-model results on every route
+  the project proposes to support.
+
+Until then, the existing agent-controlled copilot remains the approved product
+boundary. Reaffirming the deferral completes the decision requested by #764;
+it does not claim that the deferred answer-agent work shipped.
+
 ## Consequences
 
 - AI package installation, provider environment variables, queue/process needs,
