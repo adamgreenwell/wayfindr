@@ -54,8 +54,9 @@ test('openrouter calls require zero retention and stay on one upstream provider'
     $settings->set('ai.api_key', 'openrouter-test-key');
     $settings->applyOverrides();
 
+    Http::preventStrayRequests();
     Http::fake([
-        'openrouter.ai/api/v1/chat/completions' => Http::response([
+        'https://openrouter.ai/api/v1/chat/completions' => Http::response([
             'id' => 'generation-test',
             'model' => 'anthropic/claude-sonnet-4.5',
             'choices' => [[
