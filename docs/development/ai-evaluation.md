@@ -181,11 +181,17 @@ the repository, but its retention, access, and provider use remain that
 operator's responsibility. Running capture with a private fixture sends that
 fixture's question and articles to the configured provider.
 
-## Next gate
+## Recorded decision boundary
 
-The harness can now capture, gate, and score provider output, but Wayfindr still
-has no customer-facing answer runtime and no approved production threshold. A
-representative provider/model run and human review of its private failures are
-still evidence, not an ADR decision. That evidence can now feed the next issue
-#764 gate: explicitly amend, supersede, or reaffirm ADR 0004 before any
-visitor-facing implementation begins.
+The harness can capture, gate, and score provider output, but Wayfindr still
+has no customer-facing answer runtime or approved production threshold. A
+provider/model run and human review remain evidence rather than a safety
+certificate.
+
+On September 8, 2026, a deployed GPT-5.2 run passed all nine bundled synthetic
+cases and policy thresholds. The resulting [ADR 0004 reassessment](../decisions/0004-ai-as-assistive-product-and-development-layer.md#reassessment-on-2026-09-08)
+reaffirmed the deferral of autonomous visitor replies: one green narrow run did
+not establish the broader, repeated evidence required for production use. The
+agent-controlled copilot remains the approved boundary, and future
+reconsideration requires another explicit ADR decision before visitor-facing
+implementation begins.

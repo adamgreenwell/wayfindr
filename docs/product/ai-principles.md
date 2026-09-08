@@ -78,10 +78,12 @@ errors. The scoring path runs without a provider key or customer data. A
 separate explicit capture command can record provider/model-tagged output from
 synthetic fixtures into a private file outside the repository.
 
-This is evidence infrastructure, not an autonomous answer feature or an ADR
-change. A green bundled baseline proves that the deterministic scorer works; it
-does not prove a live model is suitable for visitors, and the bundled 80%
-confidence threshold is not production approval. Representative provider runs
-and human review still come before an explicit decision to amend, supersede, or
-reaffirm ADR 0004. No customer-facing implementation begins before that
-decision.
+This is evidence infrastructure, not an autonomous answer feature. A green
+bundled baseline proves that the deterministic scorer works; it does not prove
+a live model is suitable for visitors, and the bundled 80% confidence threshold
+is not production approval. The September 8, 2026
+[ADR 0004 reassessment](../decisions/0004-ai-as-assistive-product-and-development-layer.md#reassessment-on-2026-09-08)
+considered a live synthetic provider run and reaffirmed the deferral of
+autonomous visitor replies. The agent-controlled copilot remains the approved
+product boundary until broader repeated evidence and a future explicit ADR
+decision say otherwise.
