@@ -142,8 +142,9 @@ behaviour rather than against an assumption about it.
 | `test-self-host-compose-template.sh` | The compose stack renders and wires services as intended. |
 | `test-self-host-env-value.sh` | `install.sh`'s dotenv reading agrees with Compose's, across every spelling an operator might write. |
 | `test-self-host-classification.sh` | The installer preflight and the artifact guard classify actions identically. |
+| `test-self-host-release-resolution.sh` | Release discovery distinguishes a fully paginated, authoritative absence of a usable release tag from HTTP, transport, and unreadable-response failures without using the public network. |
 
-### Why the last two are differential tests
+### Why the dotenv and classification checks are differential tests
 
 [ADR 0013](../decisions/0013-upgrade-preflight-and-release-requirements.md)
 records that the installer preflight is a *second implementation* of the upgrade

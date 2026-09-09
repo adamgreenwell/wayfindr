@@ -215,32 +215,398 @@ ENV_FILE="$TARGET_DIR/.env"
 # Stack files and image must describe the same release: without an explicit
 # --ref, pin both to the latest release tag. Before the first release the
 # API has none and everything follows main/latest.
+github_json_tags() {
+    # The installer cannot assume jq, Python, PHP, or Node exists on a fresh
+    # host. Parse GitHub's response with POSIX awk, validate the whole document,
+    # and emit only the schema-correct top-level tag field. A regex over valid
+    # JSON could otherwise mistake a nested lookalike for the release to run.
+    LC_ALL=C awk -v mode="$1" '
+        function is_unescaped_control(character) {
+            # JSON rejects U+0000 through U+001F inside strings. Spell the
+            # bytes out so DEL (U+007F), which JSON permits, is not rejected by
+            # the broader locale-dependent [[:cntrl:]] character class.
+            return index("\001\002\003\004\005\006\007\010\011\012\013\014\015\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037", character) > 0
+        }
+
+        function skip_whitespace(    character) {
+            while (position <= json_length) {
+                character = substr(json, position, 1)
+                if (character != " " && character != "\t" && character != "\n" && character != "\r") {
+                    break
+                }
+                position++
+            }
+        }
+
+        function parse_literal(literal) {
+            if (substr(json, position, length(literal)) != literal) {
+                return 0
+            }
+            position += length(literal)
+            return 1
+        }
+
+        function parse_string(    character, escaped, digit) {
+            if (substr(json, position, 1) != "\"") {
+                return 0
+            }
+            position++
+            parsed_string = ""
+            parsed_string_escaped = 0
+
+            while (position <= json_length) {
+                character = substr(json, position, 1)
+                if (character == "\"") {
+                    position++
+                    return 1
+                }
+                if (is_unescaped_control(character)) {
+                    return 0
+                }
+                if (character != "\\") {
+                    parsed_string = parsed_string character
+                    position++
+                    continue
+                }
+
+                position++
+                escaped = substr(json, position, 1)
+                parsed_string_escaped = 1
+                if (escaped == "u") {
+                    for (digit = 1; digit <= 4; digit++) {
+                        if (substr(json, position + digit, 1) !~ /^[0-9a-fA-F]$/) {
+                            return 0
+                        }
+                    }
+                    position += 5
+                } else if (escaped ~ /^[\"\\\/bfnrt]$/) {
+                    position++
+                } else {
+                    return 0
+                }
+            }
+
+            return 0
+        }
+
+        function parse_number(    character) {
+            if (substr(json, position, 1) == "-") {
+                position++
+            }
+
+            character = substr(json, position, 1)
+            if (character == "0") {
+                position++
+            } else if (character ~ /^[1-9]$/) {
+                do {
+                    position++
+                    character = substr(json, position, 1)
+                } while (character ~ /^[0-9]$/)
+            } else {
+                return 0
+            }
+
+            if (substr(json, position, 1) == ".") {
+                position++
+                if (substr(json, position, 1) !~ /^[0-9]$/) {
+                    return 0
+                }
+                while (substr(json, position, 1) ~ /^[0-9]$/) {
+                    position++
+                }
+            }
+
+            character = substr(json, position, 1)
+            if (character == "e" || character == "E") {
+                position++
+                character = substr(json, position, 1)
+                if (character == "+" || character == "-") {
+                    position++
+                }
+                if (substr(json, position, 1) !~ /^[0-9]$/) {
+                    return 0
+                }
+                while (substr(json, position, 1) ~ /^[0-9]$/) {
+                    position++
+                }
+            }
+
+            return 1
+        }
+
+        function parse_array(depth, role,    character, previous_tag_count) {
+            if (depth > 64) {
+                return 0
+            }
+            position++
+            skip_whitespace()
+            if (substr(json, position, 1) == "]") {
+                position++
+                return 1
+            }
+
+            while (position <= json_length) {
+                if (role == "tags") {
+                    if (substr(json, position, 1) != "{") {
+                        return 0
+                    }
+                    previous_tag_count = tag_count
+                    if (!parse_object(depth + 1, "tag") || tag_count != previous_tag_count + 1) {
+                        return 0
+                    }
+                } else if (!parse_value(depth + 1)) {
+                    return 0
+                }
+                skip_whitespace()
+                character = substr(json, position, 1)
+                if (character == "]") {
+                    position++
+                    return 1
+                }
+                if (character != ",") {
+                    return 0
+                }
+                position++
+                skip_whitespace()
+            }
+
+            return 0
+        }
+
+        function finish_object(role, target_count, item_tag) {
+            if (role == "release") {
+                if (target_count != 1) return 0
+                release_tag = item_tag
+            } else if (role == "tag") {
+                if (target_count != 1) return 0
+                tag_values[++tag_count] = item_tag
+            }
+            return 1
+        }
+
+        function parse_object(depth, role,    character, key, key_escaped, target_count, item_tag) {
+            if (depth > 64) {
+                return 0
+            }
+            position++
+            skip_whitespace()
+            if (substr(json, position, 1) == "}") {
+                position++
+                return finish_object(role, target_count, item_tag)
+            }
+
+            while (position <= json_length) {
+                if (!parse_string()) {
+                    return 0
+                }
+                key = parsed_string
+                key_escaped = parsed_string_escaped
+                skip_whitespace()
+                if (substr(json, position, 1) != ":") {
+                    return 0
+                }
+                position++
+                skip_whitespace()
+
+                if (!key_escaped && ((role == "release" && key == "tag_name") || (role == "tag" && key == "name"))) {
+                    target_count++
+                    if (target_count != 1 || !parse_string() || parsed_string_escaped) {
+                        return 0
+                    }
+                    item_tag = parsed_string
+                } else if (!parse_value(depth + 1)) {
+                    return 0
+                }
+                skip_whitespace()
+                character = substr(json, position, 1)
+                if (character == "}") {
+                    position++
+                    return finish_object(role, target_count, item_tag)
+                }
+                if (character != ",") {
+                    return 0
+                }
+                position++
+                skip_whitespace()
+            }
+
+            return 0
+        }
+
+        function parse_value(depth,    character) {
+            if (depth > 64) {
+                return 0
+            }
+            skip_whitespace()
+            character = substr(json, position, 1)
+            if (character == "{") return parse_object(depth, "")
+            if (character == "[") return parse_array(depth, "")
+            if (character == "\"") return parse_string()
+            if (character == "-" || character ~ /^[0-9]$/) return parse_number()
+            if (character == "t") return parse_literal("true")
+            if (character == "f") return parse_literal("false")
+            if (character == "n") return parse_literal("null")
+            return 0
+        }
+
+        {
+            if (NR > 1) json = json "\n"
+            json = json $0
+        }
+
+        END {
+            position = 1
+            json_length = length(json)
+            skip_whitespace()
+            if (mode == "release" && substr(json, position, 1) == "{") {
+                valid = parse_object(1, "release")
+            } else if (mode == "tags" && substr(json, position, 1) == "[") {
+                valid = parse_array(1, "tags")
+            } else {
+                valid = 0
+            }
+            skip_whitespace()
+            if (!valid || position <= json_length) {
+                exit 1
+            }
+
+            if (mode == "release") {
+                print release_tag
+            } else {
+                print "COUNT:" (tag_count + 0)
+                for (tag = 1; tag <= tag_count; tag++) {
+                    print tag_values[tag]
+                }
+            }
+        }
+    '
+}
+
+is_release_tag() {
+    # Published images use Docker-compatible ASCII tags. Do not let an
+    # otherwise valid JSON string introduce a slash, control byte, or another
+    # character that changes the ref/image boundary.
+    local LC_ALL=C
+
+    case "$1" in
+        v[0-9]*[!0-9A-Za-z._-]*|'') return 1 ;;
+        v[0-9]*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+github_api_get() {
+    local response curl_exit=0
+
+    GITHUB_API_BODY=""
+    GITHUB_API_STATUS=""
+    GITHUB_API_ERROR=""
+
+    # Do not use -f: the response status is part of the answer. A 404 from the
+    # latest-release endpoint means "try tags", while 403/429/5xx mean GitHub
+    # could not answer and must never be restated as "there is no release".
+    response="$(curl -sSL -w $'\n%{http_code}' "$1")" || curl_exit=$?
+
+    if [ "$curl_exit" -ne 0 ]; then
+        GITHUB_API_ERROR="curl exit $curl_exit"
+        return 1
+    fi
+
+    GITHUB_API_STATUS="${response##*$'\n'}"
+    GITHUB_API_BODY="${response%$'\n'*}"
+}
+
+release_discovery_failed() {
+    if [ "$UPGRADE" = "1" ]; then
+        die "Could not determine the latest published release from GitHub ($1). The failed lookup did not pull or start an image. Retry when GitHub's release API is reachable. An explicit --ref pins the target, but the upgrade preflight still needs the published release history. See https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/install.md."
+    fi
+
+    die "Could not determine the latest published release from GitHub ($1). The failed lookup did not pull or start an image. Choose a tag at https://github.com/adamgreenwell/wayfindr/releases and rerun with --ref vX.Y.Z. See https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/install.md."
+}
+
 resolve_release() {
-    local latest
+    local latest tag_names page page_result page_count page_tags
 
     if [ -n "$REF" ]; then
         # An explicit release tag pins the image too; branches and SHAs have
         # no matching published image, so they run :latest deliberately.
-        case "$REF" in
-            v[0-9]*)
-                IMAGE_TAG="${REF#v}"
-                say "Pinned to $REF (stack files and image)."
-                ;;
-            *)
-                say "Using ref $REF with the :latest image (no matching published image for non-tag refs)."
-                ;;
-        esac
+        if is_release_tag "$REF"; then
+            IMAGE_TAG="${REF#v}"
+            say "Pinned to $REF (stack files and image)."
+        else
+            say "Using ref $REF with the :latest image (no matching published image for non-tag refs)."
+        fi
 
         return
     fi
 
-    latest="$(curl -fsSL "$RELEASES_API" 2>/dev/null | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)" || true
-
-    # A bare v* git tag publishes an image without creating a GitHub
-    # Release — resolve through the tags API before ever considering main.
-    if [ -z "$latest" ]; then
-        latest="$(curl -fsSL "$TAGS_API" 2>/dev/null | sed -n 's/.*"name": *"\(v[0-9][^"]*\)".*/\1/p' | sort -V | tail -n 1)" || true
+    if ! github_api_get "$RELEASES_API"; then
+        release_discovery_failed "release API request failed with $GITHUB_API_ERROR"
     fi
+
+    case "$GITHUB_API_STATUS" in
+        200)
+            if ! latest="$(printf '%s' "$GITHUB_API_BODY" | github_json_tags release)"; then
+                release_discovery_failed "release API returned malformed or unexpected JSON with HTTP 200"
+            fi
+
+            is_release_tag "$latest" \
+                || release_discovery_failed "release API returned HTTP 200 without a usable v* release tag"
+
+            REF="$latest"
+            IMAGE_TAG="${latest#v}"
+            say "Pinned to release $latest."
+            return
+            ;;
+        404)
+            # A repository can publish a v* tag (and therefore an image) without
+            # creating a GitHub Release. Only this authoritative "no release"
+            # response is allowed to fall back to the tags endpoint.
+            ;;
+        *)
+            release_discovery_failed "release API returned HTTP $GITHUB_API_STATUS"
+            ;;
+    esac
+
+    # A bare v* git tag publishes an image without creating a GitHub Release —
+    # resolve through every tags page before ever considering main. A full
+    # first page of newer non-release tags is not evidence that no release tag
+    # exists; only a short page closes the list authoritatively.
+    page=1
+    tag_names=""
+
+    while :; do
+        if ! github_api_get "${TAGS_API}&page=${page}"; then
+            release_discovery_failed "tags API page $page request failed with $GITHUB_API_ERROR"
+        fi
+
+        if [ "$GITHUB_API_STATUS" != "200" ]; then
+            release_discovery_failed "tags API page $page returned HTTP $GITHUB_API_STATUS"
+        fi
+
+        if ! page_result="$(printf '%s' "$GITHUB_API_BODY" | github_json_tags tags)"; then
+            release_discovery_failed "tags API page $page returned malformed or unexpected JSON with HTTP 200"
+        fi
+
+        page_count="${page_result%%$'\n'*}"
+        page_count="${page_count#COUNT:}"
+        page_tags="$(printf '%s\n' "$page_result" | sed '1d')"
+
+        [ -n "$page_tags" ] && tag_names="${tag_names}${page_tags}
+"
+
+        [ "$page_count" -lt 100 ] && break
+
+        page=$((page + 1))
+        if [ "$page" -gt 20 ]; then
+            release_discovery_failed "tags API remained full after 20 pages"
+        fi
+    done
+
+    latest="$(printf '%s\n' "$tag_names" \
+        | LC_ALL=C grep -E '^v[0-9][0-9A-Za-z._-]*$' \
+        | sort -V \
+        | tail -n 1 || true)"
 
     if [ -n "$latest" ]; then
         REF="$latest"
@@ -1493,7 +1859,7 @@ require_runnable_image() {
     # fail on the pull with a confusing error, so fail early with the way
     # forward instead.
     if [ "$PRERELEASE" = "1" ] && [ -z "${WAYFINDR_IMAGE:-}" ]; then
-        die "No published Wayfindr release exists yet, so there is no image to pull. Either set WAYFINDR_IMAGE to an image you have built, or clone the repo and use the compose.build.yml overlay (see docker/self-hosting/README.md)."
+        die "No published Wayfindr release exists yet, so there is no image to pull. Either set WAYFINDR_IMAGE to an image you have built, or follow the source-build path in https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/install.md."
     fi
 }
 

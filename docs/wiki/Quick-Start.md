@@ -50,6 +50,21 @@ everything else `https://`, and the installer prints the URL it settled on.
 The installer writes the stack to `./wayfindr`, generates secrets, starts the
 services, runs migrations, waits for health, and prints the first-run URL.
 
+By default it asks GitHub for the latest stable release, then pins both the
+stack files and image to that tag. If the GitHub API is unavailable or rate
+limited, the installer stops before pulling or starting an image instead of
+guessing. Choose the latest stable release tag shown on the
+[releases page](https://github.com/adamgreenwell/wayfindr/releases), then repeat
+the command with that tag explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
+  | bash -s -- --app-url https://support.example.com --ref vX.Y.Z
+```
+
+`--ref` pins the stack files and official image together. Replace `vX.Y.Z`
+with the release tag you chose; do not guess a tag from an image name.
+
 **`localhost` binds to loopback only.** That is deliberate — nothing is exposed
 to your network — but it means you cannot reach it from another machine. If you
 plan to browse from your laptop, use the VM's address or a name, not
