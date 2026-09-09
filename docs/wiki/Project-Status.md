@@ -2,11 +2,12 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-1.0. As of August 25, 2026, the latest public release is
-`v0.7.0`, and the next development line is `0.7.1`. The product has moved from
-"the core support loop exists" to a support desk reachable by widget, email and
-help centre, with a measurement surface of its own. "Reachable by email" carries
-one qualification: no provider can post to the inbound endpoint directly,
+Wayfindr is pre-1.0. The latest public release is `v0.7.0` (August 25, 2026),
+and the current unreleased development line is `0.8.0`. The product has moved
+from "the core support loop exists" to a support desk reachable by widget,
+email and help centre, with a measurement surface of its own. "Reachable by
+email" carries one qualification: no provider can post to the inbound endpoint
+directly,
 because Wayfindr verifies a signature scheme none of them emit, so that channel
 needs an intermediary the project does not ship ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
 

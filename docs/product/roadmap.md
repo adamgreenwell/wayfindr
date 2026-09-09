@@ -2,8 +2,10 @@
 
 This roadmap is directional and should not include private business strategy.
 
-As of August 25, 2026, the latest public release is `v0.7.0`, and the next
-development line is `0.7.1`.
+The latest public release is `v0.7.0` (August 25, 2026), and the current
+unreleased development line is `0.8.0`. Under the project's pre-1.0 versioning
+contract, features, additive schema, or operator action advance the minor slot;
+`0.8.0` is a development identity, not a claim that the release is published.
 
 `1.0.0` is scoped to finishing the core support product and proving it, rather
 than to feature parity: the remaining Tier 1 gaps (live visitor monitoring, and
