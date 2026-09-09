@@ -8,30 +8,48 @@ contract, features, additive schema, or operator action advance the minor slot;
 `0.8.0` is a development identity, not a claim that the release is published.
 
 `1.0.0` is scoped to finishing the core support product and proving it, rather
-than to feature parity: the remaining Tier 1 gaps (live visitor monitoring, and
-the dashboard surfaces still rendering English), first-class localization
-including timezone and regional settings, and hardening — upgrade paths,
-performance, and third-party install validation. Tier 2 parity work and the AI
-tier are explicitly post-1.0.
+than to feature parity. The two gaps that framed it are closed: live visitor
+monitoring shipped, and localization landed as a platform property — timezone,
+region, and where language is configured — rather than as a translation pass.
+Performance baselines have been measured instead of assumed.
+
+**One acceptance criterion is still open, and it is deliberately the one the
+author cannot satisfy alone:**
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797) — somebody who is
+not the author installs Wayfindr from a published artifact and it works.
+
+Tier 2 parity work is no longer post-1.0 either; it shipped. The AI tier is
+half shipped and half deliberately deferred, which is recorded under
+*Deferred On Purpose* below rather than left implied.
 
 ## Shipped
 
-The product has moved past a spine. It now includes:
+The product has moved past a spine. Both competitive-gap tiers behind it —
+[#741](https://github.com/adamgreenwell/wayfindr/issues/741) (Tier 1) and
+[#751](https://github.com/adamgreenwell/wayfindr/issues/751) (Tier 2) — are
+closed. It now includes:
 
-- Email as a second conversation channel — inbound still needs an intermediary
-  in front of it ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)) — a searchable help centre inside the
-  widget, per-site support hours with an away state and offline capture, and a
-  configurable pre-chat form.
+- Email as a second conversation channel. Mailgun and Postmark inbound webhooks
+  can now be pointed straight at Wayfindr
+  ([#799](https://github.com/adamgreenwell/wayfindr/issues/799) is closed; the
+  re-signing intermediary 0.7.0 required is no longer one), and Wayfindr's own
+  signature scheme still verifies for anyone who built it. See
+  [Inbound Mail](../self-hosting/inbound-mail.md). Alongside it: a searchable
+  help centre inside the widget, per-site support hours with an away state and
+  offline capture, and a configurable pre-chat form.
 - Reporting over conversations and tickets, plus visitor satisfaction ratings.
 - Per-site widget appearance, a widget language catalogue in English and German,
-  and an agent-selectable dashboard language in English, German and Italian on
-  the surfaces extracted so far: the profile pages, conversation queue and
-  detail, ticket queue, live-visitors board, visitor directory and profile,
-  reply templates, ticket labels, articles, API tokens, and outbound webhooks.
+  and an agent-selectable dashboard language in English, German and Italian.
+  Coverage is now most of the product rather than a handful of pages; what is
+  and is not extracted is described immediately below.
 
-  **Much of the rest is still English**: the home page, Alerts, Reports, site
-  settings, ticket detail, the account overview, Integrations, Operator access,
-  Audit, and the operator console.
+  **The operator console is now fully extracted**, and so is the great majority
+  of the dashboard — Alerts, Reports, ticket detail, sites and site settings,
+  the account audit, break-glass, and the security, SLA, automation and webhook
+  pages. What still renders English is the agent home page, the Integrations
+  index, custom roles, the readiness page, and support-code lookup. The CSV
+  exports keep stable English headers deliberately, because a localized cell is
+  reparsed by whatever spreadsheet opens it.
 
   `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
   are translated, and it is the only place worth reading: a page missing from it
@@ -42,13 +60,13 @@ The product has moved past a spine. It now includes:
   **Write endpoints are the exception, and it is deliberate.** A form submitted
   from a translated page answers in that page's language even when its own route
   is unlisted, because `DashboardLanguage::forRequest()` resolves from the
-  surface the response renders back to. Closing a ticket from the conversation
-  panel produces German validation; the same action from the untranslated ticket
-  page produces English. The language belongs to the page the agent is looking
-  at, not to the endpoint.
+  surface the response renders back to. The same action reached from a page that
+  is still English answers in English. The language belongs to the page the agent
+  is looking at, not to the endpoint.
 
-  A German agent moving from the queue to Reports changes language mid-session,
-  and finishing that is the remaining half.
+  A German agent can now cross most of the product without the language
+  changing under them. The agent home page is the most-met of the surfaces that
+  still do.
 
   The widget and the dashboard also carry different language sets on purpose
   rather than by omission: Italian is agent-facing, and adding it to the widget
@@ -75,9 +93,36 @@ The product has moved past a spine. It now includes:
   a default install reports nothing and shows no visitor any notice. Turning it
   off again deletes the visitors it collected who never made contact.
 
-  The board that reads it is still in review, so an operator who enables
-  presence today is collecting for the visitor directory rather than for a live
-  view.
+  The board that reads it has since shipped, so an operator who turns presence
+  on gets the live view as well as the visitor directory.
+
+- Throughput tooling for a desk with more than one agent:
+  [SLA policies](sla-policies.md) with breach warnings,
+  [automatic assignment and routing](automatic-assignment-and-routing.md), a
+  typed support lifecycle underneath condition-to-action automation rules and
+  macros, bulk actions across the conversation and ticket queues, and a command
+  palette with global keyboard shortcuts and a reference sheet.
+- Agent alerting that finally uses the socket already open: background alerts,
+  web push, quiet hours, and cross-channel de-duplication so one event does not
+  arrive three times.
+- [Proactive and triggered messages](proactive-messaging.md), defined as rules
+  and delivered to the visitors who match them — the first thing the widget does
+  without being spoken to first.
+- Outbound webhooks (ADR 0020) beside the read and write API surfaces, so an
+  integration no longer has to be built inside Wayfindr to exist.
+- An agent copilot inside ADR 0004's assistive boundary: on-demand conversation
+  summaries, editable reply drafts, suggested ticket details at conversion, and
+  suggested knowledge snippets. Every one is a suggestion an agent reviews;
+  each is optional, labelled, scrubbed and bounded at one seam before the
+  provider, and absent rather than broken when no provider is configured. The
+  operator chooses the driver, model, credential and endpoint — see
+  [Agent Copilot Providers](../self-hosting/agent-copilot-providers.md).
+- A provider-free evaluation harness for that copilot, with a confidence and
+  refusal policy and an opt-in private capture path. It exists to decide what AI
+  may do next on evidence rather than on enthusiasm.
+- Measured performance baselines rather than assumed ones: Reverb concurrent
+  agent capacity, heavy-page cobrowse transport, attachment retention at a large
+  object count, and the dashboard and report tabs under a desk's worth of data.
 
 Underneath that, the original foundation:
 
@@ -114,11 +159,15 @@ Underneath that, the original foundation:
   protection, private vulnerability reporting, Dependabot, and a repo-authored
   GitHub Wiki.
 
-## Next Alpha Focus
+## Before 1.0.0
 
-These are the nearest slices because the product spine exists, the repeatable
-self-hosting evidence gate has passed, and polish should stay demand-gated.
+The feature gaps that defined the pre-1.0 work are closed, so what is left is
+proof rather than scope. Polish stays demand-gated.
 
+- **The open milestone item**, and the only one an outsider can settle:
+  [#797](https://github.com/adamgreenwell/wayfindr/issues/797) — hand a published
+  artifact to somebody who is not the author and watch them install it. Every
+  install claim before that is the author testing their own work.
 - Keep reliability evidence repeatable: use the
   [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
   for future release candidates. The August 12 matrix proved clean install,
@@ -135,11 +184,13 @@ self-hosting evidence gate has passed, and polish should stay demand-gated.
   notifications are parked in
   [External Ticket Integrations](external-ticket-integrations.md) until real
   traffic proves a specific need.
-- Ticket workflow comfort: smoother transitions between conversation, ticket,
-  visitor, and support-code context; clearer “what needs attention” cues; and
-  less page-hopping for common agent moves.
-- Alert calm: keep the implemented digest/manual-escalation foundation stable,
-  observable, and metadata-safe before adding automatic urgency rules. See
+- Ticket workflow comfort: bulk actions, the command palette and global
+  shortcuts took the throughput half of this. What remains is context — smoother
+  transitions between conversation, ticket, visitor, and support-code, and
+  clearer “what needs attention” cues.
+- Alert calm: SLA policies and automation rules now supply the urgency rules the
+  digest foundation was waiting for. Keep both observable and metadata-safe under
+  real traffic before widening them. See
   [Account Escalation Policies](account-escalation-policies.md).
 - Operator hardening: clearer setup/recovery guidance, safer instance activity,
   process-health affordances, platform-action audit inventory, and continued
@@ -147,6 +198,32 @@ self-hosting evidence gate has passed, and polish should stay demand-gated.
 - Privacy and retention controls: transcript/message retention visibility,
   operator-owned defaults, deletion/export planning, and warnings that help
   self-hosters understand their responsibility.
+
+## Deferred On Purpose
+
+Not everything absent from the product is a gap waiting for time. One thing is
+absent because the decision went the other way, and it belongs on a roadmap so
+nobody plans around its arrival.
+
+**A visitor-facing answer agent** — AI replying to a customer without an agent
+in the loop — is deferred by
+[ADR 0004](../decisions/0004-ai-as-assistive-product-and-development-layer.md)
+and tracked as the unchecked half of
+[#762](https://github.com/adamgreenwell/wayfindr/issues/762). The evaluation
+work behind it is finished, not skipped: a provider-free harness, a confidence
+and refusal policy, and a rerun against a deployed model that passed 9 of 9
+cases with no unsafe answer. That evidence was judged useful and insufficient,
+and the ADR was reaffirmed rather than relaxed.
+
+One narrow, wholly synthetic run through a single provider route establishes
+nothing about model or prompt drift, adversarial and multilingual coverage,
+stale or conflicting knowledge, or representative self-hosting failure modes.
+Reconsideration has a stated sequence — broaden the evaluation set, record drift
+across more than one run and model revision, revisit the ADR with that evidence,
+and only then define a visitor-facing runtime with grounding, low-confidence
+handoff, per-site opt-in and disclosure, and reply audit.
+
+Until that happens, the reply a customer reads belongs to a human.
 
 ## Later Expansion
 
@@ -168,8 +245,7 @@ stable.
 - Direct ticket attachments, internal-note attachments, office-document opt-ins,
   pre-signed attachment URLs, and broader attachment workflows only if
   conversation-message attachments prove the demand and operator controls.
-- Agent-assisted summaries, reply drafts, and ticket suggestions when they
-  improve concrete workflows without becoming AI decoration.
 - SPA route tracking and richer host-app SDKs.
 - WordPress, Laravel, Next.js, React, and plain JavaScript integration polish.
-- Webhooks and broader automation surfaces.
+- Automation surfaces beyond the shipped rules, macros and outbound webhooks —
+  widened only where real accounts hit the edges of what those already do.
