@@ -7649,10 +7649,7 @@
       .replace(/'/g, '&#039;');
   }
 
-  function autoInitFromCurrentScript() {
-    var doc = root && root.document;
-    var script = doc && doc.currentScript;
-
+  function autoInitFromScript(script) {
     if (!script || !script.dataset || !script.dataset.wayfindrSiteKey) {
       return;
     }
@@ -7706,8 +7703,15 @@
     resolveAnonymousId: resolveAnonymousId,
   };
 
+  // document.currentScript exists only while this classic script is executing;
+  // a timer callback observes null. Capture the generated snippet now, while it
+  // is identifiable, and defer only the work that builds the widget.
+  var autoInitScript = root && root.document && root.document.currentScript;
+
   if (typeof setTimeout === 'function') {
-    setTimeout(autoInitFromCurrentScript, 0);
+    setTimeout(function () {
+      autoInitFromScript(autoInitScript);
+    }, 0);
   }
 
   return api;
