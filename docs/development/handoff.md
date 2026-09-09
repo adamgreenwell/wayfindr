@@ -791,10 +791,12 @@ rewrite those as runtime failures or as current production restore proof.
 
 ### Next
 
-- `v0.7.0` is the latest public artifact. The line from here is `0.7.1`, `0.7.2`
-  and so on as features land, with `1.0.0` scoped to the remaining Tier 1 gaps,
-  first-class localization, and hardening — not to feature parity. Tier 2 and
-  the AI tier are post-1.0.
+- `v0.7.0` is the latest public artifact. The current unreleased line is
+  `0.8.0`: pre-1.0 features, additive schema, or operator action advance the
+  minor slot under ADR 0012. A later fixes-only release may use `0.8.1`;
+  another feature or action-bearing line advances to `0.9.0`. None of those
+  development identities claims publication. `1.0.0` remains scoped to the
+  remaining Tier 1 proof and hardening work, not feature parity.
 - Localization is a first-class concern, not a feature: interface language,
   timezone, and regional formatting belong in first-run setup and the operator
   console, and every agent-facing timestamp currently renders in UTC.

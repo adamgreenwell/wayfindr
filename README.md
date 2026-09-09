@@ -124,8 +124,10 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
-Pre-1.0. The latest public release is `v0.7.0` (August 25, 2026), and the next
-development line is `0.7.1`.
+Pre-1.0. The latest public release is `v0.7.0` (August 25, 2026), and the
+current unreleased development line is `0.8.0`. Under the project's pre-1.0
+versioning contract, the minor bump reflects the features and schema added
+since `v0.7.0`; it does not claim that `v0.8.0` has been published.
 
 Self-hosting and upgrades from published artifacts have been proved repeatable
 on hosted runners and disposable bare-metal guests — **for the artifacts that

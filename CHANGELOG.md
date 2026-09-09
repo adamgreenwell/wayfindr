@@ -129,7 +129,7 @@ page view that was not there before.
   pruned rather than held forever.
 
 - **The conversation detail page speaks the agent's language**, including its
-  cobrowse panel — the half that 0.7.0 said would arrive in 0.7.1.
+  cobrowse panel — the half that 0.7.0 said would arrive in the next release.
 
 - **`wayfindr:translate-catalogue`**, the command that drafted the Italian pack.
   It reads a new `MURF_API_KEY` and **sends catalogue strings to an outside
@@ -176,6 +176,20 @@ page view that was not there before.
   reparsed by whatever spreadsheet opens it.
 
 ### Fixed
+
+- **Generated widget snippets initialize again.** The bundle deferred its
+  automatic setup and only then read `document.currentScript`, which is no
+  longer the executing script by that point. The script loaded successfully,
+  defined `window.Wayfindr`, made no API request, rendered nothing, and reported
+  no error. It now captures the embedding script synchronously and carries that
+  exact element into deferred initialization.
+
+- **The installer distinguishes release-discovery failure from an absent
+  release.** HTTP errors, rate limits, transport failures, malformed responses,
+  and an authoritatively empty release list now produce different diagnostics.
+  A fresh install whose GitHub API lookup is unavailable is directed to retry
+  with an explicit `--ref <tag>`, and the public Quick Start now documents that
+  escape hatch.
 
 - **The unattended-alert digest was mailing a raw UTC timestamp** —
   `2026-08-24T15:05:00.000000Z`, mid-sentence — instead of a readable time on
@@ -404,7 +418,8 @@ half of interface language support.
   itself, the conversation queue, the ticket list, and the app shell around
   them — the rail, the topbar and the search.
 
-  **The conversation detail page does not yet.** It arrives in 0.7.1. A page
+  **The conversation detail page does not yet.** It was planned for the next
+  release after 0.7.0. A page
   that has not been translated renders in English rather than showing a
   half-translated screen, and the shell renders in whatever language the page
   it is framing does. So an agent who chooses German sees German on the queue
