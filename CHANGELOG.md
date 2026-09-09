@@ -177,7 +177,7 @@ page view that was not there before.
 
 ### Fixed
 
-- **Generated widget snippets initialize again.** The bundle deferred its
+- **Generated widget snippets now initialize automatically.** The bundle deferred its
   automatic setup and only then read `document.currentScript`, which is no
   longer the executing script by that point. The script loaded successfully,
   defined `window.Wayfindr`, made no API request, rendered nothing, and reported
