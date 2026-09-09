@@ -17,6 +17,44 @@ test('attaches the public API to window for classic script tags', () => {
   assert.equal(typeof sandbox.window.Wayfindr.createClient, 'function');
 });
 
+test('auto-initializes the generated classic script after its deferred boot', async (t) => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/wayfindr-widget.js'), 'utf8');
+  const requests = [];
+  const dom = new JSDOM('<!doctype html><html><head></head><body></body></html>', {
+    url: 'https://shop.example.test/help',
+    runScripts: 'dangerously',
+    pretendToBeVisual: true,
+  });
+
+  t.after(() => dom.window.close());
+
+  dom.window.fetch = async (url) => {
+    requests.push(String(url));
+
+    return jsonResponse(200, {
+      data: {
+        appearance: null,
+        presence: { reports: false, page_urls: false },
+      },
+    });
+  };
+
+  const script = dom.window.document.createElement('script');
+  script.dataset.wayfindrApiBaseUrl = 'https://support.example.test';
+  script.dataset.wayfindrSiteKey = 'site_public_generated_snippet';
+  script.textContent = source;
+  dom.window.document.body.appendChild(script);
+
+  await new Promise((resolve) => dom.window.setTimeout(resolve, 0));
+
+  assert.equal(typeof dom.window.Wayfindr.init, 'function');
+  assert.equal(dom.window.document.querySelectorAll('.wayfindr-widget').length, 1);
+  assert.ok(
+    requests.includes('https://support.example.test/api/widget/appearance?site_public_key=site_public_generated_snippet'),
+    'generated snippets should request the site configuration automatically',
+  );
+});
+
 test('exposes stock cobrowse payload budget defaults', () => {
   assert.deepEqual(Wayfindr.cobrowsePayloadBudget, {
     mutationBatchMaxBytes: 60000,
