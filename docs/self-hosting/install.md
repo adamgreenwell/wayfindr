@@ -36,6 +36,28 @@ downloads the application image, so expect a couple of minutes. FrankenPHP
 obtains and renews the TLS certificate automatically. Re-running converges;
 secrets are preserved.
 
+Without `--ref`, the installer asks GitHub for the latest stable release and
+pins both the stack files and official image to it. An unavailable, rate-limited,
+or unreadable GitHub API response makes the installer stop instead of guessing;
+it is not evidence that no release exists. Choose the latest stable release
+tag shown on the
+[releases page](https://github.com/adamgreenwell/wayfindr/releases) and pass it
+explicitly to bypass discovery:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
+  | bash -s -- --app-url https://support.example.com --ref vX.Y.Z
+```
+
+Replace `vX.Y.Z` with the chosen release tag. A release-style `v*` ref pins the
+matching image as well as the downloaded stack files; branches and commit SHAs
+use the `latest` image and are not a release-artifact install.
+
+For an upgrade, `--ref` pins the target but is not an offline bypass: the
+preflight still reads the published release history so it can catch required
+steps between the running and target versions. If that lookup is unavailable,
+retry when GitHub is reachable rather than skipping the safety check.
+
 Upgrading later is one command — it refreshes the stack files at the newest
 release, pulls its image, restarts, and runs any new migrations
 automatically:

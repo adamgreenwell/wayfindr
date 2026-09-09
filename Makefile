@@ -63,12 +63,13 @@ wiki-sync-dry-run: wiki-test
 # The installer is shipped code that operators curl into bash, and two of these
 # guard rules the artifact ALSO implements — see docs/development/testing.md.
 self-host-test: php-version-test
-	bash -n scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh
+	bash -n scripts/self-host/install.sh scripts/test-self-host-release-resolution.sh scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh
 	scripts/test-disposable-vm-evidence-runner.sh
 	scripts/test-self-host-env-generator.sh
 	scripts/test-self-host-compose-template.sh
 	scripts/test-self-host-env-value.sh
 	scripts/test-self-host-classification.sh
+	scripts/test-self-host-release-resolution.sh
 	scripts/test-widget-bundle.sh
 
 public-artifact-install-test:
