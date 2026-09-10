@@ -9,20 +9,31 @@ contract, features, additive schema, or operator action advance the minor slot;
 
 `1.0.0` is scoped to finishing the core support product and proving it, rather
 than to feature parity. The two gaps that framed it are closed: live visitor
-monitoring shipped, and localization landed as a platform property — timezone,
-region, and where language is configured — rather than as a translation pass.
-Performance baselines have been measured instead of assumed.
+monitoring is implemented, and localization landed as a platform property —
+timezone, region, and where language is configured — rather than as a
+translation pass. Performance baselines have been measured instead of assumed.
 
 **One acceptance criterion is still open, and it is deliberately the one the
 author cannot satisfy alone:**
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797) — somebody who is
-not the author installs Wayfindr from a published artifact and it works.
+not the author installs Wayfindr from a published artifact and it works. The
+repaired baseline for that run does not exist publicly yet: first
+[#932](https://github.com/adamgreenwell/wayfindr/issues/932) prepares and reviews
+the `v0.8.0` candidate, then the owner separately authorizes publication and the
+exact artifact is verified, and only then is #797's brief refreshed for a human
+tester.
 
-Tier 2 parity work is no longer post-1.0 either; it shipped. The AI tier is
-half shipped and half deliberately deferred, which is recorded under
-*Deferred On Purpose* below rather than left implied.
+Tier 2 parity work is no longer post-1.0 either; it is implemented on current
+`main`. The AI tier has one assistive half implemented and one autonomous half
+deliberately deferred, which is recorded under *Deferred On Purpose* below
+rather than left implied.
 
-## Shipped
+## Implemented on Current Main
+
+This section describes the unreleased `0.8.0` development tree. Some foundation
+also exists in public `v0.7.0`, but none of the post-`v0.7.0` additions below
+should be read as a public-artifact claim until a stable release containing
+them is published and verified.
 
 The product has moved past a spine. Both competitive-gap tiers behind it —
 [#741](https://github.com/adamgreenwell/wayfindr/issues/741) (Tier 1) and
@@ -46,10 +57,10 @@ closed. It now includes:
   **The operator console is now fully extracted**, and so is the great majority
   of the dashboard — Alerts, Reports, ticket detail, sites and site settings,
   the account audit, break-glass, and the security, SLA, automation and webhook
-  pages. What still renders English is the agent home page, the Integrations
-  index, custom roles, the readiness page, and support-code lookup. The CSV
-  exports keep stable English headers deliberately, because a localized cell is
-  reparsed by whatever spreadsheet opens it.
+  pages, including Integrations. The ordinary pages that still render English
+  are the agent home page, custom roles, the readiness page, and support-code
+  lookup. The CSV exports keep stable English headers deliberately, because a
+  localized cell is reparsed by whatever spreadsheet opens it.
 
   `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
   are translated, and it is the only place worth reading: a page missing from it
@@ -65,8 +76,8 @@ closed. It now includes:
   is looking at, not to the endpoint.
 
   A German agent can now cross most of the product without the language
-  changing under them. The agent home page is the most-met of the surfaces that
-  still do.
+  changing under them. The agent home page is the most frequently visited of
+  the surfaces that still do.
 
   The widget and the dashboard also carry different language sets on purpose
   rather than by omission: Italian is agent-facing, and adding it to the widget
@@ -93,7 +104,7 @@ closed. It now includes:
   a default install reports nothing and shows no visitor any notice. Turning it
   off again deletes the visitors it collected who never made contact.
 
-  The board that reads it has since shipped, so an operator who turns presence
+  The board that reads it is implemented too, so an operator who turns presence
   on gets the live view as well as the visitor directory.
 
 - Throughput tooling for a desk with more than one agent:
@@ -164,10 +175,23 @@ Underneath that, the original foundation:
 The feature gaps that defined the pre-1.0 work are closed, so what is left is
 proof rather than scope. Polish stays demand-gated.
 
-- **The open milestone item**, and the only one an outsider can settle:
-  [#797](https://github.com/adamgreenwell/wayfindr/issues/797) — hand a published
-  artifact to somebody who is not the author and watch them install it. Every
-  install claim before that is the author testing their own work.
+- **Prepare the repaired release candidate:** finish and review
+  [#932](https://github.com/adamgreenwell/wayfindr/issues/932) against the
+  unreleased `0.8.0` tree. That work may make the candidate publishable; it does
+  not authorize a tag, release, registry push, or deployment.
+- **Publish only after separate owner authorization, then verify the exact
+  artifact:** record the tag, commit, image digest, release metadata, and
+  relevant clean-install/upgrade evidence before treating it as #797's new
+  baseline.
+- **Run the sole open `1.0.0` milestone criterion:** refresh
+  [#797](https://github.com/adamgreenwell/wayfindr/issues/797) with that verified
+  artifact and hand it to a human who is not the author. A cold, no-context
+  Claude sandbox run against `v0.7.0` was valuable synthetic evidence: it
+  matched the release, commit, and image digest, found the widget bootstrap and
+  installer discovery defects later fixed by PRs #929 and #931, and completed a
+  synthetic support loop after workarounds. It did not exercise a real VM,
+  public TLS/origin, local-CA trust, or an unwarmed image pull, and it is not the
+  human acceptance required by #797.
 - Keep reliability evidence repeatable: use the
   [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
   for future release candidates. The August 12 matrix proved clean install,
@@ -247,5 +271,6 @@ stable.
   conversation-message attachments prove the demand and operator controls.
 - SPA route tracking and richer host-app SDKs.
 - WordPress, Laravel, Next.js, React, and plain JavaScript integration polish.
-- Automation surfaces beyond the shipped rules, macros and outbound webhooks —
+- Automation surfaces beyond the implemented rules, macros and outbound
+  webhooks —
   widened only where real accounts hit the edges of what those already do.

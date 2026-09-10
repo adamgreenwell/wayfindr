@@ -7,12 +7,15 @@ they ask, or by email. An agent works the queue, replies, cobrowses with
 consent, and turns any of it into a durable ticket. An owner can see whether the
 desk is actually working.
 
-One caveat on email before you evaluate it: mail opens and continues
-conversations, but you cannot point a provider straight at Wayfindr yet. It
-verifies its own signature scheme and no provider emits that scheme, so a
-provider's normal webhook setup returns `401` until something in front of it
-verifies the provider and re-signs — and Wayfindr does not ship that piece
-([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+One release-boundary caveat on email before you evaluate it: current `main`
+accepts Mailgun and Postmark deliveries directly at `POST /api/mail/inbound`
+when the matching provider verification is configured, and still accepts the
+original Wayfindr-signed proxy format for existing integrations. Public
+`v0.7.0` predates that direct-provider support. See the
+[inbound mail guide](docs/self-hosting/inbound-mail.md) for the exact contracts.
+
+The capability list below describes current `main`; the Status section separates
+the public v0.7.0 release from unreleased work.
 
 - install a small widget on a site, themed to match it and speaking the
   visitor's language;
@@ -24,6 +27,12 @@ verifies the provider and re-signs — and Wayfindr does not ship that piece
 - say when the desk is open, and take the question when it is not;
 - request consent-based cobrowsing;
 - create a durable ticket from the support session;
+- route and automate support work with SLA policies, assignment rules, macros,
+  bulk actions, shortcuts, alerts, quiet hours, and de-duplicated delivery;
+- manage contacts and typed visitor attributes, and send conservative,
+  operator-enabled proactive messages;
+- optionally give agents summaries and editable drafts through the assistive
+  copilot boundary — Wayfindr does not autonomously answer visitors;
 - measure the conversations and tickets — volume, response and resolution times,
   reopens, workload, and whether the visitor said it helped. Help-centre usage
   and cobrowse sessions are not reported on.
@@ -135,9 +144,20 @@ were tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and
 has not been through that matrix yet; record fresh evidence from its own
 artifact before adopting it anywhere that matters.
 
-`1.0.0` is deliberately scoped to finishing the core support product and proving
-it, rather than to feature parity with every competitor: the remaining Tier 1
-gaps, first-class localization, and hardening. Everything below already ships.
+The feature gaps tracked in the Tier 1
+([#741](https://github.com/adamgreenwell/wayfindr/issues/741)) and Tier 2
+([#751](https://github.com/adamgreenwell/wayfindr/issues/751)) epics are
+implemented on current `main`. The sole open `1.0.0` milestone criterion is
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
+published-artifact install by somebody who is not the author. Its repaired
+baseline must follow this order: finish and review the `v0.8.0` candidate under
+[#932](https://github.com/adamgreenwell/wayfindr/issues/932), obtain separate
+owner authorization to publish it, verify the exact artifact, refresh the
+acceptance brief, and then give it to the human tester. Preparing a candidate is
+not permission to publish, and publication is not acceptance proof.
+
+The list below describes the current development tree. It is not a claim that
+these post-`v0.7.0` additions are available in the latest public artifact.
 
 - browser and CLI first-run setup;
 - authenticated account owners, admins, agents, and platform operators;
@@ -149,8 +169,8 @@ gaps, first-class localization, and hardening. Everything below already ships.
   retention sweep, malware-scanner hook, and S3-compatible storage routing;
 - durable tickets with assignment, status changes, categories, priorities,
   labels, notes, replies, queue filters, and support reference panels;
-- email as a second conversation channel, outbound, and inbound once the
-  intermediary above is in place ([#799](https://github.com/adamgreenwell/wayfindr/issues/799));
+- email as a second conversation channel, outbound, and inbound through direct
+  Mailgun/Postmark verification or the compatible Wayfindr-signed proxy format;
 - a help centre: articles authored in the dashboard, searchable from the widget;
 - per-site support hours in the site's own timezone, an away state, offline
   capture, and a configurable pre-chat form;
@@ -161,12 +181,22 @@ gaps, first-class localization, and hardening. Everything below already ships.
   replies come from data the product always kept;
 - per-site widget appearance, and a widget language catalogue with German
   complete;
-- an agent-selectable dashboard language, on the surfaces translated so far;
+- an agent-selectable dashboard language in English, German, and Italian across
+  the operator console and most dashboard workflows; the ordinary pages still
+  intentionally outside the extracted route boundary are the agent home,
+  custom roles, readiness, and support-code lookup;
 - a visitor directory, and agent-initiated password recovery;
 - a public API with a decided isolation model, scoped reads, and a narrow write surface;
 - visitor profiles, support-code lookup, and safe cross-record context;
 - alert preferences, dashboard alerts, queued email notifications, welcome
-  emails, and mail smoke testing;
+  emails, Web Push, quiet hours, cross-channel de-duplication, and mail smoke
+  testing;
+- SLA policies, automatic assignment and routing, automation rules, macros,
+  bulk queue actions, and keyboard-first command surfaces;
+- visitor presence, typed contact attributes, private contact notes, explicit
+  same-site identity merge, and operator-enabled proactive messages;
+- an optional provider-configured agent copilot for summaries and editable
+  suggestions, bounded by a provider-free evaluation harness and refusal policy;
 - operator readiness diagnostics, database-backed operator settings, guided
   onboarding, backup/restore surfaces, safe operator activity, self-hosting
   docs, and Forge-first deployment guidance;
@@ -179,6 +209,12 @@ gaps, first-class localization, and hardening. Everything below already ships.
 The self-hosting story is proved for the artifacts tested — most recently `v0.3.2`, not yet `v0.7.0` — with repeatable evidence: clean installs, supported upgrades, advisory behavior,
 backup/restore, rollback, reboot recovery, and deployment-fork readiness. See
 [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md) for the
-evidence contract. Product expansion is intentionally demand-gated around ticket
-workflow comfort, external integration field mapping, and any future cobrowse
-replay work.
+evidence contract. A cold, no-context Claude sandbox run later matched the
+`v0.7.0` release, commit, and image digest and completed a synthetic support loop
+after working around two defects. Those defects were fixed on current `main` by
+[#929](https://github.com/adamgreenwell/wayfindr/pull/929) and
+[#931](https://github.com/adamgreenwell/wayfindr/pull/931), but that run did not
+exercise a real VM, public TLS/origin, local-CA trust, or an unwarmed image pull,
+and an agent is not the human non-author required by #797. Product expansion is
+intentionally demand-gated around ticket workflow comfort, external integration
+field mapping, and any future cobrowse replay work.

@@ -3,31 +3,37 @@
 [Back to Home](Home)
 
 Wayfindr is pre-1.0. The latest public release is `v0.7.0` (August 25, 2026),
-and the current unreleased development line is `0.8.0`. The product has moved
+and the current unreleased development line is `0.8.0`. Current `main` has moved
 from "the core support loop exists" to a support desk reachable by widget,
-email and help centre, with a measurement surface of its own. "Reachable by
-email" carries one qualification: no provider can post to the inbound endpoint
-directly,
-because Wayfindr verifies a signature scheme none of them emit, so that channel
-needs an intermediary the project does not ship ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+email, and help centre, with a measurement surface of its own. Mailgun and
+Postmark can post directly to `POST /api/mail/inbound` when their matching
+verification is configured; the original Wayfindr-signed proxy format remains
+compatible. Public `v0.7.0` predates that direct-provider support. See the
+[repository inbound-mail guide](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/inbound-mail.md).
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
 hosted runners and disposable bare-metal guests — **for the artifacts that were
 tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and has
 not been through that matrix; see [Releases](Releases).
 
-`1.0.0` is scoped: the remaining Tier 1 gaps plus hardening, not feature
-parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamgreenwell/wayfindr/milestone/1).
+The Tier 1 and Tier 2 feature epics are closed on current `main`. The sole open
+`1.0.0` milestone criterion is
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
+published-artifact install by somebody who is not the author. Its prerequisite
+release sequence is recorded under *Current Release and Acceptance Gates*.
 
-## Shipped Spine
+## Current Development Tree
+
+This section describes unreleased `0.8.0` source. Some foundation also exists
+in public `v0.7.0`, but post-`v0.7.0` work listed here is not publicly available
+until a stable artifact containing it is published and verified.
 
 - Widget install, visitor identity, live chat, agent replies, and durable
   tickets.
 - **Email as a second channel**: mail opens and continues conversations, so a
-  customer replying to a notification is no longer replying into nothing —
-  once you have put something in front of the inbound endpoint to re-sign for
-  it, which the project does not yet ship
-  ([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+  customer replying to a notification is no longer replying into nothing.
+  Current `main` verifies Mailgun and Postmark directly and retains the original
+  Wayfindr-signed proxy contract for existing integrations.
 - **A help centre**: articles written in the dashboard and searchable from
   inside the widget, so a visitor can find the answer before asking.
 - **A public API and outbound webhooks**: scoped tokens provide read and narrow
@@ -46,67 +52,42 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   times, reopen rates, per-agent workload, and visitor satisfaction ratings.
   Resolution and reopen figures are read from lifecycle logs, and the two
   halves have different memories: **conversation** closes began being recorded
-  in this release, while **ticket** closes have been audited since well before
-  it — so an upgraded desk can describe a quarter of ticket work while its
+  in v0.7.0, while **ticket** closes have been audited since well before it — so
+  an upgraded desk can describe a quarter of ticket work while its
   conversation figures are still accumulating. The page states each boundary
   separately. Volume, first-response times and agent replies come from data the
   product always kept and reach back as far as the install does.
 - **Per-site widget appearance**, and a widget that speaks the visitor's
   language — **English and German**.
-- **A dashboard an agent can read in their own language** — **English, German
-  and Italian** — on the surfaces extracted so far: the profile pages, the
-  conversation queue, the ticket list, the conversation detail page with its
-  cobrowse panel, the live-visitors board, the visitor directory and profile,
-  and four account pages — reply templates, ticket labels, articles and API
-  tokens. An agent who has chosen nothing reads the install's language, which
-  the operator sets in the browser under **Language and region**; `APP_LOCALE`
-  seeds a new install and is the fallback until somebody saves one.
+- **A dashboard an agent can read in their own language** — **English, German,
+  and Italian** — across the operator console and most dashboard workflows:
+  profile, alerts, reports, conversations, tickets, sites, visitors, account
+  security, SLA, automation, articles, API/webhooks, audit, operator access,
+  Integrations, and the account overview. An agent who has chosen nothing reads
+  the install's language, which the operator sets in the browser under
+  **Language and region**; `APP_LOCALE` seeds a new install and is the fallback
+  until somebody saves one.
 
-  **Much of the dashboard is still English** — the home page, Alerts, Reports,
-  site settings, ticket detail, and the rest of account management: Account,
-  Integrations, Operator access, Audit. The **operator console** is the largest
-  untouched surface and has never been extracted at all. A German or Italian
-  agent moving from the queue to Reports changes language mid-session.
+  The ordinary dashboard pages still intentionally rendered in English are the
+  agent home page, custom-role management, readiness, and support-code lookup.
+  `DashboardLanguage::EXTRACTED_ROUTES` is the executable authority; it also
+  includes writes and partials whose validation or refreshed content must match
+  the page that invoked them. A write shared by translated and untranslated
+  pages resolves from the surface it renders back to, so the language belongs
+  to the page the agent is looking at rather than to the endpoint.
 
-  `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
-  are translated, and it is the authority rather than this paragraph: a page
-  missing from it renders English by design rather than by accident. A prose
-  list will drift from the constant, so read the constant.
-  **Write endpoints are the deliberate exception.** A form submitted from a
-  translated page answers in that page's language even when its own route is
-  absent from the constant, because `DashboardLanguage::forRequest()` resolves
-  from the surface the response renders back to. Closing a ticket from the
-  conversation panel produces German validation; the same action from the
-  untranslated ticket page produces English. The language belongs to the page
-  the agent is looking at rather than to the endpoint.
+  **The visitor and agent catalogues are deliberately different.** Italian is
+  agent-facing only: an Italian-speaking desk reads its dashboard in Italian,
+  while visitors still receive English or German. Adding a widget language is a
+  separate catalogue for a separate audience.
 
-  **The two lists are not the same, and the difference matters.** Italian is
-  agent-facing only: an Italian-speaking desk reads its own dashboard in
-  Italian, and its visitors still get English or German. Adding a language to
-  the widget is a separate catalogue with a separate audience, and reading
-  "Italian" as covering both is the wrong conclusion to draw.
-
-  **Neither pack has been read by a qualified speaker, and they are unreviewed
-  in different ways.** German was drafted during development: written by hand,
-  in context, by somebody who is not a professional translator. Italian is
-  mostly machine output. Thirteen of its fourteen catalogues came out of a
-  pipeline with a glossary, a protection scheme for placeholders and a policy
-  scorer; each opens with `NOT YET REVIEWED` and describes its own values as
-  proposals. The fourteenth, `validation.php`, is not pipeline output at all —
-  the pipeline only translates files it finds in `lang/en`, and there is no
-  English validation catalogue — so it was written by hand against the German
-  one, covering the rules the dashboard actually validates with and falling back
-  to Laravel's own English for any rule it does not name.
-
-  The count grows with every extracted surface, so treat it as of this writing
-  rather than as a fixed figure: `ls apps/server/lang/it` is the answer, and
-  `grep -l 'NOT YET REVIEWED'` over it is the unreviewed share.
-
-  Those checks establish mechanical consistency: the same term rendered the same
-  way everywhere, no placeholder lost in translation, the right register
-  attempted. They establish nothing about whether a sentence is good Italian,
-  and the translation policy says so directly. Do not promise either language to
-  a customer until somebody who speaks it has read the rendered screens.
+  The catalogue files remain the authority for review state too. German was
+  drafted by hand in context by somebody who is not a professional translator;
+  much of the Italian catalogue is machine-assisted and still carries
+  `NOT YET REVIEWED`. Mechanical checks protect keys, terminology, and
+  placeholders, but they do not establish natural language quality. Do not
+  promise either language to a customer until a qualified speaker has read the
+  rendered screens.
 - **A dashboard an agent can read on their own clock.** An agent picks a
   timezone on their profile beside their language; everyone who has not picked
   one follows the install's. The operator sets that in the browser, under
@@ -132,8 +113,11 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   in live updates as well as the first render. Values that something reads back
   are deliberately left alone: chart bar widths, data attributes, CSV cells,
   and anything on a broadcast.
-- **A visitor directory**, and a public API with a decided isolation model,
-  scoped reads, and a narrow write surface (ADR 0018).
+- **A visitor directory and contact workspace** with account-defined typed
+  attributes, exact-value filtering, private person-level notes, explicit
+  same-site identity merge, and a contacts-only custom-role boundary; plus a
+  public API with a decided isolation model, scoped reads, and a narrow write
+  surface (ADR 0018).
 - **Live visitor presence** ([#747](https://github.com/adamgreenwell/wayfindr/issues/747)):
   who is on the site right now, on what page, for how long, and whether the desk
   has ever heard from them. It updates over the Reverb connection the agent
@@ -157,8 +141,21 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
   sooner if the operator shortens the window; the maximum is the product's, not
   the operator's, and a longer value is clamped rather than honoured.
 
-  Proactive messaging — the feature presence exists to unblock — is deliberately
-  not part of this and remains Tier 2.
+  Presence also feeds operator-configured proactive-message rules. Presence is
+  still off by default, proactive messages are separately enabled, and the
+  visitor-facing disclosure and decline remain in force.
+- **Team-scale support workflow**: SLA policies and breach warnings, automatic
+  assignment and routing, typed lifecycle conditions and actions, automation
+  rules, macros, bulk actions, and a command palette with global shortcuts.
+- **Quieter, more useful alerting**: background dashboard alerts, Web Push,
+  quiet hours, and cross-channel de-duplication.
+- **An optional agent copilot inside the assistive boundary**: on-demand
+  summaries, editable reply drafts, ticket-conversion suggestions, and proposed
+  knowledge snippets. Every result is reviewed by an agent; no provider is
+  required, and Wayfindr does not autonomously answer visitors.
+- **Measured performance baselines** for concurrent Reverb agents, heavy
+  cobrowse transport, large attachment-retention sets, and data-heavy dashboard
+  and report pages.
 - **Agent-initiated password recovery.**
 - Consent-based cobrowse observe mode with sanitized snapshots, bounded
   mutations, telemetry, and an inert replay preview.
@@ -172,7 +169,7 @@ parity with every competitor. See [the 1.0.0 milestone](https://github.com/adamg
 - Pull-request CI, branch protection, Dependabot, private vulnerability
   reporting, and this repo-authored Wiki.
 
-## Current Reliability Cycle
+## Historical `0.4.0` Reliability Cycle
 
 The `0.4.0` proof cycle was not broad feature expansion. It collected clean
 evidence for:
@@ -185,10 +182,10 @@ evidence for:
 Use [Disposable VM Evidence](Disposable-VM-Evidence) when recording those runs.
 Treat dated stage or fork observations as context, not current runtime proof.
 
-## Current Evidence Snapshot
+## Last Full Public-Artifact Evidence Snapshot
 
-As of August 12, 2026, the public-artifact matrix has passing hosted runs for
-the current clean-install, published-upgrade, warning/recovery, and
+As of August 12, 2026, the public-artifact matrix had passing hosted runs for
+the then-current clean-install, published-upgrade, warning/recovery, and
 schema-compatible image rollback/retry scenarios:
 
 - [`clean-install-latest`](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323)
@@ -205,9 +202,9 @@ the Compose stack, run migrations, complete the support loop, take and restore
 a backup, repeat the support loop after restore, and restart the stack. The
 custom backup queue run also proves the backups-queue advisory appears during
 upgrade guidance and retires once the worker is observed. The recovery runs add
-hosted proof for the current restore warning path and for a narrow
+hosted proof for the then-current restore warning path and for a narrow
 schema-compatible image rollback from `0.3.2` to `0.3.1`, followed by retrying
-the current image.
+the v0.3.2 image.
 
 The owner-operated bare-metal repeat adds two fresh Ubuntu 24.04.4 clean guests,
 a public `v0.2.0` to `v0.3.2` upgrade guest, database and exact attachment-byte
@@ -239,6 +236,36 @@ production restore.
 The evidence above stands as a record of what was proved then; it is not a
 statement about the current release.)*
 
+## Current Release and Acceptance Gates
+
+A cold, no-context Claude agent tested public `v0.7.0` in a cloud sandbox. It
+matched the release, commit, and image digest and completed a synthetic
+visitor-to-agent support loop after working around two defects. The run found
+that the script-tag widget did not auto-initialize and that an unreachable
+GitHub release API was misdiagnosed as "no release." Those defects were fixed on
+current `main` by
+[#929](https://github.com/adamgreenwell/wayfindr/pull/929) and
+[#931](https://github.com/adamgreenwell/wayfindr/pull/931).
+
+That was valuable cold-start evidence, not #797 acceptance. It ran in a cloud
+sandbox rather than a real VM, warmed the image cache before timing, used
+localhost over HTTP, skipped public-origin and TLS/local-CA paths, and was
+performed by an AI agent rather than a human non-author. The fixes also remain
+unreleased while `0.8.0` is only a development identity.
+
+The next sequence is intentionally gated:
+
+1. Finish and review the `v0.8.0` candidate under
+   [#932](https://github.com/adamgreenwell/wayfindr/issues/932). This does not
+   authorize publication.
+2. After separate owner authorization, publish and verify the exact stable tag,
+   commit, image digest, release metadata, and relevant install/upgrade paths.
+3. Refresh [#797](https://github.com/adamgreenwell/wayfindr/issues/797) to name
+   that verified artifact, then hand the brief to a human who is not the author.
+
+Candidate readiness, publication, artifact verification, and human acceptance
+are four different claims. None should be collapsed into the next one.
+
 ## Parked or Demand-Gated
 
 - External tracker labels, assignees, priorities, richer inbound comments, and
@@ -252,8 +279,13 @@ statement about the current release.)*
   swaps. Literal incremental DOM patching inside the iframe should not proceed
   while it weakens the bare-sandbox, no-script, observe-only boundary; revisit
   only with measured dogfood pressure and a new architecture decision.
-- Broader automation, host SDK polish, and AI-assistive features come after the
-  operator loop is boring.
+- Automation beyond the current rules, macros, bulk actions, and webhooks waits
+  for real accounts to expose a specific edge. Host SDK polish remains
+  demand-gated.
+- A visitor-facing autonomous answer agent remains deferred by ADR 0004 and
+  [#762](https://github.com/adamgreenwell/wayfindr/issues/762). The implemented
+  copilot is assistive: a human reviews every suggestion before a visitor sees
+  it.
 
 The repository remains authoritative. See the
 [README](https://github.com/adamgreenwell/wayfindr#status),

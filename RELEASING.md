@@ -1,10 +1,11 @@
 # Releasing Wayfindr
 
 Wayfindr is self-hosted: a release is something other people have to *operate*.
-The version number and the changelog entry are the only signals an operator gets
-about whether an upgrade is safe to take unattended, so both are decided
-deliberately, not derived from the diff. The contract is ADR
-0012 (`docs/decisions/0012-platform-versioning.md`).
+The version number, changelog entry, and `release.json` declaration are the
+signals an operator and the upgrade guard get about whether an upgrade is safe
+to take unattended, so all three are decided deliberately, not derived from the
+diff. The contract is ADR 0012
+(`docs/decisions/0012-platform-versioning.md`).
 
 ## 1. Decide the number
 
@@ -24,6 +25,25 @@ Things that count as operator action: a new process or service to run (the
 migration, a dropped dependency version, or a breaking widget/public-API change.
 Additive schema that migrates itself does not.
 
+The guarded publisher currently ships stable `x.y.z` releases only. A
+dash-suffixed tag is a valid SemVer identity, but it is not a supported public
+release path: the release declaration/history contract does not yet define how
+an operator action moves from a prerelease to the eventual stable release
+without disappearing or being demanded twice. `VERSION` and the release tag
+must therefore both be the same plain stable version. Historical alpha releases
+predate this guard and do not establish a current prerelease procedure.
+
+An action may be limited to an installation profile when the packaging itself
+proves the other path already satisfies it. Use `image` for a container built
+from Wayfindr's Dockerfile and `host` for Forge or another host-managed PHP
+deployment. This is about who owns the runtime, not where the source came from:
+a locally built Wayfindr image is still `image`. Omitting
+`installation_profiles` applies the action everywhere. A scoped action still
+makes the release require operator action globally and therefore still drives
+the version decision above. Release state binds its clean marker to the profile
+that assessed it; moving an install between host PHP and an image reopens scoped
+history rather than inheriting the other path's exemptions.
+
 ## 2. Write the changelog entry
 
 Move `## [Unreleased]` content in [CHANGELOG.md](CHANGELOG.md) into a new
@@ -33,7 +53,16 @@ mark the individual entries that need hands with **⚠ Operator action**.
 
 Write it for someone several releases behind who has never read the PR.
 
-## 3. Update `VERSION`, then tag to match
+Every human action in the changelog needs a matching action in `release.json`.
+For a profile-scoped action, keep the global **Requires operator action** verdict
+and name both the affected profile and the exempt profile in its first paragraph.
+Then verify that the version and both declarations agree:
+
+```bash
+make release-contract-test
+```
+
+## 3. Land the release commit, then tag it
 
 `VERSION` holds the version under development, and it is what source builds
 report as `<VERSION>-dev` — the derivation lives in `server.Dockerfile` for image
@@ -42,14 +71,63 @@ about to push.** If they drift, every source build between this release and the
 next claims the wrong lineage — a build after `v0.2.0` would still report
 `0.1.0-dev`.
 
+### Retire pre-guard workflow runs before the first guarded release
+
+GitHub permits a workflow run to be rerun for 30 days after its initial run,
+using the workflow file and commit from that original run. That means an
+eligible **pre-guard** `Release image` run can still execute its old publisher
+and move `latest` backward even after the guarded workflow lands; repository
+changes cannot revoke a stored run.
+
+Before the first release using the guarded publisher, list the release runs and
+inspect every run still inside that 30-day window:
+
+```bash
+gh run list \
+  --workflow "Release image" \
+  --limit 100 \
+  --json databaseId,createdAt,headSha,displayTitle,status,conclusion,url
+```
+
+Preserve the run IDs, dates, SHAs, and URLs as release evidence. If any eligible
+run predates the guarded publisher, **stop before tagging**. Either wait for its
+rerun window to expire or, with explicit repository-owner approval, delete that
+specific workflow run after preserving the evidence. Repeat the audit
+immediately before pushing the first guarded tag. A passing new workflow cannot
+neutralize an independently rerunnable old one.
+
+### Protect release tags before publication
+
+The workflow checks the remote tag before each visibility-changing hand-off and
+again after publication, but it cannot stop a privileged actor from moving or
+deleting that tag later. Before pushing any guarded release tag, the repository
+must have an active ruleset covering `v*` tags that restricts creation and blocks
+updates and deletions, with bypass access restricted to the repository owner.
+Without the creation rule, a new tag on an older commit can still invoke that
+commit's unguarded publisher. Inspect the live rulesets and preserve the response
+with the release evidence:
+
+```bash
+gh api repos/adamgreenwell/wayfindr/rulesets
+
+gh api repos/adamgreenwell/wayfindr/rulesets --jq '.[].id' |
+  while read -r ruleset_id; do
+    gh api "repos/adamgreenwell/wayfindr/rulesets/$ruleset_id"
+  done
+```
+
+An empty response, an inactive rule, a pattern that misses the proposed tag, or
+a broad bypass is a **stop-before-tagging** result. The September 9, 2026 audit
+returned no repository rulesets, so this gate is currently unmet. Creating the
+rule is a separate repository-settings change and requires explicit owner
+authorization; merging release code does not silently authorize it.
+
 ```bash
 # VERSION and the tag must agree; the tag carries the conventional "v".
 # Stage both explicitly — `commit -a` would skip VERSION the first time,
 # because a file git has never seen is untracked, not modified.
-# Release from main. --atomic makes the branch and tag updates transactional,
-# but it does not check that the branch you push actually contains the tagged
-# commit — tag a release branch while pushing an unchanged `main` and the tag
-# lands on a commit unreachable from remote main, which still publishes.
+# Release from main. The commit goes up WITHOUT its tag first, because the full
+# main-branch CI run for this exact SHA is the authorization gate for tagging.
 [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ] || { echo 'Release from main.'; exit 1; }
 
 printf '0.2.0\n' > VERSION
@@ -71,31 +149,66 @@ printf '0.2.0\n' > VERSION
 php scripts/release/build-manifest.php \
   --version=0.2.0 \
   --history=releases/history.json
-git add VERSION CHANGELOG.md releases/history.json
-git commit -m "Release 0.2.0"
-git tag v0.2.0
+make release-publish-contract-test
 
-# Push the ONE tag by name. `--tags` pushes every local tag, and any v* tag
-# triggers a build-and-publish — so a stray experimental tag would ship an
-# unintended image and GitHub release.
+git add VERSION CHANGELOG.md release.json releases/history.json
+git commit -m "Release 0.2.0"
+release_sha="$(git rev-parse HEAD)"
+git push origin main
+
+# Find and watch the full main CI run for exactly that commit. GitHub can take a
+# moment to index a new run, so this waits for at most one minute for it to show.
+release_ci_run=""
+for attempt in {1..12}; do
+    release_ci_run="$(gh run list \
+      --workflow "Pull request CI" \
+      --commit "$release_sha" \
+      --event push \
+      --limit 1 \
+      --json databaseId \
+      --jq '.[0].databaseId // empty')"
+    [ -n "$release_ci_run" ] && break
+    sleep 5
+done
+[ -n "$release_ci_run" ] || { echo 'No exact-SHA main CI run appeared.'; exit 1; }
+gh run watch "$release_ci_run" --exit-status
+
+# Only now create and push the ONE tag by name. `--tags` pushes every local tag,
+# and any v* tag triggers publication, so a stray experimental tag could ship.
+git tag v0.2.0 "$release_sha"
+git push origin v0.2.0
+
+# Do not start next-cycle housekeeping yet. Wait for the release workflow to
+# publish and verify the draft assets, exact image, GitHub Release, and aliases.
+release_run=""
+for attempt in {1..12}; do
+    release_run="$(gh run list \
+      --workflow "Release image" \
+      --commit "$release_sha" \
+      --event push \
+      --limit 1 \
+      --json databaseId \
+      --jq '.[0].databaseId // empty')"
+    [ -n "$release_run" ] && break
+    sleep 5
+done
+[ -n "$release_run" ] || { echo 'No release workflow run appeared.'; exit 1; }
+gh run watch "$release_run" --exit-status
 #
-# --atomic so the branch and tag succeed or fail together. Without it, if origin
-# advanced since you prepared the release, `main` is rejected while the tag is
-# still accepted — and the tag alone publishes a release from a commit that
-# never reached the branch.
-git push --atomic origin main v0.2.0
+# If either watch fails, stop here. Do not move VERSION, clear release.json, or
+# pretend the release is complete while its public artifacts are partial.
 ```
 
 ### Then advance `VERSION` for the next cycle
 
-Immediately after tagging, move `VERSION` on to the *next* development version
-and commit that separately:
+Only after the release workflow succeeds, move `VERSION` on to the *next*
+development version and commit that separately:
 
 ```bash
 printf '0.3.0\n' > VERSION
 
-# Clear the actions now that the release carrying them is tagged and its
-# artifacts are built from it. Without this the next release rebuilds the same
+# Clear the actions now that the release carrying them is published and its
+# artifacts are verified. Without this the next release rebuilds the same
 # actions under its own version, and an operator who already acknowledged
 # 0.2.0/thing is asked again for 0.3.0/thing - work they have demonstrably done.
 #
@@ -129,10 +242,48 @@ face.)
 Pushing a `v*` tag is what triggers
 [release-image.yml](.github/workflows/release-image.yml) to build and publish the
 multi-arch image to GHCR, baking the tag and commit in as the release identity.
-Nothing else publishes; there is no other CI.
+Before authenticating to the registry or pushing anything, that workflow checks
+that the tag equals `v$(cat VERSION)`, that the tagged commit belongs to `main`,
+that the publishing-mode release contract passes, that full **Pull request CI**
+succeeded for the exact release SHA, and that the manifest can be built. It then
+stages a draft with the manifest, pushes only the exact version image, records
+its digest, publishes and verifies the GitHub Release, and promotes the minor
+and `latest` image aliases last. Publication is serialized across tags, and an
+older tag rerun through **this guarded workflow** cannot move those aliases
+backward. The release workflow is the only artifact publisher; main CI
+authorizes it but publishes nothing.
 
 ## 4. Check what an upgrader actually sees
 
 After the image publishes, confirm `/operator` on a fresh install reports the new
 version, and that the changelog entry answers "does this need me?" without the
 reader having to open a single PR.
+
+For a profile-scoped action, inspect the generated manifest and exercise both
+paths before tagging: it must remain globally action-bearing, the exempt profile
+must filter the action, and the affected profile must report it when unmet. A
+fresh install is exempt from upgrade actions, but must still satisfy its ordinary
+runtime prerequisites.
+
+## 5. Update the public site
+
+[wayfindr.cc](https://github.com/adamgreenwell/wayfindr-site) restates this
+release's facts in several places, and tagging makes them false at the same
+moment. It is a separate repository, so nothing in this checklist fails when it
+is skipped — the site just goes quietly stale, which is what happened between
+0.6.0 and 0.7.0.
+
+Four things move:
+
+- a new entry at the top of the release timeline, linked to the tag;
+- the status copy's release count, the version it says you can install today,
+  and the ordinal it gives the next release in preparation;
+- every feature chip this release ships, from **In development** to
+  **Shipped**;
+- the roadmap section, wherever this release closes something it describes as
+  still coming.
+
+The site's own suite (`npm test`) asserts those claims agree with each other, so
+a half-finished update fails there rather than reaching wayfindr.cc. It cannot
+tell that the site is *behind* — nothing offline can — so noticing that the
+update is due is this step's job, not the test's.
