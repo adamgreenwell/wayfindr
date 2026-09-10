@@ -294,8 +294,8 @@ model, or provide customer-facing runtime evidence.
 
 ## Evaluate local recorded output
 
-Pass an alternate version-2 or version-3 fixture and a version-3 response file
-without copying them into the repository:
+Pass an alternate supported fixture (version 2, 3, or 4) and a version-2 or
+version-3 response file without copying them into the repository:
 
 ```bash
 php artisan wayfindr:ai-evaluate \
