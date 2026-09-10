@@ -111,15 +111,21 @@ console offers no route back to inheriting from the environment.
 Getting back there means removing the `webpush.*` rows from `operator_settings`
 directly, and that is two steps rather than one. The settings store caches its
 rows for a day and only refreshes when the application itself writes them, so a
-deletion made in the database is not noticed:
+deletion made in the database goes unnoticed until that copy expires.
+
+After removing the rows, clear the cache and restart the workers. On a
+host-managed install:
 
 ```bash
 php artisan cache:clear
 ```
 
-Run that after removing the rows, and restart the queue workers, or the cleared
-overrides can keep shadowing the environment until the cached copy expires on
-its own.
+On the Compose stack, where the host has no `artisan`:
+
+```bash
+docker compose exec web php artisan cache:clear
+docker compose restart queue
+```
 
 ## "Ready" is a self-check, not a delivery test
 
