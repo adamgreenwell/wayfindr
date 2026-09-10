@@ -1,10 +1,10 @@
 # AI Evaluation
 
 Wayfindr has a grounded-answer evaluation harness with an enforced confidence
-and refusal policy. It provides the evidence machinery required by issue #764
-before the project can reconsider ADR 0004's prohibition on autonomous visitor
-replies. It does **not** add an answer agent, amend the ADR, or claim that any
-provider is safe for customer-facing use.
+and refusal policy. It supplied the evidence used by issue #764's completed ADR
+reassessment and supports the continuing evidence work tracked by #762. It does
+**not** add an answer agent, amend ADR 0004, or claim that any provider is safe
+for customer-facing use.
 
 Run the bundled regression from `apps/server`:
 
@@ -119,7 +119,7 @@ the fixture contract, strict loader, scorer, confidence gate, thresholds, CLI,
 and privacy-safe reporting stay coherent. They are **not model output** and a
 green bundled run is not evidence about a live model's quality, calibration, or
 drift. The expanded baseline passing all sixteen cases therefore records
-evaluator coherence only; no new provider run was made for this expansion.
+evaluator coherence only. Provider evidence is recorded separately below.
 
 The report measures:
 
@@ -205,13 +205,24 @@ common sanitizer changes, a newer checkout rejects earlier v3 captures instead
 of pretending they are equivalent. Compare those captures with the matching
 historical checkout or re-capture them under the current contract.
 
+Suite and prompt identities bind the captured fixture, policy, and prepared
+requests, not the evaluator implementation. Scoring uses the current checkout,
+so retain the Wayfindr commit used whenever scorer behavior changes.
+
 The fixture-v3 freshness work and fixture-v4 adversarial/German expansion change
 the exact suite and prompt contracts. The September 8 nine-case provider capture
-remains valid historical evidence, but it is intentionally incomparable with a
-capture against the sixteen-case contract. No provider has run this expanded
-contract yet. Measuring drift requires at least two fresh provider captures that
-share its exact `suite_digest` and `prompt_digest`; one fresh capture would
-establish only one new point-in-time result.
+remains valid historical evidence, but it is intentionally incomparable with
+the sixteen-case contract. Two private captures subsequently used the same
+sixteen-case identities and `openrouter/azure` / `openai/gpt-5.2` route. The
+`2026-09-10T06:53:32Z` run failed 15/16 with Brier 6.50 solely because
+`secret-action-priority` returned a correct refusal with contradictory 100%
+confidence. The `2026-09-10T07:31:43Z` run passed 16/16 with Brier 0.22. Scored
+together after #939 using scorer commit `9539795d`, the comparator records that
+case as recovered and a Brier delta of -6.28, with every other aggregate delta
+zero. Because the runs are only 38 minutes 11 seconds apart, they establish
+short-interval stochastic instability and recovery—not long-term drift
+resistance, model-revision behavior, provider approval, or visitor-runtime
+safety.
 
 ## Compare identified provider runs
 
@@ -249,12 +260,13 @@ content-free run metadata, aggregate metrics, adjacent metric deltas, and
 changed, regressed, or recovered case IDs. They do not include questions,
 articles, candidate answers, or expected-answer content.
 
-The command exits `0` only when every scored run passes its policy thresholds,
-`1` when at least one valid run misses a threshold, and `2` for malformed or
-incomparable input. A successful comparison proves that the recorded captures
-were evaluated under the same identified contract. It does **not** create the
-missing repeated runs, establish drift resistance, approve a provider or model,
-or provide customer-facing runtime evidence.
+The command exits `0` only when every scored run passes its policy thresholds
+and hard response-contract checks, `1` when at least one valid run misses a
+threshold or violates a hard check, and `2` for malformed or incomparable input.
+A successful comparison proves that the recorded captures were evaluated under
+the same identified contract. It does **not** by itself provide sufficiently
+separated repeated evidence, establish drift resistance, approve a provider or
+model, or provide customer-facing runtime evidence.
 
 ## Evaluate local recorded output
 
@@ -384,6 +396,16 @@ reaffirmed the deferral of autonomous visitor replies: one green narrow run did
 not establish the broader, repeated evidence required for production use. The
 agent-controlled copilot remains the approved boundary, and future
 reconsideration requires another explicit ADR decision before visitor-facing
-implementation begins. The later sixteen-case curated baseline did not call that
-provider or create a second provider result, and its changed suite and prompt
-identities prevent it from being compared to the September 8 capture as drift.
+implementation begins.
+
+On September 10, two private provider captures exercised the later sixteen-case
+contract under identical suite and prompt identities. The first failed one case
+on a contradictory-confidence refusal; the second passed and recovered it.
+[PR #939](https://github.com/adamgreenwell/wayfindr/pull/939) also made that
+contradiction a hard evaluator failure without rotating either evidence
+identity. The pair demonstrates short-interval failure and recovery under one
+unchanged route and contract. It does not establish longitudinal drift
+resistance, behavior across a model revision, representative runtime safety, or
+provider approval. The agent-controlled copilot remains the approved boundary,
+#762 remains open, and visitor-facing implementation still requires another
+explicit ADR decision.
