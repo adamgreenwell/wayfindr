@@ -82,12 +82,17 @@ until a stable artifact containing it is published and verified.
   separate catalogue for a separate audience.
 
   The catalogue files remain the authority for review state too. German was
-  drafted by hand in context by somebody who is not a professional translator;
-  much of the Italian catalogue is machine-assisted and still carries
-  `NOT YET REVIEWED`. Mechanical checks protect keys, terminology, and
-  placeholders, but they do not establish natural language quality. Do not
-  promise either language to a customer until a qualified speaker has read the
-  rendered screens.
+  drafted by hand in context by somebody who is not a professional translator,
+  and much of the Italian catalogue is machine-assisted. Both trees have since
+  been through the review the translation policy defines, and no catalogue in
+  either still carries `NOT YET REVIEWED`.
+
+  That review is a reader rather than a speaker — the bar the policy sets on
+  purpose, because it catches wrong terms, overflowing strings and misplaced
+  register, which is what a reviewable diff is good for. Mechanical checks
+  protect keys, terminology and placeholders. Neither establishes natural
+  language quality, so do not promise either language to a customer until a
+  qualified speaker has read the rendered screens.
 - **A dashboard an agent can read on their own clock.** An agent picks a
   timezone on their profile beside their language; everyone who has not picked
   one follows the install's. The operator sets that in the browser, under
