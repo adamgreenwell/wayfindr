@@ -16,7 +16,9 @@ Wayfindr is planned as a Laravel-first support platform with portable client int
 - Queue workers.
 - Postgres database.
 - Redis for cache, queues, and realtime support.
-- Integration packages for WordPress, Laravel, React, and plain JavaScript.
+- Integration packages for WordPress, Laravel, and React (placeholders, not yet
+  built). Plain JavaScript needs none: the browser widget SDK above is a script
+  tag any site can load.
 
 See [data-model.md](data-model.md) for the initial Laravel-owned domain records.
 

@@ -37,7 +37,12 @@ the public v0.7.0 release from unreleased work.
   reopens, workload, and whether the visitor said it helped. Help-centre usage
   and cobrowse sessions are not reported on.
 
-Wayfindr is a Laravel-first monorepo. Laravel owns the core product, while SDKs and integrations make it portable across WordPress, Laravel, Next.js, React, and plain JavaScript sites.
+Wayfindr is a Laravel-first monorepo. Laravel owns the core product, and the
+browser widget installs on any site with a single script tag, so a host page
+needs no framework support to run it. Framework-specific SDKs and integrations
+for WordPress, Laravel, Next.js, and React are intended but not yet built: the
+directories for them under `packages/`, `plugins/`, and `examples/` are
+placeholders today.
 
 ## Deployment Posture
 
@@ -76,14 +81,14 @@ apps/
   server/              Laravel core application
 packages/
   widget-js/           Browser widget SDK
-  react-widget/        React integration package
-  laravel-sdk/         Laravel host-app integration package
+  react-widget/        React integration package (placeholder, not yet built)
+  laravel-sdk/         Laravel host-app integration package (placeholder)
 plugins/
-  wordpress/           WordPress integration plugin
+  wordpress/           WordPress integration plugin (placeholder)
 examples/
   plain-html/          Minimal script-tag example
-  nextjs/              Next.js example app
-  laravel/             Laravel host-app example
+  nextjs/              Next.js example app (placeholder)
+  laravel/             Laravel host-app example (placeholder)
 docs/
   architecture/        Technical architecture notes
   decisions/           Public product and engineering decisions
