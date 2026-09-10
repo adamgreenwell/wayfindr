@@ -29,14 +29,23 @@ rejected, so is any `http://` URL, and the prefix is matched case-sensitively �
 
 ### Generating the key pair
 
-Generate it with `--show`:
+Generate it with `--show`. On a host-managed install, from the Laravel
+application directory:
 
 ```bash
 php artisan webpush:vapid --show
 ```
 
-That prints a `VAPID_PUBLIC_KEY=` and `VAPID_PRIVATE_KEY=` pair and changes
-nothing. Copy both into the console form.
+The one-line installer places only `compose.yml` and `.env` on the host, so
+there is no `artisan` to run there. Reach it inside the running stack instead,
+from the directory holding `compose.yml`:
+
+```bash
+docker compose exec web php artisan webpush:vapid --show
+```
+
+Either way it prints a `VAPID_PUBLIC_KEY=` and `VAPID_PRIVATE_KEY=` pair and
+changes nothing. Copy both into the console form.
 
 **Run it without `--show` and it edits `.env` instead of printing**, which is
 wrong here for three separate reasons, and the settings page's own help text
@@ -66,10 +75,15 @@ incomplete — only a value that is positively *invalid* is rejected. The green
 chip on the page, and the readiness card, are what answer that.
 
 Only the private key is encrypted at rest, under `APP_KEY`. The subject and
-public key are stored as ordinary rows, which is correct — both are published to
-every agent browser and to every push service — but it does surprise people who
-assume the whole group is encrypted. The private key is never rendered back into
-the form; the field shows only whether one is set.
+public key are stored as ordinary rows, which is correct — neither is a secret —
+but it does surprise people who assume the whole group is encrypted. They are
+not equally exposed, though, and the difference is worth knowing before you
+choose a subject: the **public key** is handed to every agent browser, while the
+**subject** goes only to the push services your agents' browsers use. It is not
+published to browsers. Use a real monitored address; that is what it is for.
+
+The private key is never rendered back into the form; the field shows only
+whether one is set.
 
 ## Rotating or clearing the keys deletes every subscription
 
@@ -192,9 +206,20 @@ though, and that field is stored from then on — and further edits to its
 variable have no effect, including one made to fix a problem, which is a quiet
 way to lose an afternoon. Rotating the keys stores both of them.
 
-Environment values also read at config-build time, so an install that uses them
-needs `php artisan config:cache` and a worker restart before a change applies.
-Console values need neither.
+Environment values also read at config-build time, so a change to one does not
+apply on its own. On a host-managed install, run `php artisan config:cache` and
+restart the workers.
+
+On the Compose stack that is not enough. The host `.env` is handed to a
+container when it is created, not mounted into it, so a running container keeps
+the values it started with and caching config inside it only re-reads those.
+Recreate the services that need the new value:
+
+```bash
+docker compose up -d --force-recreate web queue
+```
+
+Console values need none of this, on either deployment.
 
 Use the environment as an initial baseline, and the console as the control
 surface. The Compose templates do not list these variables, and that is
