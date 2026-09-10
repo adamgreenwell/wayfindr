@@ -565,6 +565,7 @@ return [
             'subtitle' => 'Consigliate per questa installazione. Nessuna blocca le migrazioni o il servizio; l’installazione funziona normalmente.',
             'count' => '{1} :count indicazione|[2,*] :count indicazioni',
             'cannot_evaluate' => 'Questa installazione non può controllarlo automaticamente; potrebbe essere già stato fatto.',
+            'check_failed' => 'La verifica automatica non è riuscita. Corregga la condizione segnalata; una conferma non nasconderà questa indicazione.',
             'silence' => 'Nasconda l’indicazione con :reference in :setting.',
         ],
         'next' => [

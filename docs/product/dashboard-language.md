@@ -1,23 +1,25 @@
 # The language the dashboard speaks
 
-Status: **in progress.** The plumbing is shipped, and
-`DashboardLanguage::EXTRACTED_ROUTES` names **108 routes — 37 of them pages** a
-reader can open, the rest the write and partial endpoints those pages call. The
-extracted surfaces are the app shell, the agent profile, the conversation queue
-and detail, the ticket queue and detail workspace, reply templates, ticket labels, articles, API
-tokens, the account audit, account-side operator access, account integrations,
-the account overview and team roster, the sites directory, new-site form,
-built-in site tester, and Site Settings, the live-visitors board, the visitor directory and
-profile, and the operator's dashboard, guided setup, break-glass request and read-only viewers,
-language-and-region, scanning, mail,
-attachment-storage, backup-configuration, backup-history, and backup-restore
-pages.
+Status: **in progress.** The plumbing and most ordinary workflows are
+implemented. `DashboardLanguage::EXTRACTED_ROUTES` is the executable inventory;
+do not mirror its size in this document, because every newly extracted page,
+write, partial, or data endpoint would make a hard-coded count stale.
 
-That list is the one the guards read, and counting it is the only honest way to
-answer how far this has got: counting *views* that call `__()` overstates it,
-because a page is not extracted until its endpoints are. All operator-owned
-surfaces, the personal alert centre, and support reports are now inside the
-extracted slice. The remaining dashboard routes are still going view by view.
+The extracted slice currently includes the app shell; profile, alerts, reports,
+conversation, ticket, site, tester, visitor, and live-presence workflows;
+account overview, security, SLA, automation, macros, proactive messages, reply
+templates, labels, articles, API tokens, outbound webhooks, audit, operator
+access, **Integrations**, and visitor-attribute management; plus the complete
+operator console, including onboarding, break-glass viewers, language and
+region, scanning, mail, Web Push, agent-copilot, attachment storage, and backup
+surfaces.
+
+The ordinary dashboard pages still intentionally rendered in English are the
+agent home, custom-role management, readiness, and support-code lookup. Exports,
+partials, and machine-facing data routes are judged by their own contracts, so
+counting GET routes is not a reliable page-completion metric. A page is not
+complete until the writes and refreshed fragments that render back into it also
+respect its request-scoped language.
 
 The account audit draws a deliberate line between its screen and its download.
 The screen's action labels, counts, and timestamps follow the agent's language
@@ -45,59 +47,26 @@ watching a conversation, and they do not all read the same language — so a
 payload carries `state` and `detail_key`, never prose, and each page renders
 those into its own agent's words.
 
-### The recorded exceptions
+### The current exception, and one retired exception
 
-The conversation **detail** page carries the largest one. Its cobrowse panel is
-supplied by the `CobrowseConsentState` family — nine support classes and roughly
-a hundred and thirty strings, shared with the widget and the operator console —
-so the panel declares `lang="en"` and that vocabulary extracts as its own
-change. The headings *around* it are this page's and are translated, the same
-split the queue's cobrowse cell uses.
+The profile page still shows a mail-readiness sentence built by
+`OperatorReadiness`. `AgentProfileController` receives that operational summary
+as English prose rather than as a profile-catalogue key, so the sentence remains
+deliberately English inside an otherwise translated profile. It carries its own
+`lang="en"`; the other readiness cards inherit the page language. An exception
+that assistive technology cannot see is not an exception, it is a defect.
 
-Two mechanisms exist so an exception can say so: `x-tab-panel` merges
-`$attributes`, and a tab may pass `badge_lang` for a badge that sits outside its
-own panel. Without them the attribute was silently dropped.
+The conversation detail's cobrowse panel and the queue's cobrowse cell used to
+be the largest recorded exception. Their vocabulary is shared across support
+classes, the widget, and operator surfaces, so the transitional implementation
+marked the untranslated region and badge as English until the whole vocabulary
+could move together. `x-tab-panel` learned to merge attributes and tabs learned
+`badge_lang` so that boundary was audible as well as visible.
 
-
-The profile page shows a mail-readiness sentence built by `OperatorReadiness`.
-That class holds the **operator console's** vocabulary — around a thousand lines
-of copy shared across that surface — so it extracts with the operator console
-rather than from a page-shaped change reaching into it. Until then, an agent
-reading the dashboard in German sees that one sentence in English.
-
-**A recorded exception has to say it is one, down to the value.** Both exceptions sit inside a page
-region marked with the agent's language, so left unmarked a screen reader
-pronounces the one deliberately untranslated sentence on the page with German
-phonetics. Each carries its own `lang`, which means the readiness cards on the
-profile page are not uniform: the translated ones follow the page and the mail
-one declares English. An exception that assistive technology cannot see is not
-an exception, it is a defect.
-
-The queue's cobrowse cell is the awkward case, and worth knowing about before
-the next one: its label, message and guidance are wholly English, so the element
-carrying them is marked — but `Last report …` and `Pressure …` are **mixed**, a
-translated label wrapping an untranslated value in one sentence whose word order
-the catalogue owns. Splitting the sentence to wrap the value is exactly the
-fragment concatenation this extraction refuses, so the marked value is passed in
-as the placeholder and only our own catalogue string renders unescaped around
-it. The value is escaped on the way in, and there is a test that says so rather
-than a comment.
-
-The **conversation queue** has the same shape of exception for the same reason:
-`CobrowseConsentState` supplies the transport label on every row, and its
-hundred-odd strings are shared with the conversation detail page. Until cobrowse
-is extracted, a German agent reads that one cell in English.
-
-Written down rather than left to be discovered, because the failure mode of an
-extraction is precisely a page that looks finished and is not. Both exceptions
-are named in their tests, and the queue's test **fails if its exemption stops
-matching anything** — so an allowlist cannot outlive the thing it excuses and
-quietly start covering real misses.
-
-One hazard recorded ahead of that work: the queue view decides whether to show
-cobrowse pressure by comparing the value against the English strings
-`No drops reported` and `No recent drops reported`. That comparison breaks the
-moment those are translated, and needs to move to a state key rather than prose.
+That description is historical now. Cobrowse copy is extracted, the panel no
+longer declares itself English, the queue's exact exception list is empty, and
+transport decisions use state/copy keys instead of comparing translated prose.
+The tests deliberately fail if a retired exception starts masking a new miss.
 
 Distinct from [ADR 0017](../decisions/0017-speaking-the-visitors-language.md),
 which is about the **widget** and therefore about visitors. This is about
@@ -274,6 +243,8 @@ fragment inside resets to the document's:
 
 That is complete by construction: anything missed stays English, which it is.
 The reverse approach fails silently in the direction that is hardest to see.
+This was the safe transitional shape; the cobrowse surface has since been
+extracted and no longer carries the panel-level English marker.
 
 Both failures are real and they are mirror images — marking the whole panel
 English made a screen reader pronounce the German headings with English rules;
@@ -648,9 +619,9 @@ every other language.
 
 The catalogue has to reach copy built outside the Blade file — labels assembled
 in a controller, option maps on a model, status text from a support class. None
-of that appears in the view, so grepping the template says a page is finished
-while a third of it is still English, and nobody notices until they switch
-language and read a page in two at once.
+of that appears in the view, so grepping the template once made a page look
+finished while a third of it was still English; the miss became visible only
+after switching language and reading two languages at once.
 
 ### Extraction does not edit copy — with one recorded exception
 
@@ -732,10 +703,10 @@ miss found by review so far has been on a branch of this kind.
 
 ### The locale is scoped to extracted surfaces, not just the `lang` attribute
 
-While this epic is half-finished, most pages are still English. Telling a screen
-reader that an English page is German makes it pronounce English words with
-German phonetics: a sighted agent never notices, and someone listening to the
-page hears nothing else.
+While a few ordinary pages remain outside the extracted slice, each one stays
+wholly English. Telling a screen reader that an English page is German makes it
+pronounce English words with German phonetics: a sighted agent never notices,
+and someone listening to the page hears nothing else.
 
 The first attempt marked the *document* — the locale switched everywhere and a
 per-view flag decided what `lang` claimed. That was wrong, and the way it was

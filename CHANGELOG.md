@@ -30,22 +30,52 @@ missed while skimming.
 
 ## [Unreleased]
 
-**Requires operator action in two cases, neither of them universal.**
-Everything else is pull-and-restart, and migrations run themselves.
+**Requires operator action when upgrading a host-managed PHP install, including
+Laravel Forge, from an earlier Wayfindr release.**
+The official Wayfindr image and images built locally with Wayfindr's Dockerfile
+include them and need no action; their normal pull, restart, and automatic
+migration path is unchanged. A known-fresh host install has the same baseline
+runtime prerequisites before its first deploy, but it has no upgrade action to
+acknowledge.
 
-1. **If you run your own nginx in front of Wayfindr** — Laravel Forge installs,
-   and anything built from the sample in
-   `docs/self-hosting/runtime-requirements.md`, whose block through 0.7.0
-   omitted the setting. See *Changed*. The shipped Docker Compose stack runs no
-   nginx: it proxies Reverb through Caddy, which imposes no idle timeout on a
-   proxied WebSocket, and needs nothing.
-2. **If your scheduler is not running**, run `wayfindr:sanitise-page-urls` once
-   by hand after upgrading. The page-address rewrite under *Security* happens
-   automatically in two passes — a migration, then the daily scheduled sweep
-   that catches anything the old code wrote during the migration window. With a
-   working scheduler that window closes within a day and you need do nothing.
-   Without one, only the migration pass ever runs, and rows written during that
-   window keep their query strings indefinitely.
+1. **⚠ Operator action, host-managed PHP upgrades only.** Before updating an
+   existing checkout, confirm the supported PHP binaries used by
+   Composer, the web process, and workers
+   have `curl`, `gd`, and `intl`, and that cURL uses libcurl 7.59.0 or newer:
+
+   ```bash
+   php -r '$problems = []; if (PHP_VERSION_ID < 80401) { $problems[] = "PHP 8.4.1+"; } foreach (["curl", "gd", "intl"] as $extension) { if (! extension_loaded($extension)) { $problems[] = "ext-{$extension}"; } } if (extension_loaded("curl") && (! is_string($version = curl_version()["version"] ?? null) || version_compare($version, "7.59.0", "<"))) { $problems[] = "libcurl 7.59.0+"; } if ($problems !== []) { fwrite(STDERR, "Missing runtime requirements: ".implode(", ", $problems).PHP_EOL); exit(78); } echo "This PHP runtime is ready.".PHP_EOL;'
+   ```
+
+   On Debian or Ubuntu with PHP 8.4 the packages are normally `php8.4-curl`,
+   `php8.4-gd`, and `php8.4-intl`. Enable the equivalents for the PHP binary
+   Composer and the application actually use, reload PHP-FPM, restart queue and
+   Reverb processes, and verify the scheduler's PHP command before deploying.
+   Composer now declares all three
+   extensions and the libcurl minimum, and stops before migration if any are
+   missing. If the host already complies, verify Composer, PHP-FPM, queues, the
+   scheduler, and Reverb; otherwise remediate first and then verify every one of
+   those runtimes. Finally, add `0.8.0/php-runtime-extensions` to
+   `WAYFINDR_ACKNOWLEDGED_ACTIONS` before deploying. A passing CLI check cannot
+   prove those other runtimes, so the release guard deliberately requires that
+   attestation; a failed machine check cannot be acknowledged away. The release
+   manifest scopes this work to host-managed PHP, so image installs do not ask
+   an operator to acknowledge modules already baked in. Release state now binds
+   its clean marker to that installation profile, so moving persisted storage
+   between an image and host PHP cannot inherit the other path's exemption.
+   Forge also asks for the key when missing state cannot prove a site is truly
+   fresh; that conservative preflight protects restored and legacy installs and
+   does not redefine a demonstrably fresh install as an upgrade.
+
+**Migration footprint.** This candidate contains 37 migration files beyond
+v0.7.0. They stay on the normal automatic migration path, but they create the
+tables, columns, and indexes behind the features below, so allow a realistic
+upgrade window for a busy database. The stored-page query-string rewrite under
+*Security* is the one deliberately irreversible data change.
+
+The nginx timeout and page-address cleanup notes below repair pre-existing host
+gaps. Neither leaves a conforming install worse after an unattended upgrade, so
+they are not release actions.
 
 **Two things you will notice within a minute of upgrading, neither of them
 broken:**
@@ -95,24 +125,22 @@ page view that was not there before.
   There is deliberately **no "go back to the environment" control**. It would
   let you un-confirm the setup step while the checklist still read ready.
 
-- **Italian.** The agent dashboard speaks English, German and Italian on the
-  surfaces extracted so far. **Neither the German nor the Italian pack has been
-  read by a qualified speaker**, and 13 of the 14 Italian catalogues open with
-  `NOT YET REVIEWED`. The mechanical checks pass — consistent terms, no lost
-  placeholders, the right register attempted — and they establish nothing about
-  whether a sentence is good Italian. Do not promise either language to a
-  customer until somebody who speaks it has read the rendered screens.
+- **Italian, and a much wider translated dashboard.** English, German, and
+  Italian now cover conversation detail and cobrowse, visitors, reply templates,
+  labels, articles, API tokens, live visitors, the account audit, operator
+  access, integrations, account/team management, the principal operator
+  console workflows, ticket detail, alerts, reports, sites, the hosted tester,
+  and site settings. The remaining ordinary dashboard pages intentionally left
+  in English are the dashboard home, custom roles, readiness, and support-code
+  lookup. `DashboardLanguage::EXTRACTED_ROUTES` remains the executable authority
+  on that boundary.
 
-- **Five more surfaces speak the agent's language**: reply templates, ticket
-  labels, articles, API tokens and the live-visitors board.
-
-  **Most of the dashboard is still English.** The account home itself is not
-  extracted, and neither are Integrations, Sites, the audit log or operator
-  access — so a German or Italian agent still reaches an English page in one
-  click from any of the four translated account pages, and the operator console
-  has not been extracted at all. `DashboardLanguage::EXTRACTED_ROUTES` is the
-  authority on which pages are translated; a page missing from it renders
-  English by design.
+  **Neither the German nor the Italian pack has been read by a qualified
+  speaker.** The Italian tree now contains 38 catalogues, 15 of which still open
+  with `NOT YET REVIEWED`. Mechanical checks establish consistent terms,
+  placeholders, and an attempted register; they do not establish that a sentence
+  is good Italian. Do not promise either language to a customer until a speaker
+  has read the rendered screens.
 
   Content the *account* wrote — an article's title and body, a token's name, a
   site's name, a visitor's name and the page they are on — now carries `lang=""`
@@ -136,18 +164,103 @@ page view that was not there before.
   service**. Nothing calls it on your behalf; it exists for whoever maintains
   the packs. If that is not you, leave the key unset and the command unused.
 
+- **A narrow public API write surface and durable outbound webhooks.** Tokens can
+  independently receive write abilities for creating conversations and tickets,
+  replying, and updating the supported ticket fields. Writes require 24-hour
+  idempotency keys and preserve the integration—not the person who created its
+  token—as the actor. Account-managed webhook endpoints can receive four signed
+  support events through an ordered, retryable outbox with delivery history,
+  manual retry, one-time secret display, and SSRF-resistant destinations.
+
+  API-created email replies are also committed to a durable outbox and recovered
+  when the queue handoff or worker fails. Email remains at-least-once because a
+  generic SMTP server cannot atomically confirm mailbox delivery. Ticket notes
+  relayed to GitHub, GitLab, or Jira use a separate at-most-once outbox: after a
+  provider call begins, an uncertain result is held for reconciliation rather
+  than risking a duplicate public comment.
+
+- **TOTP, OpenID Connect, and account-owned roles.** Accounts can require
+  encrypted TOTP with replay-safe challenges and one-time recovery codes, link
+  existing verified agents to one account OIDC provider, and define custom roles
+  from deny-by-default permissions. Owners may also opt into exact OIDC claim
+  mappings that create eligible agents on first federated sign-in and resync only
+  JIT-managed roles; Owner authority, local role assignments, raw claims, and
+  provider tokens stay outside federation control.
+
+- **Business-hours SLAs and automatic routing.** First-response and resolution
+  targets now pause with site support hours and surface approaching, breached,
+  met, and missed states in queues, work details, alerts, mail, and reports.
+  Sites may opt into round-robin assignment using explicit agent online/away
+  state and account conversation capacity. Conversation status, ticket status,
+  and priority now share typed write boundaries so API, dashboard, routing, and
+  automation cannot quietly invent different lifecycle values.
+
+- **Rules, macros, and durable automation history.** Account-scoped rules can
+  react to bounded ticket, conversation, and visitor-message events with six
+  internal actions: assignment, labels, priority, status, notifications, and
+  private notes. Rules and macros start as disabled drafts, support
+  side-effect-free previews, execute transactionally in stable order, isolate a
+  failed rule from the support write and later rules, and retain readable
+  per-action results. Visitor-message sending is deliberately not an automation
+  action. Authorized agents can run the same vocabulary as one-click macros.
+
+- **Bulk queue work and an agent command layer.** Ticket and conversation queues
+  support accessible multi-selection, one-use review, assignment and lifecycle
+  updates, and conflict-aware undo that refuses to overwrite newer work. Global
+  guarded shortcuts cover queue navigation and common actions; `Alt+P` opens an
+  accessible, permission-filtered command palette, and `?` opens the live
+  page-aware shortcut reference.
+
+- **Background, sound, and Web Push agent alerts.** Durable dashboard alerts now
+  broadcast on private agent channels, reconcile socket gaps, badge background
+  tabs, optionally play a local sound, and can reach opted-in browsers through
+  operator-managed VAPID Web Push. Per-agent quiet hours pause interruptive
+  channels while keeping the alert center current. A delivery ledger coordinates
+  visible-dashboard, push, immediate mail, unattended mail, and digest fallbacks
+  so one alert version is not intentionally sent through every channel.
+
+- **A richer, deliberately bounded visitor contact record.** Accounts can define
+  typed attributes over already-sanitized visitor context, keep private durable
+  contact notes, and explicitly merge same-site duplicates while preserving old
+  browser/session lineage and support history. Authorized exports reapply the
+  visible filters, cap at 500 recent contacts, neutralize spreadsheet formulas,
+  and exclude page URLs, raw context, notes, support history, and alias lineage.
+
+- **Opt-in proactive messages.** Disabled-by-default site rules can match URL,
+  referrer, time on page, visit count, agent availability, frequency, and prior
+  dismissal. Eligible visitors see a capped, dismissible plain-text invitation;
+  accepting it enters the ordinary conversation transcript. Ninety-day shown,
+  engaged, and dismissed evidence is reported and pruned. This is deterministic
+  rule delivery, not an autonomous AI reply.
+
+- **An optional, agent-controlled copilot.** An operator can configure Anthropic,
+  Gemini, OpenAI, OpenRouter, local Ollama, or an OpenAI-compatible endpoint for
+  four on-demand suggestions: conversation summaries, editable reply drafts,
+  ticket details, and locally resolved knowledge snippets. Requests use bounded,
+  scrubbed text with no attachment or cobrowse path; keys are encrypted and
+  write-only. OpenRouter requests pin one named upstream, require zero data
+  retention, and disable fallback routing. Every result becomes stale on new
+  conversation activity and requires an explicit agent decision before it can
+  fill—but never submit—a support control.
+
+  A provider-free evaluation harness now scores versioned synthetic cases for
+  grounded accuracy, confidence, refusal reasons, citations, coverage, unsafe
+  answers, and overconfident errors; private provider capture is separately
+  opt-in. This infrastructure did **not** ship autonomous visitor replies. ADR
+  0004 was reassessed and keeps that feature deferred.
+
 ### Changed
 
-- **⚠ Operator action, nginx installs only.** Add `proxy_read_timeout 3600s;`
-  and `proxy_send_timeout 3600s;` to **both** the `/app` and `/apps` location
-  blocks, then reload. nginx defaults to 60 seconds and the sample Wayfindr
-  shipped through 0.7.0 omitted the setting, so an install built from it drops
-  and reconnects the agent conversation page and the live visitor board roughly
-  once a minute. The client now sends its own keepalive, which helps and **does
-  not replace this** — a proxy that closes an idle connection closes it whatever
-  the client does. `docs/self-hosting/runtime-requirements.md` and the Forge
-  guide both carry the corrected block. **The Docker Compose stack needs no
-  change.**
+- **The nginx sample now keeps proxied WebSockets open for an hour.** Add
+  `proxy_read_timeout 3600s;` and `proxy_send_timeout 3600s;` to both the `/app`
+  and `/apps` location blocks and reload nginx for the same coverage. The sample
+  through 0.7.0 inherited nginx's 60-second upstream-read timeout; existing
+  installs that do not update it retain that pre-existing behavior rather than
+  becoming worse during this upgrade. Visible Wayfindr tabs now exchange a
+  15-second ping/pong, which keeps ordinary quiet sessions inside the old limit;
+  the proxy setting additionally covers delayed keepalives and non-Wayfindr
+  clients. A browser-frozen tab still reconnects when it wakes. The Docker
+  Compose stack proxies through Caddy and needs no change.
 
 - **Email can be switched on by pasting a webhook URL.** 0.7.0 told you that no
   provider's inbound webhook could be pointed at Wayfindr and that you needed a
@@ -175,6 +288,27 @@ page view that was not there before.
   deliberately keep a sortable `Y-m-d H:i:s`, because a localized cell is
   reparsed by whatever spreadsheet opens it.
 
+- **Busy queues now have a deliberate display boundary.** Conversation and
+  ticket queues render at most 200 ordered rows while keeping uncapped lane and
+  filter totals visible. Ticket attention/external-issue filtering moved into
+  portable SQL before that cap, and deterministic tie-breakers keep adjacent
+  pages and measurements stable instead of hydrating an entire account to sort
+  it in PHP.
+
+- **Performance claims now come with reproducible measurements.** Production-
+  guarded harnesses and dated baselines cover a 50,000-conversation support desk,
+  report tabs and exports, heavy-page cobrowse transport, Reverb delivery through
+  200 concurrent authenticated agents, and attachment retention at a large
+  object count. The published conservative Reverb operating envelope remains
+  100 concurrent agents; these are bounded baselines, not universal capacity
+  promises for every host.
+
+- **Abandoned cobrowse sessions stop looking active.** Active-session queries
+  now share one idle cutoff, the attention calculation hydrates recent candidates
+  in bounded keyset chunks, and the scheduled expiry path uses the same boundary.
+  Old retained sessions remain part of history without inflating active queue
+  badges or loading every candidate into memory.
+
 ### Fixed
 
 - **Generated widget snippets now initialize automatically.** The bundle deferred its
@@ -190,6 +324,29 @@ page view that was not there before.
   A fresh install whose GitHub API lookup is unavailable is directed to retry
   with an explicit `--ref <tag>`, and the public Quick Start now documents that
   escape hatch.
+
+- **Host-source upgrades now carry the same release declaration as the official
+  image.** The generic deploy flow generates and validates the target manifest,
+  binds it to a truthful clean-checkout identity, caches that identity, and only
+  then migrates. Forge delegates to the same writer. A dirty same-commit checkout
+  is treated as a changed build instead of inheriting clean state over newly
+  authored actions.
+
+- **Release publication now fails closed at every hand-off.** A tag must point
+  at frozen notes and matching committed history and have a successful full CI
+  run for its exact main-branch commit. The publisher stages verified draft
+  assets, verifies the exact multi-architecture image directly from GHCR, then
+  publishes and re-verifies the release before moving floating image aliases.
+  Publication is serialized, old tags rerun through the guarded workflow cannot
+  roll aliases backward, and every external action in the write-capable
+  workflow is pinned by commit. Pre-guard workflow runs remain a release blocker
+  until their 30-day rerun window expires or the repository owner explicitly
+  approves their removal after evidence is preserved. Publication also requires
+  an active immutable `v*` tag ruleset; the September 9 audit found none, and
+  changing repository settings remains a separately authorized operation. The
+  guarded publisher is intentionally stable-only until a prerelease-to-stable
+  operator-action contract is designed; historical dash-tag alpha support is
+  not silently inherited by this stricter pipeline.
 
 - **The unattended-alert digest was mailing a raw UTC timestamp** —
   `2026-08-24T15:05:00.000000Z`, mid-sentence — instead of a readable time on
@@ -220,8 +377,8 @@ page view that was not there before.
   of all — the cobrowse session, which keeps addresses by design after pruning
   strips everything else.
 
-  **⚠ The rewrite is irreversible**, which is the point: the query strings are
-  gone.
+  **The rewrite is intentionally irreversible**, which is the point: the query
+  strings are gone.
 
   It runs automatically, and it needs two passes rather than one. On a
   zero-downtime deploy the migration runs while the *previous* release is still
@@ -229,8 +386,11 @@ page view that was not there before.
   and the migration reports success anyway. The Forge deploy script runs
   `wayfindr:sanitise-page-urls` after activation to catch exactly those, and the
   scheduler runs it daily besides — which is what covers Docker and Compose
-  installs, since they never run that script. **If your scheduler is not
-  running, run the command once by hand after upgrading.** It is idempotent, and
+  installs, since they never run that script. A working one-minute scheduler is
+  already part of Wayfindr's runtime contract. On a host where that pre-existing
+  requirement is missing, the migration still removes the query strings it can
+  see; after repairing the scheduler, run `wayfindr:sanitise-page-urls` once to
+  close the narrow old-request race immediately. The command is idempotent and
   reports nothing on every run after the first.
 
   `audit_events` is deliberately **not** rewritten. An audit trail you rewrite

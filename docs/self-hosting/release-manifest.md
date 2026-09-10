@@ -27,8 +27,8 @@ be authored:
 the list it summarises drifts, and it drifts in the dangerous direction: `false`
 while actions exist.
 
-The generated manifest goes to two places, from the same builder so they cannot
-disagree:
+The generated manifest reaches three delivery paths, from the same builder so
+they cannot disagree:
 
 - **baked into the image** (`/etc/wayfindr/release.json`, plus
   `/etc/wayfindr/release-history.json`) — read by the guard, offline, before
@@ -36,10 +36,12 @@ disagree:
 - **published as a release asset** — read by the installer preflight, which must
   evaluate releases it never pulls
 - **generated into the checkout** on a source deployment, by
-  `deploy/forge/write-release-manifest.sh` before `artisan migrate` — only the
-  image build writes `/etc/wayfindr`, so without this the guard would find no
-  declaration on a host install and enforce nothing at all. The history needs no
-  generating there: `releases/history.json` is committed.
+  `deploy/write-release-manifest.sh` before config caching and
+  `artisan migrate` — only the image build writes `/etc/wayfindr`, so without
+  this the guard would find no declaration on a host install and enforce
+  nothing at all. The history needs no generating there:
+  `releases/history.json` is committed. Forge's compatibility wrapper passes
+  its selected PHP binary to the same host-generic writer.
 
 ## Authoring `release.json`
 
@@ -64,6 +66,10 @@ Keys beginning with `_` are treated as comments and stripped before publication.
 
 An empty `actions` list is the normal case and means the release is safe to take
 unattended.
+
+`requires_operator_action` remains a release-wide answer. If even one action is
+limited to one installation profile, the generated value is still `true`; the
+profile decides which install must act, not whether the release contains action.
 
 ### `notices` — advice that never blocks
 
@@ -119,8 +125,10 @@ Other properties worth knowing:
   the work queued forever after they did exactly as they were told, with the
   check still reporting.
 - **Silencing is the same mechanism as acknowledging.** Add `<release>/<id>` to
-  `WAYFINDR_ACKNOWLEDGED_ACTIONS`. Ids are unique across actions *and* notices in
-  a release, because they share that namespace.
+  `WAYFINDR_ACKNOWLEDGED_ACTIONS`. This silences an attested notice or one whose
+  check cannot be evaluated; it does not contradict a check that returned false.
+  Ids are unique across actions *and* notices in a release, because they share
+  that namespace.
 - **A notice is reported to fresh installs too.** An action is upgrade work, so a
   fresh install is exempt; a notice describes how the release wants to be *run*,
   and a fresh install runs it.
@@ -197,13 +205,22 @@ When the action must be performed, relative to the upgrade:
 `after-pull` exists for a manual data migration that needs the new code but must
 precede the schema change.
 
-**`before-pull` is only detected, never prevented.** The artifact guard first
-runs when the new image starts, which is after the pull — the phase has already
-passed. Only the installer preflight can stop it being missed, and that is the
-component which may not exist on an older install. What the artifact guarantees
-is no *silent* progression: it refuses to migrate and tells the operator to roll
-back, act, and upgrade again. So use `before-pull` sparingly, and only when that
-rollback recovery genuinely exists.
+**`before-pull` needs a preflight outside the target artifact.** The artifact
+guard first runs after the image or checkout has changed, so the phase has
+already passed. Image installs use the refreshed installer preflight. A
+host-managed deployment needs its deployment controller or operator to check
+first; the shipped Forge scripts validate the host runtime and the exact
+operator acknowledgement before `$CREATE_RELEASE()` or `git pull`. Composer may
+otherwise reject a host platform requirement before Laravel can load the
+manifest and print its detail.
+
+An older installer or saved host deploy script may not contain that preflight.
+What the artifact still guarantees is no *silent* schema progression: it refuses
+to migrate and tells the operator to roll back, act, and upgrade again. Use
+`before-pull` sparingly, and only when that recovery genuinely exists. For an
+in-place checkout, also make the deployment script prevent or recover a partial
+source update; the artifact cannot keep an old checkout live after another tool
+has overwritten it.
 
 ### `depends_on_release`
 
@@ -225,6 +242,39 @@ Some combinations are impossible and are rejected at build time:
 A `before-pull` action cannot need the new release's code or schema — neither
 exists yet. An `after-pull` action cannot need the new schema, since that is
 precisely what has not been migrated.
+
+### `installation_profiles` (optional)
+
+Which runtime packaging paths owe the action:
+
+| profile | meaning |
+| --- | --- |
+| `image` | a container built with Wayfindr's Dockerfile, identified by its baked `/etc/wayfindr/release.json` |
+| `host` | a Forge or other host-managed PHP checkout using the generated manifest in the repository |
+
+This is a runtime-ownership distinction, not a source-provenance distinction.
+The published image and an image built locally through `compose.build.yml` are
+both `image`, because the Dockerfile provides their PHP runtime and dependencies.
+A Forge checkout is `host`, because the operator provides PHP, its extensions,
+PHP-FPM, and the worker processes.
+
+Omit the field when an action applies everywhere. When present it must be a
+non-empty, duplicate-free list containing only `image` and/or `host`. Malformed
+scope is rejected by the manifest reader; filtering also fails closed so an
+unknown profile or malformed list cannot silently exempt an install. The profile
+is derived from the artifact shape and deliberately has no operator environment
+override.
+
+Use this only when the packaging itself proves one path does not owe the work.
+It must not hide a requirement merely because one install style is inconvenient
+to stop. The release-wide `requires_operator_action` value remains `true` while
+any scoped action exists, and the changelog must name the affected profile in its
+opening verdict.
+
+The field is additive within schema 1. The v0.7.0 reader validates the fields it
+understands and preserves this unknown action key, allowing the refreshed image
+installer to filter a `host`-only action before pulling. The target artifact then
+validates and applies the field itself.
 
 ### `applicability`
 
@@ -252,9 +302,14 @@ How the artifact decides whether the action has been done.
 | `check` | a machine-evaluable condition, named by `check` |
 | `attest` | the operator acknowledges it explicitly |
 
-Prefer `check` wherever the condition is expressible: it is real verification and
-the operator cannot be wrong about it. A `check` without a named condition is
-rejected — that is an attestation wearing a verification's label.
+Prefer `check` wherever the condition is expressible: it is real verification.
+A positive answer settles the action, and a negative answer is authoritative —
+an acknowledgement cannot override a failed check. If the running artifact
+cannot evaluate the check at all, the action stays outstanding but may be
+acknowledged; that is an explicit statement about an observation the artifact
+could not make, not a contradiction of evidence it did make. A `check` without
+a named condition is rejected — that is an attestation wearing a verification's
+label.
 
 Use `attest` only when the artifact genuinely cannot observe completion ("you
 have taken a backup you trust"). The operator satisfies it with:
@@ -302,7 +357,10 @@ The declaration is not advice — the release enforces it against itself.
 `artisan migrate` before a single schema change is applied, prints what is
 needed, and exits **78**. The container entrypoint treats that code as a refusal
 rather than a transient failure, so it stops immediately instead of retrying.
-Nothing has been changed, and the previous release still runs.
+The previous release remains live for image, atomic, and zero-downtime activation
+paths. An in-place host checkout needs its own maintenance and rollback handling;
+the guard guarantees the old schema remains untouched, not that an external
+`git pull` is reversed.
 
 **After migrating.** An unmet `after-start` requirement cannot block migration —
 the action needs the migrated schema to be performed at all — so it gates
@@ -341,6 +399,13 @@ the span from what is *running* would collapse it to `(v3, v3]`: the requirement
 would be outstanding one moment and gone the next. The marker only advances on a
 clean assessment, so the span keeps reaching back to the last release that
 genuinely owed nothing.
+
+The companion `installation_profile` says whether that clean assessment ran as
+`image` or `host`. A marker from one profile cannot settle actions scoped to the
+other. If storage moves between those packaging paths — or the state predates
+this field — the guard keeps the recorded version for floor checks but reopens
+the whole action history under the current profile. The next clean migration
+records the new profile and may narrow the span again.
 
 An install with no such file is **not** assumed to be fresh — every install
 predating this mechanism has none. If the database already carries migrations,
@@ -412,11 +477,21 @@ What it checks, specifically:
 - `phase`, `depends_on_release`, and the applicability and verification types are
   known values, and the phase/dependency pair is one that can actually be
   performed
+- authored actions, notices, and their type-specific applicability and
+  verification objects contain only recognized keys, so a typo cannot silently
+  widen or weaken a requirement
+- `installation_profiles`, when present, is a non-empty unique list containing
+  only `image` and/or `host`
 - a `check` names a condition to run
 - `minimum_upgrade_from` and an `upgrade-from` `min` parse as versions, since
   they are compared against the upgrade's starting point — a value that does not
   parse would silently make an action apply to every upgrade, including the ones
   it was written to exclude
+
+That strictness is for the authored source. A reader still accepts additive keys
+in a published manifest of schema 1 so an older release can safely consume a
+newer, backward-compatible declaration; changing the meaning of an existing key
+or requiring an old reader to understand a new one needs a schema bump.
 
 What it does **not** check is whether the `detail` you wrote is *useful*, or
 whether a named `check` is implemented. Those are review's job.

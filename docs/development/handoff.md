@@ -1,6 +1,6 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated August 11, 2026. For an agent (or engineer) picking up
+*Living document — last updated September 9, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
@@ -23,15 +23,45 @@ differentiator.
 
 ---
 
-## 2. Current state (August 2026)
+## 2. Current state (September 2026)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
 consented, masked view of the visitor's page.
 
-**The current Forge stage is the initial controlled dogfood instance.** The
-owner explicitly chose it instead of creating a separate production install
-first. The July 14 readiness pass confirmed the then-current runtime contract live:
+The guarded publisher being prepared in #932 is stable-only. Historical sections
+below accurately describe the former dash-tag alpha workflow, but that is not a
+current release path: a new prerelease channel first needs an explicit rule for
+carrying release actions into the eventual stable artifact.
+
+**Release truth comes first.** `v0.7.0` (August 25, 2026) is the latest public
+artifact. Current `main` identifies itself as unreleased `0.8.0`; that minor
+bump reflects the features, additive schema, and operator actions added since
+`v0.7.0`, not a tag, release, registry push, deployment, or acceptance claim.
+
+The Tier 1 and Tier 2 feature epics are closed in the development tree. Current
+`main` includes direct Mailgun/Postmark inbound verification, TOTP/OIDC/custom
+roles and JIT mapping, API and outbound webhooks, SLA and routing policy,
+automation rules/macros/bulk actions/shortcuts, dashboard/Web Push alerting,
+contacts and proactive messages, an optional human-reviewed agent copilot, and
+measured performance baselines. Localization now covers the operator console
+and most dashboard workflows in English, German, and Italian, with per-agent
+display timezones; stored timestamps remain UTC. These are current-source
+claims, not claims about the public `v0.7.0` artifact.
+
+**The remaining release/acceptance sequence is gated.** Finish and review the
+`v0.8.0` candidate under #932; if the owner separately authorizes publication,
+publish and verify the exact tag, commit, image digest, and relevant install and
+upgrade paths; then refresh #797's baseline and give it to a human non-author.
+A cold Claude agent's no-context `v0.7.0` sandbox run was useful synthetic
+evidence — it matched the release identity, found the widget auto-init and
+installer discovery defects fixed by PRs #929/#931, and completed a support
+loop after workarounds — but it skipped a real VM, unwarmed pull, public
+TLS/origin, and local-CA trust. It does not satisfy #797.
+
+**Historical stage evidence (July 14).** The Forge stage was chosen as the
+initial controlled dogfood instance instead of creating a separate production
+install first. That readiness pass confirmed the then-current runtime contract live:
 `APP_DEBUG=false`, public HTTPS, current migrations, PostgreSQL, Redis, outbound
 mail, the scheduler, durable queue worker, Reverb, writable storage, deploy
 restarts, and no failed queue jobs. A manual database export and isolated
@@ -41,7 +71,7 @@ protection, Dependabot, the GitHub Wiki, and the disposable-VM evidence contract
 have landed. Do not treat the July 14 stage pass, the deployment fork, or any
 later dated smoke as current deployment proof without re-checking the target.
 
-**Controlled dogfooding is open.** The first real mobile support session on
+**Controlled dogfood evidence (July 2026).** The first real mobile support session on
 `wayfindr.cc` completed the visitor/agent chat loop, produced a durable Wayfindr
 ticket, and created GitHub issue #587 through the live provider connection. It
 also surfaced a real mobile usability bug: iOS zoomed the page when the 14px chat
@@ -153,15 +183,20 @@ versioning + upgrade enforcement (ADR 0012/0013, #635–#656 — completed Augus
 11 with the advisory response; see §12), repository CI/config hardening, and the
 repo-authored GitHub Wiki.
 
-**Issue housekeeping is current.** #564 (launch proof) was reconciled and
-closed. External issue creation, state sync, and comment relay shipped and were
-live-validated; demand-gated follow-up now lives in #626 rather than the original
-integration umbrella. The break-glass half of the platform-operator boundary is
-done; any future platform-action audit inventory should start from
-`docs/product/platform-operator-boundary.md` instead of reopening the shipped
-grant contract. Other long-lived product work is deliberately demand-gated:
-#626 for richer external ticket follow-ups and #492 for live in-place cobrowse
-replay, which remains recommended against as originally specced.
+**Current issue boundary (September 9).** #932 is the release-candidate work;
+#797 is the sole open `1.0.0` milestone acceptance item and must follow a
+separately authorized, verified publication; #762 remains open only for the
+visitor-facing autonomous-answer half that ADR 0004 deliberately defers. The
+open Dependabot PR #924 is a separate dependency update, not part of the release
+or human-acceptance gate.
+
+**Historical housekeeping from the July cycle.** #564 (launch proof) was
+reconciled and closed. External issue creation, state sync, and comment relay
+were live-validated; richer follow-up was parked under #626 rather than the
+original integration umbrella. The break-glass grant contract was complete,
+and the then-open #492 in-place cobrowse replay proposal remained recommended
+against as originally specified. Keep this paragraph as history; use the live
+issue tracker for current state.
 
 ---
 
@@ -302,55 +337,44 @@ replay, which remains recommended against as originally specced.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Operate `v0.3.0` while preparing the `0.4.0` reliability cycle.** Three
-   releases are out and the upgrade path is proven in both directions (see §11
-   and §12). Cut freely: the upgrade is one command, installs pin to releases,
-   and the guard now has a proportionate response for requirements that are worth
-   reporting without being worth an outage.
+1. **Finish and review #932's `v0.8.0` candidate.** Align the release contract,
+   operator-visible copy, changelog coverage, CI, and review evidence. This step
+   may prove the source ready to publish; it does not authorize a tag, release,
+   registry push, deployment, or upgrade.
 
-   **The condition this document set in July is still unmet, and still matters**:
-   nobody but the owner has run an install *or* an upgrade. `0.1.0 → 0.2.0` and
-   `0.2.0 → 0.3.0` have both been proven end to end in a clean room against real
-   published artifacts, so the mechanism is no longer the open question — the
-   open question is whether it survives contact with someone else's environment.
-   That is the next genuinely new evidence, and it cannot be manufactured here.
+2. **Publish only after explicit owner authorization, then verify it.** Record
+   the exact stable tag, commit, image digest, GitHub release metadata, and the
+   relevant clean-install and supported-upgrade evidence. Do not transfer the
+   August 12 `v0.3.2` matrix or the cold `v0.7.0` sandbox results to the new
+   artifact by implication.
 
-2. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
+3. **Refresh and run #797 with a human non-author.** The acceptance brief must
+   name the newly verified public artifact and repaired widget/installer path.
+   The cold Claude run found real defects and proved an after-workaround
+   synthetic support loop, but an AI sandbox is not the human, real-environment
+   acceptance gate.
+
+4. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
-   conversations choose the next branch-sized slice. Watch `/operator`,
-   `/operator`, failed queue jobs, mail, and realtime after deploys, but do not
-   turn routine observation into a new ceremony layer.
+   conversations choose the next branch-sized slice. After deployments, check
+   `/operator`, failed queue jobs, mail, realtime, scheduler evidence, and
+   backup/restore evidence without treating a fork sync or deploy receipt as
+   runtime proof.
 
-3. **Attachments: done, including remote storage in production.** The full
-   contract shipped and the S3 surface runs live on Cloudflare R2 (see §2/§3).
-   Future attachment work is demand-gated:
-   direct-ticket/internal-note attachments, office-document opt-ins, pre-signed
-   URL opt-in — all deliberately excluded from ADR 0007's v1.
+5. **Keep expansion demand-gated.** Richer external-integration field mapping,
+   direct-ticket/internal-note attachment variants, office-document opt-ins,
+   pre-signed URLs, literal incremental cobrowse patching, and host SDK polish
+   should start only when real traffic identifies the narrow need and preserves
+   the existing security boundaries.
 
-4. **#626 — external ticket follow-ups, only after live demand.** Syncing labels,
-   assignee, or priority needs a product decision about fields, direction, and
-   conflict handling. Do not guess that contract before dogfood traffic shows
-   which provider metadata agents actually need. Inbound-comment notifications
-   and richer presentation belong to the same demand-gated polish lane.
+6. **Keep the autonomous half of #762 deferred.** The optional agent copilot is
+   implemented inside ADR 0004's human-review boundary. A visitor-facing answer
+   agent requires broader evaluation and a deliberate ADR change; do not smuggle
+   it in as release polish.
 
-5. **Platform operator boundary: break-glass is done.** The design-heavy grant
-   contract shipped (ADR 0008, PRs #606–#611; see §3). Any later
-   platform-action audit inventory is demand-gated, and much of its foundation
-   (account-homed `break_glass.*` events, the operator dashboard's safe-activity
-   feed) now exists. Possible later extensions the ADR deliberately excluded
-   from v1: repair verbs, attachment binary access. Start from
-   `docs/product/platform-operator-boundary.md`.
-
-6. **#492 — live in-place cobrowse replay (incremental DOM patching).**
-   **Recommended against as currently specced**: it would require weakening the
-   inert sandboxed preview, a security-posture regression. Only revisit with a
-   design that keeps the preview inert (no script execution, no external-resource
-   or `url()` exfiltration path).
-
-7. **Scale-driven realtime hardening** (only if needed). Broadcasts are
-   `ShouldBroadcastNow` (synchronous). If broadcast volume ever pressures request
-   latency, consider moving to queued broadcasts + a dedicated worker — but that
-   reintroduces a worker dependency for realtime, so measure first.
+7. **Handle #924 separately.** The open dependency PR has its own compatibility
+   and review burden. It is not a prerequisite for #932, publication, or #797
+   unless its actual diff establishes one.
 
 ---
 
@@ -742,7 +766,7 @@ commit-since-last-touch check passed at this cut while `[Unreleased]` was missin
 both floor fixes, because a later PR had touched the file without covering the
 earlier ones.
 
-### Next
+### Next steps recorded August 11, 2026
 
 - **Operate `v0.3.0`; prepare `0.4.0`.** Cut freely; the upgrade path is proven
   in both directions.
@@ -789,17 +813,23 @@ queue, Reverb, per-minute scheduler, and three-region HTTP 200 checks. The manua
 scheduler proof note was stale and backup/restore proof note missing; do not
 rewrite those as runtime failures or as current production restore proof.
 
-### Next
+### Continuation recorded September 9, 2026
 
 - `v0.7.0` is the latest public artifact. The current unreleased line is
   `0.8.0`: pre-1.0 features, additive schema, or operator action advance the
   minor slot under ADR 0012. A later fixes-only release may use `0.8.1`;
   another feature or action-bearing line advances to `0.9.0`. None of those
-  development identities claims publication. `1.0.0` remains scoped to the
-  remaining Tier 1 proof and hardening work, not feature parity.
+  development identities claims publication. Tier 1 and Tier 2 feature work is
+  implemented on current `main`; the sole open `1.0.0` milestone criterion is
+  the human non-author install in #797.
 - Localization is a first-class concern, not a feature: interface language,
   timezone, and regional formatting belong in first-run setup and the operator
-  console, and every agent-facing timestamp currently renders in UTC.
+  console. Stored timestamps remain UTC; the operator chooses the install
+  display timezone and each agent may override it on their profile.
+- Preserve the release sequence: prepare and review #932, obtain separate owner
+  authorization before publication, verify the exact stable artifact, refresh
+  #797's baseline, and only then ask the human non-author to run it. The cold
+  Claude sandbox run remains synthetic defect-finding evidence, not acceptance.
 - Operate the controlled Forge dogfood instance. Refresh the scheduler and
   backup/restore proof notes only when current operational evidence exists, and
   let real support conversations choose the next branch-sized product slice.

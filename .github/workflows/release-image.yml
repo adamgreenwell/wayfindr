@@ -1,5 +1,5 @@
-# Builds and publishes the official self-hosting image. This stays separate from
-# pull-request validation because tag pushes publish external artifacts.
+# Builds and publishes the official self-hosting image. A release tag is only
+# accepted after the complete main-branch CI run for its exact commit succeeds.
 
 name: Release image
 
@@ -9,74 +9,630 @@ on:
       - "v*"
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  # Mutable aliases and the releases/latest pointer are repository-global.
+  # Serialize every release so two different tags cannot finish out of order.
+  # Retain the full pending queue: the default keeps one waiter and cancels it
+  # when a third tag arrives, even when the active run is not cancelled.
+  group: release-image-publication
+  cancel-in-progress: false
+  queue: max
 
 jobs:
-  build-and-push:
+  validate:
+    name: Validate release
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      manifest_sha256: ${{ steps.manifest.outputs.sha256 }}
+      release_sha: ${{ steps.contract.outputs.release_sha }}
+      version: ${{ steps.contract.outputs.version }}
     steps:
       - name: Check out the tagged ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Set up QEMU (arm64 builds)
-        uses: docker/setup-qemu-action@v4
+      - name: Set up PHP 8.4
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
+        with:
+          php-version: "8.4"
+          coverage: none
+
+      - name: Verify the tagged release contract
+        id: contract
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(tr -d '[:space:]' < VERSION)"
+          expected_tag="v${version}"
+
+          if [[ "${GITHUB_REF_NAME}" != "$expected_tag" ]]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match VERSION (${expected_tag})." >&2
+            exit 1
+          fi
+
+          release_sha="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+
+          if [[ "$(git rev-parse HEAD)" != "$release_sha" ]]; then
+            echo "The checked-out commit does not match ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin main
+
+          if ! git merge-base --is-ancestor "$release_sha" origin/main; then
+            echo "Tag ${GITHUB_REF_NAME} is not on the repository's main branch." >&2
+            exit 1
+          fi
+
+          make release-publish-contract-test
+
+          echo "release_sha=$release_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # A tag workflow is independent of the main push workflow. Re-check the
+      # completed run here so an eager tag cannot publish while the PostgreSQL,
+      # widget, self-hosting, or other full-CI jobs are still running.
+      - name: Verify full main CI for the release commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.contract.outputs.release_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          runs="$(gh run list \
+            --workflow "Pull request CI" \
+            --commit "$RELEASE_SHA" \
+            --event push \
+            --limit 20 \
+            --json conclusion,headSha,status,url)"
+
+          if ! jq -e --arg sha "$RELEASE_SHA" \
+            'any(.[]; .headSha == $sha and .status == "completed" and .conclusion == "success")' \
+            <<< "$runs" >/dev/null; then
+            echo "No successful completed Pull request CI run exists for release commit $RELEASE_SHA." >&2
+            jq -r --arg sha "$RELEASE_SHA" \
+              '.[] | select(.headSha == $sha) | "  \(.status) / \(.conclusion // \"no conclusion\"): \(.url)"' \
+              <<< "$runs" >&2
+            exit 1
+          fi
+
+      # The installer reads this asset before pulling an image. Build it in the
+      # read-only job, then checksum the artifact hand-off into publication.
+      - name: Build the release manifest
+        id: manifest
+        run: |
+          php scripts/release/build-manifest.php \
+            --version="${{ github.ref_name }}" \
+            --commit="${{ steps.contract.outputs.release_sha }}" \
+            --out=release-manifest.json
+          test -s release-manifest.json
+          echo "sha256=$(sha256sum release-manifest.json | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          cat release-manifest.json
+
+      - name: Preserve the validated release manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-manifest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+      packages: write
+    steps:
+      - name: Check out the validated tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
+          persist-credentials: false
+
+      - name: Restore the validated release manifest
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-manifest-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Verify the manifest hand-off
+        env:
+          EXPECTED_SHA256: ${{ needs.validate.outputs.manifest_sha256 }}
+        run: |
+          set -euo pipefail
+          test -s release-manifest.json
+          actual="$(sha256sum release-manifest.json | awk '{print $1}')"
+          test "$actual" = "$EXPECTED_SHA256"
+
+      - name: Compute the image identity
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wayfindr"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      # The event SHA is immutable, but a movable remote tag is not. Bind every
+      # later write to the commit that passed validation, and fail before the
+      # first draft, asset, or registry mutation if the tag has moved.
+      - name: Verify the remote release tag before staging
+        env:
+          EXPECTED_SHA: ${{ needs.validate.outputs.release_sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          test "$actual" = "$EXPECTED_SHA"
+
+      # The release remains invisible to releases/latest while its required
+      # asset and exact image are being prepared. A rerun may reuse our draft;
+      # if publication already completed, it verifies and reuses the recorded
+      # digest instead of rebuilding an immutable release tag.
+      - name: Stage the draft release and manifest
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # List explicitly so a network/API failure cannot be misread as "this
+          # release does not exist" and turn into a conflicting create attempt.
+          release_json="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --slurp \
+            | jq -c --arg tag "$TAG" '
+                [.[][] | select(.tag_name == $tag)]
+                | if length > 1 then error("duplicate releases for tag")
+                  elif length == 1 then .[0]
+                  else null
+                  end
+              ')"
+
+          if [[ "$release_json" == "null" ]]; then
+            gh release create "$TAG" \
+              --draft \
+              --generate-notes \
+              --latest=false \
+              --verify-tag
+            release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          fi
+
+          jq -e --arg tag "$TAG" '
+            .tag_name == $tag and .prerelease == false
+          ' <<< "$release_json" >/dev/null
+
+          published="$(jq -r '(.draft == false)' <<< "$release_json")"
+          manifest_digest="sha256:$(sha256sum release-manifest.json | awk '{print $1}')"
+          manifest_count="$(jq '[.assets[] | select(.name == "release-manifest.json")] | length' \
+            <<< "$release_json")"
+
+          case "$manifest_count" in
+            0)
+              if [[ "$published" == "true" ]]; then
+                echo "The published release has no release-manifest.json asset." >&2
+                exit 1
+              fi
+              gh release upload "$TAG" release-manifest.json
+              release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+              ;;
+            1) ;;
+            *)
+              echo "The release has duplicate release-manifest.json assets." >&2
+              exit 1
+              ;;
+          esac
+
+          jq -e --arg digest "$manifest_digest" '
+            [.assets[] | select(
+              .name == "release-manifest.json"
+              and .state == "uploaded"
+              and .digest == $digest
+            )] | length == 1
+          ' <<< "$release_json" >/dev/null
+
+          staged="$(mktemp -d)"
+          gh release download "$TAG" \
+            --pattern release-manifest.json \
+            --dir "$staged"
+          cmp --silent release-manifest.json "$staged/release-manifest.json"
+
+          digest_count="$(jq '[.assets[] | select(.name == "release-image-digest.txt")] | length' \
+            <<< "$release_json")"
+
+          case "$digest_count" in
+            0)
+              if [[ "$published" == "true" ]]; then
+                echo "The published release has no release-image-digest.txt asset." >&2
+                exit 1
+              fi
+              echo "image_recorded=false" >> "$GITHUB_OUTPUT"
+              ;;
+            1)
+              recorded="$(mktemp -d)"
+              gh release download "$TAG" \
+                --pattern release-image-digest.txt \
+                --dir "$recorded"
+              digest="$(tr -d '[:space:]' < "$recorded/release-image-digest.txt")"
+
+              if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "The release has an invalid image digest asset." >&2
+                exit 1
+              fi
+
+              digest_asset_digest="sha256:$(sha256sum "$recorded/release-image-digest.txt" | awk '{print $1}')"
+              jq -e --arg digest "$digest_asset_digest" '
+                [.assets[] | select(
+                  .name == "release-image-digest.txt"
+                  and .state == "uploaded"
+                  and .digest == $digest
+                )] | length == 1
+              ' <<< "$release_json" >/dev/null
+
+              echo "image_recorded=true" >> "$GITHUB_OUTPUT"
+              echo "recorded_digest=$digest" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "The release has duplicate release-image-digest.txt assets." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "already_published=$published" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU for arm64 builds
+        if: steps.release.outputs.image_recorded != 'true'
+        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute image tags
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/wayfindr
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
+      - name: Build and push the release image by digest
+        id: build
+        if: steps.release.outputs.image_recorded != 'true'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: docker/self-hosting/server.Dockerfile
           platforms: linux/amd64,linux/arm64
           build-args: |
             WAYFINDR_VERSION=${{ github.ref_name }}
-            WAYFINDR_COMMIT=${{ github.sha }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+            WAYFINDR_COMMIT=${{ needs.validate.outputs.release_sha }}
+          # Publish an addressable digest without touching the immutable
+          # version tag. The digest asset below is the durable retry boundary.
+          outputs: type=image,name=${{ steps.identity.outputs.image }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.validate.outputs.release_sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # A bare git tag creates no GitHub Release, and the installer resolves
-      # releases/latest first — publish one so tag pushes alone keep installs
-      # pinned (the installer also falls back to the tags API).
-      # The installer preflight reads declarations for releases it never pulls,
-      # so the manifest has to be fetchable without the image (ADR 0013).
-      - name: Build the release manifest
+      - name: Resolve the exact image digest
+        id: image
+        env:
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          RECORDED_DIGEST: ${{ steps.release.outputs.recorded_digest }}
+        shell: bash
         run: |
-          php scripts/release/build-manifest.php \
-            --version="${{ github.ref_name }}" \
-            --commit="${{ github.sha }}" \
-            --out=release-manifest.json
-          cat release-manifest.json
+          set -euo pipefail
 
-      - name: Create the GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          generate_release_notes: true
-          # Dash-suffixed tags (v0.1.0-alpha.1) are marked prerelease, which
-          # keeps them out of releases/latest — so once a stable release
-          # exists, installs prefer it over newer alphas; before any stable,
-          # the installer's tags-API fallback still pins to the prerelease.
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          files: release-manifest.json
+          if [[ "${{ steps.release.outputs.image_recorded }}" == "true" ]]; then
+            digest="$RECORDED_DIGEST"
+          else
+            digest="$BUILT_DIGEST"
+          fi
+
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "The exact release image did not produce a valid digest." >&2
+            exit 1
+          fi
+
+          printf '%s\n' "$digest" > release-image-digest.txt
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      # Inspect the digest-only candidate before giving it a public release tag.
+      # A failed candidate can leave a private draft and durable digest evidence;
+      # it must not occupy an immutable version tag that a retry cannot repair.
+      - name: Verify the release image before tagging
+        env:
+          EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.release_sha }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE@$EXPECTED_DIGEST" >/dev/null
+
+          manifest="$(docker buildx imagetools inspect "$IMAGE@$EXPECTED_DIGEST" \
+            --format '{{json .Manifest}}')"
+          jq -e '
+            [
+              .manifests[]
+              | select(
+                  (.platform.os | type) == "string"
+                  and (.platform.architecture | type) == "string"
+                  and .platform.os != "unknown"
+                  and .platform.architecture != "unknown"
+                )
+              | "\(.platform.os)/\(.platform.architecture)"
+            ] | sort == ["linux/amd64", "linux/arm64"]
+          ' <<< "$manifest" >/dev/null
+
+          images="$(docker buildx imagetools inspect "$IMAGE@$EXPECTED_DIGEST" \
+            --format '{{json .Image}}')"
+          jq -e \
+            --arg revision "$EXPECTED_SHA" \
+            --arg source "$SOURCE" \
+            --arg version "$VERSION" '
+              (keys | sort) == ["linux/amd64", "linux/arm64"]
+              and all(.[];
+                .config.Labels["org.opencontainers.image.revision"] == $revision
+                and .config.Labels["org.opencontainers.image.source"] == $source
+                and .config.Labels["org.opencontainers.image.version"] == $version
+              )
+            ' <<< "$images" >/dev/null
+
+          artifact_dir="$(mktemp -d)"
+          container_id=
+          cleanup() {
+            if [[ -n "$container_id" ]]; then
+              docker rm "$container_id" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup EXIT
+
+          container_id="$(docker create \
+            --platform linux/amd64 \
+            --entrypoint /bin/true \
+            "$IMAGE@$EXPECTED_DIGEST")"
+          docker cp "$container_id:/etc/wayfindr/version" "$artifact_dir/version"
+          docker cp "$container_id:/etc/wayfindr/commit" "$artifact_dir/commit"
+          docker cp "$container_id:/etc/wayfindr/release.json" "$artifact_dir/release-manifest.json"
+          docker rm "$container_id" >/dev/null
+          container_id=
+
+          test "$(tr -d '[:space:]' < "$artifact_dir/version")" = "$TAG"
+          test "$(tr -d '[:space:]' < "$artifact_dir/commit")" = "$EXPECTED_SHA"
+          cmp --silent release-manifest.json "$artifact_dir/release-manifest.json"
+
+      # Record only a candidate that passed the platform, label, and baked-file
+      # checks. This remains before the immutable version tag, so a retry can
+      # recover the exact verified digest without rebuilding or overwriting.
+      - name: Attach and verify the exact image digest
+        if: steps.release.outputs.image_recorded != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" release-image-digest.txt
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          digest_asset_digest="sha256:$(sha256sum release-image-digest.txt | awk '{print $1}')"
+          jq -e --arg digest "$digest_asset_digest" '
+            [.assets[] | select(
+              .name == "release-image-digest.txt"
+              and .state == "uploaded"
+              and .digest == $digest
+            )] | length == 1
+          ' <<< "$release_json" >/dev/null
+          staged="$(mktemp -d)"
+          gh release download "$TAG" \
+            --pattern release-image-digest.txt \
+            --dir "$staged"
+          cmp --silent release-image-digest.txt "$staged/release-image-digest.txt"
+
+      - name: Verify the remote release tag before image tagging
+        env:
+          EXPECTED_SHA: ${{ needs.validate.outputs.release_sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          test "$actual" = "$EXPECTED_SHA"
+
+      # On a retry, either reuse the exact tag when it already names the
+      # verified recorded digest or create it from that digest when the prior run
+      # stopped before this step. An unknown lookup error is never treated as
+      # absence, and a mismatched existing tag is never overwritten.
+      - name: Create or verify the exact release image tag
+        env:
+          EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          inspect_error="$(mktemp)"
+          trap 'rm -f "$inspect_error"' EXIT
+          if manifest="$(docker buildx imagetools inspect "$IMAGE:$VERSION" \
+            --format '{{json .Manifest}}' 2>"$inspect_error")"; then
+            actual="$(jq -er '.digest' <<< "$manifest")"
+            if [[ "$actual" != "$EXPECTED_DIGEST" ]]; then
+              echo "$IMAGE:$VERSION already names $actual; refusing to overwrite it with $EXPECTED_DIGEST." >&2
+              exit 1
+            fi
+          else
+            cat "$inspect_error" >&2
+            if ! grep -Eiq 'manifest unknown|(^|[^[:alpha:]])not found([^[:alpha:]]|$)' "$inspect_error"; then
+              echo "Cannot determine whether $IMAGE:$VERSION exists; refusing to mutate it." >&2
+              exit 1
+            fi
+
+            docker buildx imagetools create \
+              --tag "$IMAGE:$VERSION" \
+              "$IMAGE@$EXPECTED_DIGEST"
+          fi
+
+          actual="$(docker buildx imagetools inspect "$IMAGE:$VERSION" \
+            --format '{{json .Manifest}}' | jq -er '.digest')"
+          test "$actual" = "$EXPECTED_DIGEST"
+
+      # A tag using this guarded workflow may be rerun, and release builds can
+      # finish out of order. Only the highest published-or-candidate stable
+      # SemVer may move latest or either floating image alias. Exact version
+      # releases remain rerunnable. RELEASING.md separately gates still-eligible
+      # runs that retain an older publisher from before these safeguards landed.
+      - name: Decide whether this release may move stable aliases
+        id: promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          releases="$(gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --slurp)"
+          published_versions="$(jq -r '
+            .[][]
+            | select(.draft == false and .prerelease == false)
+            | .tag_name
+            | select(test("^v?(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
+            | sub("^v"; "")
+          ' <<< "$releases")"
+          highest="$(printf '%s\n%s\n' "$VERSION" "$published_versions" \
+            | sed '/^$/d' \
+            | sort -V \
+            | tail -n 1)"
+
+          if [[ "$highest" == "$VERSION" ]]; then
+            echo "promote=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Release $VERSION is older than published stable release $highest; floating aliases will not move." >&2
+            echo "promote=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish the GitHub Release
+        if: steps.release.outputs.already_published != 'true'
+        env:
+          EXPECTED_SHA: ${{ needs.validate.outputs.release_sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Recheck immediately before visibility changes. A tag move after the
+          # draft was staged must leave the release private.
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          test "$actual" = "$EXPECTED_SHA"
+
+          if [[ "${{ steps.promotion.outputs.promote }}" == "true" ]]; then
+            gh release edit "$TAG" --draft=false --latest
+          else
+            gh release edit "$TAG" --draft=false --latest=false
+          fi
+
+      - name: Verify the published release and exact image
+        env:
+          EXPECTED_DIGEST: ${{ steps.image.outputs.digest }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.release_sha }}
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          manifest_digest="sha256:$(sha256sum release-manifest.json | awk '{print $1}')"
+          digest_asset_digest="sha256:$(sha256sum release-image-digest.txt | awk '{print $1}')"
+          jq -e \
+            --arg tag "$TAG" \
+            --arg manifest_digest "$manifest_digest" \
+            --arg digest_asset_digest "$digest_asset_digest" '
+              .tag_name == $tag
+              and .draft == false
+              and .prerelease == false
+              and ([.assets[] | select(
+                .name == "release-manifest.json"
+                and .state == "uploaded"
+                and .digest == $manifest_digest
+              )] | length == 1)
+              and ([.assets[] | select(
+                .name == "release-image-digest.txt"
+                and .state == "uploaded"
+                and .digest == $digest_asset_digest
+              )] | length == 1)
+            ' <<< "$release_json" >/dev/null
+
+          published="$(mktemp -d)"
+          gh release download "$TAG" \
+            --pattern release-manifest.json \
+            --pattern release-image-digest.txt \
+            --dir "$published"
+          cmp --silent release-manifest.json "$published/release-manifest.json"
+          cmp --silent release-image-digest.txt "$published/release-image-digest.txt"
+
+          docker buildx imagetools inspect "$IMAGE@$EXPECTED_DIGEST" >/dev/null
+          actual="$(docker buildx imagetools inspect "$IMAGE:$VERSION" \
+            --format '{{json .Manifest}}' | jq -er '.digest')"
+          test "$actual" = "$EXPECTED_DIGEST"
+
+          if [[ "${{ steps.promotion.outputs.promote }}" == "true" ]]; then
+            latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')"
+            test "$latest" = "$TAG"
+          fi
+
+          # Catch a move concurrent with publication as a failed release run.
+          # RELEASING.md requires repository tag protection as the durable
+          # boundary because a workflow cannot prevent a later privileged move.
+          actual="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          test "$actual" = "$EXPECTED_SHA"
+
+      # Floating aliases are convenience pointers only. Move them last, after
+      # the release, both assets, and the immutable version tag are verified.
+      - name: Promote stable image aliases
+        if: steps.promotion.outputs.promote == 'true'
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE: ${{ steps.identity.outputs.image }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          minor="${VERSION%.*}"
+          docker buildx imagetools create \
+            --tag "$IMAGE:$minor" \
+            "$IMAGE@$DIGEST"
+          actual="$(docker buildx imagetools inspect "$IMAGE:$minor" \
+            --format '{{json .Manifest}}' | jq -er '.digest')"
+          test "$actual" = "$DIGEST"
+
+          # The broadest pointer moves last. A failure after the minor tag is a
+          # narrower partial state than moving latest first.
+          docker buildx imagetools create \
+            --tag "$IMAGE:latest" \
+            "$IMAGE@$DIGEST"
+          actual="$(docker buildx imagetools inspect "$IMAGE:latest" \
+            --format '{{json .Manifest}}' | jq -er '.digest')"
+          test "$actual" = "$DIGEST"

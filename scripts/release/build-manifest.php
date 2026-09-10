@@ -66,6 +66,60 @@ function fail(string $message): never
     exit(1);
 }
 
+function readFileOrFail(string $path): string
+{
+    $contents = @file_get_contents($path);
+
+    if ($contents === false) {
+        fail("could not read {$path}");
+    }
+
+    return $contents;
+}
+
+/**
+ * Replace one generated file only after every byte has reached a sibling temp
+ * file. A warning from file_put_contents is not a failed process by itself, and
+ * callers use this command's exit status as their pre-publication/deploy gate.
+ */
+function writeFileOrFail(string $path, string $contents): void
+{
+    $directory = dirname($path);
+
+    if (! is_dir($directory)) {
+        fail("output directory does not exist for {$path}");
+    }
+
+    $temporary = @tempnam($directory, '.wayfindr-release-');
+
+    if ($temporary === false) {
+        fail("could not create a temporary file beside {$path}");
+    }
+
+    $permissions = @fileperms($path);
+    $mode = is_int($permissions) ? ($permissions & 0777) : 0644;
+    $written = @file_put_contents($temporary, $contents, LOCK_EX);
+
+    if ($written !== strlen($contents)) {
+        @unlink($temporary);
+        fail("could not write the complete output for {$path}");
+    }
+
+    if (! @chmod($temporary, $mode)) {
+        @unlink($temporary);
+        fail("could not set output permissions for {$path}");
+    }
+
+    if (! @rename($temporary, $path)) {
+        @unlink($temporary);
+        fail("could not replace {$path}");
+    }
+
+    if (@file_get_contents($path) !== $contents) {
+        fail("could not verify the complete output at {$path}");
+    }
+}
+
 $options = options($argv);
 $root = dirname(__DIR__, 2);
 
@@ -83,7 +137,7 @@ if (! is_file($declarationPath)) {
 }
 
 /** @var mixed $declaration */
-$declaration = json_decode((string) file_get_contents($declarationPath), true);
+$declaration = json_decode(readFileOrFail($declarationPath), true);
 
 if (! is_array($declaration)) {
     fail("{$declarationPath} is not valid JSON.");
@@ -103,16 +157,50 @@ $encode = static fn (array $value): string => json_encode(
 )."\n";
 
 if (isset($options['out'])) {
-    file_put_contents($options['out'], $encode($manifest));
+    writeFileOrFail($options['out'], $encode($manifest));
 }
 
 if (isset($options['history'])) {
     $existing = [];
 
     if (is_file($options['history'])) {
-        /** @var mixed $decoded */
-        $decoded = json_decode((string) file_get_contents($options['history']), true);
-        $existing = is_array($decoded['releases'] ?? null) ? $decoded['releases'] : [];
+        try {
+            /** @var mixed $decoded */
+            $decoded = json_decode(readFileOrFail($options['history']), true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $exception) {
+            fail("{$options['history']} is not valid JSON: {$exception->getMessage()}");
+        }
+
+        if (! is_array($decoded)
+            || ($decoded['schema'] ?? null) !== ReleaseManifest::SCHEMA
+            || ! is_array($decoded['releases'] ?? null)
+            || ! array_is_list($decoded['releases'])) {
+            fail("{$options['history']} is not a valid release history");
+        }
+
+        $seenVersions = [];
+
+        foreach ($decoded['releases'] as $index => $entry) {
+            if (! is_array($entry)) {
+                fail("{$options['history']} release #{$index} is not an object");
+            }
+
+            try {
+                ReleaseManifest::assertPublished($entry);
+            } catch (Throwable $throwable) {
+                fail("{$options['history']} release #{$index} is invalid: {$throwable->getMessage()}");
+            }
+
+            $entryVersion = $entry['version'];
+
+            if (isset($seenVersions[$entryVersion])) {
+                fail("{$options['history']} repeats release {$entryVersion}");
+            }
+
+            $seenVersions[$entryVersion] = true;
+        }
+
+        $existing = $decoded['releases'];
     }
 
     // Compare against the CANONICAL version the manifest carries, not the raw
@@ -167,7 +255,7 @@ if (isset($options['history'])) {
         ));
     }
 
-    file_put_contents($options['history'], $encode([
+    writeFileOrFail($options['history'], $encode([
         'schema' => ReleaseManifest::SCHEMA,
         'releases' => $existing,
     ]));
@@ -179,7 +267,7 @@ if (isset($options['history'])) {
 // again for `0.3.0/thing` — work they have demonstrably already done.
 if (isset($options['reset-declaration'])) {
     /** @var mixed $authored */
-    $authored = json_decode((string) file_get_contents($declarationPath), true);
+    $authored = json_decode(readFileOrFail($declarationPath), true);
 
     if (! is_array($authored)) {
         fail("{$declarationPath} is not valid JSON.");
@@ -187,7 +275,7 @@ if (isset($options['reset-declaration'])) {
 
     $authored['actions'] = [];
 
-    file_put_contents($declarationPath, $encode($authored));
+    writeFileOrFail($declarationPath, $encode($authored));
 }
 
 if (! isset($options['out']) && ! isset($options['history'])) {

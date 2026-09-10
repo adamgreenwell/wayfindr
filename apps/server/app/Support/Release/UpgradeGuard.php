@@ -205,7 +205,11 @@ final class UpgradeGuard
 
     private ?string $lastTarget = null;
 
+    private ?string $lastFrom = null;
+
     private ?string $lastCommit = null;
+
+    private ?string $lastInstallationProfile = null;
 
     private bool $lastAssessable = true;
 
@@ -221,6 +225,23 @@ final class UpgradeGuard
     public function lastTarget(): ?string
     {
         return $this->lastTarget;
+    }
+
+    /**
+     * The release the last assessment treated as currently installed.
+     *
+     * `assessAll()` returns only actions, but message surfaces still need this
+     * origin to decide whether an action can honestly offer an acknowledgement.
+     */
+    public function lastFrom(): ?string
+    {
+        return $this->lastFrom;
+    }
+
+    /** The packaging profile used by the last assessment. */
+    public function lastInstallationProfile(): ?string
+    {
+        return $this->lastInstallationProfile;
     }
 
     /**
@@ -322,7 +343,9 @@ final class UpgradeGuard
     public function assess(bool $includeTarget = false): array
     {
         $this->lastTarget = null;
+        $this->lastFrom = null;
         $this->lastCommit = null;
+        $this->lastInstallationProfile = null;
         // Cleared here, not merely overwritten at the end: every early return
         // below would otherwise leave the previous assessment's advice in place,
         // and a floor refusal would report notices computed for a different span.
@@ -364,6 +387,8 @@ final class UpgradeGuard
         $this->lastCommit = is_string($manifestCommit) && trim($manifestCommit) !== ''
             ? $manifestCommit
             : null;
+        $installationProfile = $this->installationProfile();
+        $this->lastInstallationProfile = $installationProfile;
 
         $history = $this->history();
 
@@ -404,7 +429,11 @@ final class UpgradeGuard
         // An install predating the state file has no recorded release. The
         // operator may state where it is instead, which is what keeps the floor
         // check below from being a refusal they cannot clear.
-        $recorded = $this->state->recordedVersion() ?? $this->declaredOrigin();
+        $recordedStateVersion = $this->state->recordedVersion();
+        $recorded = $recordedStateVersion ?? $this->declaredOrigin();
+        $this->lastFrom = $recorded;
+        $sameInstallationProfile = $recordedStateVersion !== null
+            && $this->state->recordedInstallationProfile() === $installationProfile;
         // Asked only when it can change the answer. Both `$legacy` and `$fresh`
         // require a null `$recorded`, so on any recorded install this was three
         // database round trips — a connection check, a table lookup and an
@@ -443,6 +472,7 @@ final class UpgradeGuard
             && $recorded !== null
             && $recorded === $target
             && ! $this->buildChanged($manifest)
+            && $sameInstallationProfile
             && $this->state->wasFreshInstall()) {
             $fresh = true;
         }
@@ -526,9 +556,15 @@ final class UpgradeGuard
         // the two drops a legacy upgrade's outstanding intermediate work the
         // moment the target is recorded — the same disappearance the marker
         // exists to prevent, reached through its own fallback.
-        $from = $this->state->satisfiedThroughRecorded()
-            ? $this->state->satisfiedThrough()
-            : $recorded;
+        // A satisfied-through marker proves only the profile under which it was
+        // assessed. Switching between an image and host-managed PHP changes which
+        // scoped actions exist. Reopen the whole history when that profile differs
+        // or is absent, including old state files written before profiles existed.
+        $from = $recorded !== null && ! $sameInstallationProfile
+            ? null
+            : ($this->state->satisfiedThroughRecorded()
+                ? $this->state->satisfiedThrough()
+                : $recorded);
 
         $outstanding = UpgradeRequirements::outstanding(
             $history,
@@ -544,6 +580,11 @@ final class UpgradeGuard
             // from the retained origin would decide the install never reached a
             // release it has been running for an upgrade or more.
             traversedFrom: $recorded,
+            // An image and a host-managed PHP checkout can carry different
+            // prerequisites. An image-baked extension is not work a Forge/host
+            // operator can skip, and making the image acknowledge it would be a
+            // false outage.
+            installationProfile: $installationProfile,
         );
 
         $this->lastOutstanding = $outstanding;
@@ -628,6 +669,26 @@ final class UpgradeGuard
             'legacy' => false,
             'floor' => null,
         ];
+    }
+
+    /**
+     * Which packaging path is executing this guard.
+     *
+     * An image built from Wayfindr's Dockerfile writes the primary /etc manifest.
+     * Host-managed PHP deploys generate the fallback in the checkout. Tests may
+     * set the config value directly; there is intentionally no environment
+     * override an operator could use to relabel a host install and bypass its
+     * work.
+     */
+    private function installationProfile(): string
+    {
+        $configured = config('wayfindr.release.installation_profile');
+
+        if (is_string($configured) && in_array($configured, ReleaseManifest::INSTALLATION_PROFILES, true)) {
+            return $configured;
+        }
+
+        return is_file(self::MANIFEST_FILE) ? 'image' : 'host';
     }
 
     /**

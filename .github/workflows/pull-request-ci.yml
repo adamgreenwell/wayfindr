@@ -10,8 +10,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: pull-request-ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # Keep one run per PR, but give every main commit its own group. A later
+  # housekeeping push must never cancel the exact-SHA run that authorizes a
+  # release tag.
+  group: pull-request-ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   php-application:
@@ -27,7 +30,7 @@ jobs:
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.4"
-          extensions: gd, intl, mbstring, pcntl, pdo_sqlite, sockets, zip
+          extensions: curl, gd, intl, mbstring, pcntl, pdo_sqlite, sockets, zip
           tools: composer:v2
           coverage: none
 
@@ -48,13 +51,8 @@ jobs:
           WAYFINDR_EXPECTED_DB_DRIVER: sqlite
         run: composer test
 
-      - name: Validate the authored release manifest
-        run: |
-          release_version="$(tr -d '[:space:]' < VERSION)-ci"
-          php scripts/release/build-manifest.php \
-            --version="$release_version" \
-            --commit="${GITHUB_SHA}" \
-            --out="${RUNNER_TEMP}/release-manifest.json"
+      - name: Validate the release contract
+        run: make release-contract-test
 
   php-application-postgres:
     name: PHP application (PostgreSQL)
@@ -89,7 +87,7 @@ jobs:
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.4"
-          extensions: gd, intl, mbstring, pcntl, pdo_pgsql, pdo_sqlite, sockets, zip
+          extensions: curl, gd, intl, mbstring, pcntl, pdo_pgsql, pdo_sqlite, sockets, zip
           tools: composer:v2
           coverage: none
 

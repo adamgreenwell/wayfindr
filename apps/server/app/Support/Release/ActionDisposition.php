@@ -8,9 +8,9 @@ namespace App\Support\Release;
  * What an upgrade can still do about one declared action, and therefore what the
  * operator should be told about it.
  *
- * This exists because the rule it carries had to be agreed by six sites — the
+ * This exists because the rule it carries had to be agreed by seven sites — the
  * predicate, the settlement in `UpgradeRequirements::outstanding()`, the blocking
- * filter in `UpgradeGuard`, the installer's partition, and two operator-facing
+ * filter in `UpgradeGuard`, the installer's partition, and three operator-facing
  * messages — and nearly every round of #648 fixed a subset and left another,
  * twice fixing a message in one file and not its twin.
  *
@@ -92,9 +92,9 @@ enum ActionDisposition: string
      * Whether the work is out of reach of the running code, whatever the operator
      * could once have done.
      *
-     * Both message sites lead with this — an operator holding a usable
-     * acknowledgement key still needs to know the work itself can no longer be
-     * performed, or they are left with an instruction they cannot follow.
+     * All three application message sites lead with this — an operator holding a
+     * usable acknowledgement key still needs to know the work itself can no
+     * longer be performed, or they are left with an instruction they cannot follow.
      */
     public function needsItsOwnRelease(): bool
     {

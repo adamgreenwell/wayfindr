@@ -62,6 +62,33 @@ final class CheckRegistry
                 return null;
             }
         });
+
+        $this->register('php-runtime-extensions', static function (): ?bool {
+            if (PHP_VERSION_ID < 80401) {
+                return false;
+            }
+
+            foreach (['curl', 'gd', 'intl'] as $extension) {
+                if (! extension_loaded($extension)) {
+                    return false;
+                }
+            }
+
+            $curl = curl_version();
+            $version = $curl['version'] ?? null;
+
+            if (! is_string($version) || version_compare($version, '7.59.0', '<')) {
+                return false;
+            }
+
+            // This process proves only its own CLI runtime. The release action
+            // also covers Composer, PHP-FPM, and long-running workers, which may
+            // use different binaries or INI trees. Leave a passing local probe
+            // unevaluable so the operator must attest to the complete check;
+            // a definite local failure remains authoritative and cannot be
+            // acknowledged away.
+            return null;
+        });
     }
 
     /**

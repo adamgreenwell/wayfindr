@@ -10,7 +10,7 @@ use App\Support\Release\UpgradeRequirements;
 /**
  * The three states, and the consequences every site derives from them.
  *
- * This is the rule that had to be agreed by six sites (#647) and was fixed a
+ * This is the rule that had to be agreed by seven sites (#647) and was fixed a
  * subset at a time through #648 and #649. It is asserted here once, on the
  * helper they all now consult, rather than re-derived in each of their tests.
  */
@@ -109,6 +109,28 @@ test('advice offers a key exactly when one would settle the action', function ()
         ->toBeNull();
 });
 
+test('advice withholds a key when a machine check has failed', function (): void {
+    $action = declaredAction('0.2.0') + ['satisfied_by' => 'failed'];
+    $advice = ActionAdvice::for($action, '0.2.0', '0.1.0');
+
+    expect($advice->acknowledgeKey)->toBeNull()
+        ->and($advice->remedyLines)->toContain(
+            'The machine check failed; an acknowledgement will not clear it.',
+        );
+});
+
+test('failed prior-release work never refers to a key that was withheld', function (): void {
+    $action = declaredAction('0.2.0') + ['satisfied_by' => 'failed'];
+    $advice = ActionAdvice::for($action, '0.3.0', '0.2.0');
+    $rendered = implode("\n", $advice->lines());
+
+    expect($advice->disposition)->toBe(ActionDisposition::PerformableNow)
+        ->and($advice->acknowledgeKey)->toBeNull()
+        ->and($rendered)->toContain('Roll back to that release, complete the work there')
+        ->and($rendered)->toContain('The machine check failed')
+        ->and($rendered)->not->toContain('key above');
+});
+
 test('advice explains itself for any work the pull puts out of reach', function (): void {
     // Both readers need this, not only the one with no key: an operator who did
     // NOT do the work cannot do it now either, so a bare key would leave them
@@ -129,8 +151,8 @@ test('advice explains itself for any work the pull puts out of reach', function 
 });
 
 test('the key is always rendered before the recovery that refers to it', function (): void {
-    // "the key above" has to refer to something already printed. Both message
-    // sites render this list verbatim, so the order is structural.
+    // "the key above" has to refer to something already printed. All three
+    // application message sites render this list, so the order is structural.
     $lines = ActionAdvice::for(declaredAction('0.2.0'), '0.3.0', '0.2.0')->lines();
 
     expect($lines[0])->toBe('Acknowledge with: 0.2.0/thing')

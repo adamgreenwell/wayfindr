@@ -121,8 +121,13 @@ it must never be used as a release tag. Consumers distinguish a development buil
 by that suffix, so without the reservation they would be inferring a semantic
 property from a naming convention an operator could legitimately collide with —
 a release tagged `v0.2.0-dev` would be misread as an unpinned development build.
-Reserving it in the scheme is what makes the inference sound. (`-dev.1` or
-`-devpreview` are ordinary prerelease identifiers and stay available.)
+Reserving it in the scheme is what makes the inference sound. `-dev.1` and
+`-devpreview` remain ordinary prerelease identities that the parser can compare,
+but the guarded public publisher introduced for the 0.8.0 cycle accepts stable
+`x.y.z` tags only. The former alpha publisher had no safe declaration rule for
+carrying an operator action from a prerelease into its eventual stable release;
+restoring a public prerelease channel therefore requires that contract to be
+designed explicitly rather than falling through the stable path.
 
 **A dirty tree cannot pin a build.** `git rev-parse HEAD` still reports the last
 commit when the working tree carries uncommitted edits **or untracked files**, so

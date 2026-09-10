@@ -6,10 +6,11 @@
     "keywords": ["support", "chat", "cobrowsing", "tickets", "laravel"],
     "license": "AGPL-3.0-or-later",
     "require": {
-        "php": "^8.4",
+        "php": "^8.4.1",
         "ext-curl": "*",
         "ext-gd": "*",
         "ext-intl": "*",
+        "lib-curl": ">=7.59.0",
         "bacon/bacon-qr-code": "^3.1",
         "laravel-notification-channels/webpush": "^12.1",
         "laravel/ai": "^0.11",

@@ -134,7 +134,8 @@ class RecordReleaseAfterMigration
         if (! $freshInstall
             && $state->wasFreshInstall()
             && $state->recordedVersion() === $version
-            && $state->recordedCommit() === $commit) {
+            && $state->recordedCommit() === $commit
+            && $state->recordedInstallationProfile() === $guard->lastInstallationProfile()) {
             $freshInstall = true;
         }
 
@@ -143,6 +144,7 @@ class RecordReleaseAfterMigration
             $commit,
             satisfiedThrough: $this->cleanThrough($state, $version, $outstanding),
             freshInstall: $freshInstall,
+            installationProfile: $guard->lastInstallationProfile(),
         );
 
         if ($recorded) {

@@ -14,11 +14,12 @@ namespace App\Support\Release;
  * recomputed from two overlapping booleans at each site, and nearly every review
  * round fixed a subset — twice fixing a message in one file and not its twin.
  *
- * The two readers are the migration refusal
- * (`BlockMigrationsWithUnmetRequirements`) and the report command
- * (`UpgradeGuardCommand`). They differ only in styling, which is why the
- * unreachable line arrives in two parts: the listener emphasises the lead and
- * the command does not, and neither gets to reword it.
+ * The readers are the migration refusal
+ * (`BlockMigrationsWithUnmetRequirements`), the report command
+ * (`UpgradeGuardCommand`) and the serving refusal
+ * (`RefuseServingWithUnmetRequirements`). The console readers render Symfony
+ * emphasis while the plain-text HTTP response strips those tags; none gets to
+ * reword the underlying advice.
  *
  * Deliberately a value object rather than a formatted string. A site that needs
  * to arrange these differently — an operator console panel, say, or the advisory
@@ -55,7 +56,10 @@ final readonly class ActionAdvice
         // actually settle the action. Offering it for work belonging to a release
         // the upgrade SKIPPED would document the bypass the refusal exists to
         // warn about.
-        $key = $disposition->acknowledgeable() && $release !== null && $id !== null
+        // A failed check is a definite negative answer. There is no honest
+        // attestation past it, so do not print a key that settlement will reject.
+        $checkFailed = ($action['satisfied_by'] ?? null) === 'failed';
+        $key = ! $checkFailed && $disposition->acknowledgeable() && $release !== null && $id !== null
             ? $release.'/'.$id
             : null;
 
@@ -75,15 +79,26 @@ final readonly class ActionAdvice
                 $release ?? 'an intermediate release',
             );
 
-            $remedy = $disposition->acknowledgeable()
-                ? [
+            $remedy = match (true) {
+                $checkFailed && $disposition === ActionDisposition::PerformableNow => [
+                    'Roll back to that release, complete the work there, and upgrade again.',
+                ],
+                $checkFailed => [
+                    'Install that release first, let it start, complete the work there, then upgrade again.',
+                ],
+                $disposition->acknowledgeable() => [
                     'If you did it before upgrading, acknowledge it with the key above.',
                     'If not, roll back to that release, do it there, and upgrade again.',
-                ]
-                : [
+                ],
+                default => [
                     'Install that release first, let it start, then upgrade again.',
                     'Acknowledging will not clear this: the work is unreachable, not undone.',
-                ];
+                ],
+            };
+        }
+
+        if ($checkFailed) {
+            $remedy[] = 'The machine check failed; an acknowledgement will not clear it.';
         }
 
         return new self(
@@ -113,7 +128,7 @@ final readonly class ActionAdvice
     /**
      * The advice as ordered lines, ready to indent and print.
      *
-     * Both message sites render exactly this list, which is what makes their
+     * Every message site renders exactly this list, which is what makes their
      * ORDER a structural property rather than a convention two files have to
      * remember. The order was previously pinned by tests that searched each file
      * for one string appearing before another — they passed while the two files
@@ -123,8 +138,8 @@ final readonly class ActionAdvice
      * The key comes before the recovery so that "the key above" in the recovery
      * refers to something the operator has actually seen.
      *
-     * Symfony style tags are included because both readers are Symfony Console
-     * outputs, so the emphasis renders identically in the refusal and the report.
+     * Symfony style tags let both console readers render the same emphasis. The
+     * serving refusal strips only the tags before writing its plain-text body.
      *
      * @return list<string>
      */

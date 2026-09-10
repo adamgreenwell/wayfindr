@@ -92,11 +92,18 @@ cat > "$TMP_DIR/artifact-classify.php" <<PHP
 require "$SERVER_APP/Support/Version/SemanticVersion.php";
 require "$SERVER_APP/Support/Version/VersionComparator.php";
 require "$SERVER_APP/Support/Release/ActionDisposition.php";
+require "$SERVER_APP/Support/Release/ReleaseManifest.php";
 require "$SERVER_APP/Support/Release/UpgradeRequirements.php";
 
 \$action = json_decode((string) getenv("WF_ACTION"), true);
 \$target = getenv("WF_TO") ?: null;
 \$recorded = getenv("WF_RECORDED") ?: null;
+\$profile = getenv("WF_PROFILE") ?: null;
+
+if (! App\Support\Release\UpgradeRequirements::appliesToInstallationProfile(\$action, \$profile)) {
+    echo "SKIP\n";
+    exit(0);
+}
 
 echo App\Support\Release\UpgradeRequirements::disposition(\$action, \$target, \$recorded)->value, "\n";
 PHP
@@ -145,7 +152,7 @@ while IFS='|' read -r description release depends recorded target expected; do
     [ -n "$installer_code" ] \
         || fail "$description: installer emitted no classification (output: $installer_out)"
 
-    artifact_code="$(WF_ACTION="$action_json" WF_TO="$target" WF_RECORDED="$recorded" \
+    artifact_code="$(WF_ACTION="$action_json" WF_TO="$target" WF_RECORDED="$recorded" WF_PROFILE="image" \
         "$PHP" "$TMP_DIR/artifact-classify.php" 2>&1)" || fail "artifact errored: $artifact_code"
 
     if [ "$installer_code" != "$artifact_code" ]; then
@@ -164,3 +171,96 @@ done <<< "$FIXTURES"
 [ "$checked" -eq 9 ] || fail "expected 9 fixtures, ran $checked"
 
 printf '\n  %d classifications agree.\n\n' "$checked"
+
+# A host-only action is still part of the release's global action verdict, but
+# the image installer must not stop on host work the target image already bakes.
+scoped_action_json='{"id":"host-php","summary":"s","detail":"d","phase":"before-pull","depends_on_release":"none","applicability":{"type":"always"},"verification":{"type":"attest"},"installation_profiles":["host"],"release":"0.3.0"}'
+scoped_manifest="$(printf '{"schema":1,"version":"0.3.0","commit":"abc","requires_operator_action":true,"minimum_upgrade_from":null,"actions":[%s]}' "$scoped_action_json")"
+
+installer_out="$(printf '%s' "$scoped_manifest" | WF_FROM="0.2.0" WF_TO="0.3.0" WF_ACK="" \
+    WF_ORIGIN_KNOWN=1 WF_RECORDED="0.2.0" WF_TAG="v0.3.0" \
+    "$PHP" "$INSTALLER_PHP" 2>&1)" || fail "installer block errored on host-only action: $installer_out"
+installer_code="$(printf '%s\n' "$installer_out" | grep -E '^(STEP|NOW|DO)\|' | head -1 | cut -d'|' -f1 || true)"
+artifact_code="$(WF_ACTION="$scoped_action_json" WF_TO="0.3.0" WF_RECORDED="0.2.0" WF_PROFILE="image" \
+    "$PHP" "$TMP_DIR/artifact-classify.php" 2>&1)" || fail "artifact errored on host-only action: $artifact_code"
+
+[ -z "$installer_code" ] || fail "host-only action: installer says $installer_code, expected SKIP"
+[ "$artifact_code" = "SKIP" ] || fail "host-only action: artifact says $artifact_code, expected SKIP"
+
+printf '    ok  %-58s %s\n\n' 'host-only work does not block a Wayfindr image' 'SKIP'
+
+for malformed_profiles in '["bogus"]' '["host","host"]'; do
+    malformed_action_json="$(printf '{"id":"host-php","summary":"s","detail":"d","phase":"before-pull","depends_on_release":"none","applicability":{"type":"always"},"verification":{"type":"attest"},"installation_profiles":%s,"release":"0.3.0"}' "$malformed_profiles")"
+    malformed_manifest="$(printf '{"schema":1,"version":"0.3.0","commit":"abc","requires_operator_action":true,"minimum_upgrade_from":null,"actions":[%s]}' "$malformed_action_json")"
+
+    installer_out="$(printf '%s' "$malformed_manifest" | WF_FROM="0.2.0" WF_TO="0.3.0" WF_ACK="" \
+        WF_ORIGIN_KNOWN=1 WF_RECORDED="0.2.0" WF_TAG="v0.3.0" \
+        "$PHP" "$INSTALLER_PHP" 2>&1)" || fail "installer block errored on malformed scope: $installer_out"
+    installer_code="$(printf '%s\n' "$installer_out" | grep -E '^(INVALID$|STEP\||NOW\||DO\|)' | head -1 | cut -d'|' -f1 || true)"
+
+    [ "$installer_code" = "INVALID" ] \
+        || fail "malformed profile scope $malformed_profiles: installer says ${installer_code:-SKIP}, expected INVALID"
+done
+
+printf '    ok  %-58s %s\n\n' 'malformed profile scopes fail closed in the installer' 'INVALID'
+
+# --- The installer's release-state profile binding --------------------------
+#
+# A satisfied-through marker is only proof for the packaging profile that
+# assessed it. Lift the real function so a state written by host PHP cannot
+# narrow an image upgrade past future image-only work (and old state with no
+# profile fails in the same conservative direction).
+STATE_FUNCTIONS="$TMP_DIR/installer-release-state.sh"
+awk '
+    /^release_state\(\) \{$/ { capture = 1 }
+    capture { print }
+    capture && /^}$/ { exit }
+' "$INSTALLER" > "$STATE_FUNCTIONS"
+
+grep -q '^release_state() {' "$STATE_FUNCTIONS" \
+    || fail "could not lift release_state() from install.sh"
+grep -q 'installation_profile' "$STATE_FUNCTIONS" \
+    || fail "the installer release state is not bound to an installation profile"
+
+# shellcheck source=/dev/null
+. "$STATE_FUNCTIONS"
+
+php_in_current_image() {
+    local code="$1"
+    shift
+    code="$(printf '%s' "$code" | sed "s#/app/apps/server#$ROOT_DIR/apps/server#g")"
+    env "$@" "$PHP" -r "$code"
+}
+
+state_path="$TMP_DIR/release-state.json"
+export WAYFINDR_RELEASE_STATE_PATH="$state_path"
+
+assert_release_state() {
+    local description="$1" json="$2" expected="$3" actual
+    printf '%s\n' "$json" > "$state_path"
+    actual="$(release_state)"
+    [ "$actual" = "$expected" ] \
+        || fail "$description: release_state returned '$actual', expected '$expected'"
+    printf '    ok  %s\n' "$description"
+}
+
+printf '  Installer release-state profile binding\n\n'
+assert_release_state \
+    'an image marker narrows a later image upgrade' \
+    '{"version":"0.9.0","satisfied_through":"0.9.0","installation_profile":"image"}' \
+    '0.9.0|0.9.0|1'
+assert_release_state \
+    'a host marker reopens the image history' \
+    '{"version":"0.9.0","satisfied_through":"0.9.0","installation_profile":"host"}' \
+    '0.9.0||0'
+assert_release_state \
+    'a pre-profile marker reopens the image history' \
+    '{"version":"0.9.0","satisfied_through":"0.9.0"}' \
+    '0.9.0||0'
+
+unset WAYFINDR_RELEASE_STATE_PATH
+
+grep -F 'if [ "$from" != "$to" ] || [ -z "$span_origin" ]; then' "$INSTALLER" >/dev/null \
+    || fail "an unknown profile span can omit a same-version target manifest"
+
+printf '\n  profile transitions cannot inherit another packaging path\x27s clean marker.\n'

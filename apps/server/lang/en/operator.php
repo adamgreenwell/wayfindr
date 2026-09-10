@@ -558,6 +558,7 @@ return [
             'subtitle' => 'Recommended for this install. None of these blocks migrations or serving—the install is running normally.',
             'count' => '{1} :count advisory|[2,*] :count advisories',
             'cannot_evaluate' => 'This install cannot check this automatically, so it may already be done.',
+            'check_failed' => 'The automatic check failed. Fix the reported condition; an acknowledgement will not hide this notice.',
             'silence' => 'Silence with :reference in :setting.',
         ],
         'next' => [

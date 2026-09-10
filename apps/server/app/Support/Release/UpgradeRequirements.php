@@ -161,6 +161,7 @@ final class UpgradeRequirements
         bool $freshInstall = false,
         bool $includeTarget = false,
         ?string $traversedFrom = null,
+        ?string $installationProfile = null,
     ): array {
         // A genuinely fresh install has not upgraded from anywhere. Passing its
         // null start into the legacy path would evaluate the entire history, so a
@@ -176,6 +177,10 @@ final class UpgradeRequirements
             $origin = self::applicabilityOrigin($manifest['version'] ?? null, $from, $traversedFrom);
 
             foreach ($manifest['actions'] ?? [] as $action) {
+                if (! self::appliesToInstallationProfile($action, $installationProfile)) {
+                    continue;
+                }
+
                 if (! self::applies($action, $origin, $evaluateCheck)) {
                     continue;
                 }
@@ -206,11 +211,44 @@ final class UpgradeRequirements
                     continue;
                 }
 
-                $outstanding[] = $action + ['satisfied_by' => $settled['by']];
+                // `satisfied_by` is assessment metadata, never declaration
+                // input. Overwrite a lookalike key from a permissive older or
+                // future manifest instead of letting array union trust it.
+                $action['satisfied_by'] = $settled['by'];
+                $outstanding[] = $action;
             }
         }
 
         return $outstanding;
+    }
+
+    /**
+     * Whether an action belongs to this packaging path.
+     *
+     * Older manifests omit the field and apply everywhere. Malformed profile data
+     * also stays in scope here: validation should have rejected it already, but a
+     * filtering helper must never turn unreadable scope into a silent exemption.
+     */
+    public static function appliesToInstallationProfile(array $action, ?string $profile): bool
+    {
+        if ($profile === null || ! in_array($profile, ReleaseManifest::INSTALLATION_PROFILES, true)) {
+            return true;
+        }
+
+        if (! array_key_exists('installation_profiles', $action)) {
+            return true;
+        }
+
+        $profiles = $action['installation_profiles'];
+
+        $valid = is_array($profiles)
+            && $profiles !== []
+            && array_is_list($profiles)
+            && count(array_filter($profiles, 'is_string')) === count($profiles)
+            && count(array_unique($profiles)) === count($profiles)
+            && array_diff($profiles, ReleaseManifest::INSTALLATION_PROFILES) === [];
+
+        return ! $valid || in_array($profile, $profiles, true);
     }
 
     /**
@@ -231,8 +269,9 @@ final class UpgradeRequirements
      *   the release is recorded, because an action is about the upgrade; a notice
      *   is about the install's ongoing state, and the running release's advice
      *   applies while it is running.
-     * - An acknowledgement settles one outright. There is no bypass to guard
-     *   against when nothing was being blocked.
+     * - An acknowledgement settles an attestation or an unevaluable check. A
+     *   negative machine answer remains authoritative even though the notice
+     *   does not block anything.
      *
      * @param  list<array<string, mixed>>  $history  published manifests, any order
      * @param  list<string>  $acknowledged  `<release>/<id>` entries
@@ -287,7 +326,10 @@ final class UpgradeRequirements
                 continue;
             }
 
-            $outstanding[] = $notice + ['satisfied_by' => $settled['by']];
+            // Same trust boundary as actions above: only this assessment gets
+            // to say why an advisory remains outstanding.
+            $notice['satisfied_by'] = $settled['by'];
+            $outstanding[] = $notice;
         }
 
         return $outstanding;
@@ -449,11 +491,18 @@ final class UpgradeRequirements
                 return ['satisfied' => true, 'by' => 'verified'];
             }
 
+            // A negative machine answer is evidence, not uncertainty. Letting an
+            // acknowledgement override it turns a verified prerequisite into an
+            // opt-out and makes "check" weaker than the documentation promises.
+            if ($result === false) {
+                return ['satisfied' => false, 'by' => 'failed'];
+            }
+
             if (self::isAcknowledged($action, $acknowledged)) {
                 return ['satisfied' => true, 'by' => 'acknowledged'];
             }
 
-            return ['satisfied' => false, 'by' => $result === null ? 'unevaluable' : 'failed'];
+            return ['satisfied' => false, 'by' => 'unevaluable'];
         }
 
         if (self::isAcknowledged($action, $acknowledged)) {

@@ -1,6 +1,6 @@
 SERVER_DIR := apps/server
 
-.PHONY: attachment-retention-test help design-fonts-test design-tokens design-tokens-test php-version-test public-artifact-install-test public-info-check public-info-test reverb-capacity-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
+.PHONY: attachment-retention-test help design-fonts-test design-tokens design-tokens-test host-release-manifest-test php-version-test public-artifact-install-test public-info-check public-info-test release-contract-test release-publish-contract-test reverb-capacity-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
 
 help:
 	@printf '%s\n' 'Wayfindr development commands:'
@@ -10,10 +10,16 @@ help:
 	@printf '%s\n' '  make design-tokens      Regenerate the design tokens into both consumers'
 	@printf '%s\n' '  make design-tokens-test Check both consumers match packages/design-tokens/tokens.json'
 	@printf '%s\n' '  make php-version-test   Check that every PHP minimum agrees'
+	@printf '%s\n' '  make host-release-manifest-test'
+	@printf '%s\n' '                          Test clean and dirty host manifest identities'
 	@printf '%s\n' '  make public-artifact-install-test'
 	@printf '%s\n' '                          Test public release artifacts in Docker (destructive to its evidence project)'
 	@printf '%s\n' '  make public-info-check  Check tracked files for sensitive markers'
 	@printf '%s\n' '  make public-info-test   Test the public-info boundary guard'
+	@printf '%s\n' '  make release-contract-test'
+	@printf '%s\n' '                          Check VERSION, CHANGELOG, and the release manifest agree'
+	@printf '%s\n' '  make release-publish-contract-test'
+	@printf '%s\n' '                          Require frozen notes and history before a tag publishes'
 	@printf '%s\n' '  make reverb-capacity-test'
 	@printf '%s\n' '                          Test the concurrent-agent capacity harness guards'
 	@printf '%s\n' '  make self-host-test     Test the installer and compose stack (needs Docker)'
@@ -54,6 +60,15 @@ attachment-retention-test:
 php-version-test:
 	scripts/test-php-version-contract.sh
 
+release-contract-test:
+	php scripts/test-release-contract.php
+
+release-publish-contract-test:
+	php scripts/test-release-contract.php --publishing
+
+host-release-manifest-test:
+	scripts/test-host-release-manifest.sh
+
 wiki-test:
 	scripts/test-wiki-docs.sh
 
@@ -62,8 +77,8 @@ wiki-sync-dry-run: wiki-test
 
 # The installer is shipped code that operators curl into bash, and two of these
 # guard rules the artifact ALSO implements — see docs/development/testing.md.
-self-host-test: php-version-test
-	bash -n scripts/self-host/install.sh scripts/test-self-host-release-resolution.sh scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh
+self-host-test: php-version-test host-release-manifest-test
+	bash -n scripts/self-host/install.sh scripts/test-host-release-manifest.sh scripts/test-self-host-release-resolution.sh scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh
 	scripts/test-disposable-vm-evidence-runner.sh
 	scripts/test-self-host-env-generator.sh
 	scripts/test-self-host-compose-template.sh

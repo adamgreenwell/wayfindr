@@ -133,6 +133,20 @@ test('the command reports cleanly and exits non-zero when blocked', function ():
         ->assertFailed();
 });
 
+test('the command offers no acknowledgement when a machine check fails', function (): void {
+    $declaration = blockingDeclaration();
+    $declaration['actions'][0]['verification'] = ['type' => 'check', 'check' => 'the-thing-exists'];
+    bakeRelease($declaration, '0.2.0');
+
+    app(CheckRegistry::class)->register('the-thing-exists', fn (): bool => false);
+
+    expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(1);
+    expect(Artisan::output())
+        ->toContain('The machine check failed; an acknowledgement will not clear it.')
+        ->not->toContain('Acknowledge with:')
+        ->not->toContain('Set WAYFINDR_ACKNOWLEDGED_ACTIONS');
+});
+
 test('the command succeeds when nothing is outstanding', function (): void {
     bakeRelease(['actions' => []], '0.2.0');
 
@@ -154,12 +168,31 @@ test('an unmet after-start requirement refuses traffic but keeps health up', fun
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
 
     // ...but the release must not serve until it is done.
-    $this->get('/')->assertStatus(503)->assertSee('do-the-thing');
+    $this->get('/')
+        ->assertStatus(503)
+        ->assertSee('do-the-thing')
+        ->assertSee('Acknowledge with: 0.2.0/do-the-thing')
+        ->assertSee('Set WAYFINDR_ACKNOWLEDGED_ACTIONS');
 
     // The health endpoint stays up: a failing health check would have the
     // orchestrator restart the container on a loop, replacing a legible message
     // with a crash loop.
     $this->get('/up')->assertSuccessful();
+});
+
+test('the serving refusal offers no acknowledgement when a machine check fails', function (): void {
+    $declaration = blockingDeclaration('after-start');
+    $declaration['actions'][0]['verification'] = ['type' => 'check', 'check' => 'the-thing-exists'];
+    bakeRelease($declaration, '0.2.0');
+
+    app(CheckRegistry::class)->register('the-thing-exists', fn (): bool => false);
+
+    $response = $this->get('/')->assertStatus(503);
+
+    expect($response->getContent())
+        ->toContain('The machine check failed; an acknowledgement will not clear it.')
+        ->not->toContain('Acknowledge with:')
+        ->not->toContain('Set WAYFINDR_ACKNOWLEDGED_ACTIONS');
 });
 
 test('serving resumes once the requirement is acknowledged', function (): void {
@@ -287,6 +320,94 @@ test('prefers the baked manifest over the source tree when both exist', function
 
     expect($assessment['blocked'])->toBeTrue()
         ->and($assessment['target'])->toBe('0.2.0');
+});
+
+test('a host-only action blocks host-managed deployments without blocking images', function (): void {
+    $declaration = blockingDeclaration();
+    $declaration['actions'][0]['installation_profiles'] = ['host'];
+    bakeRelease($declaration, '0.2.0');
+
+    config()->set('wayfindr.release.installation_profile', 'image');
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
+
+    config()->set('wayfindr.release.installation_profile', 'host');
+    expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
+});
+
+test('a clean marker from another or unknown profile cannot settle host-only history', function (
+    ?string $recordedProfile,
+): void {
+    $hostDeclaration = blockingDeclaration();
+    $hostDeclaration['actions'][0]['installation_profiles'] = ['host'];
+    $hostRelease = ReleaseManifest::build($hostDeclaration, '0.8.0', 'bbb');
+    $targetRelease = ReleaseManifest::build(['actions' => []], '0.9.0', 'abc123');
+
+    bakeRelease(['actions' => []], '0.9.0', history: [$hostRelease, $targetRelease]);
+    config()->set('wayfindr.release.installation_profile', 'host');
+
+    // This state says the install was clean through 0.9.0, but that assessment
+    // either filtered host-only actions as an image or predates profile evidence.
+    // The fresh flag must not preserve the other profile's exemption either.
+    app(ReleaseState::class)->record(
+        '0.9.0',
+        'abc123',
+        satisfiedThrough: '0.9.0',
+        freshInstall: true,
+        installationProfile: $recordedProfile,
+    );
+
+    $assessment = app(UpgradeGuard::class)->assess();
+
+    expect($assessment['blocked'])->toBeTrue()
+        ->and(array_column($assessment['actions'], 'id'))->toBe(['do-the-thing']);
+})->with([
+    'image marker' => ['image'],
+    'pre-profile marker' => [null],
+]);
+
+test('a clean host marker still settles host-only history', function (): void {
+    $hostDeclaration = blockingDeclaration();
+    $hostDeclaration['actions'][0]['installation_profiles'] = ['host'];
+    $hostRelease = ReleaseManifest::build($hostDeclaration, '0.8.0', 'bbb');
+    $targetRelease = ReleaseManifest::build(['actions' => []], '0.9.0', 'abc123');
+
+    bakeRelease(['actions' => []], '0.9.0', history: [$hostRelease, $targetRelease]);
+    config()->set('wayfindr.release.installation_profile', 'host');
+    app(ReleaseState::class)->record(
+        '0.9.0',
+        'abc123',
+        satisfiedThrough: '0.9.0',
+        installationProfile: 'host',
+    );
+
+    expect(app(UpgradeGuard::class)->assessAll())->toBe([]);
+});
+
+test('a profile transition cannot carry a fresh exemption past host after-start work', function (): void {
+    $hostDeclaration = blockingDeclaration('after-start');
+    $hostDeclaration['actions'][0]['installation_profiles'] = ['host'];
+    bakeRelease($hostDeclaration, '0.8.0');
+    config()->set('wayfindr.release.installation_profile', 'host');
+
+    // The same build was a genuinely fresh image install, where the host-only
+    // action did not apply. Moving its database and state to host PHP must not
+    // copy that exemption onto the newly assessed host profile.
+    app(ReleaseState::class)->record(
+        '0.8.0',
+        'abc123',
+        satisfiedThrough: '0.8.0',
+        freshInstall: true,
+        installationProfile: 'image',
+    );
+
+    event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
+
+    expect(app(ReleaseState::class)->recordedInstallationProfile())->toBe('host')
+        ->and(app(ReleaseState::class)->wasFreshInstall())->toBeFalse()
+        ->and(app(ReleaseState::class)->satisfiedThrough())->toBeNull()
+        ->and(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
+
+    $this->get('/')->assertStatus(503)->assertSee('do-the-thing');
 });
 
 test('reads acknowledgements from the environment, not a stale config cache', function (): void {
@@ -472,7 +593,12 @@ test('a newly traversed retirement is measured from the release actually running
     ]);
 
     // Running 0.3.0, but still carrying unpaid 0.2.0 debt.
-    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.1.0');
+    app(ReleaseState::class)->record(
+        '0.3.0',
+        'ccc',
+        satisfiedThrough: '0.1.0',
+        installationProfile: 'host',
+    );
 
     $ids = array_column(app(UpgradeGuard::class)->assessAll(), 'id');
 
@@ -508,7 +634,12 @@ test('retained debt keeps the origin its own upgrade started from', function ():
         ReleaseManifest::build(['actions' => []], '0.4.0', 'ddd'),
     ]);
 
-    app(ReleaseState::class)->record('0.3.0', 'ccc', satisfiedThrough: '0.1.0');
+    app(ReleaseState::class)->record(
+        '0.3.0',
+        'ccc',
+        satisfiedThrough: '0.1.0',
+        installationProfile: 'host',
+    );
 
     expect(array_column(app(UpgradeGuard::class)->assessAll(), 'id'))
         ->not->toContain('only-for-recent-starts');
@@ -987,7 +1118,12 @@ test('a changed build of the same version is reassessed', function (): void {
     bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
 
     // The previous deploy of the SAME version, a different commit.
-    app(ReleaseState::class)->record('0.2.0', 'older-commit', satisfiedThrough: '0.2.0');
+    app(ReleaseState::class)->record(
+        '0.2.0',
+        'older-commit',
+        satisfiedThrough: '0.2.0',
+        installationProfile: 'host',
+    );
 
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeTrue();
 });
@@ -999,7 +1135,12 @@ test('an unchanged build of the same version is not reassessed', function (): vo
     bakeRelease(blockingDeclaration('after-pull'), '0.2.0');
 
     // bakeRelease() stamps 'abc123' as the commit.
-    app(ReleaseState::class)->record('0.2.0', 'abc123', satisfiedThrough: '0.2.0');
+    app(ReleaseState::class)->record(
+        '0.2.0',
+        'abc123',
+        satisfiedThrough: '0.2.0',
+        installationProfile: 'host',
+    );
 
     expect(app(UpgradeGuard::class)->assess()['blocked'])->toBeFalse();
 });
@@ -1061,10 +1202,12 @@ test('legacy debt is not discharged by recording the target', function (): void 
         ->and(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
 });
 
-test('a state file predating the marker still falls back to the recorded release', function (): void {
-    // Old state files have no `satisfied_through` key at all, and those must keep
-    // using the recorded release as their origin rather than being read as
-    // legacy debt.
+test('a state file predating profile evidence reopens the action history', function (): void {
+    // Old state files have neither `satisfied_through` nor
+    // `installation_profile`. Their recorded version remains valid for the
+    // upgrade floor, but it cannot prove which scoped actions were filtered out.
+    // Reopening the action history is the conservative transition into the new
+    // profile-aware contract.
     bakeRelease(['actions' => []], '0.3.0', history: [
         ReleaseManifest::build(blockingDeclaration('after-start'), '0.2.0', 'bbb'),
         ReleaseManifest::build(['actions' => []], '0.3.0', 'abc123'),
@@ -1076,7 +1219,8 @@ test('a state file predating the marker still falls back to the recorded release
     );
 
     expect(app(ReleaseState::class)->satisfiedThroughRecorded())->toBeFalse()
-        ->and(app(UpgradeGuard::class)->assessAll())->toBe([]);
+        ->and(app(ReleaseState::class)->recordedInstallationProfile())->toBeNull()
+        ->and(app(UpgradeGuard::class)->assessAll())->toHaveCount(1);
 });
 
 test('the installed manifest wins over a stale history entry for its own version', function (): void {
@@ -1215,7 +1359,8 @@ test('the manifest commit is recorded, not the runtime override', function (): v
     app(UpgradeContext::class)->observeFreshInstall(true);
     event(new CommandFinished('migrate', new ArrayInput([]), new NullOutput, 0));
 
-    expect(app(ReleaseState::class)->recordedCommit())->toBe('abc123');
+    expect(app(ReleaseState::class)->recordedCommit())->toBe('abc123')
+        ->and(app(ReleaseState::class)->recordedInstallationProfile())->toBe('host');
 
     // And the fresh exemption therefore survives into the serving gate.
     expect($this->get('/')->status())->not->toBe(503);
@@ -1721,6 +1866,55 @@ test('the migration refusal does not offer a key it will not honour', function (
         ->toContain('Acknowledging will not clear this');
 });
 
+test('the migration refusal acknowledgement footer follows its actual advice keys', function (
+    array $verification,
+    ?bool $checkResult,
+    bool $expectsAcknowledgement,
+): void {
+    $declaration = blockingDeclaration();
+    $declaration['actions'][0]['verification'] = $verification;
+    bakeRelease($declaration, '0.2.0');
+
+    if ($checkResult !== null) {
+        app(CheckRegistry::class)->register('the-thing-exists', fn (): bool => $checkResult);
+    }
+
+    $output = new BufferedOutput;
+    $listener = new class extends BlockMigrationsWithUnmetRequirements
+    {
+        protected function terminate(int $code): never
+        {
+            throw new LogicException('listener terminated', $code);
+        }
+    };
+
+    try {
+        $listener->handle(new CommandStarting('migrate', new ArrayInput([]), $output));
+        $this->fail('The blocking listener did not terminate the command.');
+    } catch (LogicException $exception) {
+        expect($exception->getMessage())->toBe('listener terminated')
+            ->and($exception->getCode())->toBe(UpgradeGuard::EXIT_BLOCKED);
+    }
+
+    $rendered = $output->fetch();
+
+    if ($expectsAcknowledgement) {
+        expect($rendered)
+            ->toContain('Acknowledge with: 0.2.0/do-the-thing')
+            ->toContain('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+
+        return;
+    }
+
+    expect($rendered)
+        ->toContain('The machine check failed; an acknowledgement will not clear it.')
+        ->not->toContain('Acknowledge with:')
+        ->not->toContain('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+})->with([
+    'attestable action' => [['type' => 'attest'], null, true],
+    'failed machine check' => [['type' => 'check', 'check' => 'the-thing-exists'], false, false],
+]);
+
 test('a non-canonical manifest version is rejected', function (): void {
     // `v0.3.0` parses, so it survives the parseability check - but
     // recordedVersion() canonicalises what it reads while the guard keeps the
@@ -1887,7 +2081,12 @@ test('an unreadable release history stops the serving gate', function (): void {
     config()->set('wayfindr.release.history_path', $dir.'/history.json');
     config()->set('wayfindr.release.state_path', $dir.'/state.json');
 
-    $this->get('/')->assertStatus(503);
+    $response = $this->get('/')->assertStatus(503);
+
+    expect($response->getContent())
+        ->toContain('release-declaration-unreadable')
+        ->not->toContain('Acknowledge with:')
+        ->not->toContain('WAYFINDR_ACKNOWLEDGED_ACTIONS');
 });
 
 test('a floor refusal does not stop the serving gate', function (): void {
@@ -2228,6 +2427,53 @@ test('a failing check keeps its notice, and cannot tell is not a pass', function
 
     expect($notices)->toHaveCount(1)
         ->and($notices[0]['satisfied_by'])->toBe('unevaluable');
+});
+
+test('failed notice checks never offer an acknowledgement that settlement rejects', function (): void {
+    bakeRelease(noticeDeclaration([
+        'verification' => ['type' => 'check', 'check' => 'backups-queue-consumer'],
+    ]), '0.3.0');
+
+    app(CheckRegistry::class)->register('backups-queue-consumer', fn (): ?bool => false);
+
+    expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(0);
+    expect(Artisan::output())
+        ->toContain('The machine check failed; fix the reported condition.')
+        ->toContain('An acknowledgement will not silence this notice.')
+        ->not->toContain('Silence with:')
+        ->not->toContain('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+
+    $operator = User::factory()->create(['platform_role' => 'operator']);
+    $response = $this->actingAs($operator)->get('/operator')->assertOk();
+
+    expect($response->getContent())
+        ->toContain('The automatic check failed.')
+        ->not->toContain('0.3.0/backups-queue-consumer')
+        ->not->toContain('WAYFINDR_ACKNOWLEDGED_ACTIONS');
+});
+
+test('mixed notices only offer acknowledgements for entries that can use them', function (): void {
+    $declaration = noticeDeclaration([
+        'verification' => ['type' => 'check', 'check' => 'backups-queue-consumer'],
+    ]);
+    $declaration['notices'][] = [
+        'id' => 'review-queue-policy',
+        'summary' => 'Review the queue policy.',
+        'detail' => 'Confirm the queue policy fits this install.',
+        'applicability' => ['type' => 'always'],
+        'verification' => ['type' => 'attest'],
+    ];
+    bakeRelease($declaration, '0.3.0');
+
+    app(CheckRegistry::class)->register('backups-queue-consumer', fn (): ?bool => false);
+
+    expect(Artisan::call('wayfindr:upgrade-guard'))->toBe(0);
+    expect(Artisan::output())
+        ->toContain('An acknowledgement will not silence this notice.')
+        ->toContain('Silence with: 0.3.0/review-queue-policy')
+        ->not->toContain('Silence with: 0.3.0/backups-queue-consumer')
+        ->toContain('For notices with a')
+        ->toContain('Silence with entry, add it to WAYFINDR_ACKNOWLEDGED_ACTIONS.');
 });
 
 test('an acknowledgement silences a notice', function (): void {

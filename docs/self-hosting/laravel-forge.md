@@ -50,7 +50,8 @@ repo-scoped install flow to document for self-hosters.
 - Repository: your fork, for example `your-org/wayfindr`.
 - Initial deploy branch: `main` for stable releases, or a feature branch when
   intentionally testing unreleased work.
-- PHP: 8.4 or newer.
+- PHP: 8.4.1 or newer, with `curl`, `gd`, and `intl`; cURL must use libcurl 7.59.0
+  or newer.
 - Database: Postgres.
 - Cache/queue: Redis.
 - Root directory: `/`.
@@ -255,12 +256,65 @@ If zero-downtime deployments were disabled when the site was created, use
 
 Both scripts:
 
+- verify the application and Composer CLI PHP platforms before changing the
+  checkout,
+- require the exact 0.8.0 host-runtime acknowledgement before any deploy whose
+  persisted state cannot prove that action was already settled,
 - link Forge's root `.env` into `apps/server/.env`,
 - install production Composer dependencies from `apps/server`,
 - skip the frontend build until a `package-lock.json` exists,
 - run migrations with `--force`,
 - cache config, routes, and views,
 - restart queues and Reverb after deploy.
+
+### Before a host deploy that still owes the 0.8.0 action
+
+Version 0.8.0 is the first stable line to require `curl`, `gd`, and `intl`, with
+libcurl 7.59.0 or newer, from host-managed PHP. This does not apply to a
+container built with Wayfindr's Dockerfile; it does apply to Forge.
+
+Before deploying, verify that the PHP binaries used by Composer, PHP-FPM, queue
+workers, the scheduler, and Reverb are version 8.4.1 or newer. On Debian or
+Ubuntu the packages are normally
+`php8.4-curl`, `php8.4-gd`, and `php8.4-intl`. Install or enable them, reload
+PHP-FPM, and restart the long-running PHP processes before deploying.
+
+Run this with the site's selected PHP binary, not whichever `php` happens to be
+first in an SSH shell:
+
+```bash
+php8.4 -r 'printf("PHP: %s\n", PHP_VERSION); if (PHP_VERSION_ID < 80401) { fwrite(STDERR, "PHP 8.4.1 or newer is required.\n"); exit(78); } foreach (["curl", "gd", "intl"] as $extension) { printf("%s: %s\n", $extension, extension_loaded($extension) ? "yes" : "MISSING"); } if (extension_loaded("curl")) { printf("libcurl: %s\n", curl_version()["version"] ?? "unknown"); }'
+```
+
+Check the actual runtime used by `FORGE_COMPOSER` too. Composer's
+`config.platform` setting intentionally simulates PHP 8.4.1 for dependency
+resolution, so a platform listing from inside `apps/server` is not proof of the
+interpreter actually running Composer. The shipped deploy scripts use a neutral
+temporary declaration for this check, and support Composer 2 versions whose
+`--version` output does not name their PHP binary.
+
+The current scripts check the Forge CLI and Composer runtimes and require the
+exact acknowledgement before `$CREATE_RELEASE()` or `git pull` whenever the
+persisted release state cannot prove the action was already settled. That
+includes a first deploy, an exact 0.8.0 development-cycle state, and a later
+version whose `satisfied_through` marker still predates the action. A later
+marker is proof only when its recorded `installation_profile` is `host`; an
+image marker or an older state file with no profile did not assess this host-only
+work. The filesystem alone cannot prove that a checkout without dependencies or
+release state is fresh: a restored database and a legacy install with a missing
+vendor tree look the same. Forge keeps the deploy script pasted into the site, so
+an existing site's older copy does not gain that preflight when the repository
+changes. Follow the 0.8.0 changelog probe first even if the saved script has no
+check. A successful CLI preflight cannot observe PHP-FPM or already-running
+workers: verify those too, complete any reloads/restarts, and add
+`0.8.0/php-runtime-extensions` to `WAYFINDR_ACKNOWLEDGED_ACTIONS` before the
+deploy. The artifact refuses a known-bad CLI runtime even if that key is set.
+
+This ordering is especially important for a standard, non-zero-downtime site:
+its checkout is persistent, so discovering a missing extension at Composer time
+would otherwise leave the new source beside the previous vendor tree. The
+zero-downtime path does not activate a failed release, but the requirement still
+belongs before the deploy.
 
 ## First Account Setup
 
@@ -590,7 +644,8 @@ background process reloads the active release.
 
 ## First Deploy Checklist
 
-1. Provision a Forge server with PHP 8.4+, Postgres, Redis, and Nginx.
+1. Provision a Forge server with PHP 8.4.1+, `curl`, `gd`, `intl`, Postgres, Redis,
+   and Nginx; confirm cURL uses libcurl 7.59.0 or newer.
 2. Fork Wayfindr to your GitHub account or organization.
 3. Create the Forge site using `Custom Git`.
 4. Enable `Generate a site deploy key for your source control provider`.
@@ -599,7 +654,9 @@ background process reloads the active release.
 7. Set root directory to `/` and web directory to `/apps/server/public`.
 8. Turn off Forge's creation-time Composer install and frontend build options.
 9. Keep zero-downtime deployments enabled.
-10. Add the environment values above in Forge.
+10. Add the environment values above in Forge, including
+    `WAYFINDR_ACKNOWLEDGED_ACTIONS=0.8.0/php-runtime-extensions` after verifying
+    every PHP runtime as described above.
 11. Replace the generated deploy script with Wayfindr's deploy script.
 12. Run the first deploy.
 13. Enable TLS before testing the widget from another origin.
