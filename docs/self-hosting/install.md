@@ -198,6 +198,10 @@ Then work through the readiness screens:
   and run its synthetic connection test. Review the context and processor
   boundary in [agent-copilot-providers.md](agent-copilot-providers.md) before
   enabling it for real support data.
+- **Web push is optional too**, and off until you supply VAPID credentials in
+  the operator console. Agents still get every alert in the dashboard without
+  it. [web-push.md](web-push.md) covers generating the key pair, why rotating it
+  later disconnects every agent, and what a push service can see.
 - Before routing real visitor traffic, review
   [MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md).
 

@@ -207,6 +207,13 @@ destination that resolves to any private or reserved address is refused. The
 account delivery log is the smoke-test surface: it shows the thin payload,
 attempt count, latest bounded response, retry state, and terminal failures.
 
+Web push, when an operator configures it, also runs on the default queue worker.
+Without that worker its notifications are never sent, and the operator console
+still reports the credentials as ready, because they are — the check is offline
+and makes no network call. It needs HTTPS egress to whichever push service each
+agent's browser nominates, which is not a list you can enumerate ahead of time,
+and it does not use a proxy either. See [web-push.md](web-push.md).
+
 Generate the app key from the Laravel application directory:
 
 ```bash
