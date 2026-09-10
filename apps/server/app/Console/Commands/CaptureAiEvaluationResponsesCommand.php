@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluationDatasetLoader;
+use App\Support\Ai\Evaluation\GroundedAnswerEvaluationIdentity;
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluationOutputParser;
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluationPromptBuilder;
 use Illuminate\Console\Command;
@@ -26,6 +27,7 @@ final class CaptureAiEvaluationResponsesCommand extends Command
 
     public function handle(
         GroundedAnswerEvaluationDatasetLoader $loader,
+        GroundedAnswerEvaluationIdentity $identity,
         GroundedAnswerEvaluationPromptBuilder $promptBuilder,
         GroundedAnswerEvaluationOutputParser $parser,
     ): int {
@@ -36,6 +38,11 @@ final class CaptureAiEvaluationResponsesCommand extends Command
         try {
             $outputPath = $this->outputPath();
             $fixtures = $loader->fixtures($this->fixturePath());
+            $suiteDigest = $identity->suite($fixtures);
+            $promptDigest = $identity->promptContract($promptBuilder->contract(
+                $fixtures['cases'],
+                $fixtures['policy']['answer_confidence_threshold_percent'],
+            ));
         } catch (RuntimeException $exception) {
             return $this->invalid($exception->getMessage());
         }
@@ -100,7 +107,7 @@ final class CaptureAiEvaluationResponsesCommand extends Command
         }
 
         $responseSet = [
-            'version' => $fixtures['version'],
+            'version' => GroundedAnswerEvaluationDatasetLoader::RESPONSE_VERSION,
             'run' => [
                 'source' => 'provider',
                 'provider' => $providerName,
@@ -108,6 +115,8 @@ final class CaptureAiEvaluationResponsesCommand extends Command
                 'recorded_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
                 'prompt_tokens' => $promptTokens,
                 'completion_tokens' => $completionTokens,
+                'suite_digest' => $suiteDigest,
+                'prompt_digest' => $promptDigest,
             ],
             'responses' => $responses,
         ];
@@ -136,6 +145,8 @@ final class CaptureAiEvaluationResponsesCommand extends Command
             'cases' => count($responses),
             'provider' => $providerName,
             'model' => $modelName,
+            'suite_digest' => $suiteDigest,
+            'prompt_digest' => $promptDigest,
             'output' => $outputPath,
         ];
 

@@ -16,14 +16,18 @@ test('the bundled grounded answer evaluation passes without resolving a live pro
     expect($exitCode)->toBe(0)
         ->and($report)->toMatchArray([
             'version' => 2,
+            'response_version' => 3,
             'result' => 'passed',
             'run' => [
                 'source' => 'curated',
                 'provider' => 'wayfindr-fixture',
-                'model' => 'known-good-v2',
+                'model' => 'known-good-v3',
                 'recorded_at' => '2026-09-06T00:00:00Z',
                 'prompt_tokens' => 0,
                 'completion_tokens' => 0,
+                'identity_status' => 'verified',
+                'suite_digest' => 'sha256:b7f1b0fad2a2ee37c12d9098987b2f491f1dced43e891aee972ac94615a7be48',
+                'prompt_digest' => 'sha256:422a6c9714f1cfa67ab3d324b38193f47169cb144d5f2a55ed46cfa24af11292',
             ],
             'cases' => [
                 'total' => 9,
@@ -62,7 +66,8 @@ test('the human report explains the offline regression result', function (): voi
 
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('Wayfindr grounded-answer evaluation')
-        ->toContain('Run: curated · wayfindr-fixture / known-good-v2 · 2026-09-06T00:00:00Z')
+        ->toContain('Run: curated · wayfindr-fixture / known-good-v3 · 2026-09-06T00:00:00Z')
+        ->toContain('Evidence identity: verified · suite sha256:b7f1b0fad2a2ee37c12d9098987b2f491f1dced43e891aee972ac94615a7be48 · prompt sha256:422a6c9714f1cfa67ab3d324b38193f47169cb144d5f2a55ed46cfa24af11292')
         ->toContain('Answer confidence threshold: 80.00%')
         ->toContain('Cases: 9 total · 5 answerable · 4 refusal · 9 passed')
         ->toContain('Candidate / policy decision accuracy: 100.00% / 100.00%')
@@ -76,6 +81,127 @@ test('the human report explains the offline regression result', function (): voi
         ->toContain('Overconfident error rate: 0.00%')
         ->toContain('Confidence Brier score: 0.43')
         ->toContain('Result: PASS');
+});
+
+test('legacy version two responses remain scoreable but cannot claim comparable identity', function (): void {
+    $responses = json_decode(
+        file_get_contents(resource_path('evaluations/grounded-answers/baseline-responses.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $responses['version'] = 2;
+    $responses['run']['model'] = 'known-good-v2';
+    unset($responses['run']['suite_digest'], $responses['run']['prompt_digest']);
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-legacy-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode($responses, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', [
+            '--responses' => $path,
+            '--json' => false,
+        ]);
+        $output = Artisan::output();
+
+        expect($exitCode)->toBe(0)
+            ->and($output)->toContain('Run: curated · wayfindr-fixture / known-good-v2')
+            ->toContain('Evidence identity: legacy unbound · scoreable alone, not comparable for drift')
+            ->not->toContain('I forgot my password');
+    } finally {
+        unlink($path);
+    }
+});
+
+test('identified responses cannot be scored against a different fixture or policy', function (): void {
+    $fixtures = json_decode(
+        file_get_contents(resource_path('evaluations/grounded-answers/fixtures.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $fixtures['cases'][0]['question'] = 'A semantically different private synthetic question.';
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-suite-mismatch-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode($fixtures, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', [
+            '--fixtures' => $path,
+            '--json' => true,
+        ]);
+        $output = Artisan::output();
+        $report = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(2)
+            ->and($report)->toBe([
+                'result' => 'invalid',
+                'error' => 'The evaluation response suite digest does not match the supplied fixture and policy.',
+            ])
+            ->and($output)->not->toContain('semantically different');
+    } finally {
+        unlink($path);
+    }
+});
+
+test('identified response digests use strict lowercase SHA-256 syntax', function (): void {
+    $responses = json_decode(
+        file_get_contents(resource_path('evaluations/grounded-answers/baseline-responses.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $responses['run']['prompt_digest'] = 'sha256:NOT-A-DIGEST';
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-invalid-digest-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode($responses, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', [
+            '--responses' => $path,
+            '--json' => true,
+        ]);
+        $report = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(2)
+            ->and($report)->toBe([
+                'result' => 'invalid',
+                'error' => 'The evaluation run prompt digest must be a lowercase SHA-256 digest.',
+            ]);
+    } finally {
+        unlink($path);
+    }
+});
+
+test('identified responses must match the current prompt contract', function (): void {
+    $responses = json_decode(
+        file_get_contents(resource_path('evaluations/grounded-answers/baseline-responses.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $responses['run']['prompt_digest'] = 'sha256:'.str_repeat('c', 64);
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-prompt-mismatch-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode($responses, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', [
+            '--responses' => $path,
+            '--json' => true,
+        ]);
+        $output = Artisan::output();
+        $report = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(2)
+            ->and($report)->toBe([
+                'result' => 'invalid',
+                'error' => 'The evaluation response prompt digest does not match the current prompt contract.',
+            ])
+            ->and($output)->not->toContain('Choose Forgotten password');
+    } finally {
+        unlink($path);
+    }
 });
 
 test('answer and refusal regressions fail thresholds without printing response text', function (): void {
@@ -415,7 +541,7 @@ test('response objects cannot masquerade as the required response array', functi
         expect($exitCode)->toBe(2)
             ->and($report)->toBe([
                 'result' => 'invalid',
-                'error' => 'The evaluation responses must use version 2 with a run object and an array of responses.',
+                'error' => 'The evaluation responses must use version 2 or 3 with a run object and an array of responses.',
             ]);
     } finally {
         unlink($path);
@@ -461,11 +587,17 @@ test('response files may use their larger scoreable capture allowance', function
 
     try {
         $size = filesize($path);
-        $loaded = app(GroundedAnswerEvaluationDatasetLoader::class)->responses($path, $caseIds);
+        $loaded = app(GroundedAnswerEvaluationDatasetLoader::class)->responses(
+            $path,
+            $caseIds,
+            'sha256:'.str_repeat('0', 64),
+            'sha256:'.str_repeat('1', 64),
+        );
 
         expect($size)->toBeGreaterThan(1_048_576)
             ->and($size)->toBeLessThanOrEqual(GroundedAnswerEvaluationDatasetLoader::MAX_RESPONSE_FILE_BYTES)
-            ->and($loaded['responses'])->toHaveCount(200);
+            ->and($loaded['responses'])->toHaveCount(200)
+            ->and($loaded['run']['identity_status'])->toBe('legacy_unbound');
     } finally {
         unlink($path);
     }

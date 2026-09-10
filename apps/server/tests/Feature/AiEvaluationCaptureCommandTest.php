@@ -66,6 +66,8 @@ test('provider capture is explicit complete private and scoreable', function ():
                 'cases' => 9,
                 'provider' => 'fixture-provider',
                 'model' => 'fixture-model-v1',
+                'suite_digest' => 'sha256:b7f1b0fad2a2ee37c12d9098987b2f491f1dced43e891aee972ac94615a7be48',
+                'prompt_digest' => 'sha256:422a6c9714f1cfa67ab3d324b38193f47169cb144d5f2a55ed46cfa24af11292',
                 'output' => $canonicalOutputPath,
             ])
             ->and(is_file($outputPath))->toBeTrue()
@@ -75,14 +77,17 @@ test('provider capture is explicit complete private and scoreable', function ():
 
         $captured = json_decode(file_get_contents($outputPath), associative: true, flags: JSON_THROW_ON_ERROR);
 
-        expect($captured['run'])->toBe([
-            'source' => 'provider',
-            'provider' => 'fixture-provider',
-            'model' => 'fixture-model-v1',
-            'recorded_at' => '2026-09-06T12:34:56Z',
-            'prompt_tokens' => 90,
-            'completion_tokens' => 45,
-        ])->and($captured['responses'])->toHaveCount(9);
+        expect($captured['version'])->toBe(3)
+            ->and($captured['run'])->toBe([
+                'source' => 'provider',
+                'provider' => 'fixture-provider',
+                'model' => 'fixture-model-v1',
+                'recorded_at' => '2026-09-06T12:34:56Z',
+                'prompt_tokens' => 90,
+                'completion_tokens' => 45,
+                'suite_digest' => 'sha256:b7f1b0fad2a2ee37c12d9098987b2f491f1dced43e891aee972ac94615a7be48',
+                'prompt_digest' => 'sha256:422a6c9714f1cfa67ab3d324b38193f47169cb144d5f2a55ed46cfa24af11292',
+            ])->and($captured['responses'])->toHaveCount(9);
 
         $firstPrompt = $fake->prompts[0];
         $firstInput = json_decode($firstPrompt->input, associative: true, flags: JSON_THROW_ON_ERROR);
@@ -113,6 +118,7 @@ test('provider capture is explicit complete private and scoreable', function ():
         expect($evaluationExit)->toBe(0)
             ->and($report['result'])->toBe('passed')
             ->and($report['run']['source'])->toBe('provider')
+            ->and($report['run']['identity_status'])->toBe('verified')
             ->and($report['cases']['passed'])->toBe(9);
     } finally {
         umask($originalUmask);
