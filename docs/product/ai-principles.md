@@ -86,9 +86,10 @@ is not production approval. The September 8, 2026
 considered a live synthetic provider run and reaffirmed the deferral of
 autonomous visitor replies. The agent-controlled copilot remains the approved
 product boundary until broader repeated evidence and a future explicit ADR
-decision say otherwise. Two later private captures used the same expanded
-sixteen-case suite, prompt, provider route, and model: one failed 15/16 on a
-single contradictory-confidence refusal and one passed 16/16, recovering that
-case 38 minutes 11 seconds later. That short-interval variability is neither
-long-term drift resistance nor provider or runtime approval, so #762 and the ADR
-boundary remain unchanged.
+decision say otherwise. Four later private captures used the same expanded
+sixteen-case suite and prompt. Two GPT-5.2/Azure runs scored 15/16 and 16/16;
+Claude Sonnet 5/Bedrock scored 15/16; Gemini 3.8 Flash/Vertex scored 13/16, with
+three lexical fact misses awaiting human adjudication. The cross-model samples
+also changed upstream route, and all four were recorded within about 78 minutes.
+That point-in-time evidence is neither long-term drift resistance nor provider
+or runtime approval, so #762 and the ADR boundary remain unchanged.

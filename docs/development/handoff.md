@@ -377,11 +377,12 @@ Ordered by real dogfood value and dependency, not feature novelty.
    the existing security boundaries.
 
 6. **Keep the autonomous half of #762 deferred.** The optional agent copilot is
-   implemented inside ADR 0004's human-review boundary. Two same-contract
-   sixteen-case captures produced one confidence-contract failure and one
-   recovery only 38 minutes 11 seconds apart. A visitor-facing answer agent
-   still requires meaningfully later or model-revision evidence, human review,
-   and a deliberate ADR change; do not smuggle it in as release polish.
+   implemented inside ADR 0004's human-review boundary. Four same-contract
+   sixteen-case captures across three model/upstream routes produced one 16/16
+   pass and three machine-scored failures. Human review must adjudicate the
+   Gemini lexical misses before any fixture change, and a visitor-facing answer
+   agent still requires meaningfully later or model-revision evidence plus a
+   deliberate ADR change; do not smuggle it in as release polish.
 
 ---
 

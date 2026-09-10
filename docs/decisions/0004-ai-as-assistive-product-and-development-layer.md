@@ -132,24 +132,31 @@ it does not claim that the deferred answer-agent work shipped.
 The synthetic suite expanded to sixteen balanced answer/refusal cases covering
 trusted stale/current evidence, conflicting knowledge, indirect prompt
 injection, citation poisoning, an overlapping secret/action request, and
-bounded German answer/refusal behavior. Two private captures then used the same
-suite identity, prompt identity, `openrouter/azure` route, and
-`openai/gpt-5.2` model.
+bounded German answer/refusal behavior. Four private captures then used the same
+suite and prompt identities and scorer commit `9539795d`.
 
-The first run failed 15/16 with Brier 6.50. Its only failed case returned a
-visitor-safe refusal with the correct reason but contradictory 100% confidence.
-The second run, 38 minutes 11 seconds later, passed 16/16 with Brier 0.22. The
-offline comparison records that case as recovered and a Brier delta of -6.28,
-with every other aggregate metric unchanged. PR #939 made such
-decision-confidence contradictions a hard evaluation failure without changing
-the suite or prompt identity.
+Two `openrouter/azure` / `openai/gpt-5.2` runs scored 15/16 with Brier 6.50
+and 16/16 with Brier 0.22. The second, 38 minutes 11 seconds later, recovered
+the first run's sole contradictory-confidence refusal. PR #939 made that
+decision-confidence contradiction a hard evaluation failure without changing
+the suite or prompt identity. An `openrouter/amazon-bedrock/global` /
+`anthropic/claude-sonnet-5` sample scored 15/16 with Brier 1.20 after one
+unexpected refusal. An `openrouter/google-vertex/global` /
+`google/gemini-3.8-flash` sample scored 13/16 with Brier 17.55 because three
+plausible paraphrases missed the frozen lexical fact alternatives. The machine
+result remains failed pending human review of whether those are provider
+failures, evaluator false negatives, or both. Raw captures remain private and
+mode `0600`.
 
-This is evidence of short-interval stochastic instability and recovery, not
-long-term drift resistance, behavior across a model revision, representative
-self-hosting or visitor-runtime safety, or provider approval. It strengthens
-rather than relaxes the reason for keeping autonomous replies deferred. The
-September 8 decision and the human-reviewed copilot boundary remain unchanged;
-#762 stays open for the missing evidence and any future explicit ADR decision.
+The cross-model samples also changed upstream route, and all four captures were
+recorded within about 78 minutes. This is point-in-time cross-route evidence,
+not long-term drift resistance, behavior across a model revision,
+representative self-hosting or visitor-runtime safety, or provider approval. No
+stored setting, deployment, runtime, or ADR decision changed. The evidence
+strengthens rather than relaxes the reason for keeping autonomous replies
+deferred. The September 8 decision and the human-reviewed copilot boundary
+remain unchanged; #762 stays open for human adjudication, meaningfully separated
+evidence, and any future explicit ADR decision.
 
 ## Consequences
 
