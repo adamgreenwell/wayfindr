@@ -290,7 +290,11 @@ are four different claims. None should be collapsed into the next one.
 - A visitor-facing autonomous answer agent remains deferred by ADR 0004 and
   [#762](https://github.com/adamgreenwell/wayfindr/issues/762). The implemented
   copilot is assistive: a human reviews every suggestion before a visitor sees
-  it.
+  it. Two private captures under the same sixteen-case suite, prompt, provider
+  route, and model produced one 15/16 confidence-contract failure and one 16/16
+  recovery 38 minutes 11 seconds later. That is short-interval variability, not
+  long-term drift resistance, model-revision evidence, provider approval, or
+  visitor-runtime safety; #762 and the ADR boundary remain open and unchanged.
 
 The repository remains authoritative. See the
 [README](https://github.com/adamgreenwell/wayfindr#status),

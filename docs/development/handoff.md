@@ -1,6 +1,6 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated September 9, 2026. For an agent (or engineer) picking up
+*Living document — last updated September 10, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
@@ -187,13 +187,14 @@ versioning + upgrade enforcement (ADR 0012/0013, #635–#656 — completed Augus
 11 with the advisory response; see §12), repository CI/config hardening, and the
 repo-authored GitHub Wiki.
 
-**Current issue boundary (September 9).** #932 completed the release-candidate
+**Current issue boundary (September 10).** #932 completed the release-candidate
 work through PR #934. #797 is the sole open `1.0.0` milestone acceptance item
 and must follow the two stop-before-tag gates plus a separately authorized,
 verified publication; #762 remains open only for the visitor-facing
-autonomous-answer half that ADR 0004 deliberately defers. The open Dependabot
-PR #924 is a separate dependency update, not part of the release or
-human-acceptance gate.
+autonomous-answer half that ADR 0004 deliberately defers. PR #924 merged as a
+separate dependency update at `b2011ecb`; it did not clear a release or human
+acceptance gate. PR #939 then made contradictory refusal confidence a hard
+evaluation failure without changing the evidence identities.
 
 **Historical housekeeping from the July cycle.** #564 (launch proof) was
 reconciled and closed. External issue creation, state sync, and comment relay
@@ -376,13 +377,11 @@ Ordered by real dogfood value and dependency, not feature novelty.
    the existing security boundaries.
 
 6. **Keep the autonomous half of #762 deferred.** The optional agent copilot is
-   implemented inside ADR 0004's human-review boundary. A visitor-facing answer
-   agent requires broader evaluation and a deliberate ADR change; do not smuggle
-   it in as release polish.
-
-7. **Handle #924 separately.** The open dependency PR has its own compatibility
-   and review burden. It is not a prerequisite for publication or #797 unless
-   its actual diff establishes one.
+   implemented inside ADR 0004's human-review boundary. Two same-contract
+   sixteen-case captures produced one confidence-contract failure and one
+   recovery only 38 minutes 11 seconds apart. A visitor-facing answer agent
+   still requires meaningfully later or model-revision evidence, human review,
+   and a deliberate ADR change; do not smuggle it in as release polish.
 
 ---
 

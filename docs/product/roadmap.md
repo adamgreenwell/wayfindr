@@ -258,28 +258,31 @@ offline comparison for equivalent provider runs, and a rerun against a deployed
 model that passed 9 of 9 cases with no unsafe answer. That evidence was judged
 useful and insufficient, and the ADR was reaffirmed rather than relaxed.
 
-One narrow, wholly synthetic run through a single provider route establishes
-nothing about model or prompt drift, broad adversarial or multilingual
-coverage, or representative self-hosting failure modes. The suite now encodes
-bounded stale/conflicting, indirect-injection, citation-poisoning, jailbreak,
-and German-language behavior. Freshness remains trusted synthetic metadata and
-the selected German answer language plus classifier contract remain fixture
-metadata; Wayfindr does not derive either from runtime knowledge or widget
-locale, and no provider has run the expanded cases. The bundled sixteen-case
-baseline is curated scorer evidence, not model evidence.
+The suite now encodes bounded stale/conflicting, indirect-injection,
+citation-poisoning, jailbreak, and German-language behavior. Freshness remains
+trusted synthetic metadata and the selected German answer language plus
+classifier contract remain fixture metadata; Wayfindr does not derive either
+from runtime knowledge or widget locale. The bundled sixteen-case baseline is
+curated scorer evidence, not model evidence.
 
 The expanded suite and prompt identities intentionally make the September 8
-nine-case capture incomparable with future sixteen-case captures. The comparison
-tooling prevents that contract change from masquerading as provider/model drift;
-it does not fingerprint every provider-side transformation. Meaningful drift
-evidence now requires at least two fresh provider captures under the same
-sixteen-case suite and prompt contract, not one new capture compared with the old
-run.
+nine-case capture incomparable with later sixteen-case captures. Two private
+captures now share the expanded identities and the same `openrouter/azure` /
+`openai/gpt-5.2` route. The first failed 15/16 solely on a
+decision-confidence contradiction; the second passed 16/16 and recovered that
+case. The comparator recorded a -6.28 Brier delta and no other aggregate change.
+Because those runs are only 38 minutes 11 seconds apart, they show
+short-interval stochastic instability and recovery—not long-term drift
+resistance, model-revision behavior, provider approval, or representative
+self-hosting and visitor-runtime safety. The comparison tooling prevents a
+contract change from masquerading as provider/model drift, but it does not
+fingerprint every provider-side transformation.
 
 Reconsideration has a stated sequence — broaden the evaluation set, record drift
-across more than one run and model revision, revisit the ADR with that evidence,
-and only then define a visitor-facing runtime with grounding, low-confidence
-handoff, per-site opt-in and disclosure, and reply audit.
+across a meaningfully later run or model revision, obtain human review, revisit
+the ADR with that evidence, and only then define a visitor-facing runtime with
+grounding, low-confidence handoff, per-site opt-in and disclosure, and reply
+audit.
 
 Until that happens, the reply a customer reads belongs to a human.
 

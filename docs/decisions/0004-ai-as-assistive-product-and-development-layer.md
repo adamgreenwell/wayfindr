@@ -127,6 +127,30 @@ Until then, the existing agent-controlled copilot remains the approved product
 boundary. Reaffirming the deferral completes the decision requested by #764;
 it does not claim that the deferred answer-agent work shipped.
 
+## Evidence Update On 2026-09-10
+
+The synthetic suite expanded to sixteen balanced answer/refusal cases covering
+trusted stale/current evidence, conflicting knowledge, indirect prompt
+injection, citation poisoning, an overlapping secret/action request, and
+bounded German answer/refusal behavior. Two private captures then used the same
+suite identity, prompt identity, `openrouter/azure` route, and
+`openai/gpt-5.2` model.
+
+The first run failed 15/16 with Brier 6.50. Its only failed case returned a
+visitor-safe refusal with the correct reason but contradictory 100% confidence.
+The second run, 38 minutes 11 seconds later, passed 16/16 with Brier 0.22. The
+offline comparison records that case as recovered and a Brier delta of -6.28,
+with every other aggregate metric unchanged. PR #939 made such
+decision-confidence contradictions a hard evaluation failure without changing
+the suite or prompt identity.
+
+This is evidence of short-interval stochastic instability and recovery, not
+long-term drift resistance, behavior across a model revision, representative
+self-hosting or visitor-runtime safety, or provider approval. It strengthens
+rather than relaxes the reason for keeping autonomous replies deferred. The
+September 8 decision and the human-reviewed copilot boundary remain unchanged;
+#762 stays open for the missing evidence and any future explicit ADR decision.
+
 ## Consequences
 
 - AI package installation, provider environment variables, queue/process needs,

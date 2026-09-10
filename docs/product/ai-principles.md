@@ -86,4 +86,9 @@ is not production approval. The September 8, 2026
 considered a live synthetic provider run and reaffirmed the deferral of
 autonomous visitor replies. The agent-controlled copilot remains the approved
 product boundary until broader repeated evidence and a future explicit ADR
-decision say otherwise.
+decision say otherwise. Two later private captures used the same expanded
+sixteen-case suite, prompt, provider route, and model: one failed 15/16 on a
+single contradictory-confidence refusal and one passed 16/16, recovering that
+case 38 minutes 11 seconds later. That short-interval variability is neither
+long-term drift resistance nor provider or runtime approval, so #762 and the ADR
+boundary remain unchanged.

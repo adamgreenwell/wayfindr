@@ -268,12 +268,14 @@ page view that was not there before.
   transitions; legacy response-schema-v2 files remain individually scoreable
   but cannot be compared. The corpus and prompt expansions intentionally change
   both identities, so the historical nine-case provider capture cannot be
-  compared with a new sixteen-case capture; repeated fresh captures under the
-  same new contract are still required for drift evidence. This makes future
-  captures meaningfully comparable, but is not itself drift, provider-approval,
-  or runtime evidence. No provider was called for this expansion. This
-  infrastructure did **not** ship autonomous visitor replies. ADR 0004 was
-  reassessed and keeps that feature deferred.
+  compared with the sixteen-case contract. Two later private captures shared
+  the new identities: one failed 15/16 with Brier 6.50 on a single
+  contradictory-confidence refusal, and one passed 16/16 with Brier 0.22. Their
+  comparison records that case as recovered and a -6.28 Brier delta. These
+  38-minute-apart observations demonstrate short-interval variability, not
+  long-term drift resistance, provider approval, or runtime evidence. This
+  infrastructure did **not** ship autonomous visitor replies. ADR 0004 remains
+  unchanged.
 
 ### Changed
 
