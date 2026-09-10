@@ -17,11 +17,13 @@ translation pass. Performance baselines have been measured instead of assumed.
 author cannot satisfy alone:**
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797) — somebody who is
 not the author installs Wayfindr from a published artifact and it works. The
-repaired baseline for that run does not exist publicly yet: first
-[#932](https://github.com/adamgreenwell/wayfindr/issues/932) prepares and reviews
-the `v0.8.0` candidate, then the owner separately authorizes publication and the
-exact artifact is verified, and only then is #797's brief refreshed for a human
-tester.
+repaired baseline for that run does not exist publicly yet:
+[#932](https://github.com/adamgreenwell/wayfindr/issues/932) and
+[PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) prepared and
+reviewed the `v0.8.0` candidate on current `main`. The stop-before-tag gates in
+[RELEASING.md](../../RELEASING.md) still have to clear, the owner must separately
+authorize the repository-settings and publication changes, and the exact
+artifact must be verified before #797's brief is refreshed for a human tester.
 
 Tier 2 parity work is no longer post-1.0 either; it is implemented on current
 `main`. The AI tier has one assistive half implemented and one autonomous half
@@ -175,10 +177,15 @@ Underneath that, the original foundation:
 The feature gaps that defined the pre-1.0 work are closed, so what is left is
 proof rather than scope. Polish stays demand-gated.
 
-- **Prepare the repaired release candidate:** finish and review
-  [#932](https://github.com/adamgreenwell/wayfindr/issues/932) against the
-  unreleased `0.8.0` tree. That work may make the candidate publishable; it does
-  not authorize a tag, release, registry push, or deployment.
+- **Hold the reviewed release candidate at its publication gates:**
+  [#932](https://github.com/adamgreenwell/wayfindr/issues/932) completed through
+  [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) on the unreleased
+  `0.8.0` tree. Before any tag, wait for every eligible pre-guard release run to
+  leave its rerun window or, with separate owner authorization, delete named
+  runs after preserving their evidence. Creating the required active `v*` tag
+  ruleset is a separately authorized settings change. Neither the merged
+  candidate nor this gate inventory authorizes a repository-settings change,
+  tag, release, registry push, or deployment.
 - **Publish only after separate owner authorization, then verify the exact
   artifact:** record the tag, commit, image digest, release metadata, and
   relevant clean-install/upgrade evidence before treating it as #797's new

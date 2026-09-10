@@ -29,10 +29,10 @@ The **MVP support loop works end to end**: a visitor chats via the widget → th
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
 consented, masked view of the visitor's page.
 
-The guarded publisher being prepared in #932 is stable-only. Historical sections
-below accurately describe the former dash-tag alpha workflow, but that is not a
-current release path: a new prerelease channel first needs an explicit rule for
-carrying release actions into the eventual stable artifact.
+The guarded publisher completed in #932 and PR #934 is stable-only. Historical
+sections below accurately describe the former dash-tag alpha workflow, but that
+is not a current release path: a new prerelease channel first needs an explicit
+rule for carrying release actions into the eventual stable artifact.
 
 **Release truth comes first.** `v0.7.0` (August 25, 2026) is the latest public
 artifact. Current `main` identifies itself as unreleased `0.8.0`; that minor
@@ -49,15 +49,19 @@ and most dashboard workflows in English, German, and Italian, with per-agent
 display timezones; stored timestamps remain UTC. These are current-source
 claims, not claims about the public `v0.7.0` artifact.
 
-**The remaining release/acceptance sequence is gated.** Finish and review the
-`v0.8.0` candidate under #932; if the owner separately authorizes publication,
-publish and verify the exact tag, commit, image digest, and relevant install and
-upgrade paths; then refresh #797's baseline and give it to a human non-author.
-A cold Claude agent's no-context `v0.7.0` sandbox run was useful synthetic
-evidence — it matched the release identity, found the widget auto-init and
-installer discovery defects fixed by PRs #929/#931, and completed a support
-loop after workarounds — but it skipped a real VM, unwarmed pull, public
-TLS/origin, and local-CA trust. It does not satisfy #797.
+**The remaining release/acceptance sequence is gated.** #932 and PR #934 have
+prepared and reviewed the `v0.8.0` candidate on current `main`. Before any tag,
+wait for the eligible pre-guard release runs to leave their rerun window or,
+with separate owner authorization, delete named runs after preserving their
+evidence. Creating the required active `v*` tag ruleset is another separately
+authorized settings change. Once those gates clear, separately authorized
+publication may publish and verify the exact tag, commit, image digest, and
+relevant install and upgrade paths; then refresh #797's baseline and give it to
+a human non-author. A cold Claude agent's no-context `v0.7.0` sandbox run was
+useful synthetic evidence — it matched the release identity, found the widget
+auto-init and installer discovery defects fixed by PRs #929/#931, and completed
+a support loop after workarounds — but it skipped a real VM, unwarmed pull,
+public TLS/origin, and local-CA trust. It does not satisfy #797.
 
 **Historical stage evidence (July 14).** The Forge stage was chosen as the
 initial controlled dogfood instance instead of creating a separate production
@@ -183,12 +187,13 @@ versioning + upgrade enforcement (ADR 0012/0013, #635–#656 — completed Augus
 11 with the advisory response; see §12), repository CI/config hardening, and the
 repo-authored GitHub Wiki.
 
-**Current issue boundary (September 9).** #932 is the release-candidate work;
-#797 is the sole open `1.0.0` milestone acceptance item and must follow a
-separately authorized, verified publication; #762 remains open only for the
-visitor-facing autonomous-answer half that ADR 0004 deliberately defers. The
-open Dependabot PR #924 is a separate dependency update, not part of the release
-or human-acceptance gate.
+**Current issue boundary (September 9).** #932 completed the release-candidate
+work through PR #934. #797 is the sole open `1.0.0` milestone acceptance item
+and must follow the two stop-before-tag gates plus a separately authorized,
+verified publication; #762 remains open only for the visitor-facing
+autonomous-answer half that ADR 0004 deliberately defers. The open Dependabot
+PR #924 is a separate dependency update, not part of the release or
+human-acceptance gate.
 
 **Historical housekeeping from the July cycle.** #564 (launch proof) was
 reconciled and closed. External issue creation, state sync, and comment relay
@@ -337,10 +342,13 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Finish and review #932's `v0.8.0` candidate.** Align the release contract,
-   operator-visible copy, changelog coverage, CI, and review evidence. This step
-   may prove the source ready to publish; it does not authorize a tag, release,
-   registry push, deployment, or upgrade.
+1. **Clear the reviewed `v0.8.0` candidate's stop-before-tag gates.** #932 and
+   PR #934 completed the source, CI, and review work. Wait for every eligible
+   pre-guard release run to leave its rerun window or, with separate owner
+   authorization, delete named runs after preserving their evidence. Creating
+   the required active `v*` tag ruleset is a separate settings change that also
+   needs explicit owner authorization. Clearing either gate does not authorize
+   a tag, release, registry push, deployment, or upgrade.
 
 2. **Publish only after explicit owner authorization, then verify it.** Record
    the exact stable tag, commit, image digest, GitHub release metadata, and the
@@ -373,8 +381,8 @@ Ordered by real dogfood value and dependency, not feature novelty.
    it in as release polish.
 
 7. **Handle #924 separately.** The open dependency PR has its own compatibility
-   and review burden. It is not a prerequisite for #932, publication, or #797
-   unless its actual diff establishes one.
+   and review burden. It is not a prerequisite for publication or #797 unless
+   its actual diff establishes one.
 
 ---
 
@@ -826,10 +834,14 @@ rewrite those as runtime failures or as current production restore proof.
   timezone, and regional formatting belong in first-run setup and the operator
   console. Stored timestamps remain UTC; the operator chooses the install
   display timezone and each agent may override it on their profile.
-- Preserve the release sequence: prepare and review #932, obtain separate owner
-  authorization before publication, verify the exact stable artifact, refresh
-  #797's baseline, and only then ask the human non-author to run it. The cold
-  Claude sandbox run remains synthetic defect-finding evidence, not acceptance.
+- Preserve the release sequence: #932 and PR #934 prepared and reviewed the
+  candidate. Wait for eligible pre-guard release runs to leave their rerun
+  window or, with separate owner authorization, delete named runs after
+  preserving their evidence. Obtain separate owner authorization to create the
+  required active `v*` tag ruleset and, once both gates clear, separately
+  authorize publication. Verify the exact stable artifact, refresh #797's
+  baseline, and only then ask the human non-author to run it. The cold Claude
+  sandbox run remains synthetic defect-finding evidence, not acceptance.
 - Operate the controlled Forge dogfood instance. Refresh the scheduler and
   backup/restore proof notes only when current operational evidence exists, and
   let real support conversations choose the next branch-sized product slice.

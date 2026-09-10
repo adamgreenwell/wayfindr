@@ -150,11 +150,16 @@ The feature gaps tracked in the Tier 1
 implemented on current `main`. The sole open `1.0.0` milestone criterion is
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
 published-artifact install by somebody who is not the author. Its repaired
-baseline must follow this order: finish and review the `v0.8.0` candidate under
-[#932](https://github.com/adamgreenwell/wayfindr/issues/932), obtain separate
-owner authorization to publish it, verify the exact artifact, refresh the
-acceptance brief, and then give it to the human tester. Preparing a candidate is
-not permission to publish, and publication is not acceptance proof.
+baseline must follow this order: [#932](https://github.com/adamgreenwell/wayfindr/issues/932)
+and [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) prepared and
+reviewed the `v0.8.0` candidate on current `main`. Before any tag, wait for the
+eligible pre-guard release runs to leave their rerun window or, with separate
+owner authorization, delete named runs after preserving their evidence. Creating
+the required active `v*` tag ruleset is another separately authorized settings
+change. Only after those gates clear may the owner separately authorize
+publication, verify the exact artifact, refresh the acceptance brief, and give
+it to the human tester. Candidate readiness is not permission to change
+repository settings or publish, and publication is not acceptance proof.
 
 The list below describes the current development tree. It is not a claim that
 these post-`v0.7.0` additions are available in the latest public artifact.

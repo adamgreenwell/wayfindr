@@ -255,12 +255,17 @@ unreleased while `0.8.0` is only a development identity.
 
 The next sequence is intentionally gated:
 
-1. Finish and review the `v0.8.0` candidate under
-   [#932](https://github.com/adamgreenwell/wayfindr/issues/932). This does not
-   authorize publication.
-2. After separate owner authorization, publish and verify the exact stable tag,
-   commit, image digest, release metadata, and relevant install/upgrade paths.
-3. Refresh [#797](https://github.com/adamgreenwell/wayfindr/issues/797) to name
+1. [#932](https://github.com/adamgreenwell/wayfindr/issues/932) and
+   [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) have prepared
+   and reviewed the `v0.8.0` candidate on current `main`.
+2. Before any tag, retire every eligible pre-guard release run and install the
+   required active `v*` tag ruleset. Creating the ruleset — or deleting a run
+   instead of waiting for its rerun window to expire — requires separate owner
+   authorization.
+3. After separate publication authorization, publish and verify the exact
+   stable tag, commit, image digest, release metadata, and relevant
+   install/upgrade paths.
+4. Refresh [#797](https://github.com/adamgreenwell/wayfindr/issues/797) to name
    that verified artifact, then hand the brief to a human who is not the author.
 
 Candidate readiness, publication, artifact verification, and human acceptance
