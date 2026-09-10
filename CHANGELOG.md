@@ -268,14 +268,17 @@ page view that was not there before.
   transitions; legacy response-schema-v2 files remain individually scoreable
   but cannot be compared. The corpus and prompt expansions intentionally change
   both identities, so the historical nine-case provider capture cannot be
-  compared with the sixteen-case contract. Two later private captures shared
-  the new identities: one failed 15/16 with Brier 6.50 on a single
-  contradictory-confidence refusal, and one passed 16/16 with Brier 0.22. Their
-  comparison records that case as recovered and a -6.28 Brier delta. These
-  38-minute-apart observations demonstrate short-interval variability, not
-  long-term drift resistance, provider approval, or runtime evidence. This
-  infrastructure did **not** ship autonomous visitor replies. ADR 0004 remains
-  unchanged.
+  compared with the sixteen-case contract. Four later private captures shared
+  the new identities. Two GPT-5.2/Azure runs produced a 15/16
+  contradictory-confidence failure followed by a 16/16 recovery 38 minutes 11
+  seconds later. Claude Sonnet 5/Bedrock then failed 15/16 on one unexpected
+  refusal. Gemini 3.8 Flash/Vertex scored 13/16 because three semantically
+  plausible paraphrases missed the frozen lexical fact alternatives; those
+  machine failures remain failures pending human adjudication. All four were
+  recorded within about 78 minutes, and the cross-model samples also changed
+  upstream route. They demonstrate point-in-time variability, not long-term
+  drift resistance, provider approval, or runtime evidence. This infrastructure
+  did **not** ship autonomous visitor replies. ADR 0004 remains unchanged.
 
 ### Changed
 

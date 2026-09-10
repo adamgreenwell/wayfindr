@@ -163,10 +163,12 @@ repository settings or publish, and publication is not acceptance proof.
 
 The only other open issue is
 [#762](https://github.com/adamgreenwell/wayfindr/issues/762), outside the 1.0.0
-milestone. Two same-contract sixteen-case provider captures produced one
-confidence-contract failure and one recovery 38 minutes 11 seconds later. That
-is short-interval variability—not long-term drift resistance, model-revision
-evidence, provider or runtime approval, or authority to change ADR 0004.
+milestone. Four same-contract sixteen-case provider captures across GPT-5.2,
+Claude Sonnet 5, and Gemini 3.8 Flash produced one 16/16 pass plus 15/16,
+15/16, and 13/16 failures. The cross-model samples also changed upstream route,
+and all four were recorded within about 78 minutes. That is point-in-time
+variability—not long-term drift resistance, model-revision evidence, provider
+or runtime approval, or authority to change ADR 0004.
 
 The list below describes the current development tree. It is not a claim that
 these post-`v0.7.0` additions are available in the latest public artifact.

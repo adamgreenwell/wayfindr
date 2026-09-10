@@ -266,23 +266,27 @@ from runtime knowledge or widget locale. The bundled sixteen-case baseline is
 curated scorer evidence, not model evidence.
 
 The expanded suite and prompt identities intentionally make the September 8
-nine-case capture incomparable with later sixteen-case captures. Two private
-captures now share the expanded identities and the same `openrouter/azure` /
-`openai/gpt-5.2` route. The first failed 15/16 solely on a
-decision-confidence contradiction; the second passed 16/16 and recovered that
-case. The comparator recorded a -6.28 Brier delta and no other aggregate change.
-Because those runs are only 38 minutes 11 seconds apart, they show
-short-interval stochastic instability and recovery—not long-term drift
-resistance, model-revision behavior, provider approval, or representative
-self-hosting and visitor-runtime safety. The comparison tooling prevents a
-contract change from masquerading as provider/model drift, but it does not
-fingerprint every provider-side transformation.
+nine-case capture incomparable with later sixteen-case captures. Four private
+captures now share the expanded identities. Two `openrouter/azure` /
+`openai/gpt-5.2` runs scored 15/16 and 16/16, recovering one
+decision-confidence contradiction 38 minutes 11 seconds later. An
+`openrouter/amazon-bedrock/global` / `anthropic/claude-sonnet-5` sample scored
+15/16 after one unexpected refusal. An `openrouter/google-vertex/global` /
+`google/gemini-3.8-flash` sample scored 13/16 when three plausible paraphrases
+missed the frozen lexical fact alternatives; those machine failures await human
+adjudication. The cross-model samples also changed upstream route, and all four
+runs occurred within about 78 minutes. They show point-in-time variability—not
+long-term drift resistance, model-revision behavior, provider approval, or
+representative self-hosting and visitor-runtime safety. The comparison tooling
+prevents a contract change from masquerading as provider/model drift, but it
+does not fingerprint every provider-side transformation.
 
-Reconsideration has a stated sequence — broaden the evaluation set, record drift
-across a meaningfully later run or model revision, obtain human review, revisit
-the ADR with that evidence, and only then define a visitor-facing runtime with
-grounding, low-confidence handoff, per-site opt-in and disclosure, and reply
-audit.
+Reconsideration has a stated sequence — obtain human review of the retained
+private outputs, freeze and recapture every proposed route if that review changes
+the fixture or matcher, record same-route evidence after meaningful time or a
+model revision, revisit the ADR with that evidence, and only then define a
+visitor-facing runtime with grounding, low-confidence handoff, per-site opt-in
+and disclosure, and reply audit.
 
 Until that happens, the reply a customer reads belongs to a human.
 
