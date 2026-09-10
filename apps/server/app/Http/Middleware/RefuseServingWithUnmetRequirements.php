@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Middleware;
 
+use App\Support\Release\ActionAdvice;
 use App\Support\Release\UpgradeGuard;
 use App\Support\Release\UpgradeRequirements;
 use Closure;
@@ -34,27 +35,43 @@ class RefuseServingWithUnmetRequirements
             return $next($request);
         }
 
-        $outstanding = $this->outstanding();
+        $assessment = $this->assessment();
 
-        if ($outstanding === []) {
+        if ($assessment['actions'] === []) {
             return $next($request);
         }
 
         $lines = ['This release needs something done before it can serve traffic.', ''];
+        $hasAcknowledgementKeys = false;
 
-        foreach ($outstanding as $action) {
-            $lines[] = sprintf('%s (from %s)', $action['id'] ?? '?', $action['release'] ?? '?');
+        foreach ($assessment['actions'] as $action) {
+            $lines[] = sprintf(
+                '%s (from %s)',
+                $action['display_id'] ?? $action['id'] ?? '?',
+                $action['display_release'] ?? $action['release'] ?? '?',
+            );
             $lines[] = '  '.($action['summary'] ?? '');
 
             if (($action['detail'] ?? '') !== '') {
                 $lines[] = '  '.$action['detail'];
             }
 
-            $lines[] = sprintf('  Acknowledge with: %s/%s', $action['release'] ?? '?', $action['id'] ?? '?');
+            $advice = ActionAdvice::for($action, $assessment['target'], $assessment['from']);
+            $hasAcknowledgementKeys = $hasAcknowledgementKeys || $advice->acknowledgeKey !== null;
+
+            foreach ($advice->lines() as $line) {
+                // ActionAdvice is also used by Symfony Console and carries its
+                // emphasis tags. This response is plain text, so keep the words
+                // and discard only the styling.
+                $lines[] = '  '.strip_tags($line);
+            }
+
             $lines[] = '';
         }
 
-        $lines[] = 'Set WAYFINDR_ACKNOWLEDGED_ACTIONS once the work is done, then restart.';
+        if ($hasAcknowledgementKeys) {
+            $lines[] = 'Set WAYFINDR_ACKNOWLEDGED_ACTIONS once the work is done, then restart.';
+        }
 
         return response(implode("\n", $lines), Response::HTTP_SERVICE_UNAVAILABLE)
             ->header('Content-Type', 'text/plain; charset=utf-8')
@@ -62,9 +79,9 @@ class RefuseServingWithUnmetRequirements
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return array{actions: list<array<string, mixed>>, from: ?string, target: ?string}
      */
-    private function outstanding(): array
+    private function assessment(): array
     {
         $guard = app(UpgradeGuard::class);
 
@@ -76,7 +93,7 @@ class RefuseServingWithUnmetRequirements
             // if it needs the database, and turning a blip into a 500 from
             // middleware would take out `/up`-adjacent routes and any page that
             // does not. The migration gate is where this is actually enforced.
-            return [];
+            return ['actions' => [], 'from' => null, 'target' => null];
         }
 
         // An empty list means "nothing outstanding" only when the release could
@@ -85,21 +102,32 @@ class RefuseServingWithUnmetRequirements
         // about what this release owes — and serving on it is the fail-open this
         // gate exists to prevent.
         if (! $guard->lastAssessable()) {
-            return [[
-                'id' => 'release-declaration-unreadable',
-                'release' => 'unknown',
-                'phase' => 'after-start',
-                'summary' => 'This release cannot say what it requires.',
-                'detail' => 'Its declaration or history is missing or unreadable, so whether '
-                    .'anything is outstanding is unknown. Repull the image or the checkout.',
-            ]];
+            return [
+                'actions' => [[
+                    // Deliberately display-only identity. With no real action id
+                    // or release, ActionAdvice cannot invent an acknowledgement
+                    // key for a declaration that could not be read.
+                    'display_id' => 'release-declaration-unreadable',
+                    'display_release' => 'unknown',
+                    'phase' => 'after-start',
+                    'summary' => 'This release cannot say what it requires.',
+                    'detail' => 'Its declaration or history is missing or unreadable, so whether '
+                        .'anything is outstanding is unknown. Repull the image or the checkout.',
+                ]],
+                'from' => null,
+                'target' => null,
+            ];
         }
 
-        return array_values(array_filter(
-            $assessment,
-            static fn (array $a): bool => in_array(
-                $a['phase'] ?? '', UpgradeRequirements::BLOCKS_SERVING, true,
-            ),
-        ));
+        return [
+            'actions' => array_values(array_filter(
+                $assessment,
+                static fn (array $a): bool => in_array(
+                    $a['phase'] ?? '', UpgradeRequirements::BLOCKS_SERVING, true,
+                ),
+            )),
+            'from' => $guard->lastFrom(),
+            'target' => $guard->lastTarget(),
+        ];
     }
 }

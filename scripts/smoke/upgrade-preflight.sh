@@ -598,7 +598,8 @@ check "the parsed response has its own"  1 "$(printf '%s' "$preflight_body" | gr
 # the install IS - the floor is measured from it. `satisfied_through` is the last
 # release that owed nothing, and is where the SPAN starts; it sits further back
 # when a previous upgrade left work outstanding, and reading the span from
-# `version` instead skips the releases whose debt is still unpaid.
+# `version` instead skips the releases whose debt is still unpaid. The marker
+# is also proof only for the installation profile that assessed it.
 state_origins() {
     printf '%s' "$1" | "${PHP:-php}" -r '
         require getenv("APP")."/app/Support/Version/SemanticVersion.php";
@@ -610,7 +611,8 @@ state_origins() {
         if ($version !== "") {
             $version = App\Support\Version\SemanticVersion::parse($version)?->canonical() ?? "";
         }
-        if (! array_key_exists("satisfied_through", $state)) { $span = $version; $known = "1"; }
+        if (($state["installation_profile"] ?? null) !== "image") { $span = ""; $known = "0"; }
+        elseif (! array_key_exists("satisfied_through", $state)) { $span = $version; $known = "1"; }
         elseif (is_string($state["satisfied_through"])) { $span = $state["satisfied_through"]; $known = "1"; }
         else { $span = ""; $known = "0"; }
         echo $version, "|", $span, "|", $known;
@@ -619,16 +621,18 @@ state_origins() {
 
 echo
 echo "span origin is the debt origin, not the recorded release:"
-check "clean upgrade: both the same"        "0.2.0|0.2.0|1" "$(state_origins '{"version":"0.2.0","satisfied_through":"0.2.0"}')"
+check "clean image upgrade: both the same"  "0.2.0|0.2.0|1" "$(state_origins '{"version":"0.2.0","satisfied_through":"0.2.0","installation_profile":"image"}')"
 # The case that matters: recorded at 0.2.0 but still owing work from 0.1.0, so
 # the span must reach back and include 0.2.0 itself.
-check "retained debt reaches further back"  "0.2.0|0.1.0|1" "$(state_origins '{"version":"0.2.0","satisfied_through":"0.1.0"}')"
-check "unknown debt origin takes the lot"   "0.2.0||0"      "$(state_origins '{"version":"0.2.0","satisfied_through":null}')"
-check "a state file predating the marker"   "0.2.0|0.2.0|1" "$(state_origins '{"version":"0.2.0"}')"
-check "a v-prefix is canonicalised"        "0.2.4|0.2.4|1" "$(state_origins '{"version":"v0.2.4"}')"
+check "retained debt reaches further back"  "0.2.0|0.1.0|1" "$(state_origins '{"version":"0.2.0","satisfied_through":"0.1.0","installation_profile":"image"}')"
+check "unknown debt origin takes the lot"   "0.2.0||0"      "$(state_origins '{"version":"0.2.0","satisfied_through":null,"installation_profile":"image"}')"
+check "a pre-profile state takes the lot"   "0.2.0||0"      "$(state_origins '{"version":"0.2.0","satisfied_through":"0.2.0"}')"
+check "a host profile takes the lot"        "0.2.0||0"      "$(state_origins '{"version":"0.2.0","satisfied_through":"0.2.0","installation_profile":"host"}')"
+check "a pre-marker image falls back"       "0.2.0|0.2.0|1" "$(state_origins '{"version":"0.2.0","installation_profile":"image"}')"
+check "a v-prefix is canonicalised"        "0.2.4|0.2.4|1" "$(state_origins '{"version":"v0.2.4","installation_profile":"image"}')"
 # A malformed recorded version is no origin, so the declared one is read instead
 # - the artifact's `recordedVersion() ?? declaredOrigin()` in the same order.
-check "a malformed version is no origin"   "||1"           "$(state_origins '{"version":"0.1.O"}')"
+check "a malformed version is no origin"   "||1"           "$(state_origins '{"version":"0.1.O","installation_profile":"image"}')"
 
 # A tag names a RELEASE only when the image is ours. `fork:0.3.0` is version
 # 0.3.0 of somebody else's build, and fetching Wayfindr's official 0.3.0 manifest

@@ -116,12 +116,18 @@
                                         {{ __('operator.dashboard.release.cannot_evaluate') }}
                                     </span>
                                 @endif
-                                <span class="lede">
-                                    {!! __('operator.dashboard.release.silence', [
-                                        'reference' => '<code lang="">'.e(($notice['release'] ?? '?').'/'.($notice['id'] ?? '?')).'</code>',
-                                        'setting' => '<code lang="">WAYFINDR_ACKNOWLEDGED_ACTIONS</code>',
-                                    ]) !!}
-                                </span>
+                                @if (($notice['satisfied_by'] ?? null) === 'failed')
+                                    <span class="lede">
+                                        {{ __('operator.dashboard.release.check_failed') }}
+                                    </span>
+                                @else
+                                    <span class="lede">
+                                        {!! __('operator.dashboard.release.silence', [
+                                            'reference' => '<code lang="">'.e(($notice['release'] ?? '?').'/'.($notice['id'] ?? '?')).'</code>',
+                                            'setting' => '<code lang="">WAYFINDR_ACKNOWLEDGED_ACTIONS</code>',
+                                        ]) !!}
+                                    </span>
+                                @endif
                             </span>
                         </div>
                     @endforeach

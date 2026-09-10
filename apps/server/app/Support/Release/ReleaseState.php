@@ -125,6 +125,24 @@ final class ReleaseState
     }
 
     /**
+     * The packaging profile under which `satisfied_through` was assessed.
+     *
+     * A clean marker earned by an image cannot discharge host-only work, and a
+     * host marker cannot discharge future image-only work. Older state files do
+     * not carry this field; null therefore means "no proof for this profile",
+     * never "applies everywhere".
+     */
+    public function recordedInstallationProfile(): ?string
+    {
+        $value = $this->read()['installation_profile'] ?? null;
+
+        return is_string($value)
+            && in_array($value, ReleaseManifest::INSTALLATION_PROFILES, true)
+                ? $value
+                : null;
+    }
+
+    /**
      * Record that this release got far enough to be considered installed.
      *
      * Written only after migrations complete successfully. A release whose
@@ -187,6 +205,7 @@ final class ReleaseState
         ?string $commit,
         ?string $satisfiedThrough = null,
         bool $freshInstall = false,
+        ?string $installationProfile = null,
     ): bool {
         $path = $this->path();
         $dir = dirname($path);
@@ -199,6 +218,10 @@ final class ReleaseState
             'version' => $version,
             'commit' => $commit,
             'satisfied_through' => $satisfiedThrough,
+            'installation_profile' => is_string($installationProfile)
+                && in_array($installationProfile, ReleaseManifest::INSTALLATION_PROFILES, true)
+                    ? $installationProfile
+                    : null,
             'fresh_install' => $freshInstall,
             'recorded_at' => gmdate('c'),
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");

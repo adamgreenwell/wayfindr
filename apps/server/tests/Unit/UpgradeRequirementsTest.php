@@ -73,6 +73,16 @@ describe('outstanding actions', function (): void {
             ->and($out[0]['satisfied_by'])->toBe('unacknowledged');
     });
 
+    test('computed settlement metadata overrides a declaration lookalike', function (): void {
+        $out = UpgradeRequirements::outstanding(
+            [guardManifest('0.2.0', [guardAction(['satisfied_by' => 'failed'])])],
+            '0.1.0', '0.2.0', [], guardChecks([]),
+        );
+
+        expect($out)->toHaveCount(1)
+            ->and($out[0]['satisfied_by'])->toBe('unacknowledged');
+    });
+
     test('an acknowledgement naming the action settles it', function (): void {
         $out = UpgradeRequirements::outstanding(
             [guardManifest('0.2.0', [guardAction()])], '0.1.0', '0.2.0', ['0.2.0/do-a-thing'], guardChecks([]),
@@ -109,6 +119,15 @@ describe('outstanding actions', function (): void {
         expect($out)->toHaveCount(1)->and($out[0]['satisfied_by'])->toBe('failed');
     });
 
+    test('an acknowledgement cannot override a failing check', function (): void {
+        $out = UpgradeRequirements::outstanding(
+            [guardManifest('0.2.0', [guardAction(['verification' => ['type' => 'check', 'check' => 'worker']])])],
+            '0.1.0', '0.2.0', ['0.2.0/do-a-thing'], guardChecks(['worker' => false]),
+        );
+
+        expect($out)->toHaveCount(1)->and($out[0]['satisfied_by'])->toBe('failed');
+    });
+
     test('a check that cannot be evaluated is not a pass', function (): void {
         // Absent evidence is not evidence. The point of preferring checks is that
         // they are evidence; treating "cannot tell" as satisfied would make a
@@ -139,6 +158,64 @@ describe('outstanding actions', function (): void {
         $out = UpgradeRequirements::outstanding($history, '0.1.0', '0.3.0', [], guardChecks([]));
 
         expect(array_column($out, 'id'))->toBe(['from-two', 'from-three']);
+    });
+
+    test('keeps actions on their declared installation profile only', function (): void {
+        $action = guardAction(['installation_profiles' => ['host']]);
+        $history = [guardManifest('0.2.0', [$action])];
+
+        $host = UpgradeRequirements::outstanding(
+            $history, '0.1.0', '0.2.0', [], guardChecks([]), installationProfile: 'host',
+        );
+        $image = UpgradeRequirements::outstanding(
+            $history, '0.1.0', '0.2.0', [], guardChecks([]), installationProfile: 'image',
+        );
+
+        expect($host)->toHaveCount(1)
+            ->and($image)->toBeEmpty();
+    });
+
+    test('older unscoped actions still apply to every installation profile', function (): void {
+        expect(UpgradeRequirements::appliesToInstallationProfile(guardAction(), 'host'))->toBeTrue()
+            ->and(UpgradeRequirements::appliesToInstallationProfile(guardAction(), 'image'))->toBeTrue();
+    });
+
+    test('an unknown runtime profile cannot exempt a scoped action', function (): void {
+        expect(UpgradeRequirements::appliesToInstallationProfile(
+            guardAction(['installation_profiles' => ['host']]),
+            'bogus',
+        ))->toBeTrue();
+    });
+
+    test('malformed profile scope fails closed', function (mixed $profiles): void {
+        expect(UpgradeRequirements::appliesToInstallationProfile(
+            guardAction(['installation_profiles' => $profiles]),
+            'image',
+        ))->toBeTrue();
+    })->with([
+        'not a list' => ['host'],
+        'empty' => [[]],
+        'unknown' => [['bogus']],
+        'duplicate' => [['host', 'host']],
+    ]);
+});
+
+describe('outstanding notices', function (): void {
+    test('computed settlement metadata overrides a declaration lookalike', function (): void {
+        $notice = [
+            'id' => 'run-a-worker',
+            'release' => '0.2.0',
+            'applicability' => ['type' => 'always'],
+            'verification' => ['type' => 'attest'],
+            'satisfied_by' => 'failed',
+        ];
+
+        $out = UpgradeRequirements::outstandingNotices(
+            ['notices' => [$notice]], [], guardChecks([]),
+        );
+
+        expect($out)->toHaveCount(1)
+            ->and($out[0]['satisfied_by'])->toBe('unacknowledged');
     });
 });
 

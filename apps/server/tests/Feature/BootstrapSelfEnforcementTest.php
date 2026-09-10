@@ -85,7 +85,12 @@ test('the shipped release.json advises about the backups queue worker', function
     // refuses the upgrade outright, and a refused upgrade returns before notices
     // are computed — deliberately, since advice about a release that cannot
     // start is noise on top of a refusal.
-    app(ReleaseState::class)->record('0.3.0', 'abc', satisfiedThrough: '0.3.0');
+    app(ReleaseState::class)->record(
+        '0.3.0',
+        'abc',
+        satisfiedThrough: '0.3.0',
+        installationProfile: 'host',
+    );
 
     // No worker seen: the operator is told.
     app(CheckRegistry::class)->register('backups-queue-consumer', fn (): ?bool => false);
@@ -94,7 +99,10 @@ test('the shipped release.json advises about the backups queue worker', function
 
     expect(array_column($guard->notices(), 'id'))->toContain('backups-queue-consumer')
         ->and($guard->assess()['blocked'])->toBeFalse()
-        ->and($guard->assessAll())->toBeEmpty();
+        // release.json may independently declare real actions. The advisory
+        // boundary is that this notice never leaks into that gating list, not
+        // that every future release must keep the list globally empty.
+        ->and(array_column($guard->assessAll(), 'id'))->not->toContain('backups-queue-consumer');
 
     // A worker is seen: it retires itself, with nothing for the operator to do.
     // This is why it is verified by `check` rather than attested — an operator

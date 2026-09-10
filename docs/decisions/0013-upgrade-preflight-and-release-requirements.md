@@ -102,7 +102,9 @@ Each declared action carries a `verification`:
 
 - **`check`** — a machine-evaluable condition the artifact can test itself
   ("the backups queue has a consumer"). Preferred wherever the condition is
-  expressible. This is real verification: the operator cannot be wrong about it.
+  expressible. This is real verification: a positive answer settles it, and an
+  acknowledgement cannot override a negative answer. If the artifact cannot
+  evaluate the check at all, an acknowledgement may settle that uncertainty.
 - **`attest`** — an explicit operator acknowledgement, for actions whose
   completion the artifact cannot observe ("you have taken a backup you trust").
 
@@ -122,7 +124,8 @@ WAYFINDR_ACKNOWLEDGED_ACTIONS=0.2.0/backups-worker,0.3.0/reindex-conversations
 Each entry is `<release>/<action-id>`, so an acknowledgement is specific to the
 action that required it and cannot be a blanket opt-out. It is deliberately
 verbose to type: this is the operator asserting something the platform cannot
-check, and it should read like an assertion.
+check, not contradicting a check that returned false, and it should read like an
+assertion.
 
 A `check` sees whatever exists **when it runs**, which follows from its action's
 phase rather than from a blanket rule:
@@ -176,7 +179,7 @@ That is readable pre-migration, because it belongs to the *old* schema.
   operator who was already current, and it is the safe direction — the
   alternative is silence for precisely the installs with the furthest to travel.
 
-### Published twice, for two different readers
+### Delivered for three readers
 
 - **Baked into the image** (alongside `/etc/wayfindr/version`, ADR 0012) — the
   history above, read by the artifact guard. It must work without network access,
@@ -184,8 +187,51 @@ That is readable pre-migration, because it belongs to the *old* schema.
   offline start and skipping the check.
 - **Published as a release asset** — one manifest per release, read by the
   installer preflight, which must evaluate releases it never pulls.
+- **Generated into a host-managed checkout** — read by the same artifact guard
+  before migration when there is no image-baked `/etc` manifest.
 
-Both come from one builder so they cannot disagree.
+All three delivery paths come from one builder so they cannot disagree.
+
+### Actions may be scoped by runtime ownership
+
+Some operator work belongs to the runtime provider rather than to every way of
+running the same release. An image may already bake an extension that a Forge or
+other host-managed PHP deployment must install. Treating that as universal
+creates a false outage for the image; omitting it leaves host deployments to fail
+before the application guard can explain why.
+
+An action may therefore carry an optional `installation_profiles` list:
+
+- `image` means a container built with Wayfindr's Dockerfile and identified by
+  its baked `/etc/wayfindr/release.json`;
+- `host` means Forge or another host-managed PHP checkout using the repository
+  manifest fallback.
+
+This follows dependency ownership, not source provenance. The local
+`compose.build.yml` path is still `image`; Forge is `host`. Omission means every
+profile, preserving every earlier manifest. Invalid scope is rejected and the
+runtime filter fails closed. The profile is derived from the artifact shape and
+has no operator environment override.
+
+The release state binds `satisfied_through` and the fresh-install exemption to
+the installation profile that assessed them. A marker earned by an image may
+have filtered host-only work, and vice versa, so a missing or different recorded
+profile reopens the whole action history under the current one. The recorded
+version remains valid for upgrade-floor checks; only the profile-sensitive proof
+is discarded. The installer mirrors that rule for image upgrades, and Forge
+trusts a post-0.8 marker for its host-only action only when the state names
+`host`.
+
+The release verdict remains global: any action makes
+`requires_operator_action` true. The profile only decides which install owes
+that action, so release numbering and the changelog cannot understate it.
+
+This is additive within manifest schema 1. The v0.7.0 reader was exercised
+against the new field: it preserves unknown action keys, so the refreshed
+installer can filter host-only work while still parsing through the image being
+upgraded from. The target artifact validates the field itself. A new schema
+would instead make the old reader refuse before it could perform that safe
+handoff.
 
 ### Migration itself enforces the guard
 
@@ -250,8 +296,9 @@ have it, and the artifact guard is the guarantee for everyone else.
 
 ## Consequences
 
-- A release requiring operator action will stop an unprepared install rather than
-  half-upgrade it. The stack stays on the previous image with its schema intact.
+- A release requiring operator action will stop an unprepared install before its
+  schema changes. Image and zero-downtime paths keep the previous release live;
+  an in-place host deploy needs its own pre-pull check and rollback handling.
 - Operators who skip releases are covered, because the preflight evaluates the
   whole span and the artifact guard does not care how the image arrived.
 - An action with no expressible check is honestly labelled as attested rather
@@ -260,9 +307,15 @@ have it, and the artifact guard is the guarantee for everyone else.
   cost per release, and the point: a declaration nobody can evaluate is a comment.
 - The first enforcing release is unprotected by design. That is not a gap to fix
   but a property to schedule around — it must require nothing.
-- Enforcement sits in the migration path, so every deployment style is covered on
-  the same terms and no call site has to remember it — including scripts this
-  project never wrote.
+- Enforcement sits in the migration path, so every deployment style reaches one
+  mechanism without each migration call site remembering it. That mechanism
+  filters actions by the immutable installation profile before evaluating them.
+- Packaging-specific work can be declared without stopping a runtime whose image
+  already satisfies it. That adds one more fail-closed dimension the installer
+  and artifact must test in common.
+- Composer can refuse a host platform requirement before Laravel loads. A host
+  deployment controller must therefore enforce `before-pull` prerequisites too;
+  the application guard protects the schema, not an external in-place checkout.
 - Migration gains the ability to refuse. That is a significant behaviour change
   for a command operators trust to be mechanical, so its message must be
   unmistakable and its bypass documented for genuine emergencies.
@@ -307,20 +360,20 @@ have it, and the artifact guard is the guarantee for everyone else.
   two run after the image is known, so delegating would leave two parsers where
   there is one — with the most consequential key still on the bash side.
 
-- **One rule, six sites, is itself the hazard.** Whether an action can still be
+- **One rule, seven sites, is itself the hazard.** Whether an action can still be
   performed, whether an acknowledgement settles it, and what the operator should
   be told had to be agreed by the predicate, the settlement in `outstanding()`,
-  the blocking filter in `UpgradeGuard`, the installer's partition, and two
+  the blocking filter in `UpgradeGuard`, the installer's partition, and three
   operator-facing messages. Nearly every round of #648 fixed a subset and left
   another, twice fixing a message in one file and not its twin.
 
   The three states now have one name each — `App\Support\Release\ActionDisposition`,
   whose enum values are the installer's own `STEP`/`NOW`/`DO` so the two can be
   compared directly — and everything a site needs to *say* comes from
-  `ActionAdvice`, which both messages render verbatim. That makes their ordering
+  `ActionAdvice`, which all three application messages render. That makes their ordering
   a structural property rather than a convention each file has to remember.
 
-  Anything added here — an advisory severity, a new phase, a third message site —
+  Anything added here — an advisory severity, a new phase, a fourth message site —
   should extend those two classes rather than re-derive the rule.
 
 - **The only response this record defines is refusal, and some requirements are
@@ -355,8 +408,8 @@ have it, and the artifact guard is the guarantee for everyone else.
   gates — the migration filter, the serving filter, the installer's partition —
   and a severity flag means each must remember to check it. A gate that forgets
   turns advice into an outage, which is precisely what the advisory response
-  exists to prevent. This record already documents one rule needing six sites to
-  agree and drifting at nearly every step; a second such rule, whose failure mode
+  exists to prevent. This record already documents one rule needing seven sites
+  to agree and drifting at nearly every step; a second such rule, whose failure mode
   is refusing all traffic, was not worth authoring. The gates read `actions` and
   cannot see `notices`.
 

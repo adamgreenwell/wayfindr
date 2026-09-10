@@ -35,6 +35,9 @@ final class ReleaseManifest
 
     public const APPLICABILITY_TYPES = ['always', 'upgrade-from', 'state'];
 
+    /** Packaging paths whose operator work may differ for the same release. */
+    public const INSTALLATION_PROFILES = ['image', 'host'];
+
     /**
      * Build the published manifest from the authored declaration plus the
      * identity of the release being built.
@@ -137,7 +140,7 @@ final class ReleaseManifest
                 throw new InvalidArgumentException("Action #{$index} must be an object.");
             }
 
-            self::validateAction(self::withoutComments($action), $index);
+            self::validateAction(self::withoutComments($action), $index, true);
 
             $id = $action['id'];
 
@@ -155,7 +158,7 @@ final class ReleaseManifest
         // so ids must be unique across both, not merely within each. A notice
         // sharing an id with an action would let acknowledging the advisory
         // settle the blocking requirement silently.
-        self::validateNotices($declaration['notices'] ?? [], $seen);
+        self::validateNotices($declaration['notices'] ?? [], $seen, true);
     }
 
     /**
@@ -182,7 +185,7 @@ final class ReleaseManifest
      *
      * @throws InvalidArgumentException
      */
-    private static function validateNotices($notices, array $seen = []): void
+    private static function validateNotices($notices, array $seen = [], bool $strictKeys = false): void
     {
         if (! is_array($notices)) {
             throw new InvalidArgumentException('"notices" must be a list.');
@@ -224,12 +227,14 @@ final class ReleaseManifest
             // does not, in which case telling an operator to do something they
             // can no longer do is noise. **Advisory work must be performable at
             // any time.**
-            $unknown = array_diff(
-                array_keys($notice),
-                ['id', 'summary', 'detail', 'applicability', 'verification', 'release'],
-            );
+            $unknown = $strictKeys
+                ? array_diff(
+                    array_keys($notice),
+                    ['id', 'summary', 'detail', 'applicability', 'verification'],
+                )
+                : [];
 
-            if ($unknown !== []) {
+            if ($strictKeys && $unknown !== []) {
                 throw new InvalidArgumentException(sprintf(
                     'Notice "%s" has unknown key(s): %s. A notice takes no phase and no '
                     .'depends_on_release — it never blocks, so there is nothing to time or to strand.',
@@ -238,8 +243,8 @@ final class ReleaseManifest
                 ));
             }
 
-            self::validateApplicability($notice['applicability'], $notice['id']);
-            self::validateVerification($notice['verification'], $notice['id']);
+            self::validateApplicability($notice['applicability'], $notice['id'], $strictKeys);
+            self::validateVerification($notice['verification'], $notice['id'], $strictKeys);
 
             // `upgrade-from` is rejected for notices, because a notice has no
             // upgrade to measure from. It is evaluated against the running
@@ -297,7 +302,7 @@ final class ReleaseManifest
     /**
      * @param  array<string, mixed>  $action
      */
-    private static function validateAction(array $action, int $index): void
+    private static function validateAction(array $action, int $index, bool $strictKeys = false): void
     {
         foreach (['id', 'summary', 'detail', 'phase', 'depends_on_release', 'applicability', 'verification'] as $required) {
             if (! isset($action[$required])) {
@@ -324,12 +329,63 @@ final class ReleaseManifest
             );
         }
 
+        if ($strictKeys) {
+            $unknown = array_diff(array_keys($action), [
+                'id',
+                'summary',
+                'detail',
+                'phase',
+                'depends_on_release',
+                'installation_profiles',
+                'applicability',
+                'verification',
+            ]);
+
+            if ($unknown !== []) {
+                throw new InvalidArgumentException(sprintf(
+                    'Action "%s" has unknown key(s): %s.',
+                    $action['id'],
+                    implode(', ', $unknown),
+                ));
+            }
+        }
+
         self::assertOneOf($action['phase'], self::PHASES, "Action \"{$action['id']}\" phase");
         self::assertOneOf($action['depends_on_release'], self::DEPENDENCIES, "Action \"{$action['id']}\" depends_on_release");
         self::validatePhaseDependency($action['phase'], $action['depends_on_release'], $action['id']);
 
-        self::validateApplicability($action['applicability'], $action['id']);
-        self::validateVerification($action['verification'], $action['id']);
+        self::validateApplicability($action['applicability'], $action['id'], $strictKeys);
+        self::validateVerification($action['verification'], $action['id'], $strictKeys);
+
+        if (array_key_exists('installation_profiles', $action)) {
+            self::validateInstallationProfiles($action['installation_profiles'], $action['id']);
+        }
+    }
+
+    /**
+     * @param  mixed  $profiles
+     */
+    private static function validateInstallationProfiles($profiles, string $id): void
+    {
+        if (! is_array($profiles) || $profiles === [] || ! array_is_list($profiles)) {
+            throw new InvalidArgumentException(
+                "Action \"{$id}\" installation_profiles must be a non-empty list."
+            );
+        }
+
+        $seen = [];
+
+        foreach ($profiles as $profile) {
+            self::assertOneOf($profile, self::INSTALLATION_PROFILES, "Action \"{$id}\" installation profile");
+
+            if (isset($seen[$profile])) {
+                throw new InvalidArgumentException(
+                    "Action \"{$id}\" repeats installation profile \"{$profile}\"."
+                );
+            }
+
+            $seen[$profile] = true;
+        }
     }
 
     /**
@@ -371,13 +427,30 @@ final class ReleaseManifest
     /**
      * @param  mixed  $applicability
      */
-    private static function validateApplicability($applicability, string $id): void
+    private static function validateApplicability($applicability, string $id, bool $strictKeys = false): void
     {
         if (! is_array($applicability) || ! isset($applicability['type'])) {
             throw new InvalidArgumentException("Action \"{$id}\" applicability must be an object with a type.");
         }
 
         self::assertOneOf($applicability['type'], self::APPLICABILITY_TYPES, "Action \"{$id}\" applicability type");
+
+        if ($strictKeys) {
+            $allowed = match ($applicability['type']) {
+                'upgrade-from' => ['type', 'min'],
+                'state' => ['type', 'check'],
+                default => ['type'],
+            };
+            $unknown = array_diff(array_keys($applicability), $allowed);
+
+            if ($unknown !== []) {
+                throw new InvalidArgumentException(sprintf(
+                    'Action "%s" applicability has unknown key(s): %s.',
+                    $id,
+                    implode(', ', $unknown),
+                ));
+            }
+        }
 
         // A pointer at an earlier action cannot express retirement: a release
         // that removes a requirement must tell an install that RAN the earlier
@@ -405,13 +478,28 @@ final class ReleaseManifest
     /**
      * @param  mixed  $verification
      */
-    private static function validateVerification($verification, string $id): void
+    private static function validateVerification($verification, string $id, bool $strictKeys = false): void
     {
         if (! is_array($verification) || ! isset($verification['type'])) {
             throw new InvalidArgumentException("Action \"{$id}\" verification must be an object with a type.");
         }
 
         self::assertOneOf($verification['type'], self::VERIFICATION_TYPES, "Action \"{$id}\" verification type");
+
+        if ($strictKeys) {
+            $allowed = $verification['type'] === 'check'
+                ? ['type', 'check']
+                : ['type'];
+            $unknown = array_diff(array_keys($verification), $allowed);
+
+            if ($unknown !== []) {
+                throw new InvalidArgumentException(sprintf(
+                    'Action "%s" verification has unknown key(s): %s.',
+                    $id,
+                    implode(', ', $unknown),
+                ));
+            }
+        }
 
         // A `check` without something to run is an attestation wearing a
         // verification's label, which is the one confusion ADR 0013 forbids.

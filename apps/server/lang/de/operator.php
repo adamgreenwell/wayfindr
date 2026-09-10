@@ -558,6 +558,7 @@ return [
             'subtitle' => 'Für diese Installation empfohlen. Nichts davon blockiert Migrationen oder die Bereitstellung; die Installation läuft normal.',
             'count' => '{1} :count Hinweis|[2,*] :count Hinweise',
             'cannot_evaluate' => 'Diese Installation kann dies nicht automatisch prüfen; möglicherweise ist es bereits erledigt.',
+            'check_failed' => 'Die automatische Prüfung ist fehlgeschlagen. Beheben Sie den gemeldeten Zustand; eine Bestätigung blendet diesen Hinweis nicht aus.',
             'silence' => 'Blenden Sie den Hinweis mit :reference in :setting aus.',
         ],
         'next' => [

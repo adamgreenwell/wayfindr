@@ -359,5 +359,10 @@ return [
         // repository files.
         'manifest_fallback_path' => env('WAYFINDR_RELEASE_MANIFEST_FALLBACK', base_path('../../release-manifest.json')),
         'history_fallback_path' => env('WAYFINDR_RELEASE_HISTORY_FALLBACK', base_path('../../releases/history.json')),
+
+        // Runtime-derived by UpgradeGuard. Kept null in production so an
+        // operator cannot relabel a host-managed checkout as an image and bypass
+        // a host-only release action; tests may set it directly for both paths.
+        'installation_profile' => null,
     ],
 ];

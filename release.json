@@ -37,8 +37,38 @@
         "it - the backups page shows whether a worker has been seen - because the",
         "person configuring backups should not have to read a release manifest."
     ],
+    "_php_runtime_extensions": [
+        "Version 0.8.0 is the first stable line whose host install declares curl,",
+        "gd, and intl as Composer platform requirements. The official image bakes",
+        "all three, so asking its operator to acknowledge host work would create a",
+        "false outage. A host-managed deploy uses operator-provided PHP, and",
+        "Composer stops before the application guard can explain a missing module.",
+        "The action applies to host upgrades; a fresh host still owes the same",
+        "ordinary baseline before its first deploy, but has no upgrade action.",
+        "The installation_profiles scope keeps the one release verdict truthful",
+        "without applying host-PHP work to an image. Older manifests",
+        "omit that optional field and continue to apply everywhere."
+    ],
     "minimum_upgrade_from": "0.1.0-alpha.1",
-    "actions": [],
+    "actions": [
+        {
+            "id": "php-runtime-extensions",
+            "summary": "Prepare the host-managed PHP runtime before upgrading to this release.",
+            "detail": "This applies when upgrading Laravel Forge and other deployments that run Wayfindr on host PHP. It does not apply to a known-fresh install, the published container image, or an image built locally with Wayfindr's Dockerfile. Before updating an existing checkout, enable curl, gd, and intl for PHP 8.4.1 or newer as used by Composer and the application; curl must use libcurl 7.59.0 or newer. On Debian or Ubuntu with PHP 8.4 the packages are normally php8.4-curl, php8.4-gd, and php8.4-intl. Verify Composer, PHP-FPM, queue, scheduler, and Reverb runtimes; reload PHP-FPM and restart long-running workers. Then add <release>/php-runtime-extensions to WAYFINDR_ACKNOWLEDGED_ACTIONS and deploy. Forge also asks for that key when absent state cannot prove a site is fresh. The guard rejects a failed CLI check even when that key is present; a passing CLI check remains unevaluable because it cannot prove the other runtimes.",
+            "phase": "before-pull",
+            "depends_on_release": "none",
+            "installation_profiles": [
+                "host"
+            ],
+            "applicability": {
+                "type": "always"
+            },
+            "verification": {
+                "type": "check",
+                "check": "php-runtime-extensions"
+            }
+        }
+    ],
     "notices": [
         {
             "_note": [

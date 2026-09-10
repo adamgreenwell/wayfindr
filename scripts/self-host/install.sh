@@ -877,7 +877,9 @@ declared_origin() {
 #
 # The tri-state on `satisfied_through` matches the artifact exactly: an ABSENT
 # key falls back to the recorded version, a written null means the origin is
-# unknown and the whole history is in span.
+# unknown and the whole history is in span. The marker is trusted only when it
+# was assessed for an image; a host or pre-profile marker did not prove future
+# image-only work and therefore reopens the whole span.
 release_state() {
     php_in_current_image '
         require "/app/apps/server/app/Support/Version/SemanticVersion.php";
@@ -906,7 +908,12 @@ release_state() {
             $version = App\Support\Version\SemanticVersion::parse($version)?->canonical() ?? "";
         }
 
-        if (! array_key_exists("satisfied_through", $state)) {
+        $profile = $state["installation_profile"] ?? null;
+
+        if ($profile !== "image") {
+            $span = "";
+            $spanKnown = "0";
+        } elseif (! array_key_exists("satisfied_through", $state)) {
             $span = $version;
             $spanKnown = "1";
         } elseif (is_string($state["satisfied_through"])) {
@@ -1279,17 +1286,18 @@ upgrade_preflight() {
     # the target's own manifest was never fetched, so its floor and its
     # before-pull actions went unread before it was pulled and started.
     # The target is added when this upgrade actually TRAVERSES it - which is not
-    # the same as always. An install already recorded at the target has a
-    # legitimately empty span, `(target, target]`, and evaluating the target
-    # anyway made a re-run of `--upgrade` refuse forever: a fresh install holds no
-    # acknowledgement for the target's own upgrade-only work, because the artifact
-    # exempted it rather than asking, so an always-applicable before-pull action
-    # would exit 78 on every convergence run.
+    # the same as always. An install already recorded clean at the target under
+    # the same image profile has a legitimately empty span, `(target, target]`,
+    # and evaluating the target anyway made a re-run of `--upgrade` refuse
+    # forever: a fresh install holds no acknowledgement for the target's own
+    # upgrade-only work, because the artifact exempted it rather than asking. A
+    # missing or different profile deliberately makes the span unknown, so the
+    # target must stay in play even when the recorded version has the same name.
     #
     # The missing-tags fallback is what this is for: when the tag list does not
     # contain the release being installed, and the install is somewhere else, the
     # target still has to be read.
-    if [ "$from" != "$to" ]; then
+    if [ "$from" != "$to" ] || [ -z "$span_origin" ]; then
         span="$(printf '%s\nv%s\n' "$span" "$to" | grep -v '^$' | sort -u || true)"
     fi
 
@@ -1467,6 +1475,27 @@ upgrade_preflight() {
             }
 
             foreach ($m["actions"] ?? [] as $a) {
+                // install.sh manages the official image. A release may also name
+                // work that belongs only to a host-managed PHP checkout (for
+                // example, installing an extension an image already bakes).
+                //
+                // This field is optional and additive: the 0.7.0 manifest reader
+                // ignores unknown action keys, which matters because this refreshed
+                // installer deliberately parses through the image being upgraded
+                // FROM. A malformed scope stays in play rather than silently
+                // exempting this install; the target artifact will reject it too.
+                $profiles = $a["installation_profiles"] ?? null;
+                $usableProfiles = is_array($profiles)
+                    && $profiles !== []
+                    && array_is_list($profiles)
+                    && count(array_filter($profiles, "is_string")) === count($profiles)
+                    && count(array_unique($profiles)) === count($profiles)
+                    && array_diff($profiles, ["image", "host"]) === [];
+
+                if ($usableProfiles && !in_array("image", $profiles, true)) {
+                    continue;
+                }
+
                 $release = $a["release"] ?? "";
                 $key = $release . "/" . ($a["id"] ?? "");
 

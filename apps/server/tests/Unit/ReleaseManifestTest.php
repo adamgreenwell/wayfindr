@@ -36,6 +36,15 @@ describe('building', function (): void {
         expect($manifest['actions'][0]['release'])->toBe('0.2.0');
     });
 
+    test('preserves a scoped installation profile', function (): void {
+        $manifest = ReleaseManifest::build([
+            'actions' => [validAction(['installation_profiles' => ['host']])],
+        ], '0.2.0', 'abc');
+
+        expect($manifest['requires_operator_action'])->toBeTrue()
+            ->and($manifest['actions'][0]['installation_profiles'])->toBe(['host']);
+    });
+
     test('carries the identity and the floor', function (): void {
         $manifest = ReleaseManifest::build(
             ['minimum_upgrade_from' => '0.1.0', 'actions' => []],
@@ -196,6 +205,48 @@ describe('validation', function (): void {
         expect(fn () => ReleaseManifest::build(['requires_operator_action' => false], '0.2.0', 'abc'))
             ->toThrow(InvalidArgumentException::class, 'Unknown key');
     });
+
+    test('rejects unknown authored action keys instead of widening their scope', function (): void {
+        expect(fn () => ReleaseManifest::build([
+            'actions' => [validAction(['installation_profile' => ['host']])],
+        ], '0.2.0', 'abc'))->toThrow(InvalidArgumentException::class, 'installation_profile');
+    });
+
+    test('rejects keys that do not belong to the authored nested type', function (
+        string $field,
+        array $value,
+        string $unknown,
+    ): void {
+        expect(fn () => ReleaseManifest::build([
+            'actions' => [validAction([$field => $value])],
+        ], '0.2.0', 'abc'))->toThrow(InvalidArgumentException::class, $unknown);
+    })->with([
+        'always has no bound' => ['applicability', ['type' => 'always', 'min' => '0.1.0'], 'min'],
+        'state has no upgrade bound' => ['applicability', ['type' => 'state', 'check' => 'worker', 'min' => '0.1.0'], 'min'],
+        'attestation has no check' => ['verification', ['type' => 'attest', 'check' => 'worker'], 'check'],
+    ]);
+
+    test('keeps same-schema published readers tolerant of additive action fields', function (): void {
+        $manifest = ReleaseManifest::build(['actions' => [validAction()]], '0.2.0', 'abc');
+        $manifest['actions'][0]['future_action_field'] = ['some' => 'value'];
+        $manifest['actions'][0]['applicability']['future_applicability_field'] = true;
+        $manifest['actions'][0]['verification']['future_verification_field'] = true;
+
+        expect(ReleaseManifest::decode(json_encode($manifest))['actions'][0])
+            ->toHaveKey('future_action_field');
+    });
+
+    test('rejects unusable installation profile scopes', function (mixed $profiles, string $message): void {
+        expect(fn () => ReleaseManifest::build([
+            'actions' => [validAction(['installation_profiles' => $profiles])],
+        ], '0.2.0', 'abc'))->toThrow(InvalidArgumentException::class, $message);
+    })->with([
+        [[], 'non-empty list'],
+        ['source', 'non-empty list'],
+        [['host', 'host'], 'repeats installation profile'],
+        [['somewhere'], 'must be one of'],
+        [['source' => true], 'non-empty list'],
+    ]);
 
     test('requires applicability to say how it applies', function (array $applicability, string $expected): void {
         expect(fn () => ReleaseManifest::build(

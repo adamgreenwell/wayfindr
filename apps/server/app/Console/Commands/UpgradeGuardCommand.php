@@ -112,6 +112,7 @@ class UpgradeGuardCommand extends Command
         }
 
         $this->error(sprintf('  %d requirement(s) outstanding:', count($assessment['actions'])));
+        $hasAcknowledgementKeys = false;
 
         foreach ($assessment['actions'] as $action) {
             $this->line('');
@@ -127,6 +128,7 @@ class UpgradeGuardCommand extends Command
             // ordered list. Deriving it separately is what let the two drift
             // apart at nearly every step of #648.
             $advice = ActionAdvice::for($action, $assessment['target'] ?? null, $assessment['from'] ?? null);
+            $hasAcknowledgementKeys = $hasAcknowledgementKeys || $advice->acknowledgeKey !== null;
 
             // Phase alone is the wrong label for an action needing a release the
             // pull replaced. One belonging to a release this jump skips past
@@ -146,9 +148,11 @@ class UpgradeGuardCommand extends Command
             }
         }
 
-        $this->line('');
-        $this->line('  Set WAYFINDR_ACKNOWLEDGED_ACTIONS to the comma-separated entries above');
-        $this->line('  once the work is done.');
+        if ($hasAcknowledgementKeys) {
+            $this->line('');
+            $this->line('  Set WAYFINDR_ACKNOWLEDGED_ACTIONS to the comma-separated entries above');
+            $this->line('  once the work is done.');
+        }
 
         $this->reportNotices($notices);
 
@@ -172,6 +176,7 @@ class UpgradeGuardCommand extends Command
 
         $this->line('');
         $this->warn(sprintf('  %d advisory notice(s) — nothing is blocked:', count($notices)));
+        $hasAcknowledgementKeys = false;
 
         foreach ($notices as $notice) {
             $this->line('');
@@ -188,12 +193,25 @@ class UpgradeGuardCommand extends Command
                 $this->line('    (This install cannot evaluate the check, so this may already be done.)');
             }
 
-            $this->line(sprintf('    Silence with: %s/%s',
-                $notice['release'] ?? '?', $notice['id'] ?? '?'));
+            if (($notice['satisfied_by'] ?? null) === 'failed') {
+                $this->line('    The machine check failed; fix the reported condition.');
+                $this->line('    An acknowledgement will not silence this notice.');
+
+                continue;
+            }
+
+            $hasAcknowledgementKeys = true;
+            $this->line(sprintf(
+                '    Silence with: %s/%s',
+                $notice['release'] ?? '?',
+                $notice['id'] ?? '?',
+            ));
         }
 
-        $this->line('');
-        $this->line('  These do not block migrations or serving. Add an entry to');
-        $this->line('  WAYFINDR_ACKNOWLEDGED_ACTIONS to stop being told about one.');
+        if ($hasAcknowledgementKeys) {
+            $this->line('');
+            $this->line('  These do not block migrations or serving. For notices with a');
+            $this->line('  Silence with entry, add it to WAYFINDR_ACKNOWLEDGED_ACTIONS.');
+        }
     }
 }

@@ -24,10 +24,15 @@ Run Composer, Artisan, queue, scheduler, and Reverb commands from
 
 Minimum runtime:
 
-- PHP 8.4 or newer, with `ext-curl` (libcurl 7.59.0 or newer), `ext-gd`, and `ext-intl`.
-  Both are declared in `apps/server/composer.json`, so `composer install` refuses an environment
-  without them rather than letting one reach production — most distributions ship
-  them as `php8.4-curl`, `php8.4-gd`, and `php8.4-intl`, and the official image includes all three.
+- PHP 8.4.1 or newer, with `ext-curl` (libcurl 7.59.0 or newer), `ext-gd`, and
+  `ext-intl`. All four platform constraints are declared in
+  `apps/server/composer.json`, so `composer install` refuses an environment
+  without them rather than letting one reach production. Most distributions
+  ship the extensions as `php8.4-curl`, `php8.4-gd`, and `php8.4-intl`, and an
+  image built with Wayfindr's Dockerfile includes all three.
+  Check the PHP binaries Composer, Artisan/workers, and the web process actually
+  use; the shell's default `php` may be a different installation. Reload PHP-FPM
+  and restart workers, the scheduler, and Reverb after enabling modules.
   Outbound webhooks use cURL's pinned multi-address resolution to prevent DNS
   rebinding without discarding healthy A/AAAA fallback addresses. Wayfindr uses
   `ext-intl` to compare hostnames in one representation: an operator configures the domain
@@ -226,20 +231,79 @@ confirm what is running.
 
 ## Deploy Flow
 
-For a simple non-zero-downtime deployment, the app server should do roughly
-this from the monorepo root:
+Before an existing host-managed install first crosses 0.8.0, keep the old
+checkout in service while you verify the PHP binary used below **and** the PHP-FPM,
+queue, scheduler, and Reverb runtimes described in the 0.8.0 changelog. Reload
+or restart those processes where needed. Only after every runtime passes, persist
+`0.8.0/php-runtime-extensions` in `WAYFINDR_ACKNOWLEDGED_ACTIONS`, export that
+setting into this deploy shell, and run this gate:
 
 ```bash
+set -euo pipefail
+
+php -r '$problems = []; if (PHP_VERSION_ID < 80401) { $problems[] = "PHP 8.4.1+"; } foreach (["curl", "gd", "intl"] as $extension) { if (! extension_loaded($extension)) { $problems[] = "ext-{$extension}"; } } if (extension_loaded("curl") && (! is_string($version = curl_version()["version"] ?? null) || version_compare($version, "7.59.0", "<"))) { $problems[] = "libcurl 7.59.0+"; } if ($problems !== []) { fwrite(STDERR, "Missing runtime requirements: ".implode(", ", $problems).PHP_EOL); exit(78); }'
+
+required_action="0.8.0/php-runtime-extensions"
+WAYFINDR_REQUIRED_ACTION="$required_action" php -r '$required = (string) getenv("WAYFINDR_REQUIRED_ACTION"); $acknowledged = array_values(array_filter(array_map("trim", explode(",", (string) getenv("WAYFINDR_ACKNOWLEDGED_ACTIONS"))), static fn (string $value): bool => $value !== "")); if (! in_array($required, $acknowledged, true)) { fwrite(STDERR, "Missing exact host-upgrade acknowledgement: {$required}. Verify every runtime and persist/export WAYFINDR_ACKNOWLEDGED_ACTIONS before replacing the checkout.".PHP_EOL); exit(78); }'
+```
+
+Do not replace an in-place checkout unless that block exits zero. A demonstrably
+fresh install runs the same runtime probe as ordinary host preparation but owes
+no upgrade acknowledgement; if you cannot distinguish it from a restored or
+legacy install with missing state, take the conservative upgrade path above.
+Acknowledgement keys are comma-separated; whitespace alone never separates two
+keys, matching the application parser exactly.
+
+Once that preflight has passed—or for a fresh install once the baseline runtime
+is ready—put the target checkout in place. For a simple non-zero-downtime
+deployment, run the remaining steps from the target monorepo root. Substitute
+the exact PHP binary used by Composer and the application:
+
+```bash
+set -euo pipefail
+
+# Recheck the target shell too. This is the baseline guard for a fresh install
+# and catches a deploy shell that differs from the preflight interpreter.
+php -r '$problems = []; if (PHP_VERSION_ID < 80401) { $problems[] = "PHP 8.4.1+"; } foreach (["curl", "gd", "intl"] as $extension) { if (! extension_loaded($extension)) { $problems[] = "ext-{$extension}"; } } if (extension_loaded("curl") && (! is_string($version = curl_version()["version"] ?? null) || version_compare($version, "7.59.0", "<"))) { $problems[] = "libcurl 7.59.0+"; } if ($problems !== []) { fwrite(STDERR, "Missing runtime requirements: ".implode(", ", $problems).PHP_EOL); exit(78); }'
+
+WAYFINDR_REQUIRE_CLEAN=1 bash deploy/write-release-manifest.sh
+
+# Read the commit the guarded manifest actually accepted, so runtime identity
+# and upgrade state cannot disagree about which build this is.
+release_commit="$(php -r '$manifest = json_decode(file_get_contents("release-manifest.json"), true, flags: JSON_THROW_ON_ERROR); echo $manifest["commit"] ?? "";')"
+test -n "$release_commit"
+release_line="$(tr -d '[:space:]' < VERSION)"
+if git tag --points-at HEAD | grep -Fxq "v${release_line}"; then
+    release_version="$release_line"
+else
+    release_version="${release_line}-dev+${release_commit}"
+fi
+export WAYFINDR_VERSION="$release_version"
+export WAYFINDR_COMMIT="$release_commit"
+
 cd apps/server
 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 
-php artisan migrate --force
 php artisan config:cache
+php artisan migrate --force
 php artisan route:cache
 php artisan view:cache
 php artisan queue:restart
 php artisan reverb:restart
 ```
+
+The manifest writer's required-clean mode makes the commit truthful and stops
+before identity or migration if the checkout is modified. Persist the two
+identity values in your deployment platform as well as exporting them for this
+run. For an upgrade, keep the acknowledged-actions setting persisted too. The
+export is what lets `config:cache` bake the exact identity before `migrate`; the
+persisted values keep it true if someone later clears and rebuilds the cache
+outside this script.
+
+`deploy/write-release-manifest.sh` must stay before `config:cache` and
+`migrate`. It validates `release.json` and writes the target declaration that
+the host upgrade guard reads. Skipping it—or leaving a stale generated file in
+a persistent checkout—would let the guard assess the wrong release.
 
 Zero-downtime platforms should run the install/build/cache steps inside a new
 release directory, then activate the release only after those steps pass. Make

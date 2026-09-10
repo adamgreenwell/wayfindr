@@ -91,7 +91,7 @@ class BlockMigrationsWithUnmetRequirements
             $event->output->writeln('  Not migrating, because whether this upgrade owes anything is unknown.');
             $event->output->writeln('');
 
-            exit(1);
+            $this->terminate(1);
         }
 
         if (! $assessment['blocked']) {
@@ -128,7 +128,7 @@ class BlockMigrationsWithUnmetRequirements
             $output->writeln('  Nothing has been changed.');
             $output->writeln('');
 
-            exit(UpgradeGuard::EXIT_BLOCKED);
+            $this->terminate(UpgradeGuard::EXIT_BLOCKED);
         }
 
         $output->writeln(sprintf(
@@ -143,6 +143,7 @@ class BlockMigrationsWithUnmetRequirements
         }
 
         $unacknowledgeable = false;
+        $hasAcknowledgementKeys = false;
 
         foreach ($assessment['actions'] as $action) {
             $output->writeln('');
@@ -154,9 +155,10 @@ class BlockMigrationsWithUnmetRequirements
                 $output->writeln('    '.$action['detail']);
             }
 
-            // What to say is decided in one place, shared with the report command.
-            // Both messages are the same advice in different styling, and while
-            // each derived its own the two drifted at nearly every step — the
+            // What to say is decided in one place, shared with the report command
+            // and serving refusal. All three messages are the same advice in
+            // different styling, and while each derived its own they drifted at
+            // nearly every step — the
             // footer contradicting the section above it (#649) was the last of
             // them.
             //
@@ -169,6 +171,8 @@ class BlockMigrationsWithUnmetRequirements
             foreach ($advice->lines() as $line) {
                 $output->writeln('    '.$line);
             }
+
+            $hasAcknowledgementKeys = $hasAcknowledgementKeys || $advice->acknowledgeKey !== null;
 
             // Only unreachable work reaches the footer. Counting every
             // out-of-reach action there told an operator holding a usable key
@@ -185,14 +189,29 @@ class BlockMigrationsWithUnmetRequirements
             $output->writeln('');
         }
 
-        $output->writeln('  For anything else, set WAYFINDR_ACKNOWLEDGED_ACTIONS to the comma-separated');
-        $output->writeln('  list of the entries above and start again. Nothing has been changed.');
+        if ($hasAcknowledgementKeys) {
+            $output->writeln('  For actions with an acknowledgement entry above, set');
+            $output->writeln('  WAYFINDR_ACKNOWLEDGED_ACTIONS to their comma-separated entries and start again.');
+        }
+
+        $output->writeln('  Nothing has been changed.');
         $output->writeln('');
 
         // exit() rather than an exception: the console kernel catches every
         // exception, hard-returns 1 and prints a stack trace, so a distinguished
         // code cannot survive a throw. The entrypoint needs that code to tell a
         // refusal from an unreachable database.
-        exit(UpgradeGuard::EXIT_BLOCKED);
+        $this->terminate(UpgradeGuard::EXIT_BLOCKED);
+    }
+
+    /**
+     * Stop the command with a code the container entrypoint can distinguish.
+     *
+     * Kept behind one method so tests can capture the real refusal without an
+     * expected block terminating the entire test process.
+     */
+    protected function terminate(int $code): never
+    {
+        exit($code);
     }
 }
