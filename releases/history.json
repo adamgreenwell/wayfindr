@@ -269,6 +269,48 @@
                     }
                 }
             ]
+        },
+        {
+            "schema": 1,
+            "version": "0.8.0",
+            "commit": "",
+            "requires_operator_action": true,
+            "minimum_upgrade_from": "0.1.0-alpha.1",
+            "actions": [
+                {
+                    "release": "0.8.0",
+                    "id": "php-runtime-extensions",
+                    "summary": "Prepare the host-managed PHP runtime before upgrading to this release.",
+                    "detail": "This applies when upgrading Laravel Forge and other deployments that run Wayfindr on host PHP. It does not apply to a known-fresh install, the published container image, or an image built locally with Wayfindr's Dockerfile. Before updating an existing checkout, enable curl, gd, and intl for PHP 8.4.1 or newer as used by Composer and the application; curl must use libcurl 7.59.0 or newer. On Debian or Ubuntu with PHP 8.4 the packages are normally php8.4-curl, php8.4-gd, and php8.4-intl. Verify Composer, PHP-FPM, queue, scheduler, and Reverb runtimes; reload PHP-FPM and restart long-running workers. Then add <release>/php-runtime-extensions to WAYFINDR_ACKNOWLEDGED_ACTIONS and deploy. Forge also asks for that key when absent state cannot prove a site is fresh. The guard rejects a failed CLI check even when that key is present; a passing CLI check remains unevaluable because it cannot prove the other runtimes.",
+                    "phase": "before-pull",
+                    "depends_on_release": "none",
+                    "installation_profiles": [
+                        "host"
+                    ],
+                    "applicability": {
+                        "type": "always"
+                    },
+                    "verification": {
+                        "type": "check",
+                        "check": "php-runtime-extensions"
+                    }
+                }
+            ],
+            "notices": [
+                {
+                    "release": "0.8.0",
+                    "id": "backups-queue-consumer",
+                    "summary": "Run a queue worker on the backups connection.",
+                    "detail": "Without one, \"Run a backup now\" queues a job nothing will process and the run sits at Running indefinitely. Scheduled backups are unaffected. Compose stacks run this worker themselves, on whichever queue BACKUP_QUEUE names. On a host-managed install, open /operator/settings/backups - it prints the exact command for this install, with your configured queue name and timeout filled in (BACKUP_QUEUE can move the queue off its default, so a copied command may drain the wrong one).",
+                    "applicability": {
+                        "type": "always"
+                    },
+                    "verification": {
+                        "type": "check",
+                        "check": "backups-queue-consumer"
+                    }
+                }
+            ]
         }
     ]
 }

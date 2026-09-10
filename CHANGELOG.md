@@ -30,6 +30,8 @@ missed while skimming.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-10
+
 **Requires operator action when upgrading a host-managed PHP install, including
 Laravel Forge, from an earlier Wayfindr release.**
 The official Wayfindr image and images built locally with Wayfindr's Dockerfile
