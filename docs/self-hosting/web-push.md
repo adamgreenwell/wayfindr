@@ -228,8 +228,12 @@ docker compose up -d --force-recreate web queue
 Console values need none of this, on either deployment.
 
 Use the environment as an initial baseline, and the console as the control
-surface. The Compose templates do not list these variables, and that is
-consistent rather than an oversight: no operator-settings key appears in them.
+surface. The Compose templates do not list these variables. That is not a rule
+about operator settings in general — the mail baseline is in
+`docker/self-hosting/.env.example`, and mail is operator-managed too. Mail is
+there because a new install needs it before it can send a password reset. Web
+push is off until somebody turns it on, so the console is the whole of it; add
+the variables yourself if you would rather seed them.
 
 `WEBPUSH_DB_TABLE` and `WEBPUSH_DB_CONNECTION` exist and should be left alone.
 Subscriptions have to live on the application's primary connection; pointing
