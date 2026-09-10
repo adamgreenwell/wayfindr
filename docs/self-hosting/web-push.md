@@ -92,8 +92,20 @@ maintenance.
 *Clear the VAPID configuration* is also not a way back to environment variables.
 It stores empty values, and empty is a real override, so it shadows
 `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` from then on. The
-console offers no route back to inheriting from the environment; that needs the
-rows removed from `operator_settings` directly.
+console offers no route back to inheriting from the environment.
+
+Getting back there means removing the `webpush.*` rows from `operator_settings`
+directly, and that is two steps rather than one. The settings store caches its
+rows for a day and only refreshes when the application itself writes them, so a
+deletion made in the database is not noticed:
+
+```bash
+php artisan cache:clear
+```
+
+Run that after removing the rows, and restart the queue workers, or the cleared
+overrides can keep shadowing the environment until the cached copy expires on
+its own.
 
 ## "Ready" is a self-check, not a delivery test
 
@@ -172,11 +184,17 @@ VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 ```
 
-Once an operator saves the form, the stored values win, and later edits to these
-variables have no effect — including an edit made to fix a problem, which is a
-quiet way to lose an afternoon. Environment values also read at config-build
-time, so an install that uses them needs `php artisan config:cache` and a worker
-restart before a change applies. Console values need neither.
+Shadowing is per field, and only for fields the console actually stored. Saving
+the form does not by itself capture the environment: a value submitted unchanged
+is left inheriting, so an install configured entirely through `.env` can be
+saved through the console and still follow later edits to it. Change a field,
+though, and that field is stored from then on — and further edits to its
+variable have no effect, including one made to fix a problem, which is a quiet
+way to lose an afternoon. Rotating the keys stores both of them.
+
+Environment values also read at config-build time, so an install that uses them
+needs `php artisan config:cache` and a worker restart before a change applies.
+Console values need neither.
 
 Use the environment as an initial baseline, and the console as the control
 surface. The Compose templates do not list these variables, and that is
