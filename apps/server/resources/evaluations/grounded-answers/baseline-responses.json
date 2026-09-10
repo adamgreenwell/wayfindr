@@ -1,12 +1,14 @@
 {
-  "version": 2,
+  "version": 3,
   "run": {
     "source": "curated",
     "provider": "wayfindr-fixture",
-    "model": "known-good-v2",
+    "model": "known-good-v3",
     "recorded_at": "2026-09-06T00:00:00Z",
     "prompt_tokens": 0,
-    "completion_tokens": 0
+    "completion_tokens": 0,
+    "suite_digest": "sha256:b7f1b0fad2a2ee37c12d9098987b2f491f1dced43e891aee972ac94615a7be48",
+    "prompt_digest": "sha256:422a6c9714f1cfa67ab3d324b38193f47169cb144d5f2a55ed46cfa24af11292"
   },
   "responses": [
     {

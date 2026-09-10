@@ -12,7 +12,11 @@ use stdClass;
 /** Load a bounded, versioned offline answer-evaluation dataset. */
 final class GroundedAnswerEvaluationDatasetLoader
 {
-    private const VERSION = 2;
+    private const FIXTURE_VERSION = 2;
+
+    private const LEGACY_RESPONSE_VERSION = 2;
+
+    public const RESPONSE_VERSION = 3;
 
     private const MAX_FIXTURE_FILE_BYTES = 1_048_576;
 
@@ -51,7 +55,7 @@ final class GroundedAnswerEvaluationDatasetLoader
         $root = $this->jsonObject($path, 'fixture');
         $this->requireKeys($root, ['version', 'policy', 'cases'], 'fixture root');
 
-        if ($root->version !== self::VERSION || ! $root->policy instanceof stdClass || ! is_array($root->cases)) {
+        if ($root->version !== self::FIXTURE_VERSION || ! $root->policy instanceof stdClass || ! is_array($root->cases)) {
             throw new RuntimeException('The evaluation fixture must use version 2 with a policy object and an array of cases.');
         }
 
@@ -148,7 +152,7 @@ final class GroundedAnswerEvaluationDatasetLoader
         }
 
         return [
-            'version' => self::VERSION,
+            'version' => self::FIXTURE_VERSION,
             'policy' => $policy,
             'cases' => $cases,
         ];
@@ -158,20 +162,36 @@ final class GroundedAnswerEvaluationDatasetLoader
      * @param  list<string>  $expectedCaseIds
      * @return array{
      *   version: int,
-     *   run: array{source: 'curated'|'provider', provider: string, model: string, recorded_at: string, prompt_tokens: int, completion_tokens: int},
+     *   run: array{source: 'curated'|'provider', provider: string, model: string, recorded_at: string, prompt_tokens: int, completion_tokens: int, identity_status: 'verified'|'legacy_unbound', suite_digest: ?string, prompt_digest: ?string},
      *   responses: array<string, array{case_id: string, decision: 'answer'|'refuse', confidence_percent: float, answer: string, article_ids: list<string>, refusal_reason: string}>
      * }
      */
-    public function responses(string $path, array $expectedCaseIds): array
-    {
+    public function responses(
+        string $path,
+        array $expectedCaseIds,
+        string $expectedSuiteDigest,
+        string $expectedPromptDigest,
+    ): array {
         $root = $this->jsonObject($path, 'response');
         $this->requireKeys($root, ['version', 'run', 'responses'], 'response root');
 
-        if ($root->version !== self::VERSION || ! $root->run instanceof stdClass || ! is_array($root->responses)) {
-            throw new RuntimeException('The evaluation responses must use version 2 with a run object and an array of responses.');
+        if (! in_array($root->version, [self::LEGACY_RESPONSE_VERSION, self::RESPONSE_VERSION], true)
+            || ! $root->run instanceof stdClass
+            || ! is_array($root->responses)) {
+            throw new RuntimeException('The evaluation responses must use version 2 or 3 with a run object and an array of responses.');
         }
 
-        $run = $this->run($root->run);
+        $run = $this->run($root->run, $root->version);
+
+        if ($root->version === self::RESPONSE_VERSION
+            && ! hash_equals($expectedSuiteDigest, (string) $run['suite_digest'])) {
+            throw new RuntimeException('The evaluation response suite digest does not match the supplied fixture and policy.');
+        }
+
+        if ($root->version === self::RESPONSE_VERSION
+            && ! hash_equals($expectedPromptDigest, (string) $run['prompt_digest'])) {
+            throw new RuntimeException('The evaluation response prompt digest does not match the current prompt contract.');
+        }
 
         $expected = array_fill_keys($expectedCaseIds, true);
         $responses = [];
@@ -220,7 +240,7 @@ final class GroundedAnswerEvaluationDatasetLoader
         }
 
         return [
-            'version' => self::VERSION,
+            'version' => $root->version,
             'run' => $run,
             'responses' => $responses,
         ];
@@ -331,18 +351,25 @@ final class GroundedAnswerEvaluationDatasetLoader
     }
 
     /**
-     * @return array{source: 'curated'|'provider', provider: string, model: string, recorded_at: string, prompt_tokens: int, completion_tokens: int}
+     * @return array{source: 'curated'|'provider', provider: string, model: string, recorded_at: string, prompt_tokens: int, completion_tokens: int, identity_status: 'verified'|'legacy_unbound', suite_digest: ?string, prompt_digest: ?string}
      */
-    private function run(stdClass $value): array
+    private function run(stdClass $value, int $responseVersion): array
     {
-        $this->requireKeys($value, [
+        $keys = [
             'source',
             'provider',
             'model',
             'recorded_at',
             'prompt_tokens',
             'completion_tokens',
-        ], 'evaluation run');
+        ];
+
+        if ($responseVersion === self::RESPONSE_VERSION) {
+            $keys[] = 'suite_digest';
+            $keys[] = 'prompt_digest';
+        }
+
+        $this->requireKeys($value, $keys, 'evaluation run');
 
         if (! is_string($value->source) || ! in_array($value->source, ['curated', 'provider'], true)) {
             throw new RuntimeException('The evaluation run source must be curated or provider.');
@@ -356,14 +383,24 @@ final class GroundedAnswerEvaluationDatasetLoader
             throw new RuntimeException('The evaluation run recorded_at must be a UTC second timestamp.');
         }
 
-        return [
+        $run = [
             'source' => $value->source,
             'provider' => $this->metadataString($value->provider, 'evaluation run provider'),
             'model' => $this->metadataString($value->model, 'evaluation run model'),
             'recorded_at' => $recordedAt,
             'prompt_tokens' => $this->nonNegativeInteger($value->prompt_tokens, 'evaluation run prompt tokens'),
             'completion_tokens' => $this->nonNegativeInteger($value->completion_tokens, 'evaluation run completion tokens'),
+            'identity_status' => $responseVersion === self::RESPONSE_VERSION ? 'verified' : 'legacy_unbound',
+            'suite_digest' => null,
+            'prompt_digest' => null,
         ];
+
+        if ($responseVersion === self::RESPONSE_VERSION) {
+            $run['suite_digest'] = $this->digest($value->suite_digest, 'evaluation run suite digest');
+            $run['prompt_digest'] = $this->digest($value->prompt_digest, 'evaluation run prompt digest');
+        }
+
+        return $run;
     }
 
     /** @return list<string> */
@@ -551,6 +588,15 @@ final class GroundedAnswerEvaluationDatasetLoader
         }
 
         return trim($value);
+    }
+
+    private function digest(mixed $value, string $label): string
+    {
+        if (! is_string($value) || preg_match('/\Asha256:[a-f0-9]{64}\z/', $value) !== 1) {
+            throw new RuntimeException(sprintf('The %s must be a lowercase SHA-256 digest.', $label));
+        }
+
+        return $value;
     }
 
     private function normalize(string $value): string

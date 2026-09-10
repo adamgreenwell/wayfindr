@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluationDatasetLoader;
+use App\Support\Ai\Evaluation\GroundedAnswerEvaluationIdentity;
+use App\Support\Ai\Evaluation\GroundedAnswerEvaluationPromptBuilder;
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluator;
 use Illuminate\Console\Command;
 use RuntimeException;
@@ -21,6 +23,8 @@ final class EvaluateAiAnswersCommand extends Command
 
     public function handle(
         GroundedAnswerEvaluationDatasetLoader $loader,
+        GroundedAnswerEvaluationIdentity $identity,
+        GroundedAnswerEvaluationPromptBuilder $promptBuilder,
         GroundedAnswerEvaluator $evaluator,
     ): int {
         try {
@@ -28,9 +32,16 @@ final class EvaluateAiAnswersCommand extends Command
                 'fixtures',
                 resource_path('evaluations/grounded-answers/fixtures.json'),
             ));
+            $suiteDigest = $identity->suite($fixtures);
+            $promptDigest = $identity->promptContract($promptBuilder->contract(
+                $fixtures['cases'],
+                $fixtures['policy']['answer_confidence_threshold_percent'],
+            ));
             $responses = $loader->responses(
                 $this->pathOption('responses', resource_path('evaluations/grounded-answers/baseline-responses.json')),
                 array_column($fixtures['cases'], 'id'),
+                $suiteDigest,
+                $promptDigest,
             );
             $report = $evaluator->evaluate($fixtures, $responses);
         } catch (RuntimeException $exception) {
@@ -58,7 +69,7 @@ final class EvaluateAiAnswersCommand extends Command
     /**
      * @param  array{
      *   result: 'passed'|'failed',
-     *   run: array{source: string, provider: string, model: string, recorded_at: string},
+     *   run: array{source: string, provider: string, model: string, recorded_at: string, identity_status: string, suite_digest: ?string, prompt_digest: ?string},
      *   policy: array{answer_confidence_threshold_percent: float},
      *   cases: array{total: int, answerable: int, refusal: int, passed: int},
      *   metrics: array<string, float>,
@@ -75,6 +86,13 @@ final class EvaluateAiAnswersCommand extends Command
             $report['run']['model'],
             $report['run']['recorded_at'],
         ));
+        $this->line($report['run']['identity_status'] === 'verified'
+            ? sprintf(
+                'Evidence identity: verified · suite %s · prompt %s',
+                $report['run']['suite_digest'],
+                $report['run']['prompt_digest'],
+            )
+            : 'Evidence identity: legacy unbound · scoreable alone, not comparable for drift');
         $this->line(sprintf(
             'Answer confidence threshold: %.2f%%',
             $report['policy']['answer_confidence_threshold_percent'],

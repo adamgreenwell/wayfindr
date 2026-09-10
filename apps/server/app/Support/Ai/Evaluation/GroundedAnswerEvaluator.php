@@ -24,7 +24,7 @@ final class GroundedAnswerEvaluator
      * } $fixtures
      * @param array{
      *   version: int,
-     *   run: array{source: 'curated'|'provider', provider: string, model: string, recorded_at: string, prompt_tokens: int, completion_tokens: int},
+     *   run: array{source: 'curated'|'provider', provider: string, model: string, recorded_at: string, prompt_tokens: int, completion_tokens: int, identity_status: 'verified'|'legacy_unbound', suite_digest: ?string, prompt_digest: ?string},
      *   responses: array<string, array{case_id: string, decision: 'answer'|'refuse', confidence_percent: float, answer: string, article_ids: list<string>, refusal_reason: string}>
      * } $responseSet
      * @return array<string, mixed>
@@ -258,6 +258,7 @@ final class GroundedAnswerEvaluator
 
         return [
             'version' => $fixtures['version'],
+            'response_version' => $responseSet['version'],
             'result' => $passed ? 'passed' : 'failed',
             'run' => $responseSet['run'],
             'policy' => $policy,
