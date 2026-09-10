@@ -196,14 +196,22 @@
     </article>
   </main>
 
-  <script src="../../packages/widget-js/src/wayfindr-widget.js"></script>
-  <script>
-    Wayfindr.init({
-      apiBaseUrl: 'http://127.0.0.1:8000',
-      sitePublicKey: 'site_demo_public_key',
-      launcherLabel: 'Support',
-      title: 'Demo Support',
-    });
-  </script>
+  <!--
+    This is the data-attribute form the agent dashboard generates for a site, so
+    the one example in this repository demonstrates the integration people are
+    actually handed. `Wayfindr.init(...)` still works and is the right choice
+    when a host application has to decide the options at runtime.
+
+    Only `src` differs from a real install: a running Wayfindr serves its own
+    /widget.js, while this loads the monorepo source directly so the example
+    works without a build step.
+  -->
+  <script
+    src="../../packages/widget-js/src/wayfindr-widget.js"
+    data-wayfindr-api-base-url="http://127.0.0.1:8000"
+    data-wayfindr-site-key="site_demo_public_key"
+    data-wayfindr-launcher-label="Support"
+    data-wayfindr-title="Demo Support"
+  ></script>
 </body>
 </html>
