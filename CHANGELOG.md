@@ -337,6 +337,12 @@ page view that was not there before.
 
 ### Fixed
 
+- **AI evaluation now fails closed on contradictory confidence.** A provider
+  response that chooses refusal while reporting confidence at or above the
+  answer threshold can no longer leave the overall evaluation green merely
+  because its aggregate Brier score remains within tolerance. The refusal stays
+  visitor-safe, but the response-contract contradiction is now a hard failure.
+
 - **Generated widget snippets now initialize automatically.** The bundle deferred its
   automatic setup and only then read `document.currentScript`, which is no
   longer the executing script by that point. The script loaded successfully,

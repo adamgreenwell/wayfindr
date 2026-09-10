@@ -138,6 +138,10 @@ supported by the supplied articles and safe to give without taking an action.
 It is model-supplied evidence, not a trustworthy fact by itself. The bundled
 policy admits an answer only at 80% or higher; a lower-confidence answer is
 treated as a handoff before its text or citations are scored as visitor-visible.
+A refusal at or above that threshold contradicts the response contract, counts
+as a hard evaluation failure independent of the fixture's aggregate thresholds,
+and leaves effective policy decision accuracy describing the refusal that the
+visitor would receive.
 
 The fixture owns the regression thresholds. The bundled baseline currently
 requires 100% gated answer accuracy and coverage, refusal recall,
