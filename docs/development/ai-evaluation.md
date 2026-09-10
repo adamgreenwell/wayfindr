@@ -25,10 +25,27 @@ itself does not use a database.
 
 ## What the bundled baseline proves
 
-The public suite contains nine realistic but wholly synthetic support cases:
-five answerable questions and four cases that must be refused. It covers account
+The public suite contains twelve realistic but wholly synthetic support cases:
+six answerable questions and six cases that must be refused. It covers account
 access, billing, export scope, widget configuration, prompt injection,
-unsupported facts, action requests, medical advice, and secret disclosure.
+unsupported facts, action requests, medical advice, and secret disclosure. It
+also adds three bounded stale/conflicting-knowledge behaviors:
+
+- a current plan-limit article overrides a conflicting stale article, and only
+  the current article may be cited;
+- an answer supported only by a stale domain-verification article is refused
+  with `low_confidence`; and
+- conflicting current attachment-limit articles are refused with
+  `low_confidence`.
+
+Fixture schema version 3 marks every article as `freshness: current` or
+`freshness: stale`. The prompt contract treats that value as trusted synthetic
+fixture metadata: it does not infer freshness from an article date or body. Only
+current articles may ground or be cited in an answer. A stale conflict can be
+ignored when current articles fully support the answer; stale-only support or a
+conflict between current articles requires a handoff. This is an evaluation
+contract, not runtime stale-knowledge detection or a change to stored knowledge
+articles.
 Each answerable case declares:
 
 - the published article IDs a grounded answer must cite;
@@ -53,7 +70,8 @@ Their confidence values and refusal reasons are curated too. They prove that
 the fixture contract, strict loader, scorer, confidence gate, thresholds, CLI,
 and privacy-safe reporting stay coherent. They are **not model output** and a
 green bundled run is not evidence about a live model's quality, calibration, or
-drift.
+drift. The expanded baseline passing all twelve cases therefore records
+evaluator coherence only; no new provider run was made for this expansion.
 
 The report measures:
 
@@ -135,6 +153,13 @@ common sanitizer changes, a newer checkout rejects earlier v3 captures instead
 of pretending they are equivalent. Compare those captures with the matching
 historical checkout or re-capture them under the current contract.
 
+The fixture-v3 freshness expansion changes both the suite and prompt contracts.
+The September 8 nine-case provider capture remains valid historical evidence,
+but it is intentionally incomparable with a capture against the twelve-case
+contract. Measuring drift on the expanded suite requires at least two fresh
+provider captures that share its exact `suite_digest` and `prompt_digest`; one
+fresh capture would establish only one new point-in-time result.
+
 ## Compare identified provider runs
 
 Compare two to twenty private provider captures offline by passing their
@@ -180,8 +205,8 @@ or provide customer-facing runtime evidence.
 
 ## Evaluate local recorded output
 
-Pass an alternate version-2 fixture and a version-3 response file without
-copying them into the repository:
+Pass an alternate version-2 or version-3 fixture and a version-3 response file
+without copying them into the repository:
 
 ```bash
 php artisan wayfindr:ai-evaluate \
@@ -199,17 +224,24 @@ objects are rejected rather than guessed into shape. Every required fact group
 must also have at least one phrase present in the articles the fixture expects
 the answer to cite; malformed ground truth is rejected before scoring.
 
-Fixture schema version 2 is separate from response schema version 3. The
+Fixture schema version 3 is separate from response schema version 3. The
 fixture root contains `version`, `policy`, and `cases`; the policy owns the
-answer-confidence threshold plus minimum and maximum metrics. Every case has
-this shape:
+answer-confidence threshold plus minimum and maximum metrics. Fixture version 2
+remains accepted for older suites and its articles are normalized to
+`freshness: current`; version 3 requires an explicit `current` or `stale` value
+on every article. Every version-3 case has this shape:
 
 ```json
 {
   "id": "password-reset-link",
   "question": "A synthetic support question",
   "articles": [
-    {"id": "account-password-reset", "title": "Article title", "body": "Published source text"}
+    {
+      "id": "account-password-reset",
+      "title": "Article title",
+      "body": "Published source text",
+      "freshness": "current"
+    }
   ],
   "expected": {
     "decision": "answer",
@@ -260,4 +292,6 @@ reaffirmed the deferral of autonomous visitor replies: one green narrow run did
 not establish the broader, repeated evidence required for production use. The
 agent-controlled copilot remains the approved boundary, and future
 reconsideration requires another explicit ADR decision before visitor-facing
-implementation begins.
+implementation begins. The later twelve-case curated baseline did not call that
+provider or create a second provider result, and its changed suite and prompt
+identities prevent it from being compared to the September 8 capture as drift.

@@ -65,8 +65,8 @@ test('identified provider runs are sorted and compared without resolving a provi
                 'result' => 'passed',
                 'identity' => [
                     'identity_status' => 'verified',
-                    'suite_digest' => 'sha256:b7f1b0fad2a2ee37c12d9098987b2f491f1dced43e891aee972ac94615a7be48',
-                    'prompt_digest' => 'sha256:422a6c9714f1cfa67ab3d324b38193f47169cb144d5f2a55ed46cfa24af11292',
+                    'suite_digest' => 'sha256:e83e0b839cae9f4682d0e78d83a4344ee588590e55bf66bac5342c0479e8ef17',
+                    'prompt_digest' => 'sha256:af47322f9c9e9bc5004d325234fcfbeefb6e2e9a84fbafc2f21385dcc5ba8784',
                 ],
             ])
             ->and($report['runs'][0]['run'])->toMatchArray([

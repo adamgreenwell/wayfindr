@@ -92,6 +92,7 @@ test('the prompt identity binds every sanitized provider request field', functio
             'id' => 'private-article',
             'title' => 'Private example',
             'body' => 'Use the synthetic settings page.',
+            'freshness' => 'current',
         ]],
         'expected' => [],
     ];
@@ -108,4 +109,30 @@ test('the prompt identity binds every sanitized provider request field', functio
         ->and($identity->promptContract($contract))
         ->not->toBe($identity->promptContract($builder->contract([$changedCase], 80)))
         ->not->toBe($identity->promptContract($builder->contract([$case], 81)));
+});
+
+test('freshness changes both the suite and prompt contract identities', function (): void {
+    $identity = new GroundedAnswerEvaluationIdentity;
+    $builder = new GroundedAnswerEvaluationPromptBuilder(new AiContextSanitizer);
+    $case = [
+        'id' => 'freshness-example',
+        'question' => 'Which synthetic limit applies?',
+        'articles' => [[
+            'id' => 'limit-article',
+            'title' => 'Synthetic limit',
+            'body' => 'The synthetic limit is ten.',
+            'freshness' => 'current',
+        ]],
+        'expected' => [
+            'decision' => 'answer',
+            'article_ids' => ['limit-article'],
+        ],
+    ];
+    $changedCase = $case;
+    $changedCase['articles'][0]['freshness'] = 'stale';
+
+    expect($identity->suite(['cases' => [$case]]))
+        ->not->toBe($identity->suite(['cases' => [$changedCase]]))
+        ->and($identity->promptContract($builder->contract([$case], 80)))
+        ->not->toBe($identity->promptContract($builder->contract([$changedCase], 80)));
 });

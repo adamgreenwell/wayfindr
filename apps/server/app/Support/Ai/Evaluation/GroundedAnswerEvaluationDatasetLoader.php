@@ -12,7 +12,9 @@ use stdClass;
 /** Load a bounded, versioned offline answer-evaluation dataset. */
 final class GroundedAnswerEvaluationDatasetLoader
 {
-    private const FIXTURE_VERSION = 2;
+    private const LEGACY_FIXTURE_VERSION = 2;
+
+    private const FIXTURE_VERSION = 3;
 
     private const LEGACY_RESPONSE_VERSION = 2;
 
@@ -45,7 +47,7 @@ final class GroundedAnswerEvaluationDatasetLoader
      *   cases: list<array{
      *     id: string,
      *     question: string,
-     *     articles: list<array{id: string, title: string, body: string}>,
+     *     articles: list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}>,
      *     expected: array{decision: 'answer'|'refuse', article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
      *   }>
      * }
@@ -55,8 +57,10 @@ final class GroundedAnswerEvaluationDatasetLoader
         $root = $this->jsonObject($path, 'fixture');
         $this->requireKeys($root, ['version', 'policy', 'cases'], 'fixture root');
 
-        if ($root->version !== self::FIXTURE_VERSION || ! $root->policy instanceof stdClass || ! is_array($root->cases)) {
-            throw new RuntimeException('The evaluation fixture must use version 2 with a policy object and an array of cases.');
+        if (! in_array($root->version, [self::LEGACY_FIXTURE_VERSION, self::FIXTURE_VERSION], true)
+            || ! $root->policy instanceof stdClass
+            || ! is_array($root->cases)) {
+            throw new RuntimeException('The evaluation fixture must use version 2 or 3 with a policy object and an array of cases.');
         }
 
         $this->requireKeys($root->policy, [
@@ -130,7 +134,7 @@ final class GroundedAnswerEvaluationDatasetLoader
 
             $seenCaseIds[$caseId] = true;
             $question = $this->boundedString($rawCase->question, 3, 2_000, sprintf('question for case %s', $caseId));
-            $articles = $this->articles($rawCase->articles, $caseId);
+            $articles = $this->articles($rawCase->articles, $caseId, $root->version);
             $expected = $this->expected($rawCase->expected, $caseId, $articles);
 
             if ($expected['decision'] === 'answer') {
@@ -152,7 +156,7 @@ final class GroundedAnswerEvaluationDatasetLoader
         }
 
         return [
-            'version' => self::FIXTURE_VERSION,
+            'version' => $root->version,
             'policy' => $policy,
             'cases' => $cases,
         ];
@@ -246,8 +250,8 @@ final class GroundedAnswerEvaluationDatasetLoader
         ];
     }
 
-    /** @return list<array{id: string, title: string, body: string}> */
-    private function articles(mixed $value, string $caseId): array
+    /** @return list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}> */
+    private function articles(mixed $value, string $caseId, int $fixtureVersion): array
     {
         if (! is_array($value) || $value === [] || count($value) > 20) {
             throw new RuntimeException(sprintf('Evaluation case %s must contain between 1 and 20 articles.', $caseId));
@@ -261,7 +265,13 @@ final class GroundedAnswerEvaluationDatasetLoader
                 throw new RuntimeException(sprintf('Article %d for case %s must be an object.', $index + 1, $caseId));
             }
 
-            $this->requireKeys($rawArticle, ['id', 'title', 'body'], sprintf('article %d for case %s', $index + 1, $caseId));
+            $keys = ['id', 'title', 'body'];
+
+            if ($fixtureVersion === self::FIXTURE_VERSION) {
+                $keys[] = 'freshness';
+            }
+
+            $this->requireKeys($rawArticle, $keys, sprintf('article %d for case %s', $index + 1, $caseId));
             $articleId = $this->identifier($rawArticle->id, sprintf('article %d ID for case %s', $index + 1, $caseId));
 
             if (isset($seen[$articleId])) {
@@ -273,6 +283,9 @@ final class GroundedAnswerEvaluationDatasetLoader
                 'id' => $articleId,
                 'title' => $this->boundedString($rawArticle->title, 1, 200, sprintf('article %s title', $articleId)),
                 'body' => $this->boundedString($rawArticle->body, 1, 10_000, sprintf('article %s body', $articleId)),
+                'freshness' => $fixtureVersion === self::FIXTURE_VERSION
+                    ? $this->freshness($rawArticle->freshness, $articleId)
+                    : 'current',
             ];
         }
 
@@ -280,7 +293,7 @@ final class GroundedAnswerEvaluationDatasetLoader
     }
 
     /**
-     * @param  list<array{id: string, title: string, body: string}>  $articles
+     * @param  list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}>  $articles
      * @return array{decision: 'answer'|'refuse', article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
      */
     private function expected(mixed $value, string $caseId, array $articles): array
@@ -307,6 +320,16 @@ final class GroundedAnswerEvaluationDatasetLoader
 
         if ($unknownArticleIds !== []) {
             throw new RuntimeException(sprintf('Expected result for case %s cites an article outside that case.', $caseId));
+        }
+
+        $articlesById = array_column($articles, null, 'id');
+        $staleExpectedArticleIds = array_filter(
+            $expectedArticleIds,
+            fn (string $articleId): bool => $articlesById[$articleId]['freshness'] === 'stale',
+        );
+
+        if ($value->decision === 'answer' && $staleExpectedArticleIds !== []) {
+            throw new RuntimeException(sprintf('Answer case %s must cite only current articles.', $caseId));
         }
 
         $requiredFacts = $this->phraseGroups($value->required_facts, $caseId);
@@ -588,6 +611,15 @@ final class GroundedAnswerEvaluationDatasetLoader
         }
 
         return trim($value);
+    }
+
+    private function freshness(mixed $value, string $articleId): string
+    {
+        if (! is_string($value) || ! in_array($value, ['current', 'stale'], true)) {
+            throw new RuntimeException(sprintf('Article %s freshness must be current or stale.', $articleId));
+        }
+
+        return $value;
     }
 
     private function digest(mixed $value, string $label): string
