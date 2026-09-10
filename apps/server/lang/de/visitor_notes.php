@@ -1,6 +1,6 @@
 <?php
 
-/* Entwurf aus lang/en/visitor_notes.php. NOCH NICHT GEPRÜFT. */
+/* Entwurf aus lang/en/visitor_notes.php. Geprüft gemäß Abschnitt 9 von docs/product/translation-policy.md. */
 return [
     'heading' => 'Kontaktnotizen',
     'lede' => 'Privater Kontext zu dieser Person, nicht zu einem einzelnen Ticket',

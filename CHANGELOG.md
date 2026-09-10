@@ -139,7 +139,10 @@ page view that was not there before.
 
   Both packs have now been through the review the translation policy defines:
   every catalogue in both trees has been read against the glossary, the rendered
-  surface, and the register rules, and none still opens with `NOT YET REVIEWED`.
+  surface, and the register rules. No catalogue still opens by declaring itself
+  unreviewed, in English or in its own language — three headers keep a narrower
+  note saying only that no native speaker has read them, which is true of all of
+  them and is the next paragraph's point.
 
   **That is a reader, not a speaker, and the difference is the point.** Section 9
   of [the translation policy](docs/product/translation-policy.md) sets the bar

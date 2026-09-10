@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Bozza basata su lang/en/site_settings.php. NON ANCORA REVISIONATA.
+ * Bozza basata su lang/en/site_settings.php.
+ * Revisionata secondo la sezione 9 di docs/product/translation-policy.md.
  *
  * Creata a mano seguendo il glossario e le regole di traduzione. Nomi, URL,
  * valori dei provider, selettori e testi per i visitatori restano dati; la

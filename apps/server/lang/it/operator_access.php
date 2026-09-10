@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Bozza tratta da lang/en/operator_access.php. NON ANCORA REVISIONATA.
+ * Bozza tratta da lang/en/operator_access.php.
+ * Revisionata secondo la sezione 9 di docs/product/translation-policy.md.
  *
  * Scritta a mano seguendo il glossario in resources/translation/glossary.php
  * e le regole in docs/product/translation-policy.md. I dati dell’account

@@ -1,6 +1,6 @@
 <?php
 
-/* Bozza da lang/en/visitor_attributes.php. NON ANCORA REVISIONATA. */
+/* Bozza da lang/en/visitor_attributes.php. Revisionata secondo la sezione 9 di docs/product/translation-policy.md. */
 return [
     'document_title' => 'Attributi dei visitatori',
     'heading' => 'Attributi dei visitatori',

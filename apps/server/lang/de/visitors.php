@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Entwurf aus lang/en/visitors.php. NOCH NICHT GEPRÜFT.
+ * Entwurf aus lang/en/visitors.php.
+ * Geprüft gemäß Abschnitt 9 von docs/product/translation-policy.md.
  *
  * Von Hand anhand des Glossars und der Übersetzungsrichtlinie erstellt. Jeder
  * Wert ist ein Vorschlag. `Besucher` bezeichnet den Singular und die nackte

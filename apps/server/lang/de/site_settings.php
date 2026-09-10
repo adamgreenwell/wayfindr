@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Entwurf auf Grundlage von lang/en/site_settings.php. NOCH NICHT GEPRÜFT.
+ * Entwurf auf Grundlage von lang/en/site_settings.php.
+ * Geprüft gemäß Abschnitt 9 von docs/product/translation-policy.md.
  *
  * Von Hand anhand des Glossars und der Übersetzungsregeln erstellt. Namen,
  * URLs, Anbieterwerte, Selektoren und Text für Besuchende bleiben Daten; die

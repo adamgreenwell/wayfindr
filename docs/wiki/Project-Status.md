@@ -85,7 +85,9 @@ until a stable artifact containing it is published and verified.
   drafted by hand in context by somebody who is not a professional translator,
   and much of the Italian catalogue is machine-assisted. Both trees have since
   been through the review the translation policy defines, and no catalogue in
-  either still carries `NOT YET REVIEWED`.
+  either still declares itself unreviewed — in English or in its own language.
+  Three headers keep a narrower note recording that no native speaker has read
+  them, which is true of every catalogue in both trees.
 
   That review is a reader rather than a speaker — the bar the policy sets on
   purpose, because it catches wrong terms, overflowing strings and misplaced

@@ -1,6 +1,6 @@
 <?php
 
-/* Bozza da lang/en/visitor_notes.php. NON ANCORA REVISIONATA. */
+/* Bozza da lang/en/visitor_notes.php. Revisionata secondo la sezione 9 di docs/product/translation-policy.md. */
 return [
     'heading' => 'Note sul contatto',
     'lede' => 'Contesto privato collegato a questa persona, non a un singolo ticket',
