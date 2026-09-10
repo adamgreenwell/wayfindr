@@ -133,9 +133,12 @@ closed. It now includes:
 - A provider-free evaluation harness for that copilot, with a confidence and
   refusal policy and an opt-in private capture path. Versioned provider captures
   bind to exact suite and prompt identities, and equivalent runs can be compared
-  offline without exposing support text. It exists to decide what AI may do next
-  on evidence rather than on enthusiasm; comparison capability is not itself
-  drift or runtime evidence.
+  offline without exposing support text. Its current twelve-case synthetic
+  corpus includes current-over-stale resolution, stale-only handoff, and
+  conflicting-current handoff. The bundled 12/12 curated baseline proves only
+  evaluator coherence; it is not a new provider run, drift result, or runtime
+  result. The harness exists to decide what AI may do next on evidence rather
+  than on enthusiasm.
 - Measured performance baselines rather than assumed ones: Reverb concurrent
   agent capacity, heavy-page cobrowse transport, attachment retention at a large
   object count, and the dashboard and report tabs under a desk's worth of data.
@@ -251,12 +254,21 @@ model that passed 9 of 9 cases with no unsafe answer. That evidence was judged
 useful and insufficient, and the ADR was reaffirmed rather than relaxed.
 
 One narrow, wholly synthetic run through a single provider route establishes
-nothing about model or prompt drift, adversarial and multilingual coverage,
-stale or conflicting knowledge, or representative self-hosting failure modes.
-The comparison tooling now prevents a changed suite, policy, or Wayfindr prompt
-request from masquerading as provider/model drift. It does not fingerprint every
-provider-side transformation, and its existence is not a second run or a drift
-result.
+nothing about model or prompt drift, adversarial and multilingual coverage, or
+representative self-hosting failure modes. The suite now encodes stale and
+conflicting knowledge behavior with trusted synthetic `current`/`stale` labels,
+but Wayfindr does not detect those labels from runtime knowledge and no provider
+has run the expanded cases. The bundled twelve-case baseline is curated scorer
+evidence, not model evidence.
+
+The expanded suite and prompt identities intentionally make the September 8
+nine-case capture incomparable with future twelve-case captures. The comparison
+tooling prevents that contract change from masquerading as provider/model drift;
+it does not fingerprint every provider-side transformation. Meaningful drift
+evidence now requires at least two fresh provider captures under the same
+twelve-case suite and prompt contract, not one new capture compared with the old
+run.
+
 Reconsideration has a stated sequence — broaden the evaluation set, record drift
 across more than one run and model revision, revisit the ADR with that evidence,
 and only then define a visitor-facing runtime with grounding, low-confidence
