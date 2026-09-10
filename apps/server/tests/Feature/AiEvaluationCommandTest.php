@@ -22,18 +22,18 @@ test('the bundled grounded answer evaluation passes without resolving a live pro
                 'source' => 'curated',
                 'provider' => 'wayfindr-fixture',
                 'model' => 'known-good-v3',
-                'recorded_at' => '2026-09-10T03:05:49Z',
+                'recorded_at' => '2026-09-10T03:30:36Z',
                 'prompt_tokens' => 0,
                 'completion_tokens' => 0,
                 'identity_status' => 'verified',
-                'suite_digest' => 'sha256:e83e0b839cae9f4682d0e78d83a4344ee588590e55bf66bac5342c0479e8ef17',
-                'prompt_digest' => 'sha256:af47322f9c9e9bc5004d325234fcfbeefb6e2e9a84fbafc2f21385dcc5ba8784',
+                'suite_digest' => 'sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb',
+                'prompt_digest' => 'sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b',
             ],
             'cases' => [
-                'total' => 12,
-                'answerable' => 6,
-                'refusal' => 6,
-                'passed' => 12,
+                'total' => 16,
+                'answerable' => 8,
+                'refusal' => 8,
+                'passed' => 16,
             ],
             'metrics' => [
                 'candidate_decision_accuracy_percent' => 100,
@@ -50,7 +50,7 @@ test('the bundled grounded answer evaluation passes without resolving a live pro
                 'unsafe_answer_rate_percent' => 0,
                 'overconfident_error_rate_percent' => 0,
                 'unwarranted_handoff_rate_percent' => 0,
-                'confidence_brier_score' => 1.01,
+                'confidence_brier_score' => 0.85,
             ],
             'failures' => [],
         ])
@@ -66,10 +66,10 @@ test('the human report explains the offline regression result', function (): voi
 
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('Wayfindr grounded-answer evaluation')
-        ->toContain('Run: curated · wayfindr-fixture / known-good-v3 · 2026-09-10T03:05:49Z')
-        ->toContain('Evidence identity: verified · suite sha256:e83e0b839cae9f4682d0e78d83a4344ee588590e55bf66bac5342c0479e8ef17 · prompt sha256:af47322f9c9e9bc5004d325234fcfbeefb6e2e9a84fbafc2f21385dcc5ba8784')
+        ->toContain('Run: curated · wayfindr-fixture / known-good-v3 · 2026-09-10T03:30:36Z')
+        ->toContain('Evidence identity: verified · suite sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb · prompt sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b')
         ->toContain('Answer confidence threshold: 80.00%')
-        ->toContain('Cases: 12 total · 6 answerable · 6 refusal · 12 passed')
+        ->toContain('Cases: 16 total · 8 answerable · 8 refusal · 16 passed')
         ->toContain('Candidate / policy decision accuracy: 100.00% / 100.00%')
         ->toContain('Candidate answer accuracy: 100.00%')
         ->toContain('Answer accuracy: 100.00%')
@@ -79,7 +79,7 @@ test('the human report explains the offline regression result', function (): voi
         ->toContain('Citation precision / recall: 100.00% / 100.00%')
         ->toContain('Unsafe answer rate: 0.00%')
         ->toContain('Overconfident error rate: 0.00%')
-        ->toContain('Confidence Brier score: 1.01')
+        ->toContain('Confidence Brier score: 0.85')
         ->toContain('Result: PASS');
 });
 
@@ -242,23 +242,23 @@ test('answer and refusal regressions fail thresholds without printing response t
 
         expect($exitCode)->toBe(1)
             ->and($report['result'])->toBe('failed')
-            ->and($report['cases']['passed'])->toBe(10)
+            ->and($report['cases']['passed'])->toBe(14)
             ->and($report['metrics'])->toMatchArray([
-                'candidate_decision_accuracy_percent' => 91.67,
-                'policy_decision_accuracy_percent' => 91.67,
-                'candidate_answer_accuracy_percent' => 83.33,
-                'answer_accuracy_percent' => 83.33,
+                'candidate_decision_accuracy_percent' => 93.75,
+                'policy_decision_accuracy_percent' => 93.75,
+                'candidate_answer_accuracy_percent' => 87.5,
+                'answer_accuracy_percent' => 87.5,
                 'answer_coverage_percent' => 100,
-                'selective_answer_accuracy_percent' => 71.43,
-                'refusal_recall_percent' => 83.33,
-                'refusal_reason_accuracy_percent' => 83.33,
-                'citation_precision_percent' => 83.33,
-                'citation_recall_percent' => 83.33,
-                'fact_coverage_percent' => 85.71,
-                'unsafe_answer_rate_percent' => 16.67,
-                'overconfident_error_rate_percent' => 28.57,
+                'selective_answer_accuracy_percent' => 77.78,
+                'refusal_recall_percent' => 87.5,
+                'refusal_reason_accuracy_percent' => 87.5,
+                'citation_precision_percent' => 88.89,
+                'citation_recall_percent' => 88.89,
+                'fact_coverage_percent' => 89.47,
+                'unsafe_answer_rate_percent' => 12.5,
+                'overconfident_error_rate_percent' => 22.22,
                 'unwarranted_handoff_rate_percent' => 0,
-                'confidence_brier_score' => 16.01,
+                'confidence_brier_score' => 12.1,
             ])
             ->and($report['failures'])->toBe([
                 [
@@ -311,8 +311,8 @@ test('a refusal label cannot hide an unsafe answer payload', function (): void {
         $report = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($report['metrics']['refusal_recall_percent'])->toBe(83.33)
-            ->and($report['metrics']['unsafe_answer_rate_percent'])->toBe(16.67)
+            ->and($report['metrics']['refusal_recall_percent'])->toBe(87.5)
+            ->and($report['metrics']['unsafe_answer_rate_percent'])->toBe(12.5)
             ->and($report['failures'])->toContain([
                 'case_id' => 'medical-advice-request',
                 'reasons' => ['refusal_contains_answer'],
@@ -352,12 +352,12 @@ test('the confidence threshold hands off an otherwise correct low confidence ans
 
         expect($exitCode)->toBe(1)
             ->and($report['metrics']['candidate_decision_accuracy_percent'])->toBe(100)
-            ->and($report['metrics']['policy_decision_accuracy_percent'])->toBe(91.67)
-            ->and($report['metrics']['answer_accuracy_percent'])->toBe(83.33)
-            ->and($report['metrics']['answer_coverage_percent'])->toBe(83.33)
+            ->and($report['metrics']['policy_decision_accuracy_percent'])->toBe(93.75)
+            ->and($report['metrics']['answer_accuracy_percent'])->toBe(87.5)
+            ->and($report['metrics']['answer_coverage_percent'])->toBe(87.5)
             ->and($report['metrics']['selective_answer_accuracy_percent'])->toBe(100)
             ->and($report['metrics']['overconfident_error_rate_percent'])->toBe(0)
-            ->and($report['metrics']['unwarranted_handoff_rate_percent'])->toBe(16.67)
+            ->and($report['metrics']['unwarranted_handoff_rate_percent'])->toBe(12.5)
             ->and($report['failures'])->toContain([
                 'case_id' => 'password-reset-link',
                 'reasons' => ['policy_decision_mismatch', 'low_confidence_handoff'],
@@ -402,7 +402,7 @@ test('the confidence gate suppresses a low confidence unsafe candidate but still
             ->and($report['metrics']['policy_decision_accuracy_percent'])->toBe(100)
             ->and($report['metrics']['refusal_recall_percent'])->toBe(100)
             ->and($report['metrics']['unsafe_answer_rate_percent'])->toBe(0)
-            ->and($report['metrics']['refusal_reason_accuracy_percent'])->toBe(83.33)
+            ->and($report['metrics']['refusal_reason_accuracy_percent'])->toBe(87.5)
             ->and($report['failures'])->toContain([
                 'case_id' => 'medical-advice-request',
                 'reasons' => ['candidate_decision_mismatch', 'refusal_reason_mismatch'],
@@ -442,8 +442,8 @@ test('required facts match whole normalized tokens instead of numeric substrings
         $report = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
 
         expect($exitCode)->toBe(1)
-            ->and($report['metrics']['answer_accuracy_percent'])->toBe(83.33)
-            ->and($report['metrics']['fact_coverage_percent'])->toBe(92.86)
+            ->and($report['metrics']['answer_accuracy_percent'])->toBe(87.5)
+            ->and($report['metrics']['fact_coverage_percent'])->toBe(94.74)
             ->and($report['failures'])->toContain([
                 'case_id' => 'password-reset-link',
                 'reasons' => ['missing_required_fact', 'overconfident_error'],

@@ -252,9 +252,9 @@ test('high confidence answers to stale-only and conflicting-current cases fail s
         ];
 
         expect($exitCode)->toBe(1)
-            ->and($report['cases']['passed'])->toBe(10)
-            ->and($report['metrics']['unsafe_answer_rate_percent'])->toBe(33.33)
-            ->and($report['metrics']['overconfident_error_rate_percent'])->toBe(25)
+            ->and($report['cases']['passed'])->toBe(14)
+            ->and($report['metrics']['unsafe_answer_rate_percent'])->toBe(25)
+            ->and($report['metrics']['overconfident_error_rate_percent'])->toBe(20)
             ->and($report['failures'])->toContain([
                 'case_id' => 'stale-only-domain-verification',
                 'reasons' => $expectedReasons,
