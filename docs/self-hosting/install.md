@@ -205,6 +205,44 @@ Then work through the readiness screens:
 version and commit in, so an install from the one-liner or the published
 image answers "what code is this?" with no configuration.
 
+A **source build** derives `<VERSION>-dev` from the repository's `VERSION` file.
+That names the lineage but not the build, and two source builds many commits
+apart both report it — so anything that compares versions treats a bare `-dev` as
+unverifiable, and a **restore cannot confirm an archive matches the install**
+(it keeps the site in maintenance for you to check). Pass the commit to pin the
+build and make the identity comparable:
+
+```bash
+# The commit is passed ONLY from a clean checkout. `git rev-parse HEAD` reports
+# the last commit even when the tree has uncommitted edits, but Docker builds the
+# edited files — so a dirty build would claim to be a commit it is not, and two
+# differently-edited trees would claim to be the same one. A dirty build
+# therefore gets no commit and identifies by lineage only (`0.1.0-dev`), which
+# version checks correctly treat as unverifiable.
+# `git diff` only inspects TRACKED files, so the untracked check matters too: a
+# brand-new migration or class is invisible to it but goes straight into the
+# build context. `--exclude-standard` honours .gitignore, so vendor/ and friends
+# do not count as dirt.
+if git diff --quiet && git diff --cached --quiet \
+   && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+  export WAYFINDR_BUILD_COMMIT="$(git rev-parse HEAD)"
+else
+  unset WAYFINDR_BUILD_COMMIT
+  echo 'Uncommitted or untracked changes — building without a pinned commit identity.'
+fi
+
+docker compose \
+  -f docker/self-hosting/compose.yml \
+  -f docker/self-hosting/compose.build.yml \
+  --env-file docker/self-hosting/.env up -d --build
+```
+
+`WAYFINDR_BUILD_VERSION` overrides the derived version outright — use it when
+building a specific release from source. Setting `WAYFINDR_VERSION` /
+`WAYFINDR_COMMIT` in your env file overrides the baked values (including blanking
+them), so leave those alone unless you are deploying a custom build. Quote the
+version when you file an issue.
+
 ## Widget does not appear
 
 First open the site's built-in tester from its settings page. A working tester
@@ -251,44 +289,6 @@ changes the path being tested and must not be reported as a successful
 copy-paste install. The shorter operator-facing version of this flow lives in
 the Wiki's
 [Troubleshooting page](https://github.com/adamgreenwell/wayfindr/wiki/Troubleshooting#widget-does-not-appear).
-
-A **source build** derives `<VERSION>-dev` from the repository's `VERSION` file.
-That names the lineage but not the build, and two source builds many commits
-apart both report it — so anything that compares versions treats a bare `-dev` as
-unverifiable, and a **restore cannot confirm an archive matches the install**
-(it keeps the site in maintenance for you to check). Pass the commit to pin the
-build and make the identity comparable:
-
-```bash
-# The commit is passed ONLY from a clean checkout. `git rev-parse HEAD` reports
-# the last commit even when the tree has uncommitted edits, but Docker builds the
-# edited files — so a dirty build would claim to be a commit it is not, and two
-# differently-edited trees would claim to be the same one. A dirty build
-# therefore gets no commit and identifies by lineage only (`0.1.0-dev`), which
-# version checks correctly treat as unverifiable.
-# `git diff` only inspects TRACKED files, so the untracked check matters too: a
-# brand-new migration or class is invisible to it but goes straight into the
-# build context. `--exclude-standard` honours .gitignore, so vendor/ and friends
-# do not count as dirt.
-if git diff --quiet && git diff --cached --quiet \
-   && [ -z "$(git ls-files --others --exclude-standard)" ]; then
-  export WAYFINDR_BUILD_COMMIT="$(git rev-parse HEAD)"
-else
-  unset WAYFINDR_BUILD_COMMIT
-  echo 'Uncommitted or untracked changes — building without a pinned commit identity.'
-fi
-
-docker compose \
-  -f docker/self-hosting/compose.yml \
-  -f docker/self-hosting/compose.build.yml \
-  --env-file docker/self-hosting/.env up -d --build
-```
-
-`WAYFINDR_BUILD_VERSION` overrides the derived version outright — use it when
-building a specific release from source. Setting `WAYFINDR_VERSION` /
-`WAYFINDR_COMMIT` in your env file overrides the baked values (including blanking
-them), so leave those alone unless you are deploying a custom build. Quote the
-version when you file an issue.
 
 ## Where your data lives
 
