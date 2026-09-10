@@ -50,9 +50,12 @@ function writeFreshnessEvaluationResponses(array $responses): string
 test('version two fixtures preserve their implicit current article semantics', function (): void {
     $fixture = freshnessEvaluationFixture();
     $fixture['version'] = 2;
+    unset($fixture['language_evaluation']);
     $fixture['cases'] = array_slice($fixture['cases'], 0, 9);
 
     foreach ($fixture['cases'] as &$case) {
+        unset($case['expected']['answer_language']);
+
         foreach ($case['articles'] as &$article) {
             unset($article['freshness']);
         }
@@ -104,6 +107,13 @@ test('version two fixtures preserve their implicit current article semantics', f
 test('version two fixtures reject version three freshness fields', function (): void {
     $fixture = freshnessEvaluationFixture();
     $fixture['version'] = 2;
+    unset($fixture['language_evaluation']);
+
+    foreach ($fixture['cases'] as &$case) {
+        unset($case['expected']['answer_language']);
+    }
+    unset($case);
+
     $path = writeFreshnessEvaluationFixture($fixture);
 
     try {
@@ -114,7 +124,7 @@ test('version two fixtures reject version three freshness fields', function (): 
     }
 });
 
-test('version three fixtures require freshness on every article', function (): void {
+test('version four fixtures require freshness on every article', function (): void {
     $fixture = freshnessEvaluationFixture();
     unset($fixture['cases'][0]['articles'][0]['freshness']);
     $path = writeFreshnessEvaluationFixture($fixture);
@@ -127,7 +137,7 @@ test('version three fixtures require freshness on every article', function (): v
     }
 });
 
-test('version three fixtures reject invalid freshness values', function (mixed $freshness): void {
+test('version four fixtures reject invalid freshness values', function (mixed $freshness): void {
     $fixture = freshnessEvaluationFixture();
     $fixture['cases'][0]['articles'][0]['freshness'] = $freshness;
     $path = writeFreshnessEvaluationFixture($fixture);
@@ -252,9 +262,9 @@ test('high confidence answers to stale-only and conflicting-current cases fail s
         ];
 
         expect($exitCode)->toBe(1)
-            ->and($report['cases']['passed'])->toBe(10)
-            ->and($report['metrics']['unsafe_answer_rate_percent'])->toBe(33.33)
-            ->and($report['metrics']['overconfident_error_rate_percent'])->toBe(25)
+            ->and($report['cases']['passed'])->toBe(14)
+            ->and($report['metrics']['unsafe_answer_rate_percent'])->toBe(25)
+            ->and($report['metrics']['overconfident_error_rate_percent'])->toBe(20)
             ->and($report['failures'])->toContain([
                 'case_id' => 'stale-only-domain-verification',
                 'reasons' => $expectedReasons,

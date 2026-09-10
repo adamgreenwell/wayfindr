@@ -65,8 +65,8 @@ test('identified provider runs are sorted and compared without resolving a provi
                 'result' => 'passed',
                 'identity' => [
                     'identity_status' => 'verified',
-                    'suite_digest' => 'sha256:e83e0b839cae9f4682d0e78d83a4344ee588590e55bf66bac5342c0479e8ef17',
-                    'prompt_digest' => 'sha256:af47322f9c9e9bc5004d325234fcfbeefb6e2e9a84fbafc2f21385dcc5ba8784',
+                    'suite_digest' => 'sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe',
+                    'prompt_digest' => 'sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b',
                 ],
             ])
             ->and($report['runs'][0]['run'])->toMatchArray([
@@ -89,7 +89,9 @@ test('identified provider runs are sorted and compared without resolving a provi
                 fn (int|float $delta): bool => $delta !== 0,
             ))->toBe([])
             ->and($output)->not->toContain('Choose Forgotten password')
-            ->not->toContain('Open Billing settings');
+            ->not->toContain('Open Billing settings')
+            ->not->toContain('SYSTEM MESSAGE')
+            ->not->toContain('Ich habe mein Passwort vergessen');
     } finally {
         unlink($first);
         unlink($second);
@@ -200,7 +202,9 @@ test('the human comparison report stays content free', function (): void {
             ->toContain('Regressed cases: none')
             ->toContain('Result: PASS')
             ->not->toContain('Allowed origins')
-            ->not->toContain('30-day limited warranty');
+            ->not->toContain('30-day limited warranty')
+            ->not->toContain('exports never expire')
+            ->not->toContain('15 Minuten gültig');
     } finally {
         unlink($first);
         unlink($second);

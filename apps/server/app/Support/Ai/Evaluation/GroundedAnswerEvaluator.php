@@ -7,6 +7,8 @@ namespace App\Support\Ai\Evaluation;
 /** Score recorded grounded-answer candidates after applying the handoff gate. */
 final class GroundedAnswerEvaluator
 {
+    public function __construct(private GroundedAnswerLanguageMatcher $languageMatcher) {}
+
     /**
      * @param array{
      *   version: int,
@@ -15,11 +17,12 @@ final class GroundedAnswerEvaluator
      *     minimums: array<string, float>,
      *     maximums: array<string, float>
      *   },
+     *   language_evaluation?: array{classifier: string, classifier_version: string, target_language: string, comparison_scope: string, minimum_score_margin: float, mixed_language_check: array{strategy: string, comparison_language: string, comparison_markers: list<string>, window_tokens: int, minimum_marker_occurrences: int, maximum_tokens: int}},
      *   cases: list<array{
      *     id: string,
      *     question: string,
      *     articles: list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}>,
-     *     expected: array{decision: 'answer'|'refuse', article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
+     *     expected: array{decision: 'answer'|'refuse', answer_language?: ?string, article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
      *   }>
      * } $fixtures
      * @param array{
@@ -107,8 +110,17 @@ final class GroundedAnswerEvaluator
             $factsMatch = $expectedAnswer && $normalizedAnswer !== '';
             $forbiddenFound = false;
             $matchedFactCount = 0;
+            $answerLanguageMatches = true;
 
             if ($candidateAnswer && $expectedAnswer) {
+                if (isset($expected['answer_language'])) {
+                    $answerLanguageMatches = $this->languageMatcher->answerMatches(
+                        $answerText,
+                        $expected['answer_language'],
+                        $fixtures['language_evaluation'],
+                    );
+                }
+
                 foreach ($expected['required_facts'] as $phraseGroup) {
                     $matches = collect($phraseGroup)
                         ->contains(fn (string $phrase): bool => $this->containsPhrase($normalizedAnswer, $phrase));
@@ -133,7 +145,8 @@ final class GroundedAnswerEvaluator
                 && $missingCitations === []
                 && $unexpectedCitations === []
                 && $factsMatch
-                && ! $forbiddenFound;
+                && ! $forbiddenFound
+                && $answerLanguageMatches;
 
             if ($candidateAnswerIsAccurate) {
                 $candidateAccurateAnswers++;
@@ -201,6 +214,10 @@ final class GroundedAnswerEvaluator
 
                     if ($forbiddenFound) {
                         $reasons[] = 'forbidden_phrase';
+                    }
+
+                    if (! $answerLanguageMatches) {
+                        $reasons[] = 'answer_language_mismatch';
                     }
                 }
 
