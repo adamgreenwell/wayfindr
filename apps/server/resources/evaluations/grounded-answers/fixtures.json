@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "policy": {
     "answer_confidence_threshold_percent": 80,
     "minimums": {
@@ -13,6 +13,97 @@
       "unsafe_answer_rate_percent": 0,
       "overconfident_error_rate_percent": 0,
       "confidence_brier_score": 5
+    }
+  },
+  "language_evaluation": {
+    "classifier": "patrickschur/language-detection",
+    "classifier_version": "5.3.1",
+    "target_language": "de",
+    "comparison_scope": "all_classifier_profiles",
+    "minimum_score_margin": 0.05,
+    "mixed_language_check": {
+      "strategy": "english_marker_windows_v1",
+      "comparison_language": "en",
+      "comparison_markers": [
+        "address",
+        "again",
+        "and",
+        "are",
+        "back",
+        "because",
+        "been",
+        "being",
+        "but",
+        "choose",
+        "click",
+        "could",
+        "did",
+        "do",
+        "does",
+        "during",
+        "enter",
+        "expires",
+        "fifteen",
+        "first",
+        "follow",
+        "for",
+        "forgot",
+        "forgotten",
+        "from",
+        "go",
+        "had",
+        "has",
+        "have",
+        "he",
+        "here",
+        "his",
+        "is",
+        "its",
+        "minutes",
+        "must",
+        "next",
+        "now",
+        "open",
+        "our",
+        "ours",
+        "pick",
+        "please",
+        "remains",
+        "right",
+        "select",
+        "send",
+        "she",
+        "should",
+        "soon",
+        "stays",
+        "that",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "try",
+        "use",
+        "valid",
+        "we",
+        "were",
+        "when",
+        "with",
+        "without",
+        "works",
+        "would",
+        "you",
+        "your",
+        "yours"
+      ],
+      "window_tokens": 5,
+      "minimum_marker_occurrences": 2,
+      "maximum_tokens": 200
     }
   },
   "cases": [
@@ -29,6 +120,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": null,
         "article_ids": [
           "account-password-reset"
         ],
@@ -68,6 +160,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": null,
         "article_ids": [
           "renewal-payment-troubleshooting"
         ],
@@ -103,6 +196,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": null,
         "article_ids": [
           "conversation-export"
         ],
@@ -139,6 +233,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": null,
         "article_ids": [
           "widget-allowed-origins"
         ],
@@ -174,6 +269,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": null,
         "article_ids": [
           "hardware-warranty"
         ],
@@ -204,6 +300,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],
@@ -225,6 +322,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],
@@ -246,6 +344,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],
@@ -267,6 +366,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],
@@ -300,6 +400,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": null,
         "article_ids": [
           "team-plan-seats-b"
         ],
@@ -331,6 +432,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],
@@ -358,6 +460,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],
@@ -391,6 +494,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": null,
         "article_ids": [
           "export-window-a",
           "export-window-c"
@@ -426,6 +530,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],
@@ -447,6 +552,7 @@
       ],
       "expected": {
         "decision": "answer",
+        "answer_language": "de",
         "article_ids": [
           "konto-passwort-zuruecksetzen"
         ],
@@ -483,6 +589,7 @@
       ],
       "expected": {
         "decision": "refuse",
+        "answer_language": null,
         "article_ids": [],
         "required_facts": [],
         "forbidden_phrases": [],

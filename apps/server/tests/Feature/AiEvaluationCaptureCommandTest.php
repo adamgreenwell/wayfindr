@@ -66,7 +66,7 @@ test('provider capture is explicit complete private and scoreable', function ():
                 'cases' => 16,
                 'provider' => 'fixture-provider',
                 'model' => 'fixture-model-v1',
-                'suite_digest' => 'sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb',
+                'suite_digest' => 'sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe',
                 'prompt_digest' => 'sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b',
                 'output' => $canonicalOutputPath,
             ])
@@ -85,7 +85,7 @@ test('provider capture is explicit complete private and scoreable', function ():
                 'recorded_at' => '2026-09-06T12:34:56Z',
                 'prompt_tokens' => 160,
                 'completion_tokens' => 80,
-                'suite_digest' => 'sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb',
+                'suite_digest' => 'sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe',
                 'prompt_digest' => 'sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b',
             ])->and($captured['responses'])->toHaveCount(16);
 

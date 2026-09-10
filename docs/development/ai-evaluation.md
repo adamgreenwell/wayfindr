@@ -45,7 +45,7 @@ behaviors:
 - a German password-reset question receives a grounded German answer; and
 - an unsupported German telephone-hours question is refused as `unsupported`.
 
-Fixture schema version 3 marks every article as `freshness: current` or
+Fixture schema versions 3 and 4 mark every article as `freshness: current` or
 `freshness: stale`. The prompt contract treats that value as trusted synthetic
 fixture metadata: it does not infer freshness from an article date or body. Only
 current articles may ground or be cited in an answer. A stale conflict can be
@@ -59,9 +59,40 @@ The prompt contract now says:
 > For an answer, write in the language used by the question; keep the JSON keys,
 > decision values, and refusal_reason values exactly as specified.
 
-The two German cases are a narrow evaluation of that instruction. They do not
-establish broad multilingual quality, connect the evaluator to widget locale
-selection, or add runtime language behavior.
+The two German cases are a narrow evaluation of that instruction. Fixture
+schema version 4 explicitly selects `de` for the one answer case and pins the
+offline `patrickschur/language-detection` classifier at 5.3.1. The scorer
+compares its German score with every other language profile bundled by that
+version and requires German to lead the strongest alternative by at least
+`0.05` over the complete answer. A separate, deterministic
+`english_marker_windows_v1` regression gate tokenizes Unicode letters, scans
+every rolling five-token window, and rejects the answer when at least two
+occurrences belong to the pinned English marker set. It catches the known
+English code-switch regressions regardless of sentence punctuation,
+parentheses, slashes, or numbered formatting without trying to classify short
+technical fragments such as `Login-Formular im Browser`.
+
+The classifier identity and version, all-profile comparison scope, whole-answer
+margin, marker strategy and exact sorted marker list, window size, occurrence
+threshold, token cap, and case selection are fixture data covered by
+`suite_digest`; changing any of them rotates the evidence identity. Cases
+without `answer_language` selected skip this additional gate. The scorer fails
+closed above 200 language tokens, keeping the marker scan bounded under the
+response-size limit.
+
+That conservative, regression-tested rule accepts the curated and natural
+paraphrased German regressions while rejecting the reported mixed-language,
+repeated-English, Dutch, and Swedish bypasses even when their facts and
+citations are correct.
+Ambiguous ultra-terse text may fail the classifier even when its few words are
+German, and an English UI label containing two pinned markers may fail the
+marker gate; this bounded scorer prefers a false handoff in those cases. The
+marker check is specifically a regression gate for English insertions, not
+proof that every possible English phrase or non-English code-switch can be
+detected. Together these rules provide deterministic coverage for the current
+synthetic German case, not general language detection or proof of prose
+quality. The cases do not establish broad multilingual quality, connect the
+evaluator to widget locale selection, or add runtime language behavior.
 
 Each answerable case declares:
 
@@ -170,7 +201,7 @@ common sanitizer changes, a newer checkout rejects earlier v3 captures instead
 of pretending they are equivalent. Compare those captures with the matching
 historical checkout or re-capture them under the current contract.
 
-The fixture-v3 freshness work and the later adversarial/German expansion change
+The fixture-v3 freshness work and fixture-v4 adversarial/German expansion change
 the exact suite and prompt contracts. The September 8 nine-case provider capture
 remains valid historical evidence, but it is intentionally incomparable with a
 capture against the sixteen-case contract. No provider has run this expanded
@@ -242,12 +273,50 @@ objects are rejected rather than guessed into shape. Every required fact group
 must also have at least one phrase present in the articles the fixture expects
 the answer to cite; malformed ground truth is rejected before scoring.
 
-Fixture schema version 3 is separate from response schema version 3. The
-fixture root contains `version`, `policy`, and `cases`; the policy owns the
-answer-confidence threshold plus minimum and maximum metrics. Fixture version 2
-remains accepted for older suites and its articles are normalized to
-`freshness: current`; version 3 requires an explicit `current` or `stale` value
-on every article. Every version-3 case has this shape:
+Fixture schema version 4 is separate from response schema version 3. The
+fixture root contains `version`, `policy`, `language_evaluation`, and `cases`;
+the policy owns the answer-confidence threshold plus minimum and maximum
+metrics. Fixture version 2 remains accepted for older suites and its articles
+are normalized to `freshness: current`. Version 3 remains accepted with its
+original identity and requires an explicit `current` or `stale` value on every
+article. Version 4 keeps that freshness contract and adds the pinned language
+classifier contract plus nullable `answer_language` on every expected result.
+The language field must be null on refusals. A version-4 answer case has this
+shape:
+
+```json
+{
+  "language_evaluation": {
+    "classifier": "patrickschur/language-detection",
+    "classifier_version": "5.3.1",
+    "target_language": "de",
+    "comparison_scope": "all_classifier_profiles",
+    "minimum_score_margin": 0.05,
+    "mixed_language_check": {
+      "strategy": "english_marker_windows_v1",
+      "comparison_language": "en",
+      "comparison_markers": [
+        "address", "again", "and", "are", "back", "because", "been",
+        "being", "but", "choose", "click", "could", "did", "do", "does",
+        "during", "enter", "expires", "fifteen", "first", "follow", "for",
+        "forgot", "forgotten", "from", "go", "had", "has", "have", "he",
+        "here", "his", "is", "its", "minutes", "must",
+        "next", "now", "open", "our", "ours", "pick", "please", "remains",
+        "right", "select", "send", "she", "should", "soon", "stays", "that",
+        "the", "their", "theirs", "them", "then", "there", "these", "they",
+        "this", "those", "try", "use", "valid", "we", "were", "when", "with",
+        "without", "works", "would", "you", "your", "yours"
+      ],
+      "window_tokens": 5,
+      "minimum_marker_occurrences": 2,
+      "maximum_tokens": 200
+    }
+  }
+}
+```
+
+The package constraint pins `5.3.1` exactly and the evaluator verifies the
+installed version again before scoring. The case itself has this shape:
 
 ```json
 {
@@ -263,6 +332,7 @@ on every article. Every version-3 case has this shape:
   ],
   "expected": {
     "decision": "answer",
+    "answer_language": null,
     "article_ids": ["account-password-reset"],
     "required_facts": [["forgotten password", "forgot password"], ["15 minutes"]],
     "forbidden_phrases": ["send your password"],

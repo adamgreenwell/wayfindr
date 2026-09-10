@@ -246,17 +246,20 @@ page view that was not there before.
   A provider-free evaluation harness now scores versioned synthetic cases for
   grounded accuracy, confidence, refusal reasons, citations, coverage, unsafe
   answers, and overconfident errors; private provider capture is separately
-  opt-in. Fixture schema v3 requires trusted synthetic `current` or `stale`
-  article metadata, while fixture v2 remains accepted and normalizes every
-  article to `current`. The public corpus now has sixteen cases—eight answerable
-  and eight refusal—including current-over-stale resolution, stale-only and
-  conflicting-current handoff, indirect article-body export injection and
-  citation poisoning, an overlapping secret/action jailbreak, and grounded
-  German answer/refusal cases. Answers are instructed to use the question's
-  language while the structured JSON keys and enum values remain stable. Its
-  bundled 16/16 responses are a curated check of evaluator coherence, not a new
-  provider run, broad adversarial or multilingual evidence, or runtime
-  freshness/language detection.
+  opt-in. Fixture schemas v3 and v4 require trusted synthetic `current` or
+  `stale` article metadata, while fixture v2 remains accepted and normalizes
+  every article to `current`. Version 4 also pins an offline
+  German-versus-all-profiles language classifier, whole-answer margin, and a
+  bounded English marker-window check into the suite identity for its selected German
+  answer case. The public corpus now has sixteen cases—eight
+  answerable and eight refusal—including current-over-stale resolution,
+  stale-only and conflicting-current handoff, indirect article-body export
+  injection and citation poisoning, an overlapping secret/action jailbreak,
+  and grounded German answer/refusal cases. Answers are instructed to use the
+  question's language while the structured JSON keys and enum values remain
+  stable. Its bundled 16/16 responses are a curated check of evaluator
+  coherence, not a new provider run, broad adversarial or multilingual
+  evidence, or runtime freshness/language detection.
 
   Response schema v3 binds each capture to deterministic SHA-256 identities for
   its exact fixture/policy suite and prompt contract. An offline comparison

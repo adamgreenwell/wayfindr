@@ -15,18 +15,18 @@ test('the bundled grounded answer evaluation passes without resolving a live pro
 
     expect($exitCode)->toBe(0)
         ->and($report)->toMatchArray([
-            'version' => 3,
+            'version' => 4,
             'response_version' => 3,
             'result' => 'passed',
             'run' => [
                 'source' => 'curated',
                 'provider' => 'wayfindr-fixture',
-                'model' => 'known-good-v3',
-                'recorded_at' => '2026-09-10T03:30:36Z',
+                'model' => 'known-good-v4',
+                'recorded_at' => '2026-09-10T05:04:45Z',
                 'prompt_tokens' => 0,
                 'completion_tokens' => 0,
                 'identity_status' => 'verified',
-                'suite_digest' => 'sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb',
+                'suite_digest' => 'sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe',
                 'prompt_digest' => 'sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b',
             ],
             'cases' => [
@@ -66,8 +66,8 @@ test('the human report explains the offline regression result', function (): voi
 
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('Wayfindr grounded-answer evaluation')
-        ->toContain('Run: curated · wayfindr-fixture / known-good-v3 · 2026-09-10T03:30:36Z')
-        ->toContain('Evidence identity: verified · suite sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb · prompt sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b')
+        ->toContain('Run: curated · wayfindr-fixture / known-good-v4 · 2026-09-10T05:04:45Z')
+        ->toContain('Evidence identity: verified · suite sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe · prompt sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b')
         ->toContain('Answer confidence threshold: 80.00%')
         ->toContain('Cases: 16 total · 8 answerable · 8 refusal · 16 passed')
         ->toContain('Candidate / policy decision accuracy: 100.00% / 100.00%')

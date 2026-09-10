@@ -14,7 +14,9 @@ final class GroundedAnswerEvaluationDatasetLoader
 {
     private const LEGACY_FIXTURE_VERSION = 2;
 
-    private const FIXTURE_VERSION = 3;
+    private const FRESHNESS_FIXTURE_VERSION = 3;
+
+    private const FIXTURE_VERSION = 4;
 
     private const LEGACY_RESPONSE_VERSION = 2;
 
@@ -44,23 +46,42 @@ final class GroundedAnswerEvaluationDatasetLoader
      *       confidence_brier_score: float
      *     }
      *   },
+     *   language_evaluation?: array{
+     *     classifier: string,
+     *     classifier_version: string,
+     *     target_language: string,
+     *     comparison_scope: string,
+     *     minimum_score_margin: float,
+     *     mixed_language_check: array{strategy: string, comparison_language: string, comparison_markers: list<string>, window_tokens: int, minimum_marker_occurrences: int, maximum_tokens: int}
+     *   },
      *   cases: list<array{
      *     id: string,
      *     question: string,
      *     articles: list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}>,
-     *     expected: array{decision: 'answer'|'refuse', article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
+     *     expected: array{decision: 'answer'|'refuse', answer_language?: ?string, article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
      *   }>
      * }
      */
     public function fixtures(string $path): array
     {
         $root = $this->jsonObject($path, 'fixture');
-        $this->requireKeys($root, ['version', 'policy', 'cases'], 'fixture root');
 
-        if (! in_array($root->version, [self::LEGACY_FIXTURE_VERSION, self::FIXTURE_VERSION], true)
-            || ! $root->policy instanceof stdClass
+        if (! property_exists($root, 'version')
+            || ! in_array($root->version, [self::LEGACY_FIXTURE_VERSION, self::FRESHNESS_FIXTURE_VERSION, self::FIXTURE_VERSION], true)) {
+            throw new RuntimeException('The evaluation fixture must use version 2, 3, or 4 with a policy object and an array of cases.');
+        }
+
+        $rootKeys = ['version', 'policy', 'cases'];
+
+        if ($root->version === self::FIXTURE_VERSION) {
+            $rootKeys[] = 'language_evaluation';
+        }
+
+        $this->requireKeys($root, $rootKeys, 'fixture root');
+
+        if (! $root->policy instanceof stdClass
             || ! is_array($root->cases)) {
-            throw new RuntimeException('The evaluation fixture must use version 2 or 3 with a policy object and an array of cases.');
+            throw new RuntimeException('The evaluation fixture must use version 2, 3, or 4 with a policy object and an array of cases.');
         }
 
         $this->requireKeys($root->policy, [
@@ -110,6 +131,9 @@ final class GroundedAnswerEvaluationDatasetLoader
                 'confidence_brier_score' => $this->percentage($root->policy->maximums->confidence_brier_score, 'confidence Brier score maximum'),
             ],
         ];
+        $languageEvaluation = $root->version === self::FIXTURE_VERSION
+            ? $this->languageEvaluation($root->language_evaluation)
+            : null;
 
         if ($root->cases === [] || count($root->cases) > self::MAX_CASES) {
             throw new RuntimeException('The evaluation fixture must contain between 1 and 200 cases.');
@@ -135,7 +159,13 @@ final class GroundedAnswerEvaluationDatasetLoader
             $seenCaseIds[$caseId] = true;
             $question = $this->boundedString($rawCase->question, 3, 2_000, sprintf('question for case %s', $caseId));
             $articles = $this->articles($rawCase->articles, $caseId, $root->version);
-            $expected = $this->expected($rawCase->expected, $caseId, $articles);
+            $expected = $this->expected(
+                $rawCase->expected,
+                $caseId,
+                $articles,
+                $root->version,
+                $languageEvaluation,
+            );
 
             if ($expected['decision'] === 'answer') {
                 $answerCases++;
@@ -155,11 +185,18 @@ final class GroundedAnswerEvaluationDatasetLoader
             throw new RuntimeException('The evaluation fixture must contain at least one answer case and one refusal case.');
         }
 
-        return [
+        $fixtures = [
             'version' => $root->version,
             'policy' => $policy,
-            'cases' => $cases,
         ];
+
+        if ($languageEvaluation !== null) {
+            $fixtures['language_evaluation'] = $languageEvaluation;
+        }
+
+        $fixtures['cases'] = $cases;
+
+        return $fixtures;
     }
 
     /**
@@ -250,6 +287,116 @@ final class GroundedAnswerEvaluationDatasetLoader
         ];
     }
 
+    /**
+     * @return array{classifier: string, classifier_version: string, target_language: string, comparison_scope: string, minimum_score_margin: float, mixed_language_check: array{strategy: string, comparison_language: string, comparison_markers: list<string>, window_tokens: int, minimum_marker_occurrences: int, maximum_tokens: int}}
+     */
+    private function languageEvaluation(mixed $value): array
+    {
+        if (! $value instanceof stdClass) {
+            throw new RuntimeException('The fixture language evaluation contract must be an object.');
+        }
+
+        $this->requireKeys($value, [
+            'classifier',
+            'classifier_version',
+            'target_language',
+            'comparison_scope',
+            'minimum_score_margin',
+            'mixed_language_check',
+        ], 'fixture language evaluation contract');
+
+        if ($value->classifier !== GroundedAnswerLanguageMatcher::CLASSIFIER
+            || $value->classifier_version !== GroundedAnswerLanguageMatcher::CLASSIFIER_VERSION) {
+            throw new RuntimeException('The fixture language classifier and version must match the pinned implementation.');
+        }
+
+        if ($value->target_language !== 'de' || $value->comparison_scope !== 'all_classifier_profiles') {
+            throw new RuntimeException('The fixture language evaluation contract must use the pinned German all-profile policy.');
+        }
+
+        if ((! is_int($value->minimum_score_margin) && ! is_float($value->minimum_score_margin))
+            || $value->minimum_score_margin <= 0
+            || $value->minimum_score_margin > 1) {
+            throw new RuntimeException('The fixture language score margin must be a number greater than 0 and at most 1.');
+        }
+
+        if (! $value->mixed_language_check instanceof stdClass) {
+            throw new RuntimeException('The fixture mixed-language check must be an object.');
+        }
+
+        $this->requireKeys($value->mixed_language_check, [
+            'strategy',
+            'comparison_language',
+            'comparison_markers',
+            'window_tokens',
+            'minimum_marker_occurrences',
+            'maximum_tokens',
+        ], 'fixture mixed-language check');
+
+        if ($value->mixed_language_check->strategy !== 'english_marker_windows_v1'
+            || $value->mixed_language_check->comparison_language !== 'en') {
+            throw new RuntimeException('The fixture mixed-language check must use the pinned English marker-window strategy.');
+        }
+
+        $comparisonMarkers = $value->mixed_language_check->comparison_markers;
+
+        if (! is_array($comparisonMarkers)
+            || $comparisonMarkers === []
+            || count($comparisonMarkers) > 100
+            || array_filter(
+                $comparisonMarkers,
+                static fn (mixed $marker): bool => ! is_string($marker)
+                    || preg_match('/\A[a-z]{2,24}\z/D', $marker) !== 1,
+            ) !== []) {
+            throw new RuntimeException('The fixture mixed-language comparison markers must be 1 to 100 lowercase ASCII words.');
+        }
+
+        $sortedMarkers = array_values(array_unique($comparisonMarkers));
+        sort($sortedMarkers, SORT_STRING);
+
+        if ($comparisonMarkers !== $sortedMarkers) {
+            throw new RuntimeException('The fixture mixed-language comparison markers must be unique and sorted.');
+        }
+
+        if ($comparisonMarkers !== GroundedAnswerLanguageMatcher::COMPARISON_MARKERS) {
+            throw new RuntimeException('The fixture mixed-language comparison markers must match the pinned implementation.');
+        }
+
+        if (! is_int($value->mixed_language_check->window_tokens)
+            || $value->mixed_language_check->window_tokens < 2
+            || $value->mixed_language_check->window_tokens > 20) {
+            throw new RuntimeException('The fixture mixed-language window must contain between 2 and 20 tokens.');
+        }
+
+        if (! is_int($value->mixed_language_check->minimum_marker_occurrences)
+            || $value->mixed_language_check->minimum_marker_occurrences < 2
+            || $value->mixed_language_check->minimum_marker_occurrences > $value->mixed_language_check->window_tokens) {
+            throw new RuntimeException('The fixture mixed-language marker occurrence threshold must be between 2 and the window size.');
+        }
+
+        if (! is_int($value->mixed_language_check->maximum_tokens)
+            || $value->mixed_language_check->maximum_tokens < $value->mixed_language_check->window_tokens
+            || $value->mixed_language_check->maximum_tokens > 500) {
+            throw new RuntimeException('The fixture mixed-language token limit must be at least the window size and at most 500.');
+        }
+
+        return [
+            'classifier' => $value->classifier,
+            'classifier_version' => $value->classifier_version,
+            'target_language' => $value->target_language,
+            'comparison_scope' => $value->comparison_scope,
+            'minimum_score_margin' => (float) $value->minimum_score_margin,
+            'mixed_language_check' => [
+                'strategy' => $value->mixed_language_check->strategy,
+                'comparison_language' => $value->mixed_language_check->comparison_language,
+                'comparison_markers' => $comparisonMarkers,
+                'window_tokens' => $value->mixed_language_check->window_tokens,
+                'minimum_marker_occurrences' => $value->mixed_language_check->minimum_marker_occurrences,
+                'maximum_tokens' => $value->mixed_language_check->maximum_tokens,
+            ],
+        ];
+    }
+
     /** @return list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}> */
     private function articles(mixed $value, string $caseId, int $fixtureVersion): array
     {
@@ -267,7 +414,7 @@ final class GroundedAnswerEvaluationDatasetLoader
 
             $keys = ['id', 'title', 'body'];
 
-            if ($fixtureVersion === self::FIXTURE_VERSION) {
+            if ($fixtureVersion >= self::FRESHNESS_FIXTURE_VERSION) {
                 $keys[] = 'freshness';
             }
 
@@ -283,7 +430,7 @@ final class GroundedAnswerEvaluationDatasetLoader
                 'id' => $articleId,
                 'title' => $this->boundedString($rawArticle->title, 1, 200, sprintf('article %s title', $articleId)),
                 'body' => $this->boundedString($rawArticle->body, 1, 10_000, sprintf('article %s body', $articleId)),
-                'freshness' => $fixtureVersion === self::FIXTURE_VERSION
+                'freshness' => $fixtureVersion >= self::FRESHNESS_FIXTURE_VERSION
                     ? $this->freshness($rawArticle->freshness, $articleId)
                     : 'current',
             ];
@@ -294,21 +441,33 @@ final class GroundedAnswerEvaluationDatasetLoader
 
     /**
      * @param  list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}>  $articles
-     * @return array{decision: 'answer'|'refuse', article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
+     * @param  ?array{classifier: string, classifier_version: string, target_language: string, comparison_scope: string, minimum_score_margin: float, mixed_language_check: array{strategy: string, comparison_language: string, comparison_markers: list<string>, window_tokens: int, minimum_marker_occurrences: int, maximum_tokens: int}}  $languageEvaluation
+     * @return array{decision: 'answer'|'refuse', answer_language?: ?string, article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
      */
-    private function expected(mixed $value, string $caseId, array $articles): array
-    {
+    private function expected(
+        mixed $value,
+        string $caseId,
+        array $articles,
+        int $fixtureVersion,
+        ?array $languageEvaluation,
+    ): array {
         if (! $value instanceof stdClass) {
             throw new RuntimeException(sprintf('Expected result for case %s must be an object.', $caseId));
         }
 
-        $this->requireKeys($value, [
+        $keys = [
             'decision',
             'article_ids',
             'required_facts',
             'forbidden_phrases',
             'refusal_reasons',
-        ], sprintf('expected result for case %s', $caseId));
+        ];
+
+        if ($fixtureVersion === self::FIXTURE_VERSION) {
+            $keys[] = 'answer_language';
+        }
+
+        $this->requireKeys($value, $keys, sprintf('expected result for case %s', $caseId));
 
         if (! is_string($value->decision) || ! in_array($value->decision, ['answer', 'refuse'], true)) {
             throw new RuntimeException(sprintf('Expected result for case %s must decide answer or refuse.', $caseId));
@@ -335,6 +494,21 @@ final class GroundedAnswerEvaluationDatasetLoader
         $requiredFacts = $this->phraseGroups($value->required_facts, $caseId);
         $forbiddenPhrases = $this->phraseList($value->forbidden_phrases, 20, sprintf('forbidden phrases for case %s', $caseId));
         $refusalReasons = $this->refusalReasonList($value->refusal_reasons, $caseId);
+        $answerLanguage = null;
+
+        if ($fixtureVersion === self::FIXTURE_VERSION) {
+            $answerLanguage = $value->answer_language;
+
+            if ($answerLanguage !== null
+                && (! is_string($answerLanguage)
+                    || $answerLanguage !== $languageEvaluation['target_language'])) {
+                throw new RuntimeException(sprintf(
+                    'Answer language for case %s must be null or %s.',
+                    $caseId,
+                    $languageEvaluation['target_language'],
+                ));
+            }
+        }
 
         if ($value->decision === 'answer' && ($expectedArticleIds === [] || $requiredFacts === [] || $refusalReasons !== [])) {
             throw new RuntimeException(sprintf('Answer case %s must cite an article, require at least one fact, and leave refusal reasons empty.', $caseId));
@@ -364,13 +538,23 @@ final class GroundedAnswerEvaluationDatasetLoader
             throw new RuntimeException(sprintf('Refusal case %s must name a refusal reason and leave answer-only expectations empty.', $caseId));
         }
 
-        return [
+        if ($value->decision === 'refuse' && $answerLanguage !== null) {
+            throw new RuntimeException(sprintf('Refusal case %s must leave answer language null.', $caseId));
+        }
+
+        $expected = [
             'decision' => $value->decision,
             'article_ids' => $expectedArticleIds,
             'required_facts' => $requiredFacts,
             'forbidden_phrases' => $forbiddenPhrases,
             'refusal_reasons' => $refusalReasons,
         ];
+
+        if ($fixtureVersion === self::FIXTURE_VERSION) {
+            $expected['answer_language'] = $answerLanguage;
+        }
+
+        return $expected;
     }
 
     /**

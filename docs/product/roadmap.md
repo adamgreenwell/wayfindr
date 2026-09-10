@@ -137,9 +137,13 @@ closed. It now includes:
   corpus includes current-over-stale resolution, stale-only and
   conflicting-current handoff, indirect article-body injection and citation
   poisoning, an overlapping secret/action jailbreak, and two German-language
-  cases. The bundled 16/16 curated baseline proves only evaluator coherence; it
-  is not a new provider run, drift result, or runtime result. The harness exists
-  to decide what AI may do next on evidence rather than on enthusiasm.
+  cases. Fixture v4 pins a regression-tested offline
+  German-versus-all-profiles whole-answer classifier and bounded English
+  marker-window contract into the suite identity for the German answer gate. The bundled
+  16/16 curated baseline proves only
+  evaluator coherence; it is not a new provider run, drift result, or runtime
+  result. The harness exists to decide what AI may do next on evidence rather
+  than on enthusiasm.
 - Measured performance baselines rather than assumed ones: Reverb concurrent
   agent capacity, heavy-page cobrowse transport, attachment retention at a large
   object count, and the dashboard and report tabs under a desk's worth of data.
@@ -259,10 +263,10 @@ nothing about model or prompt drift, broad adversarial or multilingual
 coverage, or representative self-hosting failure modes. The suite now encodes
 bounded stale/conflicting, indirect-injection, citation-poisoning, jailbreak,
 and German-language behavior. Freshness remains trusted synthetic metadata and
-question language remains an evaluation prompt input; Wayfindr does not derive
-either from runtime knowledge or widget locale, and no provider has run the
-expanded cases. The bundled sixteen-case baseline is curated scorer evidence,
-not model evidence.
+the selected German answer language plus classifier contract remain fixture
+metadata; Wayfindr does not derive either from runtime knowledge or widget
+locale, and no provider has run the expanded cases. The bundled sixteen-case
+baseline is curated scorer evidence, not model evidence.
 
 The expanded suite and prompt identities intentionally make the September 8
 nine-case capture incomparable with future sixteen-case captures. The comparison
