@@ -101,11 +101,15 @@ php artisan wayfindr:ai-evaluate:capture \
 ```
 
 This can consume provider tokens or local-model capacity. It records the
-provider, model, UTC capture time, and aggregate token counts without recording
-credentials or prompt text. Candidate files are created with mode `0600`, must
-live outside the public repository, and are never overwritten. A provider
-failure, changing provider/model identity, or malformed structured response
-fails the capture without leaving a partial output file.
+provider, model, UTC capture time, aggregate token counts, and deterministic
+SHA-256 identities for the exact evaluation suite and Wayfindr prompt contract
+without recording credentials or prompt text. The suite identity covers the
+loaded fixture schema, policy, cases, and expected results. The prompt identity
+covers every request's purpose, instructions, common-sanitized JSON input, and
+timeout at Wayfindr's provider boundary. Candidate files are created with mode
+`0600`, must live outside the public repository, and are never overwritten. A
+provider failure, changing provider/model identity, or malformed structured
+response fails the capture without leaving a partial output file.
 
 Score the completed run offline:
 
@@ -118,9 +122,66 @@ php artisan wayfindr:ai-evaluate \
 CI uses a fake provider to exercise capture and prevents stray provider calls.
 No live provider is contacted by the test suite.
 
+Provider capture writes response schema version 3. Before scoring, the current
+checkout recomputes and verifies its `suite_digest` against the supplied fixture
+and policy and its `prompt_digest` against the complete prompt contract. It then
+reports both digests as content-free provenance. A response schema version 2
+file remains scoreable by itself for historical use, but it is labelled
+`legacy_unbound`: it cannot prove which exact suite, policy, or prompt produced
+the responses and therefore cannot participate in a drift comparison.
+
+Verification is deliberately current-contract strict. If the prompt builder or
+common sanitizer changes, a newer checkout rejects earlier v3 captures instead
+of pretending they are equivalent. Compare those captures with the matching
+historical checkout or re-capture them under the current contract.
+
+## Compare identified provider runs
+
+Compare two to twenty private provider captures offline by passing their
+response files as positional arguments:
+
+```bash
+php artisan wayfindr:ai-evaluate:compare \
+  /absolute/path/outside/wayfindr/provider-run-1.json \
+  /absolute/path/outside/wayfindr/provider-run-2.json \
+  --json
+```
+
+The bundled fixture is the default. Add
+`--fixtures=/absolute/path/to/private-fixtures.json` when the captures used a
+private suite.
+
+The command scores every response file against the selected fixture, orders the
+runs by their recorded UTC timestamps, and compares each adjacent pair. Every
+run must:
+
+- be a provider capture rather than a curated baseline;
+- have verified response-schema-v3 suite and prompt identities;
+- share the same `suite_digest` and `prompt_digest`;
+- have the same total, answerable, and refusal case counts and the same numeric
+  metric set; and
+- have a unique `recorded_at` timestamp.
+
+Provider and model names may differ; the shared identities keep a fixture,
+policy, or Wayfindr-prepared request change from being mistaken for provider or
+model drift. The digest does not fingerprint provider-specific SDK code or
+upstream processing, so a comparison measures the observed system and cannot
+attribute a change to the model alone. JSON and human output include
+content-free run metadata, aggregate metrics, adjacent metric deltas, and
+changed, regressed, or recovered case IDs. They do not include questions,
+articles, candidate answers, or expected-answer content.
+
+The command exits `0` only when every scored run passes its policy thresholds,
+`1` when at least one valid run misses a threshold, and `2` for malformed or
+incomparable input. A successful comparison proves that the recorded captures
+were evaluated under the same identified contract. It does **not** create the
+missing repeated runs, establish drift resistance, approve a provider or model,
+or provide customer-facing runtime evidence.
+
 ## Evaluate local recorded output
 
-Pass alternate version-2 JSON files without copying them into the repository:
+Pass an alternate version-2 fixture and a version-3 response file without
+copying them into the repository:
 
 ```bash
 php artisan wayfindr:ai-evaluate \
@@ -138,9 +199,10 @@ objects are rejected rather than guessed into shape. Every required fact group
 must also have at least one phrase present in the articles the fixture expects
 the answer to cite; malformed ground truth is rejected before scoring.
 
-The version-2 fixture root contains `version`, `policy`, and `cases`. The policy
-owns the answer-confidence threshold plus minimum and maximum metrics. Every
-case has this shape:
+Fixture schema version 2 is separate from response schema version 3. The
+fixture root contains `version`, `policy`, and `cases`; the policy owns the
+answer-confidence threshold plus minimum and maximum metrics. Every case has
+this shape:
 
 ```json
 {
@@ -165,14 +227,18 @@ refusal reason. A refusal uses an empty answer and no citations. Every fixture
 case must have exactly one response; missing, additional, and duplicate case
 IDs are invalid input rather than partial scores. The response root also carries
 the content-free run metadata used to distinguish a curated fixture from a
-recorded provider run.
+recorded provider run. Version 3 adds `suite_digest` and `prompt_digest`; legacy
+version-2 responses omit those identities and remain individually scoreable but
+are not comparable.
 
 ## Privacy boundary
 
-The command reports aggregate metrics plus failed case IDs and reason codes. It
-never prints questions, article bodies, or candidate answers, including on a
-threshold failure. Validation errors may name a fixture case ID but do not echo
-its support text.
+The scoring and comparison commands report aggregate metrics plus failed or
+transitioned case IDs and reason codes. They never print questions, article
+bodies, candidate answers, or expected-answer content, including on a threshold
+failure. Validation errors may name a fixture case ID but do not echo its
+support text. Deterministic suite and prompt digests allow equality checks
+between runs without carrying the underlying text in the report.
 
 Public fixtures must stay synthetic. ADR 0004 explicitly forbids committing
 private customer transcripts or evaluation datasets with real user information.

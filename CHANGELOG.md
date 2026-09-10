@@ -246,8 +246,15 @@ page view that was not there before.
   A provider-free evaluation harness now scores versioned synthetic cases for
   grounded accuracy, confidence, refusal reasons, citations, coverage, unsafe
   answers, and overconfident errors; private provider capture is separately
-  opt-in. This infrastructure did **not** ship autonomous visitor replies. ADR
-  0004 was reassessed and keeps that feature deferred.
+  opt-in. Response schema v3 binds each capture to deterministic SHA-256
+  identities for its exact fixture/policy suite and prompt contract. An offline
+  comparison command accepts two to twenty identified provider runs under the
+  same contract, then reports chronological metric deltas and content-free case
+  transitions; legacy v2 responses remain individually scoreable but cannot be
+  compared. This makes future captures meaningfully comparable, but is not
+  itself drift, provider-approval, or runtime evidence. This infrastructure did
+  **not** ship autonomous visitor replies. ADR 0004 was reassessed and keeps
+  that feature deferred.
 
 ### Changed
 

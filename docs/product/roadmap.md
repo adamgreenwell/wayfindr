@@ -131,8 +131,11 @@ closed. It now includes:
   operator chooses the driver, model, credential and endpoint — see
   [Agent Copilot Providers](../self-hosting/agent-copilot-providers.md).
 - A provider-free evaluation harness for that copilot, with a confidence and
-  refusal policy and an opt-in private capture path. It exists to decide what AI
-  may do next on evidence rather than on enthusiasm.
+  refusal policy and an opt-in private capture path. Versioned provider captures
+  bind to exact suite and prompt identities, and equivalent runs can be compared
+  offline without exposing support text. It exists to decide what AI may do next
+  on evidence rather than on enthusiasm; comparison capability is not itself
+  drift or runtime evidence.
 - Measured performance baselines rather than assumed ones: Reverb concurrent
   agent capacity, heavy-page cobrowse transport, attachment retention at a large
   object count, and the dashboard and report tabs under a desk's worth of data.
@@ -241,14 +244,19 @@ in the loop — is deferred by
 [ADR 0004](../decisions/0004-ai-as-assistive-product-and-development-layer.md)
 and tracked as the unchecked half of
 [#762](https://github.com/adamgreenwell/wayfindr/issues/762). The evaluation
-work behind it is finished, not skipped: a provider-free harness, a confidence
-and refusal policy, and a rerun against a deployed model that passed 9 of 9
-cases with no unsafe answer. That evidence was judged useful and insufficient,
-and the ADR was reaffirmed rather than relaxed.
+foundation behind it is implemented, not skipped: a provider-free harness, a
+confidence and refusal policy, suite- and prompt-identified private captures,
+offline comparison for equivalent provider runs, and a rerun against a deployed
+model that passed 9 of 9 cases with no unsafe answer. That evidence was judged
+useful and insufficient, and the ADR was reaffirmed rather than relaxed.
 
 One narrow, wholly synthetic run through a single provider route establishes
 nothing about model or prompt drift, adversarial and multilingual coverage,
 stale or conflicting knowledge, or representative self-hosting failure modes.
+The comparison tooling now prevents a changed suite, policy, or Wayfindr prompt
+request from masquerading as provider/model drift. It does not fingerprint every
+provider-side transformation, and its existence is not a second run or a drift
+result.
 Reconsideration has a stated sequence — broaden the evaluation set, record drift
 across more than one run and model revision, revisit the ADR with that evidence,
 and only then define a visitor-facing runtime with grounding, low-confidence
