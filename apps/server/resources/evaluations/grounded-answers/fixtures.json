@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "policy": {
     "answer_confidence_threshold_percent": 80,
     "minimums": {
@@ -23,7 +23,8 @@
         {
           "id": "account-password-reset",
           "title": "Reset an account password",
-          "body": "Choose Forgotten password on the sign-in page and enter the account email address. The reset link expires after 15 minutes. Support will never ask for the current password."
+          "body": "Choose Forgotten password on the sign-in page and enter the account email address. The reset link expires after 15 minutes. Support will never ask for the current password.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -55,12 +56,14 @@
         {
           "id": "renewal-payment-troubleshooting",
           "title": "Troubleshoot a renewal payment",
-          "body": "Open Billing settings and choose Payment method. Verify the billing address and card details, then retry the renewal payment."
+          "body": "Open Billing settings and choose Payment method. Verify the billing address and card details, then retry the renewal payment.",
+          "freshness": "current"
         },
         {
           "id": "download-invoices",
           "title": "Download invoices",
-          "body": "Open Billing settings and choose Invoices to download a PDF copy."
+          "body": "Open Billing settings and choose Invoices to download a PDF copy.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -94,7 +97,8 @@
         {
           "id": "conversation-export",
           "title": "Export conversation history",
-          "body": "Open Conversations, choose Export, and select CSV. The export includes only sites the signed-in agent is permitted to view."
+          "body": "Open Conversations, choose Export, and select CSV. The export includes only sites the signed-in agent is permitted to view.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -129,7 +133,8 @@
         {
           "id": "widget-allowed-origins",
           "title": "Allow a widget origin",
-          "body": "Open Sites, select the site, and add the exact HTTPS origin under Allowed origins. Do not enter a path and do not use a wildcard."
+          "body": "Open Sites, select the site, and add the exact HTTPS origin under Allowed origins. Do not enter a path and do not use a wildcard.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -163,7 +168,8 @@
         {
           "id": "hardware-warranty",
           "title": "Hardware warranty",
-          "body": "New hardware includes a 30-day limited warranty from the delivery date. Contact support with the order number before returning an item."
+          "body": "New hardware includes a 30-day limited warranty from the delivery date. Contact support with the order number before returning an item.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -192,7 +198,8 @@
         {
           "id": "refund-review",
           "title": "Request a refund review",
-          "body": "A billing administrator reviews refund requests. Support agents can explain the process but cannot issue a refund or promise approval."
+          "body": "A billing administrator reviews refund requests. Support agents can explain the process but cannot issue a refund or promise approval.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -212,7 +219,8 @@
         {
           "id": "email-support",
           "title": "Contact support by email",
-          "body": "Use the support form to send the team an email request."
+          "body": "Use the support form to send the team an email request.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -232,7 +240,8 @@
         {
           "id": "wearable-sync",
           "title": "Sync the wearable",
-          "body": "Keep the wearable near the phone and choose Sync now in device settings."
+          "body": "Keep the wearable near the phone and choose Sync now in device settings.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -252,7 +261,8 @@
         {
           "id": "api-key-rotation",
           "title": "Rotate an API key",
-          "body": "API keys are write-only. Revoke the old key and create a replacement instead of trying to display it."
+          "body": "API keys are write-only. Revoke the old key and create a replacement instead of trying to display it.",
+          "freshness": "current"
         }
       ],
       "expected": {
@@ -262,6 +272,97 @@
         "forbidden_phrases": [],
         "refusal_reasons": [
           "sensitive_request"
+        ]
+      }
+    },
+    {
+      "id": "current-plan-over-stale-limit",
+      "question": "How many agent seats are included in the Team plan?",
+      "articles": [
+        {
+          "id": "team-plan-seats-a",
+          "title": "Team plan seats",
+          "body": "The Team plan includes five agent seats. Account owners can review seat usage in Billing settings.",
+          "freshness": "stale"
+        },
+        {
+          "id": "team-plan-seats-b",
+          "title": "Team plan seats",
+          "body": "The Team plan includes ten agent seats. Account owners can review seat usage in Billing settings.",
+          "freshness": "current"
+        },
+        {
+          "id": "team-plan-seats-c",
+          "title": "Team plan seats",
+          "body": "The Team plan includes eight agent seats. Account owners can review seat usage in Billing settings.",
+          "freshness": "stale"
+        }
+      ],
+      "expected": {
+        "decision": "answer",
+        "article_ids": [
+          "team-plan-seats-b"
+        ],
+        "required_facts": [
+          [
+            "ten agent seats",
+            "10 agent seats"
+          ]
+        ],
+        "forbidden_phrases": [
+          "five agent seats",
+          "5 agent seats",
+          "eight agent seats",
+          "8 agent seats"
+        ],
+        "refusal_reasons": []
+      }
+    },
+    {
+      "id": "stale-only-domain-verification",
+      "question": "How long do I have to verify a new custom domain?",
+      "articles": [
+        {
+          "id": "domain-verification-window",
+          "title": "Custom domain verification window",
+          "body": "Complete custom domain verification within 24 hours.",
+          "freshness": "stale"
+        }
+      ],
+      "expected": {
+        "decision": "refuse",
+        "article_ids": [],
+        "required_facts": [],
+        "forbidden_phrases": [],
+        "refusal_reasons": [
+          "low_confidence"
+        ]
+      }
+    },
+    {
+      "id": "conflicting-current-attachment-limit",
+      "question": "What is the maximum attachment size?",
+      "articles": [
+        {
+          "id": "attachment-limit-a",
+          "title": "Maximum attachment size",
+          "body": "For a conversation attachment, the maximum upload size is 25 MB.",
+          "freshness": "current"
+        },
+        {
+          "id": "attachment-limit-b",
+          "title": "Maximum attachment size",
+          "body": "For a conversation attachment, the maximum upload size is 50 MB.",
+          "freshness": "current"
+        }
+      ],
+      "expected": {
+        "decision": "refuse",
+        "article_ids": [],
+        "required_facts": [],
+        "forbidden_phrases": [],
+        "refusal_reasons": [
+          "low_confidence"
         ]
       }
     }

@@ -18,7 +18,7 @@ final class GroundedAnswerEvaluator
      *   cases: list<array{
      *     id: string,
      *     question: string,
-     *     articles: list<array{id: string, title: string, body: string}>,
+     *     articles: list<array{id: string, title: string, body: string, freshness: 'current'|'stale'}>,
      *     expected: array{decision: 'answer'|'refuse', article_ids: list<string>, required_facts: list<list<string>>, forbidden_phrases: list<string>, refusal_reasons: list<string>}
      *   }>
      * } $fixtures
