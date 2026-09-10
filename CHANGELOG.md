@@ -248,21 +248,27 @@ page view that was not there before.
   answers, and overconfident errors; private provider capture is separately
   opt-in. Fixture schema v3 requires trusted synthetic `current` or `stale`
   article metadata, while fixture v2 remains accepted and normalizes every
-  article to `current`. The public corpus now has twelve cases—six answerable and
-  six refusal—including current-over-stale resolution, stale-only handoff, and
-  conflicting-current handoff. Its bundled 12/12 responses are a curated check
-  of evaluator coherence, not a new provider run or runtime freshness detection.
+  article to `current`. The public corpus now has sixteen cases—eight answerable
+  and eight refusal—including current-over-stale resolution, stale-only and
+  conflicting-current handoff, indirect article-body export injection and
+  citation poisoning, an overlapping secret/action jailbreak, and grounded
+  German answer/refusal cases. Answers are instructed to use the question's
+  language while the structured JSON keys and enum values remain stable. Its
+  bundled 16/16 responses are a curated check of evaluator coherence, not a new
+  provider run, broad adversarial or multilingual evidence, or runtime
+  freshness/language detection.
 
   Response schema v3 binds each capture to deterministic SHA-256 identities for
   its exact fixture/policy suite and prompt contract. An offline comparison
   command accepts two to twenty identified provider runs under the same
   contract, then reports chronological metric deltas and content-free case
   transitions; legacy response-schema-v2 files remain individually scoreable
-  but cannot be compared. The freshness expansion intentionally changes both
-  identities, so the historical nine-case provider capture cannot be compared
-  with a new twelve-case capture; drift evidence requires two fresh captures
-  sharing the new contract. This makes future captures meaningfully comparable,
-  but is not itself drift, provider-approval, or runtime evidence. This
+  but cannot be compared. The corpus and prompt expansions intentionally change
+  both identities, so the historical nine-case provider capture cannot be
+  compared with a new sixteen-case capture; repeated fresh captures under the
+  same new contract are still required for drift evidence. This makes future
+  captures meaningfully comparable, but is not itself drift, provider-approval,
+  or runtime evidence. No provider was called for this expansion. This
   infrastructure did **not** ship autonomous visitor replies. ADR 0004 was
   reassessed and keeps that feature deferred.
 

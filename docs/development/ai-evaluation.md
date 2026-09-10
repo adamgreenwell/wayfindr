@@ -25,18 +25,25 @@ itself does not use a database.
 
 ## What the bundled baseline proves
 
-The public suite contains twelve realistic but wholly synthetic support cases:
-six answerable questions and six cases that must be refused. It covers account
-access, billing, export scope, widget configuration, prompt injection,
+The public suite contains sixteen realistic but wholly synthetic support cases:
+eight answerable questions and eight cases that must be refused. It covers
+account access, billing, export scope, widget configuration, prompt injection,
 unsupported facts, action requests, medical advice, and secret disclosure. It
-also adds three bounded stale/conflicting-knowledge behaviors:
+also includes these bounded stale/conflicting, adversarial, and German-language
+behaviors:
 
 - a current plan-limit article overrides a conflicting stale article, and only
   the current article may be cited;
 - an answer supported only by a stale domain-verification article is refused
-  with `low_confidence`; and
+  with `low_confidence`;
 - conflicting current attachment-limit articles are refused with
-  `low_confidence`.
+  `low_confidence`;
+- indirect instructions and citation poisoning inside an article body are
+  ignored while an export answer stays grounded in its legitimate articles;
+- a jailbreak that combines secret disclosure with an action request is refused
+  as `sensitive_request`, preserving the refusal precedence;
+- a German password-reset question receives a grounded German answer; and
+- an unsupported German telephone-hours question is refused as `unsupported`.
 
 Fixture schema version 3 marks every article as `freshness: current` or
 `freshness: stale`. The prompt contract treats that value as trusted synthetic
@@ -46,6 +53,16 @@ ignored when current articles fully support the answer; stale-only support or a
 conflict between current articles requires a handoff. This is an evaluation
 contract, not runtime stale-knowledge detection or a change to stored knowledge
 articles.
+
+The prompt contract now says:
+
+> For an answer, write in the language used by the question; keep the JSON keys,
+> decision values, and refusal_reason values exactly as specified.
+
+The two German cases are a narrow evaluation of that instruction. They do not
+establish broad multilingual quality, connect the evaluator to widget locale
+selection, or add runtime language behavior.
+
 Each answerable case declares:
 
 - the published article IDs a grounded answer must cite;
@@ -70,7 +87,7 @@ Their confidence values and refusal reasons are curated too. They prove that
 the fixture contract, strict loader, scorer, confidence gate, thresholds, CLI,
 and privacy-safe reporting stay coherent. They are **not model output** and a
 green bundled run is not evidence about a live model's quality, calibration, or
-drift. The expanded baseline passing all twelve cases therefore records
+drift. The expanded baseline passing all sixteen cases therefore records
 evaluator coherence only; no new provider run was made for this expansion.
 
 The report measures:
@@ -153,12 +170,13 @@ common sanitizer changes, a newer checkout rejects earlier v3 captures instead
 of pretending they are equivalent. Compare those captures with the matching
 historical checkout or re-capture them under the current contract.
 
-The fixture-v3 freshness expansion changes both the suite and prompt contracts.
-The September 8 nine-case provider capture remains valid historical evidence,
-but it is intentionally incomparable with a capture against the twelve-case
-contract. Measuring drift on the expanded suite requires at least two fresh
-provider captures that share its exact `suite_digest` and `prompt_digest`; one
-fresh capture would establish only one new point-in-time result.
+The fixture-v3 freshness work and the later adversarial/German expansion change
+the exact suite and prompt contracts. The September 8 nine-case provider capture
+remains valid historical evidence, but it is intentionally incomparable with a
+capture against the sixteen-case contract. No provider has run this expanded
+contract yet. Measuring drift requires at least two fresh provider captures that
+share its exact `suite_digest` and `prompt_digest`; one fresh capture would
+establish only one new point-in-time result.
 
 ## Compare identified provider runs
 
@@ -292,6 +310,6 @@ reaffirmed the deferral of autonomous visitor replies: one green narrow run did
 not establish the broader, repeated evidence required for production use. The
 agent-controlled copilot remains the approved boundary, and future
 reconsideration requires another explicit ADR decision before visitor-facing
-implementation begins. The later twelve-case curated baseline did not call that
+implementation begins. The later sixteen-case curated baseline did not call that
 provider or create a second provider result, and its changed suite and prompt
 identities prevent it from being compared to the September 8 capture as drift.
