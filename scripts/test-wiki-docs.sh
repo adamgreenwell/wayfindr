@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WIKI_DIR="$ROOT_DIR/docs/wiki"
 HOME_PAGE="$WIKI_DIR/Home.md"
+INSTALL_GUIDE="$ROOT_DIR/docs/self-hosting/install.md"
 
 required_pages=(
     Home
@@ -79,5 +80,29 @@ done < <(
     grep -rhoE 'https://github\.com/adamgreenwell/wayfindr/(blob|tree)/main/[^) ]+' \
         "$WIKI_DIR" --include='*.md' | sort -u
 )
+
+# A synthetic cold-reader rehearsal for #797 found three documentation exits
+# that are easy to reintroduce while every link still resolves: no prerequisite
+# handoff, ambiguous bootstrap/ref identity, and no external-widget failure path.
+grep -F 'https://docs.docker.com/engine/install/' "$WIKI_DIR/Quick-Start.md" >/dev/null \
+    || fail 'Quick Start does not link the Docker Engine prerequisite.'
+grep -F 'https://docs.docker.com/compose/install/linux/' "$WIKI_DIR/Quick-Start.md" >/dev/null \
+    || fail 'Quick Start does not link the Compose plugin prerequisite.'
+grep -F 'bootstrap installer' "$WIKI_DIR/Quick-Start.md" >/dev/null \
+    || fail 'Quick Start does not distinguish the bootstrap installer from the pinned release.'
+grep -F -A 1 '/wayfindr/vX.Y.Z/scripts/self-host/install.sh' "$WIKI_DIR/Quick-Start.md" \
+    | grep -F -- '--ref vX.Y.Z' >/dev/null \
+    || fail 'Quick Start does not use the same release tag for the installer and selected artifact.'
+grep -F '## Widget Does Not Appear' "$WIKI_DIR/Troubleshooting.md" >/dev/null \
+    || fail 'Troubleshooting does not cover an absent external widget.'
+grep -F '/api/widget/appearance?site_public_key=...' "$WIKI_DIR/Troubleshooting.md" >/dev/null \
+    || fail 'Widget troubleshooting does not name the first configuration request.'
+grep -F 'docs/self-hosting/install.md#widget-does-not-appear' "$WIKI_DIR/Troubleshooting.md" >/dev/null \
+    || fail 'Widget troubleshooting does not return to the authoritative install guide.'
+grep -F '## Widget does not appear' "$INSTALL_GUIDE" >/dev/null \
+    || fail 'The authoritative install guide has lost the widget troubleshooting target.'
+grep -F -A 1 '/wayfindr/vX.Y.Z/scripts/self-host/install.sh' "$INSTALL_GUIDE" \
+    | grep -F -- '--ref vX.Y.Z' >/dev/null \
+    || fail 'The authoritative install guide does not use one release tag for both inputs.'
 
 printf '%s\n' "Wiki documentation is navigable and links back to repository authority."

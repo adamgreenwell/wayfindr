@@ -83,6 +83,42 @@ curl -fsS "http://$(grep '^WAYFINDR_LOCAL_BIND=' .env | cut -d= -f2)/up"
 - Realtime: verify Reverb, WebSocket proxy headers, and secure browser settings.
 - Mail: run `php artisan wayfindr:mail-test` to a verified recipient.
 
+## Widget Does Not Appear
+
+Open the site's built-in tester first. If it works, Wayfindr can serve the
+widget internally, but the copied snippet on the external page is still
+unproven.
+
+Copy the current snippet from that site's settings, place it before the closing
+`</body>` tag, reload with the browser cache disabled, and inspect the browser's
+Console and Network panels. A normal load requests `widget.js` and then
+`/api/widget/appearance?site_public_key=...` from the Wayfindr URL.
+
+- No script request: confirm the snippet is in the rendered page. Follow the
+  console's mixed-content or `script-src` message rather than editing the
+  generated attributes.
+- The script returns `200`, `window.Wayfindr` exists, and no appearance request
+  follows: record the release from `/operator`. Public `v0.7.0` has a known
+  generated-snippet auto-init defect fixed on `main` by
+  [#929](https://github.com/adamgreenwell/wayfindr/pull/929); the tester can work
+  while the external snippet remains inert. Use a later stable release only
+  after its release notes include that fix.
+- The appearance request returns `422` or `404`: copy the current snippet from
+  the intended site rather than repairing its public key by hand.
+- The console blocks the request: allow the Wayfindr origin in `connect-src`
+  and make sure an HTTPS page is not loading an HTTP widget.
+- The appearance request succeeds but no launcher appears: preserve the
+  release, page URL, response status, and redacted console output for a bug
+  report.
+
+The site public key is browser-visible public configuration and can accompany a
+diagnostic. Do not publish cookies, visitor data, environment values, or other
+secrets. A manual `window.Wayfindr.init(...)` call can diagnose an auto-init
+boundary on a disposable page. Programmatic integration is supported, but
+adding the call to bypass this failure changes the tested path and is not proof
+that the generated snippet works. The authoritative detail is in the
+[self-hosting install guide](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/install.md#widget-does-not-appear).
+
 ## Upgrade Refuses to Continue
 
 Read the refusal before changing anything. A release action may need to run on
