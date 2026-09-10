@@ -66,12 +66,14 @@ fi
 if grep -rn 'js\.pusher\.com' \
     "$ROOT_DIR/apps/server/app" \
     "$ROOT_DIR/apps/server/resources" \
-    "$ROOT_DIR/docs" 2>/dev/null | grep -vE 'WidgetScriptController\.php|vendor/README\.md' | grep -q .; then
+    "$ROOT_DIR/docs" \
+    "$ROOT_DIR/packages/widget-js/README.md" 2>/dev/null | grep -vE 'WidgetScriptController\.php|vendor/README\.md' | grep -q .; then
     echo "A CDN script reference has come back:" >&2
     grep -rn 'js\.pusher\.com' \
         "$ROOT_DIR/apps/server/app" \
         "$ROOT_DIR/apps/server/resources" \
-        "$ROOT_DIR/docs" 2>/dev/null | grep -vE 'WidgetScriptController\.php|vendor/README\.md' >&2
+        "$ROOT_DIR/docs" \
+        "$ROOT_DIR/packages/widget-js/README.md" 2>/dev/null | grep -vE 'WidgetScriptController\.php|vendor/README\.md' >&2
     exit 1
 fi
 

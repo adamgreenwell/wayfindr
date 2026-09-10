@@ -2,9 +2,17 @@
 
 [Back to Home](Home)
 
-The fastest evaluation path is a fresh Linux VM with Docker and the Compose
-plugin. Use a disposable machine until you have worked through backup, restore,
-mail, storage, and upgrade drills.
+The fastest evaluation path is a fresh Linux VM with
+[Docker Engine](https://docs.docker.com/engine/install/) and the
+[Compose plugin](https://docs.docker.com/compose/install/linux/). Use a
+disposable machine until you have worked through backup, restore, mail,
+storage, and upgrade drills. Before downloading Wayfindr, confirm both the
+daemon and plugin answer:
+
+```bash
+docker info >/dev/null
+docker compose version
+```
 
 ## 1. Prepare the Host
 
@@ -65,6 +73,18 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
 `--ref` pins the stack files and official image together. Replace `vX.Y.Z`
 with the release tag you chose; do not guess a tag from an image name.
 
+The URL before the pipe uses `main` to fetch the current **bootstrap installer**.
+`--ref` pins the stack files and image that bootstrap installs, not the
+already-running bootstrap file. That gives normal installs current installer
+fixes while selecting the stack files and image by the requested release tag.
+If the release's own tagged installer needs to be part of the test, use the
+same tag in both places and record it in the result:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/vX.Y.Z/scripts/self-host/install.sh \
+  | bash -s -- --app-url https://support.example.com --ref vX.Y.Z
+```
+
 **`localhost` binds to loopback only.** That is deliberate — nothing is exposed
 to your network — but it means you cannot reach it from another machine. If you
 plan to browse from your laptop, use the VM's address or a name, not
@@ -108,6 +128,10 @@ as the platform operator. Before using real visitor data:
 3. Send a visitor message and reply from the agent dashboard.
 4. Take a backup and restore it on a disposable VM.
 5. Record the running release shown by the operator console.
+
+If the built-in tester works but the copied widget does not appear on the
+target page, use [Troubleshooting](Troubleshooting#widget-does-not-appear)
+before changing the snippet by hand.
 
 The complete and authoritative procedure is the repository's
 [self-hosting install guide](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/install.md).

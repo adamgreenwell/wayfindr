@@ -12,8 +12,12 @@ Wayfindr with real visitors.
 
 ## What you need
 
-- A Linux machine (or VM) with **Docker and the Compose plugin** installed.
-  Images are published for amd64 and arm64.
+- A Linux machine (or VM) with
+  [Docker Engine](https://docs.docker.com/engine/install/) and the
+  [Compose plugin](https://docs.docker.com/compose/install/linux/) installed.
+  Images are published for amd64 and arm64. Before downloading Wayfindr,
+  `docker info` must reach the daemon and `docker compose version` must report
+  the plugin; having only the `docker` command is not enough.
 - **1 GB of RAM** to try it; **2 GB** recommended for real traffic, and add
   ~1.5 GB more if you enable ClamAV attachment scanning.
 - A few GB of disk for images, the database, and attachments.
@@ -52,6 +56,18 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
 Replace `vX.Y.Z` with the chosen release tag. A release-style `v*` ref pins the
 matching image as well as the downloaded stack files; branches and commit SHAs
 use the `latest` image and are not a release-artifact install.
+
+The examples deliberately fetch the current **bootstrap installer** from
+`main`. `--ref` selects the stack files and image that bootstrap installs; it
+does not change the bootstrap file that is already running. This keeps ordinary
+installs on current installer fixes while selecting the stack files and image
+by the requested release tag. When the release's own tagged installer must be
+part of the test, use the same tag in both places and record it in the evidence:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/vX.Y.Z/scripts/self-host/install.sh \
+  | bash -s -- --app-url https://support.example.com --ref vX.Y.Z
+```
 
 For an upgrade, `--ref` pins the target but is not an offline bypass: the
 preflight still reads the published release history so it can catch required
@@ -188,6 +204,53 @@ Then work through the readiness screens:
 `/operator` reports which release is running — the official image bakes its
 version and commit in, so an install from the one-liner or the published
 image answers "what code is this?" with no configuration.
+
+## Widget does not appear
+
+First open the site's built-in tester from its settings page. A working tester
+proves that Wayfindr can serve and run the widget internally; it does **not**
+prove that the copied snippet boots on the external page.
+
+On the target page, copy the generated snippet again without editing it, place
+it before the closing `</body>` tag, reload with the browser cache disabled,
+and inspect the Console and Network panels. A normal first load makes both of
+these requests:
+
+1. `GET <your-Wayfindr-url>/widget.js`
+2. `GET <your-Wayfindr-url>/api/widget/appearance?site_public_key=...`
+
+Use the first missing or failing boundary rather than guessing:
+
+- No `widget.js` request means the snippet is not on the rendered page. A
+  blocked request usually names mixed-content or `script-src` policy in the
+  browser console; an HTTPS page cannot load an HTTP widget.
+- A loaded script followed by no appearance request means auto-initialisation
+  did not run. Record the release from `/operator`, whether
+  `window.Wayfindr` exists in the console, and any console error before changing
+  the page. Public `v0.7.0` has a known generated-snippet auto-init defect fixed
+  on `main` by [#929](https://github.com/adamgreenwell/wayfindr/pull/929). Its
+  built-in tester can work while the copied snippet remains inert; that is not
+  external-install proof. Use a later stable release only after its release
+  notes include the fix.
+- A `422` appearance response means the site public key is missing or invalid;
+  a `404` means the key no longer identifies a serving site. Copy the current
+  snippet from the intended site's settings instead of repairing a key by hand.
+- A browser policy that blocks the appearance request normally names
+  `connect-src` or mixed content in the console. Allow the Wayfindr origin for
+  browser connections, then reload.
+- A successful appearance response with no launcher needs the release, page
+  URL, response status, and redacted console output in a bug report. Do not
+  paste cookies, visitor data, environment values, or other secrets into a
+  public issue. The site public key is browser-visible public configuration
+  and can be included when it helps identify the failing request.
+
+Calling `window.Wayfindr.init(...)` manually can separate an auto-init failure
+from a broken widget during a disposable diagnostic. Programmatic integration
+is supported, but adding the call merely to bypass a generated-snippet failure
+changes the path being tested and must not be reported as a successful
+copy-paste install. The shorter operator-facing version of this flow lives in
+the Wiki's
+[Troubleshooting page](https://github.com/adamgreenwell/wayfindr/wiki/Troubleshooting#widget-does-not-appear).
 
 A **source build** derives `<VERSION>-dev` from the repository's `VERSION` file.
 That names the lineage but not the build, and two source builds many commits

@@ -6,7 +6,6 @@ The initial package exposes a small global API and is intentionally friendly to
 plain HTML sites:
 
 ```html
-<script src="https://js.pusher.com/8.3.0/pusher.min.js"></script>
 <script src="https://your-wayfindr-host.example/widget.js"></script>
 <script>
   Wayfindr.init({
@@ -27,18 +26,19 @@ plain HTML sites:
 </script>
 ```
 
-The Pusher script is only required for live Reverb updates. Without it, the
-widget falls back to light message polling and the manual refresh button. When
-live updates are connected, unavailable, or reconnecting, the widget shows a
-small calm status note so visitors know refresh is still available without
-turning transport hiccups into a scary error state. The Reverb app key is
-public client configuration; never expose
+The server includes its vendored realtime client in `widget.js` when Reverb is
+configured, so Wayfindr needs no separate Pusher CDN tag; do not add one for
+Wayfindr. Without realtime configuration, the widget falls back to light
+message polling and the manual refresh button. When live updates are connected,
+unavailable, or reconnecting, the widget shows a small calm status note so
+visitors know refresh is still available without turning transport hiccups
+into a scary error state. The Reverb app key is public client configuration;
+never expose
 `REVERB_APP_SECRET` in browser code.
 
 Classic script tags can also use data attributes:
 
 ```html
-<script src="https://js.pusher.com/8.3.0/pusher.min.js"></script>
 <script
   src="https://your-wayfindr-host.example/widget.js"
   data-wayfindr-api-base-url="https://your-wayfindr-host.example"
