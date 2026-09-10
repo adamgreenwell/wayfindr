@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Drafted from lang/en/operator.php. NOT YET REVIEWED.
+ * Drafted from lang/en/operator.php.
+ * Reviewed per docs/product/translation-policy.md section 9.
  *
  * Machine-assisted draft against the glossary and the formal-register rules
  * in docs/product/translation-policy.md. Product names, language autonyms and

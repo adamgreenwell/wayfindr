@@ -137,12 +137,22 @@ page view that was not there before.
   lookup. `DashboardLanguage::EXTRACTED_ROUTES` remains the executable authority
   on that boundary.
 
-  **Neither the German nor the Italian pack has been read by a qualified
-  speaker.** The Italian tree now contains 38 catalogues, 15 of which still open
-  with `NOT YET REVIEWED`. Mechanical checks establish consistent terms,
-  placeholders, and an attempted register; they do not establish that a sentence
-  is good Italian. Do not promise either language to a customer until a speaker
-  has read the rendered screens.
+  Both packs have now been through the review the translation policy defines:
+  every catalogue in both trees has been read against the glossary, the rendered
+  surface, and the register rules. No catalogue still opens by declaring itself
+  unreviewed, in English or in its own language — three headers keep a narrower
+  note saying only that no native speaker has read them, which is true of all of
+  them and is the next paragraph's point.
+
+  **That is a reader, not a speaker, and the difference is the point.** Section 9
+  of [the translation policy](docs/product/translation-policy.md) sets the bar
+  deliberately at somebody who reads the target language without speaking it,
+  because that is the competence the pipeline optimises for — a reviewable diff
+  rather than a better first draft. It catches a wrong glossary term, a string
+  that overflows its button, and `Sie` where it does not belong. It does not
+  establish that a sentence is good German or good Italian. **Neither pack has
+  been read by a qualified speaker**, so do not promise either language to a
+  customer until one has read the rendered screens.
 
   Content the *account* wrote — an article's title and body, a token's name, a
   site's name, a visitor's name and the page they are on — now carries `lang=""`

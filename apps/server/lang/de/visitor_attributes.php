@@ -1,6 +1,6 @@
 <?php
 
-/* Entwurf aus lang/en/visitor_attributes.php. NOCH NICHT GEPRÜFT. */
+/* Entwurf aus lang/en/visitor_attributes.php. Geprüft gemäß Abschnitt 9 von docs/product/translation-policy.md. */
 return [
     'document_title' => 'Besucherattribute',
     'heading' => 'Besucherattribute',

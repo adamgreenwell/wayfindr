@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Entwurf auf Grundlage von lang/en/operator_access.php. NOCH NICHT GEPRÜFT.
+ * Entwurf auf Grundlage von lang/en/operator_access.php.
+ * Geprüft gemäß Abschnitt 9 von docs/product/translation-policy.md.
  *
  * Von Hand anhand des Glossars in resources/translation/glossary.php und der
  * Regeln in docs/product/translation-policy.md erstellt. Werte aus dem Konto

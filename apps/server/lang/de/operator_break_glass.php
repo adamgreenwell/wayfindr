@@ -1,8 +1,9 @@
 <?php
 
 /*
- * Entwurf auf Grundlage von lang/en/operator_break_glass.php. NOCH NICHT
- * GEPRÜFT. Von Hand anhand des Glossars und der Übersetzungsrichtlinie erstellt.
+ * Entwurf auf Grundlage von lang/en/operator_break_glass.php.
+ * Geprüft gemäß Abschnitt 9 von docs/product/translation-policy.md.
+ * Von Hand anhand des Glossars und der Übersetzungsrichtlinie erstellt.
  * Kundendaten bleiben außerhalb dieses Katalogs und werden in den Views mit
  * einer unbekannten Sprache gekennzeichnet.
  */

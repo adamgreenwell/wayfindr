@@ -1,6 +1,6 @@
 <?php
 
-/* Bozza da lang/en/visitor_merge.php. NON ANCORA REVISIONATA. */
+/* Bozza da lang/en/visitor_merge.php. Revisionata secondo la sezione 9 di docs/product/translation-policy.md. */
 return [
     'heading' => 'Unisci contatto duplicato',
     'lede' => 'Scelga l’unico contatto che il team deve conservare',

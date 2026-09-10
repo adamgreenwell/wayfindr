@@ -1,12 +1,13 @@
 <?php
 
 /*
- * Drafted from lang/en/tickets.php. NOT YET REVIEWED.
+ * Drafted from lang/en/tickets.php.
+ * Reviewed per docs/product/translation-policy.md section 9.
  *
  * Machine output against the glossary in resources/translation/glossary.php
- * and the rules in docs/product/translation-policy.md. Every value here is a
- * proposal: the pipeline optimises for a diff somebody can check, not for a
- * translation nobody has to.
+ * and the rules in docs/product/translation-policy.md. Every value here
+ * started as a proposal: the pipeline optimises for a diff somebody can
+ * check, not for a translation nobody has to.
  *
  * Review order that actually finds things: the glossary terms first, then the
  * short strings against the rendered surface, then register in the prose.

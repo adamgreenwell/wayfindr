@@ -1,12 +1,13 @@
 <?php
 
 /*
- * Drafted from lang/en/articles.php. NOT YET REVIEWED.
+ * Drafted from lang/en/articles.php.
+ * Reviewed per docs/product/translation-policy.md section 9.
  *
  * Written by hand against the glossary in resources/translation/glossary.php
  * and the rules in docs/product/translation-policy.md, then measured with
  * `wayfindr:translate-catalogue it --catalogue=articles --score`. Every value
- * here is a proposal.
+ * here started as a proposal.
  *
  * Review order that actually finds things: the glossary terms first, then the
  * short strings against the rendered surface, then register in the prose.

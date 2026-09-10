@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Bozza tratta da lang/en/operator_break_glass.php. NON ANCORA REVISIONATA.
+ * Bozza tratta da lang/en/operator_break_glass.php.
+ * Revisionata secondo la sezione 9 di docs/product/translation-policy.md.
  * Scritta a mano seguendo il glossario e le regole di traduzione. I dati del
  * cliente restano fuori dal catalogo e le view li contrassegnano con una
  * lingua sconosciuta.

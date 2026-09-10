@@ -1,7 +1,8 @@
 <?php
 
 /*
- * Bozza da lang/en/visitors.php. NON ANCORA REVISIONATA.
+ * Bozza da lang/en/visitors.php.
+ * Revisionata secondo la sezione 9 di docs/product/translation-policy.md.
  *
  * Scritta a mano seguendo il glossario e le regole della politica di
  * traduzione. Ogni valore è una proposta; le istruzioni in prosa usano Lei e

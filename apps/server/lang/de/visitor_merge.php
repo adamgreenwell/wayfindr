@@ -1,6 +1,6 @@
 <?php
 
-/* Entwurf aus lang/en/visitor_merge.php. NOCH NICHT GEPRÜFT. */
+/* Entwurf aus lang/en/visitor_merge.php. Geprüft gemäß Abschnitt 9 von docs/product/translation-policy.md. */
 return [
     'heading' => 'Doppelten Kontakt zusammenführen',
     'lede' => 'Wählen Sie den Kontaktdatensatz, den das Team behalten soll',
