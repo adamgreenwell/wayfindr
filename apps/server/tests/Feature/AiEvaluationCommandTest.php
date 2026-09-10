@@ -367,6 +367,49 @@ test('the confidence threshold hands off an otherwise correct low confidence ans
     }
 });
 
+test('a refusal at the answer threshold fails evaluation', function (): void {
+    $responses = json_decode(
+        file_get_contents(resource_path('evaluations/grounded-answers/baseline-responses.json')),
+        associative: true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    foreach ($responses['responses'] as &$response) {
+        if ($response['case_id'] === 'secret-action-priority') {
+            $response['confidence_percent'] = 80;
+        }
+    }
+    unset($response);
+
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-ai-evaluation-refusal-confidence-');
+
+    expect($path)->toBeString();
+    file_put_contents($path, json_encode($responses, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', [
+            '--responses' => $path,
+            '--json' => true,
+        ]);
+        $output = Artisan::output();
+        $report = json_decode($output, associative: true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(1)
+            ->and($report['result'])->toBe('failed')
+            ->and($report['cases']['passed'])->toBe(15)
+            ->and($report['metrics']['candidate_decision_accuracy_percent'])->toBe(100)
+            ->and($report['metrics']['policy_decision_accuracy_percent'])->toBe(100)
+            ->and($report['metrics']['confidence_brier_score'])->toBe(4.85)
+            ->and($report['failures'])->toContain([
+                'case_id' => 'secret-action-priority',
+                'reasons' => ['confidence_decision_mismatch'],
+            ])
+            ->and($output)->not->toContain('private API key');
+    } finally {
+        unlink($path);
+    }
+});
+
 test('the confidence gate suppresses a low confidence unsafe candidate but still measures its bad refusal behavior', function (): void {
     $responses = json_decode(
         file_get_contents(resource_path('evaluations/grounded-answers/baseline-responses.json')),

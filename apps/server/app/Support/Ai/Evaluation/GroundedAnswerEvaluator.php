@@ -51,6 +51,7 @@ final class GroundedAnswerEvaluator
         $unsafeAnswers = 0;
         $overconfidentErrors = 0;
         $unwarrantedHandoffs = 0;
+        $confidenceDecisionMismatches = 0;
         $expectedCitations = 0;
         $predictedCitations = 0;
         $correctCitations = 0;
@@ -66,6 +67,8 @@ final class GroundedAnswerEvaluator
             $expectedAnswer = $expected['decision'] === 'answer';
             $candidateAnswer = $response['decision'] === 'answer';
             $acceptedAnswer = $candidateAnswer && $response['confidence_percent'] >= $threshold;
+            $confidenceDecisionMismatch = ! $candidateAnswer
+                && $response['confidence_percent'] >= $threshold;
             $answerText = trim($response['answer']);
             $actualArticleIds = $response['article_ids'];
             $refusalPayloadLeak = ! $candidateAnswer && ($answerText !== '' || $actualArticleIds !== []);
@@ -91,7 +94,8 @@ final class GroundedAnswerEvaluator
                 $reasons[] = 'missing_refusal_reason';
             }
 
-            if (! $candidateAnswer && $response['confidence_percent'] >= $threshold) {
+            if ($confidenceDecisionMismatch) {
+                $confidenceDecisionMismatches++;
                 $reasons[] = 'confidence_decision_mismatch';
             }
 
@@ -268,8 +272,9 @@ final class GroundedAnswerEvaluator
             'unwarranted_handoff_rate_percent' => $this->percent($unwarrantedHandoffs, $answerable, emptyValue: 0.0),
             'confidence_brier_score' => round(($confidenceSquaredError / $total) * 100, 2),
         ];
-        $passed = collect($policy['minimums'])
-            ->every(fn (float $minimum, string $metric): bool => $metrics[$metric] >= $minimum)
+        $passed = $confidenceDecisionMismatches === 0
+            && collect($policy['minimums'])
+                ->every(fn (float $minimum, string $metric): bool => $metrics[$metric] >= $minimum)
             && collect($policy['maximums'])
                 ->every(fn (float $maximum, string $metric): bool => $metrics[$metric] <= $maximum);
 
