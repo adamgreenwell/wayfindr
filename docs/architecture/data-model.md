@@ -93,11 +93,14 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   one table whose name and connection are read from configuration rather than
   written literally, because the upstream package owns them —
   `WEBPUSH_DB_TABLE` and `WEBPUSH_DB_CONNECTION` — and moving either is a way
-  to break the feature rather than tune it. `vapid_public_key_hash` is what
-  makes rotating the install's VAPID keys able to find the rows that rotation
-  just made undeliverable, which is why that rotation empties this table for
-  every agent at once. The subscribable side is polymorphic because the package
-  is; only agents are ever attached.
+  to break the feature rather than tune it. `vapid_public_key_hash` marks which
+  generation of keys a row can still be reached with. Rotating through the
+  operator console deletes every other generation, emptying the table for every
+  agent at once; rotating through the environment only hides them, because an
+  environment value is process-local and two generations may legitimately
+  coexist mid-deployment, so no process may delete another's rows. Those hidden
+  rows are never collected. The subscribable side is polymorphic because the
+  package is; only agents are ever attached.
 - `conversation_copilot_summaries`: the latest agent-requested summary of a
   conversation, one row per conversation, overwritten by each refresh instead
   of kept as history. Every worker write is guarded on `generation`, so a
@@ -133,8 +136,10 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   notification's own ID, so a retried dashboard alert reuses one identity
   rather than posting a second alert, and `deduplicated_at` marks a stage the
   shared agent-alert ledger already covered. A row stamped `started_at` with no
-  `accepted_at` reached SMTP with an unknown outcome and is never retried
-  automatically.
+  `accepted_at` crossed the application's mail boundary and may or may not have
+  reached SMTP — the stamp is written when Laravel hands the message off, which
+  is before a transport connection is attempted — so it is left for a human
+  rather than retried automatically.
 - `ticket_labels`: account-owned labels assignable to tickets.
 - `ticket_label_ticket`: which of an account's `ticket_labels` are on a ticket.
   The pair is unique so an agent, an automation rule, and a bulk change can all
