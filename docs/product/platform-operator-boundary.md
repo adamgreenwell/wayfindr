@@ -74,7 +74,15 @@ they still hold. What it grew into is not small.
 and database-backed settings for mail, agent copilot, Web Push, storage,
 localization, scanning and backups, which override the environment; it runs
 backups on demand, keeps their history, and can restore the database from the
-browser. Every write is audited.
+browser.
+
+Setting changes and completed actions record audit events, and that is the rule
+to design to — but it is not yet true of every write. A backup that cannot reach
+the queue writes its own failure into the run history and returns before the
+audit event is created, and the storage and backup connection tests write
+without one. The run history still shows those, so nothing is invisible; it is
+the audit trail specifically that has gaps, which matters to anyone auditing
+this boundary rather than reading the console.
 
 **That is a much larger blast radius than "read-only", and the boundary this
 document defends is not the same thing as a small surface.** An in-GUI restore
