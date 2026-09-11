@@ -7,11 +7,11 @@ working support desk rather than a spine, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget
 appliance.
 
-Inbound email is the one capability in that list you cannot wire up unaided.
-Wayfindr verifies its own signature scheme, so a provider's normal webhook setup
-returns `401` until something in front of it verifies the provider and re-signs,
-and no such adapter ships yet
-([#799](https://github.com/adamgreenwell/wayfindr/issues/799)).
+Inbound email is wired up by pasting a webhook URL. Mailgun and Postmark post
+directly to `POST /api/mail/inbound` once `WAYFINDR_INBOUND_MAIL_PROVIDER` names
+the scheme; Wayfindr's original `X-Wayfindr-Signature` scheme still verifies, so
+an install that built a re-signing proxy for an earlier release can retire it or
+keep it. `docs/self-hosting/inbound-mail.md` covers all three.
 
 ## Start Here
 
