@@ -279,7 +279,13 @@ class AgentSiteController extends Controller
             'presenceEvery' => SitePresenceReporting::HEARTBEAT_SECONDS,
             'maskSelectors' => $maskSelectors,
             'maskTerms' => $maskTerms,
-            'operatorSmokePath' => OperatorDashboardPresenter::readiness($readiness->summary())['smoke_path'],
+            // Only the platform operator sees this, so only the platform
+            // operator pays for it: summary() is seven queries and a pass over
+            // the readiness checks, on a page every agent opens to copy a
+            // snippet.
+            'operatorSmokePath' => $agent->isPlatformOperator()
+                ? OperatorDashboardPresenter::readiness($readiness->summary())['smoke_path']
+                : null,
             'site' => $site,
             'siteActivity' => $this->siteActivityItems($site, $agent),
             'siteActivityAuditUrl' => $agent->hasAccountPermission(AccountPermission::ViewAudit)
