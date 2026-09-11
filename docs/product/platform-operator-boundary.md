@@ -77,12 +77,14 @@ backups on demand, keeps their history, and can restore the database from the
 browser.
 
 Setting changes and completed actions record audit events, and that is the rule
-to design to — but it is not yet true of every write. A backup that cannot reach
-the queue writes its own failure into the run history and returns before the
-audit event is created, and the storage and backup connection tests write
-without one. The run history still shows those, so nothing is invisible; it is
-the audit trail specifically that has gaps, which matters to anyone auditing
-this boundary rather than reading the console.
+to design to — but it is not yet true of every write, and the two gaps are not
+the same size. A backup that cannot reach the queue writes its own failure into
+the run history and returns before the audit event is created: that one is still
+visible, just not in the audit trail. The storage and backup connection tests
+are the weaker case. Each writes a probe object to the configured disk and
+deletes it, and records nothing — no audit event, and no run-history row either,
+because the history lists backup runs and a probe never creates one. Once the
+flash message is gone, nothing says who ran it or what happened.
 
 **That is a much larger blast radius than "read-only", and the boundary this
 document defends is not the same thing as a small surface.** An in-GUI restore
