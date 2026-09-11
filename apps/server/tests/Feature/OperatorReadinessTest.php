@@ -1785,11 +1785,19 @@ test('every scheduled command that deletes rows is named on the retention panel'
     $panel = json_encode(config('wayfindr.retention'));
 
     $unnamed = [];
+    $unresolved = [];
 
     foreach ($scheduled as $command) {
         $source = $sources[$command] ?? null;
 
         if ($source === null) {
+            // NOT a skip. A scheduled command whose source cannot be found is
+            // a command this test has stopped checking, and that is how the
+            // first version of it quietly covered a subset: the signature
+            // pattern captured a newline, so eighteen commands keyed wrong and
+            // fell through here in silence. Reported rather than continued.
+            $unresolved[] = $command;
+
             continue;
         }
 
@@ -1803,6 +1811,10 @@ test('every scheduled command that deletes rows is named on the retention panel'
             $unnamed[] = $command;
         }
     }
+
+    // The census comes first: without it, a failure to PARSE reads exactly
+    // like a clean result below.
+    expect($unresolved)->toBe([], 'Scheduled commands whose source this test could not find, so it did not check them: '.implode(', ', $unresolved));
 
     expect($unnamed)->toBe([], 'Scheduled commands delete rows without the retention panel saying so: '.implode(', ', $unnamed));
 });
