@@ -43,7 +43,7 @@ return [
     'retention' => [
         'label' => 'Operator-owned retention',
         'status' => 'manual',
-        'summary' => 'Cobrowse page content is pruned automatically; broader retention stays operator-owned.',
+        'summary' => 'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
         'description' => 'Assume application records, logs, and backups persist according to infrastructure defaults until an operator removes them or the host lifecycle removes them.',
         'docs_url' => 'https://github.com/adamgreenwell/wayfindr/blob/main/docs/privacy/data-inventory.md#retention-posture',
         'items' => [
@@ -63,9 +63,19 @@ return [
                 'description' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance (counts, timestamps, hashes, and audit events).',
             ],
             [
+                'label' => 'Visitors who never made contact',
+                'value' => 'Deleted after '.((int) env('WAYFINDR_PRESENCE_RETENTION_DAYS', 30)).' days, capped at 30',
+                'description' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything (ADR 0019).',
+            ],
+            [
+                'label' => 'Proactive message delivery evidence',
+                'value' => 'Deleted after 90 days',
+                'description' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
+            ],
+            [
                 'label' => 'Automatic deletion',
-                'value' => 'Cobrowse content only',
-                'description' => 'Beyond cobrowse page content, deletion, export, and retention controls remain future work; explain that before real support traffic.',
+                'value' => 'The classes listed above',
+                'description' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
             ],
         ],
         'reminders' => [

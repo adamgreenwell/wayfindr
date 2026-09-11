@@ -276,7 +276,7 @@ final class OperatorDashboardPresenter
             'status_label' => __('operator.dashboard.retention.status.'.($retention['status'] ?? 'manual')),
             'summary' => self::configuredCopy(
                 (string) ($retention['summary'] ?? ''),
-                'Cobrowse page content is pruned automatically; broader retention stays operator-owned.',
+                'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
                 'operator.dashboard.retention.summary',
             ),
         ];
