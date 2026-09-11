@@ -102,32 +102,34 @@
                         </p>
                     </div>
                 @else
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th scope="col">{{ __('articles.list.column_article') }}</th>
-                                <th scope="col">{{ __('articles.list.column_state') }}</th>
-                                <th scope="col">{{ __('articles.list.column_edited') }}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach ($articles as $article)
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
                                 <tr>
-                                    <td>
-                                        {{-- The title is the account's own words, in whatever
-                                             language it writes for its visitors. --}}
-                                        <a href="{{ route('dashboard.account.articles.show', $article) }}" lang="">{{ $article->title }}</a>
-                                    </td>
-                                    <td>
-                                        <span class="readiness-status" data-status="{{ $article->isPublished() ? 'ready' : 'manual' }}">
-                                            {{ $article->isPublished() ? __('articles.state.published') : __('articles.state.draft') }}
-                                        </span>
-                                    </td>
-                                    <td>{{ $article->updated_at?->diffForHumans() }}</td>
+                                    <th scope="col">{{ __('articles.list.column_article') }}</th>
+                                    <th scope="col">{{ __('articles.list.column_state') }}</th>
+                                    <th scope="col">{{ __('articles.list.column_edited') }}</th>
                                 </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach ($articles as $article)
+                                    <tr>
+                                        <td>
+                                            {{-- The title is the account's own words, in whatever
+                                                 language it writes for its visitors. --}}
+                                            <a href="{{ route('dashboard.account.articles.show', $article) }}" lang="">{{ $article->title }}</a>
+                                        </td>
+                                        <td>
+                                            <span class="readiness-status" data-status="{{ $article->isPublished() ? 'ready' : 'manual' }}">
+                                                {{ $article->isPublished() ? __('articles.state.published') : __('articles.state.draft') }}
+                                            </span>
+                                        </td>
+                                        <td>{{ $article->updated_at?->diffForHumans() }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
                 @endif
             </section>
 </x-layouts.app>
