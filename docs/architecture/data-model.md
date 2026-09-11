@@ -68,12 +68,20 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   count.
 - `conversation_reply_deliveries`: the outbox for support replies mailed on to
   visitors who arrived by email. The unique `conversation_message_id` binds one
-  outbox row to one message, so a requeued or replayed job cannot mail the same
-  reply twice; it does not deduplicate an agent who submits the reply form
-  again, because that writes a second message and earns a second delivery. The
-  RFC `message_id` is minted with the row so later mail threads against exactly
-  what was sent, and `recipient` is encrypted so a queue-support table does not
-  become a second plaintext copy of visitor addresses.
+  outbox row to one message, so a reply survives a queue or worker failure
+  without becoming two rows — but delivery is deliberately at-least-once, and
+  the table is shaped for that: `accepted_at` is the only marker, so a worker
+  lost between SMTP accepting the message and that receipt being written leaves
+  the row eligible and a later attempt mails it again. A generic SMTP server
+  cannot confirm mailbox delivery atomically, so the choice is a possible
+  duplicate or a possible silence, and support replies take the duplicate.
+  `ticket_external_comment_deliveries` faces the same question and answers it
+  the other way. Nor does the constraint deduplicate an agent who submits the
+  reply form again: that writes a second message, which earns its own row and
+  its own mail. The RFC `message_id` is minted with the row so later mail
+  threads against exactly what was sent, and `recipient` is encrypted so a
+  queue-support table does not become a second plaintext copy of visitor
+  addresses.
 - `agent_alert_deliveries`: one claim per alert version and state, taken by
   whichever off-dashboard channel reaches it first — Web Push, immediate,
   digest, or unattended mail — so the others do not send that copy. The live
