@@ -50,6 +50,14 @@ jobs:
           WAYFINDR_EXPECTED_DB_DRIVER: sqlite
         run: composer test
 
+      # After the suite, deliberately. A formatting nit is cheap to fix and a
+      # failing test is not, so style must never be the reason a run stops
+      # before it reports what actually broke. `composer lint:fix` resolves
+      # anything this catches.
+      - name: Check code style
+        working-directory: apps/server
+        run: composer lint
+
       - name: Validate the release contract
         run: make release-contract-test
 
