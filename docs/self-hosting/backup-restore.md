@@ -64,6 +64,31 @@ before doing anything destructive. An archive taken before this field existed
 reports "could not be verified" rather than a match — which is not the same as
 agreement, and should be treated as a reason to check.
 
+#### Putting a missing key back — restart before you retry
+
+When the warning says a key is missing, the fix is to restore it to `APP_KEY` or
+`APP_PREVIOUS_KEYS` and run the restore again. **On the Compose stack, editing
+the env file is not enough for the in-GUI restore.** That restore runs on
+`backup-queue`, a long-lived `queue:work` process — the same one this page tells
+you to leave running, because it is what runs the restore — and it read the key
+set once, when it started. Press confirm after editing the env and it compares
+the archive against the old keys, completes the destructive restore anyway, and
+*then* reports the mismatch.
+
+So after changing either key:
+
+```bash
+docker compose up -d --force-recreate web backup-queue
+```
+
+Then reload the restore page and confirm the warning is gone **before** you
+submit. Recreate both, not just the worker: the preflight on that page runs in
+`web`, so a stale `web` alongside a fresh `backup-queue` misleads you in the
+other direction just as easily.
+
+`wayfindr:restore` on the command line has no such problem — each invocation is a
+new process that reads the env fresh.
+
 #### If the keys are genuinely gone
 
 The clean fix is to put the original `APP_KEY` back and restore again. If it

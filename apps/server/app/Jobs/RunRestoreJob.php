@@ -449,7 +449,12 @@ class RunRestoreJob implements ShouldQueue
             $parts[] = 'This install is missing at least one key this backup was taken with, but not all '
                 .'of them — so some encrypted values still read and the older ones do not. Do NOT clear '
                 .'anything: put the missing APP_PREVIOUS_KEYS back and the rest become readable again. '
-                .'The site is being kept in maintenance mode until you have decided.';
+                .'One catch if you restore from this screen rather than the command line: this job ran '
+                .'on the long-lived backup-queue worker, which read its key set when it started, so '
+                .'editing the env and pressing confirm again compares against the OLD keys and runs the '
+                .'destructive restore anyway. Recreate the web and backup-queue services first — '
+                .'docker compose up -d --force-recreate web backup-queue — then check this page again '
+                .'before submitting. The site is being kept in maintenance mode until you have decided.';
         } elseif ($result['app_key_skew'] ?? false) {
             // TOTAL. No shared key, so nothing in the archive decrypts here.
             //

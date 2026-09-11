@@ -68,7 +68,9 @@ class RestoreCommand extends Command
                 'This archive was taken with more than one APP_KEY and this install is missing one of '
                 .'them. Values written under the missing key will be unreadable afterwards; values '
                 .'written under the key you do have will read normally. Add the missing key to '
-                .'APP_PREVIOUS_KEYS before restoring and nothing is lost. If you restore without it, '
+                .'APP_PREVIOUS_KEYS before restoring and nothing is lost -- this command reads the env '
+                .'fresh on every run, so no restart is needed here, but the in-GUI restore runs on a '
+                .'long-lived worker and does need one. If you restore without it, '
                 .'do NOT clear the encrypted columns — you would destroy the values that still read.'
             );
         } elseif ($preflight['app_key_skew'] ?? false) {
