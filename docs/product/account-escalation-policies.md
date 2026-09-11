@@ -50,8 +50,12 @@ fourth thing to disagree:
   site, not the account: SLA clocks already pause against each site's support
   hours, and automatic assignment is configured per site for the same reason. An
   escalation policy should read the work item's site schedule.
-- **Whether site-level overrides are allowed later.** The question answered
-  itself — the schedule is already per site.
+- **Whether site-level overrides of the schedule are allowed later.** That half
+  answered itself: the schedule is already per site, so there is no account
+  default for a site to override. It settles the clock source and nothing else.
+  Whether the rest of the policy — priority thresholds, fallback behavior, and
+  whether automatic escalation is on at all — may be overridden per site is
+  still open, and waypoint 8 below still governs it.
 
 Per-agent timezone exists too, and governs quiet-hour suppression rather than
 business time. An escalation policy inherits both of those clocks; it should not
