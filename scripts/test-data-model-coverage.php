@@ -46,24 +46,37 @@ const FRAMEWORK_TABLES = [
     'sessions',
 ];
 
+/** One level of nesting, so `connection(config('a.b'))` does not end the group early. */
+const BALANCED_ARGUMENTS = '\((?:[^()]|\([^()]*\))*\)';
+
 /**
  * Table names created by one migration file.
  *
- * Three call shapes reach `create`, and the third is why this script is PHP
+ * Several call shapes reach `create`, and they are why this script is PHP
  * rather than a grep. `push_subscriptions` is created as
  * `Schema::connection($connection)->create($tableName, ...)` with both values
  * read from config, so a pattern matching a literal `Schema::create('name'`
  * misses it — which is how it stayed undocumented while a check certified the
  * document complete.
  *
+ * Recognising shapes is not enough on its own. A shape this script does not
+ * know produces no match, and no match reads as success — the same blind spot
+ * in a different place. So every schema-builder `create(` in the file is
+ * counted, and a count the recognised patterns cannot account for is fatal.
+ *
  * @return list<string>
  */
 function tablesCreatedBy(string $path, string $source): array
 {
-    $pattern = '/Schema::(?:connection\([^)]*\)\s*->)?create\(\s*(?:'
-        .'[\'"](?<literal>[A-Za-z0-9_]+)[\'"]'
-        .'|\$(?<variable>[A-Za-z_][A-Za-z0-9_]*)'
-        .')/';
+    $argument = '\s*(?:[\'"](?<literal>[A-Za-z0-9_]+)[\'"]|\$(?<variable>[A-Za-z_][A-Za-z0-9_]*))';
+    $builders = builderVariables($source);
+    $receivers = ['Schema::(?:connection'.BALANCED_ARGUMENTS.'\s*->\s*)?'];
+
+    foreach ($builders as $builder) {
+        $receivers[] = '\$'.preg_quote($builder, '/').'\s*->\s*';
+    }
+
+    $pattern = '/(?:'.implode('|', $receivers).')create\('.$argument.'/';
 
     preg_match_all($pattern, $source, $matches, PREG_SET_ORDER);
 
@@ -95,7 +108,58 @@ function tablesCreatedBy(string $path, string $source): array
         $tables[] = $resolved;
     }
 
+    assertEveryCreateWasRead($path, $source, $builders, count($tables));
+
     return $tables;
+}
+
+/**
+ * Variables holding a schema builder, so `$schema->create(...)` is seen.
+ *
+ * @return list<string>
+ */
+function builderVariables(string $source): array
+{
+    $pattern = '/\$(?<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*Schema::(?:connection'.BALANCED_ARGUMENTS.')?/';
+
+    preg_match_all($pattern, $source, $matches);
+
+    return array_values(array_unique($matches['name'] ?? []));
+}
+
+/**
+ * Refuse a schema-builder `create(` the recognised patterns did not read.
+ *
+ * This is the guard the rest of the script is pointless without. A new call
+ * shape — a builder held in a property, a helper that wraps `Schema` — would
+ * otherwise match nothing, and a file that matches nothing looks exactly like
+ * a file that creates no tables.
+ */
+function assertEveryCreateWasRead(string $path, string $source, array $builders, int $read): void
+{
+    // Every create() in the file, on any receiver — deliberately broader than
+    // the shapes above. Counting only receivers already recognised would make
+    // the guard blind to exactly the shapes it exists to catch: an aliased
+    // builder (`$b = $schema; $b->create(...)`) matches no known receiver, so
+    // a narrow count reads zero-of-zero and calls it success.
+    //
+    // Across all migrations today every create() is a schema create and no
+    // non-Schema `::create(` receiver appears, so this over-counts nothing. A
+    // data migration that one day calls `SomeModel::create([...])` will trip
+    // it, and that is the right failure: the message says to teach the script
+    // the shape, and a false alarm is cheap next to a table nobody documents.
+    $total = preg_match_all('/(?:Schema::|->\s*)create\s*\(/', $source);
+
+    if ($total > $read) {
+        throw new RuntimeException(sprintf(
+            '%s calls a schema builder\'s create() %d time(s) but this check could only read %d table name(s). '
+                .'The unread call uses a shape it does not recognise. Teach it the shape rather than leaving it: '
+                .'a create() nobody reads is a table nobody has to document.',
+            basename($path),
+            $total,
+            $read,
+        ));
+    }
 }
 
 /**
@@ -162,9 +226,12 @@ function main(string $root): void
             continue;
         }
 
-        // Backticked, so a table named inside another entry's prose does not
-        // count as its own entry.
-        if (! str_contains($document, '`'.$table.'`')) {
+        // Its own bullet, not a mention. Entries cross-reference each other
+        // freely -- `ticket_label_ticket` names `ticket_labels`, and the reply
+        // outbox names the external-comment one -- so accepting any backticked
+        // occurrence would let a table be "documented" by a passing reference
+        // in somebody else's paragraph.
+        if (preg_match('/^- `'.preg_quote($table, '/').'`:/m', $document) !== 1) {
             $undocumented[$table] = $migration;
         }
     }

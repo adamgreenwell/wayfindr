@@ -222,13 +222,22 @@ A pull request that adds a migration fails until the table has an entry. That
 is deliberate: the document had drifted to 31 of 57 tables before anything read
 both files, and nothing reported it, because nothing was reading both.
 
-Two things to know if it fails on you. Laravel's own tables are excluded by an
+An entry means the table's own `- ` + backticked name + `:` bullet. A mention
+inside somebody else's paragraph does not count, because entries cross-reference
+each other constantly and otherwise a table could be "documented" by a passing
+reference.
+
+Three things to know if it fails on you. Laravel's own tables are excluded by an
 explicit list in the script, and that list is only ever for tables the framework
 creates — parking a Wayfindr table there to quiet the check defeats the whole
-point, silently. And a migration that builds its table name from a variable
-must give `config()` a readable default, as the Web Push migration does; a name
-this check cannot resolve is a hard failure rather than a skip, because an
-unreadable name and an undocumented table look identical from here.
+point, silently. A migration that builds its table name from a variable must
+give `config()` a readable default, as the Web Push migration does. And the
+script counts every `create()` in the file, not only the call shapes it knows:
+if it reads fewer table names than there are calls, it fails and asks to be
+taught the shape. Both of those are hard failures rather than skips, because an
+unreadable name and an undocumented table look identical from here — and a
+check that quietly reads nothing looks exactly like a file that creates
+nothing.
 
 It checks presence, not accuracy. Whether an entry tells the truth is a review
 question — the pass that added the missing 26 entries needed six review rounds
