@@ -814,10 +814,15 @@ return [
                     'value' => 'Deleted after 90 days',
                     'description' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
                 ],
+                'abandoned_uploads' => [
+                    'label' => 'Abandoned and failed uploads',
+                    'value' => '{1} Deleted after :count hour|[2,*] Deleted after :count hours',
+                    'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command deletes attachment rows and their binaries for uploads that never became part of a message: failed ones immediately, and pending ones once past the window. Orphaned storage objects with no row are swept with them.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Automatic deletion',
                     'value' => 'The classes listed above',
-                    'description' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
+                    'description' => 'Every class of personal data not listed above stays until an operator removes it. Internal records that identify nobody are pruned on their own schedule: expired API idempotency receipts hold a pair of hashes and a record pointer, and go hourly. Deletion and export controls for the operator-owned classes remain future work; explain that before real support traffic.',
                 ],
             ],
             'reminders' => [

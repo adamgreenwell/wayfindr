@@ -822,10 +822,15 @@ return [
                     'value' => 'Eliminate dopo 90 giorni',
                     'description' => 'Il comando pianificato wayfindr:prune-proactive-message-deliveries elimina la registrazione di quale messaggio proattivo ha raggiunto quale visitatore una volta trascorsa la finestra stabilita.',
                 ],
+                'abandoned_uploads' => [
+                    'label' => 'Caricamenti abbandonati e non riusciti',
+                    'value' => '{1} Eliminati dopo :count ora|[2,*] Eliminati dopo :count ore',
+                    'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments elimina i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio: quelli non riusciti subito, quelli in sospeso una volta scaduta la finestra. Gli oggetti di archiviazione orfani senza record vengono rimossi insieme a loro.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Eliminazione automatica',
                     'value' => 'Le classi elencate sopra',
-                    'description' => 'Tutto ciò che non è elencato sopra resta finché un gestore non lo rimuove. Eliminazione ed esportazione per quelle classi restano lavoro futuro; lo spieghi prima del traffico reale di supporto.',
+                    'description' => 'Ogni categoria di dati personali non elencata sopra resta finché un gestore non la rimuove. I record interni che non identificano nessuno vengono eliminati secondo una pianificazione propria: le ricevute di idempotenza API scadute contengono due valori hash e un riferimento a un record e vengono rimosse ogni ora. Le funzioni di cancellazione ed esportazione per le categorie gestite dal gestore restano da realizzare; lo spieghi prima che arrivi traffico di assistenza reale.',
                 ],
             ],
             'reminders' => [

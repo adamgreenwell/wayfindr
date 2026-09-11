@@ -814,10 +814,15 @@ return [
                     'value' => 'Nach 90 Tagen gelöscht',
                     'description' => 'Der geplante Befehl wayfindr:prune-proactive-message-deliveries löscht den Nachweis darüber, welche proaktive Nachricht welchen Besucher erreicht hat, sobald das begrenzte Zeitfenster abgelaufen ist.',
                 ],
+                'abandoned_uploads' => [
+                    'label' => 'Abgebrochene und fehlgeschlagene Uploads',
+                    'value' => '{1} Nach :count Stunde gelöscht|[2,*] Nach :count Stunden gelöscht',
+                    'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden: fehlgeschlagene sofort, ausstehende nach Ablauf des Zeitfensters. Verwaiste Speicherobjekte ohne Datensatz werden mit entfernt.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Automatische Löschung',
                     'value' => 'Die oben aufgeführten Klassen',
-                    'description' => 'Alles, was oben nicht aufgeführt ist, bleibt erhalten, bis ein Betreiber es entfernt. Löschung und Export für diese Klassen bleiben zukünftige Arbeit; erläutern Sie dies vor echtem Supportverkehr.',
+                    'description' => 'Jede Klasse personenbezogener Daten, die oben nicht aufgeführt ist, bleibt erhalten, bis ein Betreiber sie entfernt. Interne Datensätze, die niemanden identifizieren, werden nach eigenem Zeitplan bereinigt: abgelaufene API-Idempotenzbelege enthalten zwei Hashwerte und einen Datensatzverweis und werden stündlich entfernt. Lösch- und Exportfunktionen für die betreiberseitig verwalteten Klassen stehen noch aus; erklären Sie das, bevor echter Support-Verkehr eintrifft.',
                 ],
             ],
             'reminders' => [

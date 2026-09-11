@@ -65,7 +65,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('A full support conversation, end to end')
         ->assertSee('Data responsibility review')
         ->assertSee('How long data is kept')
-        ->assertSee('Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.')
+        ->assertSee('Cobrowse page content, visitors who never made contact, proactive-delivery evidence, and abandoned uploads are pruned automatically; broader retention stays operator-owned.')
         ->assertSee('Application records')
         ->assertSee('Automatic deletion')
         ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')
@@ -1732,4 +1732,68 @@ test('readiness smoke path preserves cobrowse manual remediation when transport 
 test('readiness diagnostics require an authenticated agent', function (): void {
     $this->get('/operator')
         ->assertRedirect('/login');
+});
+
+test('every scheduled command that deletes rows is named on the retention panel', function (): void {
+    // This list has now been wrong twice, and both times a reviewer found it
+    // rather than a test. First the panel said automatic deletion was "cobrowse
+    // content only" while two commands deleted visitor records and delivery
+    // evidence on a schedule; then, after those were added, it still omitted the
+    // attachment sweep while asserting that everything unlisted persists until
+    // an operator removes it.
+    //
+    // On a privacy surface the direction of that error matters: an operator
+    // answering a subject-access request from this panel would say a record is
+    // retained when the install had already deleted it, and could not detect the
+    // mistake. So the panel is checked against routes/console.php and the
+    // command sources rather than against a copy of itself.
+    $schedule = file_get_contents(base_path('routes/console.php'));
+
+    preg_match_all("/Schedule::command\('([^']+)'\)/", $schedule, $matches);
+    $scheduled = $matches[1];
+
+    expect($scheduled)->not->toBeEmpty();
+
+    // Signature -> source, so a command can be asked whether it removes rows.
+    $sources = [];
+
+    foreach (glob(app_path('Console/Commands/*.php')) ?: [] as $file) {
+        $source = file_get_contents($file);
+
+        if (preg_match("/\\\$signature\s*=\s*'([^' ]+)/", $source, $signature) === 1) {
+            $sources[$signature[1]] = $source;
+        }
+    }
+
+    // Named on the panel, or exempt for a stated reason. An exemption is a
+    // claim about the DATA, not about the command being uninteresting.
+    $exempt = [
+        // Two hashes, a resource pointer and an expiry. Identifies nobody, and
+        // listing it on a privacy panel would bury the rows that do.
+        'wayfindr:prune-api-idempotency-keys',
+    ];
+
+    $panel = json_encode(config('wayfindr.retention'));
+
+    $unnamed = [];
+
+    foreach ($scheduled as $command) {
+        $source = $sources[$command] ?? null;
+
+        if ($source === null) {
+            continue;
+        }
+
+        $removesRows = preg_match('/->delete\(\)|::destroy\(|->truncate\(|->forceDelete\(/', $source) === 1;
+
+        if (! $removesRows || in_array($command, $exempt, true)) {
+            continue;
+        }
+
+        if (! str_contains((string) $panel, $command)) {
+            $unnamed[] = $command;
+        }
+    }
+
+    expect($unnamed)->toBe([], 'Scheduled commands delete rows without the retention panel saying so: '.implode(', ', $unnamed));
 });
