@@ -10,7 +10,13 @@ test('account escalation policy waypoints document timing scope and guardrails',
     expect($contents)
         ->toContain('account-level escalation defaults')
         ->toContain('working hours')
-        ->toContain('account timezone')
+        // Business time moved to the site. This assertion used to require
+        // 'account timezone', which pinned a setting the product dropped once
+        // SLA clocks began pausing against each site's support hours — so the
+        // test would have failed the document for describing the decision
+        // correctly. It guards the same thing: that the document still says
+        // where business time comes from.
+        ->toContain('site support-hours')
         ->toContain('priority thresholds')
         ->toContain('fallback behavior')
         ->toContain('quiet mode')
