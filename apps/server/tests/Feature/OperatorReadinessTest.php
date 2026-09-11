@@ -65,7 +65,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('A full support conversation, end to end')
         ->assertSee('Data responsibility review')
         ->assertSee('How long data is kept')
-        ->assertSee('Cobrowse page content is pruned automatically; broader retention stays operator-owned.')
+        ->assertSee('Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.')
         ->assertSee('Application records')
         ->assertSee('Automatic deletion')
         ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')

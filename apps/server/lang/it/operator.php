@@ -788,7 +788,7 @@ return [
             'subtitle' => 'Cosa conserva questa installazione e per quanto tempo.',
             'current' => 'Impostazione corrente',
             'label' => 'Conservazione gestita dal gestore',
-            'summary' => 'Il contenuto delle pagine di cobrowse viene eliminato automaticamente; la conservazione restante è responsabilità del gestore.',
+            'summary' => 'Il contenuto delle pagine di cobrowse, i visitatori che non hanno mai preso contatto e le prove di consegna dei messaggi proattivi vengono eliminati automaticamente; la conservazione restante è responsabilità del gestore.',
             'description' => 'Si presuma che record dell’applicazione, registri e copie di sicurezza persistano secondo le impostazioni dell’infrastruttura finché un gestore non li rimuove o il ciclo dell’host non li elimina.',
             'open_guidance' => 'Apri la guida alla conservazione',
             'status' => [
@@ -812,10 +812,20 @@ return [
                     'value' => '{1} Eliminazione automatica :count ora dopo la fine della sessione|[2,*] Eliminazione automatica :count ore dopo la fine della sessione',
                     'description' => 'Il comando pianificato wayfindr:prune-cobrowse-content rimuove HTML grezzo degli snapshot, testo delle pagine e gruppi di modifiche conservati dalle sessioni di cobrowse concluse, mantenendo solo provenienza priva di contenuto, come conteggi, date, hash ed eventi di controllo.',
                 ],
+                'presence_visitors' => [
+                    'label' => 'Visitatori che non hanno mai preso contatto',
+                    'value' => '{1} Eliminati dopo :count giorno, al massimo 30|[2,*] Eliminati dopo :count giorni, al massimo 30',
+                    'description' => 'Il comando pianificato wayfindr:prune-presence-visitors elimina i record dei visitatori che non hanno mai generato una conversazione e il cui ultimo segnale è fuori dalla finestra. Il limite non è aumentabile dal gestore: la rilevazione della presenza raccoglie persone che non hanno chiesto nulla.',
+                ],
+                'proactive_deliveries' => [
+                    'label' => 'Prove di consegna dei messaggi proattivi',
+                    'value' => 'Eliminate dopo 90 giorni',
+                    'description' => 'Il comando pianificato wayfindr:prune-proactive-message-deliveries elimina la registrazione di quale messaggio proattivo ha raggiunto quale visitatore una volta trascorsa la finestra stabilita.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Eliminazione automatica',
-                    'value' => 'Solo contenuto del cobrowse',
-                    'description' => 'Oltre al contenuto delle pagine di cobrowse, eliminazione, esportazione e controlli della conservazione restano lavoro futuro; lo spieghi prima del traffico reale di supporto.',
+                    'value' => 'Le classi elencate sopra',
+                    'description' => 'Tutto ciò che non è elencato sopra resta finché un gestore non lo rimuove. Eliminazione ed esportazione per quelle classi restano lavoro futuro; lo spieghi prima del traffico reale di supporto.',
                 ],
             ],
             'reminders' => [

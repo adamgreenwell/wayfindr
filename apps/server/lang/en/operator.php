@@ -780,7 +780,7 @@ return [
             'subtitle' => 'What this install stores, and for how long.',
             'current' => 'Current setting',
             'label' => 'Operator-owned retention',
-            'summary' => 'Cobrowse page content is pruned automatically; broader retention stays operator-owned.',
+            'summary' => 'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
             'description' => 'Assume application records, logs, and backups persist according to infrastructure defaults until an operator removes them or the host lifecycle removes them.',
             'open_guidance' => 'Open retention guidance',
             'status' => [
@@ -804,10 +804,20 @@ return [
                     'value' => '{1} Auto-pruned :count hour after a session ends|[2,*] Auto-pruned :count hours after a session ends',
                     'description' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance such as counts, timestamps, hashes, and audit events.',
                 ],
+                'presence_visitors' => [
+                    'label' => 'Visitors who never made contact',
+                    'value' => '{1} Deleted after :count day, capped at 30|[2,*] Deleted after :count days, capped at 30',
+                    'description' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything.',
+                ],
+                'proactive_deliveries' => [
+                    'label' => 'Proactive message delivery evidence',
+                    'value' => 'Deleted after 90 days',
+                    'description' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Automatic deletion',
-                    'value' => 'Cobrowse content only',
-                    'description' => 'Beyond cobrowse page content, deletion, export, and retention controls remain future work; explain that before real support traffic.',
+                    'value' => 'The classes listed above',
+                    'description' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
                 ],
             ],
             'reminders' => [
