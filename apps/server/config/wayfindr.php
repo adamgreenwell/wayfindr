@@ -86,7 +86,18 @@ return [
                 'label' => 'Abandoned and failed uploads',
                 // Hours, like cobrowse above, so the row is pluralised rather
                 // than matched against a fixed default string.
-                'value' => 'Deleted within '.max(1, (int) env('WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS', 24)).' hours',
+                // The ceiling is the LONGEST of the windows, not the pending one
+                // standing in for them: orphan_grace_hours is read and clamped
+                // independently by sweepOrphanedFilesOn() and nothing caps it
+                // against the pending window, so an operator who raises it past
+                // 24 would otherwise be shown a shorter number than the sweep
+                // actually honours. The failed-upload case is the next hourly
+                // pass, which cannot exceed either.
+                'value' => 'Deleted within '.max(
+                    1,
+                    (int) env('WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS', 24),
+                    (int) env('WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS', 1),
+                ).' hours',
                 'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three, so treat it as a ceiling rather than a retention promise.',
             ],
             [
