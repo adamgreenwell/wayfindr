@@ -816,8 +816,8 @@ return [
                 ],
                 'abandoned_uploads' => [
                     'label' => 'Abgebrochene und fehlgeschlagene Uploads',
-                    'value' => '{1} Nach :count Stunde gelöscht|[2,*] Nach :count Stunden gelöscht',
-                    'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden: fehlgeschlagene sofort, ausstehende nach Ablauf des Zeitfensters. Verwaiste Speicherobjekte ohne Datensatz werden mit entfernt.',
+                    'value' => '{1} Binnen :count Stunde gelöscht|[2,*] Binnen :count Stunden gelöscht',
+                    'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments läuft stündlich und löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden. Dabei gelten drei verschiedene Fristen, nicht eine: ein fehlgeschlagener Upload wird beim nächsten Durchlauf entfernt, unabhängig vom Alter, ein ausstehender nach Ablauf von WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS und ein Speicherobjekt ganz ohne Datensatz nach WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Der Wert neben dieser Zeile ist die längste der drei Fristen und damit eine Obergrenze, keine Zusage zur Aufbewahrungsdauer.',
                 ],
                 'api_receipts' => [
                     'label' => 'API-Schreibbelege',

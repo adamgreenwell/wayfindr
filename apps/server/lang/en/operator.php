@@ -816,8 +816,8 @@ return [
                 ],
                 'abandoned_uploads' => [
                     'label' => 'Abandoned and failed uploads',
-                    'value' => '{1} Deleted after :count hour|[2,*] Deleted after :count hours',
-                    'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command deletes attachment rows and their binaries for uploads that never became part of a message: failed ones immediately, and pending ones once past the window. Orphaned storage objects with no row are swept with them.',
+                    'value' => '{1} Deleted within :count hour|[2,*] Deleted within :count hours',
+                    'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a failed upload goes on the next pass whatever its age, a pending one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three, so treat it as a ceiling rather than a retention promise.',
                 ],
                 'api_receipts' => [
                     'label' => 'API write receipts',

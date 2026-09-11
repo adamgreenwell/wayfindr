@@ -824,8 +824,8 @@ return [
                 ],
                 'abandoned_uploads' => [
                     'label' => 'Caricamenti abbandonati e non riusciti',
-                    'value' => '{1} Eliminati dopo :count ora|[2,*] Eliminati dopo :count ore',
-                    'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments elimina i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio: quelli non riusciti subito, quelli in sospeso una volta scaduta la finestra. Gli oggetti di archiviazione orfani senza record vengono rimossi insieme a loro.',
+                    'value' => '{1} Eliminati entro :count ora|[2,*] Eliminati entro :count ore',
+                    'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments viene eseguito ogni ora per eliminare i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio. Le finestre sono tre, non una: un caricamento non riuscito viene rimosso al passaggio successivo a prescindere dall’età, uno in sospeso una volta superato WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS e un oggetto di archiviazione privo di record dopo WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Il valore accanto a questa riga è la più lunga delle tre e va quindi letto come un limite massimo, non come una promessa di conservazione.',
                 ],
                 'api_receipts' => [
                     'label' => 'Ricevute di scrittura API',

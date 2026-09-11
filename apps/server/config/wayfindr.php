@@ -86,8 +86,8 @@ return [
                 'label' => 'Abandoned and failed uploads',
                 // Hours, like cobrowse above, so the row is pluralised rather
                 // than matched against a fixed default string.
-                'value' => 'Deleted after '.max(1, (int) env('WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS', 24)).' hours',
-                'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command deletes attachment rows and their binaries for uploads that never became part of a message: failed ones immediately, and pending ones once past the window. Orphaned storage objects with no row are swept with them.',
+                'value' => 'Deleted within '.max(1, (int) env('WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS', 24)).' hours',
+                'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three, so treat it as a ceiling rather than a retention promise.',
             ],
             [
                 'label' => 'API write receipts',

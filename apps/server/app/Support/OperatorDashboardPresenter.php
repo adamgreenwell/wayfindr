@@ -312,7 +312,7 @@ final class OperatorDashboardPresenter
             'cobrowse_content' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance (counts, timestamps, hashes, and audit events).',
             'presence_visitors' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything (ADR 0019).',
             'proactive_deliveries' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
-            'abandoned_uploads' => 'The scheduled wayfindr:sweep-orphaned-attachments command deletes attachment rows and their binaries for uploads that never became part of a message: failed ones immediately, and pending ones once past the window. Orphaned storage objects with no row are swept with them.',
+            'abandoned_uploads' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three, so treat it as a ceiling rather than a retention promise.',
             'api_receipts' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with -- and through it the account and the agent who issued that token -- and which ticket, conversation, or message the write produced.',
             'automatic_deletion' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
         };
@@ -356,7 +356,7 @@ final class OperatorDashboardPresenter
         // and the sweep clamps it to at least 1, so the row prints the hours the
         // command actually uses rather than the raw environment value.
         if ($key === 'abandoned_uploads'
-            && preg_match('/Deleted after (\d+) hours?$/', $actualValue, $matches) === 1) {
+            && preg_match('/Deleted within (\d+) hours?$/', $actualValue, $matches) === 1) {
             $hours = (int) $matches[1];
             $value = trans_choice(
                 'operator.dashboard.retention.items.abandoned_uploads.value',
