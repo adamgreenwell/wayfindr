@@ -80,11 +80,13 @@ Setting changes and completed actions record audit events, and that is the rule
 to design to — but it is not yet true of every write, and the gaps are not the
 same size. A backup that cannot reach the queue writes its own failure into the
 run history and returns before the audit event is created: that one is still
-visible, just not in the audit trail. The storage and backup connection tests
-are weaker. Each writes a probe object to the configured disk and deletes it,
-and records nothing — no audit event, and no run-history row either, because the
-history lists backup runs and a probe never creates one. Once the flash message
-is gone, nothing says who ran it or what happened.
+visible, just not in the audit trail. The connection tests are weaker: every
+`test()` action on the operator settings controllers — mail, agent copilot,
+scanning, storage and backups — returns flash feedback and records nothing at
+all. The storage and backup pair go further and write, putting a probe object on
+the configured disk and deleting it, and still leave no run-history row, because
+the history lists backup runs and a probe never creates one. Once the flash
+message is gone, nothing says who ran any of them or what they found.
 
 A successful restore is the structural case, and no amount of remembering to
 write an audit event fixes it. The controller does write one —
