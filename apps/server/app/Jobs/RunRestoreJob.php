@@ -440,11 +440,25 @@ class RunRestoreJob implements ShouldQueue
         // natural next move is `php artisan up` on an install whose agents
         // cannot authenticate.
         if ($result['app_key_skew'] ?? false) {
+            // The order below matters and is the whole point of spelling it
+            // out. "Re-enter the lost values, then bring the site up" is
+            // circular: settings and two-factor enrolment are authenticated
+            // HTTP routes, maintenance mode blocks them, and lifting
+            // maintenance first leaves agents unable to sign in at all because
+            // the read of their encrypted secret throws. The only sequence that
+            // terminates clears the unreadable columns at the database, where
+            // nothing decrypts them.
             $parts[] = 'This backup was taken with a different APP_KEY, so every encrypted value in it '
                 .'is unreadable here — starting with sign-in, because an agent'."'".'s two-factor secret is '
                 .'encrypted and is read while they log in. The site is being kept in maintenance mode. '
-                .'Restore the original APP_KEY (and any APP_PREVIOUS_KEYS) and restore again, or accept '
-                .'that those values are gone and re-enter them before running `php artisan up`.';
+                .'The clean fix is to put the original APP_KEY (and any APP_PREVIOUS_KEYS) back and '
+                .'restore again. If those keys are genuinely gone, recover in this order, because the '
+                .'obvious one does not work: while still in maintenance, clear the unreadable columns '
+                .'directly in the database — users.two_factor_secret, two_factor_recovery_codes and '
+                .'two_factor_confirmed_at, and any operator settings holding secrets — since every read '
+                .'of them throws; then `php artisan up`; then sign in and re-enter the integration '
+                .'credentials and re-enrol two-factor. Re-entering them first is not possible: those '
+                .'screens are behind the authentication that is broken.';
         } elseif ($result['app_key_indeterminate'] ?? false) {
             $parts[] = 'The APP_KEY could not be compared against this backup — it predates the '
                 .'fingerprint, or no key is set here. The site is being kept in maintenance mode so this '

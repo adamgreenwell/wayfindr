@@ -64,6 +64,26 @@ before doing anything destructive. An archive taken before this field existed
 reports "could not be verified" rather than a match — which is not the same as
 agreement, and should be treated as a reason to check.
 
+#### If the keys are genuinely gone
+
+The clean fix is to put the original `APP_KEY` back and restore again. If it
+cannot be recovered, the order below matters, because the obvious one does not
+terminate: re-entering the lost values needs the settings and two-factor
+screens, those are authenticated HTTP routes, maintenance mode blocks them — and
+lifting maintenance first leaves agents unable to sign in at all, because
+reading their encrypted two-factor secret throws.
+
+1. **While the site is still in maintenance**, clear the unreadable columns
+   directly in the database: `users.two_factor_secret`,
+   `users.two_factor_recovery_codes`, `users.two_factor_confirmed_at`, and any
+   operator settings row holding a secret. Nothing decrypts them there, which is
+   why this step has to come first.
+2. `php artisan up`.
+3. Sign in, re-enter the integration credentials, and re-enrol two-factor.
+
+An account that requires two-factor will ask each agent to enrol again on their
+next sign-in, which is the intended outcome — not a second failure.
+
 Ephemeral or credential-bearing table **data** is deliberately excluded — the
 schema is kept, but sessions, password-reset tokens, cache, and queue rows are
 not dumped (reviving a session or reset token is a security hole). Redis, Caddy
