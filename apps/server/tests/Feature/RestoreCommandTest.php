@@ -9,9 +9,11 @@
 
 use App\Models\Account;
 use App\Models\ConversationMessageAttachment;
+use App\Support\Backup\BackupService;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\RestoreService;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -459,6 +461,183 @@ test('a version skew between archive and install is warned', function (): void {
         ->expectsOutputToContain('Version skew');
 });
 
+test('an APP_KEY mismatch is warned before the restore runs', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // An archive taken on an install with a different key. Eight columns use
+    // Laravel's `encrypted` cast, and that cast throws on read when the key
+    // differs -- so without this warning the restore succeeds and the install
+    // breaks the first time anything reads an OIDC secret or a webhook URL.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [hash('sha256', 'base64:someone-elses-application-key')],
+    ]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('shares no APP_KEY with the key set');
+});
+
+test('a matching APP_KEY is not warned about', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // The control. Without it this pair would pass against a warning that
+    // fires unconditionally.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => BackupService::appKeyFingerprints(),
+    ]);
+
+    $output = $this->artisan('wayfindr:restore', ['archive' => $archive])->assertSuccessful();
+
+    expect($output)->not->toBeNull();
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeFalse()
+        ->and($preflight['app_key_indeterminate'])->toBeFalse();
+});
+
+test('a rotated source needs its previous keys on the target too', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // The case a single current-key fingerprint could not express. A source
+    // that rotated holds ciphertext under BOTH keys, and Laravel falls back
+    // through app.previous_keys to read the older rows. A target sharing only
+    // the current key decrypts some rows and throws on the rest -- so a match
+    // has to mean "this install holds every key the archive needs", not "the
+    // current keys agree".
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [
+            ...BackupService::appKeyFingerprints(),
+            hash('sha256', 'base64:a-key-this-install-has-retired'),
+        ],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeTrue()
+        ->and($preflight['app_key_indeterminate'])->toBeFalse();
+});
+
+test('a partial key overlap is skew but not total loss', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // Source rotated K1 -> K2; this target holds K2 but never carried K1. Rows
+    // written under K2 still decrypt perfectly and must not be cleared, so the
+    // two flags have to disagree: skew yes, no-overlap no.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [
+            ...BackupService::appKeyFingerprints(),
+            hash('sha256', 'a-historical-key-this-target-never-had'),
+        ],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeTrue()
+        ->and($preflight['app_key_no_overlap'])->toBeFalse();
+});
+
+test('no shared key at all is total loss', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [hash('sha256', 'an-entirely-unrelated-key')],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeTrue()
+        ->and($preflight['app_key_no_overlap'])->toBeTrue();
+});
+
+test('the command separates a partial key overlap from total loss', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // Partial: the archive names a key this install never had, alongside one it
+    // does. Rows written under the shared key still decrypt, so the total-loss
+    // warning would be wrong twice over -- it would read as "those values are
+    // gone" when they are not, and the recovery it points at clears columns the
+    // operator can still read.
+    $partial = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [
+            ...BackupService::appKeyFingerprints(),
+            hash('sha256', 'a-historical-key-this-target-never-had'),
+        ],
+    ]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $partial, '--force' => true])
+        ->expectsOutputToContain('do NOT clear the encrypted columns')
+        ->doesntExpectOutputToContain('EVERY encrypted value in the archive becomes unreadable')
+        ->assertSuccessful();
+
+    $total = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [hash('sha256', 'an-entirely-unrelated-key')],
+    ]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $total, '--force' => true])
+        ->expectsOutputToContain('EVERY encrypted value in the archive becomes unreadable')
+        ->doesntExpectOutputToContain('do NOT clear the encrypted columns')
+        ->assertSuccessful();
+});
+
+test('a target carrying extra keys is not skew', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // The other direction, and it must NOT warn: this install can decrypt
+    // everything the archive holds, it simply also remembers a key the archive
+    // never used. Subset, not equality.
+    config()->set('app.previous_keys', ['base64:an-extra-key-this-install-still-remembers']);
+
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [hash('sha256', (string) config('app.key'))],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeFalse()
+        ->and($preflight['app_key_indeterminate'])->toBeFalse();
+});
+
+test('an archive predating the fingerprint is indeterminate, not a match', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // Same distinction the version check draws: "cannot verify" must never be
+    // reported as "they agree", because the remedy differs.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_indeterminate'])->toBeTrue()
+        ->and($preflight['app_key_skew'])->toBeFalse();
+});
+
 test('the attachment integrity check is skipped when the restored schema lacks the attachments table', function (): void {
     // A dump from before the attachments table existed: the row query would
     // crash after the DB is already replaced. Restore must defer the check and
@@ -742,4 +921,78 @@ test('a tagged prerelease that merely contains "dev" is a real identity', functi
 
     expect($preflight['version_indeterminate'])->toBeFalse()
         ->and($preflight['version_skew'])->toBeFalse();
+});
+
+test('the key-loss runbook still matches the schema it tells operators to edit', function (): void {
+    // This list drifted twice inside one pull request: first it named two of
+    // the nine encrypted columns and read as exhaustive, then it named all nine
+    // but told operators to NULL five that are NOT NULL -- which fails the
+    // constraint, and an empty string does not help because the cast still
+    // tries to decrypt it. Both versions stranded an operator mid-recovery on
+    // an install whose sign-in was already broken.
+    //
+    // So the runbook is checked against the models and the live schema rather
+    // than against a copy of itself. Adding a tenth encrypted column, or making
+    // an existing one nullable, now fails here instead of in production.
+    $runbook = file_get_contents(base_path('../../docs/self-hosting/backup-restore.md'));
+
+    expect($runbook)->toBeString();
+
+    $section = str($runbook)->after('#### If the keys are genuinely gone')->before('###')->toString();
+
+    $encrypted = [];
+
+    foreach ((new DirectoryIterator(app_path('Models'))) as $entry) {
+        if ($entry->isDot() || $entry->getExtension() !== 'php') {
+            continue;
+        }
+
+        $class = 'App\\Models\\'.$entry->getBasename('.php');
+
+        if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
+            continue;
+        }
+
+        $model = new $class;
+
+        foreach ($model->getCasts() as $column => $cast) {
+            if (! str_starts_with((string) $cast, 'encrypted')) {
+                continue;
+            }
+
+            $encrypted[$model->getTable()][] = $column;
+        }
+    }
+
+    // The count is asserted so that a model added without a thought here fails
+    // loudly rather than slipping past a per-column loop that never ran for it.
+    expect(array_sum(array_map('count', $encrypted)))->toBe(9)
+        ->and($encrypted)->toHaveCount(7);
+
+    $nullableBlock = str($section)->between('Nullable — clear the column', '`NOT NULL` — delete the rows')->toString();
+    $deleteBlock = str($section)->after('`NOT NULL` — delete the rows')->toString();
+
+    $misplaced = [];
+
+    foreach ($encrypted as $table => $columns) {
+        $columnIsNullable = collect(Schema::getColumns($table))->keyBy('name');
+
+        foreach ($columns as $column) {
+            $nullable = (bool) ($columnIsNullable[$column]['nullable'] ?? false);
+
+            // A nullable column may be cleared in place. A NOT NULL one cannot
+            // be, so its TABLE has to appear in the delete block -- and a
+            // cascade counts: deleting outbound_webhook_endpoints takes
+            // outbound_webhook_deliveries.response_body with it.
+            $named = $nullable
+                ? str_contains($nullableBlock, $column) || str_contains($deleteBlock, $table)
+                : str_contains($deleteBlock, $table);
+
+            if (! $named) {
+                $misplaced[] = $table.'.'.$column.($nullable ? ' (nullable)' : ' (NOT NULL)');
+            }
+        }
+    }
+
+    expect($misplaced)->toBe([], 'The runbook does not give a working reset for: '.implode(', ', $misplaced));
 });

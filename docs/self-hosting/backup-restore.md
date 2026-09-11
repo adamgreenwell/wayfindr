@@ -2,9 +2,13 @@
 
 Wayfindr holds customer support conversations, tickets, and audit history — the
 kind of data whose loss is unrecoverable. Two artisan commands take and restore
-a backup, and a restore drill in CI proves the round trip, because a backup
-whose restore has never been run is a hope, not a backup (ADR
-[0009](../decisions/0009-backup-and-restore.md)).
+a backup, and a restore drill proves the round trip on a disposable VM against
+a published artifact, because a backup whose restore has never been run is a
+hope, not a backup (ADR
+[0009](../decisions/0009-backup-and-restore.md)). That drill is dispatched
+deliberately before a release rather than run on every pull request — it builds
+a fresh Ubuntu host, so putting it in the ordinary CI path would add tens of
+minutes to every change.
 
 ```bash
 # Take a backup.
@@ -31,8 +35,117 @@ apps/server && php artisan wayfindr:backup`.
 - **Local attachment binaries** — the files on the private `attachments`
   disk(s), for installs using local storage.
 - **A manifest** recording the Wayfindr version, the storage disk in effect,
-  which local disks were captured, and which disks rows depend on that the
-  archive does *not* carry.
+  which local disks were captured, which disks rows depend on that the archive
+  does *not* carry, and a fingerprint of the `APP_KEY` the backup was taken
+  with.
+
+### The archive needs the `APP_KEY` it does not contain
+
+Several columns are encrypted at rest with `APP_KEY` — single sign-on client
+secrets, outbound webhook URLs and secrets, external-issue provider
+credentials, reply-delivery recipients, and ticket comment bodies. The key is
+deliberately **not** in the archive, because an archive carrying the key that
+decrypts its own secrets is not a protected archive.
+
+The consequence is the one to plan for. **Restore your `APP_KEY` — and any
+`APP_PREVIOUS_KEYS` — alongside the archive.** An install that has rotated its
+key holds ciphertext written under the older ones, and Laravel falls back
+through `APP_PREVIOUS_KEYS` to read it, so carrying only the current key still
+leaves the older rows unreadable. The manifest records a fingerprint per
+decryption key for exactly this reason, and a restore warns unless this install
+holds every key the archive needs. Restoring onto a freshly installed stack — which is the ordinary
+disaster-recovery path — mints a new key, and a restore under a different key
+succeeds: the database loads, the install starts, and then the first read of
+any encrypted column throws. Those values are not recoverable; they have to be
+re-entered.
+
+A restore compares the manifest's fingerprint against the running key and warns
+before doing anything destructive. An archive taken before this field existed
+reports "could not be verified" rather than a match — which is not the same as
+agreement, and should be treated as a reason to check.
+
+#### Putting a missing key back — restart before you retry
+
+When the warning says a key is missing, the fix is to restore it to `APP_KEY` or
+`APP_PREVIOUS_KEYS` and run the restore again. **On the Compose stack, editing
+the env file is not enough for the in-GUI restore.** That restore runs on
+`backup-queue`, a long-lived `queue:work` process — the same one this page tells
+you to leave running, because it is what runs the restore — and it read the key
+set once, when it started. Press confirm after editing the env and it compares
+the archive against the old keys, completes the destructive restore anyway, and
+*then* reports the mismatch.
+
+So after changing either key:
+
+```bash
+docker compose up -d --force-recreate web backup-queue
+```
+
+Then reload the restore page and confirm the warning is gone **before** you
+submit. Recreate both, not just the worker: the preflight on that page runs in
+`web`, so a stale `web` alongside a fresh `backup-queue` misleads you in the
+other direction just as easily.
+
+`wayfindr:restore` on the command line has no such problem — each invocation is a
+new process that reads the env fresh.
+
+#### If the keys are genuinely gone
+
+The clean fix is to put the original `APP_KEY` back and restore again. If it
+cannot be recovered, the order below matters, because the obvious one does not
+terminate: re-entering the lost values needs the settings and two-factor
+screens, those are authenticated HTTP routes, maintenance mode blocks them — and
+lifting maintenance first leaves agents unable to sign in at all, because
+reading their encrypted two-factor secret throws.
+
+**Clearing is not one operation.** Nine columns across seven tables use
+Laravel's `encrypted` cast, and they do not all clear the same way, because five
+of them are `NOT NULL`. Setting those to `''` does not help either — the cast
+still tries to decrypt an empty string and still throws `DecryptException`. For
+those, the row itself goes.
+
+1. **While the site is still in maintenance**, reset the ciphertext directly in
+   the database. Nothing decrypts it there, which is why this step comes first.
+
+   Nullable — clear the column and keep the row:
+
+   ```sql
+   UPDATE users SET two_factor_secret = NULL,
+                    two_factor_recovery_codes = NULL,
+                    two_factor_confirmed_at = NULL;
+   UPDATE external_issue_provider_connections SET credentials = NULL;
+   ```
+
+   Plus any operator settings row holding a secret. Only
+   `users.two_factor_secret` and `credentials` are encrypted here; the two
+   two-factor companions go with the secret because they describe an enrolment
+   that no longer exists, not because they throw.
+
+   `NOT NULL` — delete the rows, because the column cannot hold `NULL` and an
+   empty string still throws on read:
+
+   ```sql
+   DELETE FROM oidc_connections;
+   DELETE FROM outbound_webhook_endpoints;
+   DELETE FROM conversation_reply_deliveries;
+   DELETE FROM ticket_external_comment_deliveries;
+   ```
+
+   What those four cascades take with them, so none of it is a surprise:
+   deleting `oidc_connections` also removes `oidc_identities`, so agents re-link
+   on their next single sign-on; deleting `outbound_webhook_endpoints` also
+   removes its subscriptions **and** its deliveries, which is where
+   `outbound_webhook_deliveries.response_body` lived, so that column needs no
+   separate step. The two delivery tables are receipts — the conversation
+   messages and ticket notes they describe are untouched.
+
+2. `php artisan up`.
+3. Sign in, re-enrol two-factor, re-enter the integration credentials, and
+   re-create the single sign-on connection and the webhook endpoints that step 1
+   deleted.
+
+An account that requires two-factor will ask each agent to enrol again on their
+next sign-in, which is the intended outcome — not a second failure.
 
 Ephemeral or credential-bearing table **data** is deliberately excluded — the
 schema is kept, but sessions, password-reset tokens, cache, and queue rows are
@@ -275,8 +388,16 @@ reachable. On a remote-storage install, seeing zero verified and a list of
 external disks is correct — the bucket is doing its half.
 
 Restore expects the app's database role to own its schema (the bundled Postgres
-service does). It applies the whole restore in a single transaction, so a
-failure rolls back and leaves the database untouched rather than half-restored.
+service does). The **database load** is applied in a single transaction
+(`pg_restore --single-transaction`), so a failure during that phase rolls back
+and leaves the database untouched.
+
+That guarantee stops at the database. Attachment binaries are put back *after*
+the transaction commits, and that step purges each local attachment disk
+wholesale before repopulating it — so a failure in the attachment phase leaves a
+committed database beside half-restored disks. Both the command and the operator
+console say so when it happens; verify the database **and** the attachment disks
+before serving traffic.
 
 ## Deferred
 

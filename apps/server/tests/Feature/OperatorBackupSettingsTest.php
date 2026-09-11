@@ -1069,6 +1069,53 @@ test('the restore confirmation page follows the operator language without weaken
     ]],
 ]);
 
+test('a partial key overlap is not presented as total loss', function (): void {
+    $archive = 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz';
+    seedLocalArchives([$archive]);
+
+    // The source rotated its key; this target holds the newer one but never
+    // carried the historical one. Rows written under the shared key decrypt
+    // perfectly, so the screen must not tell the operator that everything is
+    // unreadable -- they would abandon a restore that loses nothing, or clear
+    // columns they can still read.
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('preflight')->once()->andReturn([
+        'archive_version' => 'v0.3.0-datenpunkt',
+        'running_version' => 'v0.3.0-datenpunkt',
+        'version_skew' => false,
+        'app_key_skew' => true,
+        'app_key_no_overlap' => false,
+    ]);
+    $this->app->instance(RestoreService::class, $restores);
+
+    $this->actingAs(backupOperator('en'))
+        ->get(route('operator.settings.backups.restore', ['archive' => $archive]))
+        ->assertOk()
+        ->assertSee('the values written under the key you do have are intact', false)
+        ->assertDontSee('Every encrypted value in it becomes unreadable', false);
+});
+
+test('sharing no key at all is presented as total loss', function (): void {
+    $archive = 'wayfindr-backup-20260728-100000-aaaaaa.tar.gz';
+    seedLocalArchives([$archive]);
+
+    $restores = Mockery::mock(RestoreService::class);
+    $restores->shouldReceive('preflight')->once()->andReturn([
+        'archive_version' => 'v0.3.0-datenpunkt',
+        'running_version' => 'v0.3.0-datenpunkt',
+        'version_skew' => false,
+        'app_key_skew' => true,
+        'app_key_no_overlap' => true,
+    ]);
+    $this->app->instance(RestoreService::class, $restores);
+
+    $this->actingAs(backupOperator('en'))
+        ->get(route('operator.settings.backups.restore', ['archive' => $archive]))
+        ->assertOk()
+        ->assertSee('Every encrypted value in it becomes unreadable', false)
+        ->assertDontSee('the values written under the key you do have are intact', false);
+});
+
 test('restore durability guidance follows the operator language and isolates configuration values', function (string $locale, string $heading, string $issue): void {
     config()->set('queue.connections.backups.driver', 'datenpunkt-driver');
 

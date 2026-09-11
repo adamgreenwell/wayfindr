@@ -448,6 +448,48 @@ class BackupService
      * @param  list<string>  $remoteDisks  disks that rows depend on but are NOT in the archive (their binaries are in a bucket, or the disk is retired/unknown)
      * @return array<string, mixed>
      */
+    /**
+     * A fingerprint per DECRYPTION key, not just the current one.
+     *
+     * Laravel decrypts with `app.key` and falls back to `app.previous_keys`, so
+     * an install that has rotated holds ciphertext written under keys that are
+     * no longer current. Recording only the current key would report a match
+     * between a rotated source and a target that shares its current key but not
+     * its previous ones -- and the older rows would still throw. What has to
+     * travel is the SET.
+     *
+     * sha256 each, one-way, so the archive still reveals nothing. Sorted so the
+     * comparison does not depend on configuration order.
+     *
+     * @return list<string>
+     */
+    public static function appKeyFingerprints(): array
+    {
+        $fingerprints = array_values(array_unique(array_filter(array_map(
+            static function ($key): ?string {
+                $key = (string) $key;
+
+                // The EFFECTIVE key bytes, not the configured spelling. Laravel
+                // accepts a key either raw or `base64:`-prefixed and decodes the
+                // latter, so the same key written both ways decrypts the same
+                // ciphertext. Hashing the configuration string would call those
+                // two installs a mismatch and refuse a restore that would have
+                // worked perfectly.
+                if (str_starts_with($key, 'base64:')) {
+                    $decoded = base64_decode(substr($key, 7), true);
+                    $key = $decoded === false ? $key : $decoded;
+                }
+
+                return $key === '' ? null : hash('sha256', $key);
+            },
+            [config('app.key'), ...(array) config('app.previous_keys', [])],
+        ))));
+
+        sort($fingerprints);
+
+        return $fingerprints;
+    }
+
     public function manifest(Carbon $createdAt, array $localDisks, array $remoteDisks, string $dumpLabel): array
     {
         return [
@@ -462,6 +504,18 @@ class BackupService
             // that a retired/unknown disk's binaries are gone).
             'external_attachment_disks' => $remoteDisks,
             'database_dump' => $dumpLabel,
+            // A FINGERPRINT of APP_KEY, never the key. Eight columns in this
+            // schema use Laravel's `encrypted` cast -- OIDC client secrets,
+            // outbound webhook URLs and secrets, external-issue credentials,
+            // reply-delivery recipients, ticket comment bodies -- and the cast
+            // throws on read when the key differs. Restoring onto a fresh
+            // install, which is the ordinary disaster-recovery path and mints a
+            // new key unless the operator copies the old one, therefore
+            // produces a database that loads and then fails the first time
+            // anything touches one of those columns. The archive cannot carry
+            // the key (that would put every secret in it), so it carries enough
+            // to TELL the operator, which is what preflight compares.
+            'app_key_fingerprints' => self::appKeyFingerprints(),
         ];
     }
 
