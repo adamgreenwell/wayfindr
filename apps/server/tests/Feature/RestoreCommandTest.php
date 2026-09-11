@@ -476,7 +476,7 @@ test('an APP_KEY mismatch is warned before the restore runs', function (): void 
 
     $this->artisan('wayfindr:restore', ['archive' => $archive])
         ->assertSuccessful()
-        ->expectsOutputToContain('APP_KEY does not match the key set');
+        ->expectsOutputToContain('shares no APP_KEY with the key set');
 });
 
 test('a matching APP_KEY is not warned about', function (): void {
@@ -524,6 +524,79 @@ test('a rotated source needs its previous keys on the target too', function (): 
 
     expect($preflight['app_key_skew'])->toBeTrue()
         ->and($preflight['app_key_indeterminate'])->toBeFalse();
+});
+
+test('a partial key overlap is skew but not total loss', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // Source rotated K1 -> K2; this target holds K2 but never carried K1. Rows
+    // written under K2 still decrypt perfectly and must not be cleared, so the
+    // two flags have to disagree: skew yes, no-overlap no.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [
+            ...BackupService::appKeyFingerprints(),
+            hash('sha256', 'a-historical-key-this-target-never-had'),
+        ],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeTrue()
+        ->and($preflight['app_key_no_overlap'])->toBeFalse();
+});
+
+test('no shared key at all is total loss', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [hash('sha256', 'an-entirely-unrelated-key')],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeTrue()
+        ->and($preflight['app_key_no_overlap'])->toBeTrue();
+});
+
+test('the command separates a partial key overlap from total loss', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // Partial: the archive names a key this install never had, alongside one it
+    // does. Rows written under the shared key still decrypt, so the total-loss
+    // warning would be wrong twice over -- it would read as "those values are
+    // gone" when they are not, and the recovery it points at clears columns the
+    // operator can still read.
+    $partial = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [
+            ...BackupService::appKeyFingerprints(),
+            hash('sha256', 'a-historical-key-this-target-never-had'),
+        ],
+    ]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $partial, '--force' => true])
+        ->expectsOutputToContain('do NOT clear the encrypted columns')
+        ->doesntExpectOutputToContain('EVERY encrypted value in the archive becomes unreadable')
+        ->assertSuccessful();
+
+    $total = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [hash('sha256', 'an-entirely-unrelated-key')],
+    ]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $total, '--force' => true])
+        ->expectsOutputToContain('EVERY encrypted value in the archive becomes unreadable')
+        ->doesntExpectOutputToContain('do NOT clear the encrypted columns')
+        ->assertSuccessful();
 });
 
 test('a target carrying extra keys is not skew', function (): void {

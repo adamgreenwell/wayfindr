@@ -124,7 +124,20 @@
                      key mismatch leaves an install whose agents cannot sign in,
                      their two-factor secret being encrypted and read during
                      authentication. This screen rendered neither. --}}
-                @if ($preflight['app_key_skew'] ?? false)
+                @if (($preflight['app_key_skew'] ?? false) && ! ($preflight['app_key_no_overlap'] ?? false))
+                    {{-- Skew is not one condition. A source that rotated its key
+                         restored onto a target holding the newer one but not the
+                         historical one shares a key: those rows still decrypt.
+                         Telling that operator "every encrypted value becomes
+                         unreadable" would send them to abandon a restore that
+                         loses nothing, or to clear columns they can still read. --}}
+                    <div class="notice-copy notice-copy-bordered">
+                        <p>{!! __('operator.backups.restore.app_key_partial_skew', [
+                            'key' => '<code lang="">APP_KEY</code>',
+                            'previous' => '<code lang="">APP_PREVIOUS_KEYS</code>',
+                        ]) !!}</p>
+                    </div>
+                @elseif ($preflight['app_key_skew'] ?? false)
                     <div class="notice-copy notice-copy-bordered">
                         <p>{!! __('operator.backups.restore.app_key_skew', [
                             'key' => '<code lang="">APP_KEY</code>',

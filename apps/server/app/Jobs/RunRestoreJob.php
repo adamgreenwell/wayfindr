@@ -439,26 +439,43 @@ class RunRestoreJob implements ShouldQueue
         // down, and had no sentence anywhere connecting the two -- so the
         // natural next move is `php artisan up` on an install whose agents
         // cannot authenticate.
-        if ($result['app_key_skew'] ?? false) {
+        if (($result['app_key_skew'] ?? false) && ! ($result['app_key_no_overlap'] ?? false)) {
+            // PARTIAL. The sets overlap, so rows written under a shared key
+            // still decrypt and must not be touched. Only the ones written
+            // under the key this install is missing are unreadable -- typically
+            // an archive from a source that rotated, restored where the older
+            // key was never carried across. Advising a wholesale clear here
+            // would destroy data the operator can still read.
+            $parts[] = 'This install is missing at least one key this backup was taken with, but not all '
+                .'of them — so some encrypted values still read and the older ones do not. Do NOT clear '
+                .'anything: put the missing APP_PREVIOUS_KEYS back and the rest become readable again. '
+                .'The site is being kept in maintenance mode until you have decided.';
+        } elseif ($result['app_key_skew'] ?? false) {
+            // TOTAL. No shared key, so nothing in the archive decrypts here.
+            //
             // The order below matters and is the whole point of spelling it
             // out. "Re-enter the lost values, then bring the site up" is
             // circular: settings and two-factor enrolment are authenticated
             // HTTP routes, maintenance mode blocks them, and lifting
-            // maintenance first leaves agents unable to sign in at all because
-            // the read of their encrypted secret throws. The only sequence that
-            // terminates clears the unreadable columns at the database, where
-            // nothing decrypts them.
-            $parts[] = 'This backup was taken with a different APP_KEY, so every encrypted value in it '
-                .'is unreadable here — starting with sign-in, because an agent'."'".'s two-factor secret is '
-                .'encrypted and is read while they log in. The site is being kept in maintenance mode. '
-                .'The clean fix is to put the original APP_KEY (and any APP_PREVIOUS_KEYS) back and '
-                .'restore again. If those keys are genuinely gone, recover in this order, because the '
-                .'obvious one does not work: while still in maintenance, clear the unreadable columns '
-                .'directly in the database — users.two_factor_secret, two_factor_recovery_codes and '
-                .'two_factor_confirmed_at, and any operator settings holding secrets — since every read '
-                .'of them throws; then `php artisan up`; then sign in and re-enter the integration '
-                .'credentials and re-enrol two-factor. Re-entering them first is not possible: those '
-                .'screens are behind the authentication that is broken.';
+            // maintenance first leaves agents unable to sign in at all, because
+            // the read of their encrypted secret is what throws. The only
+            // sequence that terminates clears the columns at the database,
+            // where nothing decrypts them.
+            $parts[] = 'This backup shares none of its keys with this install, so every encrypted value '
+                .'in it is unreadable here — starting with sign-in, because an agent'."'".'s two-factor '
+                .'secret is encrypted and is read while they log in. The site is being kept in '
+                .'maintenance mode. The clean fix is to put the original APP_KEY (and any '
+                .'APP_PREVIOUS_KEYS) back and restore again. If those keys are genuinely gone, recover '
+                .'in this order, because the obvious one does not work: while still in maintenance, '
+                .'clear every encrypted column directly in the database — users.two_factor_secret, '
+                .'two_factor_recovery_codes and two_factor_confirmed_at; oidc_connections.client_secret; '
+                .'outbound_webhook_endpoints.url and .secret; outbound_webhook_deliveries.response_body; '
+                .'external_issue_provider_connections.credentials; conversation_reply_deliveries'
+                .'.recipient; ticket_external_comment_deliveries.body and .remote_url; and any operator '
+                .'settings row holding a secret — since every read of them throws; then `php artisan '
+                .'up`; then sign in, re-enter the integration credentials, and re-enrol two-factor. '
+                .'Re-entering them first is not possible: those screens sit behind the authentication '
+                .'that is broken.';
         } elseif ($result['app_key_indeterminate'] ?? false) {
             $parts[] = 'The APP_KEY could not be compared against this backup — it predates the '
                 .'fingerprint, or no key is set here. The site is being kept in maintenance mode so this '

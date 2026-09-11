@@ -59,7 +59,19 @@ class RestoreCommand extends Command
         // mismatch leaves a schema to migrate, while a key mismatch leaves
         // columns that load and then throw. Warn about it in its own sentence
         // rather than folding it into the version block.
-        if ($preflight['app_key_skew'] ?? false) {
+        if (($preflight['app_key_skew'] ?? false) && ! ($preflight['app_key_no_overlap'] ?? false)) {
+            // Partial: the two key sets intersect, so rows written under the
+            // shared key still decrypt. Warning here in the total-loss language
+            // below would push an operator to abandon a restore that loses
+            // nothing, or to clear columns that are perfectly readable.
+            $this->warn(
+                'This archive was taken with more than one APP_KEY and this install is missing one of '
+                .'them. Values written under the missing key will be unreadable afterwards; values '
+                .'written under the key you do have will read normally. Add the missing key to '
+                .'APP_PREVIOUS_KEYS before restoring and nothing is lost. If you restore without it, '
+                .'do NOT clear the encrypted columns — you would destroy the values that still read.'
+            );
+        } elseif ($preflight['app_key_skew'] ?? false) {
             // Deliberately NOT an inventory of affected columns. An earlier
             // version listed the integration secrets and read as exhaustive
             // while omitting the one that matters most: two_factor_secret is
@@ -67,7 +79,7 @@ class RestoreCommand extends Command
             // IN, so every agent with 2FA is locked out before anyone can
             // re-enter anything. Lead with that, describe the rest as a class.
             $this->warn(
-                'APP_KEY does not match the key set this archive was taken with. EVERY encrypted '
+                'This install shares no APP_KEY with the key set this archive was taken with. EVERY encrypted '
                 .'value in the archive becomes unreadable, and the first casualty is sign-in itself: '
                 .'agents with two-factor authentication cannot authenticate, because their secret is '
                 .'encrypted and is read while they log in. Operator-managed credentials, single '

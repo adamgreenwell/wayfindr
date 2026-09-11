@@ -82,9 +82,19 @@ class RestoreService
 
         $known = is_array($archive) && $archive !== [] && $running !== [];
 
+        $missing = $known ? array_diff($archive, $running) : [];
+
         return [
-            'app_key_skew' => $known && array_diff($archive, $running) !== [],
+            'app_key_skew' => $missing !== [],
             'app_key_indeterminate' => ! $known,
+            // Skew is not one condition. If the sets overlap -- a source that
+            // rotated K1 to K2 restored onto a target holding K2 but not the
+            // historical K1 -- then rows written under the shared key still
+            // decrypt perfectly, and only the older ones do not. Telling that
+            // operator "every encrypted value is unreadable, clear them all"
+            // would destroy data they could still read. An empty intersection
+            // is the only case where nothing survives.
+            'app_key_no_overlap' => $known && array_intersect($archive, $running) === [],
         ];
     }
 
