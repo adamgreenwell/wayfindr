@@ -73,13 +73,51 @@ screens, those are authenticated HTTP routes, maintenance mode blocks them — a
 lifting maintenance first leaves agents unable to sign in at all, because
 reading their encrypted two-factor secret throws.
 
-1. **While the site is still in maintenance**, clear the unreadable columns
-   directly in the database: `users.two_factor_secret`,
-   `users.two_factor_recovery_codes`, `users.two_factor_confirmed_at`, and any
-   operator settings row holding a secret. Nothing decrypts them there, which is
-   why this step has to come first.
+**Clearing is not one operation.** Nine columns across seven tables use
+Laravel's `encrypted` cast, and they do not all clear the same way, because five
+of them are `NOT NULL`. Setting those to `''` does not help either — the cast
+still tries to decrypt an empty string and still throws `DecryptException`. For
+those, the row itself goes.
+
+1. **While the site is still in maintenance**, reset the ciphertext directly in
+   the database. Nothing decrypts it there, which is why this step comes first.
+
+   Nullable — clear the column and keep the row:
+
+   ```sql
+   UPDATE users SET two_factor_secret = NULL,
+                    two_factor_recovery_codes = NULL,
+                    two_factor_confirmed_at = NULL;
+   UPDATE external_issue_provider_connections SET credentials = NULL;
+   ```
+
+   Plus any operator settings row holding a secret. Only
+   `users.two_factor_secret` and `credentials` are encrypted here; the two
+   two-factor companions go with the secret because they describe an enrolment
+   that no longer exists, not because they throw.
+
+   `NOT NULL` — delete the rows, because the column cannot hold `NULL` and an
+   empty string still throws on read:
+
+   ```sql
+   DELETE FROM oidc_connections;
+   DELETE FROM outbound_webhook_endpoints;
+   DELETE FROM conversation_reply_deliveries;
+   DELETE FROM ticket_external_comment_deliveries;
+   ```
+
+   What those four cascades take with them, so none of it is a surprise:
+   deleting `oidc_connections` also removes `oidc_identities`, so agents re-link
+   on their next single sign-on; deleting `outbound_webhook_endpoints` also
+   removes its subscriptions **and** its deliveries, which is where
+   `outbound_webhook_deliveries.response_body` lived, so that column needs no
+   separate step. The two delivery tables are receipts — the conversation
+   messages and ticket notes they describe are untouched.
+
 2. `php artisan up`.
-3. Sign in, re-enter the integration credentials, and re-enrol two-factor.
+3. Sign in, re-enrol two-factor, re-enter the integration credentials, and
+   re-create the single sign-on connection and the webhook endpoints that step 1
+   deleted.
 
 An account that requires two-factor will ask each agent to enrol again on their
 next sign-in, which is the intended outcome — not a second failure.

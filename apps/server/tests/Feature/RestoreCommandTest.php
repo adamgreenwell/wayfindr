@@ -13,6 +13,7 @@ use App\Support\Backup\BackupService;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\RestoreService;
 use Illuminate\Contracts\Filesystem\Filesystem;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -920,4 +921,78 @@ test('a tagged prerelease that merely contains "dev" is a real identity', functi
 
     expect($preflight['version_indeterminate'])->toBeFalse()
         ->and($preflight['version_skew'])->toBeFalse();
+});
+
+test('the key-loss runbook still matches the schema it tells operators to edit', function (): void {
+    // This list drifted twice inside one pull request: first it named two of
+    // the nine encrypted columns and read as exhaustive, then it named all nine
+    // but told operators to NULL five that are NOT NULL -- which fails the
+    // constraint, and an empty string does not help because the cast still
+    // tries to decrypt it. Both versions stranded an operator mid-recovery on
+    // an install whose sign-in was already broken.
+    //
+    // So the runbook is checked against the models and the live schema rather
+    // than against a copy of itself. Adding a tenth encrypted column, or making
+    // an existing one nullable, now fails here instead of in production.
+    $runbook = file_get_contents(base_path('../../docs/self-hosting/backup-restore.md'));
+
+    expect($runbook)->toBeString();
+
+    $section = str($runbook)->after('#### If the keys are genuinely gone')->before('###')->toString();
+
+    $encrypted = [];
+
+    foreach ((new DirectoryIterator(app_path('Models'))) as $entry) {
+        if ($entry->isDot() || $entry->getExtension() !== 'php') {
+            continue;
+        }
+
+        $class = 'App\\Models\\'.$entry->getBasename('.php');
+
+        if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
+            continue;
+        }
+
+        $model = new $class;
+
+        foreach ($model->getCasts() as $column => $cast) {
+            if (! str_starts_with((string) $cast, 'encrypted')) {
+                continue;
+            }
+
+            $encrypted[$model->getTable()][] = $column;
+        }
+    }
+
+    // The count is asserted so that a model added without a thought here fails
+    // loudly rather than slipping past a per-column loop that never ran for it.
+    expect(array_sum(array_map('count', $encrypted)))->toBe(9)
+        ->and($encrypted)->toHaveCount(7);
+
+    $nullableBlock = str($section)->between('Nullable — clear the column', '`NOT NULL` — delete the rows')->toString();
+    $deleteBlock = str($section)->after('`NOT NULL` — delete the rows')->toString();
+
+    $misplaced = [];
+
+    foreach ($encrypted as $table => $columns) {
+        $columnIsNullable = collect(Schema::getColumns($table))->keyBy('name');
+
+        foreach ($columns as $column) {
+            $nullable = (bool) ($columnIsNullable[$column]['nullable'] ?? false);
+
+            // A nullable column may be cleared in place. A NOT NULL one cannot
+            // be, so its TABLE has to appear in the delete block -- and a
+            // cascade counts: deleting outbound_webhook_endpoints takes
+            // outbound_webhook_deliveries.response_body with it.
+            $named = $nullable
+                ? str_contains($nullableBlock, $column) || str_contains($deleteBlock, $table)
+                : str_contains($deleteBlock, $table);
+
+            if (! $named) {
+                $misplaced[] = $table.'.'.$column.($nullable ? ' (nullable)' : ' (NOT NULL)');
+            }
+        }
+    }
+
+    expect($misplaced)->toBe([], 'The runbook does not give a working reset for: '.implode(', ', $misplaced));
 });
