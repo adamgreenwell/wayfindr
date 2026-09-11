@@ -123,7 +123,12 @@ class AppServiceProvider extends ServiceProvider
         // address.
         RateLimiter::for('password-reset-request', fn (Request $request): array => [
             Limit::perMinute(5)->by('password-reset-request-ip:'.$request->ip()),
-            Limit::perMinutes(15, 5)->by('password-reset-request-email:'.Str::lower((string) $request->input('email'))),
+            // Hashed for the same reason as the login limiter below it: the
+            // address is caller-supplied and unbounded, the cache key column
+            // is 255 characters, and exceeding it turns a rate limit into a
+            // 500. Pre-existing, and one line, so fixed here rather than left
+            // as a second instance of a defect this branch is already fixing.
+            Limit::perMinutes(15, 5)->by('password-reset-request-email:'.hash('sha256', Str::lower((string) $request->input('email')))),
         ]);
 
         // SUBMITTING a reset carries its own quota, deliberately separate from
