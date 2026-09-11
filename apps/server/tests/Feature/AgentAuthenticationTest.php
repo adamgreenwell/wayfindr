@@ -138,25 +138,42 @@ test('repeated failed sign-ins from one source are throttled', function (): void
     ])->assertStatus(429);
 });
 
-test('throttling one address does not lock a real agent out from elsewhere', function (): void {
+test('an attacker cannot lock a named agent out of their own desk', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'email' => 'ada@example.test',
         'password' => Hash::make('correct-horse-battery-staple'),
     ]);
 
-    // An attacker burns the per-IP bucket from their own address...
-    for ($attempt = 0; $attempt < 11; $attempt++) {
-        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
-            ->post(route('login.store'), [
-                'email' => $agent->email,
-                'password' => 'wrong-'.$attempt,
-            ]);
+    // The account bucket has to be driven to its limit ACROSS WINDOWS, and
+    // that detail is the whole test. Laravel's throttle middleware evaluates
+    // limits in order and throws on the first one exceeded, so a single burst
+    // trips the per-minute address limit after ten and the account bucket
+    // stops climbing there. Two earlier versions of this test missed the bug
+    // for exactly that reason -- one stopped at eleven attempts, the next ran
+    // thirty in one window and still never pushed the account bucket past ten.
+    //
+    // Waiting out the address window between bursts is what a patient attacker
+    // does, and it is the only way to reach twenty.
+    foreach ([0, 1] as $window) {
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
+                ->post(route('login.store'), [
+                    'email' => $agent->email,
+                    'password' => 'wrong-'.$window.'-'.$attempt,
+                ]);
+        }
+
+        $this->travel(1)->minutes();
     }
 
-    // ...and the agent still signs in from theirs. This is the assertion that
-    // separates a rate limit from a lockout: an email-keyed bucket alone would
-    // let anyone deny a named agent their own desk, which is why the email
-    // limit is loose and the tight one is keyed on the source.
+    // Twenty failures now sit against this agent's address. Under a globally
+    // keyed email bucket that quota is spent and belongs to nobody; under the
+    // address-plus-account key it belongs to the attacker.
+
+    // ...and the agent still signs in, which is the point of keying the
+    // account limit to the source as well as the address. A globally-keyed
+    // email bucket would have been spent above and this would be a 429 --
+    // an attacker choosing when a support desk stops working.
     $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.22'])
         ->post(route('login.store'), [
             'email' => $agent->email,

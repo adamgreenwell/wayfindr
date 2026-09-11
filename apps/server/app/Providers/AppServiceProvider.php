@@ -138,22 +138,35 @@ class AppServiceProvider extends ServiceProvider
 
         // Signing in was the one unauthenticated credential endpoint with no
         // quota at all, while password reset, the two-factor challenge, OIDC
-        // and even widget presence each had one. Same two-key shape as
-        // password-reset-request, and for the same two reasons: an IP-only
-        // bucket lets a distributed attacker grind one address, and an
-        // email-only bucket lets an attacker lock a named agent out of their
-        // own desk by spending the quota for them.
+        // and even widget presence each had one.
         //
-        // The address limit is deliberately loose and per-quarter-hour rather
-        // than a lockout: an agent who mistypes a password twice and then gets
-        // it right must not be stopped, and nothing here should ever leave a
-        // real person unable to sign in by an attacker's choice. Behind a proxy
-        // this is only as good as TRUSTED_PROXIES -- an install that does not
-        // set it sees every request from one address and falls back to the
-        // email key, which still holds.
+        // NEITHER key is the address alone, and neither is the email alone.
+        // An address-only bucket lets a distributed attacker grind one named
+        // agent. An email-only bucket is worse: it is global across every
+        // source, so an attacker who knows an agent's address can exhaust it
+        // deliberately and the agent's own correct password is refused -- a
+        // lockout wearing a rate limit's clothes, and against a support desk
+        // that is an outage.
+        //
+        // So the second key is the address AND the account together, which is
+        // Laravel's own convention for this endpoint. One source may keep
+        // guessing broadly, bounded by the first limit, but gets only twenty
+        // tries at any single agent -- and can never spend a quota that agent
+        // depends on, because the bucket is the attacker's own.
+        //
+        // Both limits are per-window rather than a lockout: someone who
+        // mistypes twice and then gets it right must not be stopped. Behind a
+        // proxy this is only as good as TRUSTED_PROXIES; an install that does
+        // not set it sees one address for everyone, which makes the first
+        // limit shared and the second per-account -- degraded, but still not a
+        // lockout.
         RateLimiter::for('login', fn (Request $request): array => [
             Limit::perMinute(10)->by('login-ip:'.$request->ip()),
-            Limit::perMinutes(15, 20)->by('login-email:'.Str::lower((string) $request->input('email'))),
+            Limit::perMinutes(15, 20)->by(
+                'login-email-ip:'
+                .Str::lower((string) $request->input('email'))
+                .'|'.$request->ip()
+            ),
         ]);
 
         RateLimiter::for('two-factor-challenge', fn (Request $request): array => [

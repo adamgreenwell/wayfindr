@@ -724,16 +724,46 @@ def declared_keys(path):
 generated = declared_keys(sys.argv[1])
 example = declared_keys(sys.argv[2])
 
-missing = sorted(example - generated)
+# Both directions. Checking only one would have let the same drift back in
+# from the other side: a key added to the generator alone leaves the operator
+# who copies .env.example with the different stack, which is the identical
+# defect with the two files swapped.
+# Keys the generator DERIVES from the host it was given, which the committed
+# example cannot carry a value for because the value depends on that host.
+# generate-env.sh computes these from whether the URL is a public domain, a
+# localhost/.local name, or a bare IP; Caddyfile reads them and Compose
+# substitutes empty when they are absent, which is the correct public-domain
+# default. Listed explicitly, with the reason, so the reverse check stays real
+# for everything else.
+DERIVED_BY_GENERATOR = {
+    'CADDY_GLOBAL_OPTIONS',
+    'CADDY_GLOBAL_OPTIONS_EXTRA',
+    'CADDY_SERVER_EXTRA_DIRECTIVES',
+}
 
-if missing:
-    raise SystemExit(
+only_in_example = sorted(example - generated)
+only_in_generated = sorted(generated - example - DERIVED_BY_GENERATOR)
+
+problems = []
+
+if only_in_example:
+    problems.append(
         'the generator omits keys the committed example declares: '
-        + ', '.join(missing)
+        + ', '.join(only_in_example)
+    )
+
+if only_in_generated:
+    problems.append(
+        'the committed example omits keys the generator emits: '
+        + ', '.join(only_in_generated)
+    )
+
+if problems:
+    raise SystemExit(
+        '\n'.join(problems)
         + '\n'
-        'An operator following the one-liner would get a different stack from one '
-        'who copied .env.example. Add them to the generator heredoc, or drop them '
-        'from the example if they are genuinely not wanted.'
+        'The two supported install paths would produce different stacks. Add the '
+        'key to whichever file lacks it, or remove it from both if it is not wanted.'
     )
 ENVPARITY
 
