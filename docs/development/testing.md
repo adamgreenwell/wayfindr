@@ -209,6 +209,32 @@ Home or the sidebar, validates internal Wiki links, and confirms that linked
 repository files still exist. The authoring and review-gated publication flow
 is documented in [wiki.md](wiki.md).
 
+## Data Model Coverage
+
+Check that every table a migration creates is described in
+[../architecture/data-model.md](../architecture/data-model.md):
+
+```bash
+make data-model-test
+```
+
+A pull request that adds a migration fails until the table has an entry. That
+is deliberate: the document had drifted to 31 of 57 tables before anything read
+both files, and nothing reported it, because nothing was reading both.
+
+Two things to know if it fails on you. Laravel's own tables are excluded by an
+explicit list in the script, and that list is only ever for tables the framework
+creates — parking a Wayfindr table there to quiet the check defeats the whole
+point, silently. And a migration that builds its table name from a variable
+must give `config()` a readable default, as the Web Push migration does; a name
+this check cannot resolve is a hard failure rather than a skip, because an
+unreadable name and an undocumented table look identical from here.
+
+It checks presence, not accuracy. Whether an entry tells the truth is a review
+question — the pass that added the missing 26 entries needed six review rounds
+to remove six wrong statements, and every one of those entries was present the
+whole time.
+
 ## Smoke Scripts
 
 Use smoke scripts when you need runtime proof against a local, staging, or

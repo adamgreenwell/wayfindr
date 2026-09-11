@@ -61,6 +61,13 @@ jobs:
       - name: Validate the release contract
         run: make release-contract-test
 
+      # Here rather than in Repository contracts because that job sets up no
+      # PHP, and this reads the migrations. A migration adding a table now has
+      # to describe it: the data model had drifted to 31 of 57 tables before
+      # anything read both files (#959).
+      - name: Check the data model still describes the schema
+        run: make data-model-test
+
   php-application-postgres:
     name: PHP application (PostgreSQL)
     runs-on: ubuntu-latest

@@ -1,6 +1,6 @@
 SERVER_DIR := apps/server
 
-.PHONY: attachment-retention-test help design-fonts-test design-tokens design-tokens-test host-release-manifest-test php-version-test public-artifact-install-test public-info-check public-info-test release-contract-test release-publish-contract-test reverb-capacity-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
+.PHONY: attachment-retention-test data-model-test help design-fonts-test design-tokens design-tokens-test host-release-manifest-test php-version-test public-artifact-install-test public-info-check public-info-test release-contract-test release-publish-contract-test reverb-capacity-test self-host-test services-up services-down server-install server-migrate server-serve server-test wiki-sync-dry-run wiki-test
 
 help:
 	@printf '%s\n' 'Wayfindr development commands:'
@@ -9,6 +9,7 @@ help:
 	@printf '%s\n' '                          Test the attachment-retention capacity harness guards'
 	@printf '%s\n' '  make design-tokens      Regenerate the design tokens into both consumers'
 	@printf '%s\n' '  make design-tokens-test Check both consumers match packages/design-tokens/tokens.json'
+	@printf '%s\n' '  make data-model-test    Check every migrated table is described in the data model'
 	@printf '%s\n' '  make php-version-test   Check that every PHP minimum agrees'
 	@printf '%s\n' '  make host-release-manifest-test'
 	@printf '%s\n' '                          Test clean and dirty host manifest identities'
@@ -59,6 +60,9 @@ attachment-retention-test:
 
 php-version-test:
 	scripts/test-php-version-contract.sh
+
+data-model-test:
+	php scripts/test-data-model-coverage.php
 
 release-contract-test:
 	php scripts/test-release-contract.php
