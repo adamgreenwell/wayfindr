@@ -3,7 +3,7 @@
 return [
     'document_title' => 'Ruoli personalizzati',
     'heading' => 'Ruoli personalizzati',
-    'subtitle' => 'Combina solo i permessi dell’account necessari a ogni persona. Le assegnazioni ai siti decidono ancora dove il lavoro di assistenza è visibile.',
+    'subtitle' => 'Combini solo i permessi dell’account necessari a ogni persona. Le assegnazioni ai siti decidono ancora dove il lavoro di assistenza è visibile.',
     'back' => 'Torna all’account',
     'fields' => ['name' => 'Nome del ruolo'],
     'groups' => ['team' => 'Accesso del team', 'support' => 'Lavoro di assistenza', 'content' => 'Conoscenza', 'account' => 'Impostazioni account'],
@@ -18,7 +18,7 @@ return [
     ],
     'flash' => ['created' => 'Ruolo personalizzato creato.', 'updated' => 'Ruolo personalizzato aggiornato.', 'deleted' => 'Ruolo personalizzato eliminato.'],
     'errors' => [
-        'assigned' => 'Sposta ogni persona da questo ruolo prima di eliminarlo.',
+        'assigned' => 'Sposti ogni persona da questo ruolo prima di eliminarlo.',
         'oidc_mapped' => 'Rimuova questo ruolo dalle mappature dei claim Single Sign-on prima di eliminarlo.',
         'duplicate' => 'Esiste già un ruolo con questo nome.',
         'reserved' => 'Owner, Admin e Agent sono nomi riservati ai ruoli integrati.',
@@ -29,7 +29,7 @@ return [
         'manage_agents' => ['label' => 'Gestisci agenti', 'detail' => 'Aggiunta dei membri del team e sospensione degli agenti ordinari.'],
         'manage_sites' => ['label' => 'Gestisci siti', 'detail' => 'Creazione, modifica, archiviazione e ripristino dei siti.'],
         'manage_site_access' => ['label' => 'Gestisci accesso ai siti', 'detail' => 'Scelta delle persone che possono assistere ogni sito.'],
-        'manage_contacts' => ['label' => 'Gestisci contatti', 'detail' => 'Definisca gli attributi dei visitatori e gestisca i contatti sui siti assegnati.'],
+        'manage_contacts' => ['label' => 'Gestisci contatti', 'detail' => 'Definizione degli attributi dei visitatori e gestione dei contatti sui siti assegnati.'],
         'manage_privacy_settings' => ['label' => 'Gestisci impostazioni privacy', 'detail' => 'Gestione dei controlli sui dati dei visitatori e sulla privacy.'],
         'manage_integrations' => ['label' => 'Gestisci integrazioni', 'detail' => 'Configurazione di provider, token API, webhook e instradamento.'],
         'manage_knowledge' => ['label' => 'Gestisci conoscenza', 'detail' => 'Creazione e pubblicazione di articoli, risposte ed etichette dei ticket.'],
