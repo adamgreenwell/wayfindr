@@ -139,6 +139,36 @@ test('a colour outside the palette is rejected', function (): void {
     expect($site->fresh()->color)->toBe(SiteColor::Red);
 });
 
+test('a validation failure opens the disclosure holding the form', function (): void {
+    $account = Account::factory()->create();
+    $owner = siteColourOwner($account);
+    $site = Site::factory()->for($account)->create(['color' => SiteColor::Red]);
+
+    // The site-details form lives inside <x-details-disclosure>, which is a
+    // native <details> and collapsed by default. Without the open prop the
+    // three @error messages render inside a closed disclosure, so the agent
+    // sees their change fail to save and is given no reason.
+    // followingRedirects() so the assertion runs against the page the agent
+    // actually lands on. The errors are flashed for exactly that one render,
+    // and that render is the thing under test.
+    $html = (string) $this->actingAs($owner)
+        ->from(route('dashboard.sites.show', $site))
+        ->followingRedirects()
+        ->put(route('dashboard.sites.details.update', $site), [
+            'name' => 'Acme Docs',
+            'color' => 'not-a-palette-key',
+        ])
+        ->assertOk()
+        ->getContent();
+
+    // Slice the disclosure's own tag rather than searching the page: `open` is
+    // a bare attribute and the word appears elsewhere in the markup.
+    $tag = substr($html, (int) strpos($html, '<details'), 120);
+
+    expect($tag)->toContain('open');
+    expect($tag)->toContain('details-disclosure');
+});
+
 test('the sites list shows each site colour', function (): void {
     $account = Account::factory()->create();
     $owner = siteColourOwner($account);

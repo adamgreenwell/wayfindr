@@ -301,7 +301,13 @@
                 </div>
 
                 @can('update', $site)
-                    <x-details-disclosure :summary="__('site_settings.site.edit')">
+                    {{-- The only disclosure in the product that wraps a form with
+                         @error blocks: without this the three messages below render
+                         inside a closed <details> and the agent is told nothing. --}}
+                    <x-details-disclosure
+                        :summary="__('site_settings.site.edit')"
+                        :open="$errors->hasAny(['name', 'domain', 'color'])"
+                    >
                         <form class="section-form" method="POST" action="{{ route('dashboard.sites.details.update', $site) }}">
                             @csrf
                             @method('PUT')

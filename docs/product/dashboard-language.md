@@ -15,7 +15,13 @@ region, scanning, mail, Web Push, agent-copilot, attachment storage, and backup
 surfaces.
 
 The ordinary dashboard pages still intentionally rendered in English are the
-agent home, custom-role management, readiness, and support-code lookup. Exports,
+agent home, readiness, and support-code lookup. Custom-role management was on
+that list while its German and Italian catalogues already existed, complete and
+in the right register — the routes had simply never been added to
+`EXTRACTED_ROUTES`, so the locale never resolved to anything but English and
+none of that work could reach a screen. The list said the surface was a
+decision; the catalogues said it was an oversight. It is extracted now, and the
+render audit covers it. Exports,
 partials, and machine-facing data routes are judged by their own contracts, so
 counting GET routes is not a reliable page-completion metric. A page is not
 complete until the writes and refreshed fragments that render back into it also

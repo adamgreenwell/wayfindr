@@ -16,6 +16,7 @@ use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\ConversationMessageAttachment;
+use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\ProactiveMessageRule;
 use App\Models\ReplyTemplate;
@@ -400,6 +401,16 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Admin]),
     ];
 
+    // And a third pair, because `manage_roles` is Owner-only: it is the one
+    // permission `AccountPermission::delegable()` withholds, so an Admin 403s
+    // on the custom-roles page. Separate for the same reason the admins are --
+    // the role is rendered on the account screen, and promoting the existing
+    // readers would take `Admin` off it.
+    $owners = [
+        'en' => User::factory()->for($account)->create(['locale' => 'en', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Owner]),
+        'de' => User::factory()->for($account)->create(['locale' => 'de', 'name' => 'Ada Datenpunkt', 'account_role' => AccountRole::Owner]),
+    ];
+
     // Both rows the account-audit screen needs: a populated reference row and
     // the otherwise easy-to-miss system/account fallbacks. The unknown action
     // also proves the localized fallback rather than a headline-cased English
@@ -478,6 +489,7 @@ function conversationQueueLanguageWorld(int $conversations = 3): array
         // screen, and the cognate list has a guard that notices when one of its
         // entries stops appearing.
         'admins' => $admins,
+        'owners' => $owners,
         'operators' => $operators,
         'operator_grant' => $operatorGrant,
     ];
@@ -502,6 +514,12 @@ function conversationQueueLanguageReaderForUrl(array $world, string $url, string
 
     if (str_starts_with($path, '/operator')) {
         return $world['operators'][$locale];
+    }
+
+    // Before the /dashboard/account branch below, which would hand back an
+    // Admin -- and `manage_roles` is the one permission an Admin does not have.
+    if (str_starts_with($path, '/dashboard/account/roles')) {
+        return $world['owners'][$locale];
     }
 
     if (
@@ -1619,6 +1637,14 @@ test('no English is rendered as German on any extracted surface', function (): v
         'subject_type' => 'ticket',
         'actions' => [['type' => 'set_priority', 'value' => 'urgent']],
     ]);
+    // A populated custom role, so the roles page renders its list rather than
+    // its empty state. The name is user-supplied data and stays in whatever
+    // words the account typed -- the catalogue prose around it is what this
+    // test is comparing.
+    CustomRole::factory()->for($world['account'])->create([
+        'name' => 'Datenpunkt custom role',
+        'name_key' => 'datenpunkt custom role',
+    ]);
     $proactiveMessageRule = ProactiveMessageRule::factory()->for($world['site'])->create([
         'name' => 'Datenpunkt proactive rule',
         'message' => 'Datenpunkt visitor invitation',
@@ -1713,6 +1739,7 @@ test('no English is rendered as German on any extracted surface', function (): v
         route('dashboard.account.show'),
         route('dashboard.account.security.show'),
         route('dashboard.account.sla-policies.index'),
+        route('dashboard.account.roles.index'),
         route('operator.settings.localization.edit'),
         route('operator.settings.scanning.edit'),
         route('operator.settings.mail.edit'),

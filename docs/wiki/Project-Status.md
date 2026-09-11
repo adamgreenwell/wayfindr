@@ -69,7 +69,7 @@ until a stable artifact containing it is published and verified.
   until somebody saves one.
 
   The ordinary dashboard pages still intentionally rendered in English are the
-  agent home page, custom-role management, readiness, and support-code lookup.
+  agent home page, readiness, and support-code lookup.
   `DashboardLanguage::EXTRACTED_ROUTES` is the executable authority; it also
   includes writes and partials whose validation or refreshed content must match
   the page that invoked them. A write shared by translated and untranslated

@@ -60,8 +60,7 @@ closed. It now includes:
   of the dashboard — Alerts, Reports, ticket detail, sites and site settings,
   the account audit, break-glass, and the security, SLA, automation and webhook
   pages, including Integrations. The ordinary pages that still render English
-  are the agent home page, custom roles, the readiness page, and support-code
-  lookup. The CSV exports keep stable English headers deliberately, because a
+  are the agent home page, the readiness page, and support-code lookup. The CSV exports keep stable English headers deliberately, because a
   localized cell is reparsed by whatever spreadsheet opens it.
 
   `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
