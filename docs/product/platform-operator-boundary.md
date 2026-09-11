@@ -77,14 +77,25 @@ backups on demand, keeps their history, and can restore the database from the
 browser.
 
 Setting changes and completed actions record audit events, and that is the rule
-to design to — but it is not yet true of every write, and the two gaps are not
-the same size. A backup that cannot reach the queue writes its own failure into
-the run history and returns before the audit event is created: that one is still
+to design to — but it is not yet true of every write, and the gaps are not the
+same size. A backup that cannot reach the queue writes its own failure into the
+run history and returns before the audit event is created: that one is still
 visible, just not in the audit trail. The storage and backup connection tests
-are the weaker case. Each writes a probe object to the configured disk and
-deletes it, and records nothing — no audit event, and no run-history row either,
-because the history lists backup runs and a probe never creates one. Once the
-flash message is gone, nothing says who ran it or what happened.
+are weaker. Each writes a probe object to the configured disk and deletes it,
+and records nothing — no audit event, and no run-history row either, because the
+history lists backup runs and a probe never creates one. Once the flash message
+is gone, nothing says who ran it or what happened.
+
+A successful restore is the structural case, and no amount of remembering to
+write an audit event fixes it. The controller does write one —
+`operator_settings.backup.restore_triggered`, committed inside the triggering
+request so it lands before the job can start — and then the restore replaces the
+database that row lives in. It survives a restore that fails or rolls back and
+is erased by one that succeeds, which is the opposite of what an auditor wants.
+The durable record of a completed restore is the cache status the controller
+writes first, not the audit trail. **An audit trail kept in the database cannot
+witness an operation that replaces the database**, so outliving one needs a
+destination the restore does not overwrite.
 
 **That is a much larger blast radius than "read-only", and the boundary this
 document defends is not the same thing as a small surface.** An in-GUI restore
