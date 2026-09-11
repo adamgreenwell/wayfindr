@@ -62,20 +62,59 @@ Platform operator surfaces should avoid:
 7. Treat customer-data access as a separate break-glass workflow with explicit approval, audit events, scope, and expiry.
 8. Never use platform authority to bypass site access inside ordinary account dashboards.
 
-## First Scaffold
+## What `/operator` Became
 
-The first code scaffold should be small:
+The first scaffold was deliberately small — system identity, release and runtime
+details, documentation links, and readiness diagnostics, with no customer-data
+access and no account-wide support shortcut. That description is kept here as
+history, because the constraints it was chosen under are the ones below, and
+they still hold. What it grew into is not small.
 
-- no full platform-admin UI yet;
-- no customer-data access;
-- no account-wide support visibility shortcut;
+`/operator` is now a full operator console. ADR 0011 gave it guided onboarding
+and database-backed settings for mail, agent copilot, Web Push, storage,
+localization, scanning and backups, which override the environment; it runs
+backups on demand, keeps their history, and can restore the database from the
+browser. Every write is audited.
+
+**That is a much larger blast radius than "read-only", and the boundary this
+document defends is not the same thing as a small surface.** An in-GUI restore
+replaces every conversation, ticket and transcript in the install, and a backup
+run writes a full copy of customer data to a destination the operator chose.
+Neither is *browsing* support content, which is what the prohibitions above
+forbid — but neither is harmless, and an operator console that can do them is
+not usefully described as read-only.
+
+What has not changed:
+
 - `users.platform_role` is nullable and grants explicit operator access only when set to `operator`;
-- `/operator` starts with system identity, release/runtime details, documentation links, and instance readiness diagnostics;
-- instance readiness includes a security posture check that flags `APP_DEBUG=true` in production (which would leak stack traces, environment values, and secrets on errors) without exposing any visitor content;
-- `/operator` includes a platform action inventory that labels current read-only actions, audited manual readiness proof, and future break-glass work without exposing support data;
-- browser and CLI bootstrap mark the first local user as both account owner and platform operator.
+- readiness includes a security posture check that flags `APP_DEBUG=true` in production — which would leak stack traces, environment values, and secrets on errors — without exposing any visitor content;
+- browser and CLI bootstrap mark the first local user as both account owner and platform operator;
+- no route on `/operator` shows conversation, ticket, or cobrowse content without a break-glass grant.
 
-The break-glass workflow itself now exists (ADR 0008): `/operator/break-glass` is where an operator requests scoped, reasoned, time-bound, read-only access, and `/dashboard/account/operator-access` is where the account's owners and admins approve, deny, or revoke it. Every transition is audited as `break_glass.*` events. The read-only viewers under `/operator/break-glass/{grant}` check the grant — never platform authority — and re-derive coverage from the resource side on every request; transcripts and tickets render as text, attachments appear as metadata only, and first views are recorded as `break_glass.opened` / `break_glass.resource_viewed` events.
+## Break-Glass
+
+The workflow exists (ADR 0008). `/operator/break-glass` is where an operator
+requests scoped, reasoned, time-bound, read-only access.
+`/dashboard/account/operator-access` is where the account decides: any member
+holding the `manage_operator_access` permission can approve, deny, or revoke.
+Owners and admins hold it by default, and an account-owned custom role may be
+granted it.
+
+Every transition is audited as `break_glass.*` events. The read-only viewers
+under `/operator/break-glass/{grant}` check the grant — never platform
+authority — and re-derive coverage from the resource side on every request;
+transcripts and tickets render as text, attachments appear as metadata only,
+and first views are recorded as `break_glass.opened` /
+`break_glass.resource_viewed` events.
+
+**Self-approval exists, and its conditions are the interesting part.** When an
+account has no eligible approver left, the requester may approve their own
+request — but only if they personally hold `manage_operator_access` on *that*
+account and are not deactivated. Platform authority alone is never enough. As
+the code puts it: an operator with no admin standing on the account has no
+consent to give, even — especially — when the account has no active approver
+left. The grant is recorded as self-approved, the mandatory reason still
+applies, and the account still sees it.
 
 Other account owners and admins remain account roles only. They do not become platform operators by implication.
 
