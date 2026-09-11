@@ -30,6 +30,33 @@ missed while skimming.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The widget script no longer starts a session or sets a cookie.**
+  `/widget.js` had been declared in `routes/web.php` since the first commit that
+  served the widget from Laravel, which put it in the `web` middleware group.
+  Because every visitor of every page of every install fetches it before they
+  have interacted with anything, that cost a `sessions` row per script load
+  against the operator's own database, and set `wayfindr-session` and
+  `XSRF-TOKEN` on visitors who never opened the widget — a consent surface in a
+  product whose presence collection is deliberately opt-in with an explicit
+  decline path (ADR 0019). The route is now registered outside every middleware
+  group, in `apps/server/routes/asset.php`. Nothing an operator has to do; the
+  URL is unchanged, and existing visitor cookies simply stop being renewed.
+
+### Changed
+
+- **The widget script is now genuinely cacheable, and revalidates cheaply.**
+  The previous `max-age=60` never applied: `Set-Cookie` on the same response
+  makes shared caches decline to store it, so the asset was refetched on every
+  page view. With the cookie gone the header is load-bearing, so it was set
+  deliberately — `max-age=300`, which is also the window in which a visitor can
+  keep running the previous release's widget after an upgrade, since the URL
+  carries no version. The response now also carries an `ETag`, so a
+  revalidation that matches costs a bare `304` rather than roughly 97 KB
+  gzipped. A size budget on the served payload is enforced by
+  `make self-host-test`; there had been none anywhere in the repo.
+
 ## [0.8.0] - 2026-09-10
 
 **Requires operator action when upgrading a host-managed PHP install, including

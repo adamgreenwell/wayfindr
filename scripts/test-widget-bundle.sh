@@ -77,4 +77,44 @@ if grep -rn 'js\.pusher\.com' \
     exit 1
 fi
 
+# A size budget on what a visitor's browser actually downloads (#955).
+#
+# Every visitor of every page of every install fetches this, so growth here is
+# multiplied by more than anything else in the product. Until this check existed
+# there was no budget anywhere and nothing would have reported a doubling.
+#
+# The yardstick is GZIPPED bytes, because that is what crosses the wire; `gzip -9`
+# is used so the number is reproducible rather than dependent on whatever level a
+# given nginx is configured for. Raw size is reported alongside for context but is
+# not what the budget is set against.
+#
+# These ceilings are deliberately close to today's figures. Raising one is a fine
+# thing to do -- it just has to be a decision somebody took, rather than a drift
+# nobody saw.
+WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
+WIDGET_SRC_GZIP_BUDGET=85000
+SERVED_GZIP_BUDGET=105000
+
+[ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"
+
+src_raw="$(wc -c < "$WIDGET_SRC" | tr -d ' ')"
+src_gzip="$(gzip -9 -c "$WIDGET_SRC" | wc -c | tr -d ' ')"
+served_raw="$(cat "$VENDOR_FILE" "$WIDGET_SRC" | wc -c | tr -d ' ')"
+served_gzip="$(cat "$VENDOR_FILE" "$WIDGET_SRC" | gzip -9 -c | wc -c | tr -d ' ')"
+
+if [ "$src_gzip" -gt "$WIDGET_SRC_GZIP_BUDGET" ]; then
+    fail "The widget source is over its size budget.
+  gzipped: $src_gzip bytes (budget $WIDGET_SRC_GZIP_BUDGET, raw $src_raw)
+Every visitor of every page of every install downloads this. Either bring it back
+under the budget, or raise WIDGET_SRC_GZIP_BUDGET in this script deliberately and
+say why in the commit message. The source is unminified today, so there is room."
+fi
+
+if [ "$served_gzip" -gt "$SERVED_GZIP_BUDGET" ]; then
+    fail "The served widget payload is over its size budget.
+  gzipped: $served_gzip bytes (budget $SERVED_GZIP_BUDGET, raw $served_raw)
+That is the realtime-configured response: the vendored client plus the widget."
+fi
+
+echo "Widget payload within budget: ${src_gzip}B gzipped source, ${served_gzip}B served with realtime."
 echo "Widget bundles its realtime client, with recorded provenance, and the image ships it."

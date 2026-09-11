@@ -69,7 +69,6 @@ use App\Http\Controllers\OperatorReadinessConfirmationController;
 use App\Http\Controllers\OperatorScanningSettingsController;
 use App\Http\Controllers\OperatorStorageSettingsController;
 use App\Http\Controllers\OperatorWebPushSettingsController;
-use App\Http\Controllers\Widget\WidgetScriptController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
@@ -78,8 +77,6 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return redirect()->route('login');
 });
-
-Route::get('/widget.js', WidgetScriptController::class)->name('widget.script');
 
 Route::get('/setup', [FirstRunSetupController::class, 'create'])->name('setup.create');
 Route::post('/setup', [FirstRunSetupController::class, 'store'])->name('setup.store');
