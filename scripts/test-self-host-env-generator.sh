@@ -696,4 +696,45 @@ if ("127.0.0.1", "8000", "tcp") not in published:
     raise SystemExit(f"the URL's own port is not published: {published}")
 PY
 
+# The generated env and the committed example must declare the same KEYS.
+#
+# They drifted: .env.example carried WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED and
+# the generator did not, so an operator who followed the documented one-liner got
+# a stack whose in-GUI restore could not see the maintenance marker, while an
+# operator who copied the example by hand got one that could. Two supported
+# install paths producing two different products, and nothing compared them.
+#
+# Keys only, never values: producing secrets and host-specific values is the
+# generator's whole job, so the example cannot contain them.
+python3 - "$ENV_FILE" "$ROOT_DIR/docker/self-hosting/.env.example" <<'ENVPARITY'
+import sys
+
+
+def declared_keys(path):
+    keys = set()
+    with open(path) as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            keys.add(line.split('=', 1)[0])
+    return keys
+
+
+generated = declared_keys(sys.argv[1])
+example = declared_keys(sys.argv[2])
+
+missing = sorted(example - generated)
+
+if missing:
+    raise SystemExit(
+        'the generator omits keys the committed example declares: '
+        + ', '.join(missing)
+        + '\n'
+        'An operator following the one-liner would get a different stack from one '
+        'who copied .env.example. Add them to the generator heredoc, or drop them '
+        'from the example if they are genuinely not wanted.'
+    )
+ENVPARITY
+
 echo "Self-host env generator creates safe starter values and renders through Compose."

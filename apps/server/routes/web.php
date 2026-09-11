@@ -83,7 +83,9 @@ Route::post('/setup', [FirstRunSetupController::class, 'store'])->name('setup.st
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [SessionController::class, 'create'])->name('login');
-    Route::post('/login', [SessionController::class, 'store'])->name('login.store');
+    Route::post('/login', [SessionController::class, 'store'])
+        ->middleware('throttle:login')
+        ->name('login.store');
     Route::post('/sso', [OidcSessionController::class, 'redirect'])
         ->middleware('throttle:oidc-redirect')
         ->name('oidc.redirect');

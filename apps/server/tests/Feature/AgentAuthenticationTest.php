@@ -115,3 +115,74 @@ test('database seeder creates demo account agent and site', function (): void {
         'domain' => 'demo.test',
     ]);
 });
+
+test('repeated failed sign-ins from one source are throttled', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => 'ada@example.test',
+        'password' => Hash::make('correct-horse-battery-staple'),
+    ]);
+
+    // Ten per minute per address. The eleventh is refused by the limiter rather
+    // than by the credential check, which is the difference between "wrong
+    // password" and "stop guessing".
+    for ($attempt = 0; $attempt < 10; $attempt++) {
+        $this->post(route('login.store'), [
+            'email' => $agent->email,
+            'password' => 'wrong-'.$attempt,
+        ]);
+    }
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'wrong-again',
+    ])->assertStatus(429);
+});
+
+test('throttling one address does not lock a real agent out from elsewhere', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => 'ada@example.test',
+        'password' => Hash::make('correct-horse-battery-staple'),
+    ]);
+
+    // An attacker burns the per-IP bucket from their own address...
+    for ($attempt = 0; $attempt < 11; $attempt++) {
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
+            ->post(route('login.store'), [
+                'email' => $agent->email,
+                'password' => 'wrong-'.$attempt,
+            ]);
+    }
+
+    // ...and the agent still signs in from theirs. This is the assertion that
+    // separates a rate limit from a lockout: an email-keyed bucket alone would
+    // let anyone deny a named agent their own desk, which is why the email
+    // limit is loose and the tight one is keyed on the source.
+    $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.22'])
+        ->post(route('login.store'), [
+            'email' => $agent->email,
+            'password' => 'correct-horse-battery-staple',
+        ])
+        ->assertRedirect();
+
+    $this->assertAuthenticatedAs($agent->fresh());
+});
+
+test('a correct password still signs in after a couple of fumbles', function (): void {
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => 'ada@example.test',
+        'password' => Hash::make('correct-horse-battery-staple'),
+    ]);
+
+    // The everyday case the limit must never break: someone mistypes twice and
+    // then gets it right.
+    foreach (['nope', 'nope-again'] as $wrong) {
+        $this->post(route('login.store'), ['email' => $agent->email, 'password' => $wrong]);
+    }
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'correct-horse-battery-staple',
+    ])->assertRedirect();
+
+    $this->assertAuthenticatedAs($agent->fresh());
+});

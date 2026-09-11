@@ -136,6 +136,26 @@ class AppServiceProvider extends ServiceProvider
             'password-reset-submit-ip:'.$request->ip()
         ));
 
+        // Signing in was the one unauthenticated credential endpoint with no
+        // quota at all, while password reset, the two-factor challenge, OIDC
+        // and even widget presence each had one. Same two-key shape as
+        // password-reset-request, and for the same two reasons: an IP-only
+        // bucket lets a distributed attacker grind one address, and an
+        // email-only bucket lets an attacker lock a named agent out of their
+        // own desk by spending the quota for them.
+        //
+        // The address limit is deliberately loose and per-quarter-hour rather
+        // than a lockout: an agent who mistypes a password twice and then gets
+        // it right must not be stopped, and nothing here should ever leave a
+        // real person unable to sign in by an attacker's choice. Behind a proxy
+        // this is only as good as TRUSTED_PROXIES -- an install that does not
+        // set it sees every request from one address and falls back to the
+        // email key, which still holds.
+        RateLimiter::for('login', fn (Request $request): array => [
+            Limit::perMinute(10)->by('login-ip:'.$request->ip()),
+            Limit::perMinutes(15, 20)->by('login-email:'.Str::lower((string) $request->input('email'))),
+        ]);
+
         RateLimiter::for('two-factor-challenge', fn (Request $request): array => [
             Limit::perMinute(5)->by('two-factor-challenge-ip:'.$request->ip()),
             Limit::perHour(25)->by('two-factor-challenge-user:'.(string) data_get(
