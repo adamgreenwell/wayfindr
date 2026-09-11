@@ -827,7 +827,7 @@ return [
                 'automatic_deletion' => [
                     'label' => 'Automatische Löschung',
                     'value' => 'Die oben aufgeführten Klassen',
-                    'description' => 'Alles, was oben nicht aufgeführt ist, bleibt erhalten, bis ein Betreiber es entfernt. Lösch- und Exportfunktionen für diese Klassen stehen noch aus; erklären Sie das, bevor echter Support-Verkehr eintrifft.',
+                    'description' => 'Lösch- und Exportfunktionen für die oben genannten Klassen stehen noch aus; erklären Sie das, bevor echter Support-Verkehr eintrifft.',
                 ],
             ],
             'reminders' => [

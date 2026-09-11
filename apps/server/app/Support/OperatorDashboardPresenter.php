@@ -314,7 +314,7 @@ final class OperatorDashboardPresenter
             'proactive_deliveries' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
             'abandoned_uploads' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three, so treat it as a ceiling rather than a retention promise.',
             'api_receipts' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with -- and through it the account and the agent who issued that token -- and which ticket, conversation, or message the write produced.',
-            'automatic_deletion' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
+            'automatic_deletion' => 'Deletion and export controls for the classes above remain future work; explain that before real support traffic.',
         };
         $actualValue = (string) ($item['value'] ?? '');
         $value = in_array($key, ['cobrowse_content', 'presence_visitors', 'abandoned_uploads', 'api_receipts'], true)

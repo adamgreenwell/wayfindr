@@ -827,7 +827,7 @@ return [
                 'automatic_deletion' => [
                     'label' => 'Automatic deletion',
                     'value' => 'The classes listed above',
-                    'description' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
+                    'description' => 'Deletion and export controls for the classes above remain future work; explain that before real support traffic.',
                 ],
             ],
             'reminders' => [

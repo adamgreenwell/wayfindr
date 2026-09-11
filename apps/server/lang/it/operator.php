@@ -835,7 +835,7 @@ return [
                 'automatic_deletion' => [
                     'label' => 'Eliminazione automatica',
                     'value' => 'Le classi elencate sopra',
-                    'description' => 'Tutto ciò che non è elencato sopra resta finché un gestore non lo rimuove. Le funzioni di cancellazione ed esportazione per queste categorie restano da realizzare; lo spieghi prima che arrivi traffico di assistenza reale.',
+                    'description' => 'Le funzioni di cancellazione ed esportazione per le categorie sopra elencate restano da realizzare; lo spieghi prima che arrivi traffico di assistenza reale.',
                 ],
             ],
             'reminders' => [

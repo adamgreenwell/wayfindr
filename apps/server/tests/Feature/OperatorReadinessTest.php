@@ -1786,6 +1786,27 @@ test('every scheduled command that deletes rows is named on the retention panel'
 
     $unnamed = [];
     $unresolved = [];
+    $unaccounted = [];
+
+    // The guard reads each command's OWN source, so a command that dispatches
+    // work deletes somewhere this cannot see: wayfindr:queue-agent-realtime-
+    // evictions reaches a delete three hops away, command -> job -> support
+    // class. Following App\ imports transitively was tried and rejected --
+    // measured at depth 2 it flags seven scheduled commands where four
+    // genuinely delete, and the remedy for a false positive here is a wrong row
+    // on a PRIVACY panel, which is worse than the blind spot.
+    //
+    // So the blind spot is declared instead of widened. Every scheduled command
+    // that dispatches work must be accounted for by hand, with the reason, and
+    // an unlisted one fails rather than passing quietly.
+    $dispatchers = [
+        // Deletes the eviction request it just satisfied. A work-queue row
+        // consumed by the work that created it, held for seconds, is not
+        // retention -- nothing is kept to be asked about later.
+        'wayfindr:queue-agent-realtime-evictions' => 'deletes only the request it satisfies',
+        // Chain checked: neither job nor AgentAlertPublicationSweep deletes.
+        'wayfindr:reconcile-agent-alert-publications' => 'dispatches, deletes nothing',
+    ];
 
     foreach ($scheduled as $command) {
         $source = $sources[$command] ?? null;
@@ -1801,6 +1822,11 @@ test('every scheduled command that deletes rows is named on the retention panel'
             continue;
         }
 
+        if (preg_match('/::dispatch\(|dispatch\(new |::dispatchSync\(/', $source) === 1
+            && ! array_key_exists($command, $dispatchers)) {
+            $unaccounted[] = $command;
+        }
+
         $removesRows = preg_match('/->delete\(\)|::destroy\(|->truncate\(|->forceDelete\(/', $source) === 1;
 
         if (! $removesRows || in_array($command, $exempt, true)) {
@@ -1811,6 +1837,8 @@ test('every scheduled command that deletes rows is named on the retention panel'
             $unnamed[] = $command;
         }
     }
+
+    expect($unaccounted)->toBe([], 'Scheduled commands dispatch work this test cannot follow, and are not accounted for above: '.implode(', ', $unaccounted));
 
     // The census comes first: without it, a failure to PARSE reads exactly
     // like a clean result below.

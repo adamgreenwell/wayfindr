@@ -95,9 +95,23 @@ return [
                 'description' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with -- and through it the account and the agent who issued that token -- and which ticket, conversation, or message the write produced.',
             ],
             [
+                // The closing row used to add "everything not listed above
+                // stays until an operator removes it". That is an unbounded
+                // claim over every table in the schema, and it was falsified
+                // three times in one review: the attachment sweep, the API
+                // receipts, and agent_realtime_evictions, which a dispatched
+                // job consumes within seconds. Keeping it true would mean
+                // auditing the whole schema on every migration.
+                //
+                // It also told an operator nothing they could act on -- the
+                // rows above already say what is auto-deleted, and the panel's
+                // own description takes the conservative posture ("assume
+                // application records, logs, and backups persist ... until an
+                // operator removes them"), which is the right default for a
+                // privacy surface and does not need this sentence to hold.
                 'label' => 'Automatic deletion',
                 'value' => 'The classes listed above',
-                'description' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
+                'description' => 'Deletion and export controls for the classes above remain future work; explain that before real support traffic.',
             ],
         ],
         'reminders' => [
