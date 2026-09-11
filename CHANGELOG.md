@@ -379,7 +379,7 @@ page view that was not there before.
   have been corrected to match.
 
 
-- **The retention panel now names every class of data Wayfindr deletes on its
+- **The retention panel names two more classes of data Wayfindr deletes on its
   own.** It said automatic deletion covered "cobrowse content only", and that
   everything else stayed until an operator removed it. Two scheduled commands
   said otherwise: visitor records that never produced a conversation are pruned
@@ -543,7 +543,10 @@ page view that was not there before.
   unauthenticated credential endpoint with no limit at all, so an attacker could
   grind a known agent's address at whatever rate the host allowed. Ten failures
   against the same address from the same source now buy a fifteen-minute wait,
-  and a correct password clears the count.
+  and a correct password clears the count — but only while the count is still
+  under ten. The refusal happens before `Auth::attempt()`, so once the limit is
+  reached the right password is rejected without being checked and cannot clear
+  anything; the wait has to expire.
 
   Counting *failures* rather than requests is the part that matters for a
   support desk. The `throttle` middleware counts every request, so ten agents
