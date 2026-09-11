@@ -31,8 +31,29 @@ apps/server && php artisan wayfindr:backup`.
 - **Local attachment binaries** — the files on the private `attachments`
   disk(s), for installs using local storage.
 - **A manifest** recording the Wayfindr version, the storage disk in effect,
-  which local disks were captured, and which disks rows depend on that the
-  archive does *not* carry.
+  which local disks were captured, which disks rows depend on that the archive
+  does *not* carry, and a fingerprint of the `APP_KEY` the backup was taken
+  with.
+
+### The archive needs the `APP_KEY` it does not contain
+
+Several columns are encrypted at rest with `APP_KEY` — single sign-on client
+secrets, outbound webhook URLs and secrets, external-issue provider
+credentials, reply-delivery recipients, and ticket comment bodies. The key is
+deliberately **not** in the archive, because an archive carrying the key that
+decrypts its own secrets is not a protected archive.
+
+The consequence is the one to plan for. **Restore your `APP_KEY` alongside the
+archive.** Restoring onto a freshly installed stack — which is the ordinary
+disaster-recovery path — mints a new key, and a restore under a different key
+succeeds: the database loads, the install starts, and then the first read of
+any encrypted column throws. Those values are not recoverable; they have to be
+re-entered.
+
+A restore compares the manifest's fingerprint against the running key and warns
+before doing anything destructive. An archive taken before this field existed
+reports "could not be verified" rather than a match — which is not the same as
+agreement, and should be treated as a reason to check.
 
 Ephemeral or credential-bearing table **data** is deliberately excluded — the
 schema is kept, but sessions, password-reset tokens, cache, and queue rows are

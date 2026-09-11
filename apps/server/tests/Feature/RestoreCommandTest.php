@@ -9,6 +9,7 @@
 
 use App\Models\Account;
 use App\Models\ConversationMessageAttachment;
+use App\Support\Backup\BackupService;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\RestoreService;
 use Illuminate\Contracts\Filesystem\Filesystem;
@@ -457,6 +458,64 @@ test('a version skew between archive and install is warned', function (): void {
     $this->artisan('wayfindr:restore', ['archive' => $archive])
         ->assertSuccessful()
         ->expectsOutputToContain('Version skew');
+});
+
+test('an APP_KEY mismatch is warned before the restore runs', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // An archive taken on an install with a different key. Eight columns use
+    // Laravel's `encrypted` cast, and that cast throws on read when the key
+    // differs -- so without this warning the restore succeeds and the install
+    // breaks the first time anything reads an OIDC secret or a webhook URL.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprint' => hash('sha256', 'base64:someone-elses-application-key'),
+    ]);
+
+    $this->artisan('wayfindr:restore', ['archive' => $archive])
+        ->assertSuccessful()
+        ->expectsOutputToContain('APP_KEY does not match');
+});
+
+test('a matching APP_KEY is not warned about', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // The control. Without it this pair would pass against a warning that
+    // fires unconditionally.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprint' => BackupService::appKeyFingerprint(),
+    ]);
+
+    $output = $this->artisan('wayfindr:restore', ['archive' => $archive])->assertSuccessful();
+
+    expect($output)->not->toBeNull();
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeFalse()
+        ->and($preflight['app_key_indeterminate'])->toBeFalse();
+});
+
+test('an archive predating the fingerprint is indeterminate, not a match', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // Same distinction the version check draws: "cannot verify" must never be
+    // reported as "they agree", because the remedy differs.
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_indeterminate'])->toBeTrue()
+        ->and($preflight['app_key_skew'])->toBeFalse();
 });
 
 test('the attachment integrity check is skipped when the restored schema lacks the attachments table', function (): void {

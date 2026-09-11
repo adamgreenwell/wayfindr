@@ -298,9 +298,20 @@ class RestoreService
             $archiveVersion = (string) ($manifest['wayfindr_version'] ?? 'unknown');
             $runningVersion = (string) (config('wayfindr.release.version') ?? 'unknown');
 
+            // An archive predating this field is INDETERMINATE, not a match --
+            // the same distinction assessVersions() draws, and for the same
+            // reason: "cannot verify" must never be reported as "they agree".
+            $archiveFingerprint = $manifest['app_key_fingerprint'] ?? null;
+            $runningFingerprint = BackupService::appKeyFingerprint();
+
             return [
                 'archive_version' => $archiveVersion,
                 'running_version' => $runningVersion,
+                'app_key_skew' => is_string($archiveFingerprint)
+                    && is_string($runningFingerprint)
+                    && ! hash_equals($archiveFingerprint, $runningFingerprint),
+                'app_key_indeterminate' => ! is_string($archiveFingerprint)
+                    || ! is_string($runningFingerprint),
                 ...$this->assessVersions(
                     $archiveVersion,
                     $runningVersion,

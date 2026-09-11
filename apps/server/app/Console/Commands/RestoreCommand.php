@@ -54,6 +54,26 @@ class RestoreCommand extends Command
             ));
         }
 
+        // Separate from version skew, and a different kind of harm: a version
+        // mismatch leaves a schema to migrate, while a key mismatch leaves
+        // columns that load and then throw. Warn about it in its own sentence
+        // rather than folding it into the version block.
+        if ($preflight['app_key_skew'] ?? false) {
+            $this->warn(
+                'APP_KEY does not match the one this archive was taken with. Encrypted columns '
+                .'(single sign-on client secrets, outbound webhook URLs and secrets, external-issue '
+                .'credentials, reply-delivery recipients, ticket comment bodies) will NOT be readable '
+                .'after this restore. Restore the original APP_KEY into this install first, or accept '
+                .'that those values are lost and re-enter them.'
+            );
+        } elseif ($preflight['app_key_indeterminate'] ?? false) {
+            $this->warn(
+                'APP_KEY could NOT be verified against this archive — it predates the fingerprint, or '
+                .'this install has no key set. If the key differs from the one the archive was taken '
+                .'with, encrypted columns will not be readable afterwards.'
+            );
+        }
+
         try {
             $result = $restores->restore($archive, (bool) $this->option('force'));
         } catch (Throwable $exception) {

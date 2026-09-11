@@ -448,6 +448,17 @@ class BackupService
      * @param  list<string>  $remoteDisks  disks that rows depend on but are NOT in the archive (their binaries are in a bucket, or the disk is retired/unknown)
      * @return array<string, mixed>
      */
+    /**
+     * sha256 of APP_KEY. One-way, so the archive reveals nothing, and the same
+     * derivation the remote backup prefix already uses.
+     */
+    public static function appKeyFingerprint(): ?string
+    {
+        $key = (string) config('app.key');
+
+        return $key === '' ? null : hash('sha256', $key);
+    }
+
     public function manifest(Carbon $createdAt, array $localDisks, array $remoteDisks, string $dumpLabel): array
     {
         return [
@@ -462,6 +473,18 @@ class BackupService
             // that a retired/unknown disk's binaries are gone).
             'external_attachment_disks' => $remoteDisks,
             'database_dump' => $dumpLabel,
+            // A FINGERPRINT of APP_KEY, never the key. Eight columns in this
+            // schema use Laravel's `encrypted` cast -- OIDC client secrets,
+            // outbound webhook URLs and secrets, external-issue credentials,
+            // reply-delivery recipients, ticket comment bodies -- and the cast
+            // throws on read when the key differs. Restoring onto a fresh
+            // install, which is the ordinary disaster-recovery path and mints a
+            // new key unless the operator copies the old one, therefore
+            // produces a database that loads and then fails the first time
+            // anything touches one of those columns. The archive cannot carry
+            // the key (that would put every secret in it), so it carries enough
+            // to TELL the operator, which is what preflight compares.
+            'app_key_fingerprint' => self::appKeyFingerprint(),
         ];
     }
 
