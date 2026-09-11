@@ -442,13 +442,15 @@ page view that was not there before.
 
 
 - **The widget script no longer starts a session or sets a cookie.** Because it
-  sat in the `web` middleware group, every visitor of every page of every
-  install caused a row to be written to the operator's own `sessions` table, and
-  received `wayfindr-session` and `XSRF-TOKEN`, before interacting with anything
-  at all. That is a consent surface in a product whose visitor presence
-  collection is deliberately opt-in with an explicit decline path (ADR 0019).
-  Nothing for an operator to do; the URL is unchanged and existing visitor
-  cookies simply stop being renewed.
+  sat in the `web` middleware group, every request that actually reached it --
+  each first load, and each one after the previous response's short cache
+  lifetime expired -- wrote a row to the `sessions` table on installs using the
+  default database session driver, and returned `wayfindr-session` and
+  `XSRF-TOKEN` to a visitor who had not interacted with anything. That is a
+  consent surface in a product whose visitor presence collection is deliberately
+  opt-in with an explicit decline path (ADR 0019), and it applied to visitors
+  who never opened the widget at all. Nothing for an operator to do; the URL is
+  unchanged and existing visitor cookies simply stop being renewed.
 
 - **Four interface defects, each of which the test suite could not see.** The
   visitors list rendered a colourless site dot, because it passed the site's
