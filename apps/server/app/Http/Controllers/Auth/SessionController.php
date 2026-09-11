@@ -120,71 +120,81 @@ class SessionController extends Controller
     }
 
     /**
-     * Sign-in throttling, counted on FAILURES only.
+     * Sign-in throttling: failures only, and keyed to one account from one
+     * source.
      *
-     * This deliberately does not use the `throttle` middleware. That counts
-     * every request, including the ones carrying a correct password -- so ten
-     * agents arriving at shift start behind one office NAT would spend the
-     * bucket between them and the eleventh would be refused while typing the
-     * right password. A support desk cannot have its own network lock it out.
+     * Three designs preceded this one, each defeated by a population it had
+     * not considered, so the reasoning is recorded rather than the result.
      *
-     * Two keys, and neither is the address alone or the account alone. An
-     * address-only bucket lets a distributed attacker grind one named agent.
-     * An account-only bucket is global across every source, so anyone who
-     * knows an agent's address could exhaust it on purpose and that agent's
-     * correct password would be refused -- a lockout wearing a rate limit's
+     * The `throttle` middleware counts every REQUEST, so a shift arriving
+     * behind one office NAT spends the bucket between them and the last ones
+     * in are refused while typing the correct password. Counting only
+     * failures fixes that.
+     *
+     * A bucket keyed on the ACCOUNT alone is global across every source, so
+     * anyone who knows an agent's address can exhaust it deliberately and that
+     * agent's correct password is refused. A lockout wearing a rate limit's
      * clothes.
      *
-     * Both are hashed. `cache.key` is a 255-character column and CACHE_STORE
-     * defaults to `database`, so a valid-but-long address composed raw into a
-     * key can exceed it, and the write happens before the response returns:
+     * And a bucket keyed on the SOURCE alone is worse than it looks on a
+     * shared address: one compromised machine on the office network fills it,
+     * and every colleague behind that NAT is refused for the window, correct
+     * password or not. The check has to run before `Auth::attempt()` -- there
+     * is no way to know a password was right without checking it -- so a full
+     * bucket can never be cleared by the very request that would have cleared
+     * it. That is why there is no per-source bucket here at all.
+     *
+     * What remains is the narrowest thing that still bounds guessing: ten
+     * failures against one address from one source. A colleague on the same
+     * NAT is unaffected because their address differs; a targeted agent can
+     * always sign in from somewhere else; and an attacker gets ten tries per
+     * account per source. Credential stuffing across many accounts from one
+     * source is deliberately NOT bounded here -- that is a job for the network
+     * and for monitoring, and pretending a login throttle does it is how the
+     * previous three versions each locked out someone real.
+     *
+     * The key is hashed: `cache.key` is a 255-character column and CACHE_STORE
+     * defaults to `database`, so a valid-but-long address composed raw can
+     * exceed it, and the counter is written before the response returns --
      * PostgreSQL would reject the insert and the agent would get a 500 instead
      * of a login. sha256 rather than a fast hash, because a collision merges
      * two agents' buckets and an attacker could arrange one.
      */
-    private const FAILURES_PER_SOURCE = 20;
-
-    private const FAILURES_PER_SOURCE_AND_ACCOUNT = 10;
+    private const FAILURES_ALLOWED = 10;
 
     private const DECAY_SECONDS = 900;
 
     private function refuseIfTooManyFailures(Request $request): void
     {
-        foreach ($this->throttleKeys($request) as $key => $allowed) {
-            if (RateLimiter::tooManyAttempts($key, $allowed)) {
-                throw ValidationException::withMessages([
-                    'email' => __('auth.throttle', [
-                        'seconds' => RateLimiter::availableIn($key),
-                        'minutes' => (int) ceil(RateLimiter::availableIn($key) / 60),
-                    ]),
-                ]);
-            }
+        $key = $this->throttleKey($request);
+
+        if (! RateLimiter::tooManyAttempts($key, self::FAILURES_ALLOWED)) {
+            return;
         }
+
+        throw ValidationException::withMessages([
+            'email' => __('auth.throttle', [
+                'seconds' => RateLimiter::availableIn($key),
+                'minutes' => (int) ceil(RateLimiter::availableIn($key) / 60),
+            ]),
+        ]);
     }
 
     private function recordFailure(Request $request): void
     {
-        foreach (array_keys($this->throttleKeys($request)) as $key) {
-            RateLimiter::hit($key, self::DECAY_SECONDS);
-        }
+        RateLimiter::hit($this->throttleKey($request), self::DECAY_SECONDS);
     }
 
     private function forgetFailures(Request $request): void
     {
-        foreach (array_keys($this->throttleKeys($request)) as $key) {
-            RateLimiter::clear($key);
-        }
+        RateLimiter::clear($this->throttleKey($request));
     }
 
-    /** @return array<string, int> key => attempts allowed */
-    private function throttleKeys(Request $request): array
+    private function throttleKey(Request $request): string
     {
-        $email = Str::lower((string) $request->input('email'));
-        $source = (string) $request->ip();
-
-        return [
-            'login-source:'.hash('sha256', $source) => self::FAILURES_PER_SOURCE,
-            'login-source-account:'.hash('sha256', $email.'|'.$source) => self::FAILURES_PER_SOURCE_AND_ACCOUNT,
-        ];
+        return 'login:'.hash(
+            'sha256',
+            Str::lower((string) $request->input('email')).'|'.(string) $request->ip()
+        );
     }
 }

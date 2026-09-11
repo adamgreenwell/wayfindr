@@ -6,7 +6,6 @@ use App\Models\Site;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
@@ -141,16 +140,53 @@ test('repeated failed sign-ins from one source are throttled', function (): void
     $this->assertGuest();
 });
 
-test('a busy office does not throttle itself', function (): void {
-    // The reason this is counted on failures rather than on requests. A shift's
-    // worth of agents arrive behind one public address; under a
-    // request-counting throttle the ones past the ceiling would be refused
-    // while typing the correct password, and no TRUSTED_PROXIES setting can
-    // tell them apart because they genuinely share the address.
-    //
-    // Deliberately more agents than the per-source ceiling allows, so this
-    // fails if the throttle ever goes back to counting requests. At twelve it
-    // passed either way and proved nothing.
+test('one bad client on a shared address does not lock out its colleagues', function (): void {
+    // The case the previous version missed. Its office test only had agents
+    // SUCCEED, so a per-source bucket was never filled and the test passed
+    // against a design that would refuse a colleague's correct password for
+    // the whole window once one machine on the NAT had failed enough.
+    $account = Account::factory()->create();
+    $office = ['REMOTE_ADDR' => '198.51.100.10'];
+
+    $victim = User::factory()->for($account)->create([
+        'email' => 'ada@example.test',
+        'password' => Hash::make('correct-horse-battery-staple'),
+    ]);
+    $colleague = User::factory()->for($account)->create([
+        'email' => 'grace@example.test',
+        'password' => Hash::make('correct-horse-battery-staple'),
+    ]);
+
+    // A compromised machine behind the office NAT sprays several addresses.
+    // Spread ACROSS accounts on purpose: grinding one address just fills that
+    // account's own bucket and stops, which masks a per-source bucket and is
+    // why an earlier version of this test passed against one. Five failures
+    // each stays under the per-account limit while putting thirty failures on
+    // the shared address.
+    foreach (['ada', 'grace', 'alan', 'edsger', 'barbara', 'donald'] as $target) {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->withServerVariables($office)->post(route('login.store'), [
+                'email' => $target.'@example.test',
+                'password' => 'wrong-'.$attempt,
+            ]);
+        }
+    }
+
+    // Everyone else behind that same address signs in normally, because the
+    // bucket is keyed to the account as well as the source.
+    $this->withServerVariables($office)
+        ->post(route('login.store'), [
+            'email' => $colleague->email,
+            'password' => 'correct-horse-battery-staple',
+        ])
+        ->assertSessionHasNoErrors();
+
+    $this->assertAuthenticatedAs($colleague->fresh());
+});
+
+test('a shift signing in from one address is never throttled', function (): void {
+    // Counted on failures rather than requests, so the number of colleagues
+    // sharing an address is irrelevant.
     $account = Account::factory()->create();
 
     foreach (range(1, 25) as $n) {
