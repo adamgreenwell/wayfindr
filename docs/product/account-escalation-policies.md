@@ -19,9 +19,18 @@ SLA policies keep business-time clocks against site support hours and raise
 approaching, breached, met and missed states; a cross-channel delivery ledger
 decides which channel carries an alert and stops the others repeating it; and
 automation rules react to bounded ticket, conversation and visitor-message
-events. None of that escalates *ownership* — an SLA breach tells the desk a
-target was missed, it does not move the work to somebody else — which is
-exactly the gap this document still describes.
+events. One of those already moves ownership: an automation rule's
+`assign_agent` action reassigns a ticket or conversation, refuses an ineligible
+target, and records the change on the assignment audit trail. What none of them
+does is move ownership *on elapsed time* — an SLA breach tells the desk a target
+was missed, it does not hand the work to somebody else — and that is the gap
+this document still describes.
+
+The distinction is about reuse, not scope. The mechanism that performs a
+reassignment, checks the target is eligible and audits the result already exists
+and is exercised in production paths. An escalation runner should drive that
+rather than write a second one; what has to be built is the clock and the policy
+that decide when to pull the trigger.
 
 Automatic escalation should only arrive after the account can explain what will
 happen, who will be notified, when it will happen, and how to turn it off.
