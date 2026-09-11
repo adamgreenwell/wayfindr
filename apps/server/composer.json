@@ -12,7 +12,7 @@
         "ext-intl": "*",
         "lib-curl": ">=7.59.0",
         "bacon/bacon-qr-code": "^3.1",
-        "laravel-notification-channels/webpush": "^12.1",
+        "laravel-notification-channels/webpush": "^13.0",
         "laravel/ai": "^0.11",
         "laravel/framework": "^13.8",
         "laravel/reverb": "^1.10",
