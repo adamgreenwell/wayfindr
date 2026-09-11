@@ -41,6 +41,11 @@ final class AgentAccountCustomRoleController extends Controller
             'roles' => CustomRole::query()
                 ->where('account_id', $actor->account_id)
                 ->withCount('users')
+                // destroy() refuses a role that is still named by a single
+                // sign-on claim mapping (ADR 0024), not only one with people on
+                // it. Without this count the view could not see that condition,
+                // so it offered an enabled delete button that always failed.
+                ->withCount('oidcRoleMappings')
                 ->orderBy('name')
                 ->get(),
         ]);

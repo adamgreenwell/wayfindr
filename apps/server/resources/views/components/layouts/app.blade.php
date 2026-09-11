@@ -2121,6 +2121,19 @@
             vertical-align: top;
         }
 
+        /* The live board's Page column holds a raw URL, and the global
+           `th, td { white-space: nowrap }` above turns one long one into
+           page-level horizontal overflow. Keyed on the attribute rather than a
+           class on purpose: the realtime handler rebuilds this cell in JS and
+           re-sets `data-live-page` (agent/sites/live.blade.php), so a class
+           would style the server-rendered board and then silently lose the fix
+           on the first heartbeat. Attribute (0,1,0) beats element (0,0,1), so
+           no !important is needed. */
+        [data-live-page] {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
         .queue-activity-preview,
         .ticket-activity-preview {
             max-width: 340px;
