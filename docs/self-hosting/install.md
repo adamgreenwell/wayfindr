@@ -202,6 +202,13 @@ Then work through the readiness screens:
   the operator console. Agents still get every alert in the dashboard without
   it. [web-push.md](web-push.md) covers generating the key pair, why rotating it
   later disconnects every agent, and what a push service can see.
+- **Set the dashboard's language and timezone** if English on UTC is not what
+  your desk wants. Both live under *Operator console → Language and region*,
+  both are defaults an agent can override on their own profile, and neither
+  needs a restart — [language-and-region.md](language-and-region.md). Timezone
+  is worth setting before anyone reads a report: it decides where a day
+  boundary falls, so activity in the offset band lands on the wrong day until
+  it matches the desk.
 - Before routing real visitor traffic, review
   [MVP Dogfood Readiness](../product/mvp-dogfood-readiness.md).
 
