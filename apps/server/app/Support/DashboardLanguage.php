@@ -131,6 +131,16 @@ final class DashboardLanguage
         'dashboard.account.security.update',
         'dashboard.account.sla-policies.index',
         'dashboard.account.sla-policies.update',
+        // Custom roles. The DE and IT catalogues for this surface were written
+        // and reviewed some time ago -- correct register, correct plural
+        // forms -- but the routes were never listed here, so the locale never
+        // resolved to anything but English and none of it could reach a
+        // screen. The writes are listed alongside the page because they render
+        // it back on a validation failure.
+        'dashboard.account.roles.index',
+        'dashboard.account.roles.store',
+        'dashboard.account.roles.update',
+        'dashboard.account.roles.destroy',
         'dashboard.conversations.index',
         'dashboard.conversations.bulk.preview',
         'dashboard.conversations.bulk.store',
