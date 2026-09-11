@@ -22,7 +22,7 @@ return [
         'oidc_mapped' => 'Rimuova questo ruolo dalle mappature dei claim Single Sign-on prima di eliminarlo.',
         'duplicate' => 'Esiste già un ruolo con questo nome.',
         'reserved' => 'Owner, Admin e Agent sono nomi riservati ai ruoli integrati.',
-        'requires' => ':permission richiede :required.',
+        'requires' => '«:permission» richiede «:required».',
         'site_manager_required' => 'È necessario assegnare un altro responsabile del sito a :site prima di poter salvare questa modifica.',
     ],
     'permissions' => [
