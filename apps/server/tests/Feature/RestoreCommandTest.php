@@ -471,12 +471,12 @@ test('an APP_KEY mismatch is warned before the restore runs', function (): void 
     $archive = makeBackupArchive([
         'wayfindr_version' => (string) config('wayfindr.release.version'),
         'local_attachment_disks' => [],
-        'app_key_fingerprint' => hash('sha256', 'base64:someone-elses-application-key'),
+        'app_key_fingerprints' => [hash('sha256', 'base64:someone-elses-application-key')],
     ]);
 
     $this->artisan('wayfindr:restore', ['archive' => $archive])
         ->assertSuccessful()
-        ->expectsOutputToContain('APP_KEY does not match');
+        ->expectsOutputToContain('APP_KEY does not match the key set');
 });
 
 test('a matching APP_KEY is not warned about', function (): void {
@@ -488,12 +488,58 @@ test('a matching APP_KEY is not warned about', function (): void {
     $archive = makeBackupArchive([
         'wayfindr_version' => (string) config('wayfindr.release.version'),
         'local_attachment_disks' => [],
-        'app_key_fingerprint' => BackupService::appKeyFingerprint(),
+        'app_key_fingerprints' => BackupService::appKeyFingerprints(),
     ]);
 
     $output = $this->artisan('wayfindr:restore', ['archive' => $archive])->assertSuccessful();
 
     expect($output)->not->toBeNull();
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeFalse()
+        ->and($preflight['app_key_indeterminate'])->toBeFalse();
+});
+
+test('a rotated source needs its previous keys on the target too', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // The case a single current-key fingerprint could not express. A source
+    // that rotated holds ciphertext under BOTH keys, and Laravel falls back
+    // through app.previous_keys to read the older rows. A target sharing only
+    // the current key decrypts some rows and throws on the rest -- so a match
+    // has to mean "this install holds every key the archive needs", not "the
+    // current keys agree".
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [
+            ...BackupService::appKeyFingerprints(),
+            hash('sha256', 'base64:a-key-this-install-has-retired'),
+        ],
+    ]);
+
+    $preflight = app(RestoreService::class)->preflight($archive);
+
+    expect($preflight['app_key_skew'])->toBeTrue()
+        ->and($preflight['app_key_indeterminate'])->toBeFalse();
+});
+
+test('a target carrying extra keys is not skew', function (): void {
+    fakeRestorer();
+    Storage::fake('attachments');
+
+    // The other direction, and it must NOT warn: this install can decrypt
+    // everything the archive holds, it simply also remembers a key the archive
+    // never used. Subset, not equality.
+    config()->set('app.previous_keys', ['base64:an-extra-key-this-install-still-remembers']);
+
+    $archive = makeBackupArchive([
+        'wayfindr_version' => (string) config('wayfindr.release.version'),
+        'local_attachment_disks' => [],
+        'app_key_fingerprints' => [hash('sha256', (string) config('app.key'))],
+    ]);
 
     $preflight = app(RestoreService::class)->preflight($archive);
 

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\Backup\PartialRestoreException;
 use App\Support\Backup\RestoreService;
 use Illuminate\Console\Command;
 use Throwable;
@@ -59,12 +60,20 @@ class RestoreCommand extends Command
         // columns that load and then throw. Warn about it in its own sentence
         // rather than folding it into the version block.
         if ($preflight['app_key_skew'] ?? false) {
+            // Deliberately NOT an inventory of affected columns. An earlier
+            // version listed the integration secrets and read as exhaustive
+            // while omitting the one that matters most: two_factor_secret is
+            // encrypted and hasTwoFactorAuthentication() reads it during SIGN
+            // IN, so every agent with 2FA is locked out before anyone can
+            // re-enter anything. Lead with that, describe the rest as a class.
             $this->warn(
-                'APP_KEY does not match the one this archive was taken with. Encrypted columns '
-                .'(single sign-on client secrets, outbound webhook URLs and secrets, external-issue '
-                .'credentials, reply-delivery recipients, ticket comment bodies) will NOT be readable '
-                .'after this restore. Restore the original APP_KEY into this install first, or accept '
-                .'that those values are lost and re-enter them.'
+                'APP_KEY does not match the key set this archive was taken with. EVERY encrypted '
+                .'value in the archive becomes unreadable, and the first casualty is sign-in itself: '
+                .'agents with two-factor authentication cannot authenticate, because their secret is '
+                .'encrypted and is read while they log in. Operator-managed credentials, single '
+                .'sign-on secrets, webhook URLs and secrets, and external-issue credentials go with '
+                .'it. Restore the original APP_KEY (and any APP_PREVIOUS_KEYS) into this install '
+                .'before restoring, or accept that those values are gone.'
             );
         } elseif ($preflight['app_key_indeterminate'] ?? false) {
             $this->warn(
@@ -77,13 +86,17 @@ class RestoreCommand extends Command
         try {
             $result = $restores->restore($archive, (bool) $this->option('force'));
         } catch (Throwable $exception) {
-            // Only the DATABASE load is transactional. Attachment binaries are
-            // restored after it commits, and that step purges the local disks
-            // wholesale first -- so a failure here can leave a committed
-            // database beside half-repopulated disks. RunRestoreJob says this
-            // for the GUI path; the command said nothing.
             $this->error('Restore failed: '.$exception->getMessage());
-            $this->warn(RestoreService::PARTIAL_FAILURE_ADVICE);
+
+            // Only when destructive work actually began. RestoreService throws
+            // from its existing-data guard BEFORE touching anything -- the
+            // ordinary "refusing without --force" case -- and following that
+            // refusal with "this may have applied partially" contradicts the
+            // line above it and sends an operator to check a database nothing
+            // touched.
+            if ($exception instanceof PartialRestoreException) {
+                $this->warn(RestoreService::PARTIAL_FAILURE_ADVICE);
+            }
 
             return self::FAILURE;
         }

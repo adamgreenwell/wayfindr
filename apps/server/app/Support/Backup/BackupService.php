@@ -449,14 +449,35 @@ class BackupService
      * @return array<string, mixed>
      */
     /**
-     * sha256 of APP_KEY. One-way, so the archive reveals nothing, and the same
-     * derivation the remote backup prefix already uses.
+     * A fingerprint per DECRYPTION key, not just the current one.
+     *
+     * Laravel decrypts with `app.key` and falls back to `app.previous_keys`, so
+     * an install that has rotated holds ciphertext written under keys that are
+     * no longer current. Recording only the current key would report a match
+     * between a rotated source and a target that shares its current key but not
+     * its previous ones -- and the older rows would still throw. What has to
+     * travel is the SET.
+     *
+     * sha256 each, one-way, so the archive still reveals nothing. Sorted so the
+     * comparison does not depend on configuration order.
+     *
+     * @return list<string>
      */
-    public static function appKeyFingerprint(): ?string
+    public static function appKeyFingerprints(): array
     {
-        $key = (string) config('app.key');
+        $keys = array_filter(array_map(
+            static fn ($key): string => (string) $key,
+            [config('app.key'), ...(array) config('app.previous_keys', [])],
+        ), static fn (string $key): bool => $key !== '');
 
-        return $key === '' ? null : hash('sha256', $key);
+        $fingerprints = array_values(array_unique(array_map(
+            static fn (string $key): string => hash('sha256', $key),
+            $keys,
+        )));
+
+        sort($fingerprints);
+
+        return $fingerprints;
     }
 
     public function manifest(Carbon $createdAt, array $localDisks, array $remoteDisks, string $dumpLabel): array
@@ -484,7 +505,7 @@ class BackupService
             // anything touches one of those columns. The archive cannot carry
             // the key (that would put every secret in it), so it carries enough
             // to TELL the operator, which is what preflight compares.
-            'app_key_fingerprint' => self::appKeyFingerprint(),
+            'app_key_fingerprints' => self::appKeyFingerprints(),
         ];
     }
 

@@ -119,6 +119,26 @@
                     </div>
                 @endif
 
+                {{-- Separate from the version block above, because the harm is a
+                     different kind. A version skew leaves a schema to migrate; a
+                     key mismatch leaves an install whose agents cannot sign in,
+                     their two-factor secret being encrypted and read during
+                     authentication. This screen rendered neither. --}}
+                @if ($preflight['app_key_skew'] ?? false)
+                    <div class="notice-copy notice-copy-bordered">
+                        <p>{!! __('operator.backups.restore.app_key_skew', [
+                            'key' => '<code lang="">APP_KEY</code>',
+                            'previous' => '<code lang="">APP_PREVIOUS_KEYS</code>',
+                        ]) !!}</p>
+                    </div>
+                @elseif ($preflight['app_key_indeterminate'] ?? false)
+                    <div class="notice-copy notice-copy-bordered">
+                        <p>{!! __('operator.backups.restore.app_key_unverified', [
+                            'key' => '<code lang="">APP_KEY</code>',
+                        ]) !!}</p>
+                    </div>
+                @endif
+
                 <div class="notice-copy notice-copy-bordered">
                     <p><strong>{{ __('operator.backups.restore.danger_heading') }}</strong> {{ __('operator.backups.restore.danger_body') }}</p>
                     <p>{{ __('operator.backups.restore.workers_warning') }}</p>

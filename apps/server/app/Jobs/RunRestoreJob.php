@@ -164,8 +164,18 @@ class RunRestoreJob implements ShouldQueue
             // (either side carries no release identity) is treated the same way —
             // we cannot prove the schema matches, and a destructive restore is
             // exactly where an unprovable assumption should fail safe.
+            //
+            // An APP_KEY mismatch fails safe the same way, and arguably harder:
+            // a version skew leaves a schema to migrate, while a key mismatch
+            // leaves an install where agents with two-factor authentication
+            // cannot sign in at all -- their secret is encrypted and is read
+            // while they authenticate. Bringing that back online automatically
+            // would hand the operator a site that looks restored and refuses
+            // its own staff.
             $this->keepMaintenance = (bool) ($result['version_skew'] ?? false)
-                || (bool) ($result['version_indeterminate'] ?? false);
+                || (bool) ($result['version_indeterminate'] ?? false)
+                || (bool) ($result['app_key_skew'] ?? false)
+                || (bool) ($result['app_key_indeterminate'] ?? false);
 
             $this->record('succeeded', $this->successMessage($result), $result);
         } catch (Throwable $exception) {

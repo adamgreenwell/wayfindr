@@ -58,6 +58,36 @@ class RestoreService
      *
      * @return array{version_skew: bool, version_indeterminate: bool, archive_version_known: bool, running_version_known: bool}
      */
+    /**
+     * Can this install decrypt everything the archive holds?
+     *
+     * SUBSET, not equality. A target carrying extra keys is fine; a target
+     * missing even one of the archive's is not, because an install that rotated
+     * its key wrote ciphertext under each one and Laravel falls back through
+     * `app.previous_keys` to read them. That is why the whole set travels
+     * rather than the current key alone.
+     *
+     * An archive predating the field is INDETERMINATE rather than matching --
+     * the distinction assessVersions() already draws, for the same reason:
+     * "cannot verify" reported as "they agree" is how an operator skips the
+     * check that would have saved them.
+     *
+     * @param  array<string, mixed>  $manifest
+     * @return array{app_key_skew: bool, app_key_indeterminate: bool}
+     */
+    public static function assessAppKeys(array $manifest): array
+    {
+        $archive = $manifest['app_key_fingerprints'] ?? null;
+        $running = BackupService::appKeyFingerprints();
+
+        $known = is_array($archive) && $archive !== [] && $running !== [];
+
+        return [
+            'app_key_skew' => $known && array_diff($archive, $running) !== [],
+            'app_key_indeterminate' => ! $known,
+        ];
+    }
+
     private function assessVersions(
         string $archiveVersion,
         string $runningVersion,
@@ -125,6 +155,8 @@ class RestoreService
         // holds the archive has room.
         $work = $this->makeWorkDir($archivePath);
 
+        $destructiveWorkBegan = false;
+
         try {
             $this->extract($archivePath, $work);
 
@@ -159,6 +191,13 @@ class RestoreService
             $archiveVersion = (string) ($manifest['wayfindr_version'] ?? 'unknown');
 
             $localDisks = $this->localDisksFrom($manifest);
+
+            // FROM HERE ON, failures are partial rather than harmless. Every
+            // throw above this line leaves the install exactly as it was -- the
+            // missing-archive check, the tampered-tarball check, and the
+            // existing-data refusal that ordinary `--force`-less runs hit. A
+            // caller needs to tell those apart, because the advice inverts.
+            $destructiveWorkBegan = true;
 
             // Replace the database with the dump (atomic — see the restorer).
             $this->restorer->restore($dump);
@@ -206,10 +245,15 @@ class RestoreService
                     $manifest['wayfindr_commit'] ?? null,
                     config('wayfindr.release.commit'),
                 ),
+                ...self::assessAppKeys($manifest),
                 'restored_disks' => $attachments['restored'],
                 'unconfigured_disks' => $attachments['unconfigured'],
                 'integrity' => $integrity,
             ];
+        } catch (Throwable $exception) {
+            throw $destructiveWorkBegan
+                ? PartialRestoreException::from($exception)
+                : $exception;
         } finally {
             $this->removeDir($work);
         }
@@ -310,20 +354,10 @@ class RestoreService
             $archiveVersion = (string) ($manifest['wayfindr_version'] ?? 'unknown');
             $runningVersion = (string) (config('wayfindr.release.version') ?? 'unknown');
 
-            // An archive predating this field is INDETERMINATE, not a match --
-            // the same distinction assessVersions() draws, and for the same
-            // reason: "cannot verify" must never be reported as "they agree".
-            $archiveFingerprint = $manifest['app_key_fingerprint'] ?? null;
-            $runningFingerprint = BackupService::appKeyFingerprint();
-
             return [
                 'archive_version' => $archiveVersion,
                 'running_version' => $runningVersion,
-                'app_key_skew' => is_string($archiveFingerprint)
-                    && is_string($runningFingerprint)
-                    && ! hash_equals($archiveFingerprint, $runningFingerprint),
-                'app_key_indeterminate' => ! is_string($archiveFingerprint)
-                    || ! is_string($runningFingerprint),
+                ...self::assessAppKeys($manifest),
                 ...$this->assessVersions(
                     $archiveVersion,
                     $runningVersion,
