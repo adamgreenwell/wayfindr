@@ -76,7 +76,7 @@ function tablesCreatedBy(string $path, string $source): array
         $receivers[] = '\$'.preg_quote($builder, '/').'\s*->\s*';
     }
 
-    $pattern = '/(?:'.implode('|', $receivers).')create\('.$argument.'/';
+    $pattern = '/(?:'.implode('|', $receivers).')(?i:create)\('.$argument.'/';
 
     preg_match_all($pattern, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
 
@@ -160,7 +160,7 @@ function assertEveryCreateWasRead(string $path, string $source, array $builders,
     // data migration that one day calls `SomeModel::create([...])` will trip
     // it, and that is the right failure: the message says to teach the script
     // the shape, and a false alarm is cheap next to a table nobody documents.
-    $total = preg_match_all('/(?:[A-Za-z_][A-Za-z0-9_]*::|->\s*)create\s*\(/', $source);
+    $total = preg_match_all('/(?:[A-Za-z_][A-Za-z0-9_]*::|->\s*)(?i:create)\s*\(/', $source);
 
     if ($total > $read) {
         throw new RuntimeException(sprintf(
@@ -208,7 +208,10 @@ function resolveVariableTableName(string $source, string $variable, int $usedAt)
     // A reassignment in between - a literal, a helper result, a conditional
     // override - leaves the config default still matching while the name it
     // describes is no longer the one being created.
-    $assignments = '/\$'.preg_quote($variable, '/').'\s*=[^=]/';
+    // Compound writes reassign too. `$t .= '_archive'` after a config()
+    // default resolves to the documented base name while creating a
+    // different table, and the counts balance the whole way.
+    $assignments = '/\$'.preg_quote($variable, '/').'\s*(?:\.|\+|-|\*|\/|%|\*\*|\?\?|\||&|\^|<<|>>)?=(?!=)/';
     preg_match_all($assignments, $source, $all, PREG_OFFSET_CAPTURE);
 
     foreach ($all[0] ?? [] as $assignment) {
