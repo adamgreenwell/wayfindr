@@ -378,6 +378,31 @@ page view that was not there before.
   could reach a screen. Three documents describing it as intentionally English
   have been corrected to match.
 
+
+- **The retention panel now names every class of data Wayfindr deletes on its
+  own.** It said automatic deletion covered "cobrowse content only", and that
+  everything else stayed until an operator removed it. Two scheduled commands
+  said otherwise: visitor records that never produced a conversation are pruned
+  after 30 days, and the record of which proactive message reached which visitor
+  after 90. Both now have their own row, in all three languages, naming the
+  command and the window.
+
+  On a privacy surface, understating what the software deletes is as wrong as
+  understating what it keeps — an operator answering a subject-access request
+  from that panel would have got it wrong in a way they could not detect. The
+  presence row also states that its 30-day window is a ceiling rather than a
+  default, because presence collects people who never asked for anything (ADR
+  0019).
+
+- **Three more copilot surfaces render in German and Italian.** The summary
+  fragment was listed in `DashboardLanguage::EXTRACTED_ROUTES`; the reply draft,
+  knowledge suggestion and ticket suggestion were not. All four render back into
+  the conversation page, which *is* extracted, so those three resolved to English
+  and injected it into a German document — 51 translated strings that could never
+  reach a screen. The render audit could not have caught it: it matches
+  parameterised routes by static prefix, so each fragment passed on the
+  conversation index's coverage without ever being rendered.
+
 ### Fixed
 
 - **AI evaluation now fails closed on contradictory confidence.** A provider
@@ -513,6 +538,21 @@ page view that was not there before.
   now good for one message however many times the provider redelivers it, and a
   delivery that differs in sender, recipients, subject, body, threading headers
   or attachments is refused.
+
+- **Signing in is rate limited, and only failures count.** It was the one
+  unauthenticated credential endpoint with no limit at all, so an attacker could
+  grind a known agent's address at whatever rate the host allowed. Ten failures
+  against the same address from the same source now buy a fifteen-minute wait,
+  and a correct password clears the count.
+
+  Counting *failures* rather than requests is the part that matters for a
+  support desk. The `throttle` middleware counts every request, so ten agents
+  arriving at shift start behind one office NAT would spend a shared budget
+  between them and the eleventh would be refused while typing the right
+  password — a lockout wearing a rate limit's clothes. There is deliberately no
+  per-source-only bucket for the same reason, and the key is hashed because
+  `cache.key` is a 255-character column and a valid-but-long address composed
+  raw into a key would fail the insert and return a 500 instead of a login.
 
 ## [0.7.0] - 2026-08-25
 
