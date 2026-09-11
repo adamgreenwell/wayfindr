@@ -63,3 +63,30 @@ test('an install without realtime is not made to carry the library', function ()
     expect($body)->not->toContain('Pusher JavaScript Library');
     expect($body)->toContain('Wayfindr');
 });
+
+test('the served widget payload stays within its size budget', function (): void {
+    configureRealtime();
+
+    $body = (string) $this->get('/widget.js')->assertOk()->getContent();
+
+    // Measured on the CONTROLLER'S OWN OUTPUT rather than on the source files.
+    // scripts/test-widget-bundle.sh budgets the widget source, which it can
+    // read directly -- but the served response is not the vendored client
+    // concatenated with the source: bundledRealtime() wraps the client in a
+    // globals-restoring IIFE and joins with a newline. Budgeting the inputs
+    // under-reports the real body and makes every future byte of that wrapper
+    // invisible, which near a ceiling is the difference between a guard and a
+    // decoration.
+    //
+    // gzip level 9 so this number and the shell script's are the same
+    // yardstick rather than merely similar.
+    $gzipped = strlen((string) gzencode($body, 9));
+
+    expect($gzipped)->toBeLessThanOrEqual(105_000);
+
+    // The wrapper is the part the shell script cannot see, so pin that it is
+    // actually present in what was just measured. Without this the test would
+    // still pass if the realtime branch silently stopped bundling -- measuring
+    // a smaller payload and calling it a win.
+    expect($body)->toContain('__wayfindrPusher');
+});
