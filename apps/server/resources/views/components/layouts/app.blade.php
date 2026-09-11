@@ -2421,6 +2421,22 @@
             grid-template-columns: minmax(0, 1fr);
         }
 
+        .readiness-group-heading {
+            /* The list carries two audiences now -- account configuration and
+               instance operations -- and the boundary has to be visible or the
+               second group reads as more work the account owner is failing to
+               do. Borrows the system's existing label treatment (condensed,
+               uppercase, muted) rather than adding an eighth type step. */
+            margin: 0;
+            padding: 18px 20px 0;
+            font-family: var(--wf-font-cond);
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
         .readiness-check {
             border-bottom: 1px solid var(--border);
             padding: 18px 20px;
@@ -2437,7 +2453,8 @@
             gap: 16px;
         }
 
-        .readiness-check h3 {
+        .readiness-check h3,
+        .readiness-check h4 {
             margin: 0;
             font-size: 1rem;
         }
@@ -2489,6 +2506,18 @@
         .readiness-action {
             color: var(--text);
             font-weight: 650;
+        }
+
+        /* An action with no link is one this reader cannot take -- the instance
+           group, where the answer is always "ask your operator". At 650 on full
+           text colour it was louder than the teal links above it, so the panel
+           emphasised what the reader could not do over what they could. */
+        .readiness-instance-checks .readiness-action:not(:has(a)) {
+            /* Muted, but still heavier than the `.lede` detail line above it --
+               at the same weight the two grey lines merged into one paragraph
+               and the instruction stopped reading as an instruction. */
+            color: var(--muted);
+            font-weight: 600;
         }
 
         .readiness-commands {

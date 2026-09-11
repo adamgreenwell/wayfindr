@@ -111,20 +111,73 @@
                             {{ $visitorSupportReadiness['label'] }}
                         </span>
                         <span class="lede">
-                            {{ $visitorSupportReadiness['ready_count'] }} ready
-                            · {{ $visitorSupportReadiness['attention_count'] }} {{ $visitorSupportReadiness['attention_count'] === 1 ? 'needs' : 'need' }} attention
-                            · {{ $visitorSupportReadiness['manual_count'] }} to confirm
+                            {{ $visitorSupportReadiness['account']['ready_count'] }} ready
+                            · {{ $visitorSupportReadiness['account']['attention_count'] }} {{ $visitorSupportReadiness['account']['attention_count'] === 1 ? 'needs' : 'need' }} attention
+                            · {{ $visitorSupportReadiness['account']['manual_count'] }} to confirm
                         </span>
+                        {{-- Beside the verdict, never folded into it. The headline
+                             answers "is my account ready", which is the only
+                             question its reader can act on; a degrading queue is
+                             still their problem to know about, just not theirs to
+                             fix. Suppressed when the instance is clean, so the
+                             ordinary case stays one line. --}}
+                        @if ($visitorSupportReadiness['instance']['status'] !== 'ready')
+                            <span class="readiness-status" data-status="{{ $visitorSupportReadiness['instance']['status'] }}">
+                                {{ $visitorSupportReadiness['instance']['label'] }}
+                            </span>
+                        @endif
                     </div>
                 </div>
 
                 <x-details-disclosure :summary="'Support checks — '.$visitorSupportReadiness['label']">
+                {{-- Both groups are labelled, not just the second one. An
+                     unlabelled first group plus a labelled second one reads as
+                     "everything, and then some exceptions"; the point is that
+                     these are two lists with two owners. --}}
+                <h3 class="readiness-group-heading">Account setup — yours to complete</h3>
+
                 <div class="readiness-list">
-                    @foreach ($visitorSupportReadiness['checks'] as $check)
+                    @foreach ($visitorSupportReadiness['account']['checks'] as $check)
                         <article class="readiness-check" data-status="{{ $check['status'] }}">
                             <div class="readiness-check-main">
                                 <div>
-                                    <h3>{{ $check['label'] }}</h3>
+                                    <h4>{{ $check['label'] }}</h4>
+                                    <p>{{ $check['summary'] }}</p>
+                                </div>
+                                <span class="readiness-status" data-status="{{ $check['status'] }}">
+                                    {{ $check['status_label'] }}
+                                </span>
+                            </div>
+
+                            <p class="lede">{{ $check['detail'] }}</p>
+                            <p class="readiness-action">
+                                @if ($check['href'])
+                                    <a class="text-link" href="{{ $check['href'] }}">{{ $check['action'] }}</a>
+                                @else
+                                    {{ $check['action'] }}
+                                @endif
+                            </p>
+                        </article>
+                    @endforeach
+                </div>
+
+                {{-- Its own heading, because the answer to every item in it is
+                     "someone else". Three unattributed rows with no link read as
+                     work the owner is failing to do. --}}
+                <h3 class="readiness-group-heading">
+                    @if ($visitorSupportReadiness['instance']['owned'])
+                        Instance checks — yours as operator
+                    @else
+                        Instance checks — your operator's to resolve
+                    @endif
+                </h3>
+
+                <div class="readiness-list readiness-instance-checks">
+                    @foreach ($visitorSupportReadiness['instance']['checks'] as $check)
+                        <article class="readiness-check" data-status="{{ $check['status'] }}">
+                            <div class="readiness-check-main">
+                                <div>
+                                    <h4>{{ $check['label'] }}</h4>
                                     <p>{{ $check['summary'] }}</p>
                                 </div>
                                 <span class="readiness-status" data-status="{{ $check['status'] }}">

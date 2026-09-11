@@ -1,13 +1,16 @@
 <?php
 
 use App\Enums\AccountRole;
+use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\OperatorReadinessConfirmation;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\OperatorReadiness;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
@@ -253,6 +256,14 @@ test('dashboard shows a visitor support readiness checklist', function (): void 
         ->assertSee('Configure privacy masking')
         ->assertSee('Set up realtime delivery')
         ->assertSee('Move queues out of sync mode')
+        // Every instance row addresses THIS reader. Leaving the operator-facing
+        // instruction in place ("Reverb credentials and the public host setting
+        // must be complete") tells an account owner to do something they have
+        // no way to do, which is the defect one layer down.
+        ->assertSee('Ask your operator to finish the realtime configuration.')
+        ->assertSee('Ask your operator to move queues onto a durable worker.')
+        ->assertDontSee('Reverb credentials and the public host setting must be complete')
+        ->assertDontSee('Queues must run on database or redis with a worker process')
         ->assertSee('Confirm scheduler job')
         ->assertSee('Confirm this')
         ->assertSee('Run a first test conversation')
@@ -293,18 +304,135 @@ test('dashboard shows a visitor support readiness checklist', function (): void 
         ->get('/dashboard')
         ->assertOk()
         ->assertSee('Visitor support readiness')
-        ->assertSee('6 ready')
+        // Four account checks, and the headline counts only those: this agent
+        // is not a platform operator, so Reverb, the queue driver and cron are
+        // not theirs to resolve and must not sit under a verdict they cannot
+        // move. The scheduler is still unconfirmed -- it just says so in the
+        // instance group now, where the person who can act on it is named.
+        ->assertSee('4 ready')
         ->assertSee('0 need attention')
-        ->assertSee('1 to confirm')
-        // Everything automatic passes here, but the scheduler can only be
-        // confirmed by a person, so the panel must not claim the install is
-        // ready for visitors while it still lists something to confirm.
-        ->assertSee('Nearly ready')
-        ->assertDontSee('Ready for visitors')
+        ->assertSee('0 to confirm')
+        ->assertSee('Ready for visitors')
+        ->assertSee("Instance checks — your operator's to resolve", false)
+        ->assertSee('Ask your operator to confirm one thing')
+        ->assertSee('Ask your operator to confirm the Laravel scheduler runs every minute.')
         ->assertSee('Widget check-in is fresh.')
         ->assertSee('Privacy masking has selectors configured.')
         ->assertSee('Realtime delivery is configured.')
         ->assertSee('Queue driver is database.');
+});
+
+test('an account owner who is not the platform operator is not judged on instance checks', function (): void {
+    // The case the split exists for, and the one a self-hosted install cannot
+    // produce: the bootstrap makes its first user both roles, so the defect was
+    // invisible to every reader it had. In a hosted Wayfindr this is EVERY
+    // customer, permanently.
+    config([
+        'broadcasting.default' => 'log',
+        'queue.default' => 'sync',
+    ]);
+
+    $account = Account::factory()->create(['name' => 'Client Of An Agency']);
+    $owner = User::factory()->for($account)->create([
+        // Null, not a second enum case: PlatformRole has only `Operator`, and
+        // "not the operator" is the absence of it.
+        'account_role' => AccountRole::Owner,
+        'platform_role' => null,
+    ]);
+
+    $site = Site::factory()->for($account)->create([
+        'settings' => ['mask_selectors' => ['input[type="password"]']],
+    ]);
+
+    Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-owner-ready',
+        'last_seen_at' => now(),
+    ]);
+
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'tester-owner-ready']);
+    Conversation::factory()->for($site)->for($visitor)->create(['subject' => 'Owner smoke test']);
+
+    // Reverb is unconfigured and queues are in sync mode -- both genuinely
+    // broken, both invisible to this owner's control. The account is
+    // nonetheless fully set up, and the headline has to be able to say so.
+    $this->actingAs($owner)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('Ready for visitors')
+        ->assertSee('4 ready')
+        ->assertSee('0 need attention')
+        // Visible, attributed, and NOT folded into the verdict above it.
+        ->assertSee("Instance checks — your operator's to resolve", false)
+        ->assertSee('Ask your operator to look at this')
+        ->assertSee('Set up realtime delivery')
+        ->assertSee('Move queues out of sync mode')
+        // Every instance row points at the operator rather than at /operator,
+        // which this reader cannot open.
+        ->assertDontSee('/operator', false);
+});
+
+test('a platform operator is told the instance checks are theirs', function (): void {
+    config([
+        'broadcasting.default' => 'log',
+        'queue.default' => 'sync',
+    ]);
+
+    $account = Account::factory()->create(['name' => 'Self Hosted']);
+    $operator = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Owner,
+        'platform_role' => PlatformRole::Operator,
+    ]);
+
+    Site::factory()->for($account)->create(['settings' => ['mask_selectors' => ['input']]]);
+
+    $this->actingAs($operator)
+        ->get('/dashboard')
+        ->assertOk()
+        ->assertSee('Instance checks — yours as operator')
+        ->assertSee('Instance needs attention')
+        ->assertSee(route('operator.dashboard'), false)
+        // The control for the pair above: an operator keeps the instruction,
+        // because they are the person who carries it out.
+        ->assertSee('Reverb credentials and the public host setting must be complete')
+        ->assertDontSee('Ask your operator to finish the realtime configuration.');
+});
+
+test('a recorded scheduler confirmation clears the check, and a stale one does not', function (): void {
+    // The other half of the defect: /operator has recorded the attestation
+    // since the confirmation model shipped, and this panel ignored it and
+    // hard-returned `manual`. The single verdict therefore topped out at
+    // "Nearly ready" forever, by construction -- a check nobody can ever clear
+    // teaches its reader to stop reading the panel.
+    config([
+        'broadcasting.default' => 'log',
+        'queue.default' => 'sync',
+    ]);
+
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    Site::factory()->for($account)->create(['settings' => ['mask_selectors' => ['input']]]);
+
+    $this->actingAs($agent)->get('/dashboard')->assertOk()
+        ->assertSee('Scheduler has not been confirmed.');
+
+    $confirmation = OperatorReadinessConfirmation::query()->create([
+        'key' => 'scheduler',
+        'confirmed_at' => now()->subDay(),
+    ]);
+
+    $this->actingAs($agent)->get('/dashboard')->assertOk()
+        ->assertSee('Scheduler was confirmed')
+        ->assertDontSee('Scheduler has not been confirmed.')
+        // The confirming operator works for the platform, not for this account.
+        ->assertDontSee('confirmed by');
+
+    // One window, shared with /operator. Eight days is past it.
+    $confirmation->forceFill([
+        'confirmed_at' => now()->subDays(OperatorReadiness::CONFIRMATION_STALE_AFTER_DAYS['scheduler'] + 1),
+    ])->save();
+
+    $this->actingAs($agent)->get('/dashboard')->assertOk()
+        ->assertSee('Scheduler has not been confirmed.');
 });
 
 test('first-run queue empty states point at what creates the work', function (): void {
