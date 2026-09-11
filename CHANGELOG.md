@@ -133,8 +133,7 @@ page view that was not there before.
   access, integrations, account/team management, the principal operator
   console workflows, ticket detail, alerts, reports, sites, the hosted tester,
   and site settings. The remaining ordinary dashboard pages intentionally left
-  in English are the dashboard home, custom roles, readiness, and support-code
-  lookup. `DashboardLanguage::EXTRACTED_ROUTES` remains the executable authority
+  in English are the dashboard home, readiness, and support-code lookup. `DashboardLanguage::EXTRACTED_ROUTES` remains the executable authority
   on that boundary.
 
   Both packs have now been through the review the translation policy defines:
@@ -352,6 +351,33 @@ page view that was not there before.
   Old retained sessions remain part of history without inflating active queue
   badges or loading every candidate into memory.
 
+
+- **The widget script is served as a public asset, and is now genuinely
+  cacheable.** It had been declared in `routes/web.php` since the first commit
+  that served it from Laravel, which put it in the `web` middleware group. The
+  response therefore carried `Set-Cookie`. A visitor's own browser cache stores
+  such a response perfectly well, so the declared `max-age=60` did apply there.
+  What it could not survive was the layer an operator actually puts in front of
+  an asset every visitor fetches: shared caches and CDNs commonly decline to
+  store a response carrying `Set-Cookie`. Removing the cookie makes the lifetime
+  dependable at that layer rather than only in each visitor's own browser. It
+  now carries `max-age=300` — chosen deliberately, because the URL has no
+  version in it, so that number is also how long a visitor can keep running the
+  previous release's widget after an upgrade — plus an `ETag`, so a revalidation
+  that matches costs a bare `304` instead of roughly 97 KB gzipped. Two size
+  budgets now exist where there had been none anywhere in the repository: the
+  widget source is budgeted by `make self-host-test`, and the served response —
+  which is not the source files concatenated, because the realtime client is
+  wrapped before it is joined — is budgeted by the server test suite, which is
+  the only place the controller's actual output can be measured.
+
+- **Custom-role management now renders in German and Italian.** The catalogues
+  had been complete for some time, but none of the `dashboard.account.roles.*`
+  routes was listed in `DashboardLanguage::EXTRACTED_ROUTES`, so the locale
+  never resolved to anything but English on that surface and none of that work
+  could reach a screen. Three documents describing it as intentionally English
+  have been corrected to match.
+
 ### Fixed
 
 - **AI evaluation now fails closed on contradictory confidence.** A provider
@@ -416,6 +442,40 @@ page view that was not there before.
   the rendered sentence against English literals — a comparison that would have
   pinned the indicator on permanently for German and Italian agents the moment
   that surface was translated.
+
+
+- **The widget script no longer starts a session or sets a cookie.** Because it
+  sat in the `web` middleware group, every request that actually reached it --
+  each first load, and each one after the previous response's short cache
+  lifetime expired -- wrote a row to the `sessions` table on installs using the
+  default database session driver, and returned `wayfindr-session` and
+  `XSRF-TOKEN` to a visitor who had not interacted with anything. That is a
+  consent surface in a product whose visitor presence collection is deliberately
+  opt-in with an explicit decline path (ADR 0019), and it applied to visitors
+  who never opened the widget at all. Nothing for an operator to do; the URL is
+  unchanged and existing visitor cookies simply stop being renewed.
+
+- **Four interface defects, each of which the test suite could not see.** The
+  visitors list rendered a colourless site dot, because it passed the site's
+  colour as an attribute that matches no rule anywhere while the conversation
+  and ticket queues supply the hue inline; it also announced as an empty element
+  for want of `aria-hidden`. The custom-roles list offered an enabled delete
+  button for a role a single sign-on claim mapping still names, which the server
+  always refused — the list never counted mappings, so the view could not see
+  that condition. Two tables lost their horizontal-overflow container by using
+  class names that have no styles anywhere, and one of them, the live visitor
+  board, would scroll the whole page sideways on a single long page URL.
+
+- **A form's validation errors no longer render inside a collapsed disclosure.**
+  The site-details form sits inside a `<details>` that is closed by default, so
+  a rejected domain or colour told the agent nothing at all: the page reloaded,
+  the change had not saved, and the explanation was hidden. The disclosure now
+  opens itself when that form has errors.
+
+- **An alert is no longer recorded as accepted before it started.** The digest
+  and unattended-conversation jobs captured the delivery timestamp before
+  sending and reused it as the acceptance time, so a listener stamping the start
+  mid-send could produce a record accepted earlier than it began.
 
 ### Security
 
