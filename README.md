@@ -110,6 +110,11 @@ Wayfindr uses a deliberately mixed license structure:
 - WordPress plugin code is intended to use a GPL-compatible license.
 - Wayfindr names, logos, and marks are not covered by the code license.
 
+Everything in this repository is Community Edition, and there is no hosted
+service. [Editions](docs/product/editions.md) records that, and the constraint
+that would apply if a commercial tier ever arrived: it may not take away
+functionality Community Edition has already published.
+
 See [0001-license-and-repo-structure.md](docs/decisions/0001-license-and-repo-structure.md) for the current licensing rationale.
 
 See [0003-laravel-forge-as-first-class-deployment-path.md](docs/decisions/0003-laravel-forge-as-first-class-deployment-path.md) for the current Forge deployment posture.
