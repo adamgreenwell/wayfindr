@@ -88,6 +88,16 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   dashboard receipt stays on the notification row rather than here, and
   `state_key` scopes a claim to the activity it covered so work that advances
   without a new alert row stays eligible for a later digest.
+- `push_subscriptions`: one browser an agent has opted in from, holding the
+  endpoint its push service issued and the keys that encrypt to it. It is the
+  one table whose name and connection are read from configuration rather than
+  written literally, because the upstream package owns them —
+  `WEBPUSH_DB_TABLE` and `WEBPUSH_DB_CONNECTION` — and moving either is a way
+  to break the feature rather than tune it. `vapid_public_key_hash` is what
+  makes rotating the install's VAPID keys able to find the rows that rotation
+  just made undeliverable, which is why that rotation empties this table for
+  every agent at once. The subscribable side is polymorphic because the package
+  is; only agents are ever attached.
 - `conversation_copilot_summaries`: the latest agent-requested summary of a
   conversation, one row per conversation, overwritten by each refresh instead
   of kept as history. Every worker write is guarded on `generation`, so a
