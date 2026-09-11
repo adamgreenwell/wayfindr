@@ -1,17 +1,39 @@
 # Account Escalation Policies
 
-Status: planned. This document defines the product boundary for future automatic
-account-level escalation before Wayfindr adds policy UI, timers, or background
-jobs.
+Status: still planned, and still the open gap it always was — nothing in the
+product escalates ownership of neglected work on elapsed time. What has changed
+is the ground underneath it. This document was written before Wayfindr had any
+policy UI, timers, or background jobs; it now has all three, for SLA deadlines
+rather than for escalation, which means the question is no longer how to build
+that machinery but which parts an escalation policy should inherit rather than
+reinvent. Read the settings below with that in mind: several name a clock or a
+schedule the product has since chosen a different home for.
 
 ## Principle
 
 Escalation should help teams catch neglected support work without making the
 dashboard feel punitive.
 
-The current foundation is manual escalation plus alert digest delivery. Automatic
-escalation should only arrive after the account can explain what will happen,
-who will be notified, when it will happen, and how to turn it off.
+The foundation is now larger than manual escalation plus alert digests. Account
+SLA policies keep business-time clocks against site support hours and raise
+approaching, breached, met and missed states; a cross-channel delivery ledger
+decides which channel carries an alert and stops the others repeating it; and
+automation rules react to bounded ticket, conversation and visitor-message
+events. One of those already moves ownership: an automation rule's
+`assign_agent` action reassigns a ticket or conversation, refuses an ineligible
+target, and records the change on the assignment audit trail. What none of them
+does is move ownership *on elapsed time* — an SLA breach tells the desk a target
+was missed, it does not hand the work to somebody else — and that is the gap
+this document still describes.
+
+The distinction is about reuse, not scope. The mechanism that performs a
+reassignment, checks the target is eligible and audits the result already exists
+and is exercised in production paths. An escalation runner should drive that
+rather than write a second one; what has to be built is the clock and the policy
+that decide when to pull the trigger.
+
+Automatic escalation should only arrive after the account can explain what will
+happen, who will be notified, when it will happen, and how to turn it off.
 Every automatic escalation path should be opt-in, auditable, and easy to
 disable.
 
@@ -24,17 +46,29 @@ that every supported site can inherit.
 Minimum account settings:
 
 - whether automatic escalation is enabled;
-- account timezone;
-- working hours and working days;
 - default waiting thresholds by priority;
 - default fallback behavior when the assignee cannot respond;
-- whether site-level overrides are allowed later;
 - who may manage the policy;
 - who receives policy-change audit events.
 
-Site-level overrides can come later if real teams prove they need different
-coverage by property. Until then, one account-level policy is easier to explain,
-test, and disable.
+Three settings this list originally named are deliberately gone, because the
+product has since put those clocks somewhere else and a fourth copy would be a
+fourth thing to disagree:
+
+- **Account timezone and account working hours.** Business time belongs to the
+  site, not the account: SLA clocks already pause against each site's support
+  hours, and automatic assignment is configured per site for the same reason. An
+  escalation policy should read the work item's site schedule.
+- **Whether site-level overrides of the schedule are allowed later.** That half
+  answered itself: the schedule is already per site, so there is no account
+  default for a site to override. It settles the clock source and nothing else.
+  Whether the rest of the policy — priority thresholds, fallback behavior, and
+  whether automatic escalation is on at all — may be overridden per site is
+  still open, and waypoint 8 below still governs it.
+
+Per-agent timezone exists too, and governs quiet-hour suppression rather than
+business time. An escalation policy inherits both of those clocks; it should not
+introduce a third.
 
 ## Timing
 
@@ -55,9 +89,11 @@ Avoid timing anchors that create noise:
 - every old open ticket;
 - work outside the agent's site access scope.
 
-Working hours should use the account timezone first. Agent timezone can become a
-later refinement, but the first implementation should keep the policy easy to
-reason about for small self-hosted teams.
+Business time comes from the work item's site support-hours schedule — the same
+source the SLA clocks read, so a breach and an escalation cannot disagree about
+whether the desk was open. Per-agent timezone already governs quiet-hour
+suppression, and an escalation policy should inherit that too rather than
+deciding separately when somebody may be interrupted.
 
 ## Priority Thresholds
 
@@ -91,6 +127,19 @@ Fallback behavior should be deliberate and boring:
 
 The fallback path should never notify a user who cannot view the underlying
 conversation, ticket, or site.
+
+The first three of those already exist. `SlaAlertRouting` routes deadline alerts
+by exactly that cascade — assigned agent who still has site access, else the
+site's eligible support agents, else account agents where the site uses
+account-wide fallback — and filters the result by recipient eligibility. An
+escalation policy should reuse it rather than write a second one that can
+disagree about who may be told.
+
+The fourth has no counterpart. When nothing is eligible, the SLA path returns an
+empty recipient set and the alert simply does not go; it raises no
+account-visible warning. Silence is a reasonable answer for a missed deadline
+and a poor one for work nobody owns, so that bullet remains unbuilt rather than
+already solved.
 
 ## Agent Preferences
 
@@ -163,16 +212,20 @@ No automatic escalation should ship until tests prove:
 - policy changes create audit events;
 - automatic escalation events create audit events;
 - metadata-first email and notification content;
-- account timezone and working hours handling;
+- site support-hours handling, and agreement with the SLA clocks about whether
+  the desk was open;
 - priority thresholds do not escalate by priority alone.
 
 ## Implementation Waypoints
 
-1. Keep this document and the existing digest/manual-escalation foundation as
-   the product contract.
+1. Keep this document as the product contract, over a foundation that now
+   includes SLA clocks, the delivery ledger, and automation rules as well as
+   digests and manual escalation.
 2. Add a read-only account policy preview that says automatic escalation is not
    enabled yet and explains the future shape.
-3. Add account-level policy storage behind owner/admin authorization.
+3. Add escalation policy storage alongside the existing account SLA policies,
+   gated on a named account permission rather than a hardcoded role check, so an
+   account-owned custom role can be granted it.
 4. Add policy-change audit events before any background escalation runner.
 5. Add a dry-run command that reports which records would escalate and why.
 6. Add automatic dashboard notifications only after the dry-run path is trusted.
@@ -185,7 +238,10 @@ No automatic escalation should ship until tests prove:
 - Should urgent escalations bypass digest cadence by default, or should accounts
   explicitly opt into that behavior?
 - Should the first policy have a single team fallback target, or derive eligible
-  recipients from site access only?
+  recipients from site access only? The cascade under *Fallback Behavior* already
+  describes the site-access answer, and `SlaAlertRouting` implements that shape
+  for deadline alerts — so the question is now whether to reuse it or offer a
+  team target instead, not which one is possible.
 - Should policy warnings live on the account overview, operator readiness, or a
   dedicated admin settings route?
 - Should a future hosted Wayfindr service offer default templates while keeping
