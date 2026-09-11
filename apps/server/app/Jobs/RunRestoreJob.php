@@ -164,8 +164,18 @@ class RunRestoreJob implements ShouldQueue
             // (either side carries no release identity) is treated the same way —
             // we cannot prove the schema matches, and a destructive restore is
             // exactly where an unprovable assumption should fail safe.
+            //
+            // An APP_KEY mismatch fails safe the same way, and arguably harder:
+            // a version skew leaves a schema to migrate, while a key mismatch
+            // leaves an install where agents with two-factor authentication
+            // cannot sign in at all -- their secret is encrypted and is read
+            // while they authenticate. Bringing that back online automatically
+            // would hand the operator a site that looks restored and refuses
+            // its own staff.
             $this->keepMaintenance = (bool) ($result['version_skew'] ?? false)
-                || (bool) ($result['version_indeterminate'] ?? false);
+                || (bool) ($result['version_indeterminate'] ?? false)
+                || (bool) ($result['app_key_skew'] ?? false)
+                || (bool) ($result['app_key_indeterminate'] ?? false);
 
             $this->record('succeeded', $this->successMessage($result), $result);
         } catch (Throwable $exception) {
@@ -422,6 +432,57 @@ class RunRestoreJob implements ShouldQueue
             $parts[] = 'The backup was taken on version '.($result['archive_version'] ?? '?')
                 .' but this install runs '.($result['running_version'] ?? '?')
                 .'. The site is being kept in maintenance mode so the schema and code can'."'".'t mismatch. On the server, make them compatible — if the backup is OLDER, run `php artisan migrate --force`; if it is NEWER, deploy a matching or newer release — then run `php artisan up`.';
+        }
+
+        // A key mismatch also holds maintenance, and said nothing about why.
+        // An operator would have read "Restore complete", found the site still
+        // down, and had no sentence anywhere connecting the two -- so the
+        // natural next move is `php artisan up` on an install whose agents
+        // cannot authenticate.
+        if (($result['app_key_skew'] ?? false) && ! ($result['app_key_no_overlap'] ?? false)) {
+            // PARTIAL. The sets overlap, so rows written under a shared key
+            // still decrypt and must not be touched. Only the ones written
+            // under the key this install is missing are unreadable -- typically
+            // an archive from a source that rotated, restored where the older
+            // key was never carried across. Advising a wholesale clear here
+            // would destroy data the operator can still read.
+            $parts[] = 'This install is missing at least one key this backup was taken with, but not all '
+                .'of them — so some encrypted values still read and the older ones do not. Do NOT clear '
+                .'anything: put the missing APP_PREVIOUS_KEYS back and the rest become readable again. '
+                .'One catch if you restore from this screen rather than the command line: this job ran '
+                .'on the long-lived backup-queue worker, which read its key set when it started, so '
+                .'editing the env and pressing confirm again compares against the OLD keys and runs the '
+                .'destructive restore anyway. Recreate the web and backup-queue services first — '
+                .'docker compose up -d --force-recreate web backup-queue — then check this page again '
+                .'before submitting. The site is being kept in maintenance mode until you have decided.';
+        } elseif ($result['app_key_skew'] ?? false) {
+            // TOTAL. No shared key, so nothing in the archive decrypts here.
+            //
+            // The order below matters and is the whole point of spelling it
+            // out. "Re-enter the lost values, then bring the site up" is
+            // circular: settings and two-factor enrolment are authenticated
+            // HTTP routes, maintenance mode blocks them, and lifting
+            // maintenance first leaves agents unable to sign in at all, because
+            // the read of their encrypted secret is what throws. The only
+            // sequence that terminates clears the columns at the database,
+            // where nothing decrypts them.
+            $parts[] = 'This backup shares none of its keys with this install, so every encrypted value '
+                .'in it is unreadable here — starting with sign-in, because an agent'."'".'s two-factor '
+                .'secret is encrypted and is read while they log in. The site is being kept in '
+                .'maintenance mode. The clean fix is to put the original APP_KEY (and any '
+                .'APP_PREVIOUS_KEYS) back and restore again. If those keys are genuinely gone, follow '
+                .'"If the keys are genuinely gone" in docs/self-hosting/backup-restore.md, which has '
+                .'the SQL. Do not improvise it: nine columns across seven tables are encrypted and '
+                .'they do not all reset the same way — five are NOT NULL, so those rows are deleted '
+                .'rather than cleared, and setting them to an empty string does not work because the '
+                .'cast still tries to decrypt it. The ordering is the other half: all of it happens '
+                .'while the site is still in maintenance, because re-entering the lost values needs '
+                .'authenticated screens that the broken sign-in cannot reach.';
+        } elseif ($result['app_key_indeterminate'] ?? false) {
+            $parts[] = 'The APP_KEY could not be compared against this backup — it predates the '
+                .'fingerprint, or no key is set here. The site is being kept in maintenance mode so this '
+                .'can be checked: if the key differs, encrypted values are unreadable and agents using '
+                .'two-factor authentication will not be able to sign in.';
         }
 
         $dangling = $result['integrity']['dangling'] ?? null;

@@ -58,6 +58,46 @@ class RestoreService
      *
      * @return array{version_skew: bool, version_indeterminate: bool, archive_version_known: bool, running_version_known: bool}
      */
+    /**
+     * Can this install decrypt everything the archive holds?
+     *
+     * SUBSET, not equality. A target carrying extra keys is fine; a target
+     * missing even one of the archive's is not, because an install that rotated
+     * its key wrote ciphertext under each one and Laravel falls back through
+     * `app.previous_keys` to read them. That is why the whole set travels
+     * rather than the current key alone.
+     *
+     * An archive predating the field is INDETERMINATE rather than matching --
+     * the distinction assessVersions() already draws, for the same reason:
+     * "cannot verify" reported as "they agree" is how an operator skips the
+     * check that would have saved them.
+     *
+     * @param  array<string, mixed>  $manifest
+     * @return array{app_key_skew: bool, app_key_indeterminate: bool}
+     */
+    public static function assessAppKeys(array $manifest): array
+    {
+        $archive = $manifest['app_key_fingerprints'] ?? null;
+        $running = BackupService::appKeyFingerprints();
+
+        $known = is_array($archive) && $archive !== [] && $running !== [];
+
+        $missing = $known ? array_diff($archive, $running) : [];
+
+        return [
+            'app_key_skew' => $missing !== [],
+            'app_key_indeterminate' => ! $known,
+            // Skew is not one condition. If the sets overlap -- a source that
+            // rotated K1 to K2 restored onto a target holding K2 but not the
+            // historical K1 -- then rows written under the shared key still
+            // decrypt perfectly, and only the older ones do not. Telling that
+            // operator "every encrypted value is unreadable, clear them all"
+            // would destroy data they could still read. An empty intersection
+            // is the only case where nothing survives.
+            'app_key_no_overlap' => $known && array_intersect($archive, $running) === [],
+        ];
+    }
+
     private function assessVersions(
         string $archiveVersion,
         string $runningVersion,
@@ -125,6 +165,8 @@ class RestoreService
         // holds the archive has room.
         $work = $this->makeWorkDir($archivePath);
 
+        $destructiveWorkBegan = false;
+
         try {
             $this->extract($archivePath, $work);
 
@@ -162,6 +204,16 @@ class RestoreService
 
             // Replace the database with the dump (atomic — see the restorer).
             $this->restorer->restore($dump);
+
+            // FROM HERE ON, failures are partial rather than harmless -- and
+            // not one line earlier. The load runs DROP SCHEMA, CREATE SCHEMA
+            // and the dump inside a single transaction, so everything it can
+            // throw rolls back: a rejected connection config, a psql that will
+            // not start, a refused connection, a bad dump. Setting the flag
+            // BEFORE that call turned all of those into "this may have applied
+            // partially" -- the same false alarm as the --force refusal, just
+            // further down. Everything above leaves the install untouched.
+            $destructiveWorkBegan = true;
 
             // Immediately, before anything that can throw.
             //
@@ -206,10 +258,15 @@ class RestoreService
                     $manifest['wayfindr_commit'] ?? null,
                     config('wayfindr.release.commit'),
                 ),
+                ...self::assessAppKeys($manifest),
                 'restored_disks' => $attachments['restored'],
                 'unconfigured_disks' => $attachments['unconfigured'],
                 'integrity' => $integrity,
             ];
+        } catch (Throwable $exception) {
+            throw $destructiveWorkBegan
+                ? PartialRestoreException::from($exception)
+                : $exception;
         } finally {
             $this->removeDir($work);
         }
@@ -279,6 +336,18 @@ class RestoreService
      *
      * @return array{archive_version: string, running_version: string, version_skew: bool, version_indeterminate: bool, archive_version_known: bool, running_version_known: bool}
      */
+    /**
+     * What a failed restore may have left behind.
+     *
+     * Only the database load is transactional (`pg_restore --single-transaction`).
+     * Attachment binaries are put back AFTER it commits, and that step purges
+     * each local disk wholesale before repopulating it -- so a failure in that
+     * phase leaves a committed database beside half-restored disks. Both the
+     * command and the queued job must say so, and they must say the same thing,
+     * so the sentence lives here rather than in either of them.
+     */
+    public const PARTIAL_FAILURE_ADVICE = 'The database load is transactional, but attachment binaries are restored after it commits and the disks are purged first — so this may have applied only partially. Verify the database AND the attachment disks before serving traffic, then re-run the restore or put the previous archive back.';
+
     public function preflight(string $archivePath): array
     {
         if (! is_file($archivePath)) {
@@ -301,6 +370,7 @@ class RestoreService
             return [
                 'archive_version' => $archiveVersion,
                 'running_version' => $runningVersion,
+                ...self::assessAppKeys($manifest),
                 ...$this->assessVersions(
                     $archiveVersion,
                     $runningVersion,
