@@ -148,8 +148,16 @@
                                     </a>
                                 </td>
                                 <td>
-                                    <span class="wf-site-dot" data-site-color="{{ $visitor->site?->resolvedColor()->value }}"></span>
                                     @if ($visitor->site)
+                                        {{-- `.wf-site-dot` carries size but no background: every consumer
+                                             supplies the hue inline, resolving the site's stored token key
+                                             through --wf-site-<key> so a retuned hue and the dark variants
+                                             both reach it (ADR 0014 §3). This one passed `data-site-color`
+                                             instead, which matches no selector anywhere in the repo, so the
+                                             dot rendered as a 9x9 transparent box -- and without
+                                             `aria-hidden` it announced as an empty element. The queue and
+                                             ticket lists have always done it this way. --}}
+                                        <span class="wf-site-dot" style="background: var({{ $visitor->site->resolvedColor()->cssVariable() }})" aria-hidden="true"></span>
                                         <span lang="">{{ $visitor->site->name }}</span>
                                     @else
                                         {{ __('visitors.list.unknown_site') }}

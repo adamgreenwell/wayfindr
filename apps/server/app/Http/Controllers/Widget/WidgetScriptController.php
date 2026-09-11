@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
 use App\Support\WidgetRealtimeConfig;
+use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
 class WidgetScriptController extends Controller
@@ -19,17 +20,44 @@ class WidgetScriptController extends Controller
      * (issue #714). The bytes are unchanged -- those pages already fetched
      * this exact file -- but they now come from one origin, in one request.
      */
-    public function __invoke(): Response
+    public function __invoke(Request $request): Response
     {
         $scriptPath = base_path('../../packages/widget-js/src/wayfindr-widget.js');
 
         abort_unless(is_file($scriptPath), 404);
 
-        return response($this->script($scriptPath), 200, [
+        $body = $this->script($scriptPath);
+
+        $response = response($body, 200, [
             'Content-Type' => 'application/javascript; charset=UTF-8',
-            'Cache-Control' => 'public, max-age=60',
+            // Until this route left the `web` group the response also carried
+            // Set-Cookie, which makes a shared cache decline to store it -- so
+            // the old max-age=60 never applied anywhere and was never tested
+            // against reality (#955). It applies now, which makes the value a
+            // real decision rather than a decorative one.
+            //
+            // The URL is unversioned, so max-age is also the window in which a
+            // visitor can keep running the previous release's widget after an
+            // upgrade. Five minutes keeps that window short while still
+            // collapsing the per-page-view refetch that motivated the issue.
+            // A longer life belongs with a versioned URL, not here.
+            'Cache-Control' => 'public, max-age=300',
             'X-Content-Type-Options' => 'nosniff',
         ]);
+
+        // The bytes change only when the release or the realtime configuration
+        // does, both install-wide, so the tag is stable for every visitor and
+        // needs no Vary. A revalidation that matches costs a bare 304 instead
+        // of ~97KB gzipped, which is the difference that actually shows up on
+        // an operator's bandwidth bill.
+        $response->setEtag(hash('xxh128', $body));
+
+        // Called for its side effect: when the client's If-None-Match matches,
+        // this strips the body and sets 304 on the response in place. The
+        // return value is discarded because both outcomes are the same object.
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     private function script(string $scriptPath): string

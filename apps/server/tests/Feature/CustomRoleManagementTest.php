@@ -6,6 +6,8 @@ use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\CustomRole;
+use App\Models\OidcConnection;
+use App\Models\OidcRoleMapping;
 use App\Models\Site;
 use App\Models\Ticket;
 use App\Models\User;
@@ -14,6 +16,25 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
+
+/**
+ * The roles list renders one <article> per role and every delete button inside
+ * it is byte-identical, so a whole-page assertion cannot tell which role it
+ * matched. Named for this file rather than for the concept: Pest helpers are
+ * global, and a bare `articleMarkup()` would collide.
+ */
+function roleArticleMarkup(string $html, int $roleId): string
+{
+    $start = strpos($html, 'role-'.$roleId.'-name');
+
+    if ($start === false) {
+        return '';
+    }
+
+    $end = strpos($html, '</article>', $start);
+
+    return $end === false ? substr($html, $start) : substr($html, $start, $end - $start);
+}
 
 test('owners can create update and delete an unassigned custom role with audit history', function (): void {
     $account = Account::factory()->create();
@@ -311,6 +332,39 @@ test('a custom role cannot cross account boundaries or be deleted while assigned
         ->assertSessionHasErrors('role');
 
     expect($assignedRole->fresh())->not->toBeNull();
+});
+
+test('the roles list disables delete for a role an sso claim still maps to', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $mappedRole = CustomRole::factory()->for($account)->create(['name' => 'Mapped role']);
+    $freeRole = CustomRole::factory()->for($account)->create(['name' => 'Free role']);
+
+    // Nobody holds either role, so the people check clears both. The only thing
+    // separating them is the claim mapping -- which is exactly the condition
+    // destroy() enforces and the list could not previously see.
+    $connection = OidcConnection::factory()->for($account)->create();
+    OidcRoleMapping::factory()
+        ->for($connection, 'connection')
+        ->create(['custom_role_id' => $mappedRole->id, 'built_in_role' => null]);
+
+    $html = (string) $this->actingAs($owner)
+        ->get(route('dashboard.account.roles.index'))
+        ->assertOk()
+        ->getContent();
+
+    // Slice each role's own article so an assertion cannot be satisfied by the
+    // other role's markup -- both buttons carry identical text and classes.
+    $mappedBlock = roleArticleMarkup($html, $mappedRole->id);
+    $freeBlock = roleArticleMarkup($html, $freeRole->id);
+
+    expect($mappedBlock)->toContain('disabled');
+    expect($mappedBlock)->toContain(__('account_roles.errors.oidc_mapped'));
+
+    // The control group: without a mapping the button stays live. Without this
+    // half the test would pass against a view that disabled every delete.
+    expect($freeBlock)->not->toContain('disabled');
 });
 
 test('site management permission cannot be removed from a sites only assigned manager', function (): void {
