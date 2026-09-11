@@ -133,8 +133,7 @@ page view that was not there before.
   access, integrations, account/team management, the principal operator
   console workflows, ticket detail, alerts, reports, sites, the hosted tester,
   and site settings. The remaining ordinary dashboard pages intentionally left
-  in English are the dashboard home, custom roles, readiness, and support-code
-  lookup. `DashboardLanguage::EXTRACTED_ROUTES` remains the executable authority
+  in English are the dashboard home, readiness, and support-code lookup. `DashboardLanguage::EXTRACTED_ROUTES` remains the executable authority
   on that boundary.
 
   Both packs have now been through the review the translation policy defines:
@@ -356,9 +355,12 @@ page view that was not there before.
 - **The widget script is served as a public asset, and is now genuinely
   cacheable.** It had been declared in `routes/web.php` since the first commit
   that served it from Laravel, which put it in the `web` middleware group. The
-  response therefore carried `Set-Cookie`, and a shared cache will not store a
-  response that does. The declared `max-age=60` consequently never applied
-  anywhere and the asset was re-fetched on every page view of every install. It
+  response therefore carried `Set-Cookie`. A visitor's own browser cache stores
+  such a response perfectly well, so the declared `max-age=60` did apply there.
+  What it could not survive was the layer an operator actually puts in front of
+  an asset every visitor fetches: shared caches and CDNs commonly decline to
+  store a response carrying `Set-Cookie`. Removing the cookie makes the lifetime
+  dependable at that layer rather than only in each visitor's own browser. It
   now carries `max-age=300` — chosen deliberately, because the URL has no
   version in it, so that number is also how long a visitor can keep running the
   previous release's widget after an upgrade — plus an `ETag`, so a revalidation
