@@ -26,11 +26,13 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   `provisioned_at` marks the federation-provisioned identities that
   claim-driven re-roling may touch.
 - `oidc_role_mappings`: exact claim values mapped to a role for one connection.
-  They are deny-by-default — no match, or matches resolving to different roles,
-  refuses the sign-in rather than guessing — and Owner is never a valid target.
-  The custom-role target is a foreign key that restricts deletion, so renaming
-  a role preserves its meaning and a mapped role cannot be removed out from
-  under the provider.
+  They govern JIT-managed identities only: an agent the provider created, and
+  every later sign-in by one, is refused when no mapping matches or when matches
+  resolve to different roles, rather than guessed at. An agent who already
+  existed locally and was linked by verified email is never routed through a
+  mapping at all, so a missing one cannot lock them out. Owner is never a valid
+  target, and the custom-role target restricts deletion, so a mapped role cannot
+  be removed out from under the provider.
 - `agent_realtime_evictions`: one pending instruction per agent to close their
   open realtime sockets, written in the same transaction as the role change,
   site-access removal, or OIDC role remap that revoked the access. `agent_id`
@@ -65,12 +67,13 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   because pruning the audit log must not delete answers the reports still
   count.
 - `conversation_reply_deliveries`: the outbox for support replies mailed on to
-  visitors who arrived by email. The unique `conversation_message_id` makes a
-  replay or a resubmitted agent form converge on one outbox row instead of a
-  second reply, and the RFC `message_id` is minted with the row so later mail
-  threads against exactly what was sent. `recipient` is encrypted so a
-  queue-support table does not become a second plaintext copy of visitor
-  addresses.
+  visitors who arrived by email. The unique `conversation_message_id` binds one
+  outbox row to one message, so a requeued or replayed job cannot mail the same
+  reply twice; it does not deduplicate an agent who submits the reply form
+  again, because that writes a second message and earns a second delivery. The
+  RFC `message_id` is minted with the row so later mail threads against exactly
+  what was sent, and `recipient` is encrypted so a queue-support table does not
+  become a second plaintext copy of visitor addresses.
 - `agent_alert_deliveries`: one claim per alert version and state, taken by
   whichever off-dashboard channel reaches it first — Web Push, immediate,
   digest, or unattended mail — so the others do not send that copy. The live
