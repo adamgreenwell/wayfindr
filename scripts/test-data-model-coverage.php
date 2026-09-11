@@ -149,12 +149,18 @@ function assertEveryCreateWasRead(string $path, string $source, array $builders,
     // builder (`$b = $schema; $b->create(...)`) matches no known receiver, so
     // a narrow count reads zero-of-zero and calls it success.
     //
+    // Any static receiver, not only a literal `Schema::`. A migration that
+    // imports the facade under an alias -- `use ...\Schema as SchemaBuilder;`
+    // then `SchemaBuilder::create(...)` -- matches neither the extraction
+    // patterns nor a `Schema::`-only count, so the file would report zero
+    // creations and pass.
+    //
     // Across all migrations today every create() is a schema create and no
     // non-Schema `::create(` receiver appears, so this over-counts nothing. A
     // data migration that one day calls `SomeModel::create([...])` will trip
     // it, and that is the right failure: the message says to teach the script
     // the shape, and a false alarm is cheap next to a table nobody documents.
-    $total = preg_match_all('/(?:Schema::|->\s*)create\s*\(/', $source);
+    $total = preg_match_all('/(?:[A-Za-z_][A-Za-z0-9_]*::|->\s*)create\s*\(/', $source);
 
     if ($total > $read) {
         throw new RuntimeException(sprintf(
@@ -185,10 +191,29 @@ function resolveVariableTableName(string $source, string $variable, int $usedAt)
     }
 
     $resolved = null;
+    $resolvedAt = -1;
 
     foreach ($matches as $match) {
         if ($match[0][1] < $usedAt) {
             $resolved = $match['default'][0];
+            $resolvedAt = $match[0][1];
+        }
+    }
+
+    if ($resolved === null) {
+        return null;
+    }
+
+    // The config assignment must be the variable's *last* one before the call.
+    // A reassignment in between - a literal, a helper result, a conditional
+    // override - leaves the config default still matching while the name it
+    // describes is no longer the one being created.
+    $assignments = '/\$'.preg_quote($variable, '/').'\s*=[^=]/';
+    preg_match_all($assignments, $source, $all, PREG_OFFSET_CAPTURE);
+
+    foreach ($all[0] ?? [] as $assignment) {
+        if ($assignment[1] > $resolvedAt && $assignment[1] < $usedAt) {
+            return null;
         }
     }
 
