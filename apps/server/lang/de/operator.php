@@ -780,7 +780,7 @@ return [
             'subtitle' => 'Was diese Installation speichert und wie lange.',
             'current' => 'Aktuelle Einstellung',
             'label' => 'Betreiberverwaltete Aufbewahrung',
-            'summary' => 'Cobrowse-Seiteninhalte werden automatisch bereinigt; die übrige Aufbewahrung bleibt Betreiberaufgabe.',
+            'summary' => 'Cobrowse-Seiteninhalte, Besucher ohne jeden Kontakt und Nachweise zu proaktiven Zustellungen werden automatisch bereinigt; die übrige Aufbewahrung bleibt Betreiberaufgabe.',
             'description' => 'Gehen Sie davon aus, dass Anwendungsdatensätze, Protokolle und Sicherungen gemäß den Infrastrukturvorgaben bestehen bleiben, bis ein Betreiber sie entfernt oder der Host-Lebenszyklus sie löscht.',
             'open_guidance' => 'Aufbewahrungsanleitung öffnen',
             'status' => [
@@ -804,10 +804,20 @@ return [
                     'value' => '{1} Automatische Bereinigung :count Stunde nach Sitzungsende|[2,*] Automatische Bereinigung :count Stunden nach Sitzungsende',
                     'description' => 'Der geplante Befehl wayfindr:prune-cobrowse-content entfernt unbearbeitetes Snapshot-HTML, Seitentext und gespeicherte Änderungsstapel aus beendeten Cobrowse-Sitzungen. Dabei bleiben nur inhaltsfreie Herkunftsdaten wie Anzahlen, Zeitstempel, Hashes und Prüfereignisse erhalten.',
                 ],
+                'presence_visitors' => [
+                    'label' => 'Besucher ohne jeden Kontakt',
+                    'value' => '{1} Nach :count Tag gelöscht, höchstens 30|[2,*] Nach :count Tagen gelöscht, höchstens 30',
+                    'description' => 'Der geplante Befehl wayfindr:prune-presence-visitors löscht Besucherdatensätze, aus denen nie eine Unterhaltung entstanden ist und deren letztes Lebenszeichen außerhalb des Zeitfensters liegt. Die Obergrenze kann ein Betreiber nicht anheben: Die Anwesenheitserfassung erfasst Menschen, die um nichts gebeten haben.',
+                ],
+                'proactive_deliveries' => [
+                    'label' => 'Nachweise zu proaktiven Zustellungen',
+                    'value' => 'Nach 90 Tagen gelöscht',
+                    'description' => 'Der geplante Befehl wayfindr:prune-proactive-message-deliveries löscht den Nachweis darüber, welche proaktive Nachricht welchen Besucher erreicht hat, sobald das begrenzte Zeitfenster abgelaufen ist.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Automatische Löschung',
-                    'value' => 'Nur Cobrowse-Inhalte',
-                    'description' => 'Über Cobrowse-Seiteninhalte hinaus bleiben Löschung, Export und Aufbewahrungssteuerung zukünftige Arbeit; erläutern Sie dies vor echtem Supportverkehr.',
+                    'value' => 'Die oben aufgeführten Klassen',
+                    'description' => 'Alles, was oben nicht aufgeführt ist, bleibt erhalten, bis ein Betreiber es entfernt. Löschung und Export für diese Klassen bleiben zukünftige Arbeit; erläutern Sie dies vor echtem Supportverkehr.',
                 ],
             ],
             'reminders' => [
