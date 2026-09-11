@@ -79,7 +79,22 @@
                     <form method="POST" action="{{ route('dashboard.account.roles.destroy', $role) }}">
                         @csrf
                         @method('DELETE')
-                        <button class="button danger" type="submit" @disabled($role->users_count > 0)>{{ __('account_roles.existing.delete') }}</button>
+                        {{-- The server refuses a delete for two reasons, not one: people still
+                             holding the role, and single sign-on claim mappings still naming it
+                             (AgentAccountCustomRoleController::destroy). The button used to test
+                             only the first, so a role with no people but a live SSO mapping
+                             offered an enabled danger button that failed validation. Both
+                             conditions are shown rather than only disabling, because a dead
+                             control with no stated reason is the same defect wearing a
+                             different hat. --}}
+                        @php($blockedByPeople = $role->users_count > 0)
+                        @php($blockedByMapping = $role->oidc_role_mappings_count > 0)
+                        <button class="button danger" type="submit" @disabled($blockedByPeople || $blockedByMapping)>{{ __('account_roles.existing.delete') }}</button>
+                        @if ($blockedByPeople)
+                            <span class="lede">{{ __('account_roles.errors.assigned') }}</span>
+                        @elseif ($blockedByMapping)
+                            <span class="lede">{{ __('account_roles.errors.oidc_mapped') }}</span>
+                        @endif
                     </form>
                 </article>
             @endforeach

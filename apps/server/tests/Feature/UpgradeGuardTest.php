@@ -180,6 +180,18 @@ test('an unmet after-start requirement refuses traffic but keeps health up', fun
     $this->get('/up')->assertSuccessful();
 });
 
+test('the serving refusal reaches public assets registered outside the web group', function (): void {
+    bakeRelease(blockingDeclaration('after-start'), '0.2.0');
+
+    // `/widget.js` is registered with no middleware group at all, so a visitor
+    // loading a page does not get a session row and a cookie (#955). The gate
+    // survives that because it is global middleware rather than group
+    // middleware -- but those two facts sit one edit apart, and the asset every
+    // visitor fetches is the last one that should keep serving from a release
+    // that has already refused everything else.
+    $this->get('/widget.js')->assertStatus(503);
+});
+
 test('the serving refusal offers no acknowledgement when a machine check fails', function (): void {
     $declaration = blockingDeclaration('after-start');
     $declaration['actions'][0]['verification'] = ['type' => 'check', 'check' => 'the-thing-exists'];
