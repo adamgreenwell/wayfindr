@@ -276,7 +276,7 @@ final class OperatorDashboardPresenter
             'status_label' => __('operator.dashboard.retention.status.'.($retention['status'] ?? 'manual')),
             'summary' => self::configuredCopy(
                 (string) ($retention['summary'] ?? ''),
-                'Cobrowse page content is pruned automatically; broader retention stays operator-owned.',
+                'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
                 'operator.dashboard.retention.summary',
             ),
         ];
@@ -308,7 +308,7 @@ final class OperatorDashboardPresenter
             'application_records' => 'Conversations, messages, tickets, visitors, cobrowse metadata, and audit records stay in the application database until an operator removes or prunes them.',
             'logs_backups' => 'Server logs, snapshots, database dumps, and storage backups follow host and provider retention policies outside Wayfindr.',
             'cobrowse_content' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance (counts, timestamps, hashes, and audit events).',
-            'presence_visitors' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything.',
+            'presence_visitors' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything (ADR 0019).',
             'proactive_deliveries' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
             'automatic_deletion' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
         };
