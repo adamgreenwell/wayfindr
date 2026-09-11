@@ -364,9 +364,12 @@ page view that was not there before.
   now carries `max-age=300` — chosen deliberately, because the URL has no
   version in it, so that number is also how long a visitor can keep running the
   previous release's widget after an upgrade — plus an `ETag`, so a revalidation
-  that matches costs a bare `304` instead of roughly 97 KB gzipped. A size
-  budget on the served payload is enforced by `make self-host-test`; there had
-  been none anywhere in the repository.
+  that matches costs a bare `304` instead of roughly 97 KB gzipped. Two size
+  budgets now exist where there had been none anywhere in the repository: the
+  widget source is budgeted by `make self-host-test`, and the served response —
+  which is not the source files concatenated, because the realtime client is
+  wrapped before it is joined — is budgeted by the server test suite, which is
+  the only place the controller's actual output can be measured.
 
 - **Custom-role management now renders in German and Italian.** The catalogues
   had been complete for some time, but none of the `dashboard.account.roles.*`
