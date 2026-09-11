@@ -21,9 +21,11 @@ updates:
       include: scope
 
   - package-ecosystem: npm
-    directories:
-      - /apps/server
-      - /packages/widget-js
+    # apps/server carried a package.json until fc47fb19 (2026-08-19) unified the
+    # design-token pipeline and removed it. The widget is the only npm manifest
+    # in the tree now; the deploy scripts say the same thing by skipping the
+    # frontend build when no package-lock.json is present.
+    directory: /packages/widget-js
     schedule:
       interval: weekly
       day: monday
