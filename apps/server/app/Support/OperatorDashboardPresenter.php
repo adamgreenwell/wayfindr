@@ -276,7 +276,7 @@ final class OperatorDashboardPresenter
             'status_label' => __('operator.dashboard.retention.status.'.($retention['status'] ?? 'manual')),
             'summary' => self::configuredCopy(
                 (string) ($retention['summary'] ?? ''),
-                'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
+                'Cobrowse page content is pruned automatically; broader retention stays operator-owned.',
                 'operator.dashboard.retention.summary',
             ),
         ];
@@ -289,6 +289,8 @@ final class OperatorDashboardPresenter
             'Application records' => 'application_records',
             'Logs and backups' => 'logs_backups',
             'Cobrowse page content' => 'cobrowse_content',
+            'Visitors who never made contact' => 'presence_visitors',
+            'Proactive message delivery evidence' => 'proactive_deliveries',
             'Automatic deletion' => 'automatic_deletion',
             default => null,
         };
@@ -306,17 +308,20 @@ final class OperatorDashboardPresenter
             'application_records' => 'Conversations, messages, tickets, visitors, cobrowse metadata, and audit records stay in the application database until an operator removes or prunes them.',
             'logs_backups' => 'Server logs, snapshots, database dumps, and storage backups follow host and provider retention policies outside Wayfindr.',
             'cobrowse_content' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance (counts, timestamps, hashes, and audit events).',
-            'automatic_deletion' => 'Beyond cobrowse page content, deletion, export, and retention controls remain future work; explain that before real support traffic.',
+            'presence_visitors' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything.',
+            'proactive_deliveries' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
+            'automatic_deletion' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
         };
         $actualValue = (string) ($item['value'] ?? '');
-        $value = $key === 'cobrowse_content'
+        $value = in_array($key, ['cobrowse_content', 'presence_visitors'], true)
             ? self::raw($actualValue)
             : self::configuredCopy(
                 $actualValue,
                 match ($key) {
                     'application_records' => 'Manual lifecycle',
                     'logs_backups' => 'Infrastructure lifecycle',
-                    'automatic_deletion' => 'Cobrowse content only',
+                    'proactive_deliveries' => 'Deleted after 90 days',
+                    'automatic_deletion' => 'The classes listed above',
                 },
                 "operator.dashboard.retention.items.{$key}.value",
             );
@@ -328,6 +333,18 @@ final class OperatorDashboardPresenter
                 'operator.dashboard.retention.items.cobrowse_content.value',
                 $hours,
                 ['count' => ReaderNumber::count($hours)],
+            );
+        }
+
+        // Same shape as cobrowse above: the window is a number, so the row is
+        // pluralised rather than matched against a fixed default string.
+        if ($key === 'presence_visitors'
+            && preg_match('/Deleted after (\d+) days?, capped at/', $actualValue, $matches) === 1) {
+            $days = (int) $matches[1];
+            $value = trans_choice(
+                'operator.dashboard.retention.items.presence_visitors.value',
+                $days,
+                ['count' => ReaderNumber::count($days)],
             );
         }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\PrunePresenceVisitorsCommand;
 use App\Support\ReleaseIdentity;
 
 return [
@@ -64,7 +65,15 @@ return [
             ],
             [
                 'label' => 'Visitors who never made contact',
-                'value' => 'Deleted after '.((int) env('WAYFINDR_PRESENCE_RETENTION_DAYS', 30)).' days, capped at 30',
+                // The EFFECTIVE window, clamped exactly as the command clamps it.
+                // Printing the raw environment value made the console promise
+                // something the scheduler does not do: a configured 0 read as
+                // "deleted after 0 days" while PrunePresenceVisitorsCommand ran
+                // with 1.
+                'value' => 'Deleted after '.max(1, min(
+                    (int) env('WAYFINDR_PRESENCE_RETENTION_DAYS', PrunePresenceVisitorsCommand::MAXIMUM_DAYS),
+                    PrunePresenceVisitorsCommand::MAXIMUM_DAYS,
+                )).' days, capped at '.PrunePresenceVisitorsCommand::MAXIMUM_DAYS,
                 'description' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything (ADR 0019).',
             ],
             [
