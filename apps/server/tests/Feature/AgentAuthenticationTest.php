@@ -5,7 +5,9 @@ use App\Models\AgentPushSubscription;
 use App\Models\Site;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
+use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 
 uses(RefreshDatabase::class);
@@ -202,4 +204,52 @@ test('a correct password still signs in after a couple of fumbles', function ():
     ])->assertRedirect();
 
     $this->assertAuthenticatedAs($agent->fresh());
+});
+
+test('a long but valid address does not break the throttle key', function (): void {
+    // CACHE_STORE defaults to `database`, whose key column is 255 characters.
+    // An unhashed composite of a long address plus the caller's IP plus the
+    // cache and limiter prefixes exceeds that, and the throttle writes its
+    // counter BEFORE the response returns -- so the insert is rejected and the
+    // agent gets a 500 where they should get a login. The array store used by
+    // the rest of the suite has no such column and would never show it.
+    config(['cache.default' => 'database']);
+
+    // Every DNS label stays under 63 characters, so this is a genuinely valid
+    // address rather than one the validator would reject before the throttle
+    // ever saw it. 241 characters, which puts the unhashed composite past the
+    // 255-character column once the prefixes and the source address are added.
+    $longEmail = str_repeat('a', 60).'@'
+        .str_repeat('b', 60).'.'
+        .str_repeat('c', 60).'.'
+        .str_repeat('d', 50).'.example';
+
+    expect(strlen($longEmail))->toBeGreaterThan(220);
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'email' => $longEmail,
+        'password' => Hash::make('correct-horse-battery-staple'),
+    ]);
+
+    $this->post(route('login.store'), [
+        'email' => $longEmail,
+        'password' => 'correct-horse-battery-staple',
+    ])->assertRedirect();
+
+    $this->assertAuthenticatedAs($agent->fresh());
+
+    // The assertion above cannot fail on SQLite, which ignores a varchar's
+    // declared length -- only the PostgreSQL job would see the rejected insert.
+    // So the bound is asserted directly as well, which holds on every driver:
+    // resolve the limiter the way the middleware does and measure the key it
+    // produces. An unhashed composite fails here immediately.
+    $limits = app(RateLimiter::class)->limiter('login')(
+        tap(Request::create('/login', 'POST', ['email' => $longEmail]), function (Request $request): void {
+            $request->server->set('REMOTE_ADDR', '203.0.113.7');
+        })
+    );
+
+    foreach ($limits as $limit) {
+        expect(strlen((string) $limit->key))->toBeLessThan(200);
+    }
 });

@@ -123,7 +123,12 @@ class AppServiceProvider extends ServiceProvider
         // address.
         RateLimiter::for('password-reset-request', fn (Request $request): array => [
             Limit::perMinute(5)->by('password-reset-request-ip:'.$request->ip()),
-            Limit::perMinutes(15, 5)->by('password-reset-request-email:'.Str::lower((string) $request->input('email'))),
+            // Hashed for the same reason as the login limiter below it: the
+            // address is caller-supplied and unbounded, the cache key column
+            // is 255 characters, and exceeding it turns a rate limit into a
+            // 500. Pre-existing, and one line, so fixed here rather than left
+            // as a second instance of a defect this branch is already fixing.
+            Limit::perMinutes(15, 5)->by('password-reset-request-email:'.hash('sha256', Str::lower((string) $request->input('email')))),
         ]);
 
         // SUBMITTING a reset carries its own quota, deliberately separate from
@@ -163,9 +168,16 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('login', fn (Request $request): array => [
             Limit::perMinute(10)->by('login-ip:'.$request->ip()),
             Limit::perMinutes(15, 20)->by(
-                'login-email-ip:'
-                .Str::lower((string) $request->input('email'))
-                .'|'.$request->ip()
+                // Hashed, because the composite is unbounded and the key is
+                // not. `cache.key` is a 255-character column and CACHE_STORE
+                // defaults to `database`, so a valid-but-long address plus the
+                // address, the cache prefix and the limiter prefix can exceed
+                // it -- and the throttle writes its counter before the response
+                // returns, so PostgreSQL would reject the insert and the agent
+                // would get a 500 instead of a login. sha256 rather than a fast
+                // hash: a collision here merges two agents' buckets, which an
+                // attacker could otherwise arrange on purpose.
+                'login-email-ip:'.hash('sha256', Str::lower((string) $request->input('email')).'|'.$request->ip())
             ),
         ]);
 
