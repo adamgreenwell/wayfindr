@@ -218,8 +218,20 @@ final class DashboardLanguage
         // different language from the page around it.
         'dashboard.conversations.messages.index',
         'dashboard.conversations.messages.store',
+        // All four copilot fragments, not just the summary. These render
+        // partials back into the conversation page, which IS extracted -- so a
+        // fragment whose own route is unlisted resolves to English and injects
+        // it into a German document. That is the mixed-language page this list
+        // exists to prevent, and it was live for three of the four: 15, 16 and
+        // 20 translated strings that could never render.
         'dashboard.conversations.copilot-summary.show',
         'dashboard.conversations.copilot-summary.store',
+        'dashboard.conversations.copilot-reply-draft.show',
+        'dashboard.conversations.copilot-reply-draft.store',
+        'dashboard.conversations.copilot-knowledge-suggestion.show',
+        'dashboard.conversations.copilot-knowledge-suggestion.store',
+        'dashboard.conversations.copilot-ticket-suggestion.show',
+        'dashboard.conversations.copilot-ticket-suggestion.store',
         'dashboard.conversations.priority.update',
         // And the attachment endpoint. The composer prefers the response's own
         // message over its local fallback, so an oversized file answered in
