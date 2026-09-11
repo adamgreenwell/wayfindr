@@ -46,8 +46,8 @@
                 {{ trans_choice('sites_live.board.note', $presentMinutes, ['count' => \App\Support\ReaderNumber::count($presentMinutes)]) }}
             </p>
 
-            <div class="table-scroll">
-                <table class="table" data-live-board>
+            <div class="table-wrap">
+                <table data-live-board>
                     <thead>
                         <tr>
                             <th scope="col">{{ __('sites_live.board.column_visitor') }}</th>
