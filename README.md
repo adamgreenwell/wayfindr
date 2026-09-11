@@ -208,7 +208,7 @@ these post-`v0.7.0` additions are available in the latest public artifact.
 - an agent-selectable dashboard language in English, German, and Italian across
   the operator console and most dashboard workflows; the ordinary pages still
   intentionally outside the extracted route boundary are the agent home,
-  custom roles, readiness, and support-code lookup;
+  readiness, and support-code lookup;
 - a visitor directory, and agent-initiated password recovery;
 - a public API with a decided isolation model, scoped reads, and a narrow write surface;
 - visitor profiles, support-code lookup, and safe cross-record context;
