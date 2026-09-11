@@ -78,19 +78,25 @@ function tablesCreatedBy(string $path, string $source): array
 
     $pattern = '/(?:'.implode('|', $receivers).')create\('.$argument.'/';
 
-    preg_match_all($pattern, $source, $matches, PREG_SET_ORDER);
+    preg_match_all($pattern, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE);
+
+    assertNoRawTableCreation($path, $source);
 
     $tables = [];
 
     foreach ($matches as $match) {
-        if (($match['literal'] ?? '') !== '') {
-            $tables[] = $match['literal'];
+        if (($match['literal'][0] ?? '') !== '') {
+            $tables[] = $match['literal'][0];
 
             continue;
         }
 
-        $variable = $match['variable'];
-        $resolved = resolveVariableTableName($source, $variable);
+        [$variable, $offset] = $match['variable'];
+        // Resolved from the assignment nearest *before* this call, not the
+        // first in the file. One migration reusing a variable for two
+        // configurable tables would otherwise record the first name twice and
+        // let the second table through with the counts still balancing.
+        $resolved = resolveVariableTableName($source, $variable, $offset);
 
         if ($resolved === null) {
             // Deliberately fatal. A dynamic name this script cannot read is
@@ -169,16 +175,51 @@ function assertEveryCreateWasRead(string $path, string $source, array $builders,
  * An operator who overrides the key renames their own table; the default is
  * what the repository ships and therefore what the data model describes.
  */
-function resolveVariableTableName(string $source, string $variable): ?string
+function resolveVariableTableName(string $source, string $variable, int $usedAt): ?string
 {
     $pattern = '/\$'.preg_quote($variable, '/')
         .'\s*=\s*(?:\([a-z]+\)\s*)?config\(\s*[\'"][^\'"]+[\'"]\s*,\s*[\'"](?<default>[A-Za-z0-9_]+)[\'"]\s*\)/';
 
-    if (preg_match($pattern, $source, $match) !== 1) {
+    if (preg_match_all($pattern, $source, $matches, PREG_SET_ORDER | PREG_OFFSET_CAPTURE) < 1) {
         return null;
     }
 
-    return $match['default'];
+    $resolved = null;
+
+    foreach ($matches as $match) {
+        if ($match[0][1] < $usedAt) {
+            $resolved = $match['default'][0];
+        }
+    }
+
+    return $resolved;
+}
+
+/**
+ * Refuse a migration that builds a table in raw SQL.
+ *
+ * `DB::statement()` and `DB::unprepared()` are legitimate migration tools and
+ * one migration here already uses the former, for an index. Neither shows a
+ * `Schema::` nor a `->create(`, so a `CREATE TABLE` inside one is invisible to
+ * every other check in this file — the counter sees zero creations and calls
+ * the file clean.
+ *
+ * No migration does this today. Detecting it and stopping costs nothing now
+ * and closes the hole before the first one does.
+ */
+function assertNoRawTableCreation(string $path, string $source): void
+{
+    if (preg_match('/\bcreate\s+table\b/i', $source) !== 1) {
+        return;
+    }
+
+    throw new RuntimeException(sprintf(
+        '%s appears to create a table in raw SQL, which this check cannot read. '
+            .'Use the schema builder, or teach this script to extract the name. '
+            .'A raw CREATE TABLE is invisible to every other rule here: nothing else in the file '
+            .'would notice the table exists.',
+        basename($path),
+    ));
 }
 
 /** @return list<string> */
