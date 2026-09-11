@@ -18,7 +18,14 @@ use Throwable;
 
 class OperatorReadiness
 {
-    private const CONFIRMATION_STALE_AFTER_DAYS = [
+    /**
+     * Public because VisitorSupportReadiness reads the scheduler confirmation
+     * too. Two copies of the window would let the account panel and /operator
+     * disagree about whether the same attestation still counts.
+     *
+     * @var array<string, int>
+     */
+    public const CONFIRMATION_STALE_AFTER_DAYS = [
         'scheduler' => 7,
         'backups_restore' => 30,
         // A dedicated attestation for the guided onboarding checklist that a
