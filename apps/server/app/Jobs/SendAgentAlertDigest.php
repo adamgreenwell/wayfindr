@@ -134,8 +134,16 @@ class SendAgentAlertDigest implements ShouldBeUnique, ShouldQueue
             throw $exception;
         }
 
+        // Captured after the send returns, not before it begins. `$deliveredAt`
+        // is the moment the digest was generated -- it is what the message
+        // itself reports -- and reusing it here recorded an acceptance earlier
+        // than the transport boundary the mail listener stamps mid-send. Both
+        // columns keep whole seconds, so whenever the send crossed a second
+        // tick the row claimed it was accepted before it started.
+        $acceptedAt = now();
+
         try {
-            $collector->acceptDeliveryClaim($agent, $candidates, $claim, $deliveredAt);
+            $collector->acceptDeliveryClaim($agent, $candidates, $claim, $acceptedAt);
         } catch (Throwable $exception) {
             // SMTP already accepted the message. The durable claim is left in
             // place so neither this job nor a later sweep can send it again.

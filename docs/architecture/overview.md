@@ -20,7 +20,10 @@ Wayfindr is planned as a Laravel-first support platform with portable client int
   built). Plain JavaScript needs none: the browser widget SDK above is a script
   tag any site can load.
 
-See [data-model.md](data-model.md) for the initial Laravel-owned domain records.
+See [data-model.md](data-model.md) for the Laravel-owned domain records. It
+covers every table the migrations create except Laravel's own framework tables,
+so a table absent from it is a gap in the document rather than a table that does
+not exist.
 
 ## Runtime Flow
 
