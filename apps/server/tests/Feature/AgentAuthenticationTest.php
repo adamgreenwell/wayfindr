@@ -5,7 +5,6 @@ use App\Models\AgentPushSubscription;
 use App\Models\Site;
 use App\Models\User;
 use Database\Seeders\DatabaseSeeder;
-use Illuminate\Cache\RateLimiter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -124,20 +123,52 @@ test('repeated failed sign-ins from one source are throttled', function (): void
         'password' => Hash::make('correct-horse-battery-staple'),
     ]);
 
-    // Ten per minute per address. The eleventh is refused by the limiter rather
-    // than by the credential check, which is the difference between "wrong
-    // password" and "stop guessing".
+    // Ten failures against this address from this source exhausts the tighter
+    // of the two buckets. The eleventh is refused by the throttle rather than
+    // by the credential check.
     for ($attempt = 0; $attempt < 10; $attempt++) {
         $this->post(route('login.store'), [
             'email' => $agent->email,
             'password' => 'wrong-'.$attempt,
-        ]);
+        ])->assertSessionHasErrors('email');
     }
 
     $this->post(route('login.store'), [
         'email' => $agent->email,
-        'password' => 'wrong-again',
-    ])->assertStatus(429);
+        'password' => 'correct-horse-battery-staple',
+    ])->assertSessionHasErrors('email');
+
+    $this->assertGuest();
+});
+
+test('a busy office does not throttle itself', function (): void {
+    // The reason this is counted on failures rather than on requests. A shift's
+    // worth of agents arrive behind one public address; under a
+    // request-counting throttle the ones past the ceiling would be refused
+    // while typing the correct password, and no TRUSTED_PROXIES setting can
+    // tell them apart because they genuinely share the address.
+    //
+    // Deliberately more agents than the per-source ceiling allows, so this
+    // fails if the throttle ever goes back to counting requests. At twelve it
+    // passed either way and proved nothing.
+    $account = Account::factory()->create();
+
+    foreach (range(1, 25) as $n) {
+        $agent = User::factory()->for($account)->create([
+            'email' => "agent{$n}@example.test",
+            'password' => Hash::make('correct-horse-battery-staple'),
+        ]);
+
+        $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.10'])
+            ->post(route('login.store'), [
+                'email' => $agent->email,
+                'password' => 'correct-horse-battery-staple',
+            ])
+            ->assertSessionHasNoErrors();
+
+        $this->assertAuthenticatedAs($agent->fresh());
+        $this->post(route('logout'));
+    }
 });
 
 test('an attacker cannot lock a named agent out of their own desk', function (): void {
@@ -146,79 +177,70 @@ test('an attacker cannot lock a named agent out of their own desk', function ():
         'password' => Hash::make('correct-horse-battery-staple'),
     ]);
 
-    // The account bucket has to be driven to its limit ACROSS WINDOWS, and
-    // that detail is the whole test. Laravel's throttle middleware evaluates
-    // limits in order and throws on the first one exceeded, so a single burst
-    // trips the per-minute address limit after ten and the account bucket
-    // stops climbing there. Two earlier versions of this test missed the bug
-    // for exactly that reason -- one stopped at eleven attempts, the next ran
-    // thirty in one window and still never pushed the account bucket past ten.
-    //
-    // Waiting out the address window between bursts is what a patient attacker
-    // does, and it is the only way to reach twenty.
-    foreach ([0, 1] as $window) {
-        for ($attempt = 0; $attempt < 10; $attempt++) {
-            $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
-                ->post(route('login.store'), [
-                    'email' => $agent->email,
-                    'password' => 'wrong-'.$window.'-'.$attempt,
-                ]);
-        }
-
-        $this->travel(1)->minutes();
+    // The attacker exhausts every bucket their own source can reach.
+    for ($attempt = 0; $attempt < 25; $attempt++) {
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.7'])
+            ->post(route('login.store'), [
+                'email' => $agent->email,
+                'password' => 'wrong-'.$attempt,
+            ]);
     }
 
-    // Twenty failures now sit against this agent's address. Under a globally
-    // keyed email bucket that quota is spent and belongs to nobody; under the
-    // address-plus-account key it belongs to the attacker.
-
-    // ...and the agent still signs in, which is the point of keying the
-    // account limit to the source as well as the address. A globally-keyed
-    // email bucket would have been spent above and this would be a 429 --
-    // an attacker choosing when a support desk stops working.
+    // The agent still signs in from theirs. Both keys carry the source, so
+    // there is no bucket an attacker can spend on the agent's behalf.
     $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.22'])
         ->post(route('login.store'), [
             'email' => $agent->email,
             'password' => 'correct-horse-battery-staple',
         ])
-        ->assertRedirect();
+        ->assertSessionHasNoErrors();
 
     $this->assertAuthenticatedAs($agent->fresh());
 });
 
-test('a correct password still signs in after a couple of fumbles', function (): void {
+test('a correct password clears the failures that preceded it', function (): void {
     $agent = User::factory()->for(Account::factory())->create([
         'email' => 'ada@example.test',
         'password' => Hash::make('correct-horse-battery-staple'),
     ]);
 
-    // The everyday case the limit must never break: someone mistypes twice and
-    // then gets it right.
-    foreach (['nope', 'nope-again'] as $wrong) {
+    // Nine fumbles, one short of the limit, then success -- which must reset
+    // the count rather than leaving the agent one mistake from a lockout for
+    // the rest of the window.
+    for ($attempt = 0; $attempt < 9; $attempt++) {
+        $this->post(route('login.store'), ['email' => $agent->email, 'password' => 'nope-'.$attempt]);
+    }
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'correct-horse-battery-staple',
+    ])->assertSessionHasNoErrors();
+
+    $this->post(route('logout'));
+
+    // If the counter had survived, these two would exhaust it.
+    foreach (['a', 'b'] as $wrong) {
         $this->post(route('login.store'), ['email' => $agent->email, 'password' => $wrong]);
     }
 
     $this->post(route('login.store'), [
         'email' => $agent->email,
         'password' => 'correct-horse-battery-staple',
-    ])->assertRedirect();
+    ])->assertSessionHasNoErrors();
 
     $this->assertAuthenticatedAs($agent->fresh());
 });
 
 test('a long but valid address does not break the throttle key', function (): void {
     // CACHE_STORE defaults to `database`, whose key column is 255 characters.
-    // An unhashed composite of a long address plus the caller's IP plus the
-    // cache and limiter prefixes exceeds that, and the throttle writes its
-    // counter BEFORE the response returns -- so the insert is rejected and the
-    // agent gets a 500 where they should get a login. The array store used by
-    // the rest of the suite has no such column and would never show it.
+    // An unhashed composite of a long address and the source exceeds it, and
+    // the counter is written before the response returns -- so the insert is
+    // rejected and the agent gets a 500 where they should get a login. The
+    // array store the rest of the suite uses has no such column.
     config(['cache.default' => 'database']);
 
     // Every DNS label stays under 63 characters, so this is a genuinely valid
-    // address rather than one the validator would reject before the throttle
-    // ever saw it. 241 characters, which puts the unhashed composite past the
-    // 255-character column once the prefixes and the source address are added.
+    // address rather than one the validator rejects before the throttle runs.
     $longEmail = str_repeat('a', 60).'@'
         .str_repeat('b', 60).'.'
         .str_repeat('c', 60).'.'
@@ -234,22 +256,7 @@ test('a long but valid address does not break the throttle key', function (): vo
     $this->post(route('login.store'), [
         'email' => $longEmail,
         'password' => 'correct-horse-battery-staple',
-    ])->assertRedirect();
+    ])->assertSessionHasNoErrors();
 
     $this->assertAuthenticatedAs($agent->fresh());
-
-    // The assertion above cannot fail on SQLite, which ignores a varchar's
-    // declared length -- only the PostgreSQL job would see the rejected insert.
-    // So the bound is asserted directly as well, which holds on every driver:
-    // resolve the limiter the way the middleware does and measure the key it
-    // produces. An unhashed composite fails here immediately.
-    $limits = app(RateLimiter::class)->limiter('login')(
-        tap(Request::create('/login', 'POST', ['email' => $longEmail]), function (Request $request): void {
-            $request->server->set('REMOTE_ADDR', '203.0.113.7');
-        })
-    );
-
-    foreach ($limits as $limit) {
-        expect(strlen((string) $limit->key))->toBeLessThan(200);
-    }
 });

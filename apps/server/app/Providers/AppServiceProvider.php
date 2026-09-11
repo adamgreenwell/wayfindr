@@ -141,46 +141,6 @@ class AppServiceProvider extends ServiceProvider
             'password-reset-submit-ip:'.$request->ip()
         ));
 
-        // Signing in was the one unauthenticated credential endpoint with no
-        // quota at all, while password reset, the two-factor challenge, OIDC
-        // and even widget presence each had one.
-        //
-        // NEITHER key is the address alone, and neither is the email alone.
-        // An address-only bucket lets a distributed attacker grind one named
-        // agent. An email-only bucket is worse: it is global across every
-        // source, so an attacker who knows an agent's address can exhaust it
-        // deliberately and the agent's own correct password is refused -- a
-        // lockout wearing a rate limit's clothes, and against a support desk
-        // that is an outage.
-        //
-        // So the second key is the address AND the account together, which is
-        // Laravel's own convention for this endpoint. One source may keep
-        // guessing broadly, bounded by the first limit, but gets only twenty
-        // tries at any single agent -- and can never spend a quota that agent
-        // depends on, because the bucket is the attacker's own.
-        //
-        // Both limits are per-window rather than a lockout: someone who
-        // mistypes twice and then gets it right must not be stopped. Behind a
-        // proxy this is only as good as TRUSTED_PROXIES; an install that does
-        // not set it sees one address for everyone, which makes the first
-        // limit shared and the second per-account -- degraded, but still not a
-        // lockout.
-        RateLimiter::for('login', fn (Request $request): array => [
-            Limit::perMinute(10)->by('login-ip:'.$request->ip()),
-            Limit::perMinutes(15, 20)->by(
-                // Hashed, because the composite is unbounded and the key is
-                // not. `cache.key` is a 255-character column and CACHE_STORE
-                // defaults to `database`, so a valid-but-long address plus the
-                // address, the cache prefix and the limiter prefix can exceed
-                // it -- and the throttle writes its counter before the response
-                // returns, so PostgreSQL would reject the insert and the agent
-                // would get a 500 instead of a login. sha256 rather than a fast
-                // hash: a collision here merges two agents' buckets, which an
-                // attacker could otherwise arrange on purpose.
-                'login-email-ip:'.hash('sha256', Str::lower((string) $request->input('email')).'|'.$request->ip())
-            ),
-        ]);
-
         RateLimiter::for('two-factor-challenge', fn (Request $request): array => [
             Limit::perMinute(5)->by('two-factor-challenge-ip:'.$request->ip()),
             Limit::perHour(25)->by('two-factor-challenge-user:'.(string) data_get(
