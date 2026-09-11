@@ -192,15 +192,18 @@ class RestoreService
 
             $localDisks = $this->localDisksFrom($manifest);
 
-            // FROM HERE ON, failures are partial rather than harmless. Every
-            // throw above this line leaves the install exactly as it was -- the
-            // missing-archive check, the tampered-tarball check, and the
-            // existing-data refusal that ordinary `--force`-less runs hit. A
-            // caller needs to tell those apart, because the advice inverts.
-            $destructiveWorkBegan = true;
-
             // Replace the database with the dump (atomic — see the restorer).
             $this->restorer->restore($dump);
+
+            // FROM HERE ON, failures are partial rather than harmless -- and
+            // not one line earlier. The load runs DROP SCHEMA, CREATE SCHEMA
+            // and the dump inside a single transaction, so everything it can
+            // throw rolls back: a rejected connection config, a psql that will
+            // not start, a refused connection, a bad dump. Setting the flag
+            // BEFORE that call turned all of those into "this may have applied
+            // partially" -- the same false alarm as the --force refusal, just
+            // further down. Everything above leaves the install untouched.
+            $destructiveWorkBegan = true;
 
             // Immediately, before anything that can throw.
             //

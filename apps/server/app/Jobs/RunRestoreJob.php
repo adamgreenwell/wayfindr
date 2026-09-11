@@ -434,6 +434,24 @@ class RunRestoreJob implements ShouldQueue
                 .'. The site is being kept in maintenance mode so the schema and code can'."'".'t mismatch. On the server, make them compatible — if the backup is OLDER, run `php artisan migrate --force`; if it is NEWER, deploy a matching or newer release — then run `php artisan up`.';
         }
 
+        // A key mismatch also holds maintenance, and said nothing about why.
+        // An operator would have read "Restore complete", found the site still
+        // down, and had no sentence anywhere connecting the two -- so the
+        // natural next move is `php artisan up` on an install whose agents
+        // cannot authenticate.
+        if ($result['app_key_skew'] ?? false) {
+            $parts[] = 'This backup was taken with a different APP_KEY, so every encrypted value in it '
+                .'is unreadable here — starting with sign-in, because an agent'."'".'s two-factor secret is '
+                .'encrypted and is read while they log in. The site is being kept in maintenance mode. '
+                .'Restore the original APP_KEY (and any APP_PREVIOUS_KEYS) and restore again, or accept '
+                .'that those values are gone and re-enter them before running `php artisan up`.';
+        } elseif ($result['app_key_indeterminate'] ?? false) {
+            $parts[] = 'The APP_KEY could not be compared against this backup — it predates the '
+                .'fingerprint, or no key is set here. The site is being kept in maintenance mode so this '
+                .'can be checked: if the key differs, encrypted values are unreadable and agents using '
+                .'two-factor authentication will not be able to sign in.';
+        }
+
         $dangling = $result['integrity']['dangling'] ?? null;
 
         if (is_array($dangling) && $dangling !== []) {

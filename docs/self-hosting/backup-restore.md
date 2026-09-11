@@ -47,8 +47,13 @@ credentials, reply-delivery recipients, and ticket comment bodies. The key is
 deliberately **not** in the archive, because an archive carrying the key that
 decrypts its own secrets is not a protected archive.
 
-The consequence is the one to plan for. **Restore your `APP_KEY` alongside the
-archive.** Restoring onto a freshly installed stack — which is the ordinary
+The consequence is the one to plan for. **Restore your `APP_KEY` — and any
+`APP_PREVIOUS_KEYS` — alongside the archive.** An install that has rotated its
+key holds ciphertext written under the older ones, and Laravel falls back
+through `APP_PREVIOUS_KEYS` to read it, so carrying only the current key still
+leaves the older rows unreadable. The manifest records a fingerprint per
+decryption key for exactly this reason, and a restore warns unless this install
+holds every key the archive needs. Restoring onto a freshly installed stack — which is the ordinary
 disaster-recovery path — mints a new key, and a restore under a different key
 succeeds: the database loads, the install starts, and then the first read of
 any encrypted column throws. Those values are not recoverable; they have to be

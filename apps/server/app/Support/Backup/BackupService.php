@@ -465,15 +465,25 @@ class BackupService
      */
     public static function appKeyFingerprints(): array
     {
-        $keys = array_filter(array_map(
-            static fn ($key): string => (string) $key,
-            [config('app.key'), ...(array) config('app.previous_keys', [])],
-        ), static fn (string $key): bool => $key !== '');
+        $fingerprints = array_values(array_unique(array_filter(array_map(
+            static function ($key): ?string {
+                $key = (string) $key;
 
-        $fingerprints = array_values(array_unique(array_map(
-            static fn (string $key): string => hash('sha256', $key),
-            $keys,
-        )));
+                // The EFFECTIVE key bytes, not the configured spelling. Laravel
+                // accepts a key either raw or `base64:`-prefixed and decodes the
+                // latter, so the same key written both ways decrypts the same
+                // ciphertext. Hashing the configuration string would call those
+                // two installs a mismatch and refuse a restore that would have
+                // worked perfectly.
+                if (str_starts_with($key, 'base64:')) {
+                    $decoded = base64_decode(substr($key, 7), true);
+                    $key = $decoded === false ? $key : $decoded;
+                }
+
+                return $key === '' ? null : hash('sha256', $key);
+            },
+            [config('app.key'), ...(array) config('app.previous_keys', [])],
+        ))));
 
         sort($fingerprints);
 
