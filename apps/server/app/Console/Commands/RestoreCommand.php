@@ -77,7 +77,13 @@ class RestoreCommand extends Command
         try {
             $result = $restores->restore($archive, (bool) $this->option('force'));
         } catch (Throwable $exception) {
+            // Only the DATABASE load is transactional. Attachment binaries are
+            // restored after it commits, and that step purges the local disks
+            // wholesale first -- so a failure here can leave a committed
+            // database beside half-repopulated disks. RunRestoreJob says this
+            // for the GUI path; the command said nothing.
             $this->error('Restore failed: '.$exception->getMessage());
+            $this->warn(RestoreService::PARTIAL_FAILURE_ADVICE);
 
             return self::FAILURE;
         }

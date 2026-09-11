@@ -2,9 +2,13 @@
 
 Wayfindr holds customer support conversations, tickets, and audit history — the
 kind of data whose loss is unrecoverable. Two artisan commands take and restore
-a backup, and a restore drill in CI proves the round trip, because a backup
-whose restore has never been run is a hope, not a backup (ADR
-[0009](../decisions/0009-backup-and-restore.md)).
+a backup, and a restore drill proves the round trip on a disposable VM against
+a published artifact, because a backup whose restore has never been run is a
+hope, not a backup (ADR
+[0009](../decisions/0009-backup-and-restore.md)). That drill is dispatched
+deliberately before a release rather than run on every pull request — it builds
+a fresh Ubuntu host, so putting it in the ordinary CI path would add tens of
+minutes to every change.
 
 ```bash
 # Take a backup.
@@ -296,8 +300,16 @@ reachable. On a remote-storage install, seeing zero verified and a list of
 external disks is correct — the bucket is doing its half.
 
 Restore expects the app's database role to own its schema (the bundled Postgres
-service does). It applies the whole restore in a single transaction, so a
-failure rolls back and leaves the database untouched rather than half-restored.
+service does). The **database load** is applied in a single transaction
+(`pg_restore --single-transaction`), so a failure during that phase rolls back
+and leaves the database untouched.
+
+That guarantee stops at the database. Attachment binaries are put back *after*
+the transaction commits, and that step purges each local attachment disk
+wholesale before repopulating it — so a failure in the attachment phase leaves a
+committed database beside half-restored disks. Both the command and the operator
+console say so when it happens; verify the database **and** the attachment disks
+before serving traffic.
 
 ## Deferred
 

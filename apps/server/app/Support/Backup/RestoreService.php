@@ -279,6 +279,18 @@ class RestoreService
      *
      * @return array{archive_version: string, running_version: string, version_skew: bool, version_indeterminate: bool, archive_version_known: bool, running_version_known: bool}
      */
+    /**
+     * What a failed restore may have left behind.
+     *
+     * Only the database load is transactional (`pg_restore --single-transaction`).
+     * Attachment binaries are put back AFTER it commits, and that step purges
+     * each local disk wholesale before repopulating it -- so a failure in that
+     * phase leaves a committed database beside half-restored disks. Both the
+     * command and the queued job must say so, and they must say the same thing,
+     * so the sentence lives here rather than in either of them.
+     */
+    public const PARTIAL_FAILURE_ADVICE = 'The database load is transactional, but attachment binaries are restored after it commits and the disks are purged first — so this may have applied only partially. Verify the database AND the attachment disks before serving traffic, then re-run the restore or put the previous archive back.';
+
     public function preflight(string $archivePath): array
     {
         if (! is_file($archivePath)) {
