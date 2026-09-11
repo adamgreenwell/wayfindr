@@ -93,14 +93,11 @@ fi
 # nobody saw.
 WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
 WIDGET_SRC_GZIP_BUDGET=85000
-SERVED_GZIP_BUDGET=105000
 
 [ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"
 
 src_raw="$(wc -c < "$WIDGET_SRC" | tr -d ' ')"
 src_gzip="$(gzip -9 -c "$WIDGET_SRC" | wc -c | tr -d ' ')"
-served_raw="$(cat "$VENDOR_FILE" "$WIDGET_SRC" | wc -c | tr -d ' ')"
-served_gzip="$(cat "$VENDOR_FILE" "$WIDGET_SRC" | gzip -9 -c | wc -c | tr -d ' ')"
 
 if [ "$src_gzip" -gt "$WIDGET_SRC_GZIP_BUDGET" ]; then
     fail "The widget source is over its size budget.
@@ -110,11 +107,14 @@ under the budget, or raise WIDGET_SRC_GZIP_BUDGET in this script deliberately an
 say why in the commit message. The source is unminified today, so there is room."
 fi
 
-if [ "$served_gzip" -gt "$SERVED_GZIP_BUDGET" ]; then
-    fail "The served widget payload is over its size budget.
-  gzipped: $served_gzip bytes (budget $SERVED_GZIP_BUDGET, raw $served_raw)
-That is the realtime-configured response: the vendored client plus the widget."
-fi
+# The SERVED payload is budgeted in PHP, not here -- see
+# WidgetScriptBundleTest, 'the served widget payload stays within its size
+# budget'. This script can read the source files but it cannot produce the
+# response: bundledRealtime() wraps the vendored client in a globals-restoring
+# IIFE and joins it to the widget with a newline, so concatenating the two
+# files under-reports the real body and makes every future byte of that wrapper
+# invisible. Near a ceiling that is the difference between a guard and a
+# decoration, so the measurement was moved to where the bytes actually exist.
 
-echo "Widget payload within budget: ${src_gzip}B gzipped source, ${served_gzip}B served with realtime."
+echo "Widget source within budget: ${src_gzip}B gzipped (raw ${src_raw}B)."
 echo "Widget bundles its realtime client, with recorded provenance, and the image ships it."
