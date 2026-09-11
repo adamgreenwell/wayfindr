@@ -65,7 +65,7 @@ test('account owner can inspect operator readiness diagnostics', function (): vo
         ->assertSee('A full support conversation, end to end')
         ->assertSee('Data responsibility review')
         ->assertSee('How long data is kept')
-        ->assertSee('Cobrowse page content, visitors who never made contact, proactive-delivery evidence, and abandoned uploads are pruned automatically; broader retention stays operator-owned.')
+        ->assertSee('Cobrowse page content, visitors who never made contact, proactive-delivery evidence, abandoned uploads, and API write receipts are pruned automatically; broader retention stays operator-owned.')
         ->assertSee('Application records')
         ->assertSee('Automatic deletion')
         ->assertSee('php artisan wayfindr:mail-test --to=you@example.com')
@@ -1760,18 +1760,27 @@ test('every scheduled command that deletes rows is named on the retention panel'
     foreach (glob(app_path('Console/Commands/*.php')) ?: [] as $file) {
         $source = file_get_contents($file);
 
-        if (preg_match("/\\\$signature\s*=\s*'([^' ]+)/", $source, $signature) === 1) {
+        // `[^' ]` is not enough: a $signature with its options on the next
+        // line puts a NEWLINE in the captured name, so the source-map key never
+        // matches what routes/console.php says and the command is skipped
+        // silently. Eighteen commands were in that state, including three
+        // scheduled ones. Excluding all whitespace is the fix; a guard that
+        // quietly checks a subset is worse than none.
+        if (preg_match("/\\\$signature\s*=\s*'([^'\s]+)/", $source, $signature) === 1) {
             $sources[$signature[1]] = $source;
         }
     }
 
     // Named on the panel, or exempt for a stated reason. An exemption is a
     // claim about the DATA, not about the command being uninteresting.
-    $exempt = [
-        // Two hashes, a resource pointer and an expiry. Identifies nobody, and
-        // listing it on a privacy panel would bury the rows that do.
-        'wayfindr:prune-api-idempotency-keys',
-    ];
+    // No exemptions. The first version of this test exempted
+    // wayfindr:prune-api-idempotency-keys as "identifies nobody" -- and that was
+    // wrong: the receipt carries api_token_id, which reaches the account and the
+    // agent who issued the token, and resource_type/resource_id names the
+    // ticket, conversation or message the write produced. An exemption is a
+    // claim about the data, and this one did not survive being checked, so the
+    // row went on the panel instead.
+    $exempt = [];
 
     $panel = json_encode(config('wayfindr.retention'));
 

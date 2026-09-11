@@ -780,7 +780,7 @@ return [
             'subtitle' => 'What this install stores, and for how long.',
             'current' => 'Current setting',
             'label' => 'Operator-owned retention',
-            'summary' => 'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
+            'summary' => 'Cobrowse page content, visitors who never made contact, proactive-delivery evidence, abandoned uploads, and API write receipts are pruned automatically; broader retention stays operator-owned.',
             'description' => 'Assume application records, logs, and backups persist according to infrastructure defaults until an operator removes them or the host lifecycle removes them.',
             'open_guidance' => 'Open retention guidance',
             'status' => [
@@ -819,10 +819,15 @@ return [
                     'value' => '{1} Deleted after :count hour|[2,*] Deleted after :count hours',
                     'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command deletes attachment rows and their binaries for uploads that never became part of a message: failed ones immediately, and pending ones once past the window. Orphaned storage objects with no row are swept with them.',
                 ],
+                'api_receipts' => [
+                    'label' => 'API write receipts',
+                    'value' => '{1} Deleted after :count hour|[2,*] Deleted after :count hours',
+                    'description' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with — and through it the account and the agent who issued that token — and which ticket, conversation, or message the write produced.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Automatic deletion',
                     'value' => 'The classes listed above',
-                    'description' => 'Every class of personal data not listed above stays until an operator removes it. Internal records that identify nobody are pruned on their own schedule: expired API idempotency receipts hold a pair of hashes and a record pointer, and go hourly. Deletion and export controls for the operator-owned classes remain future work; explain that before real support traffic.',
+                    'description' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
                 ],
             ],
             'reminders' => [

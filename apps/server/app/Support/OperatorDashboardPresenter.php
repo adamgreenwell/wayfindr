@@ -276,7 +276,7 @@ final class OperatorDashboardPresenter
             'status_label' => __('operator.dashboard.retention.status.'.($retention['status'] ?? 'manual')),
             'summary' => self::configuredCopy(
                 (string) ($retention['summary'] ?? ''),
-                'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
+                'Cobrowse page content, visitors who never made contact, proactive-delivery evidence, abandoned uploads, and API write receipts are pruned automatically; broader retention stays operator-owned.',
                 'operator.dashboard.retention.summary',
             ),
         ];
@@ -292,6 +292,7 @@ final class OperatorDashboardPresenter
             'Visitors who never made contact' => 'presence_visitors',
             'Proactive message delivery evidence' => 'proactive_deliveries',
             'Abandoned and failed uploads' => 'abandoned_uploads',
+            'API write receipts' => 'api_receipts',
             'Automatic deletion' => 'automatic_deletion',
             default => null,
         };
@@ -312,10 +313,11 @@ final class OperatorDashboardPresenter
             'presence_visitors' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything (ADR 0019).',
             'proactive_deliveries' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
             'abandoned_uploads' => 'The scheduled wayfindr:sweep-orphaned-attachments command deletes attachment rows and their binaries for uploads that never became part of a message: failed ones immediately, and pending ones once past the window. Orphaned storage objects with no row are swept with them.',
-            'automatic_deletion' => 'Every class of personal data not listed above stays until an operator removes it. Internal records that identify nobody are pruned on their own schedule: expired API idempotency receipts hold a pair of hashes and a record pointer, and go hourly. Deletion and export controls for the operator-owned classes remain future work; explain that before real support traffic.',
+            'api_receipts' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with -- and through it the account and the agent who issued that token -- and which ticket, conversation, or message the write produced.',
+            'automatic_deletion' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
         };
         $actualValue = (string) ($item['value'] ?? '');
-        $value = in_array($key, ['cobrowse_content', 'presence_visitors', 'abandoned_uploads'], true)
+        $value = in_array($key, ['cobrowse_content', 'presence_visitors', 'abandoned_uploads', 'api_receipts'], true)
             ? self::raw($actualValue)
             : self::configuredCopy(
                 $actualValue,
@@ -358,6 +360,16 @@ final class OperatorDashboardPresenter
             $hours = (int) $matches[1];
             $value = trans_choice(
                 'operator.dashboard.retention.items.abandoned_uploads.value',
+                $hours,
+                ['count' => ReaderNumber::count($hours)],
+            );
+        }
+
+        if ($key === 'api_receipts'
+            && preg_match('/Deleted after (\d+) hours?$/', $actualValue, $matches) === 1) {
+            $hours = (int) $matches[1];
+            $value = trans_choice(
+                'operator.dashboard.retention.items.api_receipts.value',
                 $hours,
                 ['count' => ReaderNumber::count($hours)],
             );

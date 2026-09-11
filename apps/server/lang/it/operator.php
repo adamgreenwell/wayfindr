@@ -788,7 +788,7 @@ return [
             'subtitle' => 'Cosa conserva questa installazione e per quanto tempo.',
             'current' => 'Impostazione corrente',
             'label' => 'Conservazione gestita dal gestore',
-            'summary' => 'Il contenuto delle pagine di cobrowse, i visitatori che non hanno mai preso contatto e le prove di consegna dei messaggi proattivi vengono eliminati automaticamente; la conservazione restante è responsabilità del gestore.',
+            'summary' => 'Il contenuto delle pagine di cobrowse, i visitatori che non hanno mai preso contatto, le prove di consegna dei messaggi proattivi, i caricamenti abbandonati e le ricevute di scrittura API vengono eliminati automaticamente; la conservazione restante è responsabilità del gestore.',
             'description' => 'Si presuma che record dell’applicazione, registri e copie di sicurezza persistano secondo le impostazioni dell’infrastruttura finché un gestore non li rimuove o il ciclo dell’host non li elimina.',
             'open_guidance' => 'Apri la guida alla conservazione',
             'status' => [
@@ -827,10 +827,15 @@ return [
                     'value' => '{1} Eliminati dopo :count ora|[2,*] Eliminati dopo :count ore',
                     'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments elimina i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio: quelli non riusciti subito, quelli in sospeso una volta scaduta la finestra. Gli oggetti di archiviazione orfani senza record vengono rimossi insieme a loro.',
                 ],
+                'api_receipts' => [
+                    'label' => 'Ricevute di scrittura API',
+                    'value' => '{1} Eliminate dopo :count ora|[2,*] Eliminate dopo :count ore',
+                    'description' => 'Il comando pianificato wayfindr:prune-api-idempotency-keys elimina le ricevute delle scritture tramite API pubblica una volta scaduta la finestra. Ogni ricevuta contiene la chiave di idempotenza e la richiesta in forma di hash, il token API usato per la scrittura — e attraverso di esso l’account e la persona che ha emesso quel token — e la segnalazione, la conversazione o il messaggio che ne è derivato.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Eliminazione automatica',
                     'value' => 'Le classi elencate sopra',
-                    'description' => 'Ogni categoria di dati personali non elencata sopra resta finché un gestore non la rimuove. I record interni che non identificano nessuno vengono eliminati secondo una pianificazione propria: le ricevute di idempotenza API scadute contengono due valori hash e un riferimento a un record e vengono rimosse ogni ora. Le funzioni di cancellazione ed esportazione per le categorie gestite dal gestore restano da realizzare; lo spieghi prima che arrivi traffico di assistenza reale.',
+                    'description' => 'Tutto ciò che non è elencato sopra resta finché un gestore non lo rimuove. Le funzioni di cancellazione ed esportazione per queste categorie restano da realizzare; lo spieghi prima che arrivi traffico di assistenza reale.',
                 ],
             ],
             'reminders' => [

@@ -126,7 +126,7 @@ test('operator console shows a safe focus summary for the current instance postu
         ->assertSee('Use this console to keep the installation healthy without opening customer support data.')
         ->assertSee('How long data is kept')
         ->assertSee('Operator-owned retention')
-        ->assertSee('Cobrowse page content, visitors who never made contact, proactive-delivery evidence, and abandoned uploads are pruned automatically; broader retention stays operator-owned.')
+        ->assertSee('Cobrowse page content, visitors who never made contact, proactive-delivery evidence, abandoned uploads, and API write receipts are pruned automatically; broader retention stays operator-owned.')
         ->assertSee('Logs and backups')
         ->assertDontSee('WF-OPFOCUS')
         ->assertDontSee('Private operator focus request')
