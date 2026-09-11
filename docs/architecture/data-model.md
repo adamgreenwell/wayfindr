@@ -27,12 +27,12 @@ Wayfindr starts with a small relational model owned by the Laravel server. The m
   claim-driven re-roling may touch.
 - `oidc_role_mappings`: exact claim values mapped to a role for one connection.
   They govern JIT-managed identities only: an agent the provider created, and
-  every later sign-in by one, is refused when no mapping matches or when matches
-  resolve to different roles, rather than guessed at. An agent who already
-  existed locally and was linked by verified email is never routed through a
-  mapping at all, so a missing one cannot lock them out. Owner is never a valid
-  target, and the custom-role target restricts deletion, so a mapped role cannot
-  be removed out from under the provider.
+  every later sign-in by one, is refused when no mapping matches or when
+  matches resolve to different roles, rather than guessed at. An agent who
+  already existed locally and was linked by verified email is never routed
+  through a mapping at all, so a missing one cannot lock them out. Owner is
+  never a valid target, and the custom-role target restricts deletion, so a
+  mapped role cannot be removed out from under the provider.
 - `agent_realtime_evictions`: one pending instruction per agent to close their
   open realtime sockets, written in the same transaction as the role change,
   site-access removal, or OIDC role remap that revoked the access. `agent_id`
