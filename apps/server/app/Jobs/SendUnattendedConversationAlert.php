@@ -121,8 +121,14 @@ class SendUnattendedConversationAlert implements ShouldBeUnique, ShouldQueue
             throw $exception;
         }
 
+        // Captured after the send returns, for the reason recorded in
+        // SendAgentAlertDigest: `$deliveredAt` is when the message was
+        // generated, and using it as the acceptance time can date the
+        // acceptance before the transport boundary stamped mid-send.
+        $acceptedAt = now();
+
         try {
-            $collector->acceptDeliveryClaim($candidates, $claim, $deliveredAt);
+            $collector->acceptDeliveryClaim($candidates, $claim, $acceptedAt);
         } catch (Throwable $exception) {
             // SMTP already accepted the message. The claim remains durable so
             // a worker retry or later scheduler sweep cannot duplicate it.
