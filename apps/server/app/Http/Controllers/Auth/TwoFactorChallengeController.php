@@ -115,14 +115,37 @@ final class TwoFactorChallengeController extends Controller
     {
         $request->session()->forget(self::SESSION_KEY);
 
+        // The KEY, not the sentence. useUserLocale() has set this request to the
+        // agent's language, so translating here produces German prose that then
+        // renders inside the English sign-in page -- one German sentence in an
+        // `<html lang="en">` document, which a screen reader pronounces with
+        // English phonetics. The destination translates its own flashes.
         return redirect()
             ->route('login')
-            ->withErrors(['email' => __('two_factor.challenge.expired')]);
+            ->withErrors(['email' => 'two_factor.challenge.expired']);
     }
 
+    /**
+     * The challenge cannot use the usual route-based resolution.
+     *
+     * This route is in the `guest` group and the provisional session has
+     * already been logged out, so `$request->user()` is null here and
+     * DashboardLanguage::forRequest() would resolve the install default and
+     * discard whatever the agent themselves chose. The controller knows who is
+     * being challenged -- the pending session carries their id -- so it sets the
+     * locale from the user directly.
+     *
+     * What it must NOT do is re-derive that resolution by hand. The previous
+     * expression fell back to `config('app.locale')`, and SetDashboardLocale has
+     * already called App::setLocale() by the time this runs, which WRITES that
+     * key. So the fallback could only ever read back the value the middleware
+     * just put there -- FALLBACK, for an unlisted route -- and an agent who had
+     * not chosen a language got English on a German install. That is the exact
+     * trap DashboardLanguage::for() was written to avoid, and it says so in its
+     * own comment.
+     */
     private function useUserLocale(User $user): void
     {
-        $locale = DashboardLanguage::normalise($user->locale) ?? config('app.locale', DashboardLanguage::FALLBACK);
-        App::setLocale($locale);
+        App::setLocale(DashboardLanguage::for($user));
     }
 }

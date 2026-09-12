@@ -80,6 +80,7 @@ return [
      * spells them.
      */
     'attributes' => [
+        'one_time_code' => 'Authentifizierungscode',
         // Every field a German page can submit, because the framework rules
         // interpolate `:attribute` and an unnamed one puts the column name into
         // the middle of a German sentence: "body darf höchstens 4000 Zeichen

@@ -10,7 +10,7 @@ return [
         'submit' => 'Anmeldung abschließen',
         'back' => 'Zurück zur Anmeldung',
         'invalid' => 'Dieser Authentifizierungscode ist ungültig.',
-        'expired' => 'Dieser Anmeldeversuch ist abgelaufen. Bitte beginne erneut.',
+        'expired' => 'Dieser Anmeldeversuch ist abgelaufen. Bitte beginnen Sie erneut.',
     ],
     'profile' => [
         'heading' => 'Zwei-Faktor-Authentifizierung',
