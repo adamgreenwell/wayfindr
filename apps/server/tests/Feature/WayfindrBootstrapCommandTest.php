@@ -139,3 +139,41 @@ test('it refuses to create an agent for an unknown account', function (): void {
         ->expectsOutputToContain('No matching account was found.')
         ->assertExitCode(1);
 });
+
+test('a supplied password meets the same minimum as every other path', function (): void {
+    // The one path into this product that never met a validator. Registering a
+    // shared rule only reaches code that CALLS PasswordRule::defaults(); these
+    // commands hashed --password directly, on the most privileged credential an
+    // install has.
+    $this->artisan('wayfindr:bootstrap', [
+        '--email' => 'owner@example.test',
+        '--password' => 'elevenchars',
+    ])
+        ->expectsOutputToContain('at least 12 characters')
+        ->assertFailed();
+
+    expect(User::count())->toBe(0);
+
+    // The generated branch makes 24 characters, so it was never the problem and
+    // must keep working without a password being supplied at all.
+    $this->artisan('wayfindr:bootstrap', ['--email' => 'owner@example.test'])
+        ->assertSuccessful();
+
+    expect(User::count())->toBe(1);
+});
+
+test('a supplied agent password meets the same minimum', function (): void {
+    $this->artisan('wayfindr:bootstrap', ['--email' => 'owner@example.test'])
+        ->assertSuccessful();
+
+    $before = User::count();
+
+    $this->artisan('wayfindr:agent', [
+        '--email' => 'agent@example.test',
+        '--password' => 'elevenchars',
+    ])
+        ->expectsOutputToContain('at least 12 characters')
+        ->assertFailed();
+
+    expect(User::count())->toBe($before);
+});
