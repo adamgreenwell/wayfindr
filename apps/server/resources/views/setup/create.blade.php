@@ -67,10 +67,15 @@
                         name="password"
                         type="password"
                         autocomplete="new-password"
+                        aria-describedby="password-help @error('password') password-error @enderror"
+                        @error('password') aria-invalid="true" @enderror
                         required
                     >
+                    {{-- The rule, stated before you can fail it. Neither password
+                         screen said what was wanted until it rejected you. --}}
+                    <p id="password-help" class="field-help">At least 12 characters. Longer is better than more complicated.</p>
                     @error('password')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="password-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 
