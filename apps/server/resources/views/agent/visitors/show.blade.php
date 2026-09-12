@@ -1,6 +1,9 @@
 <x-layouts.app :title="__('visitors.profile.document_title')" :agent="$agent" :account="$account">
     <x-page-header :title="__('visitors.profile.title')" :back-href="route('dashboard.visitors.index')" :back-label="__('visitors.profile.back')">
-        <p class="lede"><span lang="">{{ $visitor->site->name }}</span> · <span lang="">{{ $visitorContext['anonymous_id'] }}</span></p>
+        {{-- The same name the row you clicked showed. This printed `anonymous_id`
+             alone, which is null for anyone who reached us by email, so the lede
+             rendered as "Site · " with nothing after the separator. --}}
+        <p class="lede"><span lang="">{{ $visitor->site->name }}</span> · @if ($visitorContext['label_is_theirs'])<span lang="">{{ $visitorContext['label'] }}</span>@else<span>{{ $visitorContext['label'] }}</span>@endif</p>
     </x-page-header>
 
     @if (session('status'))
@@ -16,7 +19,11 @@
         <div class="meta-grid">
             <div class="meta-item">
                 <span class="meta-label">{{ __('visitors.profile.glance.visitor') }}</span>
-                <span class="meta-value" lang="">{{ $visitorContext['anonymous_id'] }}</span>
+                @if ($visitorContext['label_is_theirs'])
+                    <span class="meta-value" lang="">{{ $visitorContext['label'] }}</span>
+                @else
+                    <span class="meta-value">{{ $visitorContext['label'] }}</span>
+                @endif
             </div>
             <div class="meta-item">
                 <span class="meta-label">{{ __('visitors.profile.glance.host_visitor_id') }}</span>
@@ -97,9 +104,17 @@
             <div class="meta-item">
                 <span class="meta-label">{{ __('visitors.references.visitor') }}</span>
                 <span class="meta-value">
-                    <a class="text-link" lang="" href="{{ route('dashboard.support-code.lookup', ['support_code' => $supportReferences['visitor_reference']]) }}">
-                        {{ $supportReferences['visitor_reference'] }}
-                    </a>
+                    {{-- Guarded like `host_visitor_id` directly below. A visitor who
+                         has never loaded the widget has no browser id, and this
+                         built a support-code lookup on an empty string: a link that
+                         reads as a reference and resolves to nothing. --}}
+                    @if ($supportReferences['visitor_reference'])
+                        <a class="text-link" lang="" href="{{ route('dashboard.support-code.lookup', ['support_code' => $supportReferences['visitor_reference']]) }}">
+                            {{ $supportReferences['visitor_reference'] }}
+                        </a>
+                    @else
+                        {{ __('visitors.common.not_provided') }}
+                    @endif
                 </span>
             </div>
             <div class="meta-item">
