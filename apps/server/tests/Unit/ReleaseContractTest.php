@@ -7,6 +7,7 @@ use App\Support\Version\SemanticVersion;
 
 use function Wayfindr\ReleaseContract\assertPublishingReleaseReady;
 use function Wayfindr\ReleaseContract\assertReleaseDateIsCurrent;
+use function Wayfindr\ReleaseContract\assertReleaseGuidePreflightFollowsCommit;
 use function Wayfindr\ReleaseContract\assertVersionedReleaseRecorded;
 use function Wayfindr\ReleaseContract\historyContext;
 use function Wayfindr\ReleaseContract\operatorActionVersionIsAllowed;
@@ -194,3 +195,49 @@ test('publishing refuses a changelog section dated before the release commit', f
     // createFromFormat would roll this into October without the round-trip.
     'impossible date' => ['2026-09-31', false],
 ]);
+
+test('the guide runs its publishing preflight against the commit it will tag', function (
+    string $order,
+    bool $passes,
+): void {
+    // The date check compares against the release COMMIT, so a preflight that
+    // runs before that commit exists reads the parent. On a main quiet for a few
+    // days a stale date sits close enough to the parent to pass, and the same
+    // check then rejects the release at tag time -- with the protected tag
+    // already pushed. The ordering is the whole defence, so it is asserted here
+    // rather than left to a comment beside it.
+    $steps = [
+        'commit' => 'git commit -m "Release 0.2.0"',
+        'preflight' => 'make release-publish-contract-test',
+        'tag' => 'git tag v0.2.0',
+    ];
+
+    $guide = implode("\n", array_map(
+        fn (string $step): string => $steps[$step],
+        explode(',', $order),
+    ));
+
+    $assert = fn (): mixed => assertReleaseGuidePreflightFollowsCommit($guide);
+
+    if ($passes) {
+        $assert();
+
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    expect($assert)->toThrow(RuntimeException::class);
+})->with([
+    'preflight between the commit and the tag' => ['commit,preflight,tag', true],
+    'preflight before the commit reads the parent' => ['preflight,commit,tag', false],
+    'preflight after the tag is not a preflight' => ['commit,tag,preflight', false],
+]);
+
+test('the guide assertion fails when a step disappears entirely', function (): void {
+    // A rewrite that drops one of the three leaves nothing to order, and
+    // returning quietly would make this guard vacuous.
+    expect(fn (): mixed => assertReleaseGuidePreflightFollowsCommit(
+        "git commit -m \"Release 0.2.0\"\nmake release-publish-contract-test",
+    ))->toThrow(RuntimeException::class);
+});

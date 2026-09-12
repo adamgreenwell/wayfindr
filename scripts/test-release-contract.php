@@ -597,10 +597,47 @@ function operatorActionVersionIsAllowed(SemanticVersion $candidate, ?SemanticVer
     ) > 0;
 }
 
+/**
+ * The guide's preflight must read the commit that will be TAGGED.
+ *
+ * assertReleaseDateIsCurrent() compares the changelog date against the release
+ * commit, so running `make release-publish-contract-test` before that commit
+ * exists reads the parent. On a main quiet for a few days a stale date sits
+ * close enough to that parent to pass, and the same check then rejects the
+ * release at tag time, with the protected tag already pushed. The ordering is
+ * the whole defence, so it is asserted rather than left to the comment beside
+ * it.
+ */
+function assertReleaseGuidePreflightFollowsCommit(string $guide): void
+{
+    $commit = strpos($guide, 'git commit -m "Release 0.2.0"');
+    $preflight = strpos($guide, 'make release-publish-contract-test');
+    $tag = strpos($guide, 'git tag v0.2.0');
+
+    if ($commit === false || $preflight === false || $tag === false) {
+        throw new RuntimeException(
+            'RELEASING.md no longer shows the release commit, the publishing preflight, and the tag.'
+        );
+    }
+
+    if ($preflight < $commit) {
+        throw new RuntimeException(
+            'RELEASING.md runs the publishing preflight BEFORE the release commit, so it reads the parent commit date.'
+        );
+    }
+
+    if ($preflight > $tag) {
+        throw new RuntimeException(
+            'RELEASING.md runs the publishing preflight after the tag, which is too late to be a preflight.'
+        );
+    }
+}
+
 function assertPublishingWorkflowGuarded(string $root): void
 {
     $workflow = requiredFile($root.'/.github/workflows/release-image.yml');
     $releaseGuide = requiredFile($root.'/RELEASING.md');
+    assertReleaseGuidePreflightFollowsCommit($releaseGuide);
     $markers = [
         'VERSION read' => 'version="$(tr -d',
         'tag identity check' => 'expected_tag="v${version}"',
