@@ -248,3 +248,27 @@ test('first run setup is locked after bootstrap data exists', function (): void 
     expect(User::query()->count())->toBe(1)
         ->and(Site::query()->count())->toBe(0);
 });
+
+test('losing the setup race says what happened', function (): void {
+    // A complete six-field form against an install someone else just claimed
+    // returned 302 to a bare sign-in page with no flash at all: no way to tell
+    // whether the submission failed, was ignored, or half-applied.
+    $account = Account::factory()->create();
+    User::factory()->for($account)->create();
+
+    $this->post(route('setup.store'), [
+        'account_name' => 'Second Workspace',
+        'agent_name' => 'Someone Else',
+        'agent_email' => 'someone-else@example.test',
+        'password' => 'a-long-enough-password',
+        'password_confirmation' => 'a-long-enough-password',
+        'site_name' => 'Their Site',
+    ])
+        ->assertRedirect(route('login'))
+        ->assertSessionHas('status');
+
+    $this->followingRedirects()
+        ->get(route('setup.create'))
+        ->assertOk()
+        ->assertSee('This installation has already been set up.');
+});

@@ -87,7 +87,12 @@ class SessionController extends Controller
         }
 
         if ($agent?->account?->requires_two_factor) {
-            return redirect()->route('dashboard.profile.show');
+            // The same flash EnsureTwoFactorPolicy sets for the identical
+            // redirect. Arriving here from sign-in said nothing at all, so an
+            // agent landed on their profile with no idea why they were not on
+            // the dashboard; arriving from a later request explained itself.
+            return redirect()->route('dashboard.profile.show')
+                ->with('status', 'two_factor.policy.enrol_required');
         }
 
         return redirect()->intended(route('dashboard'));
