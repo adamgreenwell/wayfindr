@@ -71,6 +71,37 @@ test('a reset link sets a new password and the old one stops working', function 
         ->and(Hash::check('the-old-password', $agent->password))->toBeFalse();
 });
 
+test('a completed reset tells you so on the page it lands on', function (): void {
+    // PasswordResetController has always flashed this, and login.blade.php
+    // rendered no flash region at all -- unlike forgot-password.blade.php right
+    // next to it -- so the confirmation was discarded. You finish a reset, land
+    // on the sign-in form, and nothing on it says the reset worked or which
+    // password to type.
+    Notification::fake();
+    $agent = agentNeedingRecovery();
+    $token = Password::createToken($agent);
+
+    $this->post(route('password.update'), [
+        'token' => $token,
+        'email' => $agent->email,
+        'password' => 'a-brand-new-password',
+        'password_confirmation' => 'a-brand-new-password',
+    ])->assertRedirect(route('login'));
+
+    // Following the redirect, not asserting on the session: a flash nothing
+    // renders is exactly the defect, and assertSessionHas would have passed
+    // throughout.
+    $this->followingRedirects()
+        ->post(route('password.update'), [
+            'token' => Password::createToken($agent),
+            'email' => $agent->email,
+            'password' => 'another-new-password',
+            'password_confirmation' => 'another-new-password',
+        ])
+        ->assertOk()
+        ->assertSee('Your password has been reset. Sign in with it now.');
+});
+
 test('a completed reset ends the sessions that were already open', function (): void {
     // A reset that leaves old sessions alive is not a recovery, it is a second
     // key cut for whoever already had one.
