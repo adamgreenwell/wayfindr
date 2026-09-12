@@ -4,6 +4,18 @@
             <h1 id="login-heading">Agent Login</h1>
             <p class="lede">Sign in to your Wayfindr support workspace.</p>
 
+            {{-- The shape forgot-password.blade.php next door already uses.
+                 PasswordResetController redirects here with a status after a
+                 successful reset, and this page rendered no flash region at all,
+                 so the confirmation was discarded: you land on sign-in with no
+                 word that the reset worked, and no way to tell which password to
+                 type. --}}
+            @if (session('status'))
+                <div class="notice-copy">
+                    <p>{{ session('status') }}</p>
+                </div>
+            @endif
+
             <form method="POST" action="{{ route('login.store') }}">
                 @csrf
 
