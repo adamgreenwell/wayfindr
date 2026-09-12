@@ -275,6 +275,7 @@ return [
         'safe' => 'Safe context only',
         'visitor' => 'Visitor',
         'host_id' => 'Host visitor ID',
+        'lookup_reference' => 'Visitor lookup reference',
         'last_seen' => 'Last seen',
         'latest_page' => 'Latest page',
         'entry_page' => 'Entry page',

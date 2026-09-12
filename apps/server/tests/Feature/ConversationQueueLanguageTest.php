@@ -3951,8 +3951,17 @@ test('authored ticket activity values keep their own language boundaries', funct
 
 test('ticket detail translated identifier fallbacks keep the dashboard language', function (): void {
     $world = conversationQueueLanguageWorld();
+    // Every identifier null, which is the only state that still reaches the
+    // fallback. This fixture used to give the visitor a NAME and rely on the
+    // Visitor row printing the browser id, so the fallback appeared for somebody
+    // the install could perfectly well name. That row shows the name now, which
+    // is the point of it -- but the assertion below is about our own fallback
+    // never being marked as the visitor's language, and that still needs a
+    // visitor who genuinely has no identifier at all.
     $visitor = Visitor::factory()->for($world['site'])->create([
-        'name' => 'Authored requester',
+        'name' => null,
+        'email' => null,
+        'external_id' => null,
         'anonymous_id' => null,
     ]);
     $ticket = Ticket::factory()
@@ -3984,10 +3993,19 @@ test('ticket detail translated identifier fallbacks keep the dashboard language'
     ] as $what => $fallback) {
         $nodes = $xpath->query('//span[normalize-space(text())="'.$fallback.'"]');
 
-        expect($nodes)->toHaveCount(1, "the {$what} fallback did not render exactly once")
-            ->and($nodes->item(0)?->hasAttribute('lang'))->toBeFalse(
+        // At least once, and NONE of them marked. The count was pinned at one
+        // while the Visitor row printed a browser id; that row carries the
+        // resolved label now, so a visitor with no identifier at all reaches the
+        // fallback in both the row and the requester brief. Which is correct --
+        // and makes the marking the thing worth asserting, on every occurrence
+        // rather than the first.
+        expect($nodes->length)->toBeGreaterThan(0, "the {$what} fallback did not render at all");
+
+        foreach ($nodes as $node) {
+            expect($node->hasAttribute('lang'))->toBeFalse(
                 "the translated {$what} fallback was marked as unknown-language text"
             );
+        }
     }
 });
 

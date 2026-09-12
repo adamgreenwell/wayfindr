@@ -267,6 +267,7 @@ return [
         'safe' => 'Nur sicherer Kontext',
         'visitor' => 'Besucher',
         'host_id' => 'Besucher-ID des Hosts',
+        'lookup_reference' => 'Suchreferenz des Besuchers',
         'last_seen' => 'Zuletzt gesehen',
         'latest_page' => 'Neueste Seite',
         'entry_page' => 'Einstiegsseite',

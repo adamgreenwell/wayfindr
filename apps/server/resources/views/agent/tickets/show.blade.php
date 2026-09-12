@@ -25,13 +25,14 @@
                     ? $ticket->replyVisibility()
                     : ['tone' => 'manual'];
                 $ticketLifecycleNote = $ticket->latestLifecycleNote();
-                $requesterReference = $ticket->requester?->email
-                    ?? $ticket->requester?->name
-                    ?? $ticket->requester?->anonymous_id
-                    ?? __('ticket_detail.common.not_linked');
-                $requesterReferenceIsAuthored = $ticket->requester?->email !== null
-                    || $ticket->requester?->name !== null
-                    || $ticket->requester?->anonymous_id !== null;
+                // One label, resolved in the controller, in the precedence the
+                // visitors list and the other two surfaces use. This put the
+                // ADDRESS before the name and omitted the host identifier, so a
+                // visitor with both was called something different here than on
+                // the page you clicked through from. A PHP comment, not a Blade
+                // one: inside @php this region is PHP source.
+                $requesterReference = $visitorContext['label'];
+                $requesterReferenceIsAuthored = $visitorContext['label_is_theirs'];
                 $hasVisitorContext = $visitorContext['has_visitor']
                     || $visitorContext['last_page_url']
                     || $visitorContext['started_page_url']
@@ -1049,7 +1050,14 @@
                     <div class="meta-grid">
                         <div class="meta-item">
                             <span class="meta-label">{{ __('ticket_detail.visitor_context.visitor') }}</span>
-                            <span class="meta-value" @if ($ticket->requester?->anonymous_id !== null) lang="" @endif>{{ $visitorContext['anonymous_id'] }}</span>
+                            <span class="meta-value" @if ($visitorContext['label_is_theirs']) lang="" @endif>{{ $visitorContext['label'] }}</span>
+                        </div>
+                        <div class="meta-item">
+                            {{-- The browser id, which the Visitor row above used
+                                 to carry. Same label the visitor profile uses for
+                                 the same thing, so the two pages name it alike. --}}
+                            <span class="meta-label">{{ __('ticket_detail.visitor_context.lookup_reference') }}</span>
+                            @if ($visitorContext['lookup_reference'])<span class="meta-value" lang="">{{ $visitorContext['lookup_reference'] }}</span>@else<span class="meta-value">{{ __('ticket_detail.common.not_provided') }}</span>@endif
                         </div>
                         <div class="meta-item">
                             <span class="meta-label">{{ __('ticket_detail.visitor_context.host_id') }}</span>
