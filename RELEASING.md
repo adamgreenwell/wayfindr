@@ -149,10 +149,18 @@ printf '0.2.0\n' > VERSION
 php scripts/release/build-manifest.php \
   --version=0.2.0 \
   --history=releases/history.json
-make release-publish-contract-test
 
 git add VERSION CHANGELOG.md release.json releases/history.json
 git commit -m "Release 0.2.0"
+
+# AFTER the commit, and before the tag. The publishing contract compares the
+# changelog's date against the commit being released, so running it beforehand
+# reads the PARENT: on a main that has been quiet for a few days, a stale date
+# sits close enough to that parent to pass, and the same check then rejects the
+# release at tag time -- once the protected tag is already pushed. Here a
+# failure costs `git commit --amend` and nothing else.
+make release-publish-contract-test
+
 release_sha="$(git rev-parse HEAD)"
 git push origin main
 

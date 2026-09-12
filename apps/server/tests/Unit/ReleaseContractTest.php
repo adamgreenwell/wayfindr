@@ -6,9 +6,12 @@ use App\Support\Release\ReleaseManifest;
 use App\Support\Version\SemanticVersion;
 
 use function Wayfindr\ReleaseContract\assertPublishingReleaseReady;
+use function Wayfindr\ReleaseContract\assertReleaseDateIsCurrent;
+use function Wayfindr\ReleaseContract\assertReleaseGuidePreflightFollowsCommit;
 use function Wayfindr\ReleaseContract\assertVersionedReleaseRecorded;
 use function Wayfindr\ReleaseContract\historyContext;
 use function Wayfindr\ReleaseContract\operatorActionVersionIsAllowed;
+use function Wayfindr\ReleaseContract\releaseSections;
 
 require_once dirname(__DIR__, 4).'/scripts/test-release-contract.php';
 
@@ -125,4 +128,116 @@ test('publishing refuses preparation state and requires frozen release history',
             historyContext(releaseContractHistory([]), $candidate),
             $generated,
         ))->toThrow(RuntimeException::class, 'matching 0.8.0 entry');
+});
+
+test('the release date is read from the candidate heading, ignoring fenced examples', function (): void {
+    // The fenced block matters: a first version of this scanned the raw lines
+    // and would have returned the EXAMPLE's date, so a current example could
+    // let a stale real release date through.
+    $markdown = <<<'MD'
+        ## [Unreleased]
+
+        Write the heading like this:
+
+        ```markdown
+        ## [0.8.0] - 1999-01-01
+        ```
+
+        ## [0.8.0] - 2026-09-12
+
+        ## [0.7.0] - 2026-08-25
+        MD;
+
+    $dates = releaseSections($markdown)['dates'];
+
+    expect($dates['0.8.0'])->toBe('2026-09-12')
+        ->and($dates['0.7.0'])->toBe('2026-08-25')
+        // Unreleased carries no date, and an absent version has no entry.
+        ->and($dates['Unreleased'])->toBeNull()
+        ->and($dates['0.9.0'] ?? null)->toBeNull();
+});
+
+test('publishing refuses a changelog section dated before the release commit', function (
+    ?string $date,
+    bool $passes,
+): void {
+    // Compared against the RELEASE COMMIT, never the clock. A wall-clock check
+    // fails an accurate heading whenever the publish job is rerun more than a
+    // day after the tag -- which release-image.yml supports -- and with a
+    // protected tag that would leave the release unpublishable. A guard against
+    // a cosmetic defect must not be able to block a release.
+    $assert = fn (): mixed => assertReleaseDateIsCurrent($date, '0.8.0', '2026-09-12');
+
+    if ($passes) {
+        $assert();
+
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    expect($assert)->toThrow(RuntimeException::class);
+})->with([
+    'the commit day itself' => ['2026-09-12', true],
+    // One day of slack absorbs timezone skew between whoever wrote the heading
+    // and the committer.
+    'the day before' => ['2026-09-11', true],
+    // LATER is fine and expected: a tag pushed some days after the release
+    // commit landed is ordinary, and refusing it recreates the blocking failure
+    // from the other side.
+    'the day after' => ['2026-09-13', true],
+    'a week after' => ['2026-09-19', true],
+    'two days before' => ['2026-09-10', false],
+    'a week before' => ['2026-09-05', false],
+    'no date at all' => [null, false],
+    'not a date' => ['soon', false],
+    'wrong shape' => ['12-09-2026', false],
+    // createFromFormat would roll this into October without the round-trip.
+    'impossible date' => ['2026-09-31', false],
+]);
+
+test('the guide runs its publishing preflight against the commit it will tag', function (
+    string $order,
+    bool $passes,
+): void {
+    // The date check compares against the release COMMIT, so a preflight that
+    // runs before that commit exists reads the parent. On a main quiet for a few
+    // days a stale date sits close enough to the parent to pass, and the same
+    // check then rejects the release at tag time -- with the protected tag
+    // already pushed. The ordering is the whole defence, so it is asserted here
+    // rather than left to a comment beside it.
+    $steps = [
+        'commit' => 'git commit -m "Release 0.2.0"',
+        'preflight' => 'make release-publish-contract-test',
+        'tag' => 'git tag v0.2.0',
+    ];
+
+    $guide = implode("\n", array_map(
+        fn (string $step): string => $steps[$step],
+        explode(',', $order),
+    ));
+
+    $assert = fn (): mixed => assertReleaseGuidePreflightFollowsCommit($guide);
+
+    if ($passes) {
+        $assert();
+
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    expect($assert)->toThrow(RuntimeException::class);
+})->with([
+    'preflight between the commit and the tag' => ['commit,preflight,tag', true],
+    'preflight before the commit reads the parent' => ['preflight,commit,tag', false],
+    'preflight after the tag is not a preflight' => ['commit,tag,preflight', false],
+]);
+
+test('the guide assertion fails when a step disappears entirely', function (): void {
+    // A rewrite that drops one of the three leaves nothing to order, and
+    // returning quietly would make this guard vacuous.
+    expect(fn (): mixed => assertReleaseGuidePreflightFollowsCommit(
+        "git commit -m \"Release 0.2.0\"\nmake release-publish-contract-test",
+    ))->toThrow(RuntimeException::class);
 });

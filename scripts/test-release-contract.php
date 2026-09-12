@@ -135,6 +135,7 @@ function hasVisibleContent(string $markdown): bool
 function releaseSections(string $markdown): array
 {
     $sections = [];
+    $dates = [];
     $current = null;
     $body = [];
     $fenceCharacter = null;
@@ -184,8 +185,15 @@ function releaseSections(string $markdown): array
         if (preg_match('/^##(?:[ \t]+|$)/', $line) === 1) {
             $store();
 
-            if (preg_match('/^##[ \t]+\[([^\]]+)](?:[ \t]+-[ \t]+.*)?[ \t]*$/', $line, $heading) === 1) {
+            if (preg_match('/^##[ \t]+\[([^\]]+)](?:[ \t]+-[ \t]+(.*))?[ \t]*$/', $line, $heading) === 1) {
                 $current = trim($heading[1]);
+                // Captured HERE rather than by a second scan of the raw lines,
+                // because this loop is the one that skips fenced blocks. A
+                // separate scanner reads a heading inside a ```markdown example
+                // as if it were the real section.
+                $dates[$current] = isset($heading[2]) && trim($heading[2]) !== ''
+                    ? trim($heading[2])
+                    : null;
             }
 
             continue;
@@ -198,7 +206,7 @@ function releaseSections(string $markdown): array
 
     $store();
 
-    return $sections;
+    return ['bodies' => $sections, 'dates' => $dates];
 }
 
 /** @return array<string, string> */
@@ -470,6 +478,94 @@ function assertPublishingReleaseReady(
     assertVersionedReleaseRecorded($history, $generated);
 }
 
+/**
+ * The date of the commit being released, which is what the heading is compared
+ * against. The publishing workflow checks out the tagged ref and verifies HEAD
+ * equals it, so this is the tagged commit -- and unlike a wall clock it is
+ * identical on every rerun, forever.
+ */
+function releaseCommitDate(string $root): string
+{
+    $command = 'git -C '.escapeshellarg($root).' show -s --format=%cs HEAD 2>/dev/null';
+    $date = trim((string) shell_exec($command));
+
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+        throw new RuntimeException(
+            'could not read the release commit date from git, so the changelog date cannot be checked. '
+            .'Publishing runs inside a checkout of the tagged ref; if this is a local run, run it from the repository.'
+        );
+    }
+
+    return $date;
+}
+
+/**
+ * A release section written days before the cut ships a date that was never
+ * true. Nothing else catches it: the date is not part of any declaration, so
+ * every other contract check passes over a section headed with last week.
+ *
+ * Publishing only. On a pull request the candidate section is legitimately
+ * dated whenever its author expected to cut, and failing every unrelated PR
+ * until someone bumps it would make the guard a tax rather than a check.
+ *
+ * The comparison is against the RELEASE COMMIT, never the current time. A
+ * wall-clock check fails an accurate heading whenever the publish job is rerun
+ * more than a day after the tag -- which release-image.yml explicitly supports,
+ * reusing a partial draft or a recorded digest. With a protected tag that
+ * cannot simply be replaced, a transient failure plus a delayed rerun would
+ * leave the release permanently unpublishable. A guard against a cosmetic
+ * defect must not be able to block a release.
+ *
+ * The falsifiable property is therefore one-sided: notes cannot predate the
+ * commit they describe. A heading LATER than the commit is fine and expected --
+ * a tag pushed some days after the release commit landed is an ordinary thing
+ * to do, and refusing it would recreate the same blocking failure from the
+ * other side. One day of slack absorbs timezone skew between whoever wrote the
+ * heading and the committer.
+ */
+function assertReleaseDateIsCurrent(?string $date, string $version, string $releasedOn): void
+{
+    if ($date === null) {
+        throw new RuntimeException(
+            "publishing requires the [{$version}] changelog heading to carry a date."
+        );
+    }
+
+    $heading = parseContractDate($date)
+        ?? throw new RuntimeException(
+            "the [{$version}] changelog heading is dated \"{$date}\", which is not a YYYY-MM-DD date."
+        );
+
+    $commit = parseContractDate($releasedOn)
+        ?? throw new RuntimeException("could not read the release commit date: \"{$releasedOn}\".");
+
+    if ($heading >= $commit->modify('-1 day')) {
+        return;
+    }
+
+    $drift = (int) $heading->diff($commit)->days;
+
+    throw new RuntimeException(
+        "the [{$version}] changelog section is dated {$date}, {$drift} days before the release commit ({$releasedOn}). "
+        .'Set it to the day the release is tagged; it ships as the release date.'
+    );
+}
+
+/**
+ * Round-tripped through its own format on purpose: createFromFormat rolls
+ * 2026-09-31 forward into October without complaining.
+ */
+function parseContractDate(string $date): ?\DateTimeImmutable
+{
+    $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, new \DateTimeZone('UTC'));
+
+    if ($parsed === false || $parsed->format('Y-m-d') !== $date) {
+        return null;
+    }
+
+    return $parsed;
+}
+
 function isPatchLine(SemanticVersion $candidate, ?SemanticVersion $previous): bool
 {
     return $previous !== null
@@ -501,10 +597,47 @@ function operatorActionVersionIsAllowed(SemanticVersion $candidate, ?SemanticVer
     ) > 0;
 }
 
+/**
+ * The guide's preflight must read the commit that will be TAGGED.
+ *
+ * assertReleaseDateIsCurrent() compares the changelog date against the release
+ * commit, so running `make release-publish-contract-test` before that commit
+ * exists reads the parent. On a main quiet for a few days a stale date sits
+ * close enough to that parent to pass, and the same check then rejects the
+ * release at tag time, with the protected tag already pushed. The ordering is
+ * the whole defence, so it is asserted rather than left to the comment beside
+ * it.
+ */
+function assertReleaseGuidePreflightFollowsCommit(string $guide): void
+{
+    $commit = strpos($guide, 'git commit -m "Release 0.2.0"');
+    $preflight = strpos($guide, 'make release-publish-contract-test');
+    $tag = strpos($guide, 'git tag v0.2.0');
+
+    if ($commit === false || $preflight === false || $tag === false) {
+        throw new RuntimeException(
+            'RELEASING.md no longer shows the release commit, the publishing preflight, and the tag.'
+        );
+    }
+
+    if ($preflight < $commit) {
+        throw new RuntimeException(
+            'RELEASING.md runs the publishing preflight BEFORE the release commit, so it reads the parent commit date.'
+        );
+    }
+
+    if ($preflight > $tag) {
+        throw new RuntimeException(
+            'RELEASING.md runs the publishing preflight after the tag, which is too late to be a preflight.'
+        );
+    }
+}
+
 function assertPublishingWorkflowGuarded(string $root): void
 {
     $workflow = requiredFile($root.'/.github/workflows/release-image.yml');
     $releaseGuide = requiredFile($root.'/RELEASING.md');
+    assertReleaseGuidePreflightFollowsCommit($releaseGuide);
     $markers = [
         'VERSION read' => 'version="$(tr -d',
         'tag identity check' => 'expected_tag="v${version}"',
@@ -752,7 +885,8 @@ function main(string $root, bool $publishing = false): void
     }
 
     $machineRequiresAction = $manifest['requires_operator_action'];
-    $sections = releaseSections(requiredFile($root.'/CHANGELOG.md'));
+    $changelog = releaseSections(requiredFile($root.'/CHANGELOG.md'));
+    $sections = $changelog['bodies'];
 
     if (! array_key_exists('Unreleased', $sections)) {
         throw new RuntimeException('CHANGELOG has no [Unreleased] section.');
@@ -778,6 +912,12 @@ function main(string $root, bool $publishing = false): void
             $versionedHasContent,
             $history,
             $manifest,
+        );
+
+        assertReleaseDateIsCurrent(
+            $changelog['dates'][$candidate->canonical()] ?? null,
+            $candidate->canonical(),
+            releaseCommitDate($root),
         );
     }
 
