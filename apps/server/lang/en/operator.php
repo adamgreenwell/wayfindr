@@ -780,7 +780,7 @@ return [
             'subtitle' => 'What this install stores, and for how long.',
             'current' => 'Current setting',
             'label' => 'Operator-owned retention',
-            'summary' => 'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
+            'summary' => 'Cobrowse page content, visitors who never made contact, proactive-delivery evidence, abandoned uploads, and API write receipts are pruned automatically; broader retention stays operator-owned.',
             'description' => 'Assume application records, logs, and backups persist according to infrastructure defaults until an operator removes them or the host lifecycle removes them.',
             'open_guidance' => 'Open retention guidance',
             'status' => [
@@ -814,10 +814,20 @@ return [
                     'value' => 'Deleted after 90 days',
                     'description' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
                 ],
+                'abandoned_uploads' => [
+                    'label' => 'Abandoned and failed uploads',
+                    'value' => '{1} Deleted within :count hour|[2,*] Deleted within :count hours',
+                    'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a failed upload goes on the next pass whatever its age, a pending one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three plus the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
+                ],
+                'api_receipts' => [
+                    'label' => 'API write receipts',
+                    'value' => '{1} Deleted after :count hour|[2,*] Deleted after :count hours',
+                    'description' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with — and through it the account and the agent who issued that token — and which ticket, conversation, or message the write produced.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Automatic deletion',
                     'value' => 'The classes listed above',
-                    'description' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
+                    'description' => 'Removing or exporting the records of one person on request is still manual: there is no in-product control for it, for any class. That is separate from the scheduled deletions listed above, which do run. Explain the difference before real support traffic.',
                 ],
             ],
             'reminders' => [

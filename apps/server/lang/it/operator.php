@@ -788,7 +788,7 @@ return [
             'subtitle' => 'Cosa conserva questa installazione e per quanto tempo.',
             'current' => 'Impostazione corrente',
             'label' => 'Conservazione gestita dal gestore',
-            'summary' => 'Il contenuto delle pagine di cobrowse, i visitatori che non hanno mai preso contatto e le prove di consegna dei messaggi proattivi vengono eliminati automaticamente; la conservazione restante è responsabilità del gestore.',
+            'summary' => 'Il contenuto delle pagine di cobrowse, i visitatori che non hanno mai preso contatto, le prove di consegna dei messaggi proattivi, i caricamenti abbandonati e le ricevute di scrittura API vengono eliminati automaticamente; la conservazione restante è responsabilità del gestore.',
             'description' => 'Si presuma che record dell’applicazione, registri e copie di sicurezza persistano secondo le impostazioni dell’infrastruttura finché un gestore non li rimuove o il ciclo dell’host non li elimina.',
             'open_guidance' => 'Apri la guida alla conservazione',
             'status' => [
@@ -822,10 +822,20 @@ return [
                     'value' => 'Eliminate dopo 90 giorni',
                     'description' => 'Il comando pianificato wayfindr:prune-proactive-message-deliveries elimina la registrazione di quale messaggio proattivo ha raggiunto quale visitatore una volta trascorsa la finestra stabilita.',
                 ],
+                'abandoned_uploads' => [
+                    'label' => 'Caricamenti abbandonati e non riusciti',
+                    'value' => '{1} Eliminati entro :count ora|[2,*] Eliminati entro :count ore',
+                    'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments viene eseguito ogni ora per eliminare i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio. Le finestre sono tre, non una: un caricamento non riuscito viene rimosso al passaggio successivo a prescindere dall’età, uno in sospeso una volta superato WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS e un oggetto di archiviazione privo di record dopo WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Il valore accanto a questa riga è la più lunga delle tre più l’intervallo orario, perché un record che diventa idoneo un minuto dopo un passaggio attende quello successivo.',
+                ],
+                'api_receipts' => [
+                    'label' => 'Ricevute di scrittura API',
+                    'value' => '{1} Eliminate dopo :count ora|[2,*] Eliminate dopo :count ore',
+                    'description' => 'Il comando pianificato wayfindr:prune-api-idempotency-keys elimina le ricevute delle scritture tramite API pubblica una volta scaduta la finestra. Ogni ricevuta contiene la chiave di idempotenza e la richiesta in forma di hash, il token API usato per la scrittura — e attraverso di esso l’account e la persona che ha emesso quel token — e la segnalazione, la conversazione o il messaggio che ne è derivato.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Eliminazione automatica',
                     'value' => 'Le classi elencate sopra',
-                    'description' => 'Tutto ciò che non è elencato sopra resta finché un gestore non lo rimuove. Eliminazione ed esportazione per quelle classi restano lavoro futuro; lo spieghi prima del traffico reale di supporto.',
+                    'description' => 'Cancellare o esportare su richiesta i record di una singola persona resta un intervento manuale: non esiste una funzione nel prodotto, per nessuna categoria. È cosa diversa dalle eliminazioni pianificate elencate sopra, che invece vengono eseguite. Spieghi questa differenza prima che arrivi traffico di assistenza reale.',
                 ],
             ],
             'reminders' => [

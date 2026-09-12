@@ -780,7 +780,7 @@ return [
             'subtitle' => 'Was diese Installation speichert und wie lange.',
             'current' => 'Aktuelle Einstellung',
             'label' => 'Betreiberverwaltete Aufbewahrung',
-            'summary' => 'Cobrowse-Seiteninhalte, Besucher ohne jeden Kontakt und Nachweise zu proaktiven Zustellungen werden automatisch bereinigt; die übrige Aufbewahrung bleibt Betreiberaufgabe.',
+            'summary' => 'Cobrowse-Seiteninhalte, Besucher ohne jeden Kontakt, Nachweise zu proaktiven Zustellungen, abgebrochene Uploads und API-Schreibbelege werden automatisch bereinigt; die übrige Aufbewahrung bleibt Betreiberaufgabe.',
             'description' => 'Gehen Sie davon aus, dass Anwendungsdatensätze, Protokolle und Sicherungen gemäß den Infrastrukturvorgaben bestehen bleiben, bis ein Betreiber sie entfernt oder der Host-Lebenszyklus sie löscht.',
             'open_guidance' => 'Aufbewahrungsanleitung öffnen',
             'status' => [
@@ -814,10 +814,20 @@ return [
                     'value' => 'Nach 90 Tagen gelöscht',
                     'description' => 'Der geplante Befehl wayfindr:prune-proactive-message-deliveries löscht den Nachweis darüber, welche proaktive Nachricht welchen Besucher erreicht hat, sobald das begrenzte Zeitfenster abgelaufen ist.',
                 ],
+                'abandoned_uploads' => [
+                    'label' => 'Abgebrochene und fehlgeschlagene Uploads',
+                    'value' => '{1} Binnen :count Stunde gelöscht|[2,*] Binnen :count Stunden gelöscht',
+                    'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments läuft stündlich und löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden. Dabei gelten drei verschiedene Fristen, nicht eine: ein fehlgeschlagener Upload wird beim nächsten Durchlauf entfernt, unabhängig vom Alter, ein ausstehender nach Ablauf von WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS und ein Speicherobjekt ganz ohne Datensatz nach WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Der Wert neben dieser Zeile ist die längste der drei Fristen zuzüglich des stündlichen Abstands, denn ein Datensatz, der eine Minute nach einem Durchlauf fällig wird, wartet auf den nächsten.',
+                ],
+                'api_receipts' => [
+                    'label' => 'API-Schreibbelege',
+                    'value' => '{1} Nach :count Stunde gelöscht|[2,*] Nach :count Stunden gelöscht',
+                    'description' => 'Der geplante Befehl wayfindr:prune-api-idempotency-keys löscht Belege über Schreibzugriffe der öffentlichen API nach Ablauf des Zeitfensters. Jeder Beleg enthält den gehashten Idempotenzschlüssel, die gehashte Anfrage, das verwendete API-Token — und darüber das Konto sowie die Person, die dieses Token ausgestellt hat — und den Vorgang, die Unterhaltung oder die Nachricht, die dabei entstanden ist.',
+                ],
                 'automatic_deletion' => [
                     'label' => 'Automatische Löschung',
                     'value' => 'Die oben aufgeführten Klassen',
-                    'description' => 'Alles, was oben nicht aufgeführt ist, bleibt erhalten, bis ein Betreiber es entfernt. Löschung und Export für diese Klassen bleiben zukünftige Arbeit; erläutern Sie dies vor echtem Supportverkehr.',
+                    'description' => 'Die Datensätze einer einzelnen Person auf Anfrage zu löschen oder zu exportieren, bleibt Handarbeit: dafür gibt es keine Funktion im Produkt, für keine Klasse. Das ist etwas anderes als die oben aufgeführten geplanten Löschungen, die tatsächlich laufen. Erklären Sie diesen Unterschied, bevor echter Support-Verkehr eintrifft.',
                 ],
             ],
             'reminders' => [

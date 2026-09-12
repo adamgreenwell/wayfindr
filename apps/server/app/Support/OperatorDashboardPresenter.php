@@ -276,7 +276,7 @@ final class OperatorDashboardPresenter
             'status_label' => __('operator.dashboard.retention.status.'.($retention['status'] ?? 'manual')),
             'summary' => self::configuredCopy(
                 (string) ($retention['summary'] ?? ''),
-                'Cobrowse page content, visitors who never made contact, and proactive-delivery evidence are pruned automatically; broader retention stays operator-owned.',
+                'Cobrowse page content, visitors who never made contact, proactive-delivery evidence, abandoned uploads, and API write receipts are pruned automatically; broader retention stays operator-owned.',
                 'operator.dashboard.retention.summary',
             ),
         ];
@@ -291,6 +291,8 @@ final class OperatorDashboardPresenter
             'Cobrowse page content' => 'cobrowse_content',
             'Visitors who never made contact' => 'presence_visitors',
             'Proactive message delivery evidence' => 'proactive_deliveries',
+            'Abandoned and failed uploads' => 'abandoned_uploads',
+            'API write receipts' => 'api_receipts',
             'Automatic deletion' => 'automatic_deletion',
             default => null,
         };
@@ -310,10 +312,12 @@ final class OperatorDashboardPresenter
             'cobrowse_content' => 'The scheduled wayfindr:prune-cobrowse-content command strips raw snapshot HTML, page text, and retained mutation batches from ended cobrowse sessions, keeping only content-free provenance (counts, timestamps, hashes, and audit events).',
             'presence_visitors' => 'The scheduled wayfindr:prune-presence-visitors command deletes visitor records that never produced a conversation and whose last heartbeat is past the window. The cap is a ceiling an operator cannot raise: presence collects people who never asked for anything (ADR 0019).',
             'proactive_deliveries' => 'The scheduled wayfindr:prune-proactive-message-deliveries command deletes the record of which proactive message reached which visitor once it is past its bounded window.',
-            'automatic_deletion' => 'Everything not listed above stays until an operator removes it. Deletion and export controls for those classes remain future work; explain that before real support traffic.',
+            'abandoned_uploads' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a FAILED upload goes on the next pass whatever its age, a PENDING one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three PLUS the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
+            'api_receipts' => 'The scheduled wayfindr:prune-api-idempotency-keys command deletes public API write receipts once past their window. Each holds the hashed idempotency key and request, the API token the write was made with -- and through it the account and the agent who issued that token -- and which ticket, conversation, or message the write produced.',
+            'automatic_deletion' => 'Removing or exporting the records of one person on request is still manual: there is no in-product control for it, for any class. That is separate from the scheduled deletions listed above, which do run. Explain the difference before real support traffic.',
         };
         $actualValue = (string) ($item['value'] ?? '');
-        $value = in_array($key, ['cobrowse_content', 'presence_visitors'], true)
+        $value = in_array($key, ['cobrowse_content', 'presence_visitors', 'abandoned_uploads', 'api_receipts'], true)
             ? self::raw($actualValue)
             : self::configuredCopy(
                 $actualValue,
@@ -345,6 +349,29 @@ final class OperatorDashboardPresenter
                 'operator.dashboard.retention.items.presence_visitors.value',
                 $days,
                 ['count' => ReaderNumber::count($days)],
+            );
+        }
+
+        // Same shape again. The window is WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS
+        // and the sweep clamps it to at least 1, so the row prints the hours the
+        // command actually uses rather than the raw environment value.
+        if ($key === 'abandoned_uploads'
+            && preg_match('/Deleted within (\d+) hours?$/', $actualValue, $matches) === 1) {
+            $hours = (int) $matches[1];
+            $value = trans_choice(
+                'operator.dashboard.retention.items.abandoned_uploads.value',
+                $hours,
+                ['count' => ReaderNumber::count($hours)],
+            );
+        }
+
+        if ($key === 'api_receipts'
+            && preg_match('/Deleted after (\d+) hours?$/', $actualValue, $matches) === 1) {
+            $hours = (int) $matches[1];
+            $value = trans_choice(
+                'operator.dashboard.retention.items.api_receipts.value',
+                $hours,
+                ['count' => ReaderNumber::count($hours)],
             );
         }
 
