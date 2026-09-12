@@ -1726,3 +1726,41 @@ test('the broadcast row carries one resolved label, not the raw fields', functio
         ->and($rows[$anonymous->id]['label'])->toBe('anon-row-plain')
         ->and($rows[$named->id])->not->toHaveKey('email');
 });
+
+test('the board calls a visitor named zero by their name', function (): void {
+    // The resolver carries "0" correctly and then the payload threw it away
+    // again with `?: null`, one line after asking for it. The board showed
+    // `Visitor 41` for a contact the host calls 0.
+    $f = boardFixture();
+
+    $visitor = presentVisitor($f['site'], 'anon-board-zero', [
+        'name' => '0',
+        'email' => null,
+        'external_id' => null,
+        'presence_only' => false,
+    ]);
+
+    expect(LiveVisitorBoard::for($f['site'])->firstWhere('id', $visitor->id)['label'])->toBe('0');
+
+    $html = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain(__('sites_live.board.unnamed', ['id' => $visitor->id]));
+});
+
+test('the socket renderer distinguishes an absent label from the string zero', function (): void {
+    // A SOURCE check, and it says so: the renderer is inline JavaScript in a
+    // Blade file and there is no JS runner in this repo, so no test can execute
+    // it. What it can do is refuse the one construction that is wrong for a
+    // value which may legitimately be "0" -- the same truthiness mistake the
+    // server side made on the line above it.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    expect($source)->toContain('visitor.label !== null');
+
+    // `if (visitor.label)` and `visitor.label ? ... : ...` both discard "0".
+    expect($source)->not->toMatch('/if\s*\(\s*visitor\.label\s*\)/')
+        ->and($source)->not->toMatch('/visitor\.label\s*\?[^?=]/');
+});

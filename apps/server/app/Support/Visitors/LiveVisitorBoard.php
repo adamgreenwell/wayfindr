@@ -163,6 +163,12 @@ final class LiveVisitorBoard
         bool $showPageUrls = true,
         bool $showConversationCount = true,
     ): array {
+        // Asked for with an empty fallback and read through `is_theirs`, NOT
+        // through the truthiness of the label. `?: null` here would drop the
+        // string "0" -- the exact value this resolver exists to carry, thrown
+        // away one line after asking for it.
+        $identity = VisitorLabel::forVisitor($visitor, '');
+
         return [
             'id' => $visitor->id,
             // What to CALL them, resolved once here rather than decided again
@@ -175,7 +181,7 @@ final class LiveVisitorBoard
             // broadcast to every agent watching and they do not all read the
             // same language, so the fallback wording is chosen at the surface
             // exactly as the rest of this payload's state is.
-            'label' => VisitorLabel::forVisitor($visitor, '')['label'] ?: null,
+            'label' => $identity['is_theirs'] ? $identity['label'] : null,
             'state' => VisitorPresence::stateFor($visitor->last_web_seen_at),
             // Answered from the policy in force, not from what happens to be
             // stored. Revoking addresses commits the setting and THEN sweeps

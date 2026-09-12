@@ -383,7 +383,10 @@
                         // nothing of theirs to use, which is the same decision
                         // the server-rendered table above makes -- it is made
                         // once, in the payload, rather than twice here.
-                        if (visitor.label) {
+                        // Compared against null, never tested for truthiness:
+                        // "0" is a label this product accepts and `if (label)`
+                        // discards it exactly as `?:` did on the server.
+                        if (visitor.label !== null && visitor.label !== undefined) {
                             link.setAttribute('lang', '');
                             link.textContent = visitor.label;
                         } else {
