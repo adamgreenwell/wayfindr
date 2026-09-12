@@ -51,6 +51,13 @@ Move `## [Unreleased]` content in [CHANGELOG.md](CHANGELOG.md) into a new
 action** (followed by exactly what to do) or **No operator action required**, and
 mark the individual entries that need hands with **⚠ Operator action**.
 
+**If that section already exists, set its date to the day you are tagging.**
+Notes are often moved out of Unreleased days or weeks before the cut — the
+section is frozen from that moment, and its date silently ages with it. That
+date is the release date every reader sees. The publishing preflight in step 3
+refuses a section dated before the commit it would tag, so a stale one stops the
+release; this is where it is cheapest to avoid.
+
 Write it for someone several releases behind who has never read the PR.
 
 Every human action in the changelog needs a matching action in `release.json`.
