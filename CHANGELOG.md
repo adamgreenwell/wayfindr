@@ -379,12 +379,12 @@ page view that was not there before.
   have been corrected to match.
 
 
-- **The retention panel now names every class of data this install deletes on a
-  schedule, and no longer claims anything about the rest.** It had said automatic
-  deletion covered "cobrowse content only", and that everything else stayed until
-  an operator removed it. Four scheduled commands said otherwise. Each now has
-  its own row, in all three languages, naming the command and the window:
-  visitor records that never produced a conversation (30 days); the record of
+- **The retention panel documents four more classes of data this install deletes
+  on a schedule, and stops claiming anything about the rest.** It had said
+  automatic deletion covered "cobrowse content only", and that everything else
+  stayed until an operator removed it. Four scheduled commands said otherwise.
+  Each now has its own row, in all three languages, naming the command and the
+  window: visitor records that never produced a conversation (30 days); the record of
   which proactive message reached which visitor (90 days); abandoned and failed
   uploads, with their binaries; and public API write receipts (24 hours), which
   carry the token a write was made with — and through it the account and the
@@ -399,7 +399,10 @@ page view that was not there before.
   **The closing claim is gone rather than corrected.** "Everything not listed
   above stays until an operator removes it" is an unbounded assertion about
   every table in the schema, and keeping it true would mean auditing the schema
-  on every migration. What remains is the part an operator can act on: removing
+  on every migration. So the panel documents the classes it documents, and says
+  nothing about the others: short-lived work-queue rows, for instance, are
+  deleted by the jobs that consume them and are not retention in any sense a
+  subject-access request would reach. What remains is the part an operator can act on: removing
   or exporting the records of one person on request is still manual, for every
   class, and is separate from the scheduled deletions above.
 
@@ -521,10 +524,12 @@ page view that was not there before.
   they do not own.** Three of its seven checks are instance operations — realtime
   delivery, the queue driver, the scheduler — and they always counted toward the
   headline verdict while linking nowhere for anyone who is not the platform
-  operator. A self-hosted install cannot produce that reader, because its
-  bootstrap makes the first user both roles; anyone running Wayfindr on someone
-  else's behalf gets three unactionable items on the first screen and a verdict
-  they cannot move. The headline now describes the account, the instance checks
+  operator. The install's first user never sees it, because the bootstrap makes
+  them both roles — but promoting a second agent to owner leaves their platform
+  role unset, so a self-hosted install produces this reader as soon as it has
+  two owners, and an agency running Wayfindr for a client produces it on day
+  one. That reader gets three unactionable items on the first screen and a
+  verdict they cannot move. The headline now describes the account, the instance checks
   keep their place under their own heading with their own status beside the
   verdict rather than inside it, and every one of them names who can act.
 
@@ -535,10 +540,11 @@ page view that was not there before.
 
 - **The site settings page stops showing an account admin the operator's install
   checklist.** Managing sites was enough to be shown the post-install smoke path:
-  six steps, each marked "needs attention", each with shell commands and a copy
-  button, including a cron line carrying a literal `/path/to/apps/server`. It is
-  written for somebody with a shell on the server, and an account admin does not
-  necessarily have one. The readiness panel above already tells them whether the
+  six steps whose statuses track whatever the install has not finished, half of
+  them carrying copyable shell commands — `php artisan queue:work`, a mail test,
+  and a cron line with a literal `/path/to/apps/server` in it. It is written for
+  somebody with a shell on the server, and an account admin does not necessarily
+  have one. The readiness panel above already tells them whether the
   install is healthy and whose job it is to fix.
 
 ### Security
