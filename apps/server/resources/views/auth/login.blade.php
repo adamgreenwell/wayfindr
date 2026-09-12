@@ -12,7 +12,12 @@
                  type. --}}
             @if (session('status'))
                 <div class="notice-copy">
-                    <p>{{ session('status') }}</p>
+                    {{-- `__()` returns a non-key string unchanged, so this costs
+                         nothing for the literals PasswordResetController flashes
+                         and stops a raw key ever reaching the page. The rule is
+                         in docs/product/dashboard-language.md: a flash belongs to
+                         the destination, not the controller. --}}
+                    <p>{{ __(session('status')) }}</p>
                 </div>
             @endif
 
@@ -31,7 +36,7 @@
                         autofocus
                     >
                     @error('email')
-                        <p class="field-error">{{ $message }}</p>
+                        <p class="field-error">{{ __($message) }}</p>
                     @enderror
                 </div>
 
@@ -45,7 +50,7 @@
                         required
                     >
                     @error('password')
-                        <p class="field-error">{{ $message }}</p>
+                        <p class="field-error">{{ __($message) }}</p>
                     @enderror
                 </div>
 
@@ -78,7 +83,7 @@
                         required
                     >
                     @error('account_slug')
-                        <p class="field-error">{{ $message }}</p>
+                        <p class="field-error">{{ __($message) }}</p>
                     @enderror
                 </div>
 

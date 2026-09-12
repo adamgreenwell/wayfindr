@@ -10,7 +10,7 @@ return [
         'submit' => 'Completa l’accesso',
         'back' => 'Torna all’accesso',
         'invalid' => 'Il codice di autenticazione non è valido.',
-        'expired' => 'Questo tentativo di accesso è scaduto. Ricomincia.',
+        'expired' => 'Questo tentativo di accesso è scaduto. Ricominci.',
     ],
     'profile' => [
         'heading' => 'Autenticazione a due fattori',

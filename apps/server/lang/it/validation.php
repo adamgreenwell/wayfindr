@@ -88,6 +88,7 @@ return [
      * spells them.
      */
     'attributes' => [
+        'one_time_code' => 'Codice di autenticazione',
         // Every field an Italian page can submit. Without a name here the rule
         // interpolates the column: "Il campo body non può contenere più di 4000
         // caratteri." House terms come from the glossary -- a reply helper is

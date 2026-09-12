@@ -471,3 +471,105 @@ test('the account requirement prevents two factor from being disabled', function
 
     expect($agent->fresh()->hasTwoFactorAuthentication())->toBeTrue();
 });
+
+test('the challenge speaks the install language to an agent who never chose one', function (): void {
+    // The common case on any install that turned the dashboard language on after
+    // it had agents: `locale` is null on every one of them. The challenge read
+    // `config('app.locale')` as its fallback, and SetDashboardLocale has already
+    // written that key by the time the controller runs -- so the fallback could
+    // only ever read back FALLBACK, and the one screen between a German agent's
+    // password and their German dashboard came out in English.
+    config(['wayfindr.dashboard_locale' => 'de', 'app.locale' => 'de']);
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'password' => Hash::make('correct-password'),
+        'locale' => null,
+    ]);
+    giveAgentTwoFactor($agent);
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'correct-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    $this->get(route('two-factor.challenge'))
+        ->assertOk()
+        ->assertSee('<html lang="de">', false)
+        ->assertSee('Identität bestätigen')
+        ->assertDontSee('Confirm it is you');
+});
+
+test('an agent who chose a language keeps it over the install default', function (): void {
+    // The control for the test above. Reading the agent first is the whole point
+    // of resolving through DashboardLanguage::for(), and a fix that simply used
+    // the install default everywhere would pass the first test and fail this one.
+    config(['wayfindr.dashboard_locale' => 'de', 'app.locale' => 'de']);
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'password' => Hash::make('correct-password'),
+        'locale' => 'it',
+    ]);
+    giveAgentTwoFactor($agent);
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'correct-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    $this->get(route('two-factor.challenge'))
+        ->assertOk()
+        ->assertSee('<html lang="it">', false)
+        ->assertDontSee('Identität bestätigen');
+});
+
+test('the expired message lands on the sign-in page in the page own language', function (): void {
+    // The challenge translates for the AGENT; the sign-in page it redirects to is
+    // English. Flashing a translated sentence put one German line inside an
+    // `<html lang="en">` document, which a screen reader pronounces with English
+    // phonetics. The key travels instead, and the destination translates it.
+    config(['wayfindr.dashboard_locale' => 'de', 'app.locale' => 'de']);
+
+    $agent = User::factory()->for(Account::factory())->create([
+        'password' => Hash::make('correct-password'),
+        'locale' => 'de',
+    ]);
+    giveAgentTwoFactor($agent);
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'correct-password',
+    ])->assertRedirect(route('two-factor.challenge'));
+
+    // The documented way a pending challenge expires: the credential it was
+    // opened against changes underneath it.
+    $agent->forceFill(['password' => Hash::make('a-different-password')])->save();
+
+    $this->followingRedirects()
+        ->post(route('two-factor.challenge.store'), ['one_time_code' => '123456'])
+        ->assertOk()
+        ->assertSee('That sign-in attempt expired. Please start again.')
+        ->assertDontSee('Dieser Anmeldeversuch ist abgelaufen.')
+        ->assertDontSee('two_factor.challenge.expired');
+});
+
+test('the German and Italian challenge address the agent formally, and name the field', function (): void {
+    // Every other string in the challenge block uses Sie and Lei. `expired` alone
+    // said "Bitte beginne erneut" and "Ricomincia" -- the du and tu imperatives --
+    // and the register linter does not see a bare imperative with no pronoun in it.
+    $de = require lang_path('de/two_factor.php');
+    $it = require lang_path('it/two_factor.php');
+
+    expect($de['challenge']['expired'])->toContain('beginnen Sie')
+        ->and($de['challenge']['expired'])->not->toContain('beginne erneut')
+        ->and($it['challenge']['expired'])->toContain('Ricominci.')
+        ->and($it['challenge']['expired'])->not->toContain('Ricomincia');
+
+    // `one_time_code` is the only field this page validates, and neither
+    // catalogue named it -- so a German agent pasting a recovery code with its
+    // dashes was told "one time code darf hoechstens 32 Zeichen lang sein".
+    $deAttributes = (require lang_path('de/validation.php'))['attributes'];
+    $itAttributes = (require lang_path('it/validation.php'))['attributes'];
+
+    expect($deAttributes)->toHaveKey('one_time_code')
+        ->and($itAttributes)->toHaveKey('one_time_code');
+});
