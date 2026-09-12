@@ -179,16 +179,19 @@ test('publishing refuses a changelog section dated before the release commit', f
     expect($assert)->toThrow(RuntimeException::class);
 })->with([
     'the commit day itself' => ['2026-09-12', true],
-    // One day of slack absorbs timezone skew between whoever wrote the heading
-    // and the committer.
+    // A day either side absorbs timezone skew between whoever wrote the heading
+    // and the committer, in whichever direction it lands.
     'the day before' => ['2026-09-11', true],
-    // LATER is fine and expected: a tag pushed some days after the release
-    // commit landed is ordinary, and refusing it recreates the blocking failure
-    // from the other side.
     'the day after' => ['2026-09-13', true],
-    'a week after' => ['2026-09-19', true],
     'two days before' => ['2026-09-10', false],
     'a week before' => ['2026-09-05', false],
+    // Symmetric on purpose. This passed while the bound was one-sided, on the
+    // reasoning that a tag pushed days after its commit is ordinary -- true
+    // when the heading recorded the TAG day, which is no longer the rule. A
+    // heading far after its commit is now a typo.
+    'two days after' => ['2026-09-14', false],
+    'a week after' => ['2026-09-19', false],
+    'a year out' => ['2027-09-12', false],
     'no date at all' => [null, false],
     'not a date' => ['soon', false],
     'wrong shape' => ['12-09-2026', false],

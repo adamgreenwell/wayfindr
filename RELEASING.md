@@ -51,6 +51,30 @@ Move `## [Unreleased]` content in [CHANGELOG.md](CHANGELOG.md) into a new
 action** (followed by exactly what to do) or **No operator action required**, and
 mark the individual entries that need hands with **⚠ Operator action**.
 
+**If that section already exists, set its date to the day you make the release
+commit in step 3.** Notes are often moved out of Unreleased days or weeks before
+the cut — the section is frozen from that moment, and its date silently ages
+with it. That date is the release date every reader sees.
+
+The release commit rather than "the day you tag", deliberately. The two are
+minutes apart in the ordinary flow, but only one of them is knowable while you
+are editing the heading: exact-SHA CI sits between them, and a slow run or a
+commit made near midnight can carry the tag into the next day. The commit is
+also the release identity everything else derives from — the image build, the
+manifest, and the history entry all read it — so dating the notes by it is both
+precise and checkable.
+
+A tag created the day after its commit therefore ships notes dated the commit's
+day, and that is the intended outcome rather than a defect to chase.
+Re-committing to correct that drift would start a fresh exact-SHA CI run which
+can cross midnight in its turn, so the remedy does not converge.
+
+The preflight in step 3 refuses a section dated more than a day from the commit
+in either direction — a day of tolerance for timezone skew between whoever wrote
+the heading and the committer, and an upper edge so a mistyped year cannot
+publish. Both edges are measured against the commit rather than the clock, so
+neither can fail a rerun of the publish job.
+
 Write it for someone several releases behind who has never read the PR.
 
 Every human action in the changelog needs a matching action in `release.json`.

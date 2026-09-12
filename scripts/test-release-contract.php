@@ -516,12 +516,18 @@ function releaseCommitDate(string $root): string
  * leave the release permanently unpublishable. A guard against a cosmetic
  * defect must not be able to block a release.
  *
- * The falsifiable property is therefore one-sided: notes cannot predate the
- * commit they describe. A heading LATER than the commit is fine and expected --
- * a tag pushed some days after the release commit landed is an ordinary thing
- * to do, and refusing it would recreate the same blocking failure from the
- * other side. One day of slack absorbs timezone skew between whoever wrote the
- * heading and the committer.
+ * A day either side of the commit, symmetrically. This was one-sided at first,
+ * on the reasoning that a heading LATER than its commit is expected because a
+ * tag pushed days after the commit is ordinary -- but that belonged to an
+ * earlier rule where the heading recorded the day of the TAG. RELEASING.md now
+ * dates the notes by the release commit, precisely because the tagging day is
+ * not knowable while the heading is being written, so a heading far after its
+ * commit is a typo rather than a late tag. An unbounded upper edge let
+ * 2027-09-12 publish.
+ *
+ * Both edges are measured against the commit, which is immutable, so neither
+ * can fail on a rerun. That is the property that matters; the earlier
+ * wall-clock version could block a release, and this cannot.
  */
 function assertReleaseDateIsCurrent(?string $date, string $version, string $releasedOn): void
 {
@@ -539,15 +545,16 @@ function assertReleaseDateIsCurrent(?string $date, string $version, string $rele
     $commit = parseContractDate($releasedOn)
         ?? throw new RuntimeException("could not read the release commit date: \"{$releasedOn}\".");
 
-    if ($heading >= $commit->modify('-1 day')) {
+    if ($heading >= $commit->modify('-1 day') && $heading <= $commit->modify('+1 day')) {
         return;
     }
 
     $drift = (int) $heading->diff($commit)->days;
+    $direction = $heading < $commit ? 'before' : 'after';
 
     throw new RuntimeException(
-        "the [{$version}] changelog section is dated {$date}, {$drift} days before the release commit ({$releasedOn}). "
-        .'Set it to the day the release is tagged; it ships as the release date.'
+        "the [{$version}] changelog section is dated {$date}, {$drift} days {$direction} the release commit ({$releasedOn}). "
+        .'Set it to the day of the release commit; it ships as the release date.'
     );
 }
 
