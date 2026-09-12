@@ -518,12 +518,7 @@ class AgentVisitorController extends Controller
             unset($hostContext[$key]);
         }
 
-        $identity = VisitorLabel::fromCandidates([
-            $visitor->name,
-            $visitor->email,
-            $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id),
-            $visitor->anonymous_id,
-        ], __('visitors.common.not_provided'));
+        $identity = VisitorLabel::forVisitor($visitor, __('visitors.common.not_provided'));
 
         return [
             'anonymous_id' => $visitor->anonymous_id,

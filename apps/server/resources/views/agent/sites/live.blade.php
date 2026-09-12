@@ -61,10 +61,11 @@
                             <tr data-visitor-id="{{ $visitor['id'] }}" data-last-seen="{{ $visitor['last_web_seen_at'] }}">
                                 <td>
                                     @if ($visitor['made_contact'])
-                                        {{-- A name or address the VISITOR gave, so it is
-                                             their words and not the agent's language. The
-                                             `Visitor 41` fallback is ours and is not marked. --}}
-                                        <a href="{{ $visitor['profile_url'] }}">@if ($visitor['name'] ?? $visitor['email'])<span lang="">{{ $visitor['name'] ?? $visitor['email'] }}</span>@else{{ __('sites_live.board.unnamed', ['id' => $visitor['id']]) }}@endif</a>
+                                        {{-- An identifier the VISITOR or their host gave, so
+                                             it is their words and not the agent's language. The
+                                             `Visitor 41` fallback is ours and is not marked.
+                                             The payload resolved which of the two this is. --}}
+                                        <a href="{{ $visitor['profile_url'] }}">@if ($visitor['label'] !== null)<span lang="">{{ $visitor['label'] }}</span>@else{{ __('sites_live.board.unnamed', ['id' => $visitor['id']]) }}@endif</a>
                                         @if ($canViewConversationCounts)
                                             <span class="lede" data-live-conversation-count data-count="{{ $visitor['conversations_count'] }}">{{ trans_choice('sites_live.board.conversations', $visitor['conversations_count'], ['count' => \App\Support\ReaderNumber::count($visitor['conversations_count'])]) }}</span>
                                         @endif
@@ -376,11 +377,18 @@
                         // and looking like the page had simply lost them.
                         var link = document.createElement('a');
 
-                        // A name or address the VISITOR gave is their words; the
-                        // numbered fallback is ours, so only the first is marked.
-                        if (visitor.name || visitor.email) {
+                        // An identifier the VISITOR or their host gave is their
+                        // words; the numbered fallback is ours, so only the
+                        // first is marked. `label` is null when there is
+                        // nothing of theirs to use, which is the same decision
+                        // the server-rendered table above makes -- it is made
+                        // once, in the payload, rather than twice here.
+                        // Compared against null, never tested for truthiness:
+                        // "0" is a label this product accepts and `if (label)`
+                        // discards it exactly as `?:` did on the server.
+                        if (visitor.label !== null && visitor.label !== undefined) {
                             link.setAttribute('lang', '');
-                            link.textContent = visitor.name || visitor.email;
+                            link.textContent = visitor.label;
                         } else {
                             link.removeAttribute('lang');
                             link.textContent = copy.unnamed.replace(':id', visitor.id);

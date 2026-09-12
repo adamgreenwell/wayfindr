@@ -339,10 +339,13 @@
                 <p class="lede">{{ __('visitor_merge.search.limit') }}</p>
                 <div class="timeline-list">
                     @foreach ($mergeCandidates as $candidate)
-                        @php($candidateLabel = $candidate->name ?: $candidate->email ?: $candidate->external_id ?: $candidate->anonymous_id)
+                        {{-- The precedence is right here, but `?:` still skipped the
+                             string "0" and an all-null candidate rendered an empty
+                             heading. Through the resolver like everywhere else. --}}
+                        @php($candidateIdentity = \App\Support\Visitors\VisitorLabel::forVisitor($candidate, __('visitor_merge.candidate.not_provided')))
                         <article class="timeline-item">
                             <div class="timeline-content">
-                                <strong lang="">{{ $candidateLabel }}</strong>
+                                <strong @if ($candidateIdentity['is_theirs']) lang="" @endif>{{ $candidateIdentity['label'] }}</strong>
                                 <div class="timeline-meta">
                                     <span>{{ __('visitor_merge.candidate.email') }}: @if ($candidate->email)<span lang="">{{ $candidate->email }}</span>@else{{ __('visitor_merge.candidate.not_provided') }}@endif</span>
                                     <span>{{ __('visitor_merge.candidate.host_id') }}: @if ($candidate->external_id)<span lang="">{{ $candidate->external_id }}</span>@else{{ __('visitor_merge.candidate.not_provided') }}@endif</span>

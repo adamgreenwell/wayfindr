@@ -911,3 +911,132 @@ test('a retained browser id finds the canonical contact across support search su
         ->assertSee('Contact note added')
         ->assertSee('Canonical Search Result');
 });
+
+test('a merge candidate found by host id is headed by that host id', function (): void {
+    // This surface already had the precedence right; the guard pins it so the
+    // move onto the shared resolver did not quietly reorder it. A contact the
+    // host knows only as `billing-4021` is findable by that string and must be
+    // headed by it, not by the browser id listed two lines below.
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['name' => 'Duplicate Contact']);
+
+    Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'billing-4021',
+        'anonymous_id' => 'anon-merge-host',
+    ]);
+
+    $html = $this->actingAs($manager)
+        ->get(route('dashboard.visitors.show', [$source, 'merge_search' => 'billing-4021']))
+        ->assertOk()
+        ->getContent();
+
+    expect(visitorMergeCandidateHeadings($html))->toBe(['billing-4021']);
+});
+
+test('a merge candidate named by the digit zero is not headed by the browser id', function (): void {
+    // `?:` treats the string "0" as absent. A host that numbers its accounts
+    // from zero had contact 0 headed by an opaque browser id.
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['name' => 'Duplicate Contact']);
+
+    Visitor::factory()->for($site)->create([
+        'name' => '0',
+        'email' => null,
+        'external_id' => null,
+        'anonymous_id' => 'anon-merge-zero',
+    ]);
+
+    $html = $this->actingAs($manager)
+        ->get(route('dashboard.visitors.show', [$source, 'merge_search' => 'anon-merge-zero']))
+        ->assertOk()
+        ->getContent();
+
+    expect(visitorMergeCandidateHeadings($html))->toBe(['0']);
+});
+
+test('a candidate found only through a retained browser id still has a heading', function (): void {
+    // The search also matches alias rows, so a canonical contact whose own four
+    // fields are empty is reachable by a browser id it absorbed in an earlier
+    // merge. The old chain had no fallback at all, so that candidate rendered an
+    // EMPTY heading -- and the heading was marked `lang=""` regardless, which
+    // announces our own English sentence as an unknown tongue.
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['name' => 'Duplicate Contact']);
+
+    $nameless = Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => null,
+        'anonymous_id' => null,
+    ]);
+
+    VisitorIdentityAlias::create([
+        'visitor_id' => $nameless->id,
+        'site_id' => $site->id,
+        'anonymous_id' => 'absorbed-browser-1',
+    ]);
+
+    $html = $this->actingAs($manager)
+        ->get(route('dashboard.visitors.show', [$source, 'merge_search' => 'absorbed-browser-1']))
+        ->assertOk()
+        ->getContent();
+
+    expect(visitorMergeCandidateHeadings($html))->toBe([__('visitor_merge.candidate.not_provided')]);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+    $strong = $xpath->query('//article[contains(@class, "timeline-item")]//strong')->item(0);
+
+    // `getAttribute` returns '' both for lang="" and for no lang at all, so ask
+    // whether the attribute is there, not what it holds.
+    expect($strong?->hasAttribute('lang'))->toBeFalse(
+        'the fallback is our copy, not the visitor\'s, and must not be language-reset'
+    );
+});
+
+test('a merge candidate heading never shows a host identifier that carries an address', function (): void {
+    // Searchable by it, and still not displayable: the search matches the raw
+    // column, the heading shows what the resolver will part with.
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['name' => 'Duplicate Contact']);
+
+    Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'ada@example.test',
+        'anonymous_id' => 'anon-merge-address',
+    ]);
+
+    $html = $this->actingAs($manager)
+        ->get(route('dashboard.visitors.show', [$source, 'merge_search' => 'ada@example.test']))
+        ->assertOk()
+        ->getContent();
+
+    expect(visitorMergeCandidateHeadings($html))->toBe(['anon-merge-address']);
+});
+
+function visitorMergeCandidateHeadings(string $html): array
+{
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $headings = [];
+
+    foreach ($xpath->query('//article[contains(@class, "timeline-item")]//strong') as $node) {
+        $headings[] = trim($node->textContent);
+    }
+
+    return $headings;
+}

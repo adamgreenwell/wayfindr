@@ -124,7 +124,7 @@ test('a visitor who has been in touch is marked as such', function (): void {
 
     expect($row['made_contact'])->toBeTrue()
         ->and($row['conversations_count'])->toBe(1)
-        ->and($row['name'])->toBe('Dana');
+        ->and($row['label'])->toBe('Dana');
 });
 
 test('the board belongs to one site', function (): void {
@@ -1656,4 +1656,111 @@ test('the board keeps its own connection alive', function (): void {
         mb_strpos($closeHandler, 'stopKeepalive();'),
         'a close from a replaced socket stops the current keepalive'
     );
+});
+
+test('the board calls a visitor what their profile calls them', function (): void {
+    // The board knew about `name` and `email` only and otherwise fell back to
+    // `Visitor <database id>`, so a contact the host calls `customer-123` had
+    // one name here and another on the profile this row links to. The whole
+    // point of a board is recognising somebody, and a surrogate id is the one
+    // string that identifies them to nobody.
+    $f = boardFixture();
+
+    $visitor = presentVisitor($f['site'], 'anon-board-host', [
+        'name' => null,
+        'email' => null,
+        'external_id' => 'customer-123',
+        'presence_only' => false,
+    ]);
+
+    $html = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('customer-123')
+        ->and($html)->not->toContain(__('sites_live.board.unnamed', ['id' => $visitor->id]));
+});
+
+test('the board does not show a host identifier that carries an address', function (): void {
+    // `external_id` is the one identifier the HOST wrote, so it is the one that
+    // can carry something a support desk should not display. The detail pages
+    // ran it through the sanitiser; the board, the queue and the visitor list
+    // did not, until the redaction moved inside the resolver.
+    $f = boardFixture();
+
+    $visitor = presentVisitor($f['site'], 'anon-board-address', [
+        'name' => null,
+        'email' => null,
+        'external_id' => 'ada@example.test',
+        'presence_only' => false,
+    ]);
+
+    $html = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain('ada@example.test');
+
+    // and it is not simply blank: the browser id is still theirs to show.
+    expect($html)->toContain('anon-board-address');
+});
+
+test('the broadcast row carries one resolved label, not the raw fields', function (): void {
+    // Two renderers read this row -- the Blade table and the socket handler
+    // under it -- and each used to decide the name for itself. The row now
+    // answers it once. It carries the visitor\'s own string or null, never our
+    // fallback sentence, because every agent watching reads it in their own
+    // language.
+    $f = boardFixture();
+
+    $named = presentVisitor($f['site'], 'anon-row-named', [
+        'name' => null, 'email' => null, 'external_id' => 'customer-9', 'presence_only' => false,
+    ]);
+    $anonymous = presentVisitor($f['site'], 'anon-row-plain');
+
+    $rows = LiveVisitorBoard::for($f['site'])->keyBy('id');
+
+    expect($rows[$named->id]['label'])->toBe('customer-9')
+        ->and($rows[$anonymous->id]['label'])->toBe('anon-row-plain')
+        ->and($rows[$named->id])->not->toHaveKey('email');
+});
+
+test('the board calls a visitor named zero by their name', function (): void {
+    // The resolver carries "0" correctly and then the payload threw it away
+    // again with `?: null`, one line after asking for it. The board showed
+    // `Visitor 41` for a contact the host calls 0.
+    $f = boardFixture();
+
+    $visitor = presentVisitor($f['site'], 'anon-board-zero', [
+        'name' => '0',
+        'email' => null,
+        'external_id' => null,
+        'presence_only' => false,
+    ]);
+
+    expect(LiveVisitorBoard::for($f['site'])->firstWhere('id', $visitor->id)['label'])->toBe('0');
+
+    $html = test()->actingAs($f['agent'])
+        ->get(route('dashboard.sites.live', $f['site']))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain(__('sites_live.board.unnamed', ['id' => $visitor->id]));
+});
+
+test('the socket renderer distinguishes an absent label from the string zero', function (): void {
+    // A SOURCE check, and it says so: the renderer is inline JavaScript in a
+    // Blade file and there is no JS runner in this repo, so no test can execute
+    // it. What it can do is refuse the one construction that is wrong for a
+    // value which may legitimately be "0" -- the same truthiness mistake the
+    // server side made on the line above it.
+    $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
+
+    expect($source)->toContain('visitor.label !== null');
+
+    // `if (visitor.label)` and `visitor.label ? ... : ...` both discard "0".
+    expect($source)->not->toMatch('/if\s*\(\s*visitor\.label\s*\)/')
+        ->and($source)->not->toMatch('/visitor\.label\s*\?[^?=]/');
 });

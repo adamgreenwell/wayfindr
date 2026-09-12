@@ -22,6 +22,7 @@ use App\Models\Visitor;
 use App\Models\VisitorAttributeDefinition;
 use App\Support\ReaderClock;
 use App\Support\SpreadsheetSafeCsv;
+use App\Support\Visitors\VisitorLabel;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -915,15 +916,21 @@ class AgentAccountAuditController extends Controller
         return is_string($name) && trim($name) !== '' ? $name : null;
     }
 
+    /**
+     * The eighth surface that names a visitor, and the last to do it alone.
+     *
+     * Its own filter handled "0" correctly, which the `?:` chains did not, but
+     * it passed the host's `external_id` through unredacted like the other
+     * list surfaces -- so an audit row could print an address the detail page
+     * for the same visitor hides.
+     *
+     * The fallback stays local and stays the database id ON PURPOSE. Every
+     * other surface says a sentence, because it names one visitor in front of
+     * the reader; a log names many, and two rows reading "Unknown visitor"
+     * cannot be told apart by somebody reconstructing what happened.
+     */
     private function visitorLabel(Visitor $visitor): string
     {
-        return collect([
-            $visitor->name,
-            $visitor->email,
-            $visitor->external_id,
-            $visitor->anonymous_id,
-        ])
-            ->filter(fn ($value): bool => is_string($value) && trim($value) !== '')
-            ->first() ?? '#'.$visitor->id;
+        return VisitorLabel::forVisitor($visitor, '#'.$visitor->id)['label'];
     }
 }

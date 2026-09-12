@@ -1102,12 +1102,7 @@ class AgentConversationController extends Controller
         $visitorMetadata = $visitor?->metadata ?? [];
         $conversationMetadata = $conversation->metadata ?? [];
 
-        $identity = VisitorLabel::fromCandidates([
-            $visitor?->name,
-            $visitor?->email,
-            $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
-            $visitor?->anonymous_id,
-        ], __('conversations.detail.unknown_visitor'));
+        $identity = VisitorLabel::forVisitor($visitor, __('conversations.detail.unknown_visitor'));
 
         return [
             // Whether the visitor gave the platform ANY identifier of their own.

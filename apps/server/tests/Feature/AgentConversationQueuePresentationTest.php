@@ -428,3 +428,140 @@ test('the queue switcher does not rebuild the whole lane', function (): void {
     expect(Conversation::query()->count())
         ->toBeGreaterThan(ConversationQueueQuery::DISPLAY_LIMIT);
 });
+
+test('the queue names a visitor the same way the row it opens does', function (): void {
+    // The fifth naming surface, and the last to build its own answer. It kept
+    // TWO expressions in step by hand -- the label and whether to reset the
+    // language -- which is what the shared resolver exists to make impossible,
+    // and it omitted the host identifier. So the queue showed an opaque browser
+    // id for a visitor the conversation it opens calls `customer-123`.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'customer-123',
+        'anonymous_id' => 'anon-queue',
+    ]);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-QUEUEHOST',
+        'subject' => 'Known to the host',
+        'status' => 'open',
+    ]);
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('customer-123')
+        ->and($html)->not->toContain('anon-queue');
+});
+
+test('the queue calls a visitor named zero by their name', function (): void {
+    // `?:` reads the string "0" as absent, so a host numbering contacts from
+    // zero had contact 0 shown under an opaque browser id -- on every surface
+    // that built its own chain, which was all of them.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => '0',
+        'email' => null,
+        'external_id' => null,
+        'anonymous_id' => 'anon-queue-zero',
+    ]);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-QUEUEZERO',
+        'subject' => 'Contact number zero',
+        'status' => 'open',
+    ]);
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+    $cell = $xpath->query('//*[contains(@class, "wf-queue-assignee")]')->item(0);
+
+    expect(trim((string) $cell?->textContent))->toBe('0');
+});
+
+test('the queue does not mark its own unknown-visitor sentence as the visitor language', function (): void {
+    // The pair the resolver returns together. Marking our own fallback with
+    // `lang=""` announces English copy as an unknown tongue; the two
+    // hand-maintained expressions could drift into exactly that.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent', 'locale' => 'de']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => null, 'email' => null, 'external_id' => null, 'anonymous_id' => null,
+    ]);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-QUEUEANON',
+        'subject' => 'No identifier at all',
+        'status' => 'open',
+    ]);
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    $fallback = __('conversations.row.unknown_visitor', [], 'de');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $nodes = $xpath->query('//*[normalize-space(text())="'.$fallback.'"]');
+
+    expect($nodes->length)->toBeGreaterThan(0, 'the translated fallback did not render');
+
+    foreach ($nodes as $node) {
+        expect($node->hasAttribute('lang'))->toBeFalse(
+            'the queue marked its own fallback as unknown-language text'
+        );
+    }
+});
+
+test('the queue never shows a host identifier that carries an address', function (): void {
+    // Adding `external_id` to the queue\'s candidates fixed one defect and
+    // opened another: the detail page it opens redacts that field, so the queue
+    // would have shown an address the row itself hides -- and in the row\'s
+    // `title` attribute at full length. The redaction belongs with the order.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'ada@example.test',
+        'anonymous_id' => 'anon-queue-address',
+    ]);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-QUEUEADDR',
+        'subject' => 'Host stored an address',
+        'status' => 'open',
+    ]);
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain('ada@example.test')
+        ->and($html)->toContain('anon-queue-address');
+});
