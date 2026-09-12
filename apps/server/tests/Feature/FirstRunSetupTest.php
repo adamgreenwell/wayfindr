@@ -367,4 +367,30 @@ test('a rejected field is tied to its own error message', function (): void {
 
     // and the invalid state sits on the field, not only in the prose
     expect(substr_count($html, 'aria-invalid="true"'))->toBeGreaterThanOrEqual(4);
+
+    // Every marked input must point at ITS OWN field's message. Resolving to
+    // something that renders is not enough: my first pass wired
+    // password_confirmation to site_name's error, which resolved perfectly and
+    // told a screen reader the wrong control was invalid.
+    preg_match_all('/<input\b[^>]*>/s', $html, $inputs);
+
+    foreach ($inputs[0] as $input) {
+        if (! str_contains($input, 'aria-describedby=')) {
+            continue;
+        }
+
+        preg_match('/name="([a-z_0-9]+)"/', $input, $name);
+        preg_match('/aria-describedby="([^"]*)"/', $input, $described);
+
+        foreach (preg_split('/\s+/', trim($described[1])) ?: [] as $token) {
+            if ($token === '' || str_ends_with($token, '-help')) {
+                continue;
+            }
+
+            expect($token)->toBe(
+                $name[1].'-error',
+                "the {$name[1]} input points at {$token}, which belongs to another field",
+            );
+        }
+    }
 });

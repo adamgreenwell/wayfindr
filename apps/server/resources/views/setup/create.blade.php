@@ -92,8 +92,6 @@
                         name="password_confirmation"
                         type="password"
                         autocomplete="new-password"
-                        aria-describedby="@error('site_name') password_confirmation-error @enderror"
-                        @error('site_name') aria-invalid="true" @enderror
                         required
                     >
                 </div>
@@ -105,10 +103,12 @@
                         name="site_name"
                         type="text"
                         value="{{ old('site_name') }}"
+                        aria-describedby="@error('site_name') site_name-error @enderror"
+                        @error('site_name') aria-invalid="true" @enderror
                         required
                     >
                     @error('site_name')
-                        <p id="password_confirmation-error" class="field-error">{{ $message }}</p>
+                        <p id="site_name-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 
@@ -121,8 +121,8 @@
                         inputmode="url"
                         value="{{ old('site_domain') }}"
                         placeholder="docs.example.com"
-                    aria-describedby="@error('site_domain') site_domain-error @enderror"
-                    @error('site_domain') aria-invalid="true" @enderror
+                        aria-describedby="@error('site_domain') site_domain-error @enderror"
+                        @error('site_domain') aria-invalid="true" @enderror
                     >
                     <p class="field-help">Optional. You can connect more sites later.</p>
                     @error('site_domain')
