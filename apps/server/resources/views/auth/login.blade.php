@@ -34,9 +34,11 @@
                         value="{{ old('email') }}"
                         required
                         autofocus
+                    aria-describedby="@error('email') email-error @enderror"
+                    @error('email') aria-invalid="true" @enderror
                     >
                     @error('email')
-                        <p class="field-error">{{ __($message) }}</p>
+                        <p id="email-error" class="field-error">{{ __($message) }}</p>
                     @enderror
                 </div>
 
@@ -47,10 +49,12 @@
                         name="password"
                         type="password"
                         autocomplete="current-password"
+                        aria-describedby="@error('password') password-error @enderror"
+                        @error('password') aria-invalid="true" @enderror
                         required
                     >
                     @error('password')
-                        <p class="field-error">{{ __($message) }}</p>
+                        <p id="password-error" class="field-error">{{ __($message) }}</p>
                     @enderror
                 </div>
 
@@ -87,10 +91,12 @@
                              setup/create's free-text account name.) --}}
                         autocomplete="off"
                         value="{{ old('account_slug') }}"
+                        aria-describedby="@error('account_slug') account_slug-error @enderror"
+                        @error('account_slug') aria-invalid="true" @enderror
                         required
                     >
                     @error('account_slug')
-                        <p class="field-error">{{ __($message) }}</p>
+                        <p id="account_slug-error" class="field-error">{{ __($message) }}</p>
                     @enderror
                 </div>
 

@@ -325,3 +325,46 @@ test('both password screens state the rule before they can reject you', function
         ->assertSee('At least 12 characters')
         ->assertSee('id="password-help"', false);
 });
+
+test('a rejected field is tied to its own error message', function (): void {
+    // Not an attribute count. The property that matters is that the token in
+    // aria-describedby resolves to the element carrying the message -- a wired
+    // input pointing at an id nothing renders announces nothing. My own first
+    // pass produced exactly that: ids derived from the error paragraph rather
+    // than the input, so `agent_name-error-error`.
+    $payload = [
+        'account_name' => '', 'agent_name' => '',
+        'agent_email' => 'not-an-address',
+        'password' => 'short', 'password_confirmation' => 'different',
+        'site_name' => '',
+    ];
+
+    $this->from(route('setup.create'))->post(route('setup.store'), $payload);
+
+    $html = $this->followingRedirects()
+        ->post(route('setup.store'), $payload)
+        ->assertOk()
+        ->getContent();
+
+    // Blade's @error directive leaves whitespace inside the attribute, which is
+    // fine -- aria-describedby is a space-separated token list -- so the
+    // assertion reads the tokens rather than the byte string.
+    preg_match_all('/aria-describedby="([^"]*)"/', $html, $matches);
+
+    $tokens = collect($matches[1])
+        ->flatMap(fn (string $value): array => preg_split('/\s+/', trim($value)) ?: [])
+        ->filter()
+        ->all();
+
+    expect($tokens)->not->toBeEmpty();
+
+    foreach (['account_name', 'agent_name', 'agent_email', 'password'] as $field) {
+        // the input points at an id...
+        expect($tokens)->toContain($field.'-error');
+        // ...and something renders that id
+        expect($html)->toContain('id="'.$field.'-error"');
+    }
+
+    // and the invalid state sits on the field, not only in the prose
+    expect(substr_count($html, 'aria-invalid="true"'))->toBeGreaterThanOrEqual(4);
+});

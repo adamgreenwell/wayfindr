@@ -23,9 +23,11 @@
                         value="{{ old('email') }}"
                         required
                         autofocus
+                    aria-describedby="@error('email') email-error @enderror"
+                    @error('email') aria-invalid="true" @enderror
                     >
                     @error('email')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="email-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 

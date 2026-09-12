@@ -15,10 +15,12 @@
                         autocomplete="one-time-code"
                         required
                         autofocus
+                    aria-describedby="@error('one_time_code') one_time_code-error @enderror"
+                    @error('one_time_code') aria-invalid="true" @enderror
                     >
                     <p class="field-help">{{ __('two_factor.challenge.help') }}</p>
                     @error('one_time_code')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="one_time_code-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 

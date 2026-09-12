@@ -16,10 +16,12 @@
                         type="email"
                         autocomplete="email"
                         value="{{ old('email', $email) }}"
+                        aria-describedby="@error('email') email-error @enderror"
+                        @error('email') aria-invalid="true" @enderror
                         required
                     >
                     @error('email')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="email-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 

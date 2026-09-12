@@ -419,11 +419,15 @@ page view that was not there before.
   parameterised routes by static prefix, so each fragment passed on the
   conversation index's coverage without ever being rendered.
 
-- **A visitor is called one thing across the product.** Three controllers each
-  carried a private `visitorContext()`, and the conversation page printed a raw
-  `anon-6871486e` beside a tab showing the person's name. Each surface now
-  resolves one label in the precedence its own list already used — name, then
-  address, then the host's identifier, then the browser id.
+- **The conversation page and the visitor profile call a visitor the same thing
+  the list does.** Three controllers each carry a private `visitorContext()`,
+  and the conversation page printed a raw `anon-6871486e` beside a tab showing
+  the person's name. Those two surfaces now resolve one label in the precedence
+  the visitors list already used — name, then address, then the host's
+  identifier, then the browser id. **The ticket page still answers differently**
+  and is tracked separately: its requester reference puts the address before the
+  name and omits the host identifier, and correcting it needs a place to keep
+  showing the browser id, which that page has nowhere else.
 
   Two defects fell out of that which the inconsistency had hidden. Anyone who
   reached us by email had **no name at all** on their own profile: the page
