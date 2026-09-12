@@ -144,7 +144,17 @@
                             <tr>
                                 <td>
                                     <a class="text-link" lang="" href="{{ route('dashboard.visitors.show', $visitor) }}">
-                                        {{ $visitor->name ?: $visitor->email ?: $visitor->external_id ?: $visitor->anonymous_id }}
+                                        {{-- The reference the other three surfaces were
+                                             brought into line with. Through the shared
+                                             resolver so it shares their handling of "0",
+                                             which `?:` skipped, and of an all-null
+                                             visitor, which rendered nothing at all. --}}
+                                        {{ \App\Support\Visitors\VisitorLabel::fromCandidates([
+                                            $visitor->name,
+                                            $visitor->email,
+                                            $visitor->external_id,
+                                            $visitor->anonymous_id,
+                                        ], __('visitors.common.not_provided'))['label'] }}
                                     </a>
                                 </td>
                                 <td>

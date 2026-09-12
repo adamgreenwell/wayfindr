@@ -14,6 +14,7 @@ use App\Support\ReaderNumber;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\SpreadsheetSafeCsv;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorLabel;
 use App\Support\Visitors\VisitorPresence;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
@@ -517,6 +518,13 @@ class AgentVisitorController extends Controller
             unset($hostContext[$key]);
         }
 
+        $identity = VisitorLabel::fromCandidates([
+            $visitor->name,
+            $visitor->email,
+            $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id),
+            $visitor->anonymous_id,
+        ], __('visitors.common.not_provided'));
+
         return [
             'anonymous_id' => $visitor->anonymous_id,
             // What this person is CALLED, in the precedence the visitors list
@@ -525,17 +533,8 @@ class AgentVisitorController extends Controller
             // -- a dangling separator with nothing after it -- for anyone who
             // reached us by email, since InboundMailRouter leaves both the name
             // and the browser id null when a From header has no display name.
-            'label' => $visitor->name
-                ?: $visitor->email
-                ?: $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id)
-                ?: $visitor->anonymous_id
-                ?: __('visitors.common.not_provided'),
-            // Derived from the same expression rather than beside it: `lang=""`
-            // on our own fallback announces English copy as an unknown language.
-            'label_is_theirs' => filled($visitor->name
-                ?: $visitor->email
-                ?: $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id)
-                ?: $visitor->anonymous_id),
+            'label' => $identity['label'],
+            'label_is_theirs' => $identity['is_theirs'],
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor->external_id),
             'last_seen_at' => $visitor->last_seen_at,
             'last_page_url' => $this->contextString($visitorMetadata['last_page_url'] ?? null),

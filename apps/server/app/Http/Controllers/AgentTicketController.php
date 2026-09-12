@@ -38,6 +38,7 @@ use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorLabel;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -1677,6 +1678,13 @@ class AgentTicketController extends Controller
             $hostContext = $requesterMetadata['context'] ?? [];
         }
 
+        $identity = VisitorLabel::fromCandidates([
+            $requester?->name,
+            $requester?->email,
+            $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id),
+            $requester?->anonymous_id,
+        ], __('ticket_detail.common.not_linked'));
+
         return [
             'has_visitor' => $requester !== null,
             'anonymous_id' => $requester?->anonymous_id ?? __('ticket_detail.common.not_linked'),
@@ -1686,16 +1694,8 @@ class AgentTicketController extends Controller
             // at-a-glance row printed the browser id raw -- so anyone who
             // arrived by email fell through to "not linked" on a ticket whose
             // address the install is holding.
-            'label' => $requester?->name
-                ?: $requester?->email
-                ?: $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id)
-                ?: $requester?->anonymous_id
-                ?: __('ticket_detail.common.not_linked'),
-            // Derived from the same expression, never written beside it.
-            'label_is_theirs' => filled($requester?->name
-                ?: $requester?->email
-                ?: $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id)
-                ?: $requester?->anonymous_id),
+            'label' => $identity['label'],
+            'label_is_theirs' => $identity['is_theirs'],
             // The browser id on its own, because the Visitor row above used to
             // be the only place this page showed it. Promoting that row to the
             // label without this would delete a reference agents quote.

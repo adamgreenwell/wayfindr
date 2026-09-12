@@ -41,6 +41,7 @@ use App\Support\Routing\AssignmentAuditTrail;
 use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorLabel;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -1101,6 +1102,13 @@ class AgentConversationController extends Controller
         $visitorMetadata = $visitor?->metadata ?? [];
         $conversationMetadata = $conversation->metadata ?? [];
 
+        $identity = VisitorLabel::fromCandidates([
+            $visitor?->name,
+            $visitor?->email,
+            $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
+            $visitor?->anonymous_id,
+        ], __('conversations.detail.unknown_visitor'));
+
         return [
             // Whether the visitor gave the platform ANY identifier of their own.
             // The page needs this to decide language: `anonymous_id` below
@@ -1126,21 +1134,14 @@ class AgentConversationController extends Controller
             // it, a visitor the host knows as `customer-123` and we hold no
             // name for was announced by their browser id -- or as "unknown
             // visitor" when they had none -- while the row below named them.
-            'label' => $visitor?->name
-                ?: $visitor?->email
-                ?: $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id)
-                ?: $visitor?->anonymous_id
-                ?: __('conversations.detail.unknown_visitor'),
+            'label' => $identity['label'],
             // Computed FROM the same expression rather than beside it, because
             // the two cannot be allowed to disagree: marking our own fallback
             // sentence as the visitor's language announces English copy as an
             // unknown tongue. `identified` above answers a narrower question and
             // is deliberately left alone -- the references row below leans on it
             // meaning "has an id of some kind".
-            'label_is_theirs' => filled($visitor?->name
-                ?: $visitor?->email
-                ?: $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id)
-                ?: $visitor?->anonymous_id),
+            'label_is_theirs' => $identity['is_theirs'],
             'anonymous_id' => $visitor?->anonymous_id ?? __('conversations.detail.unknown_visitor'),
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             // What the visitor typed into the pre-chat form, if the site asked.
