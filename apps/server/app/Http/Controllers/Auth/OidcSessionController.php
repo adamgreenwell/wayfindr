@@ -140,7 +140,12 @@ final class OidcSessionController extends Controller
         $request->session()->regenerate();
 
         if ($user->account?->requires_two_factor) {
-            return redirect()->route('dashboard.profile.show');
+            // The same flash EnsureTwoFactorPolicy sets for the identical
+            // redirect. Arriving here from sign-in said nothing at all, so an
+            // agent landed on their profile with no idea why they were not on
+            // the dashboard; arriving from a later request explained itself.
+            return redirect()->route('dashboard.profile.show')
+                ->with('status', 'two_factor.policy.enrol_required');
         }
 
         return redirect()->intended(route('dashboard'));
@@ -441,9 +446,16 @@ final class OidcSessionController extends Controller
     {
         $this->clearAttempt($request);
 
+        // Keep the slug. A MALFORMED slug goes through $request->validate(),
+        // which flashes input, so the field came back filled; an unrecognised
+        // one came through here, which did not, so the field came back empty.
+        // One form, one field, two opposite behaviours depending on which way
+        // it failed. onlyInput on an absent key is a no-op, so the callback()
+        // path -- where nothing was posted -- is unaffected.
         return redirect()
             ->route('login')
-            ->withErrors(['account_slug' => __('oidc.sign_in.failed')]);
+            ->withErrors(['account_slug' => __('oidc.sign_in.failed')])
+            ->onlyInput('account_slug');
     }
 
     private function clearAttempt(Request $request): void

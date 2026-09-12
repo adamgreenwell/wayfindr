@@ -573,3 +573,29 @@ test('the German and Italian challenge address the agent formally, and name the 
     expect($deAttributes)->toHaveKey('one_time_code')
         ->and($itAttributes)->toHaveKey('one_time_code');
 });
+
+test('an account that requires two-factor says so on arrival', function (): void {
+    // EnsureTwoFactorPolicy sets this flash for the identical redirect, so
+    // reaching the profile from a LATER request explained itself while arriving
+    // there straight from sign-in said nothing at all: you land on your profile
+    // instead of the dashboard with no stated reason.
+    $account = Account::factory()->create(['requires_two_factor' => true]);
+    $agent = User::factory()->for($account)->create([
+        'password' => Hash::make('correct-password'),
+    ]);
+
+    $this->post(route('login.store'), [
+        'email' => $agent->email,
+        'password' => 'correct-password',
+    ])
+        ->assertRedirect(route('dashboard.profile.show'))
+        ->assertSessionHas('status', 'two_factor.policy.enrol_required');
+
+    // The profile renders `{{ __(session('status')) }}`, so the key resolves.
+    $this->actingAs($agent)
+        ->withSession(['status' => 'two_factor.policy.enrol_required'])
+        ->get(route('dashboard.profile.show'))
+        ->assertOk()
+        ->assertSee('two-factor', false)
+        ->assertDontSee('two_factor.policy.enrol_required');
+});
