@@ -41,7 +41,7 @@ class FirstRunSetupController extends Controller
             'account_name' => ['required', 'string', 'max:255'],
             'agent_name' => ['required', 'string', 'max:255'],
             'agent_email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'confirmed', Password::min(12)],
+            'password' => ['required', 'confirmed', Password::defaults()],
             'site_name' => ['required', 'string', 'max:255'],
             'site_domain' => ['nullable', 'string', 'max:255'],
         ]);

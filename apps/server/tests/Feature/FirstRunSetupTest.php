@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\FirstRunState;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 
 uses(RefreshDatabase::class);
 
@@ -271,4 +272,56 @@ test('losing the setup race says what happened', function (): void {
         ->get(route('setup.create'))
         ->assertOk()
         ->assertSee('This installation has already been set up.');
+});
+
+test('every path that sets a password asks for the same length', function (): void {
+    // PasswordResetController already called Password::defaults() -- the right
+    // thing -- and nothing registered one, so it silently got Laravel's min(8),
+    // while the install hard-coded 12 and the profile change hard-coded 8. The
+    // one correctly-written call site was the weakest of the three, so account
+    // recovery accepted a shorter password than the install that created it.
+    $eleven = 'elevenchars';
+
+    // The install path.
+    $this->post(route('setup.store'), [
+        'account_name' => 'Acme', 'agent_name' => 'A',
+        'agent_email' => 'a@example.test',
+        'password' => $eleven, 'password_confirmation' => $eleven,
+        'site_name' => 'S',
+    ])->assertSessionHasErrors(['password' => 'The password field must be at least 12 characters.']);
+
+    expect(User::count())->toBe(0);
+
+    // The recovery path, which is the one that used to accept eight.
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->post(route('password.update'), [
+        'token' => Password::createToken($agent),
+        'email' => $agent->email,
+        'password' => $eleven, 'password_confirmation' => $eleven,
+    ])->assertSessionHasErrors(['password' => 'The password field must be at least 12 characters.']);
+
+    // The profile change, which also hard-coded its own number.
+    $this->actingAs($agent)
+        ->put(route('dashboard.profile.password.update'), [
+            'current_password' => 'wrong-on-purpose',
+            'password' => $eleven, 'password_confirmation' => $eleven,
+        ])->assertSessionHasErrors(['password' => 'The password field must be at least 12 characters.']);
+});
+
+test('both password screens state the rule before they can reject you', function (): void {
+    // Asserted on a GET, because the claim is that the rule is readable BEFORE
+    // you fail -- which a test of the failure path cannot show.
+    $this->get(route('setup.create'))
+        ->assertOk()
+        ->assertSee('At least 12 characters')
+        ->assertSee('id="password-help"', false)
+        ->assertSee('aria-describedby="password-help', false);
+
+    $agent = User::factory()->for(Account::factory())->create();
+
+    $this->get(route('password.reset', ['token' => Password::createToken($agent)]))
+        ->assertOk()
+        ->assertSee('At least 12 characters')
+        ->assertSee('id="password-help"', false);
 });

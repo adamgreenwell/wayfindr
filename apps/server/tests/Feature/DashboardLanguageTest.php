@@ -364,8 +364,8 @@ test('a validation failure is reported in the agent language', function (): void
             'password_confirmation' => 'short',
         ])
         ->assertOk()
-        ->assertSee('Passwort muss mindestens 8 Zeichen lang sein.')
-        ->assertDontSee('at least 8 characters');
+        ->assertSee('Passwort muss mindestens 12 Zeichen lang sein.')
+        ->assertDontSee('at least 12 characters');
 });
 
 test('a validation failure an agent can read is still English for anyone else', function (): void {

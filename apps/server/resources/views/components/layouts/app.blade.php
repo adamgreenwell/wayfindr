@@ -1690,6 +1690,27 @@
             padding: 28px;
         }
 
+        /* A bare h2 inside .panel matched NO authored rule, so login's "Single
+           sign-on" rendered at the UA default -- 23.28px against a 28px h1, a
+           1.20 ratio where the renovated pages run 1.75 (28/16). The card read
+           as two stacked pages. Not solved by wrapping the block in
+           `.section`, which would bring that component's borders and padding
+           into a panel that already has its own. */
+        .panel h2 {
+            margin: 24px 0 0;
+            font-size: 1rem;
+            line-height: 1.3;
+        }
+
+        /* The product's only <hr> sits on login, and nothing styled it: a 2px
+           inset groove at #808080, a colour no token defines and which is wrong
+           in both themes. Through the tokens it matches the card's own edge. */
+        hr {
+            border: 0;
+            border-top: var(--wf-border) solid var(--wf-rule);
+            margin: 24px 0;
+        }
+
         .panel h1,
         .page h1 {
             margin: 0;

@@ -78,7 +78,14 @@
                         id="account_slug"
                         name="account_slug"
                         type="text"
-                        autocomplete="organization"
+                        {{-- NOT `organization`: that is the token for a company
+                             name, and browsers autofill "Acme Corp" into a field
+                             whose own rule is /^[a-z0-9]+(?:-[a-z0-9]+)*$/ -- so
+                             the autofill is rejected by the validator that
+                             follows it. HTML has no token for a tenant slug.
+                             (`organization` is right one view over, on
+                             setup/create's free-text account name.) --}}
+                        autocomplete="off"
                         value="{{ old('account_slug') }}"
                         required
                     >

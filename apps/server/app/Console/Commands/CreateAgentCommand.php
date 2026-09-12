@@ -7,7 +7,9 @@ use App\Models\Account;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class CreateAgentCommand extends Command
 {
@@ -49,6 +51,26 @@ class CreateAgentCommand extends Command
 
         if ($passwordWasGenerated) {
             $password = Str::password(24);
+        }
+
+        // A supplied password is the one path into this product that never met
+        // a validator. The generated branch above makes 24 characters, so only
+        // --password could set something shorter than the minimum every HTTP
+        // path enforces -- on the most privileged credential an install has.
+        //
+        // Validated against the SAME registered rule rather than a number
+        // repeated here: one definition is the whole point of it.
+        if (! $passwordWasGenerated) {
+            $check = Validator::make(
+                ['password' => $password],
+                ['password' => ['required', PasswordRule::defaults()]],
+            );
+
+            if ($check->fails()) {
+                $this->error((string) $check->errors()->first('password'));
+
+                return self::FAILURE;
+            }
         }
 
         $agent = User::query()->firstOrNew(['email' => $email]);
