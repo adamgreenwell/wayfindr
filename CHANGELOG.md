@@ -379,20 +379,38 @@ page view that was not there before.
   have been corrected to match.
 
 
-- **The retention panel names two more classes of data Wayfindr deletes on its
-  own.** It said automatic deletion covered "cobrowse content only", and that
-  everything else stayed until an operator removed it. Two scheduled commands
-  said otherwise: visitor records that never produced a conversation are pruned
-  after 30 days, and the record of which proactive message reached which visitor
-  after 90. Both now have their own row, in all three languages, naming the
-  command and the window.
+- **The retention panel documents four more classes of data this install deletes
+  on a schedule, and stops claiming anything about the rest.** It had said
+  automatic deletion covered "cobrowse content only", and that everything else
+  stayed until an operator removed it. Four scheduled commands said otherwise.
+  Each now has its own row, in all three languages, naming the command and the
+  window: visitor records that never produced a conversation (30 days); the record of
+  which proactive message reached which visitor (90 days); abandoned and failed
+  uploads, with their binaries; and public API write receipts (24 hours), which
+  carry the token a write was made with — and through it the account and the
+  agent who issued that token — plus the ticket, conversation or message it
+  produced.
 
   On a privacy surface, understating what the software deletes is as wrong as
-  understating what it keeps — an operator answering a subject-access request
-  from that panel would have got it wrong in a way they could not detect. The
-  presence row also states that its 30-day window is a ceiling rather than a
-  default, because presence collects people who never asked for anything (ADR
-  0019).
+  understating what it keeps: an operator answering a subject-access request
+  from that panel would have said a record was retained when the install had
+  already removed it, and could not have detected the mistake.
+
+  **The closing claim is gone rather than corrected.** "Everything not listed
+  above stays until an operator removes it" is an unbounded assertion about
+  every table in the schema, and keeping it true would mean auditing the schema
+  on every migration. So the panel documents the classes it documents, and says
+  nothing about the others: short-lived work-queue rows, for instance, are
+  deleted by the jobs that consume them and are not retention in any sense a
+  subject-access request would reach. What remains is the part an operator can act on: removing
+  or exporting the records of one person on request is still manual, for every
+  class, and is separate from the scheduled deletions above.
+
+  Two rows carry a caveat worth repeating here. The presence window is a ceiling
+  an operator cannot raise, because presence collects people who never asked for
+  anything (ADR 0019). And the uploads figure includes the sweep's own hourly
+  cadence, because becoming eligible for deletion is not the same as being
+  deleted — a row that qualifies a minute after a pass waits for the next one.
 
 - **Three more copilot surfaces render in German and Italian.** The summary
   fragment was listed in `DashboardLanguage::EXTRACTED_ROUTES`; the reply draft,
@@ -501,6 +519,33 @@ page view that was not there before.
   and unattended-conversation jobs captured the delivery timestamp before
   sending and reused it as the acceptance time, so a listener stamping the start
   mid-send could produce a record accepted earlier than it began.
+
+- **The visitor support readiness panel stops judging an account owner on checks
+  they do not own.** Three of its seven checks are instance operations — realtime
+  delivery, the queue driver, the scheduler — and they always counted toward the
+  headline verdict while linking nowhere for anyone who is not the platform
+  operator. The install's first user never sees it, because the bootstrap makes
+  them both roles — but promoting a second agent to owner leaves their platform
+  role unset, so a self-hosted install produces this reader as soon as it has
+  two owners, and an agency running Wayfindr for a client produces it on day
+  one. That reader gets three unactionable items on the first screen and a
+  verdict they cannot move. The headline now describes the account, the instance checks
+  keep their place under their own heading with their own status beside the
+  verdict rather than inside it, and every one of them names who can act.
+
+  The scheduler check also stops returning "confirm this" unconditionally. The
+  operator console has recorded that attestation since it shipped and this panel
+  ignored it, so the old verdict could never read "Ready for visitors" no matter
+  what anyone did.
+
+- **The site settings page stops showing an account admin the operator's install
+  checklist.** Managing sites was enough to be shown the post-install smoke path:
+  six steps whose statuses track whatever the install has not finished, half of
+  them carrying copyable shell commands — `php artisan queue:work`, a mail test,
+  and a cron line with a literal `/path/to/apps/server` in it. It is written for
+  somebody with a shell on the server, and an account admin does not necessarily
+  have one. The readiness panel above already tells them whether the
+  install is healthy and whose job it is to fix.
 
 ### Security
 
