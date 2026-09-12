@@ -817,7 +817,7 @@ return [
                 'abandoned_uploads' => [
                     'label' => 'Abgebrochene und fehlgeschlagene Uploads',
                     'value' => '{1} Binnen :count Stunde gelöscht|[2,*] Binnen :count Stunden gelöscht',
-                    'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments läuft stündlich und löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden. Dabei gelten drei verschiedene Fristen, nicht eine: ein fehlgeschlagener Upload wird beim nächsten Durchlauf entfernt, unabhängig vom Alter, ein ausstehender nach Ablauf von WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS und ein Speicherobjekt ganz ohne Datensatz nach WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Der Wert neben dieser Zeile ist die längste der drei Fristen und damit eine Obergrenze, keine Zusage zur Aufbewahrungsdauer.',
+                    'description' => 'Der geplante Befehl wayfindr:sweep-orphaned-attachments läuft stündlich und löscht Anhangsdatensätze und die zugehörigen Dateien für Uploads, die nie Teil einer Nachricht wurden. Dabei gelten drei verschiedene Fristen, nicht eine: ein fehlgeschlagener Upload wird beim nächsten Durchlauf entfernt, unabhängig vom Alter, ein ausstehender nach Ablauf von WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS und ein Speicherobjekt ganz ohne Datensatz nach WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Der Wert neben dieser Zeile ist die längste der drei Fristen zuzüglich des stündlichen Abstands, denn ein Datensatz, der eine Minute nach einem Durchlauf fällig wird, wartet auf den nächsten.',
                 ],
                 'api_receipts' => [
                     'label' => 'API-Schreibbelege',
@@ -827,7 +827,7 @@ return [
                 'automatic_deletion' => [
                     'label' => 'Automatische Löschung',
                     'value' => 'Die oben aufgeführten Klassen',
-                    'description' => 'Lösch- und Exportfunktionen für die oben genannten Klassen stehen noch aus; erklären Sie das, bevor echter Support-Verkehr eintrifft.',
+                    'description' => 'Die Datensätze einer einzelnen Person auf Anfrage zu löschen oder zu exportieren, bleibt Handarbeit: dafür gibt es keine Funktion im Produkt, für keine Klasse. Das ist etwas anderes als die oben aufgeführten geplanten Löschungen, die tatsächlich laufen. Erklären Sie diesen Unterschied, bevor echter Support-Verkehr eintrifft.',
                 ],
             ],
             'reminders' => [

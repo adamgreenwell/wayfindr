@@ -825,7 +825,7 @@ return [
                 'abandoned_uploads' => [
                     'label' => 'Caricamenti abbandonati e non riusciti',
                     'value' => '{1} Eliminati entro :count ora|[2,*] Eliminati entro :count ore',
-                    'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments viene eseguito ogni ora per eliminare i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio. Le finestre sono tre, non una: un caricamento non riuscito viene rimosso al passaggio successivo a prescindere dall’età, uno in sospeso una volta superato WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS e un oggetto di archiviazione privo di record dopo WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Il valore accanto a questa riga è la più lunga delle tre e va quindi letto come un limite massimo, non come una promessa di conservazione.',
+                    'description' => 'Il comando pianificato wayfindr:sweep-orphaned-attachments viene eseguito ogni ora per eliminare i record degli allegati e i relativi file per i caricamenti che non sono mai entrati in un messaggio. Le finestre sono tre, non una: un caricamento non riuscito viene rimosso al passaggio successivo a prescindere dall’età, uno in sospeso una volta superato WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS e un oggetto di archiviazione privo di record dopo WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. Il valore accanto a questa riga è la più lunga delle tre più l’intervallo orario, perché un record che diventa idoneo un minuto dopo un passaggio attende quello successivo.',
                 ],
                 'api_receipts' => [
                     'label' => 'Ricevute di scrittura API',
@@ -835,7 +835,7 @@ return [
                 'automatic_deletion' => [
                     'label' => 'Eliminazione automatica',
                     'value' => 'Le classi elencate sopra',
-                    'description' => 'Le funzioni di cancellazione ed esportazione per le categorie sopra elencate restano da realizzare; lo spieghi prima che arrivi traffico di assistenza reale.',
+                    'description' => 'Cancellare o esportare su richiesta i record di una singola persona resta un intervento manuale: non esiste una funzione nel prodotto, per nessuna categoria. È cosa diversa dalle eliminazioni pianificate elencate sopra, che invece vengono eseguite. Spieghi questa differenza prima che arrivi traffico di assistenza reale.',
                 ],
             ],
             'reminders' => [

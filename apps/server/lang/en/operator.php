@@ -817,7 +817,7 @@ return [
                 'abandoned_uploads' => [
                     'label' => 'Abandoned and failed uploads',
                     'value' => '{1} Deleted within :count hour|[2,*] Deleted within :count hours',
-                    'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a failed upload goes on the next pass whatever its age, a pending one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three, so treat it as a ceiling rather than a retention promise.',
+                    'description' => 'The scheduled wayfindr:sweep-orphaned-attachments command runs hourly and deletes attachment rows and their binaries for uploads that never became part of a message. Three different windows, not one: a failed upload goes on the next pass whatever its age, a pending one once past WAYFINDR_ATTACHMENT_PENDING_EXPIRY_HOURS, and a storage object with no row at all after WAYFINDR_ATTACHMENT_ORPHAN_GRACE_HOURS. The value beside this row is the longest of the three plus the hourly interval, because a row that becomes eligible a minute after a pass waits for the next one.',
                 ],
                 'api_receipts' => [
                     'label' => 'API write receipts',
@@ -827,7 +827,7 @@ return [
                 'automatic_deletion' => [
                     'label' => 'Automatic deletion',
                     'value' => 'The classes listed above',
-                    'description' => 'Deletion and export controls for the classes above remain future work; explain that before real support traffic.',
+                    'description' => 'Removing or exporting the records of one person on request is still manual: there is no in-product control for it, for any class. That is separate from the scheduled deletions listed above, which do run. Explain the difference before real support traffic.',
                 ],
             ],
             'reminders' => [

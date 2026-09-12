@@ -1734,19 +1734,30 @@ test('readiness diagnostics require an authenticated agent', function (): void {
         ->assertRedirect('/login');
 });
 
-test('every scheduled command that deletes rows is named on the retention panel', function (): void {
-    // This list has now been wrong twice, and both times a reviewer found it
-    // rather than a test. First the panel said automatic deletion was "cobrowse
-    // content only" while two commands deleted visitor records and delivery
-    // evidence on a schedule; then, after those were added, it still omitted the
-    // attachment sweep while asserting that everything unlisted persists until
-    // an operator removes it.
+test('every scheduled prune or sweep is named on the retention panel', function (): void {
+    // FOURTH shape of this test. The first three tried to answer "does this
+    // scheduled command eventually delete a row", and each was defeated the same
+    // way: a signature regex that captured a newline and skipped eighteen
+    // commands; then a command deleting three hops away through a dispatched
+    // job; then a dispatch census matching `::dispatch(` while seven commands
+    // dispatch through helpers like `::dispatchPending(`.
     //
-    // On a privacy surface the direction of that error matters: an operator
-    // answering a subject-access request from this panel would say a record is
-    // retained when the install had already deleted it, and could not detect the
-    // mistake. So the panel is checked against routes/console.php and the
-    // command sources rather than against a copy of itself.
+    // That question needs a call graph, and following App\ imports transitively
+    // was measured: at depth 2 it flags seven scheduled commands where four
+    // genuinely delete. The remedy for a false positive here is a wrong row on a
+    // PRIVACY panel, so a wider net is worse than a narrower claim.
+    //
+    // So the test enforces a CONVENTION instead, which is complete because it
+    // needs no call graph: a scheduled command that removes data is named
+    // `prune-*` or `sweep-*`, and every one of those is on the panel. Both
+    // halves are checked, so the convention cannot be quietly broken by naming a
+    // deleter something else.
+    //
+    // DECLARED LIMIT, not a covered case: a deletion added behind a dispatch
+    // from a command outside that convention is beyond this test. Nothing cheap
+    // catches that, and `agent_realtime_evictions` is the live example -- a
+    // work-queue row its own job consumes, which is not retention, so the panel
+    // is right to omit it.
     $schedule = file_get_contents(base_path('routes/console.php'));
 
     preg_match_all("/Schedule::command\('([^']+)'\)/", $schedule, $matches);
@@ -1754,95 +1765,55 @@ test('every scheduled command that deletes rows is named on the retention panel'
 
     expect($scheduled)->not->toBeEmpty();
 
-    // Signature -> source, so a command can be asked whether it removes rows.
+    $panel = json_encode(config('wayfindr.retention'));
     $sources = [];
 
     foreach (glob(app_path('Console/Commands/*.php')) ?: [] as $file) {
         $source = file_get_contents($file);
 
-        // `[^' ]` is not enough: a $signature with its options on the next
-        // line puts a NEWLINE in the captured name, so the source-map key never
-        // matches what routes/console.php says and the command is skipped
-        // silently. Eighteen commands were in that state, including three
-        // scheduled ones. Excluding all whitespace is the fix; a guard that
-        // quietly checks a subset is worse than none.
+        // `[^' ]` is not enough: a $signature with its options on the next line
+        // puts a NEWLINE in the captured name, so the key never matches
+        // routes/console.php and the command is skipped in silence.
         if (preg_match("/\\\$signature\s*=\s*'([^'\s]+)/", $source, $signature) === 1) {
             $sources[$signature[1]] = $source;
         }
     }
 
-    // Named on the panel, or exempt for a stated reason. An exemption is a
-    // claim about the DATA, not about the command being uninteresting.
-    // No exemptions. The first version of this test exempted
-    // wayfindr:prune-api-idempotency-keys as "identifies nobody" -- and that was
-    // wrong: the receipt carries api_token_id, which reaches the account and the
-    // agent who issued the token, and resource_type/resource_id names the
-    // ticket, conversation or message the write produced. An exemption is a
-    // claim about the data, and this one did not survive being checked, so the
-    // row went on the panel instead.
-    $exempt = [];
-
-    $panel = json_encode(config('wayfindr.retention'));
-
-    $unnamed = [];
     $unresolved = [];
-    $unaccounted = [];
-
-    // The guard reads each command's OWN source, so a command that dispatches
-    // work deletes somewhere this cannot see: wayfindr:queue-agent-realtime-
-    // evictions reaches a delete three hops away, command -> job -> support
-    // class. Following App\ imports transitively was tried and rejected --
-    // measured at depth 2 it flags seven scheduled commands where four
-    // genuinely delete, and the remedy for a false positive here is a wrong row
-    // on a PRIVACY panel, which is worse than the blind spot.
-    //
-    // So the blind spot is declared instead of widened. Every scheduled command
-    // that dispatches work must be accounted for by hand, with the reason, and
-    // an unlisted one fails rather than passing quietly.
-    $dispatchers = [
-        // Deletes the eviction request it just satisfied. A work-queue row
-        // consumed by the work that created it, held for seconds, is not
-        // retention -- nothing is kept to be asked about later.
-        'wayfindr:queue-agent-realtime-evictions' => 'deletes only the request it satisfies',
-        // Chain checked: neither job nor AgentAlertPublicationSweep deletes.
-        'wayfindr:reconcile-agent-alert-publications' => 'dispatches, deletes nothing',
-    ];
+    $unnamed = [];
+    $misnamed = [];
 
     foreach ($scheduled as $command) {
         $source = $sources[$command] ?? null;
 
         if ($source === null) {
-            // NOT a skip. A scheduled command whose source cannot be found is
-            // a command this test has stopped checking, and that is how the
-            // first version of it quietly covered a subset: the signature
-            // pattern captured a newline, so eighteen commands keyed wrong and
-            // fell through here in silence. Reported rather than continued.
+            // NOT a skip. A scheduled command whose source cannot be found is a
+            // command this test has stopped checking, which is how the first
+            // version quietly covered a subset.
             $unresolved[] = $command;
 
             continue;
         }
 
-        if (preg_match('/::dispatch\(|dispatch\(new |::dispatchSync\(/', $source) === 1
-            && ! array_key_exists($command, $dispatchers)) {
-            $unaccounted[] = $command;
-        }
+        $isPruneOrSweep = preg_match('/:(prune|sweep)-/', $command) === 1;
 
-        $removesRows = preg_match('/->delete\(\)|::destroy\(|->truncate\(|->forceDelete\(/', $source) === 1;
-
-        if (! $removesRows || in_array($command, $exempt, true)) {
-            continue;
-        }
-
-        if (! str_contains((string) $panel, $command)) {
+        if ($isPruneOrSweep && ! str_contains((string) $panel, $command)) {
             $unnamed[] = $command;
+        }
+
+        // The other half of the convention: a deleter must not be called
+        // something else. Only its own source is read, which is all this can
+        // honestly claim -- see the declared limit above.
+        if (! $isPruneOrSweep
+            && preg_match('/->delete\(\)|::destroy\(|->truncate\(|->forceDelete\(/', $source) === 1) {
+            $misnamed[] = $command;
         }
     }
 
-    expect($unaccounted)->toBe([], 'Scheduled commands dispatch work this test cannot follow, and are not accounted for above: '.implode(', ', $unaccounted));
-
-    // The census comes first: without it, a failure to PARSE reads exactly
-    // like a clean result below.
+    // The census first: a failure to PARSE reads exactly like a clean result.
     expect($unresolved)->toBe([], 'Scheduled commands whose source this test could not find, so it did not check them: '.implode(', ', $unresolved));
 
-    expect($unnamed)->toBe([], 'Scheduled commands delete rows without the retention panel saying so: '.implode(', ', $unnamed));
+    expect($unnamed)->toBe([], 'Scheduled prune/sweep commands the retention panel does not name: '.implode(', ', $unnamed));
+
+    expect($misnamed)->toBe([], 'Scheduled commands delete rows but are not named prune-* or sweep-*, so the panel check cannot see them: '.implode(', ', $misnamed));
 });
