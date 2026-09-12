@@ -289,13 +289,20 @@
                                         // has to follow the branch rather than the
                                         // element: marking it unconditionally announces
                                         // our fallback as unknown.
-                                        $visitorGaveTheirOwn = filled($conversation->visitor?->name
-                                            ?: $conversation->visitor?->email
-                                            ?: $conversation->visitor?->anonymous_id);
-                                        $visitorLabel = $conversation->visitor?->name
-                                            ?: $conversation->visitor?->email
-                                            ?: $conversation->visitor?->anonymous_id
-                                            ?: __('conversations.row.unknown_visitor');
+                                        // Through the shared resolver, like the other
+                                        // five naming surfaces. Two expressions kept in
+                                        // step by hand is what the resolver exists to
+                                        // replace, and this pair also omitted the host's
+                                        // identifier -- so the queue showed a browser id
+                                        // where the row it opens showed `customer-123`.
+                                        $visitorIdentity = \App\Support\Visitors\VisitorLabel::fromCandidates([
+                                            $conversation->visitor?->name,
+                                            $conversation->visitor?->email,
+                                            $conversation->visitor?->external_id,
+                                            $conversation->visitor?->anonymous_id,
+                                        ], __('conversations.row.unknown_visitor'));
+                                        $visitorGaveTheirOwn = $visitorIdentity['is_theirs'];
+                                        $visitorLabel = $visitorIdentity['label'];
                                     @endphp
                                     <tr data-agent-shortcut-row @if ($canManageConversations) data-queue-bulk-row data-conversation-bulk-row @endif>
                                         @if ($canManageConversations)
