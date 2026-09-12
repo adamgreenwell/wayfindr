@@ -1110,6 +1110,28 @@ class AgentConversationController extends Controller
             // name reaches exactly that state -- `InboundMailRouter::visitor()`
             // creates the visitor with both fields null on purpose.
             'identified' => $visitor?->anonymous_id !== null || $visitor?->name !== null,
+            // What this person is CALLED, in one place, in the precedence the
+            // conversation list already uses. The detail header used to print
+            // `anonymous_id` alone, so opening a conversation from a row reading
+            // "Priya Raman" landed on a page headed `anon_6871486e...` -- with a
+            // tab further down, under the identical label, reading "Priya Raman"
+            // again. Three answers, one page.
+            //
+            // Email earns its place in the middle: an inbound-mail visitor whose
+            // From header carries no display name has both `name` and
+            // `anonymous_id` null, so the header announced "unknown visitor"
+            // about somebody whose address we are holding.
+            'label' => $visitor?->name
+                ?: $visitor?->email
+                ?: $visitor?->anonymous_id
+                ?: __('conversations.detail.unknown_visitor'),
+            // Computed FROM the same expression rather than beside it, because
+            // the two cannot be allowed to disagree: marking our own fallback
+            // sentence as the visitor's language announces English copy as an
+            // unknown tongue. `identified` above answers a narrower question and
+            // is deliberately left alone -- the references row below leans on it
+            // meaning "has an id of some kind".
+            'label_is_theirs' => filled($visitor?->name ?: $visitor?->email ?: $visitor?->anonymous_id),
             'anonymous_id' => $visitor?->anonymous_id ?? __('conversations.detail.unknown_visitor'),
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             // What the visitor typed into the pre-chat form, if the site asked.
