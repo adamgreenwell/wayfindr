@@ -135,6 +135,7 @@ function hasVisibleContent(string $markdown): bool
 function releaseSections(string $markdown): array
 {
     $sections = [];
+    $dates = [];
     $current = null;
     $body = [];
     $fenceCharacter = null;
@@ -184,8 +185,15 @@ function releaseSections(string $markdown): array
         if (preg_match('/^##(?:[ \t]+|$)/', $line) === 1) {
             $store();
 
-            if (preg_match('/^##[ \t]+\[([^\]]+)](?:[ \t]+-[ \t]+.*)?[ \t]*$/', $line, $heading) === 1) {
+            if (preg_match('/^##[ \t]+\[([^\]]+)](?:[ \t]+-[ \t]+(.*))?[ \t]*$/', $line, $heading) === 1) {
                 $current = trim($heading[1]);
+                // Captured HERE rather than by a second scan of the raw lines,
+                // because this loop is the one that skips fenced blocks. A
+                // separate scanner reads a heading inside a ```markdown example
+                // as if it were the real section.
+                $dates[$current] = isset($heading[2]) && trim($heading[2]) !== ''
+                    ? trim($heading[2])
+                    : null;
             }
 
             continue;
@@ -198,7 +206,7 @@ function releaseSections(string $markdown): array
 
     $store();
 
-    return $sections;
+    return ['bodies' => $sections, 'dates' => $dates];
 }
 
 /** @return array<string, string> */
@@ -471,25 +479,24 @@ function assertPublishingReleaseReady(
 }
 
 /**
- * The date on the candidate's heading, or null when it carries none.
- *
- * releaseSections() deliberately discards it -- the section BODY is what every
- * other check reads -- so this re-scans the headings rather than widening that
- * contract for one caller.
+ * The date of the commit being released, which is what the heading is compared
+ * against. The publishing workflow checks out the tagged ref and verifies HEAD
+ * equals it, so this is the tagged commit -- and unlike a wall clock it is
+ * identical on every rerun, forever.
  */
-function releaseSectionDate(string $markdown, string $version): ?string
+function releaseCommitDate(string $root): string
 {
-    foreach (explode("\n", normalizeMarkdown($markdown)) as $line) {
-        if (preg_match('/^##[ \t]+\[([^\]]+)][ \t]+-[ \t]+(\S+)[ \t]*$/', $line, $heading) !== 1) {
-            continue;
-        }
+    $command = 'git -C '.escapeshellarg($root).' show -s --format=%cs HEAD 2>/dev/null';
+    $date = trim((string) shell_exec($command));
 
-        if (trim($heading[1]) === $version) {
-            return trim($heading[2]);
-        }
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) !== 1) {
+        throw new RuntimeException(
+            'could not read the release commit date from git, so the changelog date cannot be checked. '
+            .'Publishing runs inside a checkout of the tagged ref; if this is a local run, run it from the repository.'
+        );
     }
 
-    return null;
+    return $date;
 }
 
 /**
@@ -501,12 +508,22 @@ function releaseSectionDate(string $markdown, string $version): ?string
  * dated whenever its author expected to cut, and failing every unrelated PR
  * until someone bumps it would make the guard a tax rather than a check.
  *
- * One day of slack in both directions, deliberately. The workflow runs minutes
- * after the tag is pushed and both can straddle UTC midnight; a guard that
- * forces a retag over that boundary costs more than the day of drift it would
- * catch. Staleness worth catching is measured in days.
+ * The comparison is against the RELEASE COMMIT, never the current time. A
+ * wall-clock check fails an accurate heading whenever the publish job is rerun
+ * more than a day after the tag -- which release-image.yml explicitly supports,
+ * reusing a partial draft or a recorded digest. With a protected tag that
+ * cannot simply be replaced, a transient failure plus a delayed rerun would
+ * leave the release permanently unpublishable. A guard against a cosmetic
+ * defect must not be able to block a release.
+ *
+ * The falsifiable property is therefore one-sided: notes cannot predate the
+ * commit they describe. A heading LATER than the commit is fine and expected --
+ * a tag pushed some days after the release commit landed is an ordinary thing
+ * to do, and refusing it would recreate the same blocking failure from the
+ * other side. One day of slack absorbs timezone skew between whoever wrote the
+ * heading and the committer.
  */
-function assertReleaseDateIsCurrent(?string $date, string $version, string $today): void
+function assertReleaseDateIsCurrent(?string $date, string $version, string $releasedOn): void
 {
     if ($date === null) {
         throw new RuntimeException(
@@ -514,28 +531,39 @@ function assertReleaseDateIsCurrent(?string $date, string $version, string $toda
         );
     }
 
-    $released = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, new \DateTimeZone('UTC'));
-
-    if ($released === false || $released->format('Y-m-d') !== $date) {
-        throw new RuntimeException(
+    $heading = parseContractDate($date)
+        ?? throw new RuntimeException(
             "the [{$version}] changelog heading is dated \"{$date}\", which is not a YYYY-MM-DD date."
         );
+
+    $commit = parseContractDate($releasedOn)
+        ?? throw new RuntimeException("could not read the release commit date: \"{$releasedOn}\".");
+
+    if ($heading >= $commit->modify('-1 day')) {
+        return;
     }
 
-    $now = \DateTimeImmutable::createFromFormat('!Y-m-d', $today, new \DateTimeZone('UTC'));
+    $drift = (int) $heading->diff($commit)->days;
 
-    if ($now === false) {
-        throw new RuntimeException("could not read today as a date: \"{$today}\".");
+    throw new RuntimeException(
+        "the [{$version}] changelog section is dated {$date}, {$drift} days before the release commit ({$releasedOn}). "
+        .'Set it to the day the release is tagged; it ships as the release date.'
+    );
+}
+
+/**
+ * Round-tripped through its own format on purpose: createFromFormat rolls
+ * 2026-09-31 forward into October without complaining.
+ */
+function parseContractDate(string $date): ?\DateTimeImmutable
+{
+    $parsed = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, new \DateTimeZone('UTC'));
+
+    if ($parsed === false || $parsed->format('Y-m-d') !== $date) {
+        return null;
     }
 
-    $drift = (int) $released->diff($now)->days;
-
-    if ($drift > 1) {
-        throw new RuntimeException(
-            "the [{$version}] changelog section is dated {$date}, {$drift} days from {$today}. "
-            .'Set it to the day the release is tagged; it ships as the release date.'
-        );
-    }
+    return $parsed;
 }
 
 function isPatchLine(SemanticVersion $candidate, ?SemanticVersion $previous): bool
@@ -820,7 +848,8 @@ function main(string $root, bool $publishing = false): void
     }
 
     $machineRequiresAction = $manifest['requires_operator_action'];
-    $sections = releaseSections(requiredFile($root.'/CHANGELOG.md'));
+    $changelog = releaseSections(requiredFile($root.'/CHANGELOG.md'));
+    $sections = $changelog['bodies'];
 
     if (! array_key_exists('Unreleased', $sections)) {
         throw new RuntimeException('CHANGELOG has no [Unreleased] section.');
@@ -849,9 +878,9 @@ function main(string $root, bool $publishing = false): void
         );
 
         assertReleaseDateIsCurrent(
-            releaseSectionDate(requiredFile($root.'/CHANGELOG.md'), $candidate->canonical()),
+            $changelog['dates'][$candidate->canonical()] ?? null,
             $candidate->canonical(),
-            (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d'),
+            releaseCommitDate($root),
         );
     }
 

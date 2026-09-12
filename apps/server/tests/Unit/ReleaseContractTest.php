@@ -10,7 +10,7 @@ use function Wayfindr\ReleaseContract\assertReleaseDateIsCurrent;
 use function Wayfindr\ReleaseContract\assertVersionedReleaseRecorded;
 use function Wayfindr\ReleaseContract\historyContext;
 use function Wayfindr\ReleaseContract\operatorActionVersionIsAllowed;
-use function Wayfindr\ReleaseContract\releaseSectionDate;
+use function Wayfindr\ReleaseContract\releaseSections;
 
 require_once dirname(__DIR__, 4).'/scripts/test-release-contract.php';
 
@@ -129,29 +129,42 @@ test('publishing refuses preparation state and requires frozen release history',
         ))->toThrow(RuntimeException::class, 'matching 0.8.0 entry');
 });
 
-test('the release date is read from the candidate heading only', function (): void {
+test('the release date is read from the candidate heading, ignoring fenced examples', function (): void {
+    // The fenced block matters: a first version of this scanned the raw lines
+    // and would have returned the EXAMPLE's date, so a current example could
+    // let a stale real release date through.
     $markdown = <<<'MD'
         ## [Unreleased]
+
+        Write the heading like this:
+
+        ```markdown
+        ## [0.8.0] - 1999-01-01
+        ```
 
         ## [0.8.0] - 2026-09-12
 
         ## [0.7.0] - 2026-08-25
         MD;
 
-    expect(releaseSectionDate($markdown, '0.8.0'))->toBe('2026-09-12')
-        ->and(releaseSectionDate($markdown, '0.7.0'))->toBe('2026-08-25')
-        // Unreleased carries no date, and neither does a version that is absent.
-        ->and(releaseSectionDate($markdown, 'Unreleased'))->toBeNull()
-        ->and(releaseSectionDate($markdown, '0.9.0'))->toBeNull();
+    $dates = releaseSections($markdown)['dates'];
+
+    expect($dates['0.8.0'])->toBe('2026-09-12')
+        ->and($dates['0.7.0'])->toBe('2026-08-25')
+        // Unreleased carries no date, and an absent version has no entry.
+        ->and($dates['Unreleased'])->toBeNull()
+        ->and($dates['0.9.0'] ?? null)->toBeNull();
 });
 
-test('publishing refuses a changelog section dated days from the cut', function (
+test('publishing refuses a changelog section dated before the release commit', function (
     ?string $date,
     bool $passes,
 ): void {
-    // A section written days before the cut ships a date that was never true,
-    // and nothing else catches it: the date is not part of any declaration, so
-    // every other contract check passes over a heading dated last week.
+    // Compared against the RELEASE COMMIT, never the clock. A wall-clock check
+    // fails an accurate heading whenever the publish job is rerun more than a
+    // day after the tag -- which release-image.yml supports -- and with a
+    // protected tag that would leave the release unpublishable. A guard against
+    // a cosmetic defect must not be able to block a release.
     $assert = fn (): mixed => assertReleaseDateIsCurrent($date, '0.8.0', '2026-09-12');
 
     if ($passes) {
@@ -164,18 +177,20 @@ test('publishing refuses a changelog section dated days from the cut', function 
 
     expect($assert)->toThrow(RuntimeException::class);
 })->with([
-    // One day of slack in both directions: the tag and the workflow that reads
-    // it can straddle UTC midnight, and forcing a retag over that costs more
-    // than the day of drift it would catch.
-    'the day itself' => ['2026-09-12', true],
-    'yesterday' => ['2026-09-11', true],
-    'tomorrow' => ['2026-09-13', true],
-    'two days stale' => ['2026-09-10', false],
-    'a week stale' => ['2026-09-05', false],
-    'two days early' => ['2026-09-14', false],
+    'the commit day itself' => ['2026-09-12', true],
+    // One day of slack absorbs timezone skew between whoever wrote the heading
+    // and the committer.
+    'the day before' => ['2026-09-11', true],
+    // LATER is fine and expected: a tag pushed some days after the release
+    // commit landed is ordinary, and refusing it recreates the blocking failure
+    // from the other side.
+    'the day after' => ['2026-09-13', true],
+    'a week after' => ['2026-09-19', true],
+    'two days before' => ['2026-09-10', false],
+    'a week before' => ['2026-09-05', false],
     'no date at all' => [null, false],
     'not a date' => ['soon', false],
     'wrong shape' => ['12-09-2026', false],
-    // createFromFormat would roll this into October without the round-trip check.
+    // createFromFormat would roll this into October without the round-trip.
     'impossible date' => ['2026-09-31', false],
 ]);
