@@ -470,6 +470,74 @@ function assertPublishingReleaseReady(
     assertVersionedReleaseRecorded($history, $generated);
 }
 
+/**
+ * The date on the candidate's heading, or null when it carries none.
+ *
+ * releaseSections() deliberately discards it -- the section BODY is what every
+ * other check reads -- so this re-scans the headings rather than widening that
+ * contract for one caller.
+ */
+function releaseSectionDate(string $markdown, string $version): ?string
+{
+    foreach (explode("\n", normalizeMarkdown($markdown)) as $line) {
+        if (preg_match('/^##[ \t]+\[([^\]]+)][ \t]+-[ \t]+(\S+)[ \t]*$/', $line, $heading) !== 1) {
+            continue;
+        }
+
+        if (trim($heading[1]) === $version) {
+            return trim($heading[2]);
+        }
+    }
+
+    return null;
+}
+
+/**
+ * A release section written days before the cut ships a date that was never
+ * true. Nothing else catches it: the date is not part of any declaration, so
+ * every other contract check passes over a section headed with last week.
+ *
+ * Publishing only. On a pull request the candidate section is legitimately
+ * dated whenever its author expected to cut, and failing every unrelated PR
+ * until someone bumps it would make the guard a tax rather than a check.
+ *
+ * One day of slack in both directions, deliberately. The workflow runs minutes
+ * after the tag is pushed and both can straddle UTC midnight; a guard that
+ * forces a retag over that boundary costs more than the day of drift it would
+ * catch. Staleness worth catching is measured in days.
+ */
+function assertReleaseDateIsCurrent(?string $date, string $version, string $today): void
+{
+    if ($date === null) {
+        throw new RuntimeException(
+            "publishing requires the [{$version}] changelog heading to carry a date."
+        );
+    }
+
+    $released = \DateTimeImmutable::createFromFormat('!Y-m-d', $date, new \DateTimeZone('UTC'));
+
+    if ($released === false || $released->format('Y-m-d') !== $date) {
+        throw new RuntimeException(
+            "the [{$version}] changelog heading is dated \"{$date}\", which is not a YYYY-MM-DD date."
+        );
+    }
+
+    $now = \DateTimeImmutable::createFromFormat('!Y-m-d', $today, new \DateTimeZone('UTC'));
+
+    if ($now === false) {
+        throw new RuntimeException("could not read today as a date: \"{$today}\".");
+    }
+
+    $drift = (int) $released->diff($now)->days;
+
+    if ($drift > 1) {
+        throw new RuntimeException(
+            "the [{$version}] changelog section is dated {$date}, {$drift} days from {$today}. "
+            .'Set it to the day the release is tagged; it ships as the release date.'
+        );
+    }
+}
+
 function isPatchLine(SemanticVersion $candidate, ?SemanticVersion $previous): bool
 {
     return $previous !== null
@@ -778,6 +846,12 @@ function main(string $root, bool $publishing = false): void
             $versionedHasContent,
             $history,
             $manifest,
+        );
+
+        assertReleaseDateIsCurrent(
+            releaseSectionDate(requiredFile($root.'/CHANGELOG.md'), $candidate->canonical()),
+            $candidate->canonical(),
+            (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('Y-m-d'),
         );
     }
 

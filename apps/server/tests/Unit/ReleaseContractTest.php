@@ -6,9 +6,11 @@ use App\Support\Release\ReleaseManifest;
 use App\Support\Version\SemanticVersion;
 
 use function Wayfindr\ReleaseContract\assertPublishingReleaseReady;
+use function Wayfindr\ReleaseContract\assertReleaseDateIsCurrent;
 use function Wayfindr\ReleaseContract\assertVersionedReleaseRecorded;
 use function Wayfindr\ReleaseContract\historyContext;
 use function Wayfindr\ReleaseContract\operatorActionVersionIsAllowed;
+use function Wayfindr\ReleaseContract\releaseSectionDate;
 
 require_once dirname(__DIR__, 4).'/scripts/test-release-contract.php';
 
@@ -126,3 +128,54 @@ test('publishing refuses preparation state and requires frozen release history',
             $generated,
         ))->toThrow(RuntimeException::class, 'matching 0.8.0 entry');
 });
+
+test('the release date is read from the candidate heading only', function (): void {
+    $markdown = <<<'MD'
+        ## [Unreleased]
+
+        ## [0.8.0] - 2026-09-12
+
+        ## [0.7.0] - 2026-08-25
+        MD;
+
+    expect(releaseSectionDate($markdown, '0.8.0'))->toBe('2026-09-12')
+        ->and(releaseSectionDate($markdown, '0.7.0'))->toBe('2026-08-25')
+        // Unreleased carries no date, and neither does a version that is absent.
+        ->and(releaseSectionDate($markdown, 'Unreleased'))->toBeNull()
+        ->and(releaseSectionDate($markdown, '0.9.0'))->toBeNull();
+});
+
+test('publishing refuses a changelog section dated days from the cut', function (
+    ?string $date,
+    bool $passes,
+): void {
+    // A section written days before the cut ships a date that was never true,
+    // and nothing else catches it: the date is not part of any declaration, so
+    // every other contract check passes over a heading dated last week.
+    $assert = fn (): mixed => assertReleaseDateIsCurrent($date, '0.8.0', '2026-09-12');
+
+    if ($passes) {
+        $assert();
+
+        expect(true)->toBeTrue();
+
+        return;
+    }
+
+    expect($assert)->toThrow(RuntimeException::class);
+})->with([
+    // One day of slack in both directions: the tag and the workflow that reads
+    // it can straddle UTC midnight, and forcing a retag over that costs more
+    // than the day of drift it would catch.
+    'the day itself' => ['2026-09-12', true],
+    'yesterday' => ['2026-09-11', true],
+    'tomorrow' => ['2026-09-13', true],
+    'two days stale' => ['2026-09-10', false],
+    'a week stale' => ['2026-09-05', false],
+    'two days early' => ['2026-09-14', false],
+    'no date at all' => [null, false],
+    'not a date' => ['soon', false],
+    'wrong shape' => ['12-09-2026', false],
+    // createFromFormat would roll this into October without the round-trip check.
+    'impossible date' => ['2026-09-31', false],
+]);
