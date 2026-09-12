@@ -422,9 +422,11 @@ page view that was not there before.
 - **The conversation page and the visitor profile call a visitor the same thing
   the list does.** Three controllers each carry a private `visitorContext()`,
   and the conversation page printed a raw `anon-6871486e` beside a tab showing
-  the person's name. Those two surfaces now resolve one label in the precedence
-  the visitors list already used — name, then address, then the host's
-  identifier, then the browser id. **The ticket page still answers differently**
+  the person's name, and the conversation page skipped the host's own identifier
+  so a visitor the host knows as `customer-123` was announced by an opaque
+  browser id. Those two surfaces now resolve one label in the precedence the
+  visitors list already used — name, then address, then the host's identifier,
+  then the browser id. **The ticket page still answers differently**
   and is tracked separately: its requester reference puts the address before the
   name and omits the host identifier, and correcting it needs a place to keep
   showing the browser id, which that page has nowhere else.
