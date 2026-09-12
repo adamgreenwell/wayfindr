@@ -35,6 +35,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password as PasswordRule;
 use NotificationChannels\WebPush\ReportHandler;
 use NotificationChannels\WebPush\WebPushChannel;
 
@@ -96,6 +97,22 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // One minimum for every password this product sets.
+        //
+        // PasswordResetController already asked for the shared default -- it
+        // calls Password::defaults() -- and nothing ever registered one, so it
+        // silently got Laravel's own min(8). Meanwhile the install path
+        // hard-coded min(12) and the profile change hard-coded min(8). So the
+        // one call site written correctly was the weakest of the three, and the
+        // recovery path accepted a shorter password than the install that
+        // created the account.
+        //
+        // 12, because it is the only number anyone in this codebase chose on
+        // purpose -- someone typed it for the owner account on a fresh install.
+        // Raising the others cannot lock anybody out: these rules run when a
+        // password is SET, never when an existing one is checked.
+        PasswordRule::defaults(fn (): PasswordRule => PasswordRule::min(12));
+
         // Browser subscriptions contain an outbound URL. Replace the package's
         // stock channel with Wayfindr's DNS-pinned transport and retry-aware
         // report handling. A transient report must fail the queued listener;
