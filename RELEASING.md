@@ -51,15 +51,26 @@ Move `## [Unreleased]` content in [CHANGELOG.md](CHANGELOG.md) into a new
 action** (followed by exactly what to do) or **No operator action required**, and
 mark the individual entries that need hands with **⚠ Operator action**.
 
-**If that section already exists, set its date to the day you are tagging.**
-Notes are often moved out of Unreleased days or weeks before the cut — the
-section is frozen from that moment, and its date silently ages with it. That
-date is the release date every reader sees. The publishing preflight in step 3
-refuses a section dated more than a day before the commit it would tag — a day
-of slack absorbs timezone skew between whoever wrote the heading and the
-committer, so it is a backstop against a stale date, not against an
-off-by-one one. Setting it here is cheaper than discovering it there, and it is
-the only place that gets the date exactly right.
+**If that section already exists, set its date to the day you make the release
+commit in step 3.** Notes are often moved out of Unreleased days or weeks before
+the cut — the section is frozen from that moment, and its date silently ages
+with it. That date is the release date every reader sees.
+
+The release commit rather than "the day you tag", deliberately. The two are
+minutes apart in the ordinary flow, but only one of them is knowable while you
+are editing the heading: exact-SHA CI sits between them, and a slow run or a
+commit made near midnight can carry the tag into the next day. The commit is
+also the release identity everything else derives from — the image build, the
+manifest, and the history entry all read it — so dating the notes by it is both
+precise and checkable.
+
+A tag created the day after its commit therefore ships notes dated the commit's
+day, and that is the intended outcome rather than a defect to chase. The whole
+mechanism already tolerates a day either way: the preflight in step 3 refuses a
+section dated more than a day before the commit, because timezone skew between
+whoever wrote the heading and the committer is not worth blocking a release
+over. Re-committing to correct a one-day drift would start a fresh exact-SHA CI
+run that can cross midnight in its turn, so it does not converge.
 
 Write it for someone several releases behind who has never read the PR.
 
