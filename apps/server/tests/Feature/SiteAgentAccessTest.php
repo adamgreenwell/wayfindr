@@ -1093,6 +1093,37 @@ test('site assigned platform operators see the operator smoke path', function ()
         ->assertSee('php artisan queue:failed');
 });
 
+test('an account admin is not shown the operator smoke path', function (): void {
+    // The control for the test above, and the reason it needed one. This was
+    // `ManageSites || isPlatformOperator()`, so an account admin with no shell
+    // got the whole post-install checklist: six steps, each marked "Needs
+    // attention", each with a Copy button, one of them a cron line containing
+    // the literal /path/to/apps/server.
+    //
+    // A self-hosted install cannot produce this reader -- its bootstrap makes
+    // the first user both roles -- which is why it went unnoticed. In a hosted
+    // Wayfindr it is every customer who can manage a site.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'platform_role' => null,
+        'name' => 'Ada Admin',
+    ]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+    $site->supportAgents()->attach($admin->id);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertDontSee('Prove the install works')
+        ->assertDontSee('Confirm background workers')
+        ->assertDontSee('php artisan queue:failed')
+        ->assertDontSee('/path/to/apps/server')
+        ->assertDontSee('Open operator console')
+        // What IS theirs on this page is untouched.
+        ->assertSee('Open tester');
+});
+
 test('admins can review recent site access activity from the site settings page', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
