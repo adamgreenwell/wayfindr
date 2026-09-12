@@ -419,24 +419,26 @@ page view that was not there before.
   parameterised routes by static prefix, so each fragment passed on the
   conversation index's coverage without ever being rendered.
 
-- **The conversation page and the visitor profile call a visitor the same thing
-  the list does.** Three controllers each carry a private `visitorContext()`,
-  and the conversation page printed a raw `anon-6871486e` beside a tab showing
-  the person's name, and the conversation page skipped the host's own identifier
-  so a visitor the host knows as `customer-123` was announced by an opaque
-  browser id. Those two surfaces now resolve one label in the precedence the
-  visitors list already used — name, then address, then the host's identifier,
-  then the browser id. **The ticket page still answers differently**
-  and is tracked separately: its requester reference puts the address before the
-  name and omits the host identifier, and correcting it needs a place to keep
-  showing the browser id, which that page has nowhere else.
+- **A visitor is called the same thing on every surface that names one.** Three
+  controllers each carried a private `visitorContext()` and the directory had a
+  fourth expression of its own, so one person could be four different names
+  depending on which page you were looking at. The conversation page printed a
+  raw `anon-6871486e` beside a tab showing that person's name; the ticket page
+  put the address before the name and ignored the host's identifier entirely.
+  All four now take name, then address, then the host's identifier, then the
+  browser id — and where a page needs the browser id as a support reference, it
+  has its own row for it rather than borrowing the name's.
 
-  Two defects fell out of that which the inconsistency had hidden. Anyone who
+  Three defects fell out of that which the inconsistency had hidden. Anyone who
   reached us by email had **no name at all** on their own profile: the page
   printed the browser id, which inbound mail never sets, so the heading read
   "Acme Docs · " with nothing after it and their address appeared nowhere on
-  the page. And the support-code reference built its lookup link from that same
-  empty value, so it rendered a link to nothing.
+  the page. The support-code reference built its lookup link from that same
+  empty value, so it rendered a link to nothing. And a visitor the widget
+  identified as the single character `0` was announced as unknown on every one
+  of those pages, because the expression they all shared treated it as an
+  absence rather than a value — `0` is a perfectly ordinary identifier and the
+  widget accepts it.
 
 - **Signing in tells you what happened.** Four places where the product went
   quiet at the moment it most needed to speak: a completed password reset
