@@ -1137,3 +1137,24 @@ test('local password login remains available when OIDC is enabled', function ():
 
     $this->assertAuthenticatedAs($user);
 });
+
+test('a failed single sign-on keeps the slug you typed', function (): void {
+    // The same field behaved oppositely depending on HOW it failed. A malformed
+    // slug goes through $request->validate(), which flashes input, so the field
+    // came back filled. An unrecognised one came through failed(), which did
+    // not, so the field came back empty and you retyped it to find out you had
+    // it right the first time.
+    oidcWorld();
+
+    $this->post(route('oidc.redirect'), ['account_slug' => 'missing-account'])
+        ->assertRedirect(route('login'))
+        ->assertSessionHasErrors('account_slug')
+        ->assertSessionHasInput('account_slug', 'missing-account');
+
+    // login.blade.php already reads old('account_slug'), so the value renders
+    // with no change to the view.
+    $this->followingRedirects()
+        ->post(route('oidc.redirect'), ['account_slug' => 'missing-account'])
+        ->assertOk()
+        ->assertSee('value="missing-account"', false);
+});

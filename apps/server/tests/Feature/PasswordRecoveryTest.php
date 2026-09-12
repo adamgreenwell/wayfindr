@@ -330,3 +330,42 @@ test('sessions are deleted from the connection the session store uses', function
 
     @unlink($file);
 });
+
+test('a stale reset link offers the page its own error names', function (): void {
+    // The error on a bad token says "Request a new one." The page rendered ZERO
+    // anchors -- the only href in 102KB of document was the favicon -- so it
+    // named a destination it gave no way to reach. Both sibling auth views
+    // already carry exactly this footer link.
+    $response = $this->get('/reset-password/not-a-real-token?email=agent@example.test')->assertOk();
+
+    expect(substr_count($response->getContent(), '<a '))->toBeGreaterThan(0);
+
+    $response->assertSee(route('password.request'), false)
+        ->assertSee('Request a new reset link');
+});
+
+test('being throttled explains itself instead of rendering the framework 429', function (): void {
+    Notification::fake();
+    $agent = agentNeedingRecovery();
+
+    $throttled = null;
+
+    for ($attempt = 0; $attempt < 12; $attempt++) {
+        $response = $this->post(route('password.email'), ['email' => $agent->email]);
+
+        if ($response->status() === 429) {
+            $throttled = $response;
+            break;
+        }
+    }
+
+    expect($throttled)->not->toBeNull('the reset request route should throttle');
+
+    // Laravel's own 429 is 6,602 bytes whose entire visible text is "Too Many
+    // Requests 429 Too Many Requests" -- no product name, no link back, and no
+    // use made of the Retry-After it just computed.
+    $throttled->assertSee('Too many attempts')
+        ->assertSee('Nothing has been cancelled, and your account is not locked.')
+        ->assertSee(route('login'), false)
+        ->assertDontSee('Too Many Requests');
+});

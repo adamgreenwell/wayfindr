@@ -134,7 +134,12 @@ class FirstRunSetupController extends Controller
             return redirect()->route('dashboard');
         }
 
-        return redirect()->route('login');
+        // Losing the race silently discarded a six-field form and dropped the
+        // person on a bare sign-in page. They cannot tell whether their
+        // submission failed, was ignored, or half-applied.
+        return redirect()
+            ->route('login')
+            ->with('status', 'This installation has already been set up. Sign in with the owner account that claimed it.');
     }
 
     private function accountSlug(string $accountName, ?Account $account = null): string

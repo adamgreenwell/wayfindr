@@ -51,6 +51,12 @@
 
                 <button class="button full" type="submit">Set new password</button>
             </form>
+
+            {{-- The same footer anchor forgot-password and the two-factor
+                 challenge already carry. This page rendered ZERO links, and its
+                 own error on a stale token says "Request a new one" -- naming a
+                 destination it gave you no way to reach. --}}
+            <p><a class="text-link" href="{{ route('password.request') }}">Request a new reset link</a></p>
         </section>
     </main>
 </x-layouts.app>
