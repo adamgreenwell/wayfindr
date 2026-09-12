@@ -297,6 +297,71 @@ test('conversation queue shows bounded latest activity previews', function (): v
         ->assertSee('No messages have been sent yet.');
 });
 
+test('conversation detail calls the visitor what the list called them', function (): void {
+    // The page carried three answers under two identical labels: the header
+    // printed `anonymous_id` alone, the Visitor tab printed the name, and the row
+    // you clicked to get here printed the name too. Opening "Priya Raman" landed
+    // on a page headed `anon-...`.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-6871486e',
+        'name' => 'Priya Raman',
+    ]);
+
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVNAME',
+        'subject' => 'Named visitor',
+        'status' => 'open',
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk();
+
+    // Both places that carry the "Visitor" label, and the browser id nowhere as
+    // this person's NAME -- it still appears under its own reference label.
+    expect(substr_count($response->getContent(), 'Priya Raman'))->toBeGreaterThanOrEqual(2);
+});
+
+test('a visitor known only by email is not called unknown', function (): void {
+    // InboundMailRouter creates exactly this: a From header with no display name
+    // leaves `name` and `anonymous_id` null while the address is right there. The
+    // header announced the translated "unknown visitor" sentence about somebody
+    // whose email we are holding.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => null,
+        'name' => null,
+        'email' => 'priya@example.test',
+    ]);
+
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVMAIL',
+        'subject' => 'Mailed in',
+        'status' => 'open',
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk();
+
+    // Twice: the header and the Visitor tab. Before this it appeared once, in the
+    // tab's own email row, while both of those said "unknown visitor".
+    expect(substr_count($response->getContent(), 'priya@example.test'))->toBe(2);
+
+    // The references row still says there is no reference, and should: that label
+    // answers "what identifier can you quote elsewhere", and for a visitor who
+    // has never loaded the widget the honest answer is none. Asserted so a later
+    // change that spreads the email into it has to be deliberate.
+    expect(substr_count($response->getContent(), __('conversations.detail.unknown_visitor')))->toBe(1);
+});
+
 test('conversation detail organizes the workspace into tabs', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);

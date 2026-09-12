@@ -83,12 +83,14 @@
                     </div>
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
-                        {{-- The identifier the visitor's browser gave, so it follows
-                             the branch: ours only when there is no visitor at all. --}}
-                        @if ($conversation->visitor->anonymous_id ?? null)
-                            <span class="meta-value" lang="">{{ $conversation->visitor->anonymous_id }}</span>
+                        {{-- The same name the row you clicked showed, and the same
+                             one the Visitor tab shows further down. This printed
+                             `anonymous_id` alone, so a conversation listed under a
+                             person's name opened on a page headed `anon_6871486e...`. --}}
+                        @if ($visitorContext['label_is_theirs'])
+                            <span class="meta-value" lang="">{{ $visitorContext['label'] }}</span>
                         @else
-                            <span class="meta-value">{{ __('conversations.detail.unknown_visitor') }}</span>
+                            <span class="meta-value">{{ $visitorContext['label'] }}</span>
                         @endif
                     </div>
                     <div class="meta-item">
@@ -757,18 +759,23 @@
                 <div class="meta-grid">
                     <div class="meta-item">
                         <span class="meta-label">{{ __('conversations.detail.context.visitor') }}</span>
-                        {{-- Usually the visitor's words -- a name they gave, or the
-                             identifier their browser did -- but not always. An
-                             inbound email with no display name leaves both null and
-                             `anonymous_id` carries a translated sentence instead, so
-                             the reset follows `identified` rather than the element. --}}
-                        @if ($visitorContext['identified'])
-                            <span class="meta-value" lang="">{{ $visitorContext['name'] ?: $visitorContext['anonymous_id'] }}</span>
+                        {{-- Usually the visitor's words -- a name they gave, the
+                             address they wrote from, or the identifier their browser
+                             produced -- but not always, and when it is none of those
+                             `label` carries a translated sentence. The reset follows
+                             `label_is_theirs`, which is computed from the same
+                             expression so the two cannot drift apart. --}}
+                        @if ($visitorContext['label_is_theirs'])
+                            <span class="meta-value" lang="">{{ $visitorContext['label'] }}</span>
                         @else
-                            <span class="meta-value">{{ $visitorContext['anonymous_id'] }}</span>
+                            <span class="meta-value">{{ $visitorContext['label'] }}</span>
                         @endif
                     </div>
-                    @if ($visitorContext['email'])
+                    {{-- Suppressed when the address is already the name above it:
+                         with no name and no browser id, `label` resolves to the
+                         email, and two adjacent rows carrying the identical string
+                         read as a rendering fault rather than as two facts. --}}
+                    @if ($visitorContext['email'] && $visitorContext['label'] !== $visitorContext['email'])
                         <div class="meta-item">
                             <span class="meta-label">{{ __('conversations.detail.context.email') }}</span>
                             <span class="meta-value">{{ $visitorContext['email'] }}</span>
