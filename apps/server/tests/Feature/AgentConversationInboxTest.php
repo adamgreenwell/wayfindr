@@ -362,6 +362,42 @@ test('a visitor known only by email is not called unknown', function (): void {
     expect(substr_count($response->getContent(), __('conversations.detail.unknown_visitor')))->toBe(1);
 });
 
+test('a visitor the host names is called by that name, not their browser id', function (): void {
+    // The precedence had a hole between address and browser id. A visitor the
+    // host system knows as `customer-123`, with no name and no address, was
+    // announced by an opaque browser id -- or as "unknown visitor" when they had
+    // none -- while the row directly below named them. The visitors list and the
+    // visitor profile both resolve the host identifier here.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'customer-123',
+        'anonymous_id' => 'anon-6871486e',
+    ]);
+
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-CONVHOST',
+        'subject' => 'Known to the host',
+        'status' => 'open',
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $conversation->support_code))
+        ->assertOk();
+
+    $html = $response->getContent();
+
+    // Both places carrying the "Visitor" label, plus the host-id row that
+    // already showed it.
+    expect(substr_count($html, 'customer-123'))->toBeGreaterThanOrEqual(3)
+        // and the browser id is no longer how the page addresses them
+        ->and($html)->not->toContain('>anon-6871486e</span>');
+});
+
 test('conversation detail organizes the workspace into tabs', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create(['name' => 'Riley Agent']);

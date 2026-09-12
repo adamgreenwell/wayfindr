@@ -24,9 +24,11 @@
                         value="{{ old('account_name') }}"
                         required
                         autofocus
+                    aria-describedby="@error('account_name') account_name-error @enderror"
+                    @error('account_name') aria-invalid="true" @enderror
                     >
                     @error('account_name')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="account_name-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 
@@ -38,10 +40,12 @@
                         type="text"
                         autocomplete="name"
                         value="{{ old('agent_name') }}"
+                        aria-describedby="@error('agent_name') agent_name-error @enderror"
+                        @error('agent_name') aria-invalid="true" @enderror
                         required
                     >
                     @error('agent_name')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="agent_name-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 
@@ -53,10 +57,12 @@
                         type="email"
                         autocomplete="email"
                         value="{{ old('agent_email') }}"
+                        aria-describedby="@error('agent_email') agent_email-error @enderror"
+                        @error('agent_email') aria-invalid="true" @enderror
                         required
                     >
                     @error('agent_email')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="agent_email-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 
@@ -97,10 +103,12 @@
                         name="site_name"
                         type="text"
                         value="{{ old('site_name') }}"
+                        aria-describedby="@error('site_name') site_name-error @enderror"
+                        @error('site_name') aria-invalid="true" @enderror
                         required
                     >
                     @error('site_name')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="site_name-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 
@@ -113,10 +121,12 @@
                         inputmode="url"
                         value="{{ old('site_domain') }}"
                         placeholder="docs.example.com"
+                        aria-describedby="@error('site_domain') site_domain-error @enderror"
+                        @error('site_domain') aria-invalid="true" @enderror
                     >
                     <p class="field-help">Optional. You can connect more sites later.</p>
                     @error('site_domain')
-                        <p class="field-error">{{ $message }}</p>
+                        <p id="site_domain-error" class="field-error">{{ $message }}</p>
                     @enderror
                 </div>
 

@@ -351,7 +351,6 @@ page view that was not there before.
   Old retained sessions remain part of history without inflating active queue
   badges or loading every candidate into memory.
 
-
 - **The widget script is served as a public asset, and is now genuinely
   cacheable.** It had been declared in `routes/web.php` since the first commit
   that served it from Laravel, which put it in the `web` middleware group. The
@@ -377,7 +376,6 @@ page view that was not there before.
   never resolved to anything but English on that surface and none of that work
   could reach a screen. Three documents describing it as intentionally English
   have been corrected to match.
-
 
 - **The retention panel documents four more classes of data this install deletes
   on a schedule, and stops claiming anything about the rest.** It had said
@@ -420,6 +418,83 @@ page view that was not there before.
   reach a screen. The render audit could not have caught it: it matches
   parameterised routes by static prefix, so each fragment passed on the
   conversation index's coverage without ever being rendered.
+
+- **The conversation page and the visitor profile call a visitor the same thing
+  the list does.** Three controllers each carry a private `visitorContext()`,
+  and the conversation page printed a raw `anon-6871486e` beside a tab showing
+  the person's name, and the conversation page skipped the host's own identifier
+  so a visitor the host knows as `customer-123` was announced by an opaque
+  browser id. Those two surfaces now resolve one label in the precedence the
+  visitors list already used — name, then address, then the host's identifier,
+  then the browser id. **The ticket page still answers differently**
+  and is tracked separately: its requester reference puts the address before the
+  name and omits the host identifier, and correcting it needs a place to keep
+  showing the browser id, which that page has nowhere else.
+
+  Two defects fell out of that which the inconsistency had hidden. Anyone who
+  reached us by email had **no name at all** on their own profile: the page
+  printed the browser id, which inbound mail never sets, so the heading read
+  "Acme Docs · " with nothing after it and their address appeared nowhere on
+  the page. And the support-code reference built its lookup link from that same
+  empty value, so it rendered a link to nothing.
+
+- **Signing in tells you what happened.** Four places where the product went
+  quiet at the moment it most needed to speak: a completed password reset
+  flashed a confirmation to a page that rendered no flash region, so you landed
+  on the sign-in form with no word that the reset worked and no way to know
+  which password to type; an account that requires two-factor authentication
+  redirected you to your profile without saying why, though the same redirect
+  from a later request had always explained itself; losing the first-run setup
+  race discarded a six-field form in silence; and a failed single sign-on threw
+  away the account slug you had typed, while the same field kept it when the
+  failure came the other way.
+
+- **The two-factor challenge speaks the agent's language.** It could not. The
+  controller resolved its own locale and fell back to a key that Laravel's own
+  `setLocale()` had already overwritten during the request, so the fallback
+  could only ever return English. Every agent who had not chosen a personal
+  language — every agent on an install that enabled the setting after it had
+  users — met exactly one English screen, between their password and their
+  German dashboard, while being asked to prove who they are.
+
+  Three smaller things on the same screen: the expiry message travelled as
+  translated prose and rendered inside the English sign-in page, one German
+  sentence in a document declaring itself English; German and Italian dropped
+  to the informal register in that one string while every other string in the
+  block used `Sie` and `Lei`; and neither catalogue named the only field the
+  page validates, so an agent pasting a recovery code with its dashes was told
+  in their own language that "one time code" was too long.
+
+- **Being rate limited explains itself.** Every throttled route rendered the
+  framework's own page: six kilobytes whose entire visible text is "Too Many
+  Requests", with no product name, no way back, and no use made of the wait it
+  had just calculated. It now says how long in minutes, says the limit counts
+  attempts rather than locking the account, and links somewhere that exists for
+  whoever is reading — the dashboard for a signed-in agent, sign-in for anyone
+  else. It is translated, because half the routes that reach it are inside the
+  dashboard where the agent's language is already resolved.
+
+- **The password reset page is no longer a dead end.** It rendered no links at
+  all — the only address anywhere in the document was the favicon — while its
+  own error on a stale token told the reader to request a new one.
+
+- **The sign-in card reads as one card.** Its second heading matched no rule in
+  the stylesheet and rendered at the browser default, a fifth larger than the
+  renovated pages allow and close enough to the page title that the card read
+  as two stacked pages. The product's only horizontal rule was unstyled too — a
+  two-pixel groove in a grey no palette defines, wrong in both themes. The
+  single sign-on field also stopped claiming to hold an organisation name, which
+  made browsers autofill a company name into a field that only accepts a slug
+  and rejects it a moment later.
+
+- **Field errors are announced.** Not one entry surface marked an invalid field
+  or tied its message to it, while the dashboard has done both all along; a
+  screen reader could reach the error text but nothing connected it to the
+  field that caused it.
+
+- **The Laravel scaffold page is gone.** It arrived with the first server
+  commit, was reachable from nowhere, and still told anyone who rendered it
+  that the core application scaffold was running and the product was pre-alpha.
 
 ### Fixed
 
@@ -486,7 +561,6 @@ page view that was not there before.
   pinned the indicator on permanently for German and Italian agents the moment
   that surface was translated.
 
-
 - **The widget script no longer starts a session or sets a cookie.** Because it
   sat in the `web` middleware group, every request that actually reached it --
   each first load, and each one after the previous response's short cache
@@ -546,6 +620,26 @@ page view that was not there before.
   somebody with a shell on the server, and an account admin does not necessarily
   have one. The readiness panel above already tells them whether the
   install is healthy and whose job it is to fix.
+
+- **Every path that sets a password now asks for the same twelve characters.**
+  Account recovery used to accept eight while the install that created the
+  account required twelve — and the reason is worth stating, because the code
+  looked correct: the reset controller asked for the shared default and nothing
+  had ever registered one, so it silently inherited the framework's own minimum
+  of eight. The install and the profile change each hard-coded a different
+  number beside it. The one call site written properly was the weakest of the
+  three.
+
+  There is now one registered rule and five call sites read it, including
+  `wayfindr:bootstrap` and `wayfindr:agent`, which took `--password` and hashed
+  it with no validation at all. That was the most privileged credential an
+  install has: bootstrap creates the first owner and platform operator.
+
+  **⚠ Operator action: none, but expect the question.** No existing password
+  becomes invalid — these rules run when a password is set, never when one is
+  checked. An agent choosing a new password will be asked for twelve where the
+  form previously took eight, and both password screens now state the rule
+  before rejecting anyone, which they did not before.
 
 ### Security
 

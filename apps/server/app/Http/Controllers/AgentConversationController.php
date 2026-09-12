@@ -1121,8 +1121,14 @@ class AgentConversationController extends Controller
             // From header carries no display name has both `name` and
             // `anonymous_id` null, so the header announced "unknown visitor"
             // about somebody whose address we are holding.
+            // The host's own identifier sits between the address and the
+            // browser id, matching the visitors list and the profile. Without
+            // it, a visitor the host knows as `customer-123` and we hold no
+            // name for was announced by their browser id -- or as "unknown
+            // visitor" when they had none -- while the row below named them.
             'label' => $visitor?->name
                 ?: $visitor?->email
+                ?: $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id)
                 ?: $visitor?->anonymous_id
                 ?: __('conversations.detail.unknown_visitor'),
             // Computed FROM the same expression rather than beside it, because
@@ -1131,7 +1137,10 @@ class AgentConversationController extends Controller
             // unknown tongue. `identified` above answers a narrower question and
             // is deliberately left alone -- the references row below leans on it
             // meaning "has an id of some kind".
-            'label_is_theirs' => filled($visitor?->name ?: $visitor?->email ?: $visitor?->anonymous_id),
+            'label_is_theirs' => filled($visitor?->name
+                ?: $visitor?->email
+                ?: $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id)
+                ?: $visitor?->anonymous_id),
             'anonymous_id' => $visitor?->anonymous_id ?? __('conversations.detail.unknown_visitor'),
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($visitor?->external_id),
             // What the visitor typed into the pre-chat form, if the site asked.
