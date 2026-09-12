@@ -143,8 +143,24 @@
                             @php($presenceCue = $visitor->presenceCue())
                             <tr>
                                 <td>
-                                    <a class="text-link" lang="" href="{{ route('dashboard.visitors.show', $visitor) }}">
-                                        {{ $visitor->name ?: $visitor->email ?: $visitor->external_id ?: $visitor->anonymous_id }}
+                                    {{-- The reference the other three surfaces were brought
+                                         into line with. Through the shared resolver so it
+                                         shares their handling of "0", which `?:` skipped, and
+                                         of an all-null visitor, which rendered nothing at all.
+
+                                         `lang=""` is conditional for the same reason it is on
+                                         the other three: the anchor carried it unconditionally,
+                                         so on a German install the fallback sentence -- OUR
+                                         copy, not the visitor's -- was announced as
+                                         unknown-language text. --}}
+                                    @php($visitorIdentity = \App\Support\Visitors\VisitorLabel::fromCandidates([
+                                        $visitor->name,
+                                        $visitor->email,
+                                        $visitor->external_id,
+                                        $visitor->anonymous_id,
+                                    ], __('visitors.common.not_provided')))
+                                    <a class="text-link" @if ($visitorIdentity['is_theirs']) lang="" @endif href="{{ route('dashboard.visitors.show', $visitor) }}">
+                                        {{ $visitorIdentity['label'] }}
                                     </a>
                                 </td>
                                 <td>

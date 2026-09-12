@@ -267,6 +267,7 @@ return [
         'safe' => 'Solo contesto sicuro',
         'visitor' => 'Visitatore',
         'host_id' => 'ID visitatore dell’host',
+        'lookup_reference' => 'Riferimento di ricerca del visitatore',
         'last_seen' => 'Ultima visualizzazione',
         'latest_page' => 'Ultima pagina',
         'entry_page' => 'Pagina di ingresso',

@@ -38,6 +38,7 @@ use App\Support\Sla\SlaStatePresenter;
 use App\Support\TicketCategory;
 use App\Support\TicketExternalIssueAttempt;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\VisitorLabel;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -1677,9 +1678,28 @@ class AgentTicketController extends Controller
             $hostContext = $requesterMetadata['context'] ?? [];
         }
 
+        $identity = VisitorLabel::fromCandidates([
+            $requester?->name,
+            $requester?->email,
+            $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id),
+            $requester?->anonymous_id,
+        ], __('ticket_detail.common.not_linked'));
+
         return [
             'has_visitor' => $requester !== null,
             'anonymous_id' => $requester?->anonymous_id ?? __('ticket_detail.common.not_linked'),
+            // The third private visitorContext(), and it gave the FOURTH answer
+            // to what a visitor is called: the requester reference put the
+            // address before the name and omitted the host identifier, while the
+            // at-a-glance row printed the browser id raw -- so anyone who
+            // arrived by email fell through to "not linked" on a ticket whose
+            // address the install is holding.
+            'label' => $identity['label'],
+            'label_is_theirs' => $identity['is_theirs'],
+            // The browser id on its own, because the Visitor row above used to
+            // be the only place this page showed it. Promoting that row to the
+            // label without this would delete a reference agents quote.
+            'lookup_reference' => $requester?->anonymous_id,
             'external_id' => $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id),
             'last_seen_at' => $requester?->last_seen_at,
             'last_page_url' => $this->contextString($visitorContext['last_page_url'] ?? null)

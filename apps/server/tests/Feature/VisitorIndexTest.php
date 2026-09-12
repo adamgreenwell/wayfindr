@@ -599,3 +599,72 @@ test('the rail offers visitors', function (): void {
         ->assertOk()
         ->assertSee(route('dashboard.visitors.index'), false);
 });
+
+test('the directory does not mark its own fallback as the visitor language', function (): void {
+    // The anchor carried `lang=""` unconditionally, which is right for a name a
+    // visitor supplied and wrong for a sentence we wrote: on a German install it
+    // announced our own copy as unknown-language text, which is the case
+    // is_theirs exists to separate. The list was the last surface still doing it.
+    $w = visitorIndexWorld();
+    $w['agent']->forceFill(['locale' => 'de'])->save();
+
+    // Nothing to call them by, so the row falls back to our sentence.
+    Visitor::factory()->for($w['site'])->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => null,
+        'anonymous_id' => null,
+        'last_seen_at' => now(),
+    ]);
+
+    $html = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->getContent();
+
+    $fallback = __('visitors.common.not_provided', [], 'de');
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $anchors = $xpath->query('//a[normalize-space(text())="'.$fallback.'"]');
+
+    expect($anchors->length)->toBeGreaterThan(0, 'the translated fallback did not render');
+
+    foreach ($anchors as $anchor) {
+        expect($anchor->hasAttribute('lang'))->toBeFalse(
+            'the directory marked its own fallback sentence as unknown-language text'
+        );
+    }
+});
+
+test('a visitor the widget calls zero is still named in the directory', function (): void {
+    // `?:` skipped the literal string "0", and widget bootstrap validates
+    // anonymous_id as required|string|max:255 -- so the product accepted this
+    // visitor and then could not name them.
+    $w = visitorIndexWorld();
+
+    Visitor::factory()->for($w['site'])->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => null,
+        'anonymous_id' => '0',
+        'last_seen_at' => now(),
+    ]);
+
+    $html = $this->actingAs($w['agent'])
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    // Named "0", and marked as the visitor's own string rather than ours.
+    $anchors = $xpath->query('//a[normalize-space(text())="0"]');
+
+    expect($anchors->length)->toBe(1)
+        ->and($anchors->item(0)?->hasAttribute('lang'))->toBeTrue();
+});
