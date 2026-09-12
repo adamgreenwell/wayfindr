@@ -397,3 +397,33 @@ test('a throttled authenticated form is not told to sign in again', function ():
         ->assertSee(route('dashboard'), false)
         ->assertDontSee('Back to sign in');
 });
+
+test('a throttled German agent gets a German 429, not English inside lang=de', function (): void {
+    // This view answers throttled routes INSIDE the dashboard, and those are
+    // extracted -- SetDashboardLocale has already resolved the agent's language
+    // and x-layouts.app renders `<html lang="de">`. Hard-coded English there
+    // makes a screen reader pronounce English words with German phonetics, the
+    // same defect PR #987 fixed in the other direction.
+    $agent = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Owner,
+        'locale' => 'de',
+    ]);
+
+    $throttled = null;
+
+    for ($attempt = 0; $attempt < 20; $attempt++) {
+        $response = $this->actingAs($agent)
+            ->put(route('dashboard.profile.two-factor.confirm'), ['one_time_code' => '000000']);
+
+        if ($response->status() === 429) {
+            $throttled = $response;
+            break;
+        }
+    }
+
+    expect($throttled)->not->toBeNull('two-factor confirmation should throttle');
+
+    $throttled->assertSee('<html lang="de">', false)
+        ->assertSee('Zu viele Versuche')
+        ->assertDontSee('Too many attempts');
+});
