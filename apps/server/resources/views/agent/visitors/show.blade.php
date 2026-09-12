@@ -342,12 +342,7 @@
                         {{-- The precedence is right here, but `?:` still skipped the
                              string "0" and an all-null candidate rendered an empty
                              heading. Through the resolver like everywhere else. --}}
-                        @php($candidateIdentity = \App\Support\Visitors\VisitorLabel::fromCandidates([
-                            $candidate->name,
-                            $candidate->email,
-                            $candidate->external_id,
-                            $candidate->anonymous_id,
-                        ], __('visitor_merge.candidate.not_provided')))
+                        @php($candidateIdentity = \App\Support\Visitors\VisitorLabel::forVisitor($candidate, __('visitor_merge.candidate.not_provided')))
                         <article class="timeline-item">
                             <div class="timeline-content">
                                 <strong @if ($candidateIdentity['is_theirs']) lang="" @endif>{{ $candidateIdentity['label'] }}</strong>

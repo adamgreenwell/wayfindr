@@ -165,8 +165,17 @@ final class LiveVisitorBoard
     ): array {
         return [
             'id' => $visitor->id,
-            'name' => $visitor->name,
-            'email' => $visitor->email,
+            // What to CALL them, resolved once here rather than decided again
+            // by the Blade table and a third time by the socket renderer below
+            // it. Those two knew about `name` and `email` only, so a visitor
+            // the host calls `customer-123` was `Visitor 41` on this board and
+            // `customer-123` on the profile it links to.
+            //
+            // Their own string or null -- never our sentence. This row is
+            // broadcast to every agent watching and they do not all read the
+            // same language, so the fallback wording is chosen at the surface
+            // exactly as the rest of this payload's state is.
+            'label' => VisitorLabel::forVisitor($visitor, '')['label'] ?: null,
             'state' => VisitorPresence::stateFor($visitor->last_web_seen_at),
             // Answered from the policy in force, not from what happens to be
             // stored. Revoking addresses commits the setting and THEN sweeps

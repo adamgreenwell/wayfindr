@@ -153,12 +153,7 @@
                                          so on a German install the fallback sentence -- OUR
                                          copy, not the visitor's -- was announced as
                                          unknown-language text. --}}
-                                    @php($visitorIdentity = \App\Support\Visitors\VisitorLabel::fromCandidates([
-                                        $visitor->name,
-                                        $visitor->email,
-                                        $visitor->external_id,
-                                        $visitor->anonymous_id,
-                                    ], __('visitors.common.not_provided')))
+                                    @php($visitorIdentity = \App\Support\Visitors\VisitorLabel::forVisitor($visitor, __('visitors.common.not_provided')))
                                     <a class="text-link" @if ($visitorIdentity['is_theirs']) lang="" @endif href="{{ route('dashboard.visitors.show', $visitor) }}">
                                         {{ $visitorIdentity['label'] }}
                                     </a>

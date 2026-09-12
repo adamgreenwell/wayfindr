@@ -534,3 +534,34 @@ test('the queue does not mark its own unknown-visitor sentence as the visitor la
         );
     }
 });
+
+test('the queue never shows a host identifier that carries an address', function (): void {
+    // Adding `external_id` to the queue\'s candidates fixed one defect and
+    // opened another: the detail page it opens redacts that field, so the queue
+    // would have shown an address the row itself hides -- and in the row\'s
+    // `title` attribute at full length. The redaction belongs with the order.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['name' => 'Ada Agent']);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'ada@example.test',
+        'anonymous_id' => 'anon-queue-address',
+    ]);
+
+    Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-QUEUEADDR',
+        'subject' => 'Host stored an address',
+        'status' => 'open',
+    ]);
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain('ada@example.test')
+        ->and($html)->toContain('anon-queue-address');
+});

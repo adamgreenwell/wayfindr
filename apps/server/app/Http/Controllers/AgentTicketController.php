@@ -1678,12 +1678,7 @@ class AgentTicketController extends Controller
             $hostContext = $requesterMetadata['context'] ?? [];
         }
 
-        $identity = VisitorLabel::fromCandidates([
-            $requester?->name,
-            $requester?->email,
-            $visitorContextSanitizer->sanitizeIdentifier($requester?->external_id),
-            $requester?->anonymous_id,
-        ], __('ticket_detail.common.not_linked'));
+        $identity = VisitorLabel::forVisitor($requester, __('ticket_detail.common.not_linked'));
 
         return [
             'has_visitor' => $requester !== null,

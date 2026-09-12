@@ -645,3 +645,76 @@ test('audit-only roles cannot read or search support identities and references',
         ->not->toContain('WF-HIDDEN-749')
         ->not->toContain('#98765');
 });
+
+test('the audit log never prints a host identifier that carries an address', function (): void {
+    // The eighth naming surface, and the last with its own copy of the answer.
+    // Its filter handled "0" correctly where the `?:` chains did not, but it
+    // printed `external_id` raw -- so an audit row could show an address that
+    // the visitor detail page for the same person redacts.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'ada@example.test',
+        'anonymous_id' => 'anon-audit-address',
+    ]);
+
+    AuditEvent::factory()->for($account)->for($site)->create([
+        'actor_type' => $visitor->getMorphClass(),
+        'actor_id' => $visitor->id,
+        'subject_type' => $visitor->getMorphClass(),
+        'subject_id' => $visitor->id,
+        'action' => 'visitor.identity_merged',
+        'metadata' => [],
+        'occurred_at' => CarbonImmutable::create(2026, 9, 12, 10, 0, 0, 'UTC'),
+    ]);
+
+    $html = $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain('ada@example.test')
+        ->and($html)->toContain('anon-audit-address');
+});
+
+test('the audit log still tells two unnamed visitors apart', function (): void {
+    // Every other surface says a sentence when there is nothing to call
+    // somebody, because it names one visitor in front of the reader. A log
+    // names many at once, and two rows both reading "Unknown visitor" cannot
+    // be told apart by somebody reconstructing what happened -- so this
+    // surface keeps the database id as its fallback deliberately.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+
+    $first = Visitor::factory()->for($site)->create([
+        'name' => null, 'email' => null, 'external_id' => null, 'anonymous_id' => null,
+    ]);
+    $second = Visitor::factory()->for($site)->create([
+        'name' => null, 'email' => null, 'external_id' => null, 'anonymous_id' => null,
+    ]);
+
+    foreach ([$first, $second] as $visitor) {
+        AuditEvent::factory()->for($account)->for($site)->create([
+            'actor_type' => $visitor->getMorphClass(),
+            'actor_id' => $visitor->id,
+            'subject_type' => $site->getMorphClass(),
+            'subject_id' => $site->id,
+            'action' => 'visitor.identity_merged',
+            'metadata' => [],
+            'occurred_at' => CarbonImmutable::create(2026, 9, 12, 10, 0, 0, 'UTC'),
+        ]);
+    }
+
+    $html = $this->actingAs($admin)
+        ->get(route('dashboard.account.audit.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('#'.$first->id)
+        ->and($html)->toContain('#'.$second->id);
+});

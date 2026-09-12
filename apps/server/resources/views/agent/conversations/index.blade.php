@@ -295,12 +295,10 @@
                                         // replace, and this pair also omitted the host's
                                         // identifier -- so the queue showed a browser id
                                         // where the row it opens showed `customer-123`.
-                                        $visitorIdentity = \App\Support\Visitors\VisitorLabel::fromCandidates([
-                                            $conversation->visitor?->name,
-                                            $conversation->visitor?->email,
-                                            $conversation->visitor?->external_id,
-                                            $conversation->visitor?->anonymous_id,
-                                        ], __('conversations.row.unknown_visitor'));
+                                        $visitorIdentity = \App\Support\Visitors\VisitorLabel::forVisitor(
+                                            $conversation->visitor,
+                                            __('conversations.row.unknown_visitor'),
+                                        );
                                         $visitorGaveTheirOwn = $visitorIdentity['is_theirs'];
                                         $visitorLabel = $visitorIdentity['label'];
                                     @endphp

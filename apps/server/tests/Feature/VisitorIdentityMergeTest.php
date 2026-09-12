@@ -1003,6 +1003,29 @@ test('a candidate found only through a retained browser id still has a heading',
     );
 });
 
+test('a merge candidate heading never shows a host identifier that carries an address', function (): void {
+    // Searchable by it, and still not displayable: the search matches the raw
+    // column, the heading shows what the resolver will part with.
+    $account = Account::factory()->create();
+    $manager = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $source = Visitor::factory()->for($site)->create(['name' => 'Duplicate Contact']);
+
+    Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'ada@example.test',
+        'anonymous_id' => 'anon-merge-address',
+    ]);
+
+    $html = $this->actingAs($manager)
+        ->get(route('dashboard.visitors.show', [$source, 'merge_search' => 'ada@example.test']))
+        ->assertOk()
+        ->getContent();
+
+    expect(visitorMergeCandidateHeadings($html))->toBe(['anon-merge-address']);
+});
+
 function visitorMergeCandidateHeadings(string $html): array
 {
     $document = new DOMDocument;

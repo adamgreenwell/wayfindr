@@ -510,3 +510,51 @@ test('a named visitor is called their name, not their browser id', function (): 
     expect(substr_count($response->getContent(), 'Priya Raman'))->toBeGreaterThanOrEqual(2)
         ->and($response->getContent())->toContain('anon-6871486e');
 });
+
+test('the visitor list never shows a host identifier that carries an address', function (): void {
+    // `external_id` is the one naming field the HOST wrote, so it is the one
+    // that can arrive holding an address, a card-shaped number or a token. The
+    // detail pages redacted it; the list, the queue and the live board did not,
+    // because each rebuilt the candidate list by hand and only three of the six
+    // remembered. The redaction now lives with the order, inside the resolver.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create();
+
+    Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'ada@example.test',
+        'anonymous_id' => 'anon-list-address',
+    ]);
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->not->toContain('ada@example.test')
+        ->and($html)->toContain('anon-list-address');
+});
+
+test('the visitor list shows a host identifier that is only an identifier', function (): void {
+    // The redaction is a heuristic over the VALUE, so it must not swallow the
+    // ordinary case it exists to let through.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create();
+
+    Visitor::factory()->for($site)->create([
+        'name' => null,
+        'email' => null,
+        'external_id' => 'customer-123',
+        'anonymous_id' => 'anon-list-plain',
+    ]);
+
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.visitors.index'))
+        ->assertOk()
+        ->getContent();
+
+    expect($html)->toContain('customer-123');
+});

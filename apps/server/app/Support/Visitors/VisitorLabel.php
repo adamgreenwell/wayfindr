@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Support\Visitors;
 
+use App\Models\Visitor;
+use App\Support\VisitorContextSanitizer;
+
 /**
  * What a visitor is CALLED, as opposed to how they are looked up.
  *
@@ -15,13 +18,42 @@ namespace App\Support\Visitors;
  * `anonymous_id` as `required|string|max:255`, so "0" is a value this product
  * accepts and then could not name.
  *
- * The candidate ORDER stays at the call site, because it is per-surface
- * knowledge, and so does the fallback sentence, because each surface says it in
- * its own words. What lives here is the part that must never vary: first filled
- * wins, and whether the result is the visitor's own string or ours.
+ * The order was left at the call site on the theory that it is per-surface
+ * knowledge. It is not: all seven surfaces want the same order, and what they
+ * were really rebuilding by hand was a four-item list plus the decision to
+ * redact the host's identifier. Three remembered the redaction and three did
+ * not, so a host that stores an email address in `external_id` had it shown on
+ * the queue, the visitor list and the merge list while the detail pages hid it.
+ *
+ * So `forVisitor()` owns the order AND the redaction, and the only thing a
+ * surface still supplies is the sentence to say when there is nothing to say,
+ * because each says that in its own words.
  */
 final class VisitorLabel
 {
+    /**
+     * The four ways to name a visitor, in the one order every surface wants.
+     *
+     * `external_id` is the only one the HOST wrote rather than the visitor or
+     * us, so it is the only one that can carry something a support desk should
+     * not display. It is redacted here rather than at six call sites.
+     *
+     * @param  string  $fallback  what to say when the visitor has no identifier
+     *                            at all; pass an empty string where the reader's
+     *                            language is not known yet (a broadcast payload)
+     *                            and let the surface supply its own sentence.
+     * @return array{label: string, is_theirs: bool}
+     */
+    public static function forVisitor(?Visitor $visitor, string $fallback): array
+    {
+        return self::fromCandidates([
+            $visitor?->name,
+            $visitor?->email,
+            (new VisitorContextSanitizer)->sanitizeIdentifier($visitor?->external_id),
+            $visitor?->anonymous_id,
+        ], $fallback);
+    }
+
     /**
      * @param  list<string|null>  $candidates  in the order the surface prefers them
      * @param  string  $fallback  what to say when the visitor has no identifier at all

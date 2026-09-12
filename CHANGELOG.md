@@ -419,15 +419,28 @@ page view that was not there before.
   parameterised routes by static prefix, so each fragment passed on the
   conversation index's coverage without ever being rendered.
 
-- **A visitor is called the same thing on every surface that names one.** Three
-  controllers each carried a private `visitorContext()` and the directory had a
-  fourth expression of its own, so one person could be four different names
-  depending on which page you were looking at. The conversation page printed a
-  raw `anon-6871486e` beside a tab showing that person's name; the ticket page
-  put the address before the name and ignored the host's identifier entirely.
-  All four now take name, then address, then the host's identifier, then the
+- **A visitor is called the same thing on every surface that names one.** Eight
+  surfaces each decided it privately — three controllers with a `visitorContext()`
+  apiece, the visitor directory, the ticket queue, the merge candidate list, the
+  live board and the account audit log — so one person could be eight different
+  names depending on where you were looking. The conversation page printed a raw
+  `anon-6871486e` beside a tab showing that person's name; the ticket page put
+  the address before the name and ignored the host's identifier entirely; the
+  live board called a customer the host knows as `customer-123` "Visitor 41".
+  All eight now take name, then address, then the host's identifier, then the
   browser id — and where a page needs the browser id as a support reference, it
   has its own row for it rather than borrowing the name's.
+
+  The host's identifier is the only one of the four that the *site operator*
+  wrote rather than the visitor or us, so it is the only one that can arrive
+  holding something a support desk should not display. The three detail pages
+  ran it through the redaction that catches addresses, card-shaped numbers and
+  API tokens. The visitor directory and the audit log printed it whole, so a
+  host that files its customers under their email address had that address on
+  two screens that the detail page for the same person redacts. That decision
+  now travels with the order, inside the one resolver, because eight surfaces
+  rebuilding the same four-item list by hand is how five of them came to differ
+  on it.
 
   Three defects fell out of that which the inconsistency had hidden. Anyone who
   reached us by email had **no name at all** on their own profile: the page
