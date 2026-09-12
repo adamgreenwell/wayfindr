@@ -365,7 +365,35 @@ test('being throttled explains itself instead of rendering the framework 429', f
     // Requests 429 Too Many Requests" -- no product name, no link back, and no
     // use made of the Retry-After it just computed.
     $throttled->assertSee('Too many attempts')
-        ->assertSee('Nothing has been cancelled, and your account is not locked.')
+        ->assertSee('It does not lock your account')
         ->assertSee(route('login'), false)
         ->assertDontSee('Too Many Requests');
+});
+
+test('a throttled authenticated form is not told to sign in again', function (): void {
+    // This view answers EVERY html 429, not just the pre-auth ones. The
+    // two-factor confirmation, recovery-code regeneration, disablement and the
+    // operator AI test are all throttled inside the `auth` group, and offering
+    // an already-signed-in agent a link to sign in is no way out.
+    $agent = User::factory()->for(Account::factory())->create([
+        'account_role' => AccountRole::Owner,
+    ]);
+
+    $throttled = null;
+
+    for ($attempt = 0; $attempt < 20; $attempt++) {
+        $response = $this->actingAs($agent)
+            ->put(route('dashboard.profile.two-factor.confirm'), ['one_time_code' => '000000']);
+
+        if ($response->status() === 429) {
+            $throttled = $response;
+            break;
+        }
+    }
+
+    expect($throttled)->not->toBeNull('two-factor confirmation should throttle');
+
+    $throttled->assertSee('Too many attempts')
+        ->assertSee(route('dashboard'), false)
+        ->assertDontSee('Back to sign in');
 });
