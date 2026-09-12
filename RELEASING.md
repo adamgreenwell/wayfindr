@@ -65,12 +65,15 @@ manifest, and the history entry all read it — so dating the notes by it is bot
 precise and checkable.
 
 A tag created the day after its commit therefore ships notes dated the commit's
-day, and that is the intended outcome rather than a defect to chase. The whole
-mechanism already tolerates a day either way: the preflight in step 3 refuses a
-section dated more than a day before the commit, because timezone skew between
-whoever wrote the heading and the committer is not worth blocking a release
-over. Re-committing to correct a one-day drift would start a fresh exact-SHA CI
-run that can cross midnight in its turn, so it does not converge.
+day, and that is the intended outcome rather than a defect to chase.
+Re-committing to correct that drift would start a fresh exact-SHA CI run which
+can cross midnight in its turn, so the remedy does not converge.
+
+The preflight in step 3 refuses a section dated more than a day from the commit
+in either direction — a day of tolerance for timezone skew between whoever wrote
+the heading and the committer, and an upper edge so a mistyped year cannot
+publish. Both edges are measured against the commit rather than the clock, so
+neither can fail a rerun of the publish job.
 
 Write it for someone several releases behind who has never read the PR.
 
