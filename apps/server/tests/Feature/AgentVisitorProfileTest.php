@@ -457,3 +457,56 @@ test('visitor profile respects site support access', function (): void {
         ->get(route('dashboard.visitors.show', $visitor))
         ->assertNotFound();
 });
+
+test('a visitor who reached us by email has a name on their own profile', function (): void {
+    // InboundMailRouter creates exactly this when a From header carries no
+    // display name: the address is all we get, and both `name` and
+    // `anonymous_id` stay null. The profile printed `anonymous_id` alone, so the
+    // lede rendered as "Acme Docs · " -- a dangling separator -- and her email
+    // appeared nowhere on her own page.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => null,
+        'name' => null,
+        'external_id' => null,
+        'email' => 'priya@example.test',
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk();
+
+    // The lede and the at-a-glance row, the same two places the browser id used
+    // to occupy.
+    expect(substr_count($response->getContent(), 'priya@example.test'))->toBeGreaterThanOrEqual(2)
+        // The separator must not be left hanging.
+        ->and($response->getContent())->not->toContain('Acme Docs</span> · <span lang=""></span>');
+
+    // And the support-code reference is no longer a link to nothing. Guarded the
+    // same way `host_visitor_id` directly below it already was.
+    $response->assertDontSee('support_code=&', false)
+        ->assertDontSee("'support_code' => ''", false);
+});
+
+test('a named visitor is called their name, not their browser id', function (): void {
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $visitor = Visitor::factory()->for($site)->create([
+        'anonymous_id' => 'anon-6871486e',
+        'name' => 'Priya Raman',
+    ]);
+
+    $response = $this->actingAs($agent)
+        ->get(route('dashboard.visitors.show', $visitor))
+        ->assertOk();
+
+    // Named in the lede and the glance row; the browser id survives in the
+    // references block, which is the surface that exists to carry it.
+    expect(substr_count($response->getContent(), 'Priya Raman'))->toBeGreaterThanOrEqual(2)
+        ->and($response->getContent())->toContain('anon-6871486e');
+});
