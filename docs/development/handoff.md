@@ -4,10 +4,10 @@
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§14](#14-session-snapshot--september-1213-2026-visitor-naming-closed-the-account-half-measured-the-release-gate-narrowed)**
+**Taking the baton? Start at [§15](#15-release-080-rehearsal--september-13-2026)**
 — the most recent session snapshot carries the current situational state, what
 is blocked on whom, and what is actually available to pick up. Then §5
-(conventions) and §7 (gotchas). Sections 8–13 are older snapshots, kept for
+(conventions) and §7 (gotchas). Sections 8–14 are older snapshots, kept for
 their evidence rather than their currency.
 
 ---
@@ -1109,3 +1109,25 @@ One more nuance on the copilot: it is **off until an operator configures a
 provider** — `config/ai.php` defaults the driver to an empty string — so "the
 copilot ships" means the capability exists and is opt-in, not that every install
 is running AI.
+
+## 15. Release 0.8.0 rehearsal — September 13, 2026
+
+The owner selected **0.8.0 as the next release target**, with installation and
+upgrade verification ahead of further account/site-settings restructuring.
+The local [pre-publication rehearsal](release-0.8.0-rehearsal.md) found and fixed
+a real image-upgrade defect: persisted compiled Blade templates from 0.7.0
+could make the new dashboard return HTTP 500 after sign-in. Images now keep
+their default compiled views local to each container.
+
+The fixed candidate passed a fresh local install and a repeated 0.7.0 upgrade
+without clearing the old cache. The upgrade applied 37 migrations and preserved
+seeded records, attachment bytes, and an encrypted value. Backup/restore and
+container restart checks also passed. The linked report records exact candidate
+identities and the limits of the local ARM64 evidence.
+
+The release remains **unpublished**. #970 still requires owner-controlled tag
+protection and a fresh old-run audit after September 24 at 12:53:21 UTC; waiting
+for that window is the selected path. The changelog date stays provisional until
+the final release commit. Public artifact checks and #797's human non-author
+installation follow publication. No deployment, fork sync, or human acceptance
+is implied by this rehearsal.

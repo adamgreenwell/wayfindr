@@ -6,8 +6,9 @@ platform needs to provide. Use it when translating Wayfindr to a plain VPS,
 Docker host, Coolify-style application platform, Kubernetes, or another
 Laravel-capable environment.
 
-Wayfindr is still pre-alpha. Treat this as the runtime contract, not a polished
-one-command installer.
+For the supported Docker installation procedure, start with the
+[installation guide](install.md). This document describes the services and
+runtime prerequisites for operating Wayfindr on other deployment platforms.
 
 ## Application Shape
 
