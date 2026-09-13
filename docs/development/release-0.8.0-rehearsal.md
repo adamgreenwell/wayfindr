@@ -86,8 +86,9 @@ the test inventory independently confirmed that all 287 ran. PHP-version,
 host-manifest, and self-hosting shell contracts passed.
 
 The real extracted Forge preflight accepted PHP 8.5.10 and Composer using that
-runtime. Running either application PHP or Composer with PHP 8.3.33 stopped
-with exit 78 before the mutation sentinel. Separately injected missing curl,
+runtime. Repeating the check with the unsupported `8.3.33` runtime for either
+application PHP or Composer stopped with exit 78 before the mutation sentinel.
+Separately injected missing curl,
 gd, or intl checks also stopped with exit 78; those missing-extension cases were
 fault injection, not a claim that the Mac lacked the modules.
 

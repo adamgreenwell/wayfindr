@@ -1121,7 +1121,7 @@ their default compiled views local to each container.
 
 The fixed candidate passed a fresh local install and a repeated 0.7.0 upgrade
 without clearing the old cache. The upgrade applied 37 migrations and preserved
-seeded records, attachment bytes, and an encrypted value. Backup/restore and
+seeded records, local marker-file bytes, and an encrypted value. Backup/restore and
 container restart checks also passed. The linked report records exact candidate
 identities and the limits of the local ARM64 evidence.
 
