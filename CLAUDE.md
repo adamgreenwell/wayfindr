@@ -32,9 +32,25 @@ not a requirement of the repo.
 
 ```bash
 # from apps/server, substituting whichever binary `php -v` proved is >= 8.4.1
+php artisan config:clear
 php -d memory_limit=1G vendor/bin/pest
 php vendor/bin/pint app/Support/Visitors/VisitorLabel.php   # or any path(s)
 ```
+
+- **`config:clear` first is not optional.** A cached `bootstrap/cache/config.php`
+  is baked from `config/*.php` with `env()` already resolved, so the values
+  `phpunit.xml` sets are ignored. Measured on this repo:
+
+  ```
+  with cached config  ->  database.default = pgsql
+  after config:clear  ->  database.default = sqlite
+  ```
+
+  `RefreshDatabase` would then migrate and truncate **your real development
+  database** instead of in-memory sqlite. `bootstrap/cache/` is gitignored, so
+  whether you have one is invisible in the diff — anyone who has run
+  `artisan config:cache` does. The repo's own `composer test` script exists for
+  this reason: it is `artisan config:clear` followed by pest.
 
 - `-d memory_limit=1G` is required for the full suite; without it you get
   "Allowed memory size exhausted" inside a compiled Blade view, which reads like

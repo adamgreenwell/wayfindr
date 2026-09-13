@@ -336,7 +336,12 @@ issue tracker for current state.
   Mac the default is 8.3, so the Homebrew 8.5 build
   (`/opt/homebrew/opt/php/bin/php`) is the one to reach for there — a
   host-specific fallback, not a repo requirement, and it does not exist on Linux
-  or in CI. Add `-d memory_limit=1G` for the full suite.
+  or in CI. Add `-d memory_limit=1G` for the full suite, and run
+  `artisan config:clear` **before** Pest: a cached `bootstrap/cache/config.php`
+  is baked with `env()` already resolved, so `phpunit.xml`'s `DB_CONNECTION`
+  is ignored and `RefreshDatabase` truncates your real database instead of
+  in-memory sqlite (measured: `pgsql` cached vs `sqlite` cleared). That is why
+  `composer test` is `config:clear` then pest.
 
   **Invoke vendor binaries through that binary, not by their own path.**
   `vendor/bin/*` scripts start `#!/usr/bin/env php`, so running
