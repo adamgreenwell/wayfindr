@@ -343,9 +343,9 @@ issue tracker for current state.
   `./vendor/bin/pest` picks up whatever `php` is first on `PATH` — 8.3 on the
   maintainer's Mac — and dies in Composer's platform check before any test
   runs. Use `<php> vendor/bin/pest` and `<php> vendor/bin/pint <paths>`.
-  (`./vendor/bin/pint` happens to survive this today because Pint is
-  self-contained and requires only `^8.3.0`; that is luck, not a rule, and it
-  does not hold for `pest`.) Widget: `node --test` + jsdom, **run
+  (`./vendor/bin/pint` happens to survive this today because Pint ships
+  self-contained and tolerates an older interpreter than the application does;
+  that is luck, not a rule, and it does not hold for `pest`.) Widget: `node --test` + jsdom, **run
   from `packages/widget-js`** — from any other directory it discovers nothing,
   prints `tests 0` and exits 0, so a widget regression passes silently. For
   inline Blade `<script>` changes, sanity-check JS with `node --check` on the
