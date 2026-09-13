@@ -121,6 +121,7 @@ RUN mkdir -p /etc/wayfindr \
 # given" too, so it can never shadow the derived identity in the file.
 ENV APP_ENV=production \
     APP_DEBUG=false \
+    VIEW_COMPILED_PATH=/app/apps/server/bootstrap/cache/views \
     LOG_CHANNEL=stderr \
     SERVER_NAME=:80 \
     WAYFINDR_VERSION=${WAYFINDR_VERSION} \

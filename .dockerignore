@@ -18,6 +18,7 @@
 !packages/widget-js/vendor/**
 
 apps/server/bootstrap/cache/*.php
+apps/server/bootstrap/cache/views
 apps/server/database/database.sqlite
 apps/server/storage/app/public/*
 apps/server/storage/framework/cache/*

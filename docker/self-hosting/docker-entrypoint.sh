@@ -3,6 +3,12 @@ set -euo pipefail
 
 cd /app/apps/server
 
+# Compiled views belong to this container's source, not the shared storage
+# volume: an older image can leave newer cache timestamps behind on upgrade.
+# Keep workers and overlapping releases from reading or clearing one another's
+# templates. An empty override still gets the container-local default.
+export VIEW_COMPILED_PATH="${VIEW_COMPILED_PATH:-$PWD/bootstrap/cache/views}"
+
 # The storage volume may start empty (first boot) — recreate the tree the app
 # expects. Idempotent on every start.
 mkdir -p \
@@ -12,7 +18,8 @@ mkdir -p \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs \
-    bootstrap/cache
+    bootstrap/cache \
+    "$VIEW_COMPILED_PATH"
 
 # Gated automatic migrations: the compose web service opts in so a fresh
 # install and every upgrade converge without a manual exec; workers leave it
