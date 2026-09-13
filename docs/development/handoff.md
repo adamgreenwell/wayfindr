@@ -950,10 +950,19 @@ Three lessons from it that generalise beyond this PR:
   trusting its zero.
 - **The consumer of a resolver can undo it in one line.** Having removed `?:`
   everywhere, I then wrote `forVisitor(...)['label'] ?: null` in the live board's
-  payload — discarding the string `"0"` one line after asking for it — and the
-  same truthiness mistake in the JS renderer, where `"0"` is falsy too. When a
+  payload — discarding the string `"0"` one line after asking for it. When a
   helper returns a flag *because* the derived answer is unreliable, read the
   flag; never re-derive it from the value.
+
+  **PHP and JavaScript disagree about `"0"`, and I got this backwards.** In PHP
+  `(bool) "0"` is `false`, which is the whole bug. In JavaScript
+  `Boolean("0")` is `true` — only the *number* `0` is falsy — so the renderer's
+  `if (visitor.label)` would have shown a visitor named `0` correctly. The
+  browser-side change to `!== null` preserves the payload contract (the
+  visitor's own string, or `null`, never our sentence); it does not fix the same
+  bug. Do not carry PHP's falsy set across the seam: `"0"`, `"false"` and
+  `" "` are all truthy in JS, and `[]` is truthy there while `blank([])` is
+  true here.
 
 Codex found each of these. It took three review rounds and every round found
 something real, including a redaction regression the fix itself introduced.

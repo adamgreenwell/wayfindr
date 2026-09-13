@@ -1754,8 +1754,12 @@ test('the socket renderer distinguishes an absent label from the string zero', f
     // A SOURCE check, and it says so: the renderer is inline JavaScript in a
     // Blade file and there is no JS runner in this repo, so no test can execute
     // it. What it can do is refuse the one construction that is wrong for a
-    // value which may legitimately be "0" -- the same truthiness mistake the
-    // server side made on the line above it.
+    // value which may legitimately be "0". NOTE: unlike PHP, JavaScript treats
+    // the STRING "0" as truthy -- Boolean("0") === true, only the number 0 is
+    // falsy -- so `if (visitor.label)` would in fact render a visitor named 0.
+    // This guard is about the payload CONTRACT, not about that: the field is
+    // the visitor's own string or null, and a renderer that tests truthiness
+    // instead of null is reading a contract it was not given.
     $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
 
     expect($source)->toContain('visitor.label !== null');
