@@ -1,8 +1,14 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated September 10, 2026. For an agent (or engineer) picking up
+*Living document — last updated September 13, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
+
+**Taking the baton? Start at [§14](#14-session-snapshot--september-1213-2026-visitor-naming-closed-the-account-half-measured-the-release-gate-narrowed)**
+— the most recent session snapshot carries the current situational state, what
+is blocked on whom, and what is actually available to pick up. Then §5
+(conventions) and §7 (gotchas). Sections 8–13 are older snapshots, kept for
+their evidence rather than their currency.
 
 ---
 
@@ -324,9 +330,32 @@ issue tracker for current state.
   `main` to trigger a Forge deploy. **Do not sync it yourself.** A synced fork
   proves only that source was moved; it is not runtime proof until the target
   deployment is checked.
-- **Test toolchain**: run server tests with the PHP 8.5 binary
-  (`/opt/homebrew/opt/php/bin/php`); add `-d memory_limit=1G` for the full suite.
-  Pest + Pint (`./vendor/bin/pint <files>`). Widget: `node --test` + jsdom. For
+- **Test toolchain**: server tests need **PHP >= 8.4.1** (`composer.json`
+  requires `^8.4.1`, and Composer's platform check fails before your code runs).
+  Check with `php -v` and use that binary if it qualifies; on the maintainer's
+  Mac the default is 8.3, so the Homebrew 8.5 build
+  (`/opt/homebrew/opt/php/bin/php`) is the one to reach for there — a
+  host-specific fallback, not a repo requirement, and it does not exist on Linux
+  or in CI. Add `-d memory_limit=1G` for the full suite, and run
+  `php artisan config:clear` (same binary, same `apps/server` directory)
+  **before** Pest: a cached `bootstrap/cache/config.php`
+  is baked with `env()` already resolved, so `phpunit.xml`'s `DB_CONNECTION`
+  is ignored and `RefreshDatabase` truncates your real database instead of
+  in-memory sqlite (measured: `pgsql` cached vs `sqlite` cleared). That is why
+  `composer test` is `config:clear` then pest.
+
+  **Invoke vendor binaries through that binary, not by their own path.**
+  `vendor/bin/*` scripts start `#!/usr/bin/env php`, so running
+  `./vendor/bin/pest` picks up whatever `php` is first on `PATH` — 8.3 on the
+  maintainer's Mac — and dies in Composer's platform check before any test
+  runs. Invoke them through the binary you selected —
+  `php vendor/bin/pest`, `php vendor/bin/pint app/Support/Visitors/VisitorLabel.php` —
+  substituting the qualified path for `php` where the default is too old.
+  (`./vendor/bin/pint` happens to survive this today because Pint ships
+  self-contained and tolerates an older interpreter than the application does;
+  that is luck, not a rule, and it does not hold for `pest`.) Widget: `node --test` + jsdom, **run
+  from `packages/widget-js`** — from any other directory it discovers nothing,
+  prints `tests 0` and exits 0, so a widget regression passes silently. For
   inline Blade `<script>` changes, sanity-check JS with `node --check` on the
   extracted block.
 - **Stage validation** uses an authenticated browser session: the agent side at
@@ -395,8 +424,17 @@ Ordered by real dogfood value and dependency, not feature novelty.
   often captures blank under automation. Validate content via the
   `allow-same-origin` diagnostic-iframe trick or by reading `srcdoc`, not
   screenshots. (Real agents' browsers paint it fine.)
-- **Blade `@php(...)` short form** can truncate on inner `()` — use
-  `@php … @endphp` block form.
+- **Blade `@php(...)` short form** can truncate on inner `()` — prefer the
+  `@php … @endphp` block form. **But never add a block to a file that already
+  uses the inline form without converting the inline one first.** Blade extracts
+  raw `@php … @endphp` regions in a non-greedy pre-pass *before* compiling
+  directives, so a pre-existing inline `@php(...)` pairs with the *new* block's
+  `@endphp` and swallows everything between them. Every directive in that span
+  stops compiling and is emitted literally. Directive counts all balance, which
+  is what makes it confusing; the error points nowhere near the cause. This took
+  out 275 lines of `agent/sites/show.blade.php` and **31 tests** in PR #720.
+  To diagnose: read the compiled view in `storage/framework/views/` and find the
+  first literal `{{` — the unpaired `@php` is immediately above it.
 - **GitHub auto-close keywords in PR titles/bodies** (`closes #NN`) will close
   the referenced issue on merge. This already caused avoidable issue housekeeping
   on an older integration epic — mind epic references in PR text.
@@ -847,3 +885,206 @@ rewrite those as runtime failures or as current production restore proof.
   let real support conversations choose the next branch-sized product slice.
 - Rerun the same disposable matrix for any later release candidate; the August
   12 results prove only the exact public artifacts and dated environments above.
+
+---
+
+## 14. Session snapshot — September 12–13, 2026 (visitor naming closed; the account half measured; the release gate narrowed)
+
+**Read this section first if you are picking up the baton.** It is the current
+situational state; §§8–13 above are older snapshots kept for their evidence.
+
+### Where `main` is
+
+`cf6cf218`, clean tree, **no open PRs**. Full suite **3,896 tests — 3,883
+passed, 13 skipped, 0 failed** (run 2026-09-13 on the 8.5 binary with
+`-d memory_limit=1G`). `VERSION` is `0.8.0`; the newest published tag is still
+`v0.7.0`.
+
+### The release gate is now the *only* thing between here and `v0.8.0`
+
+Everything else on the path is ready: the ordinary release contract passes,
+there are no open PRs, and the 0.8.0 notes are reconciled — reconciliation is an
+ongoing practice on this cut (#975, #990, #993 among others) and nothing has
+merged since the last one.
+
+**`--publishing` mode currently FAILS, and that is correct.** It reports that the
+`[0.8.0]` section is dated 2026-09-10, some days before the release commit. The
+gap widens with every commit that lands on `main`, because the guard is anchored
+to the *release commit* rather than to the clock — deliberately, so that a rerun
+of the publish job can never fail a heading that was accurate when written.
+
+`RELEASING.md` step 2 instructs setting that date on the day you make the
+release commit, and step 3 makes it. **Do not "fix" this ahead of the cut.**
+Re-dating early only re-ages, and each re-commit starts a fresh exact-SHA CI run
+that can itself cross midnight, so the remedy does not converge. The failure is
+the expected pre-release-commit state, not a defect.
+
+**#970's two owner-only preconditions both still stand**, re-audited 2026-09-13
+because `RELEASING.md` requires repeating that audit immediately before the
+first guarded tag:
+
+1. **No `v*` ruleset exists** — `gh api repos/adamgreenwell/wayfindr/rulesets`
+   returns `[]`. Without the *creation* rule, a new tag on an older commit can
+   still invoke that commit's unguarded publisher.
+2. **Pre-guard `Release image` runs are still re-runnable.** The window is 30
+   days from each run's own creation *timestamp*, so the count falls through
+   the day rather than at midnight — the four 0.4.0–0.4.3 runs all lapse during
+   2026-09-13, the last at 19:46:49Z. What remains after that is 0.4.4
+   (`32040370601`), 0.5.0 (`32176129777`), 0.6.0 (`32486676482`) and **0.7.0
+   (`32850117913`), which expires 2026-09-24 and governs the wait.** Re-run the
+   audit against timestamps, not dates; a date-only comparison reports runs
+   expired up to a day early.
+
+Neither is an agent action. Creating rulesets and deleting workflow runs are
+both owner decisions; the run evidence is preserved in #970.
+
+### What merged: one visitor, one name (#993 → `cf6cf218`)
+
+`VisitorLabel::forVisitor()` now owns the candidate order *and* the redaction of
+the host-supplied `external_id`, and all **eight** surfaces that name a visitor
+route through it — three detail-page `visitorContext()` implementations, the
+visitor directory, the ticket queue, the merge candidate list, the live board,
+and the account audit log.
+
+Three lessons from it that generalise beyond this PR:
+
+- **The redaction was riding in an argument list.** Extracting the shared
+  resolver removed the duplicated `?:` chain but left six callers each rebuilding
+  the same four-item candidate list — and `external_id` is the only one of the
+  four the *site operator* writes rather than the visitor or us, so it is the
+  only one that can arrive holding an address or a token. Three callers
+  sanitised it; two shipped it whole. **If every caller passes the same
+  argument, it belongs inside; if that argument encodes a safety decision, it
+  belongs inside even when one caller differs.**
+- **A census finds the shape you searched for, not the property you meant.** A
+  multiline-tolerant sweep for `?:` chains over a naming field returned one hit
+  and I called it clean. The live board used `??` and `||`; the audit log used
+  `collect()->filter()->first()`. Re-phrasing the sweep as the *property* —
+  which code picks among a visitor's identifiers, whatever joins them — found
+  all eight, including one nobody knew about. Validate any such sweep against a
+  commit where the defect existed (`git show HEAD~1:path/to/file | grep -nE 'pattern'`)
+  before trusting its zero.
+- **The consumer of a resolver can undo it in one line.** Having removed `?:`
+  everywhere, I then wrote `forVisitor(...)['label'] ?: null` in the live board's
+  payload — discarding the string `"0"` one line after asking for it. When a
+  helper returns a flag *because* the derived answer is unreliable, read the
+  flag; never re-derive it from the value.
+
+  **PHP and JavaScript disagree about `"0"`, and I got this backwards.** In PHP
+  `(bool) "0"` is `false`, which is the whole bug. In JavaScript
+  `Boolean("0")` is `true` — only the *number* `0` is falsy — so the renderer's
+  `if (visitor.label)` would have shown a visitor named `0` correctly. The
+  browser-side change to `!== null` preserves the payload contract (the
+  visitor's own string, or `null`, never our sentence); it does not fix the same
+  bug. Do not carry PHP's falsy set across the seam: `"0"`, `"false"` and
+  `" "` are all truthy in JS, and `[]` is truthy there while `blank([])` is
+  true here.
+
+Codex found each of these. It took three review rounds and every round found
+something real, including a redaction regression the fix itself introduced.
+
+### The account half is measured, and it is the shape of 1.0.0
+
+A competitive study of tawk.to (#994, and #986 for the pricing half) produced one
+number worth acting on. Of **50 named `dashboard.*` GET routes: 19 answer
+customers** (conversations 9, alerts 3, visitors 3, reports 2, tickets 2) and
+**19 administer the account**, plus 8 site config and 4 other. tawk.to's help
+centre, as the same proxy, puts ~10% on billing, profile and add-ons. Different
+units, so the ratio is the comparable part — 38% against 10%.
+
+This converges independently with the September UI audit: 43 of its 215 findings
+are account-admin (22) and account-content (21), the two groups still untouched.
+
+**The account group is unfinished, not broken.** Nine views, 2,280 lines, and
+**zero use of `x-tabs`** against tickets and conversations, which both use it.
+All 18 account page surfaces render 200 with exactly one `<h1>`, no dead `href`,
+and no untranslated markers (15 parameter-free, plus three model-bound ones).
+`account/show.blade.php` alone is 722 lines and 12 `<section>` blocks, and
+carries **two** `management-list` blocks: an in-page map of eight-plus fragment
+anchors into its own sections, and a cross-surface directory to the other nine
+views. So the epic is really that one page, the same shape as #985.
+
+That in-page map is the argument, not a mitigation. The UI audit's own line —
+*"a table of contents is evidence a page needs tabs, not a substitute for one"* —
+now applies to three surfaces in three different vocabularies: `sites/show`
+invented a `filter-chip` jump list, `account/show` invented a `management-list`
+one, and the renovated groups use `x-tabs`.
+
+Two measurement traps worth inheriting. First, `dashboard.readiness.show` is not
+a page: `routes/web.php:301` is a `Route::redirect` to `/operator`. It appears
+in the 50-route split's "other" bucket and in
+`docs/product/dashboard-language.md:17`'s list of intentionally-English *pages*,
+and it renders nothing. Do not budget work for it. Second, I twice concluded
+`account/show` had no jump list because I grepped for the *vocabulary*
+(`filter-chip`) rather than the *property* (in-page anchor navigation) — the
+same error described two paragraphs above, made again within the hour.
+
+**Correction recorded here because it was published wrongly first:** the study
+initially said Wayfindr has no AI. It does — the **agent copilot** shipped
+through #921 under #763. The difference from a competitor selling an autonomous
+answering product is *who the AI talks to*: theirs answers the customer, ours
+answers the agent and a person reviews every suggestion. ADR 0004 defers the
+visitor-facing answer agent deliberately, which is why #762 keeps #764
+unchecked. §6 item 6 above had this right; I did not check it before writing the
+comparison. **The autonomous half is deferred by decision, not missing by
+omission** — do not scope it as a gap to close.
+
+### Three decisions waiting on the owner
+
+Each has been measured so the decision is cheap. Do not start any of them
+unilaterally.
+
+1. **#970** — the ruleset, and wait-or-delete on whichever pre-guard runs are
+   *still* inside their window when you act. Do not take a count from this
+   document: it falls through the day, and #970 carries the audit. Gates
+   `v0.8.0`, and therefore #797, and therefore 1.0.0.
+2. **Does `account/show` become tabs before 1.0.0 or after?** Same question for
+   #985's `sites/show`. Both are 0.6.0 renovation debt rather than new work.
+3. **Is the next tag `0.9.0` or `1.0.0`?** The recommendation in #994 is that
+   1.0.0 should mean *a self-hoster who is not us can install, run and upgrade
+   it* — making #797 the only hard gate. Holding 1.0.0 for the version a
+   stranger has actually survived is the more conservative read and is
+   defensible.
+
+### What is unblocked right now
+
+- **#948 — three latent defects in the grounded-answer evaluation harness.**
+  Filed deliberately to be fixed *when no capture is being adjudicated*, per the
+  freeze discipline in `docs/development/ai-evaluation.md`. None of them changes
+  the recorded outcome of any existing capture. This is the clearest piece of
+  agent-sized work on the board.
+
+  Defect 1 is confirmed still live against the real function: `normalize()`
+  collapses everything outside Unicode `\p{L}\p{N}` to a space, so a decomposed
+  grapheme splits — `gültig` in NFC normalizes to `gültig`, in NFD to
+  `gu ltig`. It is a **single-alternative** required fact in
+  `german-password-reset-link`, so nothing rescues it. **The fix must move two
+  files together**: the method is byte-identical in
+  `GroundedAnswerEvaluator.php:305` and
+  `GroundedAnswerEvaluationDatasetLoader.php:818`, each with its own
+  `containsPhrase()` beneath it, and the loader's grounding pre-check asserts
+  every required phrase appears in the fixture. Fixing one copy only will
+  disagree with the other.
+- The small end of the account group, if the owner answers question 2 — but the
+  restructure itself is an epic boundary.
+
+**Not available**: #797 needs a human non-author; #970 needs repository
+settings; #764 is deferred by ADR 0004; Wayfindr Cloud is not to be worked on
+before 1.0.0 is cut, and #986 already records what was learned about its pricing
+so that ground does not need re-covering.
+
+**One trap that looks like available work and is not.** `docs/product/roadmap.md`
+and ADR 0004 both say the three Gemini paraphrase misses "await human
+adjudication" and that "#762 stays open for human adjudication". Those read like
+stale sentences describing a gate that closed with the September 10 evidence.
+They are not stale — #762's own body still says *"A human must review the
+retained private responses and decide whether those are provider failures,
+evaluator false negatives, or both"*, and the freeze discipline explicitly
+forbids tuning the fixture after seeing model output. Do not reconcile that
+wording; it is an open human gate, and an agent closing it in prose would be
+claiming an adjudication nobody performed.
+
+One more nuance on the copilot: it is **off until an operator configures a
+provider** — `config/ai.php` defaults the driver to an empty string — so "the
+copilot ships" means the capability exists and is opt-in, not that every install
+is running AI.

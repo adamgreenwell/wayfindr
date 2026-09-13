@@ -383,9 +383,13 @@
                         // nothing of theirs to use, which is the same decision
                         // the server-rendered table above makes -- it is made
                         // once, in the payload, rather than twice here.
-                        // Compared against null, never tested for truthiness:
-                        // "0" is a label this product accepts and `if (label)`
-                        // discards it exactly as `?:` did on the server.
+                        // Compared against null, never tested for truthiness.
+                        // `label` is the visitor's own string or null, and null
+                        // is the only value meaning "nothing of theirs" -- so
+                        // that is what to test. (JS is not PHP here: Boolean("0")
+                        // is TRUE, only the number 0 is falsy, so `if (label)`
+                        // would render a visitor named 0 fine. It is still
+                        // wrong: it reads the value instead of the contract.)
                         if (visitor.label !== null && visitor.label !== undefined) {
                             link.setAttribute('lang', '');
                             link.textContent = visitor.label;
