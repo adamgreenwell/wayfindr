@@ -337,7 +337,15 @@ issue tracker for current state.
   (`/opt/homebrew/opt/php/bin/php`) is the one to reach for there — a
   host-specific fallback, not a repo requirement, and it does not exist on Linux
   or in CI. Add `-d memory_limit=1G` for the full suite.
-  Pest + Pint (`./vendor/bin/pint` followed by the paths to format). Widget: `node --test` + jsdom, **run
+
+  **Invoke vendor binaries through that binary, not by their own path.**
+  `vendor/bin/*` scripts start `#!/usr/bin/env php`, so running
+  `./vendor/bin/pest` picks up whatever `php` is first on `PATH` — 8.3 on the
+  maintainer's Mac — and dies in Composer's platform check before any test
+  runs. Use `<php> vendor/bin/pest` and `<php> vendor/bin/pint <paths>`.
+  (`./vendor/bin/pint` happens to survive this today because Pint is
+  self-contained and requires only `^8.3.0`; that is luck, not a rule, and it
+  does not hold for `pest`.) Widget: `node --test` + jsdom, **run
   from `packages/widget-js`** — from any other directory it discovers nothing,
   prints `tests 0` and exits 0, so a widget regression passes silently. For
   inline Blade `<script>` changes, sanity-check JS with `node --check` on the
