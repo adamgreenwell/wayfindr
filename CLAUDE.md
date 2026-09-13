@@ -28,8 +28,16 @@ every PHP command needs the 8.5 binary:
   `cp apps/server/.env.example apps/server/.env` immediately, as CI does. More
   generally: when a fresh checkout fails, run the same tests on unmodified
   `main` *in that checkout* before believing the failure is yours.
-- Widget tests: `node --test`. For inline Blade `<script>` edits, extract the
-  block and `node --check` it.
+- **Widget tests run from `packages/widget-js`**, not `apps/server`:
+
+  ```bash
+  cd packages/widget-js && node --test
+  ```
+
+  Run from anywhere else, `node --test` discovers no test files, prints
+  `tests 0`, and **exits 0** — a green run that silently skipped all 22 widget
+  test files and 327 assertions. `npm test` in that package is the same command.
+- For inline Blade `<script>` edits, extract the block and `node --check` it.
 - **Run the whole suite, not the file you touched**, before pushing anything
   that touches a shared helper or a Blade view. A view-level parse error only
   surfaces when something renders that view, so `--filter` will not see it.

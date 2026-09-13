@@ -332,7 +332,9 @@ issue tracker for current state.
   deployment is checked.
 - **Test toolchain**: run server tests with the PHP 8.5 binary
   (`/opt/homebrew/opt/php/bin/php`); add `-d memory_limit=1G` for the full suite.
-  Pest + Pint (`./vendor/bin/pint <files>`). Widget: `node --test` + jsdom. For
+  Pest + Pint (`./vendor/bin/pint <files>`). Widget: `node --test` + jsdom, **run
+  from `packages/widget-js`** — from any other directory it discovers nothing,
+  prints `tests 0` and exits 0, so a widget regression passes silently. For
   inline Blade `<script>` changes, sanity-check JS with `node --check` on the
   extracted block.
 - **Stage validation** uses an authenticated browser session: the agent side at
