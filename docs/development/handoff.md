@@ -337,7 +337,7 @@ issue tracker for current state.
   (`/opt/homebrew/opt/php/bin/php`) is the one to reach for there — a
   host-specific fallback, not a repo requirement, and it does not exist on Linux
   or in CI. Add `-d memory_limit=1G` for the full suite.
-  Pest + Pint (`./vendor/bin/pint <files>`). Widget: `node --test` + jsdom, **run
+  Pest + Pint (`./vendor/bin/pint` followed by the paths to format). Widget: `node --test` + jsdom, **run
   from `packages/widget-js`** — from any other directory it discovers nothing,
   prints `tests 0` and exits 0, so a widget regression passes silently. For
   inline Blade `<script>` changes, sanity-check JS with `node --check` on the

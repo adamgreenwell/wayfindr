@@ -33,7 +33,7 @@ not a requirement of the repo.
 ```bash
 # from apps/server, substituting whichever binary `php -v` proved is >= 8.4.1
 php -d memory_limit=1G vendor/bin/pest
-php vendor/bin/pint <files>
+php vendor/bin/pint app/Support/Visitors/VisitorLabel.php   # or any path(s)
 ```
 
 - `-d memory_limit=1G` is required for the full suite; without it you get
