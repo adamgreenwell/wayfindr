@@ -1750,21 +1750,29 @@ test('the board calls a visitor named zero by their name', function (): void {
     expect($html)->not->toContain(__('sites_live.board.unnamed', ['id' => $visitor->id]));
 });
 
-test('the socket renderer distinguishes an absent label from the string zero', function (): void {
+test('the socket renderer reads the label contract rather than truthiness', function (): void {
     // A SOURCE check, and it says so: the renderer is inline JavaScript in a
-    // Blade file and there is no JS runner in this repo, so no test can execute
-    // it. What it can do is refuse the one construction that is wrong for a
-    // value which may legitimately be "0". NOTE: unlike PHP, JavaScript treats
-    // the STRING "0" as truthy -- Boolean("0") === true, only the number 0 is
-    // falsy -- so `if (visitor.label)` would in fact render a visitor named 0.
-    // This guard is about the payload CONTRACT, not about that: the field is
-    // the visitor's own string or null, and a renderer that tests truthiness
-    // instead of null is reading a contract it was not given.
+    // Blade file and this repo has no JS runner, so no test can execute it.
+    //
+    // What it enforces is the PAYLOAD CONTRACT. `label` is the visitor's own
+    // string or `null` -- never our translated fallback, because the row is
+    // broadcast to agents who do not all read the same language. `null` is the
+    // only value meaning "nothing of theirs to show", so that is what the
+    // renderer must test.
+    //
+    // Note for anyone carrying the server-side reasoning across: PHP and
+    // JavaScript disagree here. `(bool) "0"` is false in PHP, which is the
+    // whole reason `?:` lost a visitor named 0 -- but `Boolean("0")` is TRUE in
+    // JavaScript, where only the number 0 is falsy. So `if (visitor.label)`
+    // would render that visitor correctly. It is still wrong, because it reads
+    // a contract it was not given: it would also treat a future empty string as
+    // absent, and it couples the renderer to the value rather than to the
+    // field's meaning.
     $source = file_get_contents(resource_path('views/agent/sites/live.blade.php'));
 
     expect($source)->toContain('visitor.label !== null');
 
-    // `if (visitor.label)` and `visitor.label ? ... : ...` both discard "0".
+    // Both of these test the value's truthiness instead of the contract.
     expect($source)->not->toMatch('/if\s*\(\s*visitor\.label\s*\)/')
         ->and($source)->not->toMatch('/visitor\.label\s*\?[^?=]/');
 });
