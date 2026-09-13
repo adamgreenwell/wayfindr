@@ -7,6 +7,7 @@ cd /app/apps/server
 # volume: an older image can leave newer cache timestamps behind on upgrade.
 # Keep workers and overlapping releases from reading or clearing one another's
 # templates. An empty override still gets the container-local default.
+# The image's view config applies the same fallback to direct exec commands.
 export VIEW_COMPILED_PATH="${VIEW_COMPILED_PATH:-$PWD/bootstrap/cache/views}"
 
 # The storage volume may start empty (first boot) — recreate the tree the app

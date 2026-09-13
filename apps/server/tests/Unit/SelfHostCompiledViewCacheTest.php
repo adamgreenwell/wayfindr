@@ -34,7 +34,7 @@ test('container startup ignores newer compiled views retained from an older imag
 <?php
 require $argv[1].'/vendor/autoload.php';
 new Illuminate\Foundation\Application($argv[2]);
-$view = require $argv[1].'/vendor/laravel/framework/config/view.php';
+$view = require $argv[3];
 $directoryExists = is_dir($view['compiled']);
 $compiler = new Illuminate\View\Compilers\BladeCompiler(new Illuminate\Filesystem\Filesystem, $view['compiled']);
 $engine = new Illuminate\View\Engines\CompilerEngine($compiler);
@@ -66,6 +66,7 @@ PHP);
         $fixture.'/render.php',
         dirname(__DIR__, 2),
         $fixture,
+        $root.'/docker/self-hosting/view.php',
     ], $fixture, [
         'WAYFINDR_TEST_APP_ROOT' => $fixture,
         'WAYFINDR_AUTO_MIGRATE' => '0',
@@ -75,6 +76,8 @@ PHP);
     try {
         if ($configuration === 'image') {
             expect($imageHasCompiledPath)->toBeTrue('The image must set the compiled view path for commands that bypass its entrypoint.');
+            expect($files->get($root.'/docker/self-hosting/server.Dockerfile'))
+                ->toContain('COPY docker/self-hosting/view.php /app/apps/server/config/view.php');
         }
 
         $process->mustRun();
@@ -87,21 +90,26 @@ PHP);
                 : $fixture.'/bootstrap/cache/views')
             ->and($files->get($previousCompiled))->toBe($previousContents);
 
-        if ($configuration === 'image') {
-            // docker exec does not rerun the entrypoint or inherit its exports.
-            // The image's own environment must also select the isolated cache.
-            $direct = new Process([
-                PHP_BINARY,
-                $fixture.'/render.php',
-                dirname(__DIR__, 2),
-                $fixture,
-            ], $fixture, ['VIEW_COMPILED_PATH' => $configuredPath]);
-            $direct->mustRun();
-            $directResult = json_decode($direct->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        // docker exec does not rerun the entrypoint or inherit its exports.
+        // Its original container environment must work even when the override
+        // was empty; the entrypoint's child alone cannot repair that case.
+        $direct = new Process([
+            PHP_BINARY,
+            $fixture.'/render.php',
+            dirname(__DIR__, 2),
+            $fixture,
+            $root.'/docker/self-hosting/view.php',
+        ], $fixture, ['VIEW_COMPILED_PATH' => $configuredPath]);
+        $direct->run();
 
-            expect($directResult['output'])->toBe('CURRENT_RELEASE_TEMPLATE')
-                ->and($directResult['compiled_path'])->toBe($fixture.'/bootstrap/cache/views');
-        }
+        expect($direct->isSuccessful())
+            ->toBeTrue('Direct-exec views must resolve a valid cache path even with an empty override.');
+        $directResult = json_decode($direct->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($directResult['output'])->toBe('CURRENT_RELEASE_TEMPLATE')
+            ->and($directResult['compiled_path'])->toBe($configuration === 'custom'
+                ? $configuredPath
+                : $fixture.'/bootstrap/cache/views');
     } finally {
         $files->deleteDirectory($fixture);
     }

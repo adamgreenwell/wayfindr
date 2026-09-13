@@ -130,6 +130,7 @@ ENV APP_ENV=production \
 WORKDIR /app/apps/server
 
 COPY --from=vendor /app/apps/server /app/apps/server
+COPY docker/self-hosting/view.php /app/apps/server/config/view.php
 COPY release.json /app/release.json
 COPY releases/history.json /app/releases/history.json
 COPY scripts/release/build-manifest.php /app/scripts/release/build-manifest.php
