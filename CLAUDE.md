@@ -91,7 +91,16 @@ php vendor/bin/pint <files>
   something clean, check the pattern still catches a known instance — ideally
   one from a commit where the defect existed (`git show HEAD~1:path | <sweep>`).
   Searching for the *shape* you last saw a bug written in will miss the same bug
-  written another way.
+  written another way. The cheap version: name one place the property *does*
+  hold and confirm your pattern finds it.
+- **Run any command before you write it down, from the directory you are telling
+  the reader to stand in.** Three of the commands originally in this file were
+  wrong on exactly that point, and the worst of them printed `tests 0` and
+  exited `0`. Documenting a command is making a claim about it.
+- **Green is the result that deserves suspicion**, because it is the one that
+  ends the investigation. A pass that arrives faster than the work should take,
+  a sweep that finds nothing, a test count lower than you expected — check what
+  it actually ran before believing it.
 
 ## Where the rest lives
 
