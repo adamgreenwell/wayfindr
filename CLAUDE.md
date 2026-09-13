@@ -49,8 +49,8 @@ php vendor/bin/pint app/Support/Visitors/VisitorLabel.php   # or any path(s)
   `RefreshDatabase` would then migrate and truncate **your real development
   database** instead of in-memory sqlite. `bootstrap/cache/` is gitignored, so
   whether you have one is invisible in the diff — anyone who has run
-  `artisan config:cache` does. The repo's own `composer test` script exists for
-  this reason: it is `artisan config:clear` followed by pest.
+  `php artisan config:cache` does. The repo's own `composer test` script exists
+  for this reason: it is `php artisan config:clear` followed by pest.
 
 - `-d memory_limit=1G` is required for the full suite; without it you get
   "Allowed memory size exhausted" inside a compiled Blade view, which reads like
