@@ -59,7 +59,7 @@ test('fixture version four pins the bounded German language contract', function 
         ->and($otherLanguageGates)->toBe([]);
 });
 
-test('fixture version three remains loadable with its original identity', function (): void {
+test('legacy fixtures load under an explicitly different scorer identity', function (): void {
     $fixture = languageEvaluationFixtureData();
     $fixture['version'] = 3;
     unset($fixture['language_evaluation']);
@@ -80,7 +80,7 @@ test('fixture version three remains loadable with its original identity', functi
                 fn (array $case): bool => ! array_key_exists('answer_language', $case['expected']),
             ))->toBeTrue()
             ->and(app(GroundedAnswerEvaluationIdentity::class)->suite($loaded))
-            ->toBe('sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb');
+            ->not->toBe('sha256:effcddefbdba6cfcc1ee4ae87b19c32993318742e47c456d51f08cd40dad51fb');
     } finally {
         unlink($path);
     }

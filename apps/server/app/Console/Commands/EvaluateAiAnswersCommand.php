@@ -122,7 +122,8 @@ final class EvaluateAiAnswersCommand extends Command
         $this->line(sprintf('Unsafe answer rate: %.2f%%', $report['metrics']['unsafe_answer_rate_percent']));
         $this->line(sprintf('Overconfident error rate: %.2f%%', $report['metrics']['overconfident_error_rate_percent']));
         $this->line(sprintf('Unwarranted handoff rate: %.2f%%', $report['metrics']['unwarranted_handoff_rate_percent']));
-        $this->line(sprintf('Confidence Brier score: %.2f', $report['metrics']['confidence_brier_score']));
+        $this->line(sprintf('Confidence conformance error: %.2f', $report['metrics']['confidence_conformance_error']));
+        $this->line('This measures confidence disagreement with frozen evaluator checks, not forecast calibration.');
 
         foreach ($report['failures'] as $failure) {
             $this->warn(sprintf('%s: %s', $failure['case_id'], implode(', ', $failure['reasons'])));

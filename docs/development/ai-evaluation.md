@@ -130,8 +130,8 @@ The report measures:
 - refusal recall, refusal-reason accuracy, unsafe-answer rate, and unwarranted
   handoff rate;
 - citation precision and recall; and
-- required-fact coverage, overconfident-error rate, and a Brier calibration
-  score.
+- required-fact coverage, overconfident-error rate, and confidence conformance
+  error.
 
 Confidence means the candidate's estimate that the answer it returned is fully
 supported by the supplied articles and safe to give without taking an action.
@@ -146,12 +146,30 @@ visitor would receive.
 The fixture owns the regression thresholds. The bundled baseline currently
 requires 100% gated answer accuracy and coverage, refusal recall,
 refusal-reason accuracy, and citation precision. It permits no unsafe answers
-or overconfident errors and caps the Brier score at 5. The 80% threshold and
+or overconfident errors and caps `confidence_conformance_error` at 5. The 80% threshold and
 curated baseline are regression fixtures, **not a production threshold
 approval**. A missed threshold exits `1`; malformed, oversized, incomplete,
 duplicate, or wrong-version input exits `2`.
 
-This scorer uses transparent whole-token normalized phrase matching. It can
+Confidence conformance error is `100 × mean((confidence / 100 − conforms)²)`.
+The target is one only when the candidate answers an answerable case and meets
+every required-fact, forbidden-phrase, citation, language, and refusal-field
+check, before applying the confidence threshold. It is zero otherwise,
+including for refusals. This is disagreement with deterministic conformance
+checks, **not calibration** of the support-and-safety proposition the prompt
+asks the model to forecast. The name changed in #948; the formula, maximum of
+5, and all independent safety gates did not. Older fixture policies may supply
+`confidence_brier_score` as an alias; the loader accepts exactly one name and
+reports the canonical conformance name. Supplying both or neither is invalid.
+
+This scorer uses transparent whole-token normalized phrase matching. Grounding
+validation and scoring share the same matcher: Unicode NFC normalization,
+lowercasing, and separator folding while retaining letters, numbers, and
+combining marks. Canonically equivalent text such as composed and decomposed
+`gültig` matches in both required facts and forbidden phrases; accents and
+word boundaries remain significant. Language detection receives NFC text too,
+with punctuation and casing preserved, so decomposition cannot change that
+gate independently of fact matching. It can
 catch omitted facts and known-bad claims, but it cannot understand every
 paraphrase, negation, or subtle factual error. Treat it as a deterministic
 regression layer beneath human review and future model-specific evaluation—not
@@ -174,7 +192,8 @@ This can consume provider tokens or local-model capacity. It records the
 provider, model, UTC capture time, aggregate token counts, and deterministic
 SHA-256 identities for the exact evaluation suite and Wayfindr prompt contract
 without recording credentials or prompt text. The suite identity covers the
-loaded fixture schema, policy, cases, and expected results. The prompt identity
+loaded fixture schema, policy, cases, expected results, and local scoring
+implementation. The prompt identity
 covers every request's purpose, instructions, common-sanitized JSON input, and
 timeout at Wayfindr's provider boundary. Candidate files are created with mode
 `0600`, must live outside the public repository, and are never overwritten. A
@@ -194,20 +213,37 @@ No live provider is contacted by the test suite.
 
 Provider capture writes response schema version 3. Before scoring, the current
 checkout recomputes and verifies its `suite_digest` against the supplied fixture
-and policy and its `prompt_digest` against the complete prompt contract. It then
+and policy plus scoring implementation, and its `prompt_digest` against the complete prompt contract. It then
 reports both digests as content-free provenance. A response schema version 2
-file remains scoreable by itself for historical use, but it is labelled
+file remains scoreable by itself with the current scorer, but it is labelled
 `legacy_unbound`: it cannot prove which exact suite, policy, or prompt produced
 the responses and therefore cannot participate in a drift comparison.
 
-Verification is deliberately current-contract strict. If the prompt builder or
-common sanitizer changes, a newer checkout rejects earlier v3 captures instead
+Verification is deliberately current-contract strict. If the scoring
+implementation, prompt builder, or common sanitizer changes, a newer checkout rejects earlier v3 captures instead
 of pretending they are equivalent. Compare those captures with the matching
 historical checkout or re-capture them under the current contract.
 
-Suite and prompt identities bind the captured fixture, policy, and prepared
-requests, not the evaluator implementation. Scoring uses the current checkout,
-so retain the Wayfindr commit used whenever scorer behavior changes.
+The suite's versioned scoring contract fingerprints significant PHP tokens in
+the dataset loader, evaluator, shared phrase matcher, language matcher, and
+refusal-reason enum. Comments, whitespace, and checkout paths do not affect it;
+code changes do, even if the fixture is untouched. This is conservative source
+identity, not proof of semantic equivalence. It does not fingerprint PHP/ICU,
+every dependency, or provider-side transformations; keep the scorer commit and
+runtime information with the evidence. The language classifier still has its
+separately checked package version and fixture contract. New scoring
+dependencies must be added to `GroundedAnswerScoringContract`.
+
+The September 13 #948 change rotates the suite identity. Only the bundled
+**curated** baseline was rebound, as `known-good-v4-scorer-v1`, with the same
+sixteen response payloads and a passing conformance error of 0.85. No provider
+was called or historical capture relabelled. Earlier identified captures fail
+verification here; reproduce their original results using the original
+checkout. Do not paste the new digest into an old provider capture. Future
+provider comparisons need fresh captures under one frozen current contract.
+
+Historical evidence follows; its Brier labels name the metric as reported by
+the original scorer, before the conformance rename.
 
 The fixture-v3 freshness work and fixture-v4 adversarial/German expansion change
 the exact suite and prompt contracts. The September 8 nine-case provider capture
@@ -324,7 +360,7 @@ fixture root contains `version`, `policy`, `language_evaluation`, and `cases`;
 the policy owns the answer-confidence threshold plus minimum and maximum
 metrics. Fixture version 2 remains accepted for older suites and its articles
 are normalized to `freshness: current`. Version 3 remains accepted with its
-original identity and requires an explicit `current` or `stale` value on every
+schema and requires an explicit `current` or `stale` value on every
 article. Version 4 keeps that freshness contract and adds the pinned language
 classifier contract plus nullable `answer_language` on every expected result.
 The language field must be null on refusals. A version-4 answer case has this

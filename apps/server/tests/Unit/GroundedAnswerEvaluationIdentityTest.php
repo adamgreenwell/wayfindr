@@ -6,6 +6,17 @@ use App\Support\Ai\AiContextSanitizer;
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluationIdentity;
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluationPromptBuilder;
 
+test('the suite identity rejects the former fixture-only scoring contract', function (): void {
+    $suite = ['cases' => ['synthetic-case'], 'version' => 4];
+    $previousDigest = 'sha256:'.hash(
+        'sha256',
+        "wayfindr:grounded-answer-evaluation:suite\0".json_encode($suite, JSON_THROW_ON_ERROR),
+    );
+
+    expect((new GroundedAnswerEvaluationIdentity)->suite($suite))
+        ->not->toBe($previousDigest);
+});
+
 test('associative key order does not change an evaluation identity', function (): void {
     $identity = new GroundedAnswerEvaluationIdentity;
     $suite = [

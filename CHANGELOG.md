@@ -516,10 +516,19 @@ page view that was not there before.
 
 ### Fixed
 
+- **Offline AI evaluation preserves Unicode equivalence and identifies its
+  scorer.** Required and forbidden phrase checks now share NFC normalization
+  with fixture grounding. The suite identity also binds local scoring code,
+  so older identified captures cannot silently be rescored as comparable after
+  a rule change. The unchanged squared-error gate is named confidence
+  conformance error rather than claiming forecast calibration. Historical
+  provider results remain tied to their original checkout; only the bundled
+  curated baseline was rebound, without changing its response payloads.
+
 - **AI evaluation now fails closed on contradictory confidence.** A provider
   response that chooses refusal while reporting confidence at or above the
   answer threshold can no longer leave the overall evaluation green merely
-  because its aggregate Brier score remains within tolerance. The refusal stays
+  because its aggregate confidence conformance error remains within tolerance. The refusal stays
   visitor-safe, but the response-contract contradiction is now a hard failure.
 
 - **Generated widget snippets now initialize automatically.** The bundle deferred its

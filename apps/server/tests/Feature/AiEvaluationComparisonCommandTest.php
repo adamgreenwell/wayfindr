@@ -65,7 +65,7 @@ test('identified provider runs are sorted and compared without resolving a provi
                 'result' => 'passed',
                 'identity' => [
                     'identity_status' => 'verified',
-                    'suite_digest' => 'sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe',
+                    'suite_digest' => 'sha256:184c62862a7f06a824dd9279837fddd6a5d7337682d683a2dcbad848582a41c4',
                     'prompt_digest' => 'sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b',
                 ],
             ])
