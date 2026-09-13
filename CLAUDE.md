@@ -86,11 +86,12 @@ php vendor/bin/pint app/Support/Visitors/VisitorLabel.php   # or any path(s)
 - **A test that has never failed has not been tested.** After writing a test for
   a fix, reintroduce the bug and confirm the test fails *on the assertion that
   names it*. "It failed" is not enough — a parse error is not a caught mutation.
-- **Mutate from a copy**, not `git checkout <file>` — that discards the
-  uncommitted fix along with the mutation.
+- **Mutate from a copy**, not `git checkout -- path/to/file` — that discards
+  the uncommitted fix along with the mutation.
 - **A sweep that returns zero is a claim about its pattern.** Before reporting
   something clean, check the pattern still catches a known instance — ideally
-  one from a commit where the defect existed (`git show HEAD~1:path | <sweep>`).
+  one from a commit where the defect existed
+  (`git show HEAD~1:path/to/file | grep -nE 'pattern'`).
   Searching for the *shape* you last saw a bug written in will miss the same bug
   written another way. The cheap version: name one place the property *does*
   hold and confirm your pattern finds it.

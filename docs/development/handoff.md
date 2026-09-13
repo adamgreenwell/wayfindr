@@ -342,7 +342,9 @@ issue tracker for current state.
   `vendor/bin/*` scripts start `#!/usr/bin/env php`, so running
   `./vendor/bin/pest` picks up whatever `php` is first on `PATH` — 8.3 on the
   maintainer's Mac — and dies in Composer's platform check before any test
-  runs. Use `<php> vendor/bin/pest` and `<php> vendor/bin/pint <paths>`.
+  runs. Invoke them through the binary you selected —
+  `php vendor/bin/pest`, `php vendor/bin/pint app/Support/Visitors/VisitorLabel.php` —
+  substituting the qualified path for `php` where the default is too old.
   (`./vendor/bin/pint` happens to survive this today because Pint ships
   self-contained and tolerates an older interpreter than the application does;
   that is luck, not a rule, and it does not hold for `pest`.) Widget: `node --test` + jsdom, **run
@@ -954,8 +956,8 @@ Three lessons from it that generalise beyond this PR:
   `collect()->filter()->first()`. Re-phrasing the sweep as the *property* —
   which code picks among a visitor's identifiers, whatever joins them — found
   all eight, including one nobody knew about. Validate any such sweep against a
-  commit where the defect existed (`git show HEAD~1:path | <sweep>`) before
-  trusting its zero.
+  commit where the defect existed (`git show HEAD~1:path/to/file | grep -nE 'pattern'`)
+  before trusting its zero.
 - **The consumer of a resolver can undo it in one line.** Having removed `?:`
   everywhere, I then wrote `forVisitor(...)['label'] ?: null` in the live board's
   payload — discarding the string `"0"` one line after asking for it. When a
