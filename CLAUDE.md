@@ -12,20 +12,35 @@ is stale.
 
 ## Toolchain
 
-The default `php` on this machine is 8.3 and the dependencies need 8.4+, so
-every PHP command needs the 8.5 binary:
+**Server commands run from `apps/server`; widget commands from
+`packages/widget-js`.** Every path below is relative to the directory its block
+names. Getting this wrong is not loud — see the widget bullet.
+
+**PHP must be 8.4 or newer.** The vendored dependencies fail Composer's platform
+check before your code runs. Which binary that is depends on the machine, so
+check rather than assume:
 
 ```bash
-/opt/homebrew/opt/php/bin/php -d memory_limit=1G vendor/bin/pest
+php -v                      # >= 8.4? use plain `php` for everything below
 ```
 
-- Run from `apps/server`. `-d memory_limit=1G` is required for the full suite;
-  without it you get "Allowed memory size exhausted" inside a compiled Blade
-  view, which reads like a bug in the view.
-- Format with `vendor/bin/pint <files>` before committing.
-- **A fresh `git worktree` has no `apps/server/.env`**, and without it three
+On Linux, in a container, and in CI the `php` on `PATH` is normally new enough.
+On the maintainer's Mac it is 8.3, and the 8.5 Homebrew build
+(`/opt/homebrew/opt/php/bin/php`) is the one to use — a host-specific fallback,
+not a requirement of the repo.
+
+```bash
+# from apps/server, substituting whichever binary `php -v` proved is >= 8.4
+php -d memory_limit=1G vendor/bin/pest
+php vendor/bin/pint <files>
+```
+
+- `-d memory_limit=1G` is required for the full suite; without it you get
+  "Allowed memory size exhausted" inside a compiled Blade view, which reads like
+  a bug in the view.
+- **A fresh `git worktree` has no `.env`**, and without it three
   `SiteConnectionStatusTest` tests fail for reasons that look like your change.
-  `cp apps/server/.env.example apps/server/.env` immediately, as CI does. More
+  From `apps/server`, `cp .env.example .env` immediately, as CI does. More
   generally: when a fresh checkout fails, run the same tests on unmodified
   `main` *in that checkout* before believing the failure is yours.
 - **Widget tests run from `packages/widget-js`**, not `apps/server`:
