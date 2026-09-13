@@ -1056,7 +1056,9 @@ unilaterally.
    #985's `sites/show`. Both are 0.6.0 renovation debt rather than new work.
 3. **Is the next tag `0.9.0` or `1.0.0`?** The recommendation in #994 is that
    1.0.0 should mean *a self-hoster who is not us can install, run and upgrade
-   it* — making #797 the only hard gate. Holding 1.0.0 for the version a
+   it* — proposing #797 as the acceptance definition once its release
+   prerequisites clear. This is a recommendation for the owner, not a change to
+   the current milestone's #970 and #985 scope. Holding 1.0.0 for the version a
    stranger has actually survived is the more conservative read and is
    defensible.
 

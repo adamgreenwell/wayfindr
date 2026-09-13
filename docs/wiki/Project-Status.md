@@ -16,11 +16,16 @@ hosted runners and disposable bare-metal guests — **for the artifacts that wer
 tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and has
 not been through that matrix; see [Releases](Releases).
 
-The Tier 1 and Tier 2 feature epics are closed on current `main`. The sole open
-`1.0.0` milestone criterion is
+The Tier 1 and Tier 2 feature epics are closed on current `main`. The remaining
+independent-install acceptance criterion is
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
 published-artifact install by somebody who is not the author. Its prerequisite
 release sequence is recorded under *Current Release and Acceptance Gates*.
+The open `1.0.0` milestone also includes
+[#970](https://github.com/adamgreenwell/wayfindr/issues/970)'s release
+preconditions and [#985](https://github.com/adamgreenwell/wayfindr/issues/985)'s
+site-settings work; the latter still needs an owner decision on scope and
+timing. #797 is not the milestone's only open issue.
 
 ## Current Development Tree
 
@@ -299,8 +304,13 @@ are four different claims. None should be collapsed into the next one.
   copilot is assistive: a human reviews every suggestion before a visitor sees
   it. Four private captures under the same sixteen-case suite and prompt across
   three model/upstream routes produced one 16/16 pass and three machine-scored
-  failures. Gemini's three lexical fact misses await human adjudication. All
-  four were recorded within about 78 minutes, so this is point-in-time
+  failures. The owner's [September 10 adjudication](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625334565)
+  found two Gemini misses were matcher brittleness and one was a real omission.
+  The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
+  was no fixture or matcher change, preserving the recorded 13/16 failure.
+  #762 now waits on same-route evidence after meaningful elapsed time or a
+  model revision before revisiting ADR 0004. All four captures were recorded
+  within about 78 minutes, so this is point-in-time
   variability, not long-term drift resistance, model-revision evidence,
   provider approval, or visitor-runtime safety; #762 and the ADR boundary remain
   open and unchanged.

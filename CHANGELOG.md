@@ -283,9 +283,12 @@ page view that was not there before.
   the new identities. Two GPT-5.2/Azure runs produced a 15/16
   contradictory-confidence failure followed by a 16/16 recovery 38 minutes 11
   seconds later. Claude Sonnet 5/Bedrock then failed 15/16 on one unexpected
-  refusal. Gemini 3.8 Flash/Vertex scored 13/16 because three semantically
-  plausible paraphrases missed the frozen lexical fact alternatives; those
-  machine failures remain failures pending human adjudication. All four were
+  refusal. Gemini 3.8 Flash/Vertex scored 13/16 because three answers missed the
+  frozen lexical fact alternatives. The owner's September 10 adjudication
+  found two matcher false negatives and one real omitted retry step. The final
+  decision was no fixture or matcher change; the recorded 13/16 failure and
+  evidence identities stand. Same-route evidence after meaningful elapsed time
+  or a model revision is still required before revisiting ADR 0004. All four were
   recorded within about 78 minutes, and the cross-model samples also changed
   upstream route. They demonstrate point-in-time variability, not long-term
   drift resistance, provider approval, or runtime evidence. This infrastructure

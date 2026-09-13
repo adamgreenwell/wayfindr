@@ -157,7 +157,8 @@ artifact before adopting it anywhere that matters.
 The feature gaps tracked in the Tier 1
 ([#741](https://github.com/adamgreenwell/wayfindr/issues/741)) and Tier 2
 ([#751](https://github.com/adamgreenwell/wayfindr/issues/751)) epics are
-implemented on current `main`. The sole open `1.0.0` milestone criterion is
+implemented on current `main`. The remaining independent-install acceptance
+criterion is
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
 published-artifact install by somebody who is not the author. Its repaired
 baseline must follow this order: [#932](https://github.com/adamgreenwell/wayfindr/issues/932)
@@ -170,12 +171,21 @@ change. Only after those gates clear may the owner separately authorize
 publication, verify the exact artifact, refresh the acceptance brief, and give
 it to the human tester. Candidate readiness is not permission to change
 repository settings or publish, and publication is not acceptance proof.
+The open `1.0.0` milestone also includes
+[#970](https://github.com/adamgreenwell/wayfindr/issues/970)'s release
+preconditions and [#985](https://github.com/adamgreenwell/wayfindr/issues/985)'s
+site-settings work, whose scope and timing still need an owner decision.
 
-The only other open issue is
+The deferred autonomous-answer capability is tracked separately in
 [#762](https://github.com/adamgreenwell/wayfindr/issues/762), outside the 1.0.0
 milestone. Four same-contract sixteen-case provider captures across GPT-5.2,
 Claude Sonnet 5, and Gemini 3.8 Flash produced one 16/16 pass plus 15/16,
-15/16, and 13/16 failures. The cross-model samples also changed upstream route,
+15/16, and 13/16 failures. The owner's [September 10 adjudication](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625334565)
+attributed two Gemini misses to matcher brittleness and one to a real omission.
+The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
+was no fixture or matcher change; the recorded 13/16 failure stands. #762 now
+waits on same-route evidence after meaningful elapsed time or a model revision
+before revisiting ADR 0004. The cross-model samples also changed upstream route,
 and all four were recorded within about 78 minutes. That is point-in-time
 variability—not long-term drift resistance, model-revision evidence, provider
 or runtime approval, or authority to change ADR 0004.
