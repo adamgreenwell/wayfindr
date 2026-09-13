@@ -235,11 +235,17 @@ and scorer commit `9539795d`:
    `widget-origin-allowlist` missed the frozen lexical fact alternatives and
    produced `missing_required_fact` plus `overconfident_error` failures.
 
-Private inspection suggests the three Gemini answers may be semantically
-adequate. That is an AI reviewer observation, not human adjudication, and the
-recorded machine result remains failed. Do not tune the frozen fixture or
-matcher after seeing these outputs; if human review justifies a change, rotate
-the evidence identity and recapture every proposed route. Raw responses remain
+The owner's [September 10 human adjudication](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625334565)
+superseded the earlier AI spot-review: `conversation-csv-export` and
+`widget-origin-allowlist` were matcher brittleness, while `renewal-card-retry`
+really omitted the final retry step. The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
+was no fixture or matcher change. Even crediting both brittle matches leaves
+one genuine miss among eight answerable cases, below the 100% answer-accuracy
+minimum. The recorded machine result remains failed at 13/16 under the original
+identities and scorer commit; the adjudication required no identity rotation or
+recapture. Do not tune the frozen fixture or matcher to these outputs. Any
+independently justified change must rotate the evidence identity and recapture
+every proposed route, preserving the historical result. Raw responses remain
 private and mode `0600`.
 
 The two GPT runs are only 38 minutes 11 seconds apart, the cross-model samples
@@ -427,8 +433,10 @@ contract under identical suite and prompt identities. The detailed record above
 contains their machine results and review boundary. One GPT-5.2/Azure run
 passed; the other GPT run, Claude/Bedrock, and Gemini/Vertex runs failed the
 frozen gate. The cross-model samples also changed upstream route, all four were
-recorded within about 78 minutes, and Gemini's lexical misses still require
-human adjudication. This is not longitudinal drift evidence, representative
-runtime safety, or provider approval. The agent-controlled copilot remains the
-approved boundary, #762 remains open, and visitor-facing implementation still
-requires another explicit ADR decision.
+recorded within about 78 minutes. Human adjudication is complete and left the
+fixture, matcher, and recorded results unchanged. #762 still requires same-route
+evidence after meaningful elapsed time or a model revision before revisiting
+ADR 0004. The September 10 captures are not longitudinal drift evidence,
+representative runtime safety, or provider approval. The agent-controlled
+copilot remains the approved boundary, #762 remains open, and visitor-facing
+implementation still requires another explicit ADR decision.
