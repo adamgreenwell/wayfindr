@@ -16,12 +16,13 @@ is stale.
 `packages/widget-js`.** Every path below is relative to the directory its block
 names. Getting this wrong is not loud — see the widget bullet.
 
-**PHP must be 8.4 or newer.** The vendored dependencies fail Composer's platform
-check before your code runs. Which binary that is depends on the machine, so
-check rather than assume:
+**PHP must be 8.4.1 or newer** — `apps/server/composer.json` requires `^8.4.1`,
+and Composer's platform check fails before your code runs. 8.4.0 is *not*
+enough. Which binary qualifies depends on the machine, so check rather than
+assume:
 
 ```bash
-php -v                      # >= 8.4? use plain `php` for everything below
+php -v                      # >= 8.4.1? use plain `php` for everything below
 ```
 
 On Linux, in a container, and in CI the `php` on `PATH` is normally new enough.
@@ -30,7 +31,7 @@ On the maintainer's Mac it is 8.3, and the 8.5 Homebrew build
 not a requirement of the repo.
 
 ```bash
-# from apps/server, substituting whichever binary `php -v` proved is >= 8.4
+# from apps/server, substituting whichever binary `php -v` proved is >= 8.4.1
 php -d memory_limit=1G vendor/bin/pest
 php vendor/bin/pint <files>
 ```
@@ -46,7 +47,7 @@ php vendor/bin/pint <files>
 - **Widget tests run from `packages/widget-js`**, not `apps/server`:
 
   ```bash
-  cd packages/widget-js && node --test
+  node --test
   ```
 
   Run from anywhere else, `node --test` discovers no test files, prints
@@ -106,11 +107,23 @@ php vendor/bin/pint <files>
 
 - `docs/decisions/` — 24 ADRs. ADR 0004 (AI boundary), 0012/0013 (versioning and
   upgrade guards) and 0014 (design system) come up most often.
-- **Shipped docs are under test.** Pest asserts the literal, case-sensitive
-  content of 11 documents across `docs/privacy/`, `docs/product/` and
-  `docs/self-hosting/` — `PlatformOperatorBoundaryTest` alone covers six. Grep
-  the tests before editing any document under those three trees, and when a test
-  and the product disagree, consider that the *test* may be the stale one.
+- **Six shipped docs are under test.** Six Pest tests read a document off disk
+  with `base_path('../../docs/...')` and assert its literal content against the
+  behaviour it describes:
+
+  | document | test |
+  |---|---|
+  | `product/rbac-waypoints.md` | `RbacDocumentationTest` |
+  | `product/account-escalation-policies.md` | `AccountEscalationPolicyDocumentationTest` |
+  | `product/accounts-and-roles.md` | `SiteAgentAccessTest` |
+  | `product/widget-api-abuse-controls.md` | `VisitorPresenceCollectionTest` |
+  | `self-hosting/backup-restore.md` | `RestoreCommandTest` |
+  | `self-hosting/performance-baseline.md` | `MeasureDashboardCommandTest` |
+
+  Grep before editing any of those six, and when a test and the product
+  disagree, consider that the *test* may be the stale one. Other documents are
+  mentioned in test comments but are **not** asserted — do not read a mention as
+  coverage.
 - `docs/self-hosting/` is also **interface**: operators copy its shell snippets
   verbatim, so they need code-level review. Test the everyday case against a
   deployed environment, not the committed repo.

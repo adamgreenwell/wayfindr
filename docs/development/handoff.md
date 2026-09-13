@@ -330,8 +330,13 @@ issue tracker for current state.
   `main` to trigger a Forge deploy. **Do not sync it yourself.** A synced fork
   proves only that source was moved; it is not runtime proof until the target
   deployment is checked.
-- **Test toolchain**: run server tests with the PHP 8.5 binary
-  (`/opt/homebrew/opt/php/bin/php`); add `-d memory_limit=1G` for the full suite.
+- **Test toolchain**: server tests need **PHP >= 8.4.1** (`composer.json`
+  requires `^8.4.1`, and Composer's platform check fails before your code runs).
+  Check with `php -v` and use that binary if it qualifies; on the maintainer's
+  Mac the default is 8.3, so the Homebrew 8.5 build
+  (`/opt/homebrew/opt/php/bin/php`) is the one to reach for there — a
+  host-specific fallback, not a repo requirement, and it does not exist on Linux
+  or in CI. Add `-d memory_limit=1G` for the full suite.
   Pest + Pint (`./vendor/bin/pint <files>`). Widget: `node --test` + jsdom, **run
   from `packages/widget-js`** — from any other directory it discovers nothing,
   prints `tests 0` and exits 0, so a widget regression passes silently. For
@@ -1004,7 +1009,9 @@ omission** — do not scope it as a gap to close.
 Each has been measured so the decision is cheap. Do not start any of them
 unilaterally.
 
-1. **#970** — the ruleset, and wait-or-delete on the four remaining runs. Gates
+1. **#970** — the ruleset, and wait-or-delete on whichever pre-guard runs are
+   *still* inside their window when you act. Do not take a count from this
+   document: it falls through the day, and #970 carries the audit. Gates
    `v0.8.0`, and therefore #797, and therefore 1.0.0.
 2. **Does `account/show` become tabs before 1.0.0 or after?** Same question for
    #985's `sites/show`. Both are 0.6.0 renovation debt rather than new work.
