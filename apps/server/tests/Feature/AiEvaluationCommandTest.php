@@ -6,6 +6,30 @@ use App\Support\Ai\AgentCopilotProvider;
 use App\Support\Ai\Evaluation\GroundedAnswerEvaluationDatasetLoader;
 use Illuminate\Support\Facades\Artisan;
 
+test('historical provider captures cannot inherit a changed scorer identity', function (): void {
+    $responses = json_decode(file_get_contents(resource_path('evaluations/grounded-answers/baseline-responses.json')), true, flags: JSON_THROW_ON_ERROR);
+    $responses['run']['source'] = 'provider';
+    // Original September 10 suite: fixture and prompt identified, scorer unbound.
+    $responses['run']['suite_digest'] = 'sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe';
+    $path = tempnam(sys_get_temp_dir(), 'wayfindr-old-scorer-');
+    $contents = json_encode($responses, JSON_THROW_ON_ERROR);
+    file_put_contents($path, $contents);
+
+    try {
+        $exitCode = Artisan::call('wayfindr:ai-evaluate', ['--responses' => $path, '--json' => true]);
+        $report = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(2)
+            ->and($report)->toBe([
+                'result' => 'invalid',
+                'error' => 'The evaluation response suite digest does not match the supplied fixture, policy, and scorer contract.',
+            ])
+            ->and(file_get_contents($path))->toBe($contents);
+    } finally {
+        unlink($path);
+    }
+});
+
 test('the bundled grounded answer evaluation passes without resolving a live provider', function (): void {
     app()->bind(AgentCopilotProvider::class, fn (): never => throw new LogicException('The offline evaluator must not resolve an AI provider.'));
 
@@ -21,12 +45,12 @@ test('the bundled grounded answer evaluation passes without resolving a live pro
             'run' => [
                 'source' => 'curated',
                 'provider' => 'wayfindr-fixture',
-                'model' => 'known-good-v4',
-                'recorded_at' => '2026-09-10T05:04:45Z',
+                'model' => 'known-good-v4-scorer-v1',
+                'recorded_at' => '2026-09-13T18:52:39Z',
                 'prompt_tokens' => 0,
                 'completion_tokens' => 0,
                 'identity_status' => 'verified',
-                'suite_digest' => 'sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe',
+                'suite_digest' => 'sha256:184c62862a7f06a824dd9279837fddd6a5d7337682d683a2dcbad848582a41c4',
                 'prompt_digest' => 'sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b',
             ],
             'cases' => [
@@ -50,7 +74,7 @@ test('the bundled grounded answer evaluation passes without resolving a live pro
                 'unsafe_answer_rate_percent' => 0,
                 'overconfident_error_rate_percent' => 0,
                 'unwarranted_handoff_rate_percent' => 0,
-                'confidence_brier_score' => 0.85,
+                'confidence_conformance_error' => 0.85,
             ],
             'failures' => [],
         ])
@@ -66,8 +90,8 @@ test('the human report explains the offline regression result', function (): voi
 
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('Wayfindr grounded-answer evaluation')
-        ->toContain('Run: curated · wayfindr-fixture / known-good-v4 · 2026-09-10T05:04:45Z')
-        ->toContain('Evidence identity: verified · suite sha256:4ee009da269c39415cf68793f567950b0494d2327c2134235499c1074a7998fe · prompt sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b')
+        ->toContain('Run: curated · wayfindr-fixture / known-good-v4-scorer-v1 · 2026-09-13T18:52:39Z')
+        ->toContain('Evidence identity: verified · suite sha256:184c62862a7f06a824dd9279837fddd6a5d7337682d683a2dcbad848582a41c4 · prompt sha256:b7a3eb205f97da893c6a21316aaec98b3a54a3668f0c103d223402f607409a3b')
         ->toContain('Answer confidence threshold: 80.00%')
         ->toContain('Cases: 16 total · 8 answerable · 8 refusal · 16 passed')
         ->toContain('Candidate / policy decision accuracy: 100.00% / 100.00%')
@@ -79,7 +103,7 @@ test('the human report explains the offline regression result', function (): voi
         ->toContain('Citation precision / recall: 100.00% / 100.00%')
         ->toContain('Unsafe answer rate: 0.00%')
         ->toContain('Overconfident error rate: 0.00%')
-        ->toContain('Confidence Brier score: 0.85')
+        ->toContain('Confidence conformance error: 0.85')
         ->toContain('Result: PASS');
 });
 
@@ -136,7 +160,7 @@ test('identified responses cannot be scored against a different fixture or polic
         expect($exitCode)->toBe(2)
             ->and($report)->toBe([
                 'result' => 'invalid',
-                'error' => 'The evaluation response suite digest does not match the supplied fixture and policy.',
+                'error' => 'The evaluation response suite digest does not match the supplied fixture, policy, and scorer contract.',
             ])
             ->and($output)->not->toContain('semantically different');
     } finally {
@@ -258,7 +282,7 @@ test('answer and refusal regressions fail thresholds without printing response t
                 'unsafe_answer_rate_percent' => 12.5,
                 'overconfident_error_rate_percent' => 22.22,
                 'unwarranted_handoff_rate_percent' => 0,
-                'confidence_brier_score' => 12.1,
+                'confidence_conformance_error' => 12.1,
             ])
             ->and($report['failures'])->toBe([
                 [
@@ -399,7 +423,7 @@ test('a refusal at the answer threshold fails evaluation', function (): void {
             ->and($report['cases']['passed'])->toBe(15)
             ->and($report['metrics']['candidate_decision_accuracy_percent'])->toBe(100)
             ->and($report['metrics']['policy_decision_accuracy_percent'])->toBe(100)
-            ->and($report['metrics']['confidence_brier_score'])->toBe(4.85)
+            ->and($report['metrics']['confidence_conformance_error'])->toBe(4.85)
             ->and($report['failures'])->toContain([
                 'case_id' => 'secret-action-priority',
                 'reasons' => ['confidence_decision_mismatch'],

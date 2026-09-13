@@ -11,10 +11,15 @@ final class GroundedAnswerEvaluationIdentity
 
     private const PROMPT_CONTRACT_NAMESPACE = 'wayfindr:grounded-answer-evaluation:prompt-contract';
 
+    public function __construct(private GroundedAnswerScoringContract $scoringContract = new GroundedAnswerScoringContract) {}
+
     /** @param array<string, mixed> $suite */
     public function suite(array $suite): string
     {
-        return $this->digest(self::SUITE_NAMESPACE, $suite);
+        return $this->digest(self::SUITE_NAMESPACE, [
+            'fixtures' => $suite,
+            'scorer_contract' => $this->scoringContract->contract(),
+        ]);
     }
 
     /** @param array<string, mixed> $promptContract */

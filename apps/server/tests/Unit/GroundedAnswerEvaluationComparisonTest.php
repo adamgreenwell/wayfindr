@@ -15,7 +15,7 @@ function groundedAnswerComparisonScoredReport(
     array $metrics = [
         'answer_accuracy_percent' => 100.0,
         'unsafe_answer_rate_percent' => 0.0,
-        'confidence_brier_score' => 3.25,
+        'confidence_conformance_error' => 3.25,
     ],
     array $failures = [],
     string $provider = 'openrouter/azure',
@@ -55,7 +55,7 @@ test('verified provider reports produce ordered deltas and content-free case tra
         metrics: [
             'answer_accuracy_percent' => 80.0,
             'unsafe_answer_rate_percent' => 0.0,
-            'confidence_brier_score' => 12.5,
+            'confidence_conformance_error' => 12.5,
         ],
         failures: [
             ['case_id' => 'alpha-case', 'reasons' => ['missing_citation']],
@@ -68,7 +68,7 @@ test('verified provider reports produce ordered deltas and content-free case tra
         metrics: [
             'answer_accuracy_percent' => 70.0,
             'unsafe_answer_rate_percent' => 25.0,
-            'confidence_brier_score' => 18.75,
+            'confidence_conformance_error' => 18.75,
         ],
         failures: [
             ['case_id' => 'gamma-case', 'reasons' => ['overconfident_error']],
@@ -106,7 +106,7 @@ test('verified provider reports produce ordered deltas and content-free case tra
                 'cases' => ['total' => 3, 'answerable' => 2, 'refusal' => 1, 'passed' => 1],
                 'metrics' => [
                     'answer_accuracy_percent' => 80.0,
-                    'confidence_brier_score' => 12.5,
+                    'confidence_conformance_error' => 12.5,
                     'unsafe_answer_rate_percent' => 0.0,
                 ],
             ],
@@ -123,7 +123,7 @@ test('verified provider reports produce ordered deltas and content-free case tra
                 'cases' => ['total' => 3, 'answerable' => 2, 'refusal' => 1, 'passed' => 1],
                 'metrics' => [
                     'answer_accuracy_percent' => 70.0,
-                    'confidence_brier_score' => 18.75,
+                    'confidence_conformance_error' => 18.75,
                     'unsafe_answer_rate_percent' => 25.0,
                 ],
             ],
@@ -140,7 +140,7 @@ test('verified provider reports produce ordered deltas and content-free case tra
                 'cases' => ['total' => 3, 'answerable' => 2, 'refusal' => 1, 'passed' => 3],
                 'metrics' => [
                     'answer_accuracy_percent' => 100.0,
-                    'confidence_brier_score' => 3.25,
+                    'confidence_conformance_error' => 3.25,
                     'unsafe_answer_rate_percent' => 0.0,
                 ],
             ],
@@ -151,7 +151,7 @@ test('verified provider reports produce ordered deltas and content-free case tra
                 'to_recorded_at' => '2026-09-02T10:00:00Z',
                 'metric_deltas' => [
                     'answer_accuracy_percent' => -10.0,
-                    'confidence_brier_score' => 6.25,
+                    'confidence_conformance_error' => 6.25,
                     'unsafe_answer_rate_percent' => 25.0,
                 ],
                 'changed_case_ids' => ['alpha-case'],
@@ -163,7 +163,7 @@ test('verified provider reports produce ordered deltas and content-free case tra
                 'to_recorded_at' => '2026-09-03T10:00:00Z',
                 'metric_deltas' => [
                     'answer_accuracy_percent' => 30.0,
-                    'confidence_brier_score' => -15.5,
+                    'confidence_conformance_error' => -15.5,
                     'unsafe_answer_rate_percent' => -25.0,
                 ],
                 'changed_case_ids' => [],

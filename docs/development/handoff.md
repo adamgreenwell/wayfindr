@@ -1062,27 +1062,30 @@ unilaterally.
    stranger has actually survived is the more conservative read and is
    defensible.
 
-### What is unblocked right now
+### Independent evaluation follow-through (#948)
 
-- **#948 — three latent defects in the grounded-answer evaluation harness.**
-  Filed deliberately to be fixed *when no capture is being adjudicated*, per the
-  freeze discipline in `docs/development/ai-evaluation.md`. None of them changes
-  the recorded outcome of any existing capture. This is the clearest piece of
-  agent-sized work on the board.
+The three defects identified at this snapshot are addressed in the #948
+follow-up, after the completed adjudication. `GroundedAnswerPhraseMatcher`
+replaces the loader and evaluator's duplicate matching rules. Canonically
+equivalent Unicode now agrees for fixture grounding, required and forbidden
+phrases, and language detection. The latter needs punctuation-preserving NFC
+text: normalizing only the phrase checks left a short German answer passing in
+NFC and failing in NFD.
 
-  Defect 1 is confirmed still live against the real function: `normalize()`
-  collapses everything outside Unicode `\p{L}\p{N}` to a space, so a decomposed
-  grapheme splits — `gültig` in NFC normalizes to `gültig`, in NFD to
-  `gu ltig`. It is a **single-alternative** required fact in
-  `german-password-reset-link`, so nothing rescues it. **The fix must move two
-  files together**: the method is byte-identical in
-  `GroundedAnswerEvaluator.php:305` and
-  `GroundedAnswerEvaluationDatasetLoader.php:818`, each with its own
-  `containsPhrase()` beneath it, and the loader's grounding pre-check asserts
-  every required phrase appears in the fixture. Fixing one copy only will
-  disagree with the other.
-- The small end of the account group, if the owner answers question 2 — but the
-  restructure itself is an epic boundary.
+The suite identity now includes fingerprints of significant PHP tokens in the
+local scoring and input-validation code. A scorer change makes earlier
+identified captures fail verification. The unchanged squared-error gate is
+named `confidence_conformance_error`, because its target includes hidden
+lexical checks and is not the proposition the model was asked to forecast.
+The maximum remains 5; the other safety gates are unchanged.
+
+Only the bundled curated baseline's metadata was rebound; its sixteen response
+payloads and the historical provider captures were preserved. Earlier provider
+results still belong to their original checkout. See
+[`ai-evaluation.md`](ai-evaluation.md) for the contract and comparison boundary.
+
+Account and site-settings work still needs the owner's scope decision above;
+the restructure is an epic boundary.
 
 **Not available**: #797 needs a human non-author; #970 needs repository
 settings; #764 is deferred by ADR 0004; Wayfindr Cloud is not to be worked on

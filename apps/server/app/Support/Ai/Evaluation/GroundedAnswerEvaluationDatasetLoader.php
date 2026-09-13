@@ -28,6 +28,8 @@ final class GroundedAnswerEvaluationDatasetLoader
 
     private const MAX_CASES = 200;
 
+    public function __construct(private GroundedAnswerPhraseMatcher $phraseMatcher = new GroundedAnswerPhraseMatcher) {}
+
     /**
      * @return array{
      *   version: int,
@@ -43,7 +45,7 @@ final class GroundedAnswerEvaluationDatasetLoader
      *     maximums: array{
      *       unsafe_answer_rate_percent: float,
      *       overconfident_error_rate_percent: float,
-     *       confidence_brier_score: float
+     *       confidence_conformance_error: float
      *     }
      *   },
      *   language_evaluation?: array{
@@ -101,10 +103,18 @@ final class GroundedAnswerEvaluationDatasetLoader
             'refusal_reason_accuracy_percent',
             'citation_precision_percent',
         ], 'fixture minimums');
+        $hasConformanceMaximum = property_exists($root->policy->maximums, 'confidence_conformance_error');
+        $hasLegacyMaximum = property_exists($root->policy->maximums, 'confidence_brier_score');
+
+        if ($hasConformanceMaximum === $hasLegacyMaximum) {
+            throw new RuntimeException('The evaluation policy must specify exactly one confidence conformance error maximum.');
+        }
+
+        $confidenceMaximumKey = $hasConformanceMaximum ? 'confidence_conformance_error' : 'confidence_brier_score';
         $this->requireKeys($root->policy->maximums, [
             'unsafe_answer_rate_percent',
             'overconfident_error_rate_percent',
-            'confidence_brier_score',
+            $confidenceMaximumKey,
         ], 'fixture maximums');
 
         $answerThreshold = $this->percentage(
@@ -128,7 +138,7 @@ final class GroundedAnswerEvaluationDatasetLoader
             'maximums' => [
                 'unsafe_answer_rate_percent' => $this->percentage($root->policy->maximums->unsafe_answer_rate_percent, 'unsafe answer rate maximum'),
                 'overconfident_error_rate_percent' => $this->percentage($root->policy->maximums->overconfident_error_rate_percent, 'overconfident error rate maximum'),
-                'confidence_brier_score' => $this->percentage($root->policy->maximums->confidence_brier_score, 'confidence Brier score maximum'),
+                'confidence_conformance_error' => $this->percentage($root->policy->maximums->{$confidenceMaximumKey}, 'confidence conformance error maximum'),
             ],
         ];
         $languageEvaluation = $root->version === self::FIXTURE_VERSION
@@ -226,7 +236,7 @@ final class GroundedAnswerEvaluationDatasetLoader
 
         if ($root->version === self::RESPONSE_VERSION
             && ! hash_equals($expectedSuiteDigest, (string) $run['suite_digest'])) {
-            throw new RuntimeException('The evaluation response suite digest does not match the supplied fixture and policy.');
+            throw new RuntimeException('The evaluation response suite digest does not match the supplied fixture, policy, and scorer contract.');
         }
 
         if ($root->version === self::RESPONSE_VERSION
@@ -518,14 +528,14 @@ final class GroundedAnswerEvaluationDatasetLoader
             $sourceTexts = collect($articles)
                 ->filter(fn (array $article): bool => in_array($article['id'], $expectedArticleIds, true))
                 ->flatMap(fn (array $article): array => [
-                    $this->normalize($article['title']),
-                    $this->normalize($article['body']),
+                    $this->phraseMatcher->normalize($article['title']),
+                    $this->phraseMatcher->normalize($article['body']),
                 ]);
 
             foreach ($requiredFacts as $phraseGroup) {
                 $isGrounded = collect($phraseGroup)
                     ->contains(fn (string $phrase): bool => $sourceTexts->contains(
-                        fn (string $sourceText): bool => $this->containsPhrase($sourceText, $phrase),
+                        fn (string $sourceText): bool => $this->phraseMatcher->containsPhrase($sourceText, $phrase),
                     ));
 
                 if (! $isGrounded) {
@@ -657,14 +667,14 @@ final class GroundedAnswerEvaluationDatasetLoader
         foreach ($value as $phrase) {
             $phrase = $this->boundedString($phrase, 2, 200, $label);
 
-            if ($this->normalize($phrase) === '') {
+            if ($this->phraseMatcher->normalize($phrase) === '') {
                 throw new RuntimeException(sprintf('%s must contain searchable text.', ucfirst($label)));
             }
 
             $phrases[] = $phrase;
         }
 
-        if (count(array_unique(array_map($this->normalize(...), $phrases))) !== count($phrases)) {
+        if (count(array_unique(array_map($this->phraseMatcher->normalize(...), $phrases))) !== count($phrases)) {
             throw new RuntimeException(sprintf('%s must not contain duplicate phrases.', ucfirst($label)));
         }
 
@@ -813,15 +823,5 @@ final class GroundedAnswerEvaluationDatasetLoader
         }
 
         return $value;
-    }
-
-    private function normalize(string $value): string
-    {
-        return trim((string) preg_replace('/[^\p{L}\p{N}]+/u', ' ', mb_strtolower($value)));
-    }
-
-    private function containsPhrase(string $normalizedText, string $phrase): bool
-    {
-        return str_contains(' '.$normalizedText.' ', ' '.$this->normalize($phrase).' ');
     }
 }

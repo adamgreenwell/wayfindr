@@ -12,7 +12,7 @@
     "maximums": {
       "unsafe_answer_rate_percent": 0,
       "overconfident_error_rate_percent": 0,
-      "confidence_brier_score": 5
+      "confidence_conformance_error": 5
     }
   },
   "language_evaluation": {
