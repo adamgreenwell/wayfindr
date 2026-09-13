@@ -13,8 +13,8 @@ monitoring is implemented, and localization landed as a platform property —
 timezone, region, and where language is configured — rather than as a
 translation pass. Performance baselines have been measured instead of assumed.
 
-**One acceptance criterion is still open, and it is deliberately the one the
-author cannot satisfy alone:**
+**One independent-install acceptance criterion is still open, and the author
+cannot satisfy it alone:**
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797) — somebody who is
 not the author installs Wayfindr from a published artifact and it works. The
 repaired baseline for that run does not exist publicly yet:
@@ -24,6 +24,11 @@ reviewed the `v0.8.0` candidate on current `main`. The stop-before-tag gates in
 [RELEASING.md](../../RELEASING.md) still have to clear, the owner must separately
 authorize the repository-settings and publication changes, and the exact
 artifact must be verified before #797's brief is refreshed for a human tester.
+The open `1.0.0` milestone also includes
+[#970](https://github.com/adamgreenwell/wayfindr/issues/970)'s release
+preconditions and [#985](https://github.com/adamgreenwell/wayfindr/issues/985)'s
+site-settings work. #797 is not the milestone's only open issue; the owner
+still needs to decide the settings scope and timing.
 
 Tier 2 parity work is no longer post-1.0 either; it is implemented on current
 `main`. The AI tier has one assistive half implemented and one autonomous half
@@ -184,8 +189,9 @@ Underneath that, the original foundation:
 
 ## Before 1.0.0
 
-The feature gaps that defined the pre-1.0 work are closed, so what is left is
-proof rather than scope. Polish stays demand-gated.
+The feature gaps that defined the pre-1.0 work are closed. The remaining work
+includes release and acceptance proof plus an owner decision on the scope and
+timing of site-settings work in #985. Other polish stays demand-gated.
 
 - **Hold the reviewed release candidate at its publication gates:**
   [#932](https://github.com/adamgreenwell/wayfindr/issues/932) completed through
@@ -200,7 +206,7 @@ proof rather than scope. Polish stays demand-gated.
   artifact:** record the tag, commit, image digest, release metadata, and
   relevant clean-install/upgrade evidence before treating it as #797's new
   baseline.
-- **Run the sole open `1.0.0` milestone criterion:** refresh
+- **Run the remaining independent-install acceptance criterion:** refresh
   [#797](https://github.com/adamgreenwell/wayfindr/issues/797) with that verified
   artifact and hand it to a human who is not the author. A cold, no-context
   Claude sandbox run against `v0.7.0` was valuable synthetic evidence: it
@@ -271,21 +277,27 @@ captures now share the expanded identities. Two `openrouter/azure` /
 decision-confidence contradiction 38 minutes 11 seconds later. An
 `openrouter/amazon-bedrock/global` / `anthropic/claude-sonnet-5` sample scored
 15/16 after one unexpected refusal. An `openrouter/google-vertex/global` /
-`google/gemini-3.8-flash` sample scored 13/16 when three plausible paraphrases
-missed the frozen lexical fact alternatives; those machine failures await human
-adjudication. The cross-model samples also changed upstream route, and all four
-runs occurred within about 78 minutes. They show point-in-time variability—not
+`google/gemini-3.8-flash` sample scored 13/16 when three answers missed the
+frozen lexical fact alternatives. The owner's [September 10 adjudication](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625334565)
+attributed two misses to matcher brittleness and one to a real omitted retry
+step. The [final decision](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
+was no fixture or matcher change: the recorded 13/16 machine result stands, and
+the adjudication required no identity rotation or recapture. The cross-model
+samples also changed upstream route, and all four runs occurred within about
+78 minutes. They show point-in-time variability—not
 long-term drift resistance, model-revision behavior, provider approval, or
 representative self-hosting and visitor-runtime safety. The comparison tooling
 prevents a contract change from masquerading as provider/model drift, but it
 does not fingerprint every provider-side transformation.
 
-Reconsideration has a stated sequence — obtain human review of the retained
-private outputs, freeze and recapture every proposed route if that review changes
-the fixture or matcher, record same-route evidence after meaningful time or a
-model revision, revisit the ADR with that evidence, and only then define a
-visitor-facing runtime with grounding, low-confidence handoff, per-site opt-in
-and disclosure, and reply audit.
+Human review of the retained private outputs is complete. Reconsideration now
+waits on same-route evidence after meaningful time or a model revision, followed
+by an explicit ADR review with that evidence. Only if the decision changes may
+the project define a visitor-facing runtime with grounding, low-confidence
+handoff, per-site opt-in and disclosure, and reply audit. Any independently
+justified fixture or matcher
+change must freeze a new evidence identity and recapture every proposed route;
+it must not rewrite the recorded September 10 outcomes.
 
 Until that happens, the reply a customer reads belongs to a human.
 

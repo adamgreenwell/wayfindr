@@ -193,10 +193,12 @@ versioning + upgrade enforcement (ADR 0012/0013, #635–#656 — completed Augus
 11 with the advisory response; see §12), repository CI/config hardening, and the
 repo-authored GitHub Wiki.
 
-**Current issue boundary (September 10).** #932 completed the release-candidate
-work through PR #934. #797 is the sole open `1.0.0` milestone acceptance item
-and must follow the two stop-before-tag gates plus a separately authorized,
-verified publication; #762 remains open only for the visitor-facing
+**Current issue boundary (September 13).** #932 completed the release-candidate
+work through PR #934. #797 is the remaining independent-install acceptance
+criterion and must follow the two stop-before-tag gates plus a separately
+authorized, verified publication. The open `1.0.0` milestone also includes
+#970's release gates and #985's site-settings work; #797 is not its only open
+issue. #762 remains open only for the visitor-facing
 autonomous-answer half that ADR 0004 deliberately defers. PR #924 merged as a
 separate dependency update at `b2011ecb`; it did not clear a release or human
 acceptance gate. PR #939 then made contradictory refusal confidence a hard
@@ -408,10 +410,13 @@ Ordered by real dogfood value and dependency, not feature novelty.
 6. **Keep the autonomous half of #762 deferred.** The optional agent copilot is
    implemented inside ADR 0004's human-review boundary. Four same-contract
    sixteen-case captures across three model/upstream routes produced one 16/16
-   pass and three machine-scored failures. Human review must adjudicate the
-   Gemini lexical misses before any fixture change, and a visitor-facing answer
-   agent still requires meaningfully later or model-revision evidence plus a
-   deliberate ADR change; do not smuggle it in as release polish.
+   pass and three machine-scored failures. The owner completed human
+   adjudication on September 10: two Gemini misses were matcher brittleness and
+   one was a real omission. The final decision was no fixture or matcher change;
+   the recorded 13/16 result stands. Same-route evidence after meaningful elapsed
+   time or a model revision is still required before revisiting ADR 0004. A
+   visitor-facing answer agent requires a deliberate ADR change; do not smuggle
+   it in as release polish.
 
 ---
 
@@ -866,8 +871,10 @@ rewrite those as runtime failures or as current production restore proof.
   minor slot under ADR 0012. A later fixes-only release may use `0.8.1`;
   another feature or action-bearing line advances to `0.9.0`. None of those
   development identities claims publication. Tier 1 and Tier 2 feature work is
-  implemented on current `main`; the sole open `1.0.0` milestone criterion is
-  the human non-author install in #797.
+  implemented on current `main`; the human non-author install in #797 was the
+  remaining independent-install acceptance criterion. This is the September 9
+  snapshot, not the current milestone inventory; see §14 for the later #970
+  and #985 work.
 - Localization is a first-class concern, not a feature: interface language,
   timezone, and regional formatting belong in first-run setup and the operator
   console. Stored timestamps remain UTC; the operator chooses the install
@@ -895,17 +902,24 @@ situational state; §§8–13 above are older snapshots kept for their evidence.
 
 ### Where `main` is
 
-`cf6cf218`, clean tree, **no open PRs**. Full suite **3,896 tests — 3,883
-passed, 13 skipped, 0 failed** (run 2026-09-13 on the 8.5 binary with
+At the original snapshot: `cf6cf218`, clean tree, **no open PRs**. Full suite
+**3,896 tests — 3,883 passed, 13 skipped, 0 failed** (run 2026-09-13 on the 8.5 binary with
 `-d memory_limit=1G`). `VERSION` is `0.8.0`; the newest published tag is still
 `v0.7.0`.
 
-### The release gate is now the *only* thing between here and `v0.8.0`
+PR #995 subsequently merged the handoff and `CLAUDE.md` refresh as `9614551e`.
+The test totals above belong to `cf6cf218`; they are not a new suite run at that
+documentation commit. As of the September 13 reconciliation, the open `1.0.0`
+milestone issues are #797 (independent-install acceptance), #970 (release
+preconditions), and #985 (site-settings scope). #797 is the remaining
+independent-install acceptance criterion, not the sole open milestone issue.
 
-Everything else on the path is ready: the ordinary release contract passes,
-there are no open PRs, and the 0.8.0 notes are reconciled — reconciliation is an
-ongoing practice on this cut (#975, #990, #993 among others) and nothing has
-merged since the last one.
+### Release-gate findings at the original snapshot
+
+Everything else on the path was ready at that snapshot: the ordinary release
+contract passed, there were no open PRs, and the 0.8.0 notes were reconciled.
+Reconciliation is an ongoing practice on this cut (#975, #990, #993 among
+others); nothing had merged after the last reconciliation at that point.
 
 **`--publishing` mode currently FAILS, and that is correct.** It reports that the
 `[0.8.0]` section is dated 2026-09-10, some days before the release commit. The
@@ -1042,7 +1056,9 @@ unilaterally.
    #985's `sites/show`. Both are 0.6.0 renovation debt rather than new work.
 3. **Is the next tag `0.9.0` or `1.0.0`?** The recommendation in #994 is that
    1.0.0 should mean *a self-hoster who is not us can install, run and upgrade
-   it* — making #797 the only hard gate. Holding 1.0.0 for the version a
+   it* — proposing #797 as the acceptance definition once its release
+   prerequisites clear. This is a recommendation for the owner, not a change to
+   the current milestone's #970 and #985 scope. Holding 1.0.0 for the version a
    stranger has actually survived is the more conservative read and is
    defensible.
 
@@ -1073,16 +1089,18 @@ settings; #764 is deferred by ADR 0004; Wayfindr Cloud is not to be worked on
 before 1.0.0 is cut, and #986 already records what was learned about its pricing
 so that ground does not need re-covering.
 
-**One trap that looks like available work and is not.** `docs/product/roadmap.md`
-and ADR 0004 both say the three Gemini paraphrase misses "await human
-adjudication" and that "#762 stays open for human adjudication". Those read like
-stale sentences describing a gate that closed with the September 10 evidence.
-They are not stale — #762's own body still says *"A human must review the
-retained private responses and decide whether those are provider failures,
-evaluator false negatives, or both"*, and the freeze discipline explicitly
-forbids tuning the fixture after seeing model output. Do not reconcile that
-wording; it is an open human gate, and an agent closing it in prose would be
-claiming an adjudication nobody performed.
+**Correction to this snapshot: the human adjudication is complete.** The
+original snapshot relied on #762's stale issue body and incorrectly called this
+an open human gate. The owner's [September 10 adjudication](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625334565)
+found matcher brittleness in `conversation-csv-export` and
+`widget-origin-allowlist`, but a real omitted retry step in `renewal-card-retry`.
+The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
+was no fixture or matcher change. The recorded 13/16 machine result, scorer
+commit, and evidence identities stand; this adjudication required no recapture.
+The freeze discipline still forbids tuning to retained outputs. #762 now waits
+on same-route evidence after meaningful elapsed time or a model revision before
+ADR 0004 is revisited. No visitor-facing runtime was approved. #948 tracks the
+separately discovered evaluator defects and must preserve the historical record.
 
 One more nuance on the copilot: it is **off until an operator configures a
 provider** — `config/ai.php` defaults the driver to an empty string — so "the

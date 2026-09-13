@@ -88,8 +88,13 @@ autonomous visitor replies. The agent-controlled copilot remains the approved
 product boundary until broader repeated evidence and a future explicit ADR
 decision say otherwise. Four later private captures used the same expanded
 sixteen-case suite and prompt. Two GPT-5.2/Azure runs scored 15/16 and 16/16;
-Claude Sonnet 5/Bedrock scored 15/16; Gemini 3.8 Flash/Vertex scored 13/16, with
-three lexical fact misses awaiting human adjudication. The cross-model samples
+Claude Sonnet 5/Bedrock scored 15/16; Gemini 3.8 Flash/Vertex scored 13/16.
+The owner's [September 10 adjudication](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625334565)
+attributed two Gemini misses to matcher brittleness and one to a real omitted
+retry step. The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
+was no fixture or matcher change; the recorded 13/16 failure and evidence
+identities stand. #762 now waits on same-route evidence after meaningful
+elapsed time or a model revision before revisiting ADR 0004. The cross-model samples
 also changed upstream route, and all four were recorded within about 78 minutes.
 That point-in-time evidence is neither long-term drift resistance nor provider
 or runtime approval, so #762 and the ADR boundary remain unchanged.

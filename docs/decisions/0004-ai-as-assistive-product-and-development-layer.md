@@ -143,10 +143,14 @@ the suite or prompt identity. An `openrouter/amazon-bedrock/global` /
 `anthropic/claude-sonnet-5` sample scored 15/16 with Brier 1.20 after one
 unexpected refusal. An `openrouter/google-vertex/global` /
 `google/gemini-3.8-flash` sample scored 13/16 with Brier 17.55 because three
-plausible paraphrases missed the frozen lexical fact alternatives. The machine
-result remains failed pending human review of whether those are provider
-failures, evaluator false negatives, or both. Raw captures remain private and
-mode `0600`.
+answers missed the frozen lexical fact alternatives. The owner's [human
+adjudication later on September 10](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625334565)
+found two matcher false negatives (`conversation-csv-export` and
+`widget-origin-allowlist`) and one real omission (`renewal-card-retry` lacked
+the final retry step). The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
+was no fixture or matcher change. The failed 13/16 machine result and its
+original identities and scorer commit remain unchanged; the adjudication
+required no recapture. Raw captures remain private and mode `0600`.
 
 The cross-model samples also changed upstream route, and all four captures were
 recorded within about 78 minutes. This is point-in-time cross-route evidence,
@@ -155,8 +159,9 @@ representative self-hosting or visitor-runtime safety, or provider approval. No
 stored setting, deployment, runtime, or ADR decision changed. The evidence
 strengthens rather than relaxes the reason for keeping autonomous replies
 deferred. The September 8 decision and the human-reviewed copilot boundary
-remain unchanged; #762 stays open for human adjudication, meaningfully separated
-evidence, and any future explicit ADR decision.
+remain unchanged. Human adjudication is complete; #762 stays open for same-route
+evidence after meaningful elapsed time or a model revision before this ADR is
+revisited. The adjudication does not approve a visitor-facing answer runtime.
 
 ## Consequences
 
