@@ -516,6 +516,23 @@ page view that was not there before.
 
 ### Fixed
 
+- **Container upgrades no longer reuse compiled pages from the previous
+  release.** By default, each container keeps its Blade cache outside shared storage,
+  preventing sign-in and dashboard errors after upgrading from 0.7.0. Stored
+  uploads, sessions, and other application data stay in place.
+
+- **Restores warn when the backup's decryption keys are missing or cannot be
+  verified.** New backups record fingerprints of the source key set, not the
+  keys themselves. Keep the original `APP_KEY` and any `APP_PREVIOUS_KEYS`
+  separately for disaster recovery; the archive cannot recover missing keys.
+  Restore preflight now distinguishes a definite mismatch from an older archive
+  without key metadata. The GUI leaves the install in maintenance in either
+  case until the operator checks it, because missing keys can make encrypted
+  values unreadable, including agents' two-factor secrets. Follow the
+  [backup and restore guide](docs/self-hosting/backup-restore.md) before retrying.
+  Failure guidance also warns when the database committed but attachment
+  recovery failed; those later failures do not roll back the whole restore.
+
 - **Offline AI evaluation preserves Unicode equivalence and identifies its
   scorer.** Required and forbidden phrase checks now share NFC normalization
   with fixture grounding. The suite identity also binds local scoring code,
