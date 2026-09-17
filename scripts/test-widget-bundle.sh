@@ -92,7 +92,20 @@ fi
 # thing to do -- it just has to be a decision somebody took, rather than a drift
 # nobody saw.
 WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
-WIDGET_SRC_GZIP_BUDGET=85000
+# Raised from 85000 for the visitor-session refresh lifecycle (#1002), which
+# adds about 6.5KB gzipped of genuine behaviour: the rotation scheduler, the
+# deadline bookkeeping, and the storage compatibility it needs.
+#
+# Raised only after trimming, not instead of it. That branch first came in 329
+# bytes over, and the cause was prose rather than code -- 63% of its added
+# lines were comments against a 22% house norm -- so 54 lines of narrative were
+# cut before this number was touched. What is left is the feature.
+#
+# The figure restores the margin this guard shipped with. It was set 6654 bytes
+# (8%) above the file at the time; #1002 left 69 bytes, which is not a budget,
+# it is a tripwire for whoever edits the widget next. 90000 puts roughly 5KB
+# back -- still far below the doubling this exists to catch.
+WIDGET_SRC_GZIP_BUDGET=90000
 
 [ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"
 
