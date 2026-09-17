@@ -657,7 +657,7 @@
      * together: a lifetime that outlives the token it described would schedule
      * a refresh for a credential already replaced.
      */
-    function adoptVisitorToken(token, expiresInSeconds) {
+    function adoptVisitorToken(token, expiresInSeconds, requestedAtMs) {
       visitorToken = token;
       visitorTokenGeneration += 1;
 
@@ -675,7 +675,22 @@
         ? expiresInSeconds
         : null;
 
-      tokenExpiresAt = seconds === null ? null : Date.now() + Math.max(0, seconds) * 1000;
+      // Anchored to when the REQUEST left, not to when its answer was
+      // processed. The server measures the lifetime from the moment it minted
+      // the token, and everything between that and this line -- the network,
+      // a suspended tab, a sleeping laptop holding a buffered response -- is
+      // life already spent. Dating the deadline from here credits the token
+      // with time it does not have, and once the server enforces the lifetime
+      // that is a window where every request is refused.
+      //
+      // Anchoring to the request is deliberately the pessimistic end of that
+      // range: the token was minted at some point between the two, so this can
+      // under-count the life remaining but never over-count it.
+      var anchor = typeof requestedAtMs === 'number' && isFinite(requestedAtMs)
+        ? requestedAtMs
+        : Date.now();
+
+      tokenExpiresAt = seconds === null ? null : anchor + Math.max(0, seconds) * 1000;
 
       // Stored WITH the token, because the two are only meaningful together. A
       // new page instance restoring the credential alone would treat a token
@@ -781,6 +796,7 @@
       sitePublicKey: sitePublicKey,
       bootstrap: function (pageUrl, context) {
         var ticket = ++bootstrapTicket;
+        var requestedAt = Date.now();
 
         // The token, when we hold one, so the server can tell a reopened panel
         // from a new session. It is not a credential here -- bootstrap mints
@@ -806,7 +822,7 @@
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (token) {
-            adoptVisitorToken(token, result.visitor.token_expires_in);
+            adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
           }
 
           maskSelectors = siteMaskSelectors(result);
@@ -852,6 +868,8 @@
           return Promise.resolve('idle');
         }
 
+        var requestedAt = Date.now();
+
         return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
@@ -863,7 +881,7 @@
             return 'rejected';
           }
 
-          adoptVisitorToken(token, result.visitor.token_expires_in);
+          adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
 
           return 'refreshed';
         }).catch(function (error) {

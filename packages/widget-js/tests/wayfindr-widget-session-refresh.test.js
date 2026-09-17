@@ -879,3 +879,33 @@ test('the unknown-lifetime probe never outlasts a configured interval', async ()
 
   assert.equal(widget.client.nextSessionRefreshDelay(now), 2000);
 });
+
+test('an advertised lifetime counts from when the request left, not when it answered', async () => {
+  // The server measures a lifetime from the moment it mints the token. Time
+  // spent in the network -- or in a suspended tab holding a buffered response,
+  // or a laptop that slept -- is life already gone. Dating the deadline from
+  // the moment JavaScript handles the answer credits the token with time it
+  // does not have, and once the server enforces the lifetime that is a window
+  // where every request the widget makes is refused.
+  //
+  // A one-second lifetime whose answer takes 400ms: by 450ms in, a bit over
+  // half is spent, so roughly 275ms remains to halve. Anchoring to the
+  // response instead would still believe it had nearly a full second.
+  const { widget } = widgetForRefresh({
+    tokenExpiresIn: 4,
+    bootstrapGate: new Promise((resolve) => setTimeout(resolve, 2000)),
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 2050));
+  await settle();
+
+  const delay = widget.client.nextSessionRefreshDelay(Date.now());
+
+  // Half of the ~1950ms actually left is about 975. Anchoring to the response
+  // would believe nearly the whole four seconds remained and answer ~1985, so
+  // the bound sits well clear of both rather than between two close values.
+  assert.ok(
+    delay < 1400,
+    `expected the 2s spent in flight to count against the 4s lifetime, got ${delay}`,
+  );
+});
