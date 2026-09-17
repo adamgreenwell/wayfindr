@@ -363,3 +363,48 @@ test('a reused browser identity does not inherit the deleted visitor session', f
         Carbon::setTestNow();
     }
 });
+
+test('a stranger holding the anonymous id cannot spend the visitor refresh budget', function (): void {
+    // Treat the anonymous id as known, because it is: Wayfindr prints it on
+    // /dashboard/visitors/{id} for every visitor, and the widget puts it in
+    // query strings that every stock access log records. That is the premise
+    // this whole endpoint was built on -- so a budget keyed on it in route
+    // middleware would have belonged to whoever read it rather than to the
+    // visitor, and spending it is a targeted, silent denial of renewal.
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_ip_per_minute', 1000);
+
+    refreshSessionFixture('anon-targeted');
+    $token = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-targeted');
+
+    // Ten attempts naming the victim, none of them holding their token. The
+    // statuses are collected rather than asserted here, so that the victim's
+    // budget below is what fails when this regresses -- asserting 401 inside
+    // the loop makes the loop itself fail first, which reports a throttled
+    // ATTACKER rather than the stranded visitor that is the actual defect.
+    $forgedStatuses = [];
+
+    foreach (range(1, 10) as $attempt) {
+        $forgedStatuses[] = $this->postJson('/api/widget/session', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-targeted',
+            'visitor_token' => 'forged-token-'.$attempt,
+        ])->getStatusCode();
+    }
+
+    $refresh = fn () => $this->postJson('/api/widget/session', [
+        'site_public_key' => 'site_public_refresh',
+        'anonymous_id' => 'anon-targeted',
+        'visitor_token' => $token,
+    ]);
+
+    // The victim still holds the whole budget: two refreshes, then the limit.
+    // Had the forged attempts been charged, the first of these would be a 429.
+    $refresh()->assertOk();
+    $refresh()->assertOk();
+    $refresh()->assertStatus(429);
+
+    // And every forged attempt was refused for want of a credential, not
+    // throttled -- a 429 here would mean it had reached the bucket at all.
+    expect(array_unique($forgedStatuses))->toBe([401]);
+});
