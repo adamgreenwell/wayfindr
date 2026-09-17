@@ -147,9 +147,14 @@ an expiry it has been told about.
 `Wayfindr.init()`, the embedded widget. A host integrating through
 `Wayfindr.createClient()` directly -- a documented path in the widget package's
 README -- gets the token but no timer, and nothing in that API tells the
-integrator to drive one. Those sessions will bootstrap, work, and then stop
-working once the lifetime you set elapses. If any of your sites integrate that
-way, leave this at 0 until they rotate.
+integrator to drive one.
+
+Setting a lifetime does not break those sessions today -- nothing refuses an
+expired token yet, which is the whole point of advertising first. They are the
+sessions that break at the LATER step, when the server starts refusing. So a
+`createClient` integration is work to finish before that step, not a reason to
+leave this at 0: leaving it at 0 declines the advertise-first move that makes
+enforcement safe, which is the opposite of what you want.
 
 The residual: two sessions begun for the same visitor in the same microsecond
 share a budget. The value is inside the encrypted token, so it cannot be read

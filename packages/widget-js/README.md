@@ -120,10 +120,11 @@ it -- but nothing drives them for you.
 request did not get through, so the token is probably still good) or `idle`
 (there was nothing to trade). Recovering from `rejected` means bootstrapping;
 recovering from `unavailable` means waiting, since re-minting there discards a
-working session. That is harmless while `WAYFINDR_VISITOR_SESSION_TTL_MINUTES`
-is 0, its shipped default, because tokens then never expire. If the install you
-integrate with sets a lifetime, a `createClient` session will stop working when
-it elapses.
+working session. No Wayfindr install refuses an expired visitor token today, so an
+unrotated session keeps working however long it lives. That is what will change:
+an install that advertises a lifetime is preparing to enforce one, and an
+unrotated `createClient` session is exactly the case enforcement ends. Build
+rotation before the install you integrate with gets there.
 
 `sendFirstMessage` bootstraps the visitor session automatically when needed.
 Lower-level calls such as `startConversation`, `sendMessage`,
