@@ -562,9 +562,16 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
+    // Declared before the storage restore below assigns it. `var` hoists the
+    // binding but not the initialiser, so declaring it further down would let
+    // `= null` run afterwards and silently discard the restored deadline.
+    var tokenExpiresAt = null;
     var sessionRefreshMs = typeof options.sessionRefreshMs === 'number'
       ? Math.max(0, options.sessionRefreshMs)
       : DEFAULT_SESSION_REFRESH_MS;
+    var onSessionTokenChanged = typeof options.onSessionTokenChanged === 'function'
+      ? options.onSessionTokenChanged
+      : null;
     // A function, not a value: the panel re-resolves its language when
     // bootstrap returns the site default, so a locale captured at construction
     // would be the one we had before we knew anything.
@@ -590,6 +597,10 @@
 
     if (!visitorToken) {
       visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
+
+      var storedExpiry = Number(storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey)));
+
+      tokenExpiresAt = isFinite(storedExpiry) && storedExpiry > 0 ? storedExpiry : null;
     }
 
     if (!fetcher) {
@@ -597,7 +608,6 @@
     }
 
     var bootstrapTicket = 0;
-    var tokenExpiresAt = null;
 
     /**
      * Take ownership of a freshly-minted token.
@@ -615,6 +625,25 @@
       var parsed = typeof expiresAt === 'string' && expiresAt ? Date.parse(expiresAt) : NaN;
 
       tokenExpiresAt = isNaN(parsed) ? null : parsed;
+
+      // Stored WITH the token, because the two are only meaningful together. A
+      // new page instance restoring the credential alone would treat a token
+      // near the end of its life as non-expiring and wait a full interval --
+      // first refreshing it some time after enforcement had already killed it.
+      if (tokenExpiresAt === null) {
+        storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
+      } else {
+        storageSet(storage, visitorTokenExpiryStorageKey(sitePublicKey), String(tokenExpiresAt));
+      }
+
+      // A new token can carry a SOONER deadline than the one a pending timer
+      // was scheduled against -- an operator enabling a five-minute lifetime
+      // while a tab sits on a ten-minute timer, for instance. Whoever owns the
+      // timer has to hear about it, or the token expires before the timer
+      // fires.
+      if (typeof onSessionTokenChanged === 'function') {
+        onSessionTokenChanged();
+      }
     }
 
     /**
@@ -699,9 +728,15 @@
        * so every later consumer reads the new value rather than a copy taken
        * when the session started.
        *
-       * Resolves false rather than throwing when there is nothing to refresh
-       * or the server declines: a failed refresh is not an error the visitor
-       * did anything about, and the caller decides whether to re-bootstrap.
+       * Resolves an OUTCOME rather than throwing, because the caller's next
+       * move depends on which failure it was:
+       *
+       *   'refreshed'   -- a new token is in hand and stored
+       *   'rejected'    -- the server refused this token; it is dead, and
+       *                    asking again with it will never work
+       *   'unavailable' -- we could not ask. The token may be perfectly good,
+       *                    so re-minting would discard a working session
+       *   'idle'        -- there was no token to trade in the first place
        */
       /**
        * How long to wait before refreshing, in ms. The client owns this because
@@ -713,7 +748,7 @@
       },
       refreshSession: function () {
         if (!visitorToken) {
-          return Promise.resolve(false);
+          return Promise.resolve('idle');
         }
 
         return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
@@ -724,14 +759,21 @@
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (!token) {
-            return false;
+            return 'rejected';
           }
 
           adoptVisitorToken(token, result.visitor.token_expires_at);
 
-          return true;
-        }).catch(function () {
-          return false;
+          return 'refreshed';
+        }).catch(function (error) {
+          // WHICH failure it was decides what the caller should do. A refused
+          // token is dead and asking again with it will never succeed; an
+          // unreachable server is temporary and re-minting would throw away a
+          // perfectly good session. `postJson` attaches the status when there
+          // was a response at all.
+          var status = error && typeof error.status === 'number' ? error.status : 0;
+
+          return status === 401 || status === 403 ? 'rejected' : 'unavailable';
         });
       },
       // Somebody is on the site. Public and unauthenticated by necessity: a
@@ -1109,18 +1151,15 @@
       storage: resolveStorageOption(options),
       visitorToken: options.visitorToken,
       sessionRefreshMs: options.sessionRefreshMs,
+      onSessionTokenChanged: function () {
+        restartSessionRefresh();
+      },
       realtime: options.realtime,
       reverb: options.reverb,
       Pusher: options.Pusher,
     });
 
     injectStyles(doc);
-
-    // Rotation is not tied to the panel. A visitor who never opens the widget
-    // still holds a token -- restored from storage on load -- and still uses
-    // it, so waiting for a panel-open bootstrap would leave exactly the quiet
-    // sessions a lifetime is most likely to expire under.
-    scheduleSessionRefresh();
 
     /**
      * What to show a visitor for a failure.
@@ -1391,6 +1430,19 @@
     // would clear nothing and then be undone by the callback resuming. A
     // widget that has been torn down must not be able to resurrect itself.
     var sessionRefreshStopped = false;
+
+    // AFTER those two declarations, not before them. `var` hoists the binding
+    // but not the initialiser, so calling this earlier created the timer, put
+    // its handle in the hoisted binding, and then had the handle overwritten
+    // with null when execution reached the `= null` above -- leaving a timer
+    // destroy() could not cancel and a guard that read false, so bootstrap
+    // started a second independent cycle.
+    //
+    // Rotation is deliberately not tied to the panel: a visitor who never
+    // opens the widget still holds a token restored from storage and still
+    // uses it, and those are exactly the quiet sessions a lifetime expires
+    // under.
+    scheduleSessionRefresh();
     var readReceiptDwellMs = typeof options.readReceiptDwellMs === 'number' ? Math.max(0, options.readReceiptDwellMs) : 1200;
     var readReceiptTimer = null;
     var pendingReadReceiptMessageId = null;
@@ -1927,10 +1979,25 @@
 
       sessionRefreshTimer = setTimeout(async function () {
         sessionRefreshTimer = null;
-        await client.refreshSession();
-        // Rescheduled whatever the outcome. A refusal is usually transient --
-        // offline, a restarting server -- and a widget that stops trying after
-        // one failure is a widget that has silently given up on the session.
+
+        var outcome = await client.refreshSession();
+
+        // A REJECTED token is dead and presenting it again will never work.
+        // That is reachable in normal use: a laptop sleeps, a background tab
+        // is suspended, the timer fires late and the lifetime has already
+        // passed. Rescheduling with the same token would leave an open
+        // conversation permanently unauthorised with nothing saying why.
+        //
+        // Bootstrap is the recovery because it is the one path that can mint
+        // without presenting anything. 'unavailable' is deliberately NOT
+        // recovered from -- the token is probably fine and the network is not,
+        // so re-minting would throw away a working session to fix nothing.
+        if (outcome === 'rejected') {
+          await client.bootstrap(pageUrlForReporting(), visitorContext).catch(function () {});
+        }
+
+        // Rescheduled either way: a widget that gives up after one failure has
+        // silently abandoned the session.
         scheduleSessionRefresh();
       }, delay);
 
@@ -1939,15 +2006,31 @@
       }
     }
 
-    function stopSessionRefresh() {
-      sessionRefreshStopped = true;
-
+    function clearSessionRefreshTimer() {
       if (!sessionRefreshTimer) {
         return;
       }
 
       clearTimeout(sessionRefreshTimer);
       sessionRefreshTimer = null;
+    }
+
+    function stopSessionRefresh() {
+      sessionRefreshStopped = true;
+      clearSessionRefreshTimer();
+    }
+
+    /**
+     * Re-aim the timer at a deadline that has moved.
+     *
+     * Not the same as stopping: this keeps rotation on. A pending timer is
+     * scheduled against the token that existed when it was set, so adopting a
+     * token with a sooner expiry has to discard it -- otherwise the timer
+     * fires after the credential it was meant to renew has already died.
+     */
+    function restartSessionRefresh() {
+      clearSessionRefreshTimer();
+      scheduleSessionRefresh();
     }
 
     function scheduleMessagePoll() {
@@ -7242,6 +7325,10 @@
 
   function visitorTokenStorageKey(sitePublicKey) {
     return 'wayfindr:' + sitePublicKey + ':visitor-token';
+  }
+
+  function visitorTokenExpiryStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':visitor-token-expires-at';
   }
 
   function appearanceStorageKey(sitePublicKey) {
