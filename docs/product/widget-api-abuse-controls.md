@@ -93,6 +93,10 @@ WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY=20000
 # lifetime, plus a retry.
 WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE=30
 WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE=600
+
+# How long a visitor session token stays usable, in minutes. Zero is no expiry,
+# and is the shipped default. See "Turning on a token lifetime" below.
+WAYFINDR_VISITOR_SESSION_TTL_MINUTES=0
 ```
 
 Use lower values for tightly controlled demos or test installs. Use higher
@@ -119,6 +123,25 @@ id. A budget keyed on the visitor could therefore be spent with genuinely valid
 credentials by someone who bootstrapped once. Refreshing carries a session's
 start forward and bootstrapping begins a new one, so keying on the session puts
 those requests in the caller's own bucket.
+
+## Turning on a token lifetime
+
+`WAYFINDR_VISITOR_SESSION_TTL_MINUTES` is zero on every install today, and zero
+means a visitor session token never expires. Setting it does ONE thing: bootstrap
+and refresh begin advertising a lifetime, and the widget rotates its token ahead
+of that deadline. The server still accepts an older token.
+
+That ordering matters and is worth not reversing. `widget.js` is cached for five
+minutes and carries no version, so the widgets holding tokens right now are the
+ones that have to survive the change. Advertise the lifetime first, let the
+installed widgets rotate against it, and only then consider refusing an expired
+token. A rule enforced before its clients can rotate strands every open
+conversation at once, and it does so quietly, because a refused refresh is
+indistinguishable to the widget from a declined one.
+
+Raise or lower it freely afterwards: the widget reads the deadline from each
+response rather than caching a policy, and it will not schedule a refresh past
+an expiry it has been told about.
 
 The residual: two sessions begun for the same visitor in the same microsecond
 share a budget. The value is inside the encrypted token, so it cannot be read
