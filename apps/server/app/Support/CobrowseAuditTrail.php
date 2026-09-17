@@ -97,9 +97,11 @@ class CobrowseAuditTrail
      * under repeats at the poll rate.
      *
      * `granted_by` is recorded explicitly rather than inferred from the actor
-     * type. This endpoint is the visitor surface, so the answer is always
-     * `visitor` today; naming it means a future agent- or system-initiated
-     * end is distinguishable in the same log rather than by absence.
+     * type, and ONLY on a grant. This endpoint is the visitor surface, so the
+     * answer is always `visitor` today; naming it means a future agent- or
+     * system-initiated grant is distinguishable in the same log rather than by
+     * absence. On a decline or a revocation there is no granting party to
+     * name, and the actor already records who answered.
      *
      * DECLINING AND REVOKING ARE DIFFERENT EVENTS and the previous status is
      * what separates them. Answering no to a pending request never granted
@@ -124,9 +126,14 @@ class CobrowseAuditTrail
                 'support_code' => $this->supportCode($session),
                 'previous_status' => $previousStatus,
                 'status' => $session->status,
-                'granted_by' => 'visitor',
                 'consented_at' => $session->consented_at?->toJSON(),
                 'ended_at' => $session->ended_at?->toJSON(),
+                // Only on a grant. The field names the party who GRANTED, so
+                // carrying it on a decline would have the row assert a consent
+                // that never happened -- the very thing distinguishing the two
+                // actions was meant to stop. Who answered is recorded either
+                // way, as the event's actor.
+                ...($granted ? ['granted_by' => 'visitor'] : []),
             ],
         );
     }

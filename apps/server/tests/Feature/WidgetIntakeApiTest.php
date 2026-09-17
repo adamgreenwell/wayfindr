@@ -2180,7 +2180,14 @@ test('declining a pending request is recorded as a decline, not a revocation', f
     $event = AuditEvent::query()->where('action', 'cobrowse.consent_declined')->sole();
 
     expect($event->metadata['previous_status'])->toBe('requested')
-        ->and($event->metadata['status'])->toBe('revoked');
+        ->and($event->metadata['status'])->toBe('revoked')
+        // The field names who GRANTED. Carrying it here would have the row
+        // assert a consent that never happened -- which is the thing telling
+        // decline apart from revoke exists to prevent.
+        ->and($event->metadata)->not->toHaveKey('granted_by');
+
+    // Who answered is still recorded, as the actor.
+    expect($event->actor_id)->toBe($visitor->id);
 
     // And the log does not also claim a revocation.
     expect(AuditEvent::query()->where('action', 'cobrowse.consent_revoked')->count())->toBe(0);
@@ -2209,4 +2216,9 @@ test('withdrawing consent already given is still a revocation', function (): voi
 
     expect(AuditEvent::query()->where('action', 'cobrowse.consent_revoked')->count())->toBe(1)
         ->and(AuditEvent::query()->where('action', 'cobrowse.consent_declined')->count())->toBe(0);
+
+    // A revocation names no granting party either: the grant that preceded it
+    // has its own row, and that is where `granted_by` belongs.
+    expect(AuditEvent::query()->where('action', 'cobrowse.consent_revoked')->sole()->metadata)
+        ->not->toHaveKey('granted_by');
 });
