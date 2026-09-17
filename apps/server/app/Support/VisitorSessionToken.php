@@ -157,6 +157,35 @@ class VisitorSessionToken
     }
 
     /**
+     * A stable name for the SESSION a token belongs to, across rotations.
+     *
+     * Exists to be a quota key, and the property that makes it usable as one is
+     * narrow: refreshing carries `session_started_at` forward unchanged, so a
+     * widget rotating its token keeps the same identity, while a caller who
+     * bootstraps gets a fresh start and therefore a different one.
+     *
+     * That distinction is what the visitor id alone cannot make. Bootstrap
+     * mints a working token for anyone presenting a site's public key and an
+     * anonymous id -- both values Wayfindr publishes or displays -- so a budget
+     * keyed on the visitor is spendable by a stranger who bootstraps once and
+     * then refreshes legitimately. The session start is inside the encrypted
+     * payload, so it cannot be named by someone who has only read the id.
+     *
+     * Hashed because it is a cache key, not a claim: nothing should be able to
+     * read a visitor id or a session time back out of a rate limiter's store.
+     */
+    public function sessionIdentity(string $token): string
+    {
+        $payload = $this->decode($token);
+
+        return hash('sha256', implode('|', [
+            (string) ($payload['site_id'] ?? ''),
+            (string) ($payload['visitor_id'] ?? ''),
+            $this->sessionStartedAt($payload)->toJSON(),
+        ]));
+    }
+
+    /**
      * When this SESSION began, as opposed to when this token was minted.
      *
      * Tokens issued before the field existed carry only `issued_at`; treating
