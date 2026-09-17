@@ -37,11 +37,11 @@ function widgetForRefresh(options) {
     url: 'https://docs.example.test/',
   });
 
-  const storage = memoryStorage({
+  const storage = memoryStorage(Object.assign({
     'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
     'wayfindr:site_public_docs:visitor-token': 'token-first',
     'wayfindr:site_public_docs:support-code': 'WF-DOCS',
-  });
+  }, options.storageSeed || {}));
 
   const requests = [];
   let bootstrapCalls = 0;
@@ -821,3 +821,61 @@ test('a superseded bootstrap does not count as having adopted a token', async ()
   );
 });
 
+
+const EXPIRY_KEY = 'wayfindr:site_public_docs:visitor-token-expires-at';
+
+test('a token restored with no expiry record beside it is treated as unknown', async () => {
+  // The upgrade path. Storage written by a widget version that kept no expiry
+  // has the token and nothing else -- which is exactly what "the server said
+  // there is no expiry" used to look like, because that case DELETED the key.
+  // One absent key cannot mean both, so the absent case now writes a marker
+  // and a bare token means nobody recorded a lifetime.
+  //
+  // Bootstrap is held open: in the widget it would adopt a server-advertised
+  // lifetime moments later, but createClient consumers have no such rescue.
+  const now = Date.now();
+  const { widget } = widgetForRefresh({
+    bootstrapGate: new Promise(() => {}),
+  });
+  await settle();
+
+  assert.equal(widget.client.nextSessionRefreshDelay(now), 30000);
+});
+
+test('a token restored with a recorded absence waits the full interval', async () => {
+  // The other side of the same key. This widget wrote the marker, so the
+  // absence is a fact rather than a gap, and there is nothing to probe for.
+  const now = Date.now();
+  const { widget } = widgetForRefresh({
+    storageSeed: { [EXPIRY_KEY]: 'none' },
+    bootstrapGate: new Promise(() => {}),
+  });
+  await settle();
+
+  assert.equal(widget.client.nextSessionRefreshDelay(now), 600000);
+});
+
+test('adopting a token the server gave no lifetime for records that absence', async () => {
+  // Closing the loop: the marker has to actually be written, or the next page
+  // load reads this session's token as a legacy one and probes forever.
+  const { storage } = widgetForRefresh({
+    tokenExpiresIn: null,
+  });
+  await settle();
+
+  assert.equal(storage.getItem(EXPIRY_KEY), 'none');
+});
+
+test('the unknown-lifetime probe never outlasts a configured interval', async () => {
+  // The probe is meant to be SOONER than the default, never later than what
+  // the integrator asked for -- a caller rotating every two seconds did not
+  // request a thirty-second wait because storage happened to be old.
+  const now = Date.now();
+  const { widget } = widgetForRefresh({
+    sessionRefreshMs: 2000,
+    bootstrapGate: new Promise(() => {}),
+  });
+  await settle();
+
+  assert.equal(widget.client.nextSessionRefreshDelay(now), 2000);
+});

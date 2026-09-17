@@ -420,6 +420,10 @@
   // "expiring imminently" case alike.
   var MIN_SESSION_REFRESH_MS = 30000;
 
+  // Written where a deadline would go when the server declared there is none,
+  // so that an ABSENT key keeps meaning "nobody recorded one".
+  var NO_TOKEN_EXPIRY = 'none';
+
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
@@ -611,9 +615,18 @@
     if (!visitorToken) {
       visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
 
-      var storedExpiry = Number(storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey)));
+      var storedExpiry = storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey));
+      var restoredExpiry = Number(storedExpiry);
 
-      tokenExpiresAt = isFinite(storedExpiry) && storedExpiry > 0 ? storedExpiry : null;
+      if (isFinite(restoredExpiry) && restoredExpiry > 0) {
+        tokenExpiresAt = restoredExpiry;
+      } else if (visitorToken && storedExpiry !== NO_TOKEN_EXPIRY) {
+        // A token with no record of its lifetime beside it. Only an older
+        // widget writes that -- this one always records something -- so the
+        // lifetime is unknown rather than absent, and it is worth one early
+        // refresh to find out which.
+        visitorTokenLifetimeUnknown = true;
+      }
     } else if (typeof options.visitorTokenExpiresIn === 'number' && isFinite(options.visitorTokenExpiresIn)) {
       // A host handing over a token may hand over its lifetime with it, in the
       // same seconds-from-now form the server uses.
@@ -668,11 +681,18 @@
       // new page instance restoring the credential alone would treat a token
       // near the end of its life as non-expiring and wait a full interval --
       // first refreshing it some time after enforcement had already killed it.
-      if (tokenExpiresAt === null) {
-        storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
-      } else {
-        storageSet(storage, visitorTokenExpiryStorageKey(sitePublicKey), String(tokenExpiresAt));
-      }
+      //
+      // "No expiry" is written down rather than expressed by removing the key,
+      // because an absent key cannot mean two things. Storage written by a
+      // widget version that kept no expiry at all has no key either, and that
+      // is an UNKNOWN lifetime, not a declared absence -- reading them alike
+      // sends every upgraded page back to the ten-minute interval against a
+      // token that may have minutes left.
+      storageSet(
+        storage,
+        visitorTokenExpiryStorageKey(sitePublicKey),
+        tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt),
+      );
 
       // A new token can carry a SOONER deadline than the one a pending timer
       // was scheduled against -- an operator enabling a five-minute lifetime
@@ -718,8 +738,12 @@
       if (tokenExpiresAt === null) {
         // A lifetime nobody stated could be anything, so find out rather than
         // assume ten minutes of it. One early refresh answers the question.
+        //
+        // Sooner than the interval, never later than it: this is a probe, and
+        // a caller who configured a five-second rotation did not ask to wait
+        // thirty. The retry floor still applies on top, as everywhere else.
         if (visitorTokenLifetimeUnknown) {
-          return Math.max(MIN_SESSION_REFRESH_MS, floorMs);
+          return Math.max(floorMs, Math.min(sessionRefreshMs, MIN_SESSION_REFRESH_MS));
         }
 
         // Nothing to be late for, so pacing a retry costs nothing here.
