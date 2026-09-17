@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
-use App\Models\Site;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
 use Illuminate\Cache\RateLimiter;
@@ -48,7 +47,7 @@ class VisitorSessionController extends Controller
         // a caller with 422 and tell them which of the three they got wrong.
         $token = $visitorSessionToken->refresh($request, $site, $validated['anonymous_id']);
 
-        $this->chargeVisitorBudget($limiter, $site, $validated['anonymous_id']);
+        $this->chargeSessionBudget($limiter, $visitorSessionToken->sessionIdentity($token));
 
         return response()->json([
             'data' => [
@@ -62,38 +61,39 @@ class VisitorSessionController extends Controller
     }
 
     /**
-     * Spend one of this visitor's refreshes -- after proving the caller is them.
+     * Spend one of this SESSION's refreshes.
      *
-     * Every other widget bucket is charged by route middleware. This one cannot
-     * be, and the reason is the defect this endpoint was built to close.
-     * Middleware runs before any token is verified, so the only visitor
-     * identifier it can key on is the caller-supplied `anonymous_id` -- a value
-     * Wayfindr prints in its own dashboard and writes into access logs. Keying
-     * a budget on it hands that budget to anyone who can read it: thirty junk
-     * tokens a minute exhausts a stranger's allowance, and the real widget
-     * starts taking 429s.
+     * Two things about this are deliberate and neither is obvious.
      *
-     * The damage is quiet, which is what makes it worth the inversion.
-     * `refreshSession()` reduces every refusal to the same failed refresh, so
-     * a targeted 429 is indistinguishable from a flaky network -- and once a
-     * lifetime is enforced, a visitor held at the limit simply stops being able
-     * to renew, with nothing anywhere saying why.
+     * It is charged here rather than by route middleware, because middleware
+     * runs before any token is verified and the only identifier available to it
+     * is the caller-supplied `anonymous_id` -- a value Wayfindr prints in its
+     * own dashboard and writes into access logs. A budget keyed there is a
+     * budget anyone who can read that value may spend.
      *
-     * Charging here means `refresh()` has already rejected anyone who cannot
-     * act as this visitor, so only the visitor can spend the visitor's budget.
-     * The cost of that ordering is a token minted and then discarded on the
-     * over-limit path, which is pure computation -- nothing is persisted, and
-     * nothing is handed to the caller.
+     * And it is keyed on the SESSION rather than the visitor, because
+     * verification alone does not isolate anybody. Bootstrap mints a working
+     * token for whoever presents a site's public key and an anonymous id, so a
+     * stranger who has read the id can bootstrap once and then spend a
+     * visitor-keyed budget with perfectly valid tokens. `sessionIdentity()`
+     * survives rotation but not a fresh bootstrap, so the stranger's requests
+     * land in the stranger's bucket.
+     *
+     * The damage being prevented is quiet, which is what makes it worth the
+     * trouble. `refreshSession()` reduces every refusal to the same failed
+     * refresh, so a targeted 429 is indistinguishable from a flaky network --
+     * and once a lifetime is enforced, a visitor held at the limit simply stops
+     * being able to renew, with nothing anywhere saying why.
+     *
+     * The cost of charging after minting is a token computed and then discarded
+     * on the over-limit path. Nothing is persisted and nothing is handed to the
+     * caller, so that is wasted CPU rather than a side effect.
      */
-    private function chargeVisitorBudget(RateLimiter $limiter, Site $site, string $anonymousId): void
+    private function chargeSessionBudget(RateLimiter $limiter, string $sessionIdentity): void
     {
         $perMinute = max(1, (int) config('wayfindr.widget_rate_limits.session_refresh_per_minute', 30));
 
-        $key = implode('|', [
-            'session-visitor',
-            hash('sha256', (string) $site->public_key),
-            hash('sha256', $anonymousId),
-        ]);
+        $key = 'session-refresh|'.$sessionIdentity;
 
         if ($limiter->tooManyAttempts($key, $perMinute)) {
             throw new ThrottleRequestsException(

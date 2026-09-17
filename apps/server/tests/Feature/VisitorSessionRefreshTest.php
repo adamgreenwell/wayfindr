@@ -466,3 +466,83 @@ test('a stranger holding the anonymous id cannot spend the visitor refresh budge
     // throttled -- a 429 here would mean it had reached the bucket at all.
     expect(array_unique($forgedStatuses))->toBe([401]);
 });
+
+test('a stranger who bootstraps a valid token still cannot spend the victim budget', function (): void {
+    // The sharper version of the attack, and the one that survives simply
+    // verifying the token. Bootstrap mints a WORKING token for anyone who
+    // presents a site's public key and an anonymous id, so a stranger who has
+    // read the id off the dashboard does not need to forge anything: they ask
+    // the server politely and then refresh with a credential that is genuinely
+    // valid. A budget keyed on the visitor is spendable that way.
+    //
+    // Keying on the session is what separates them. Refreshing carries
+    // `session_started_at` forward; bootstrapping without a token starts a new
+    // one. The stranger gets their own bucket.
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_ip_per_minute', 1000);
+
+    refreshSessionFixture('anon-targeted');
+
+    Carbon::setTestNow(Carbon::parse('2026-09-17 09:00:00'));
+
+    try {
+        $victim = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-targeted');
+
+        // Later, a different session for the same visitor. The separation is
+        // the session start, so the clock has to actually move -- two sessions
+        // begun in the same instant are one session as far as this key knows.
+        Carbon::setTestNow(Carbon::parse('2026-09-17 09:30:00'));
+
+        $stranger = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-targeted');
+
+        $refresh = fn (string $token) => $this->postJson('/api/widget/session', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-targeted',
+            'visitor_token' => $token,
+        ]);
+
+        // The stranger spends their own allowance to the limit.
+        $refresh($stranger)->assertOk();
+        $refresh($stranger)->assertOk();
+        $refresh($stranger)->assertStatus(429);
+
+        // The victim's is untouched.
+        $refresh($victim)->assertOk();
+        $refresh($victim)->assertOk();
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('a rotating widget keeps one budget rather than minting a fresh one each time', function (): void {
+    // The other half of keying on the session: it has to SURVIVE rotation.
+    // If each refreshed token started a new bucket, the budget would never
+    // bind at all and the limit would be decorative.
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_ip_per_minute', 1000);
+
+    refreshSessionFixture('anon-rotating');
+
+    $token = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-rotating');
+
+    $refresh = function (string $current) {
+        $response = $this->postJson('/api/widget/session', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-rotating',
+            'visitor_token' => $current,
+        ]);
+
+        return [$response, $response->status() === 200 ? $response->json('data.visitor.token') : $current];
+    };
+
+    [$first, $token] = $refresh($token);
+    $first->assertOk();
+
+    // Each hop presents the token the previous hop returned, so every request
+    // carries a different credential -- and they all land in one bucket.
+    [$second, $token] = $refresh($token);
+    $second->assertOk();
+
+    [$third] = $refresh($token);
+    $third->assertStatus(429);
+});

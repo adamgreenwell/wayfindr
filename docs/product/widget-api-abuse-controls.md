@@ -85,11 +85,12 @@ WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE=1200
 WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE=30
 WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY=20000
 
-# Visitor session refresh. The first is per visitor and is charged only after
-# the request proves it holds that visitor's token; the second is the ceiling
-# for one address, and is what bounds unauthenticated attempts. A widget trades
-# its token in ahead of expiry, so an established tab spends this rarely --
-# once per token lifetime, plus a retry.
+# Visitor session refresh. The first is per SESSION -- one widget's run of
+# rotations, not one visitor -- and is charged only after the request proves it
+# holds a token from that session; the second is the ceiling for one address,
+# and is what bounds unauthenticated attempts. A widget trades its token in
+# ahead of expiry, so an established tab spends this rarely -- once per token
+# lifetime, plus a retry.
 WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE=30
 WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE=600
 ```
@@ -104,13 +105,25 @@ visitor whose token cannot be renewed simply stops being able to. If refresh
 429s are suspected, raise `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE`
 rather than the per-visitor budget, for the same reason as presence below.
 
-The per-visitor budget is spent inside the controller rather than by route
-middleware, and deliberately: middleware runs before the token is checked, so
-the only thing it could key on is the caller-supplied `anonymous_id` -- a value
-the dashboard displays and access logs record. Charged there, anyone who could
-read it could exhaust a stranger's allowance with junk tokens and leave the
-real widget unable to renew. A refused request never reaches the budget, so
-only the visitor spends the visitor's.
+That budget is spent inside the controller rather than by route middleware, and
+is keyed on the session rather than the visitor. Both are deliberate.
+
+Middleware runs before the token is checked, so the only thing it could key on
+is the caller-supplied `anonymous_id` -- a value the dashboard displays and
+access logs record. Charged there, anyone who could read it could exhaust a
+stranger's allowance with junk tokens.
+
+Verifying the token is not by itself enough either, because widget bootstrap
+mints a working token for whoever presents a site's public key and an anonymous
+id. A budget keyed on the visitor could therefore be spent with genuinely valid
+credentials by someone who bootstrapped once. Refreshing carries a session's
+start forward and bootstrapping begins a new one, so keying on the session puts
+those requests in the caller's own bucket.
+
+The residual: two sessions begun for the same visitor in the same microsecond
+share a budget. The value is inside the encrypted token, so it cannot be read
+and aimed at -- but it is a timestamp rather than a secret, and the real remedy
+is for bootstrap to stop minting on a published identifier at all.
 
 For a shared address specifically, `WAYFINDR_WIDGET_PRESENCE_PER_MINUTE` is
 usually the wrong one to raise: it is already per visitor, so a busy office
