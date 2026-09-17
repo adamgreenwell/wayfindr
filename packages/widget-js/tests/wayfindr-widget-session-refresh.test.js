@@ -44,6 +44,7 @@ function widgetForRefresh(options) {
   });
 
   const requests = [];
+  let bootstrapCalls = 0;
 
   const widget = Wayfindr.init({
     document: dom.window.document,
@@ -61,6 +62,15 @@ function widgetForRefresh(options) {
       requests.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
 
       if (url.endsWith('/api/widget/bootstrap')) {
+        bootstrapCalls += 1;
+
+        // The FIRST bootstrap always succeeds -- it is how the widget comes up.
+        // Later ones can be made to fail, which is the only way to exercise a
+        // recovery that does not actually mint a replacement token.
+        if (options.bootstrapFailsAfterFirst && bootstrapCalls > 1) {
+          throw new Error('bootstrap unreachable');
+        }
+
         return jsonResponse(200, {
           data: {
             site: { public_key: 'site_public_docs', settings: {}, color: 'blue' },
@@ -141,6 +151,7 @@ test('refreshing without a token asks the server nothing', async () => {
     url: 'https://docs.example.test/',
   });
   const requests = [];
+  let bootstrapCalls = 0;
 
   const widget = Wayfindr.init({
     document: dom.window.document,
@@ -411,6 +422,7 @@ test('a visitor who never opened the widget still rotates their token', async ()
     url: 'https://docs.example.test/',
   });
   const requests = [];
+  let bootstrapCalls = 0;
 
   const storage = memoryStorage({
     'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
@@ -461,6 +473,7 @@ test('a rejected token is recovered by re-minting, not retried forever', async (
     url: 'https://docs.example.test/',
   });
   const requests = [];
+  let bootstrapCalls = 0;
   let bootstraps = 0;
 
   const storage = memoryStorage({
@@ -677,4 +690,59 @@ test('bootstrap does not start a second, independent refresh cycle', async () =>
   assert.ok(during <= 9, `expected one refresh cycle, saw ${during} requests -- looks like two`);
 
   widget.destroy();
+});
+
+test('a failed refresh on a live token retries inside its life, not after the floor', async () => {
+  // The retry floor and the expiry ceiling met here, and the floor won: a
+  // token with 400ms left had its first attempt at 200ms, failed, and was then
+  // pushed out to the 30-second floor -- which is the original defect back
+  // again, reached by the fix for the hot loop rather than by the old code.
+  //
+  // Halving what remains is already a backoff, so no floor is wanted while the
+  // token is alive: 200ms, 100ms, 50ms, converging on the deadline.
+  const { requests } = widgetForRefresh({
+    tokenExpiresIn: 0.4,
+    sessionResponse: () => Promise.reject(new Error('network down')),
+  });
+  await settle();
+
+  await new Promise((resolve) => setTimeout(resolve, 380));
+  await settle();
+
+  const calls = requests.filter((request) => request.url.endsWith('/api/widget/session'));
+
+  assert.ok(
+    calls.length >= 2,
+    `expected repeated retries inside the 400ms lifetime, got ${calls.length}`,
+  );
+});
+
+test('a recovery bootstrap that mints nothing is paced, not retried in a loop', async () => {
+  // A dead token is rejected, so recovery runs -- and recovery can fail too,
+  // on a 429, a 5xx or no network at all. The token is then still dead, so the
+  // next delay is "now" and the widget reissues BOTH a session request and a
+  // bootstrap on every pass. Swallowing the bootstrap failure and treating
+  // 'rejected' as recovered is what made that reachable.
+  const { requests } = widgetForRefresh({
+    tokenExpiresIn: 0,
+    sessionResponse: () => jsonResponse(401, { message: 'gone' }),
+    bootstrapFailsAfterFirst: true,
+  });
+  await settle();
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  await settle();
+
+  const sessionCalls = requests.filter((request) => request.url.endsWith('/api/widget/session'));
+  const bootstrapCalls = requests.filter((request) => request.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(sessionCalls.length >= 1, 'the dead token was never retried at all');
+  assert.ok(
+    sessionCalls.length <= 2,
+    `expected the retry to be paced, got ${sessionCalls.length} session attempts in 250ms`,
+  );
+  assert.ok(
+    bootstrapCalls.length <= 3,
+    `expected recovery to be paced, got ${bootstrapCalls.length} bootstraps in 250ms`,
+  );
 });

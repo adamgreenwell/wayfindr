@@ -677,7 +677,7 @@
      * With an expiry, refresh at the HALFWAY point rather than near the edge,
      * so one failed attempt still leaves a whole half-life to retry in.
      */
-    function visitorTokenRefreshDelay(now) {
+    function visitorTokenRefreshDelay(now, floorMs) {
       // Zero means refreshing is off, and it has to mean that whether or not
       // the server advertised an expiry -- otherwise disabling the interval
       // would still schedule as soon as a lifetime appeared.
@@ -685,28 +685,37 @@
         return 0;
       }
 
+      floorMs = typeof floorMs === 'number' && floorMs > 0 ? floorMs : 0;
+
       if (tokenExpiresAt === null) {
-        return sessionRefreshMs;
+        // Nothing to be late for, so pacing a retry costs nothing here.
+        return Math.max(sessionRefreshMs, floorMs);
       }
 
       var remaining = tokenExpiresAt - now;
 
-      // The expiry is a CEILING, never merely a hint. A thirty-second floor
-      // applied near the edge scheduled the first refresh for after the token
-      // had already died: a lifetime of twenty seconds waited thirty, and a
-      // one-minute lifetime whose halfway attempt failed once retried exactly
-      // at the deadline. Either way the widget spends a window presenting a
-      // token every request will refuse.
-      //
-      // So: halfway when there is room for halfway -- one failed attempt still
-      // leaves a whole half-life to retry in -- and otherwise as much of what
-      // remains as there is. A token with twenty seconds left refreshes in ten.
-      //
-      // `Math.max(1, ...)` is what makes an already-dead token mean NOW rather
-      // than never: zero is reserved for refreshing being switched off, and
-      // `scheduleSessionRefresh` reads it that way. Pacing the retries that
-      // follow is that function's job, not this one's.
-      return Math.min(sessionRefreshMs, Math.max(1, Math.floor(remaining / 2)));
+      if (remaining > 0) {
+        // The expiry is a CEILING, and NOTHING may raise a delay above it --
+        // not the steady interval, and not a retry floor. That second case is
+        // the one that keeps coming back: a thirty-second floor applied near
+        // the edge is how a twenty-second lifetime came to wait thirty, and
+        // re-applying it to retries reintroduced exactly that for the token
+        // that had just failed once.
+        //
+        // No floor is needed while the token is alive, because halving what
+        // remains IS a backoff -- each failed attempt halves again, so repeated
+        // failures converge on the deadline instead of overshooting it, and a
+        // five-second token retries at 2.5s, 1.2s, 0.6s rather than at 30.
+        return Math.min(sessionRefreshMs, Math.max(1, Math.floor(remaining / 2)));
+      }
+
+      // Already dead, so there is no deadline left to respect and the only
+      // question is how hard to retry. Immediately on first discovering it --
+      // `1` rather than `0`, because zero means refreshing is switched off and
+      // the scheduler reads it that way -- and at the caller's floor once an
+      // attempt has actually failed, since from here the delay is permanently
+      // "now" and an unreachable server would be hammered.
+      return floorMs > 0 ? floorMs : 1;
     }
 
     return {
@@ -753,8 +762,8 @@
        * it owns the advertised expiry; the widget owns the timer because it
        * owns the lifecycle that has to stop.
        */
-      nextSessionRefreshDelay: function (now) {
-        return visitorTokenRefreshDelay(typeof now === 'number' ? now : Date.now());
+      nextSessionRefreshDelay: function (now, floorMs) {
+        return visitorTokenRefreshDelay(typeof now === 'number' ? now : Date.now(), floorMs);
       },
       /**
        * Trade the current token for a fresh one.
@@ -2000,18 +2009,17 @@
       }
 
       // The interval is the client's, because the client owns the token and
-      // the expiry the server advertised for it. The widget owns only the
-      // timer. Zero means off.
-      var delay = client.nextSessionRefreshDelay();
+      // the expiry the server advertised for it -- and therefore owns whether
+      // a retry floor may apply at all, which depends on how much life the
+      // token has left. Applying the floor out here instead was how it came to
+      // override the expiry ceiling. The widget owns only the timer.
+      //
+      // Zero still means refreshing is switched off, and the floor cannot
+      // change that: it is passed in, not max()-ed over the answer.
+      var delay = client.nextSessionRefreshDelay(Date.now(), floorMs);
 
-      // Tested BEFORE any floor is applied. Zero means refreshing is switched
-      // off, and a retry floor must not be able to switch it back on.
       if (delay <= 0) {
         return;
-      }
-
-      if (floorMs > 0 && delay < floorMs) {
-        delay = floorMs;
       }
 
       sessionRefreshTimer = setTimeout(async function () {
@@ -2039,20 +2047,40 @@
         // without presenting anything. 'unavailable' is deliberately NOT
         // recovered from -- the token is probably fine and the network is not,
         // so re-minting would throw away a working session to fix nothing.
+        // Whether recovery actually produced a replacement, which is not the
+        // same as whether it threw. A bootstrap that 429s, 5xxes or never
+        // arrives leaves the SAME dead token in place, and so does one whose
+        // answer is superseded by a later bootstrap. Swallowing that and
+        // treating 'rejected' as recovered is what let the widget spin: the
+        // stored deadline is still in the past, so the next delay is "now",
+        // and it reissues a session request and a bootstrap on every pass.
+        var recovered = true;
+
         if (outcome === 'rejected') {
-          await client.bootstrap(pageUrlForReporting(), visitorContext).catch(function () {});
+          recovered = await client.bootstrap(pageUrlForReporting(), visitorContext)
+            .then(function (result) {
+              return Boolean(result && result.visitor && result.visitor.token);
+            })
+            .catch(function () {
+              return false;
+            });
+
+          // destroy() can land during the recovery request too, not only
+          // during the refresh that preceded it.
+          if (sessionRefreshStopped) {
+            return;
+          }
         }
 
         // Rescheduled either way: a widget that gives up after one failure has
         // silently abandoned the session.
         //
-        // With a floor when we could not ask at all. Past the expiry the
-        // deadline-derived delay is "now", so an unreachable server would be
-        // retried in a tight loop -- precisely when it can least afford one.
-        // A dead token is no more valid thirty seconds from now, so pacing
-        // costs the visitor nothing. A REJECTED token skips the floor: it was
-        // answered, and bootstrap above has already re-minted.
-        scheduleSessionRefresh(outcome === 'unavailable' ? MIN_SESSION_REFRESH_MS : 0);
+        // Paced whenever the cycle ended with no usable token -- the server
+        // could not be reached, or recovery did not mint one. The floor is a
+        // request, not a command: while the token is still alive the client
+        // ignores it in favour of the deadline, and it only takes effect once
+        // there is no deadline left to be late for.
+        scheduleSessionRefresh(outcome === 'unavailable' || !recovered ? MIN_SESSION_REFRESH_MS : 0);
       }, delay);
 
       if (typeof sessionRefreshTimer.unref === 'function') {
