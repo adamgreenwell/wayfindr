@@ -131,6 +131,7 @@ return [
         'break_glass_resource_viewed' => 'Il gestore ha consultato un record',
         'break_glass_closed' => 'Accesso del gestore terminato',
         'break_glass_expired' => 'Accesso del gestore scaduto',
+        'cobrowse_consent_declined' => 'Richiesta Cobrowse rifiutata',
         'cobrowse_consent_granted' => 'Consenso Cobrowse concesso',
         'cobrowse_consent_revoked' => 'Consenso Cobrowse revocato',
         'cobrowse_preview_viewed' => 'Anteprima Cobrowse consultata',

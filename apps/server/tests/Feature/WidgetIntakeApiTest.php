@@ -2152,3 +2152,61 @@ test('a grant that cannot be audited does not start screen sharing', function ()
     expect($session->fresh()->status)->toBe('requested')
         ->and(AuditEvent::query()->where('action', 'cobrowse.consent_granted')->count())->toBe(0);
 });
+
+test('declining a pending request is recorded as a decline, not a revocation', function (): void {
+    // `requested -> revoked` never granted anything. The widget calls that
+    // button Decline and tells the visitor "Cobrowse request declined", so an
+    // audit row claiming consent was REVOKED would describe a withdrawal that
+    // never happened -- to a reader who went to the log precisely to find out.
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-DECLINE',
+    ]);
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'requested',
+        'consented_at' => null,
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'granted' => false,
+    ])->assertOk();
+
+    $event = AuditEvent::query()->where('action', 'cobrowse.consent_declined')->sole();
+
+    expect($event->metadata['previous_status'])->toBe('requested')
+        ->and($event->metadata['status'])->toBe('revoked');
+
+    // And the log does not also claim a revocation.
+    expect(AuditEvent::query()->where('action', 'cobrowse.consent_revoked')->count())->toBe(0);
+});
+
+test('withdrawing consent already given is still a revocation', function (): void {
+    // The other side of the same distinction: this one really did grant.
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-WITHDRAW',
+    ]);
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'granted' => false,
+    ])->assertOk();
+
+    expect(AuditEvent::query()->where('action', 'cobrowse.consent_revoked')->count())->toBe(1)
+        ->and(AuditEvent::query()->where('action', 'cobrowse.consent_declined')->count())->toBe(0);
+});

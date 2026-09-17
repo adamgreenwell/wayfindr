@@ -134,6 +134,7 @@ return [
         'break_glass_resource_viewed' => 'Operator viewed a record',
         'break_glass_closed' => 'Operator access ended',
         'break_glass_expired' => 'Operator access expired',
+        'cobrowse_consent_declined' => 'Cobrowse request declined',
         'cobrowse_consent_granted' => 'Cobrowse consent granted',
         'cobrowse_consent_revoked' => 'Cobrowse consent revoked',
         'cobrowse_preview_viewed' => 'Cobrowse preview viewed',

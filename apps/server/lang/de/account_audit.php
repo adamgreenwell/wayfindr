@@ -131,6 +131,7 @@ return [
         'break_glass_resource_viewed' => 'Betreiber hat einen Datensatz eingesehen',
         'break_glass_closed' => 'Betreiberzugriff beendet',
         'break_glass_expired' => 'Betreiberzugriff abgelaufen',
+        'cobrowse_consent_declined' => 'Cobrowse-Anfrage abgelehnt',
         'cobrowse_consent_granted' => 'Cobrowse-Einwilligung erteilt',
         'cobrowse_consent_revoked' => 'Cobrowse-Einwilligung widerrufen',
         'cobrowse_preview_viewed' => 'Cobrowse-Vorschau angesehen',

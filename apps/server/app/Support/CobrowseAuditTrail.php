@@ -100,6 +100,15 @@ class CobrowseAuditTrail
      * type. This endpoint is the visitor surface, so the answer is always
      * `visitor` today; naming it means a future agent- or system-initiated
      * end is distinguishable in the same log rather than by absence.
+     *
+     * DECLINING AND REVOKING ARE DIFFERENT EVENTS and the previous status is
+     * what separates them. Answering no to a pending request never granted
+     * anything -- the widget calls that button `Decline` and says "Cobrowse
+     * request declined." Withdrawing consent already given is a revocation,
+     * and it is the one that means a screen stopped being shared. Recording
+     * both as `revoked` would put a withdrawal in the log for a visitor who
+     * never consented, which is exactly the kind of thing an audit trail is
+     * read to settle.
      */
     public function consentAnswered(
         CobrowseSession $session,
@@ -110,7 +119,7 @@ class CobrowseAuditTrail
         $this->record(
             $session,
             $actor,
-            $granted ? 'cobrowse.consent_granted' : 'cobrowse.consent_revoked',
+            $this->consentAction($previousStatus, $granted),
             [
                 'support_code' => $this->supportCode($session),
                 'previous_status' => $previousStatus,
@@ -120,6 +129,20 @@ class CobrowseAuditTrail
                 'ended_at' => $session->ended_at?->toJSON(),
             ],
         );
+    }
+
+    /**
+     * `granted` was never a state this session reached, so a no is a decline.
+     */
+    private function consentAction(string $previousStatus, bool $granted): string
+    {
+        if ($granted) {
+            return 'cobrowse.consent_granted';
+        }
+
+        return $previousStatus === 'granted'
+            ? 'cobrowse.consent_revoked'
+            : 'cobrowse.consent_declined';
     }
 
     public function snapshotReceived(CobrowseSession $session, Visitor $actor, array $snapshot, ?array $reportedRuleset, array $siteRuleset): void
