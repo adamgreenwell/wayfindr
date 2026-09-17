@@ -255,24 +255,97 @@ test('a lifetime longer than the interval still rotates on the interval', async 
   assert.equal(widget.client.nextSessionRefreshDelay(now), 600000);
 });
 
-test('a token about to expire is refreshed now rather than at half of nothing', async () => {
+test('a token about to expire is refreshed inside its life, not after it', async () => {
+  // The thirty-second floor used to win this comparison, so a five-second
+  // lifetime waited thirty: the first refresh was scheduled twenty-five
+  // seconds after the token had already died, and every request in between
+  // presented a credential the server would refuse. The expiry is a ceiling.
   const now = Date.now();
   const { widget } = widgetForRefresh({
     tokenExpiresIn: 5,
   });
   await settle();
 
-  assert.equal(widget.client.nextSessionRefreshDelay(now), 30000);
+  const delay = widget.client.nextSessionRefreshDelay(now);
+
+  assert.ok(delay > 0 && delay < 5000, `expected a delay inside the 5s lifetime, got ${delay}`);
+  assert.ok(Math.abs(delay - 2500) < 500, `expected about half of 5s, got ${delay}`);
 });
 
-test('an expiry already past asks immediately and lets the server decide', async () => {
-  const now = Date.now();
-  const { widget } = widgetForRefresh({
+test('an expiry already past is refreshed at once rather than after a floor', async () => {
+  // Nothing is left to halve. Asserting the delay NUMBER here would be
+  // measuring the wrong thing -- the refresh fires during this test, adopts a
+  // token the mock advertises no expiry for, and the delay afterwards reads as
+  // a plain interval. The observable consequence is what matters: it asks now.
+  const { requests } = widgetForRefresh({
     tokenExpiresIn: 0,
   });
   await settle();
 
-  assert.equal(widget.client.nextSessionRefreshDelay(now), 30000);
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  const calls = requests.filter((request) => request.url.endsWith('/api/widget/session'));
+
+  assert.ok(calls.length > 0, 'an already-expired token was left to sit rather than refreshed');
+});
+
+test('an unreachable server is retried on the floor, not in a hot loop', async () => {
+  // The other half of letting an expired token mean "now": once the expiry has
+  // passed, the deadline-derived delay is always "now", so a server that
+  // cannot be reached would be asked again immediately, and again, precisely
+  // when it can least afford it. A dead token is no more valid thirty seconds
+  // from now, so pacing the retry costs the visitor nothing.
+  const { requests } = widgetForRefresh({
+    tokenExpiresIn: 0,
+    sessionResponse: () => Promise.reject(new Error('network down')),
+  });
+  await settle();
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  await settle();
+
+  const calls = requests.filter((request) => request.url.endsWith('/api/widget/session'));
+
+  assert.ok(calls.length >= 1, 'no refresh was attempted at all');
+  assert.ok(calls.length <= 2, `expected the retry to be paced, got ${calls.length} attempts in 250ms`);
+});
+
+test('a widget destroyed mid-refresh does not re-mint a token afterwards', async () => {
+  // destroy() can land while a refresh is in flight. The reschedule at the end
+  // of the cycle checked the stop flag; the bootstrap recovery did not, so a
+  // rejected token could be re-minted and written to storage after teardown --
+  // the one thing destroy() exists to prevent.
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  const { widget, requests } = widgetForRefresh({
+    sessionRefreshMs: 20,
+    sessionResponse: () => held.then(() => jsonResponse(401, { message: 'gone' })),
+  });
+  await settle();
+
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  const bootstrapsBefore = requests.filter((request) => request.url.endsWith('/api/widget/bootstrap')).length;
+
+  widget.destroy();
+  release();
+
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  await settle();
+
+  const bootstrapsAfter = requests.filter((request) => request.url.endsWith('/api/widget/bootstrap')).length;
+
+  assert.equal(
+    bootstrapsAfter,
+    bootstrapsBefore,
+    'a destroyed widget recovered from a rejected token and re-minted one',
+  );
 });
 
 test('the scheduled refresh actually fires and rotates the stored token', async () => {
