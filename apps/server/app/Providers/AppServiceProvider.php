@@ -218,23 +218,26 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'bootstrap_per_minute', 'bootstrap')
         );
 
-        // Per VISITOR, with a much higher per-IP ceiling as the abuse cap --
-        // the shape presence and proactive already use, and for the same
-        // reason. A refreshing widget is one established session, so a budget
-        // keyed only by site and source IP divides by however many people sit
-        // behind that address: an office, a school or a carrier NAT would
-        // share thirty refreshes a minute between all of them.
+        // The per-ADDRESS ceiling only. The per-visitor budget this endpoint
+        // also has is charged in `VisitorSessionController`, not here, and the
+        // reason is the whole point of the endpoint.
         //
-        // That failure is quiet, which is what makes it worth avoiding here.
-        // `refreshSession()` reduces any refusal to `false`, so a 429 looks
-        // exactly like a declined refresh -- and once a lifetime is enforced,
-        // a visitor whose neighbours spent the budget simply stops being able
-        // to renew.
-        RateLimiter::for('widget-session', fn (Request $request): array => [
-            $this->widgetLimit($request, 'session_refresh_per_minute', 'session')
-                ->by($this->widgetVisitorKey($request, 'session-visitor')),
-            $this->widgetLimit($request, 'session_refresh_per_ip_per_minute', 'session-ip'),
-        ]);
+        // Middleware runs before the token is verified, so the only visitor
+        // identifier available at this point is the caller-supplied
+        // `anonymous_id` -- the value this PR exists because Wayfindr displays
+        // it in the dashboard and writes it to access logs. A bucket keyed on
+        // it is a bucket anyone holding it can spend: thirty junk-token
+        // requests a minute and the real widget takes 429s instead of renewing.
+        //
+        // That denial is aimed at one visitor and it is silent, because
+        // `refreshSession()` reduces any refusal to the same `false` a declined
+        // refresh gives. Charging the budget after `refresh()` has proved the
+        // caller IS that visitor means only that visitor can spend it, and this
+        // ceiling still caps what unauthenticated junk costs the server.
+        RateLimiter::for(
+            'widget-session',
+            fn (Request $request): Limit => $this->widgetLimit($request, 'session_refresh_per_ip_per_minute', 'session-ip')
+        );
 
         // Presence reports at 45-second intervals, so a genuine tab makes about
         // 1.33 requests a minute and 80 an hour.

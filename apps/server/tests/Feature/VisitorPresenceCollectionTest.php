@@ -2019,6 +2019,12 @@ test('the abuse-control guide documents the limits this install actually applies
         'WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE',
         'WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY',
         'WAYFINDR_WIDGET_CONFIG_RATE_LIMIT',
+        // Same reason, same failure: the session refresh limit is per visitor
+        // with an address ceiling behind it, and a 429 there is indistinguishable
+        // from a declined refresh -- so an operator who cannot find the key
+        // cannot diagnose why sessions stop renewing.
+        'WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE',
+        'WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE',
     ] as $key) {
         test()->assertStringContainsString($key, $guide, $key.' is not in the operator guide');
     }
