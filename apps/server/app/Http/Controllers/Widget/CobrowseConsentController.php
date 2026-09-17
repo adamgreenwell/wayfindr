@@ -10,6 +10,7 @@ use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class CobrowseConsentController extends Controller
 {
@@ -34,7 +35,7 @@ class CobrowseConsentController extends Controller
             $validated['anonymous_id'],
         );
 
-        [$conversation, $cobrowseSession] = DB::transaction(function () use ($conversation, $conversationWrites, $validated, $cobrowseAudit): array {
+        [$conversation, $cobrowseSession, $previousStatus] = DB::transaction(function () use ($conversation, $conversationWrites, $validated, $cobrowseAudit): array {
             $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
             $cobrowseSession = $conversationWrites->lockCobrowseSession($conversation, grantedOnly: false);
 
@@ -44,10 +45,15 @@ class CobrowseConsentController extends Controller
             $previousStatus = (string) $cobrowseSession->status;
 
             if ($validated['granted']) {
-                $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
+                $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session) use ($previousStatus): void {
                     $session->forceFill([
                         'status' => 'granted',
-                        'consented_at' => now(),
+                        // Only on the transition. Consent happened once, and a
+                        // duplicate or racing post is the same answer arriving
+                        // twice -- moving the stamp would drift it away from
+                        // the single audit row that records when it was given,
+                        // leaving two disagreeing answers to the same question.
+                        'consented_at' => $previousStatus === 'granted' ? $session->consented_at : now(),
                         'ended_at' => null,
                     ]);
                 });
@@ -65,20 +71,45 @@ class CobrowseConsentController extends Controller
                 });
             }
 
-            // Inside the transaction on purpose: screen sharing must not begin
-            // on a record that failed to write. If the audit insert throws, the
-            // grant rolls back with it.
-            if ($previousStatus !== $cobrowseSession->status) {
+            // A GRANT is audited inside the transaction: screen sharing must
+            // not begin on a record that failed to write, so a failed insert
+            // takes the grant with it.
+            //
+            // A REFUSAL is not, and putting it here was the mistake -- see
+            // below. Both directions fail closed toward NOT sharing; only the
+            // grant achieves that by rolling back.
+            if ($validated['granted'] && $previousStatus !== $cobrowseSession->status) {
                 $cobrowseAudit->consentAnswered(
                     $cobrowseSession,
                     $conversation->visitor,
                     $previousStatus,
-                    $validated['granted'],
+                    true,
                 );
             }
 
-            return [$conversation, $cobrowseSession];
+            return [$conversation, $cobrowseSession, $previousStatus];
         });
+
+        // Declines and revocations are audited AFTER the commit, on purpose.
+        // Rolling a refusal back because its audit row failed would leave the
+        // session `granted` and the visitor's screen still being shared -- the
+        // widget surfaces the error without stopping the mutation stream, so
+        // the visitor would believe they had stopped it while it continued.
+        //
+        // An unrecorded stop is bad. A stop that did not happen is worse, and
+        // the whole point of failing closed is to prefer the first.
+        if (! $validated['granted'] && $previousStatus !== $cobrowseSession->status) {
+            try {
+                $cobrowseAudit->consentAnswered(
+                    $cobrowseSession,
+                    $conversation->visitor,
+                    $previousStatus,
+                    false,
+                );
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
 
         return response()->json([
             'data' => [

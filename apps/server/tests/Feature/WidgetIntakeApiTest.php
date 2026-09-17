@@ -2222,3 +2222,83 @@ test('withdrawing consent already given is still a revocation', function (): voi
     expect(AuditEvent::query()->where('action', 'cobrowse.consent_revoked')->sole()->metadata)
         ->not->toHaveKey('granted_by');
 });
+
+test('a revocation that cannot be audited still stops the sharing', function (): void {
+    // The mirror of the grant case, and the direction I had backwards. Rolling
+    // a refusal back because its audit row failed leaves the session granted
+    // and the screen still being shared -- and the widget surfaces the error
+    // without stopping the mutation stream, so the visitor believes they have
+    // stopped something that is still running.
+    //
+    // An unrecorded stop is bad. A stop that did not happen is worse.
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-STOPWINS',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
+    {
+        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted): void
+        {
+            throw new RuntimeException('audit sink unavailable');
+        }
+    });
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'granted' => false,
+    ]);
+
+    expect($session->fresh()->status)->toBe('revoked')
+        ->and($session->fresh()->ended_at)->not->toBeNull();
+});
+
+test('a repeated grant does not move the time consent was given', function (): void {
+    // The audit row records one consent, at one moment. Letting a duplicate or
+    // racing post advance `consented_at` would leave the session and the log
+    // giving different answers to when the visitor agreed.
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-STAMP',
+    ]);
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'requested',
+        'consented_at' => null,
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $payload = [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'granted' => true,
+    ];
+
+    Carbon::setTestNow(Carbon::parse('2026-09-17 10:00:00'));
+
+    try {
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", $payload)->assertOk();
+
+        Carbon::setTestNow(Carbon::parse('2026-09-17 10:30:00'));
+
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", $payload)->assertOk();
+
+        $event = AuditEvent::query()->where('action', 'cobrowse.consent_granted')->sole();
+
+        expect(CobrowseSession::query()->sole()->consented_at->format('H:i'))->toBe('10:00')
+            ->and($event->occurred_at->format('H:i'))->toBe('10:00');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
