@@ -84,11 +84,23 @@ WAYFINDR_WIDGET_PRESENCE_PER_MINUTE=30
 WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE=1200
 WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_MINUTE=30
 WAYFINDR_WIDGET_PRESENCE_CREATIONS_PER_IP_PER_DAY=20000
+
+# Visitor session refresh. The first is per visitor; the second is the ceiling
+# for one address. A widget trades its token in ahead of expiry, so an
+# established tab spends this rarely -- once per token lifetime, plus a retry.
+WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE=30
+WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE=600
 ```
 
 Use lower values for tightly controlled demos or test installs. Use higher
 values when many real visitors share one client IP, such as office networks,
 VPNs, or proxy-heavy host environments.
+
+`POST /api/widget/session` is the refresh route, and its failure is quiet: the
+widget reduces a refused refresh to the same outcome as a declined one, so a
+visitor whose token cannot be renewed simply stops being able to. If refresh
+429s are suspected, raise `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE`
+rather than the per-visitor budget, for the same reason as presence below.
 
 For a shared address specifically, `WAYFINDR_WIDGET_PRESENCE_PER_MINUTE` is
 usually the wrong one to raise: it is already per visitor, so a busy office
