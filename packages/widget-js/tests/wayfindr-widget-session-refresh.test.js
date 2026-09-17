@@ -1015,3 +1015,39 @@ test('every live subscription sees a refreshed token, not just the newest', asyn
     `${stale.length} of ${captured.length} subscriptions still hold the token that was rotated away`,
   );
 });
+
+test('a widget destroyed mid-refresh does not store the token that arrives after', async () => {
+  // The deeper half of the teardown problem. Guarding after the await is too
+  // late: adoption happens INSIDE refreshSession()'s own then(), so by the time
+  // the scheduler re-reads the stopped flag the token is already in storage and
+  // the realtime payload already mutated.
+  //
+  // The harm is not the wasted write. A host that destroys and re-initialises
+  // gets a new instance with a freshly minted token, and the old instance's
+  // late response would overwrite it -- leaving the live widget holding a
+  // credential nothing is rotating.
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  const { widget, storage } = widgetForRefresh({
+    sessionResponse: () => held.then(() => jsonResponse(200, {
+      data: { visitor: { anonymous_id: 'anon-docs', token: 'token-second' } },
+    })),
+  });
+  await settle();
+
+  const refreshing = widget.client.refreshSession();
+
+  widget.destroy();
+  release();
+  await refreshing;
+  await settle();
+
+  assert.equal(
+    storage.snapshot()['wayfindr:site_public_docs:visitor-token'],
+    'token-first',
+    'a destroyed widget adopted a token that arrived after teardown',
+  );
+});

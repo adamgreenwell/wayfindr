@@ -576,6 +576,13 @@
     // told, and the two want opposite scheduling.
     var visitorTokenLifetimeUnknown = false;
 
+    // Set by stop(), which the widget calls from destroy(). Adoption is the
+    // one thing that must honour it: a response already in flight resolves
+    // after teardown and would otherwise persist a token and mutate the
+    // realtime payload for a widget that no longer exists -- overwriting what
+    // a freshly re-initialised instance had just minted.
+    var clientStopped = false;
+
     // Counts ADOPTIONS, not bootstraps. Recovery has to know whether a token
     // was actually taken up, and a bootstrap can resolve carrying one without
     // adopting it -- see the stale-ticket branch.
@@ -664,6 +671,13 @@
      * a refresh for a credential already replaced.
      */
     function adoptVisitorToken(token, expiresInSeconds, requestedAtMs) {
+      // Checked HERE rather than by the caller, because adoption happens inside
+      // the awaited client methods -- a guard after the await runs when the
+      // token has already been stored.
+      if (clientStopped) {
+        return;
+      }
+
       visitorToken = token;
       visitorTokenGeneration += 1;
 
@@ -845,6 +859,11 @@
        * it owns the advertised expiry; the widget owns the timer because it
        * owns the lifecycle that has to stop.
        */
+      // Teardown. After this, a response still in flight can resolve but
+      // cannot take its token up.
+      stop: function () {
+        clientStopped = true;
+      },
       // Recovery reads this across a bootstrap to learn whether a token was
       // actually taken up, which a resolved promise does not tell it.
       visitorTokenGeneration: function () {
@@ -5575,6 +5594,13 @@
         stopCobrowseStatusPoll();
         stopMessagePoll();
         stopSessionRefresh();
+
+        // Stops the timer AND disarms adoption, so a refresh or bootstrap whose
+        // answer is still on the wire cannot write a token after teardown.
+        if (typeof client.stop === 'function') {
+          client.stop();
+        }
+
         cancelPendingReadReceipt();
         clearAgentTypingExpiry();
         stopMutationStream();
