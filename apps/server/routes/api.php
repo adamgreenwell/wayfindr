@@ -45,8 +45,8 @@ Route::post('/widget/session', VisitorSessionController::class)
     ->middleware('throttle:widget-session')
     ->name('widget.session.refresh');
 Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)
-->middleware('throttle:widget-broadcast-auth')
-->name('widget.broadcasting.auth');
+    ->middleware('throttle:widget-broadcast-auth')
+    ->name('widget.broadcasting.auth');
 // Its own budget, not bootstrap's. This is now read on every PAGE LOAD --
 // presence configuration has to reach a visitor who never opens the panel --
 // while bootstrap is read once somebody does. Sharing a bucket meant passive
