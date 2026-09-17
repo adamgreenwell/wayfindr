@@ -5,17 +5,25 @@ namespace App\Support;
 use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Visitors\VisitorIdentityResolver;
+use Carbon\CarbonImmutable;
+use Carbon\Exceptions\InvalidFormatException;
+use DateTimeInterface;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use JsonException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class VisitorSessionToken
 {
     public function __construct(private readonly VisitorIdentityResolver $identities) {}
 
-    public function issue(Site $site, Visitor $visitor, ?string $anonymousId = null): string
-    {
+    public function issue(
+        Site $site,
+        Visitor $visitor,
+        ?string $anonymousId = null,
+        ?DateTimeInterface $sessionStartedAt = null,
+    ): string {
         $anonymousId ??= (string) $visitor->anonymous_id;
 
         if ($anonymousId !== (string) $visitor->anonymous_id
@@ -31,11 +39,209 @@ class VisitorSessionToken
             }
         }
 
+        return $this->encode($site, $visitor, $anonymousId, now(), $sessionStartedAt);
+    }
+
+    /**
+     * When the session this request belongs to began, if it is continuing one.
+     *
+     * Bootstrap re-mints on every panel open, so without this an ordinary
+     * reopen would restart the clock an absolute session cap is meant to
+     * measure -- and a visitor could hold a session open indefinitely by
+     * closing and reopening the widget.
+     *
+     * Deliberately TOLERANT, unlike `refresh()`. Bootstrap is reachable with
+     * no token at all and must stay that way; a caller presenting nothing, or
+     * a token for another site or visitor, is simply starting a new session
+     * rather than being refused. The only thing a presented token buys is
+     * continuity of a clock that is not in the caller's favour.
+     */
+    public function continuingSessionStartedAt(
+        Request $request,
+        Site $site,
+        Visitor $visitor,
+        string $anonymousId,
+    ): ?CarbonImmutable {
+        $token = $this->tokenFromRequest($request);
+
+        if (! is_string($token) || $token === '') {
+            return null;
+        }
+
+        try {
+            $payload = $this->decode($token);
+        } catch (HttpException) {
+            return null;
+        }
+
+        if ((int) ($payload['site_id'] ?? 0) !== $site->id) {
+            return null;
+        }
+
+        if (! hash_equals((string) ($payload['anonymous_id'] ?? ''), $anonymousId)) {
+            return null;
+        }
+
+        // The anonymous id is not enough to prove the token belongs to THIS
+        // visitor's session. Deleting a visitor frees their browser identity,
+        // and the same string can later name a different person -- whose
+        // genuinely new session would then inherit a start from a row that no
+        // longer exists, and expire early once an absolute cap measures it.
+        //
+        // Lineage rather than equality, because a deliberate merge moves a
+        // browser identity between rows on purpose and a token issued before
+        // it still describes the same session.
+        if (! $this->tokenBelongsToVisitor($payload, $site, $visitor, $anonymousId)) {
+            return null;
+        }
+
+        return $this->sessionStartedAt($payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function tokenBelongsToVisitor(array $payload, Site $site, Visitor $visitor, string $anonymousId): bool
+    {
+        $tokenVisitorId = (int) ($payload['visitor_id'] ?? 0);
+
+        if ($tokenVisitorId === (int) $visitor->id) {
+            return true;
+        }
+
+        $alias = $this->identities->aliasForAnonymousId((int) $site->id, $anonymousId);
+
+        if (! $alias) {
+            return false;
+        }
+
+        $lineage = [
+            (int) ($alias->visitor_id ?? 0),
+            ...array_map('intval', is_array($alias->previous_visitor_ids) ? $alias->previous_visitor_ids : []),
+        ];
+
+        return in_array($tokenVisitorId, $lineage, true)
+            && in_array((int) $visitor->id, $lineage, true);
+    }
+
+    /**
+     * Exchange a currently-valid token for a fresh one.
+     *
+     * The gap this fills: `issue()` is reachable only from widget bootstrap,
+     * which asks for nothing but a site's public key and an anonymous id. So
+     * there has never been a way to obtain a token that proves MORE than
+     * bootstrap does, and therefore no way to shorten a token's life without
+     * stranding every session that outlives it.
+     *
+     * This proves possession of a current token -- `visitorFromRequest()` is
+     * the same check every conversation endpoint makes -- and hands back one
+     * minted now. That is strictly more than bootstrap asks, which is what
+     * makes it a safe thing to require before a TTL exists.
+     *
+     * `session_started_at` rides along unchanged so that a later absolute cap
+     * has something to measure. Without it, rotation alone would let a token
+     * live forever by refreshing just before each expiry.
+     *
+     * NOTE: this rotates, it does not revoke. Tokens are stateless encrypted
+     * payloads with no server-side record, so the previous token stays valid
+     * until something expires it. Rotation becomes a security property when
+     * the TTL lands, not before.
+     */
+    public function refresh(Request $request, Site $site, string $anonymousId): string
+    {
+        $visitor = $this->visitorFromRequest($request, $site, $anonymousId);
+
+        $sessionStartedAt = $this->sessionStartedAt($this->decode((string) $this->tokenFromRequest($request)));
+
+        return $this->encode($site, $visitor, $anonymousId, now(), $sessionStartedAt);
+    }
+
+    /**
+     * A stable name for the SESSION a token belongs to, across rotations.
+     *
+     * Exists to be a quota key, and the property that makes it usable as one is
+     * narrow: refreshing carries `session_started_at` forward unchanged, so a
+     * widget rotating its token keeps the same identity, while a caller who
+     * bootstraps gets a fresh start and therefore a different one.
+     *
+     * That distinction is what the visitor id alone cannot make. Bootstrap
+     * mints a working token for anyone presenting a site's public key and an
+     * anonymous id -- both values Wayfindr publishes or displays -- so a budget
+     * keyed on the visitor is spendable by a stranger who bootstraps once and
+     * then refreshes legitimately. The session start is inside the encrypted
+     * payload, so it cannot be named by someone who has only read the id.
+     *
+     * Hashed because it is a cache key, not a claim: nothing should be able to
+     * read a visitor id or a session time back out of a rate limiter's store.
+     */
+    public function sessionIdentity(string $token): string
+    {
+        $payload = $this->decode($token);
+
+        return hash('sha256', implode('|', [
+            (string) ($payload['site_id'] ?? ''),
+            (string) ($payload['visitor_id'] ?? ''),
+            $this->sessionStartedAt($payload)->toJSON(),
+        ]));
+    }
+
+    /**
+     * When this SESSION began, as opposed to when this token was minted.
+     *
+     * Tokens issued before the field existed carry only `issued_at`; treating
+     * that as the session start is the truthful reading -- it is the earliest
+     * moment we can evidence.
+     */
+    public function sessionStartedAt(array $payload): CarbonImmutable
+    {
+        foreach (['session_started_at', 'issued_at'] as $key) {
+            $value = $payload[$key] ?? null;
+
+            if (is_string($value) && $value !== '') {
+                try {
+                    return CarbonImmutable::parse($value);
+                } catch (InvalidFormatException) {
+                    // Fall through: an unparseable stamp is not evidence of a
+                    // start, and guessing one would be worse than saying now.
+                }
+            }
+        }
+
+        return CarbonImmutable::now();
+    }
+
+    /**
+     * When this token was minted. Written since the beginning and, until the
+     * refresh path existed, never read by anything.
+     */
+    public function issuedAt(string $token): ?CarbonImmutable
+    {
+        $value = $this->decode($token)['issued_at'] ?? null;
+
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value);
+        } catch (InvalidFormatException) {
+            return null;
+        }
+    }
+
+    private function encode(
+        Site $site,
+        Visitor $visitor,
+        string $anonymousId,
+        DateTimeInterface $issuedAt,
+        ?DateTimeInterface $sessionStartedAt = null,
+    ): string {
         return Crypt::encryptString(json_encode([
             'site_id' => $site->id,
             'visitor_id' => $visitor->id,
             'anonymous_id' => $anonymousId,
-            'issued_at' => now()->toJSON(),
+            'issued_at' => CarbonImmutable::instance($issuedAt)->toJSON(),
+            'session_started_at' => CarbonImmutable::instance($sessionStartedAt ?? $issuedAt)->toJSON(),
         ], JSON_THROW_ON_ERROR));
     }
 
@@ -94,7 +300,7 @@ class VisitorSessionToken
     }
 
     /**
-     * @return array{site_id?: int, visitor_id?: int, anonymous_id?: string, issued_at?: string}
+     * @return array{site_id?: int, visitor_id?: int, anonymous_id?: string, issued_at?: string, session_started_at?: string}
      */
     private function decode(string $token): array
     {

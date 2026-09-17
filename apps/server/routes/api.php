@@ -25,6 +25,7 @@ use App\Http\Controllers\Widget\ConversationRatingController;
 use App\Http\Controllers\Widget\ConversationTypingController;
 use App\Http\Controllers\Widget\PresenceController;
 use App\Http\Controllers\Widget\ProactiveMessageController;
+use App\Http\Controllers\Widget\VisitorSessionController;
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
 use Illuminate\Support\Facades\Route;
@@ -35,6 +36,14 @@ Route::post('/widget/presence', PresenceController::class)
 Route::post('/widget/bootstrap', BootstrapController::class)
     ->middleware('throttle:widget-bootstrap')
     ->name('widget.bootstrap');
+
+// Re-mint a visitor token for a caller who already holds a valid one. Its own
+// budget rather than the bootstrap one: a refreshing widget is an established
+// session and must not spend the allowance that lets a new visitor start a
+// conversation.
+Route::post('/widget/session', VisitorSessionController::class)
+    ->middleware('throttle:widget-session')
+    ->name('widget.session.refresh');
 Route::post('/widget/broadcasting/auth', BroadcastAuthController::class)
     ->middleware('throttle:widget-broadcast-auth')
     ->name('widget.broadcasting.auth');

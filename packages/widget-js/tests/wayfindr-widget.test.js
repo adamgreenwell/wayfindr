@@ -1263,6 +1263,10 @@ test('prepares private conversation subscriptions for realtime adapters', () => 
     'conversation.typing.updated',
   ]);
   assert.equal(subscriptionPayload.authEndpoint, 'http://127.0.0.1:8000/api/widget/broadcasting/auth');
+  // Still an object, because `options.realtime` is a public surface and an
+  // adapter written against this contract must keep working. The built-in
+  // adapter reads `authPayloadProvider` instead, so a reconnect after a token
+  // refresh authorises with the current token rather than this frozen copy.
   assert.deepEqual(subscriptionPayload.authPayload, {
     site_public_key: 'site_public_docs',
     anonymous_id: 'anon-browser-123',

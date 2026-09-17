@@ -218,6 +218,27 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'bootstrap_per_minute', 'bootstrap')
         );
 
+        // The per-ADDRESS ceiling only. The per-visitor budget this endpoint
+        // also has is charged in `VisitorSessionController`, not here, and the
+        // reason is the whole point of the endpoint.
+        //
+        // Middleware runs before the token is verified, so the only visitor
+        // identifier available at this point is the caller-supplied
+        // `anonymous_id` -- the value this PR exists because Wayfindr displays
+        // it in the dashboard and writes it to access logs. A bucket keyed on
+        // it is a bucket anyone holding it can spend: thirty junk-token
+        // requests a minute and the real widget takes 429s instead of renewing.
+        //
+        // That denial is aimed at one visitor and it is silent, because
+        // `refreshSession()` reduces any refusal to the same `false` a declined
+        // refresh gives. Charging the budget after `refresh()` has proved the
+        // caller IS that visitor means only that visitor can spend it, and this
+        // ceiling still caps what unauthenticated junk costs the server.
+        RateLimiter::for(
+            'widget-session',
+            fn (Request $request): Limit => $this->widgetLimit($request, 'session_refresh_per_ip_per_minute', 'session-ip')
+        );
+
         // Presence reports at 45-second intervals, so a genuine tab makes about
         // 1.33 requests a minute and 80 an hour.
         //

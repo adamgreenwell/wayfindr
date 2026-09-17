@@ -167,6 +167,17 @@ return [
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),
 
+        // Token refresh. One established tab needs this rarely -- once per
+        // token lifetime, plus a retry -- so a low ceiling is generous for
+        // real use and tight on a client grinding the endpoint.
+        'session_refresh_per_minute' => (int) env('WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE', 30),
+
+        // The abuse ceiling, per source address rather than per visitor. Sized
+        // so a busy office never reaches it: every tab behind one address can
+        // refresh normally, while a client rotating anonymous ids to grind the
+        // endpoint still meets a bound.
+        'session_refresh_per_ip_per_minute' => (int) env('WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE', 600),
+
         // Public site configuration, read once per PAGE LOAD rather than once
         // per panel opening, so it is sized for browsing rather than for
         // conversations. It shared the bootstrap budget until presence needed
