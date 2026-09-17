@@ -672,43 +672,28 @@
       visitorTokenLifetimeUnknown = false;
       storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
 
-      // The server sends a DURATION, and the deadline is computed against our
-      // own clock. Both ends of that arithmetic are then the same clock, so a
-      // browser running fast or slow cancels out -- where subtracting local
-      // `now` from a server-authored instant would have a ten-minute-slow
-      // browser believe a five-minute token had fifteen minutes left.
+      // A DURATION, so both ends of the arithmetic use our own clock and a
+      // fast or slow browser cancels out. Subtracting local `now` from a
+      // server-authored instant would not.
       var seconds = typeof expiresInSeconds === 'number' && isFinite(expiresInSeconds)
         ? expiresInSeconds
         : null;
 
-      // Anchored to when the REQUEST left, not to when its answer was
-      // processed. The server measures the lifetime from the moment it minted
-      // the token, and everything between that and this line -- the network,
-      // a suspended tab, a sleeping laptop holding a buffered response -- is
-      // life already spent. Dating the deadline from here credits the token
-      // with time it does not have, and once the server enforces the lifetime
-      // that is a window where every request is refused.
-      //
-      // Anchoring to the request is deliberately the pessimistic end of that
-      // range: the token was minted at some point between the two, so this can
-      // under-count the life remaining but never over-count it.
+      // Anchored to when the REQUEST left, because time spent in flight -- or
+      // across a sleep holding a buffered response -- is life already spent.
+      // The mint happened somewhere between the two, so this under-counts what
+      // is left but never over-counts it.
       var anchor = typeof requestedAtMs === 'number' && isFinite(requestedAtMs)
         ? requestedAtMs
         : Date.now();
 
       tokenExpiresAt = seconds === null ? null : anchor + Math.max(0, seconds) * 1000;
 
-      // Stored WITH the token, because the two are only meaningful together. A
-      // new page instance restoring the credential alone would treat a token
-      // near the end of its life as non-expiring and wait a full interval --
-      // first refreshing it some time after enforcement had already killed it.
-      //
-      // "No expiry" is written down rather than expressed by removing the key,
-      // because an absent key cannot mean two things. Storage written by a
-      // widget version that kept no expiry at all has no key either, and that
-      // is an UNKNOWN lifetime, not a declared absence -- reading them alike
-      // sends every upgraded page back to the ten-minute interval against a
-      // token that may have minutes left.
+      // Stored WITH the token: restoring the credential alone would treat a
+      // nearly-dead token as non-expiring. "No expiry" is written down rather
+      // than expressed by removing the key, because an absent key already
+      // means "an older widget recorded nothing", which wants the opposite
+      // scheduling.
       storageSet(
         storage,
         visitorTokenExpiryStorageKey(sitePublicKey),
@@ -801,26 +786,17 @@
       var remaining = tokenExpiresAt - now;
 
       if (remaining > 0) {
-        // The expiry is a CEILING, and NOTHING may raise a delay above it --
-        // not the steady interval, and not a retry floor. That second case is
-        // the one that keeps coming back: a thirty-second floor applied near
-        // the edge is how a twenty-second lifetime came to wait thirty, and
-        // re-applying it to retries reintroduced exactly that for the token
-        // that had just failed once.
-        //
-        // No floor is needed while the token is alive, because halving what
-        // remains IS a backoff -- each failed attempt halves again, so repeated
-        // failures converge on the deadline instead of overshooting it, and a
-        // five-second token retries at 2.5s, 1.2s, 0.6s rather than at 30.
+        // The expiry is a CEILING that nothing may raise a delay above --
+        // neither the steady interval nor a retry floor. No floor is wanted
+        // while the token is alive: halving what remains is itself a backoff,
+        // so repeated failures converge on the deadline instead of
+        // overshooting it.
         return Math.min(sessionRefreshMs, Math.max(1, Math.floor(remaining / 2)));
       }
 
-      // Already dead, so there is no deadline left to respect and the only
-      // question is how hard to retry. Immediately on first discovering it --
-      // `1` rather than `0`, because zero means refreshing is switched off and
-      // the scheduler reads it that way -- and at the caller's floor once an
-      // attempt has actually failed, since from here the delay is permanently
-      // "now" and an unreachable server would be hammered.
+      // Already dead: retry at once on first discovering it -- `1`, not `0`,
+      // which means refreshing is switched off -- and at the floor once an
+      // attempt has failed, since from here the delay is permanently "now".
       return floorMs > 0 ? floorMs : 1;
     }
 
@@ -1584,17 +1560,10 @@
     // widget that has been torn down must not be able to resurrect itself.
     var sessionRefreshStopped = false;
 
-    // AFTER those two declarations, not before them. `var` hoists the binding
-    // but not the initialiser, so calling this earlier created the timer, put
-    // its handle in the hoisted binding, and then had the handle overwritten
-    // with null when execution reached the `= null` above -- leaving a timer
-    // destroy() could not cancel and a guard that read false, so bootstrap
-    // started a second independent cycle.
-    //
-    // Rotation is deliberately not tied to the panel: a visitor who never
-    // opens the widget still holds a token restored from storage and still
-    // uses it, and those are exactly the quiet sessions a lifetime expires
-    // under.
+    // AFTER those two declarations: `var` hoists the binding but not the
+    // initialiser, so calling this earlier left a timer destroy() could not
+    // cancel. Rotation is deliberately not tied to the panel -- a visitor who
+    // never opens the widget still holds and uses a restored token.
     scheduleSessionRefresh();
     var readReceiptDwellMs = typeof options.readReceiptDwellMs === 'number' ? Math.max(0, options.readReceiptDwellMs) : 1200;
     var readReceiptTimer = null;
@@ -2140,37 +2109,21 @@
 
         var outcome = await client.refreshSession();
 
-        // destroy() can land while that request is in flight, and everything
-        // below this line either starts new work or persists a token. The
-        // reschedule at the bottom checks the flag; the bootstrap recovery did
-        // not, so a widget torn down mid-refresh could re-mint a token and
-        // write it to storage after teardown -- the one thing destroy() exists
-        // to prevent. One guard here covers both, because both are recovery.
+        // Everything below starts new work or persists a token, and a
+        // destroyed widget must do neither.
         if (sessionRefreshStopped) {
           return;
         }
 
-        // A REJECTED token is dead and presenting it again will never work.
-        // That is reachable in normal use: a laptop sleeps, a background tab
-        // is suspended, the timer fires late and the lifetime has already
-        // passed. Rescheduling with the same token would leave an open
-        // conversation permanently unauthorised with nothing saying why.
+        // Only a REJECTED token is re-minted, and only through bootstrap,
+        // which is the one path that mints without presenting anything.
+        // 'unavailable' deliberately is not: the token is probably fine and
+        // the network is not, so re-minting discards a working session.
         //
-        // Bootstrap is the recovery because it is the one path that can mint
-        // without presenting anything. 'unavailable' is deliberately NOT
-        // recovered from -- the token is probably fine and the network is not,
-        // so re-minting would throw away a working session to fix nothing.
-        // Whether recovery actually ADOPTED a replacement, which is neither
-        // "did it throw" nor "did the answer contain a token". A bootstrap
-        // that 429s, 5xxes or never arrives leaves the same dead token in
-        // place -- and so does one superseded by a later bootstrap, which
-        // takes the stale-ticket branch and returns its response, token and
-        // all, without adopting anything. Reading the response would call that
-        // recovered; counting adoptions does not.
-        //
-        // Getting this wrong is what let the widget spin: the stored deadline
-        // is still in the past, so the next delay is "now", and it reissues a
-        // session request and a bootstrap on every pass.
+        // Recovery counts ADOPTIONS rather than reading the response, because
+        // a bootstrap superseded by a later one returns its answer -- token
+        // and all -- without adopting it, and would otherwise look successful
+        // while the dead token stayed in place.
         var recovered = true;
 
         if (outcome === 'rejected') {
@@ -2178,9 +2131,8 @@
 
           recovered = await client.bootstrap(pageUrlForReporting(), visitorContext)
             .then(function () {
-              // A concurrent bootstrap adopting instead of this one still
-              // counts: the question is whether a token was taken up, not
-              // which request produced it.
+              // A concurrent bootstrap adopting instead of this one counts:
+              // the question is whether a token was taken up at all.
               return client.visitorTokenGeneration() !== generationBefore;
             })
             .catch(function () {
@@ -2194,17 +2146,11 @@
           }
         }
 
-        // Rescheduled either way: a widget that gives up after one failure has
-        // silently abandoned the session.
-        //
-        // Paced whenever the cycle ended with no usable token -- the server
-        // could not be reached, or recovery did not mint one. The floor is a
-        // request, not a command: while the token is still alive the client
-        // ignores it in favour of the deadline, and it only takes effect once
-        // there is no deadline left to be late for.
-        // `idle` is paced alongside the failures: it means there is no token to
-        // trade, and no amount of asking sooner produces one. Whatever puts the
-        // client in that state, retrying it at timer speed is never the answer.
+        // Always rescheduled -- giving up after one failure abandons the
+        // session silently -- but paced whenever the cycle ended with no
+        // usable token, `idle` included, since asking sooner cannot produce
+        // one. The floor is a request, not a command: the client ignores it
+        // while the token is still alive and honours the deadline instead.
         var pace = outcome === 'unavailable' || outcome === 'idle' || !recovered;
 
         scheduleSessionRefresh(pace ? MIN_SESSION_REFRESH_MS : 0);
