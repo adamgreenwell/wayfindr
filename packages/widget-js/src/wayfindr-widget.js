@@ -618,7 +618,13 @@
       var storedExpiry = storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey));
       var restoredExpiry = Number(storedExpiry);
 
-      if (isFinite(restoredExpiry) && restoredExpiry > 0) {
+      // Both branches require a token, because a deadline without one is not
+      // a deadline -- it is an orphaned key, which these being separate writes
+      // makes reachable. Honouring it put the scheduler past an expiry it had
+      // no credential for: the delay collapses to "now", `refreshSession()`
+      // answers `idle` because there is nothing to trade, and the cycle repeats
+      // as fast as timers fire.
+      if (visitorToken && isFinite(restoredExpiry) && restoredExpiry > 0) {
         tokenExpiresAt = restoredExpiry;
       } else if (visitorToken && storedExpiry !== NO_TOKEN_EXPIRY) {
         // A token with no record of its lifetime beside it. Only an older
@@ -727,6 +733,33 @@
       if (typeof onSessionTokenChanged === 'function') {
         onSessionTokenChanged();
       }
+    }
+
+    /**
+     * The legacy `authPayload` object, created ONCE and shared by every
+     * subscription.
+     *
+     * Building a fresh object per subscription left only the newest one
+     * reachable from `adoptVisitorToken`, so a consumer holding several live
+     * subscriptions through a custom adapter had all but the last go stale: an
+     * earlier one reconnecting after a rotation would re-authorise with the
+     * token it was created with. Sharing one object means adopting a token
+     * updates every subscription at once, which is what the contract -- "the
+     * credentials to authorise with" -- always implied.
+     */
+    function legacyRealtimeAuthPayload() {
+      if (!realtimeAuthPayload) {
+        realtimeAuthPayload = {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+        };
+      }
+
+      // Refreshed on every read as well as on adoption, so a subscription
+      // created before the first token still authorises with the current one.
+      realtimeAuthPayload.visitor_token = requireVisitorToken(visitorToken);
+
+      return realtimeAuthPayload;
     }
 
     /**
@@ -1198,11 +1231,7 @@
           // re-authorises on every reconnect, and the frozen object carries
           // whichever token was current when the subscription was created, so
           // a refreshed session would keep presenting the token it replaced.
-          authPayload: realtimeAuthPayload = {
-            site_public_key: sitePublicKey,
-            anonymous_id: anonymousId,
-            visitor_token: requireVisitorToken(visitorToken),
-          },
+          authPayload: legacyRealtimeAuthPayload(),
           authPayloadProvider: function () {
             return {
               site_public_key: sitePublicKey,
@@ -2173,7 +2202,12 @@
         // request, not a command: while the token is still alive the client
         // ignores it in favour of the deadline, and it only takes effect once
         // there is no deadline left to be late for.
-        scheduleSessionRefresh(outcome === 'unavailable' || !recovered ? MIN_SESSION_REFRESH_MS : 0);
+        // `idle` is paced alongside the failures: it means there is no token to
+        // trade, and no amount of asking sooner produces one. Whatever puts the
+        // client in that state, retrying it at timer speed is never the answer.
+        var pace = outcome === 'unavailable' || outcome === 'idle' || !recovered;
+
+        scheduleSessionRefresh(pace ? MIN_SESSION_REFRESH_MS : 0);
       }, delay);
 
       if (typeof sessionRefreshTimer.unref === 'function') {

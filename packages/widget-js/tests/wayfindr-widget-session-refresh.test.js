@@ -37,11 +37,19 @@ function widgetForRefresh(options) {
     url: 'https://docs.example.test/',
   });
 
-  const storage = memoryStorage(Object.assign({
+  const seed = Object.assign({
     'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
     'wayfindr:site_public_docs:visitor-token': 'token-first',
     'wayfindr:site_public_docs:support-code': 'WF-DOCS',
-  }, options.storageSeed || {}));
+  }, options.storageSeed || {});
+
+  // Storage holding an expiry but no token is only reachable if the token key
+  // can be absent, so it has to be removable rather than overridable.
+  if (options.withoutStoredToken) {
+    delete seed['wayfindr:site_public_docs:visitor-token'];
+  }
+
+  const storage = memoryStorage(seed);
 
   const requests = [];
   let bootstrapCalls = 0;
@@ -938,5 +946,72 @@ test('bootstrap presents the token we already hold, so the session clock continu
     bootstrap.body.visitor_token,
     'token-first',
     'bootstrap did not present the stored token, so the server will start a new session',
+  );
+});
+
+test('an expiry with no token beside it is not treated as a deadline', async () => {
+  // The token and its expiry are separate storage keys, so a failed or custom
+  // write can leave the deadline without the credential it describes. Honouring
+  // it is a hot loop rather than a stale token: the delay collapses to "now"
+  // because the deadline has passed, refreshSession() answers 'idle' because
+  // there is nothing to trade, and the cycle repeats as fast as timers fire.
+  //
+  // Bootstrap is held open so nothing supplies a token behind the test's back.
+  const now = Date.now();
+  const { widget } = widgetForRefresh({
+    withoutStoredToken: true,
+    storageSeed: { [EXPIRY_KEY]: String(Date.now() - 60000) },
+    bootstrapGate: new Promise(() => {}),
+  });
+  await settle();
+
+  assert.equal(
+    widget.client.nextSessionRefreshDelay(now),
+    600000,
+    'an orphaned expiry was honoured, collapsing the delay to now',
+  );
+});
+
+test('every live subscription sees a refreshed token, not just the newest', async () => {
+  // `subscribeToConversation` built a fresh legacy payload per call and only the
+  // last one stayed reachable from adoptVisitorToken, so a consumer holding
+  // several live subscriptions through a custom adapter had all but the newest
+  // go stale. The failure surfaces late and looks like a server problem: an
+  // older subscription reconnects, re-authorises with the token it was created
+  // with, and is refused.
+  const captured = [];
+
+  const { widget } = widgetForRefresh({
+    realtime: {
+      subscribe: (config) => {
+        captured.push(config);
+
+        return { unsubscribe: () => {} };
+      },
+    },
+  });
+  await settle();
+
+  widget.client.subscribeToConversation('WF-DOCS', () => {}, () => {}, () => {});
+  widget.client.subscribeToConversation('WF-OTHER', () => {}, () => {}, () => {});
+
+  // Three, not two: the widget subscribes once itself on init, because the
+  // seeded storage carries a support code. That subscription is a real one and
+  // has to stay current too, so it is asserted along with the rest.
+  assert.ok(captured.length >= 2, `expected several live subscriptions, got ${captured.length}`);
+  assert.ok(
+    captured.every((config) => config.authPayload.visitor_token === 'token-first'),
+    'subscriptions did not start on the stored token',
+  );
+
+  assert.equal(await widget.client.refreshSession(), 'refreshed');
+  await settle();
+
+  const stale = captured.filter((config) => config.authPayload.visitor_token !== 'token-second');
+
+  assert.equal(
+    stale.length,
+    0,
+    `${stale.length} of ${captured.length} subscriptions still hold the token that was rotated away`,
   );
 });
