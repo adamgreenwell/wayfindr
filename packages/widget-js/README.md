@@ -111,8 +111,16 @@ const timeline = await client.fetchMessages(result.conversation.support_code);
 **`createClient` does not rotate the visitor session token.** The refresh timer
 lives in `Wayfindr.init()`. The client exposes the two pieces --
 `nextSessionRefreshDelay()` for when to refresh and `refreshSession()` for doing
-it, resolving `refreshed` / `rejected` / `unavailable` / `idle` -- but nothing
-drives them for you. That is harmless while `WAYFINDR_VISITOR_SESSION_TTL_MINUTES`
+it -- but nothing drives them for you.
+
+`refreshSession()` resolves `true` only when a new token was taken up, and
+`false` for every other result, which is what it has always done.
+`refreshSessionOutcome()` reports which result it was -- `refreshed`,
+`rejected` (the server refused this token; it is dead), `unavailable` (the
+request did not get through, so the token is probably still good) or `idle`
+(there was nothing to trade). Recovering from `rejected` means bootstrapping;
+recovering from `unavailable` means waiting, since re-minting there discards a
+working session. That is harmless while `WAYFINDR_VISITOR_SESSION_TTL_MINUTES`
 is 0, its shipped default, because tokens then never expire. If the install you
 integrate with sets a lifetime, a `createClient` session will stop working when
 it elapses.

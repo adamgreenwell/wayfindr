@@ -873,7 +873,21 @@
         return visitorTokenRefreshDelay(typeof now === 'number' ? now : Date.now(), floorMs);
       },
       /**
-       * Trade the current token for a fresh one.
+       * Trade the current token for a fresh one. Resolves TRUE only when a new
+       * token was taken up -- the contract this method has always had.
+       *
+       * Load-bearing, because `if (!await client.refreshSession())` is how an
+       * integration recovers: returning the richer outcome here makes every
+       * failure truthy, and nothing throws, so the session just stops working
+       * once a lifetime is enforced. The detail is refreshSessionOutcome().
+       */
+      refreshSession: function () {
+        return this.refreshSessionOutcome().then(function (outcome) {
+          return outcome === 'refreshed';
+        });
+      },
+      /**
+       * The same exchange, reporting WHICH result it was.
        *
        * Unlike bootstrap this proves possession of a working token, so it is
        * the path that can survive a server-side token lifetime. It updates the
@@ -881,7 +895,7 @@
        * so every later consumer reads the new value rather than a copy taken
        * when the session started.
        *
-       * Resolves an OUTCOME rather than throwing, because the caller's next
+       * Resolves an outcome rather than throwing, because the caller's next
        * move depends on which failure it was:
        *
        *   'refreshed'   -- a new token is in hand and stored
@@ -891,7 +905,7 @@
        *                    so re-minting would discard a working session
        *   'idle'        -- there was no token to trade in the first place
        */
-      refreshSession: function () {
+      refreshSessionOutcome: function () {
         if (!visitorToken) {
           return Promise.resolve('idle');
         }
@@ -2126,7 +2140,7 @@
       sessionRefreshTimer = setTimeout(async function () {
         sessionRefreshTimer = null;
 
-        var outcome = await client.refreshSession();
+        var outcome = await client.refreshSessionOutcome();
 
         // Everything below starts new work or persists a token, and a
         // destroyed widget must do neither.

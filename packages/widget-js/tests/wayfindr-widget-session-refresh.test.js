@@ -116,7 +116,7 @@ test('refreshing trades the current token and remembers the new one', async () =
   const { widget, storage, requests } = widgetForRefresh();
   await settle();
 
-  const outcome = await widget.client.refreshSession();
+  const outcome = await widget.client.refreshSessionOutcome();
   await settle();
 
   assert.equal(outcome, 'refreshed');
@@ -144,7 +144,7 @@ test('a refused token is reported as rejected, not merely failed', async () => {
   });
   await settle();
 
-  assert.equal(await widget.client.refreshSession(), 'rejected');
+  assert.equal(await widget.client.refreshSessionOutcome(), 'rejected');
   assert.equal(storage.snapshot()['wayfindr:site_public_docs:visitor-token'], 'token-first');
 });
 
@@ -158,7 +158,7 @@ test('an unreachable server is reported as unavailable, so a good token is kept'
   });
   await settle();
 
-  assert.equal(await widget.client.refreshSession(), 'unavailable');
+  assert.equal(await widget.client.refreshSessionOutcome(), 'unavailable');
   assert.equal(storage.snapshot()['wayfindr:site_public_docs:visitor-token'], 'token-first');
 });
 
@@ -186,7 +186,7 @@ test('refreshing without a token asks the server nothing', async () => {
     },
   });
 
-  assert.equal(await widget.client.refreshSession(), 'idle');
+  assert.equal(await widget.client.refreshSessionOutcome(), 'idle');
   assert.equal(
     requests.filter((url) => url.endsWith('/api/widget/session')).length,
     0,
@@ -224,7 +224,7 @@ test('the realtime auth payload reflects a refreshed token rather than the one i
   assert.equal(typeof captured.authPayloadProvider, 'function');
   assert.equal(captured.authPayloadProvider().visitor_token, 'token-first');
 
-  assert.equal(await widget.client.refreshSession(), 'refreshed');
+  assert.equal(await widget.client.refreshSessionOutcome(), 'refreshed');
   await settle();
 
   assert.equal(
@@ -1004,7 +1004,7 @@ test('every live subscription sees a refreshed token, not just the newest', asyn
     'subscriptions did not start on the stored token',
   );
 
-  assert.equal(await widget.client.refreshSession(), 'refreshed');
+  assert.equal(await widget.client.refreshSessionOutcome(), 'refreshed');
   await settle();
 
   const stale = captured.filter((config) => config.authPayload.visitor_token !== 'token-second');
@@ -1050,4 +1050,49 @@ test('a widget destroyed mid-refresh does not store the token that arrives after
     'token-first',
     'a destroyed widget adopted a token that arrived after teardown',
   );
+});
+
+test('refreshSession keeps its boolean contract for existing integrations', async () => {
+  // This method returned a boolean before the outcome work, and `createClient`
+  // is a public surface: an integration that wrote
+  //
+  //   if (!await client.refreshSession()) await client.bootstrap(...)
+  //
+  // stops recovering the moment every failure becomes a truthy string, and a
+  // `=== true` check starts reading success as failure. Nothing throws; the
+  // session just quietly stops working once a lifetime is enforced.
+  //
+  // So the boolean stays exactly what it was -- true only when a token was
+  // actually taken up -- and the detail lives in refreshSessionOutcome().
+  const refreshed = await widgetForRefresh();
+  await settle();
+
+  const ok = await refreshed.widget.client.refreshSession();
+
+  assert.equal(typeof ok, 'boolean', 'refreshSession must keep resolving a boolean');
+  assert.equal(ok, true);
+
+  // A refused token is false, not a truthy 'rejected'.
+  const rejected = widgetForRefresh({
+    sessionResponse: () => jsonResponse(401, { message: 'Visitor token is invalid.' }),
+  });
+  await settle();
+
+  assert.equal(await rejected.widget.client.refreshSession(), false);
+  assert.equal(await rejected.widget.client.refreshSessionOutcome(), 'rejected');
+
+  // As is an unreachable server...
+  const unavailable = widgetForRefresh({
+    sessionResponse: () => Promise.reject(new Error('network down')),
+  });
+  await settle();
+
+  assert.equal(await unavailable.widget.client.refreshSession(), false);
+
+  // ...and having nothing to trade.
+  const idle = widgetForRefresh({ withoutStoredToken: true, bootstrapGate: new Promise(() => {}) });
+  await settle();
+
+  assert.equal(await idle.widget.client.refreshSession(), false);
+  assert.equal(await idle.widget.client.refreshSessionOutcome(), 'idle');
 });
