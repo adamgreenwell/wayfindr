@@ -206,9 +206,16 @@ test('the realtime auth payload reflects a refreshed token rather than the one i
     'the already-created subscription must authorise with the current token',
   );
 
-  // The frozen object is deliberately NOT updated -- an adapter holding it has
-  // the contract it was written against, which is what keeps it working.
-  assert.equal(captured.authPayload.visitor_token, 'token-first');
+  // And the legacy object is kept CURRENT, not merely intact. I originally
+  // asserted the opposite here -- that freezing it was what kept an old
+  // adapter working. It is not: that adapter was promised the credentials to
+  // authorise with, so a frozen copy hands it a token that is about to be
+  // refused, and the reconnect that reads it is precisely the one that fails.
+  assert.equal(
+    captured.authPayload.visitor_token,
+    'token-second',
+    'a custom adapter would reconnect with the token that was just rotated away',
+  );
 });
 
 test('with no advertised expiry the widget rotates on a steady interval', async () => {

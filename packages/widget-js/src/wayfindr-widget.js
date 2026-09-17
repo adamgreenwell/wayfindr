@@ -566,6 +566,9 @@
     // binding but not the initialiser, so declaring it further down would let
     // `= null` run afterwards and silently discard the restored deadline.
     var tokenExpiresAt = null;
+    // The object handed to a custom realtime adapter. Kept so that adopting a
+    // token can refresh the credentials INSIDE it -- see adoptVisitorToken.
+    var realtimeAuthPayload = null;
     var sessionRefreshMs = typeof options.sessionRefreshMs === 'number'
       ? Math.max(0, options.sessionRefreshMs)
       : DEFAULT_SESSION_REFRESH_MS;
@@ -648,6 +651,16 @@
       // while a tab sits on a ten-minute timer, for instance. Whoever owns the
       // timer has to hear about it, or the token expires before the timer
       // fires.
+      // Keep the legacy object CURRENT rather than merely intact. An adapter
+      // written against `authPayload` was promised the credentials to
+      // authorise with, not a snapshot of the ones that were current when it
+      // subscribed -- so freezing it preserves the shape and breaks the
+      // meaning. After rotation it would hold a token that is about to be
+      // refused, and the reconnect that needs it is exactly the one that fails.
+      if (realtimeAuthPayload) {
+        realtimeAuthPayload.visitor_token = visitorToken;
+      }
+
       if (typeof onSessionTokenChanged === 'function') {
         onSessionTokenChanged();
       }
@@ -1075,16 +1088,18 @@
           // integration surface: a host can supply its own adapter and
           // `resolveRealtime()` hands it this config untouched.
           //
-          // `authPayload` stays an object so an adapter written against the
-          // old contract keeps working exactly as it did -- it would otherwise
-          // serialise a function and send no credentials at all, failing
-          // authorisation in a way that looks like a server problem.
+          // `authPayload` stays an OBJECT so an adapter written against the
+          // old contract keeps working -- it would otherwise serialise a
+          // function and send no credentials at all. It is also kept current:
+          // adopting a token writes the new one into this same object, because
+          // the contract was "the credentials to authorise with", not "the
+          // credentials as of subscribe time".
           //
           // `authPayloadProvider` is what the built-in adapter reads. Reverb
           // re-authorises on every reconnect, and the frozen object carries
           // whichever token was current when the subscription was created, so
           // a refreshed session would keep presenting the token it replaced.
-          authPayload: {
+          authPayload: realtimeAuthPayload = {
             site_public_key: sitePublicKey,
             anonymous_id: anonymousId,
             visitor_token: requireVisitorToken(visitorToken),
