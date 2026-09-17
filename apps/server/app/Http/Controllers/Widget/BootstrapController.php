@@ -103,7 +103,7 @@ class BootstrapController extends Controller
                         // Reopening the panel re-bootstraps, so without this an
                         // ordinary reopen would restart the clock an absolute
                         // session cap is meant to measure.
-                        $visitorSessionToken->continuingSessionStartedAt($request, $site, $validated['anonymous_id']),
+                        $visitorSessionToken->continuingSessionStartedAt($request, $site, $visitor, $validated['anonymous_id']),
                     ),
                     // Whether the host app told us who this is, as the SERVER
                     // sees it. The widget's own option can be set while the

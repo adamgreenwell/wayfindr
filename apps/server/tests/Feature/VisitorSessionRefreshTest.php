@@ -328,3 +328,38 @@ test('the per-address ceiling still bounds a client rotating identities', functi
     $refresh('anon-rot-2')->assertOk();
     $refresh('anon-rot-3')->assertStatus(429);
 });
+
+test('a reused browser identity does not inherit the deleted visitor session', function (): void {
+    // Deleting a visitor frees their browser identity, and the same string can
+    // later name a different person. Matching on the anonymous id alone would
+    // hand that genuinely new session a start from a row that no longer
+    // exists -- and once an absolute cap measures it, expire them early for
+    // somebody else's time.
+    [$site, $original] = refreshSessionFixture();
+
+    Carbon::setTestNow(Carbon::parse('2026-09-17 09:00:00'));
+
+    try {
+        $stale = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-refresh');
+
+        // The original visitor goes away and the identity is reused.
+        $original->delete();
+        Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-refresh']);
+
+        Carbon::setTestNow(Carbon::parse('2026-09-17 16:00:00'));
+
+        $fresh = $this->postJson('/api/widget/bootstrap', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-refresh',
+            'page_url' => 'https://docs.example.test/install',
+            'visitor_token' => $stale,
+        ])->assertSuccessful()->json('data.visitor.token');
+
+        $payload = decodeVisitorSessionPayload($fresh);
+
+        // Their session began when they arrived, not when somebody else did.
+        expect(Carbon::parse($payload['session_started_at'])->format('H:i'))->toBe('16:00');
+    } finally {
+        Carbon::setTestNow();
+    }
+});

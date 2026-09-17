@@ -56,8 +56,12 @@ class VisitorSessionToken
      * rather than being refused. The only thing a presented token buys is
      * continuity of a clock that is not in the caller's favour.
      */
-    public function continuingSessionStartedAt(Request $request, Site $site, string $anonymousId): ?CarbonImmutable
-    {
+    public function continuingSessionStartedAt(
+        Request $request,
+        Site $site,
+        Visitor $visitor,
+        string $anonymousId,
+    ): ?CarbonImmutable {
         $token = $this->tokenFromRequest($request);
 
         if (! is_string($token) || $token === '') {
@@ -78,7 +82,46 @@ class VisitorSessionToken
             return null;
         }
 
+        // The anonymous id is not enough to prove the token belongs to THIS
+        // visitor's session. Deleting a visitor frees their browser identity,
+        // and the same string can later name a different person -- whose
+        // genuinely new session would then inherit a start from a row that no
+        // longer exists, and expire early once an absolute cap measures it.
+        //
+        // Lineage rather than equality, because a deliberate merge moves a
+        // browser identity between rows on purpose and a token issued before
+        // it still describes the same session.
+        if (! $this->tokenBelongsToVisitor($payload, $site, $visitor, $anonymousId)) {
+            return null;
+        }
+
         return $this->sessionStartedAt($payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function tokenBelongsToVisitor(array $payload, Site $site, Visitor $visitor, string $anonymousId): bool
+    {
+        $tokenVisitorId = (int) ($payload['visitor_id'] ?? 0);
+
+        if ($tokenVisitorId === (int) $visitor->id) {
+            return true;
+        }
+
+        $alias = $this->identities->aliasForAnonymousId((int) $site->id, $anonymousId);
+
+        if (! $alias) {
+            return false;
+        }
+
+        $lineage = [
+            (int) ($alias->visitor_id ?? 0),
+            ...array_map('intval', is_array($alias->previous_visitor_ids) ? $alias->previous_visitor_ids : []),
+        ];
+
+        return in_array($tokenVisitorId, $lineage, true)
+            && in_array((int) $visitor->id, $lineage, true);
     }
 
     /**
