@@ -735,6 +735,51 @@
     }
 
     /**
+     * Trade the current token for a fresh one, reporting WHICH result it was.
+     *
+     * A closure function rather than a method, so neither public wrapper
+     * depends on its receiver -- `refreshSession` did not before, and a caller
+     * holding a detached reference should not start throwing.
+     *
+     *   'refreshed'   -- a new token is in hand and stored
+     *   'rejected'    -- the server refused this token; it is dead
+     *   'unavailable' -- we could not ask, so the token may still be good
+     *   'idle'        -- there was nothing to trade
+     */
+    function refreshVisitorSession() {
+      if (!visitorToken) {
+        return Promise.resolve('idle');
+      }
+
+      var requestedAt = Date.now();
+
+      return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
+        site_public_key: sitePublicKey,
+        anonymous_id: anonymousId,
+        visitor_token: visitorToken,
+      }).then(function (result) {
+        var token = result && result.visitor ? result.visitor.token : null;
+
+        if (!token) {
+          return 'rejected';
+        }
+
+        adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
+
+        return 'refreshed';
+      }).catch(function (error) {
+        // WHICH failure it was decides what the caller should do. A refused
+        // token is dead and asking again with it will never succeed; an
+        // unreachable server is temporary and re-minting would throw away a
+        // perfectly good session. `postJson` attaches the status when there
+        // was a response at all.
+        var status = error && typeof error.status === 'number' ? error.status : 0;
+
+        return status === 401 || status === 403 ? 'rejected' : 'unavailable';
+      });
+    }
+
+    /**
      * The legacy `authPayload` object, created ONCE and shared by every
      * subscription.
      *
@@ -882,7 +927,7 @@
        * once a lifetime is enforced. The detail is refreshSessionOutcome().
        */
       refreshSession: function () {
-        return this.refreshSessionOutcome().then(function (outcome) {
+        return refreshVisitorSession().then(function (outcome) {
           return outcome === 'refreshed';
         });
       },
@@ -906,36 +951,7 @@
        *   'idle'        -- there was no token to trade in the first place
        */
       refreshSessionOutcome: function () {
-        if (!visitorToken) {
-          return Promise.resolve('idle');
-        }
-
-        var requestedAt = Date.now();
-
-        return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
-          site_public_key: sitePublicKey,
-          anonymous_id: anonymousId,
-          visitor_token: visitorToken,
-        }).then(function (result) {
-          var token = result && result.visitor ? result.visitor.token : null;
-
-          if (!token) {
-            return 'rejected';
-          }
-
-          adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
-
-          return 'refreshed';
-        }).catch(function (error) {
-          // WHICH failure it was decides what the caller should do. A refused
-          // token is dead and asking again with it will never succeed; an
-          // unreachable server is temporary and re-minting would throw away a
-          // perfectly good session. `postJson` attaches the status when there
-          // was a response at all.
-          var status = error && typeof error.status === 'number' ? error.status : 0;
-
-          return status === 401 || status === 403 ? 'rejected' : 'unavailable';
-        });
+        return refreshVisitorSession();
       },
       // Somebody is on the site. Public and unauthenticated by necessity: a
       // visitor who has never made contact has no token, and that is the whole

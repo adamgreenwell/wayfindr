@@ -1096,3 +1096,19 @@ test('refreshSession keeps its boolean contract for existing integrations', asyn
   assert.equal(await idle.widget.client.refreshSession(), false);
   assert.equal(await idle.widget.client.refreshSessionOutcome(), 'idle');
 });
+
+test('refreshSession survives being detached from the client', async () => {
+  // It did not depend on its receiver before the outcome work, so a caller
+  // holding a bare reference -- `promise.then(client.refreshSession)`, or a
+  // wrapper that destructures the client -- kept working. Routing it through
+  // `this` would have made those throw: the same shape of silent break as
+  // returning a truthy string, arriving by a different door.
+  const { widget } = widgetForRefresh();
+  await settle();
+
+  const detached = widget.client.refreshSession;
+  const detachedOutcome = widget.client.refreshSessionOutcome;
+
+  assert.equal(await detached(), true, 'a detached refreshSession threw or misreported');
+  assert.equal(await detachedOutcome(), 'refreshed');
+});
