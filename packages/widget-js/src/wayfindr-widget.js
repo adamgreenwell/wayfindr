@@ -566,6 +566,16 @@
     // binding but not the initialiser, so declaring it further down would let
     // `= null` run afterwards and silently discard the restored deadline.
     var tokenExpiresAt = null;
+
+    // A supplied token whose lifetime nobody stated. Distinct from `null`,
+    // which means the server said there is no expiry: this means we were not
+    // told, and the two want opposite scheduling.
+    var visitorTokenLifetimeUnknown = false;
+
+    // Counts ADOPTIONS, not bootstraps. Recovery has to know whether a token
+    // was actually taken up, and a bootstrap can resolve carrying one without
+    // adopting it -- see the stale-ticket branch.
+    var visitorTokenGeneration = 0;
     // The object handed to a custom realtime adapter. Kept so that adopting a
     // token can refresh the credentials INSIDE it -- see adoptVisitorToken.
     var realtimeAuthPayload = null;
@@ -604,6 +614,19 @@
       var storedExpiry = Number(storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey)));
 
       tokenExpiresAt = isFinite(storedExpiry) && storedExpiry > 0 ? storedExpiry : null;
+    } else if (typeof options.visitorTokenExpiresIn === 'number' && isFinite(options.visitorTokenExpiresIn)) {
+      // A host handing over a token may hand over its lifetime with it, in the
+      // same seconds-from-now form the server uses.
+      tokenExpiresAt = Date.now() + Math.max(0, options.visitorTokenExpiresIn) * 1000;
+    } else {
+      // And when it does not, the lifetime is UNKNOWN rather than absent.
+      // Treating the two alike waits the full ten-minute interval, so a host
+      // supplying a five-minute token gets its first refresh after the token
+      // is already dead -- and `createClient` is a public integration surface,
+      // so this path is reachable without the widget's own bootstrap to cover
+      // it moments later. Ask early instead: the refresh response carries the
+      // real deadline, and everything after it schedules properly.
+      visitorTokenLifetimeUnknown = true;
     }
 
     if (!fetcher) {
@@ -623,6 +646,11 @@
      */
     function adoptVisitorToken(token, expiresInSeconds) {
       visitorToken = token;
+      visitorTokenGeneration += 1;
+
+      // Whatever the server just said is now what we know, including when it
+      // said nothing: that is an absent expiry, not an unstated one.
+      visitorTokenLifetimeUnknown = false;
       storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
 
       // The server sends a DURATION, and the deadline is computed against our
@@ -688,6 +716,12 @@
       floorMs = typeof floorMs === 'number' && floorMs > 0 ? floorMs : 0;
 
       if (tokenExpiresAt === null) {
+        // A lifetime nobody stated could be anything, so find out rather than
+        // assume ten minutes of it. One early refresh answers the question.
+        if (visitorTokenLifetimeUnknown) {
+          return Math.max(MIN_SESSION_REFRESH_MS, floorMs);
+        }
+
         // Nothing to be late for, so pacing a retry costs nothing here.
         return Math.max(sessionRefreshMs, floorMs);
       }
@@ -762,6 +796,11 @@
        * it owns the advertised expiry; the widget owns the timer because it
        * owns the lifecycle that has to stop.
        */
+      // Recovery reads this across a bootstrap to learn whether a token was
+      // actually taken up, which a resolved promise does not tell it.
+      visitorTokenGeneration: function () {
+        return visitorTokenGeneration;
+      },
       nextSessionRefreshDelay: function (now, floorMs) {
         return visitorTokenRefreshDelay(typeof now === 'number' ? now : Date.now(), floorMs);
       },
@@ -1190,6 +1229,9 @@
       // client config, bypassing the own-property guard in resolveStorageOption.
       storage: resolveStorageOption(options),
       visitorToken: options.visitorToken,
+      // Forwarded with the token, because a token without its lifetime is the
+      // case the client has to schedule defensively for.
+      visitorTokenExpiresIn: options.visitorTokenExpiresIn,
       sessionRefreshMs: options.sessionRefreshMs,
       onSessionTokenChanged: function () {
         restartSessionRefresh();
@@ -2047,19 +2089,28 @@
         // without presenting anything. 'unavailable' is deliberately NOT
         // recovered from -- the token is probably fine and the network is not,
         // so re-minting would throw away a working session to fix nothing.
-        // Whether recovery actually produced a replacement, which is not the
-        // same as whether it threw. A bootstrap that 429s, 5xxes or never
-        // arrives leaves the SAME dead token in place, and so does one whose
-        // answer is superseded by a later bootstrap. Swallowing that and
-        // treating 'rejected' as recovered is what let the widget spin: the
-        // stored deadline is still in the past, so the next delay is "now",
-        // and it reissues a session request and a bootstrap on every pass.
+        // Whether recovery actually ADOPTED a replacement, which is neither
+        // "did it throw" nor "did the answer contain a token". A bootstrap
+        // that 429s, 5xxes or never arrives leaves the same dead token in
+        // place -- and so does one superseded by a later bootstrap, which
+        // takes the stale-ticket branch and returns its response, token and
+        // all, without adopting anything. Reading the response would call that
+        // recovered; counting adoptions does not.
+        //
+        // Getting this wrong is what let the widget spin: the stored deadline
+        // is still in the past, so the next delay is "now", and it reissues a
+        // session request and a bootstrap on every pass.
         var recovered = true;
 
         if (outcome === 'rejected') {
+          var generationBefore = client.visitorTokenGeneration();
+
           recovered = await client.bootstrap(pageUrlForReporting(), visitorContext)
-            .then(function (result) {
-              return Boolean(result && result.visitor && result.visitor.token);
+            .then(function () {
+              // A concurrent bootstrap adopting instead of this one still
+              // counts: the question is whether a token was taken up, not
+              // which request produced it.
+              return client.visitorTokenGeneration() !== generationBefore;
             })
             .catch(function () {
               return false;

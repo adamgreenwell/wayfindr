@@ -58,6 +58,8 @@ function widgetForRefresh(options) {
     messagePollMs: 0,
     realtime: options.realtime || false,
     sessionRefreshMs: options.sessionRefreshMs,
+    visitorToken: options.visitorToken,
+    visitorTokenExpiresIn: options.visitorTokenExpiresIn,
     fetch: async (url, init) => {
       requests.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
 
@@ -69,6 +71,12 @@ function widgetForRefresh(options) {
         // recovery that does not actually mint a replacement token.
         if (options.bootstrapFailsAfterFirst && bootstrapCalls > 1) {
           throw new Error('bootstrap unreachable');
+        }
+
+        // Hold the response open, so a test can decide when -- or whether --
+        // a bootstrap gets to finish.
+        if (options.bootstrapGate) {
+          await options.bootstrapGate;
         }
 
         return jsonResponse(200, {
@@ -746,3 +754,70 @@ test('a recovery bootstrap that mints nothing is paced, not retried in a loop', 
     `expected recovery to be paced, got ${bootstrapCalls.length} bootstraps in 250ms`,
   );
 });
+
+test('a supplied token with no stated lifetime is refreshed early, not in ten minutes', async () => {
+  // An unknown lifetime is not an absent one. A host that hands over a token
+  // without saying how long it lasts could be handing over a five-minute one,
+  // and waiting the ten-minute default means the first refresh lands after it
+  // is dead. `createClient` is a public integration surface, so this is
+  // reachable without the widget's own bootstrap arriving moments later to
+  // supply the real deadline -- which is why the bootstrap is held open here.
+  const now = Date.now();
+  const { widget } = widgetForRefresh({
+    visitorToken: 'host-supplied-token',
+    bootstrapGate: new Promise(() => {}),
+  });
+  await settle();
+
+  assert.equal(widget.client.nextSessionRefreshDelay(now), 30000);
+});
+
+test('a supplied token whose lifetime IS stated is scheduled against it', async () => {
+  // And when the host does say, that is the deadline -- halved, like any other.
+  const now = Date.now();
+  const { widget } = widgetForRefresh({
+    visitorToken: 'host-supplied-token',
+    visitorTokenExpiresIn: 400,
+    bootstrapGate: new Promise(() => {}),
+  });
+  await settle();
+
+  const delay = widget.client.nextSessionRefreshDelay(now);
+
+  assert.ok(Math.abs(delay - 200000) < 2000, `expected about half of 400s, got ${delay}`);
+});
+
+test('a superseded bootstrap does not count as having adopted a token', async () => {
+  // The foundation the recovery check rests on. When two bootstraps overlap,
+  // the loser takes the stale-ticket branch and returns its response -- token
+  // and all -- WITHOUT adopting it. Reading that response would call recovery
+  // successful; counting adoptions does not, which is the whole point.
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+
+  const { widget } = widgetForRefresh({
+    bootstrapGate: gate,
+    sessionRefreshMs: 0,
+  });
+  release();
+  await settle();
+
+  const before = widget.client.visitorTokenGeneration();
+
+  // Two bootstraps in flight at once; the second bumps the ticket.
+  const loser = widget.client.bootstrap('https://docs.example.test/');
+  const winner = widget.client.bootstrap('https://docs.example.test/');
+
+  await loser;
+  await winner;
+  await settle();
+
+  assert.equal(
+    widget.client.visitorTokenGeneration(),
+    before + 1,
+    'the superseded bootstrap adopted a token as well as the superseding one',
+  );
+});
+
