@@ -684,7 +684,8 @@
       // Whatever the server just said is now what we know, including when it
       // said nothing: that is an absent expiry, not an unstated one.
       visitorTokenLifetimeUnknown = false;
-      storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
+
+      var tokenStored = storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
 
       // A DURATION, so both ends of the arithmetic use our own clock and a
       // fast or slow browser cancels out. Subtracting local `now` from a
@@ -708,11 +709,20 @@
       // than expressed by removing the key, because an absent key already
       // means "an older widget recorded nothing", which wants the opposite
       // scheduling.
-      storageSet(
-        storage,
-        visitorTokenExpiryStorageKey(sitePublicKey),
-        tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt),
-      );
+      // Only for a token that actually persisted: these are separate writes,
+      // either can be refused alone, and pairing this deadline with an OLD
+      // token left in storage would have the next page wait past the point
+      // that one dies. Dropping it reads as an unknown lifetime and probes
+      // early instead.
+      if (tokenStored) {
+        storageSet(
+          storage,
+          visitorTokenExpiryStorageKey(sitePublicKey),
+          tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt),
+        );
+      } else {
+        storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
+      }
 
       // A new token can carry a SOONER deadline than the one a pending timer
       // was scheduled against -- an operator enabling a five-minute lifetime
@@ -918,38 +928,18 @@
         return visitorTokenRefreshDelay(typeof now === 'number' ? now : Date.now(), floorMs);
       },
       /**
-       * Trade the current token for a fresh one. Resolves TRUE only when a new
-       * token was taken up -- the contract this method has always had.
-       *
-       * Load-bearing, because `if (!await client.refreshSession())` is how an
-       * integration recovers: returning the richer outcome here makes every
-       * failure truthy, and nothing throws, so the session just stops working
-       * once a lifetime is enforced. The detail is refreshSessionOutcome().
+       * Resolves TRUE only when a new token was taken up -- the contract this
+       * has always had, and load-bearing: `if (!await client.refreshSession())`
+       * is how an integration recovers, and a truthy failure breaks it
+       * silently. The detail is refreshSessionOutcome().
        */
       refreshSession: function () {
         return refreshVisitorSession().then(function (outcome) {
           return outcome === 'refreshed';
         });
       },
-      /**
-       * The same exchange, reporting WHICH result it was.
-       *
-       * Unlike bootstrap this proves possession of a working token, so it is
-       * the path that can survive a server-side token lifetime. It updates the
-       * same two places bootstrap does -- the closure variable and storage --
-       * so every later consumer reads the new value rather than a copy taken
-       * when the session started.
-       *
-       * Resolves an outcome rather than throwing, because the caller's next
-       * move depends on which failure it was:
-       *
-       *   'refreshed'   -- a new token is in hand and stored
-       *   'rejected'    -- the server refused this token; it is dead, and
-       *                    asking again with it will never work
-       *   'unavailable' -- we could not ask. The token may be perfectly good,
-       *                    so re-minting would discard a working session
-       *   'idle'        -- there was no token to trade in the first place
-       */
+      // The same exchange, reporting WHICH result it was. See
+      // refreshVisitorSession() for what each outcome means.
       refreshSessionOutcome: function () {
         return refreshVisitorSession();
       },
@@ -7752,10 +7742,15 @@
     try {
       if (storage) {
         storage.setItem(key, value);
+
+        return true;
       }
     } catch (error) {
       // Private browsing and locked-down embeds can reject storage writes.
     }
+
+    // Reported so a caller writing a PAIR can keep both consistent.
+    return false;
   }
 
   // Does this storage actually keep things?

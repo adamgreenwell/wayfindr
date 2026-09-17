@@ -51,6 +51,19 @@ function widgetForRefresh(options) {
 
   const storage = memoryStorage(seed);
 
+  // Storage that refuses ONE key, the way private browsing or a quota can
+  // refuse a single write while accepting others.
+  if (options.rejectWrite) {
+    const realSet = storage.setItem;
+    storage.setItem = (key, value) => {
+      if (key.endsWith(options.rejectWrite)) {
+        throw new Error("storage refused " + key);
+      }
+
+      return realSet(key, value);
+    };
+  }
+
   const requests = [];
   let bootstrapCalls = 0;
 
@@ -1111,4 +1124,36 @@ test('refreshSession survives being detached from the client', async () => {
 
   assert.equal(await detached(), true, 'a detached refreshSession threw or misreported');
   assert.equal(await detachedOutcome(), 'refreshed');
+});
+
+test('a deadline is not published for a token that failed to persist', async () => {
+  // The token and its expiry are two separate writes and storageSet swallows
+  // each failure on its own, so a backend can refuse one and accept the other
+  // -- private browsing, a quota, a locked-down embed. Publishing the new
+  // deadline anyway pairs it with the OLD token still in storage, and the next
+  // page then waits past the point that older credential actually dies.
+  //
+  // Dropping the record instead reads as an unknown lifetime on the next load,
+  // which probes early. That is the safe way to be wrong.
+  const { widget, storage } = widgetForRefresh({
+    tokenExpiresIn: 600,
+    rejectWrite: ':visitor-token',
+  });
+  await settle();
+
+  assert.equal(await widget.client.refreshSession(), true);
+  await settle();
+
+  const snapshot = storage.snapshot();
+
+  assert.notEqual(
+    snapshot['wayfindr:site_public_docs:visitor-token'],
+    'token-second',
+    'the token write was supposed to be refused by this fixture',
+  );
+  assert.equal(
+    snapshot['wayfindr:site_public_docs:visitor-token-expires-at'],
+    undefined,
+    'a deadline was published for a token that never reached storage',
+  );
 });
