@@ -67,7 +67,7 @@ function widgetForRefresh(options) {
             visitor: {
               anonymous_id: 'anon-docs',
               token: 'token-first',
-              token_expires_at: options.tokenExpiresAt || null,
+              token_expires_in: options.tokenExpiresIn === undefined ? null : options.tokenExpiresIn,
             },
           },
         });
@@ -227,7 +227,7 @@ test('an advertised expiry is refreshed at its halfway point', async () => {
   // half-life to retry in before anything breaks.
   const now = Date.now();
   const { widget } = widgetForRefresh({
-    tokenExpiresAt: new Date(now + 400000).toISOString(),
+    tokenExpiresIn: 400,
   });
   await settle();
 
@@ -241,7 +241,7 @@ test('a lifetime longer than the interval still rotates on the interval', async 
   // ceiling, so a generous server-side lifetime does not slow rotation down.
   const now = Date.now();
   const { widget } = widgetForRefresh({
-    tokenExpiresAt: new Date(now + 86400000).toISOString(),
+    tokenExpiresIn: 86400,
   });
   await settle();
 
@@ -251,7 +251,7 @@ test('a lifetime longer than the interval still rotates on the interval', async 
 test('a token about to expire is refreshed now rather than at half of nothing', async () => {
   const now = Date.now();
   const { widget } = widgetForRefresh({
-    tokenExpiresAt: new Date(now + 5000).toISOString(),
+    tokenExpiresIn: 5,
   });
   await settle();
 
@@ -261,7 +261,7 @@ test('a token about to expire is refreshed now rather than at half of nothing', 
 test('an expiry already past asks immediately and lets the server decide', async () => {
   const now = Date.now();
   const { widget } = widgetForRefresh({
-    tokenExpiresAt: new Date(now - 60000).toISOString(),
+    tokenExpiresIn: 0,
   });
   await settle();
 
@@ -289,7 +289,7 @@ test('setting the interval to zero turns rotation off entirely', async () => {
   // interval would still schedule the moment a lifetime appeared.
   const { widget, requests } = widgetForRefresh({
     sessionRefreshMs: 0,
-    tokenExpiresAt: new Date(Date.now() + 120000).toISOString(),
+    tokenExpiresIn: 120,
   });
   await settle();
 
@@ -503,8 +503,7 @@ test('an adopted expiry survives into the next page instance', async () => {
   // A round trip, not a seeded value: the deadline has to be WRITTEN when a
   // token is adopted, or the next page load restores a credential whose life
   // it cannot see and waits a full interval on a token already expired.
-  const expiry = new Date(Date.now() + 400000).toISOString();
-  const { widget, storage } = widgetForRefresh({ tokenExpiresAt: expiry });
+  const { widget, storage } = widgetForRefresh({ tokenExpiresIn: 400 });
   await settle();
 
   widget.destroy();

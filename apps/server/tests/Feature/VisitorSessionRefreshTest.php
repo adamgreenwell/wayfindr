@@ -328,3 +328,61 @@ test('the per-address ceiling still bounds a client rotating identities', functi
     $refresh('anon-rot-2')->assertOk();
     $refresh('anon-rot-3')->assertStatus(429);
 });
+
+test('a lifetime is advertised as a duration, never as an instant', function (): void {
+    // An instant is only meaningful against a clock, and the clock that reads
+    // it is the visitor's browser. A browser ten minutes slow would subtract
+    // its own `now` from a server-authored deadline, conclude a five-minute
+    // token had fifteen minutes left, and schedule its refresh for after the
+    // credential was already dead. A duration is skew-free.
+    config()->set('wayfindr.visitor_session_ttl_minutes', 5);
+    refreshSessionFixture();
+
+    $payload = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_refresh',
+        'anonymous_id' => 'anon-refresh',
+        'page_url' => 'https://docs.example.test/install',
+    ])->assertSuccessful()->json('data.visitor');
+
+    expect($payload)->toHaveKey('token_expires_in')
+        ->and($payload)->not->toHaveKey('token_expires_at')
+        ->and($payload['token_expires_in'])->toBeInt()
+        ->and($payload['token_expires_in'])->toBeGreaterThan(290)
+        ->and($payload['token_expires_in'])->toBeLessThanOrEqual(300);
+});
+
+test('no configured lifetime advertises nothing to refresh ahead of', function (): void {
+    // Zero is the shipped default and every existing install's behaviour.
+    config()->set('wayfindr.visitor_session_ttl_minutes', 0);
+    refreshSessionFixture();
+
+    $payload = $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_refresh',
+        'anonymous_id' => 'anon-refresh',
+        'page_url' => 'https://docs.example.test/install',
+    ])->assertSuccessful()->json('data.visitor');
+
+    expect($payload['token_expires_in'])->toBeNull();
+});
+
+test('refreshing advertises the new token lifetime, not the old one', function (): void {
+    config()->set('wayfindr.visitor_session_ttl_minutes', 5);
+    refreshSessionFixture();
+
+    $original = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-refresh');
+
+    Carbon::setTestNow(now()->addMinutes(4));
+
+    try {
+        $payload = $this->postJson('/api/widget/session', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-refresh',
+            'visitor_token' => $original,
+        ])->assertOk()->json('data.visitor');
+
+        // A full lifetime again, not the one minute left on what it replaced.
+        expect($payload['token_expires_in'])->toBeGreaterThan(290);
+    } finally {
+        Carbon::setTestNow();
+    }
+});

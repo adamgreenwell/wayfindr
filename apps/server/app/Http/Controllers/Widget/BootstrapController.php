@@ -105,10 +105,11 @@ class BootstrapController extends Controller
                         // session cap is meant to measure.
                         $visitorSessionToken->continuingSessionStartedAt($request, $site, $validated['anonymous_id']),
                     ),
-                    // Null while no lifetime is configured. The widget refreshes
-                    // ahead of this when it is set, so the capability is in
-                    // browsers before the server ever refuses an older token.
-                    'token_expires_at' => $visitorSessionToken->expiresAt($token)?->toJSON(),
+                    // A DURATION, not an instant: the browser clock that would
+                    // read an instant can be wrong by any amount, and a slow one
+                    // would schedule its refresh for after the token had died.
+                    // Null while no lifetime is configured.
+                    'token_expires_in' => $visitorSessionToken->expiresInSeconds($token),
                     // Whether the host app told us who this is, as the SERVER
                     // sees it. The widget's own option can be set while the
                     // value was rejected -- sanitised away, or already claimed

@@ -618,13 +618,20 @@
      * together: a lifetime that outlives the token it described would schedule
      * a refresh for a credential already replaced.
      */
-    function adoptVisitorToken(token, expiresAt) {
+    function adoptVisitorToken(token, expiresInSeconds) {
       visitorToken = token;
       storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
 
-      var parsed = typeof expiresAt === 'string' && expiresAt ? Date.parse(expiresAt) : NaN;
+      // The server sends a DURATION, and the deadline is computed against our
+      // own clock. Both ends of that arithmetic are then the same clock, so a
+      // browser running fast or slow cancels out -- where subtracting local
+      // `now` from a server-authored instant would have a ten-minute-slow
+      // browser believe a five-minute token had fifteen minutes left.
+      var seconds = typeof expiresInSeconds === 'number' && isFinite(expiresInSeconds)
+        ? expiresInSeconds
+        : null;
 
-      tokenExpiresAt = isNaN(parsed) ? null : parsed;
+      tokenExpiresAt = seconds === null ? null : Date.now() + Math.max(0, seconds) * 1000;
 
       // Stored WITH the token, because the two are only meaningful together. A
       // new page instance restoring the credential alone would treat a token
@@ -710,7 +717,7 @@
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (token) {
-            adoptVisitorToken(token, result.visitor.token_expires_at);
+            adoptVisitorToken(token, result.visitor.token_expires_in);
           }
 
           maskSelectors = siteMaskSelectors(result);
@@ -762,7 +769,7 @@
             return 'rejected';
           }
 
-          adoptVisitorToken(token, result.visitor.token_expires_at);
+          adoptVisitorToken(token, result.visitor.token_expires_in);
 
           return 'refreshed';
         }).catch(function (error) {

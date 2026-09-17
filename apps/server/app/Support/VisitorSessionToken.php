@@ -159,6 +159,30 @@ class VisitorSessionToken
     }
 
     /**
+     * How much longer this token has, in seconds, or null if nothing expires.
+     *
+     * RELATIVE on purpose. An absolute instant is only meaningful against a
+     * clock, and the clock that would read it is the visitor's browser -- which
+     * can be wrong by any amount. A browser running ten minutes slow subtracts
+     * its own `now` from a server-authored deadline and concludes it has
+     * fifteen minutes left on a five-minute token, then schedules its refresh
+     * for after the credential is already dead.
+     *
+     * A duration is skew-free: the widget adds it to its own clock, so both
+     * ends of the arithmetic are the same clock and the error cancels.
+     */
+    public function expiresInSeconds(string $token): ?int
+    {
+        $expiresAt = $this->expiresAt($token);
+
+        if ($expiresAt === null) {
+            return null;
+        }
+
+        return max(0, (int) round(CarbonImmutable::now()->diffInSeconds($expiresAt, false)));
+    }
+
+    /**
      * When this token was minted. Written since the beginning and, until the
      * refresh path existed, never read by anything.
      */
