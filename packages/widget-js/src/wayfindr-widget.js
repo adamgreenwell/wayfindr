@@ -714,13 +714,18 @@
       // token left in storage would have the next page wait past the point
       // that one dies. Dropping it reads as an unknown lifetime and probes
       // early instead.
-      if (tokenStored) {
-        storageSet(
-          storage,
-          visitorTokenExpiryStorageKey(sitePublicKey),
-          tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt),
-        );
-      } else {
+      // EITHER write can be refused alone, and both directions leave a
+      // deadline paired with a token it does not describe -- a stale `none`
+      // being the worst, since it says "never expires" about a token that now
+      // does. So the record only survives when the pair did; removing it reads
+      // as an unknown lifetime next load and probes early.
+      var expiryRecorded = tokenStored && storageSet(
+        storage,
+        visitorTokenExpiryStorageKey(sitePublicKey),
+        tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt),
+      );
+
+      if (! expiryRecorded) {
         storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
       }
 

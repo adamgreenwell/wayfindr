@@ -1157,3 +1157,33 @@ test('a deadline is not published for a token that failed to persist', async () 
     'a deadline was published for a token that never reached storage',
   );
 });
+
+test('a stale expiry record is cleared when its update is refused', async () => {
+  // The mirror of the previous case, and the more dangerous direction. Storage
+  // accepts the new token but refuses the expiry write, leaving the OLD record
+  // describing it. If that record is 'none' -- written before an operator
+  // enabled a lifetime -- the next page believes a now-expiring token never
+  // expires and waits the full interval, past the point it dies.
+  const { widget, storage } = widgetForRefresh({
+    tokenExpiresIn: 300,
+    storageSeed: { [EXPIRY_KEY]: 'none' },
+    rejectWrite: ':visitor-token-expires-at',
+  });
+  await settle();
+
+  assert.equal(await widget.client.refreshSession(), true);
+  await settle();
+
+  const snapshot = storage.snapshot();
+
+  assert.equal(
+    snapshot['wayfindr:site_public_docs:visitor-token'],
+    'token-second',
+    'the token write was supposed to succeed in this fixture',
+  );
+  assert.equal(
+    snapshot[EXPIRY_KEY],
+    undefined,
+    "a stale 'none' survived, so the next load reads a now-expiring token as non-expiring",
+  );
+});
