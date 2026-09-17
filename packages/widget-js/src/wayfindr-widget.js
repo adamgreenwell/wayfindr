@@ -406,6 +406,20 @@
       root.console.error('[wayfindr] ' + what + ' failed:', error);
     }
   }
+  // Visitor tokens do not expire today. This interval exists so that when a
+  // lifetime IS switched on server-side, the widgets already embedded on
+  // customers' sites are rotating rather than waiting to be stranded -- the
+  // script is cached for five minutes and carries no version, so client
+  // capability can never be deployed in step with a server rule.
+  //
+  // Ten minutes is six requests an hour against a per-tab budget of thirty a
+  // minute, and it is short enough that any plausible lifetime exceeds it.
+  var DEFAULT_SESSION_REFRESH_MS = 600000;
+
+  // Never hammer: the floor applies to a configured interval and to the
+  // "expiring imminently" case alike.
+  var MIN_SESSION_REFRESH_MS = 30000;
+
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
@@ -548,6 +562,9 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
+    var sessionRefreshMs = typeof options.sessionRefreshMs === 'number'
+      ? Math.max(0, options.sessionRefreshMs)
+      : DEFAULT_SESSION_REFRESH_MS;
     // A function, not a value: the panel re-resolves its language when
     // bootstrap returns the site default, so a locale captured at construction
     // would be the one we had before we knew anything.
@@ -580,6 +597,59 @@
     }
 
     var bootstrapTicket = 0;
+    var tokenExpiresAt = null;
+
+    /**
+     * Take ownership of a freshly-minted token.
+     *
+     * Both mint paths -- bootstrap and refresh -- land here so they cannot
+     * disagree about what "we now hold a token" means. The expiry the server
+     * advertises is recorded with it, because the two are only meaningful
+     * together: a lifetime that outlives the token it described would schedule
+     * a refresh for a credential already replaced.
+     */
+    function adoptVisitorToken(token, expiresAt) {
+      visitorToken = token;
+      storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
+
+      var parsed = typeof expiresAt === 'string' && expiresAt ? Date.parse(expiresAt) : NaN;
+
+      tokenExpiresAt = isNaN(parsed) ? null : parsed;
+    }
+
+    /**
+     * How long to wait before trading this token in.
+     *
+     * With no advertised expiry, a steady interval: the token does not expire
+     * today, but a lifetime can be switched on server-side at any time and the
+     * widgets already in browsers are the ones that have to survive it. A
+     * client that is already rotating cannot be stranded by that change.
+     *
+     * With an expiry, refresh at the HALFWAY point rather than near the edge,
+     * so one failed attempt still leaves a whole half-life to retry in.
+     */
+    function visitorTokenRefreshDelay(now) {
+      // Zero means refreshing is off, and it has to mean that whether or not
+      // the server advertised an expiry -- otherwise disabling the interval
+      // would still schedule as soon as a lifetime appeared.
+      if (sessionRefreshMs <= 0) {
+        return 0;
+      }
+
+      if (tokenExpiresAt === null) {
+        return sessionRefreshMs;
+      }
+
+      var remaining = tokenExpiresAt - now;
+
+      // Already expired, or so close that half of what is left is not worth
+      // waiting for: go now and let the server decide.
+      if (remaining <= MIN_SESSION_REFRESH_MS * 2) {
+        return MIN_SESSION_REFRESH_MS;
+      }
+
+      return Math.min(sessionRefreshMs, Math.floor(remaining / 2));
+    }
 
     return {
       anonymousId: anonymousId,
@@ -611,8 +681,7 @@
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (token) {
-            visitorToken = token;
-            storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
+            adoptVisitorToken(token, result.visitor.token_expires_at);
           }
 
           maskSelectors = siteMaskSelectors(result);
@@ -634,6 +703,14 @@
        * or the server declines: a failed refresh is not an error the visitor
        * did anything about, and the caller decides whether to re-bootstrap.
        */
+      /**
+       * How long to wait before refreshing, in ms. The client owns this because
+       * it owns the advertised expiry; the widget owns the timer because it
+       * owns the lifecycle that has to stop.
+       */
+      nextSessionRefreshDelay: function (now) {
+        return visitorTokenRefreshDelay(typeof now === 'number' ? now : Date.now());
+      },
       refreshSession: function () {
         if (!visitorToken) {
           return Promise.resolve(false);
@@ -650,8 +727,7 @@
             return false;
           }
 
-          visitorToken = token;
-          storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
+          adoptVisitorToken(token, result.visitor.token_expires_at);
 
           return true;
         }).catch(function () {
@@ -1032,12 +1108,19 @@
       // client config, bypassing the own-property guard in resolveStorageOption.
       storage: resolveStorageOption(options),
       visitorToken: options.visitorToken,
+      sessionRefreshMs: options.sessionRefreshMs,
       realtime: options.realtime,
       reverb: options.reverb,
       Pusher: options.Pusher,
     });
 
     injectStyles(doc);
+
+    // Rotation is not tied to the panel. A visitor who never opens the widget
+    // still holds a token -- restored from storage on load -- and still uses
+    // it, so waiting for a panel-open bootstrap would leave exactly the quiet
+    // sessions a lifetime is most likely to expire under.
+    scheduleSessionRefresh();
 
     /**
      * What to show a visitor for a failure.
@@ -1302,6 +1385,12 @@
       : DEFAULT_COBROWSE_PAYLOAD_BUDGET.mutationQueueMaxRecords;
     var messagePollMs = typeof options.messagePollMs === 'number' ? Math.max(0, options.messagePollMs) : 5000;
     var messagePollTimer = null;
+    var sessionRefreshTimer = null;
+    // Stopping is permanent. The refresh cycle nulls its own timer, awaits the
+    // network, and reschedules -- so a destroy() landing inside that await
+    // would clear nothing and then be undone by the callback resuming. A
+    // widget that has been torn down must not be able to resurrect itself.
+    var sessionRefreshStopped = false;
     var readReceiptDwellMs = typeof options.readReceiptDwellMs === 'number' ? Math.max(0, options.readReceiptDwellMs) : 1200;
     var readReceiptTimer = null;
     var pendingReadReceiptMessageId = null;
@@ -1807,6 +1896,58 @@
       }
 
       renderConnectionState(stableConnectionState || 'polling');
+    }
+
+    /**
+     * Keep the visitor token fresh for as long as this widget is alive.
+     *
+     * Not tied to a conversation: the token authorises every visitor-side
+     * request, so it has to stay valid whether or not a panel is open, and
+     * whether or not anyone is typing.
+     *
+     * Runs while the tab is hidden too, deliberately. Stopping would leave a
+     * backgrounded tab holding a token that expires -- the visitor returns to a
+     * widget that has to recover rather than one that works -- and browsers
+     * already throttle background timers, which at ten-minute spacing costs
+     * nothing and changes nothing.
+     */
+    function scheduleSessionRefresh() {
+      if (sessionRefreshStopped || sessionRefreshTimer) {
+        return;
+      }
+
+      // The interval is the client's, because the client owns the token and
+      // the expiry the server advertised for it. The widget owns only the
+      // timer. Zero means off.
+      var delay = client.nextSessionRefreshDelay();
+
+      if (delay <= 0) {
+        return;
+      }
+
+      sessionRefreshTimer = setTimeout(async function () {
+        sessionRefreshTimer = null;
+        await client.refreshSession();
+        // Rescheduled whatever the outcome. A refusal is usually transient --
+        // offline, a restarting server -- and a widget that stops trying after
+        // one failure is a widget that has silently given up on the session.
+        scheduleSessionRefresh();
+      }, delay);
+
+      if (typeof sessionRefreshTimer.unref === 'function') {
+        sessionRefreshTimer.unref();
+      }
+    }
+
+    function stopSessionRefresh() {
+      sessionRefreshStopped = true;
+
+      if (!sessionRefreshTimer) {
+        return;
+      }
+
+      clearTimeout(sessionRefreshTimer);
+      sessionRefreshTimer = null;
     }
 
     function scheduleMessagePoll() {
@@ -2938,6 +3079,7 @@
 
         bootstrapped = true;
         applyBootstrapResult(result, settingsSeq);
+        scheduleSessionRefresh();
       });
 
       // Opening the panel must not surface a failure: the fallback state is
@@ -5194,6 +5336,7 @@
 
         stopCobrowseStatusPoll();
         stopMessagePoll();
+        stopSessionRefresh();
         cancelPendingReadReceipt();
         clearAgentTypingExpiry();
         stopMutationStream();
