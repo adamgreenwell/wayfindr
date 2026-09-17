@@ -82,6 +82,76 @@ class CobrowseAuditTrail
      * @param  array{selectors: array<int, string>, terms: array<int, string>}|null  $reportedRuleset
      * @param  array{selectors: array<int, string>, terms: array<int, string>}  $siteRuleset
      */
+    /**
+     * Who answered the consent prompt, and what it changed.
+     *
+     * The one cobrowse lifecycle step that had no audit row. Everything else
+     * here records watching or receiving a screen; this records the decision
+     * that ALLOWS those, which is the one `SECURITY.md:120` names -- an action
+     * that changes who can see visitor data.
+     *
+     * Keyed on the TRANSITION rather than the request. A widget that posts
+     * `granted: true` against an already-granted session is repeating itself,
+     * not consenting again, and the consent endpoint has no idempotency guard
+     * of its own -- so auditing every request would bury the real decision
+     * under repeats at the poll rate.
+     *
+     * `granted_by` is recorded explicitly rather than inferred from the actor
+     * type, and ONLY on a grant. This endpoint is the visitor surface, so the
+     * answer is always `visitor` today; naming it means a future agent- or
+     * system-initiated grant is distinguishable in the same log rather than by
+     * absence. On a decline or a revocation there is no granting party to
+     * name, and the actor already records who answered.
+     *
+     * DECLINING AND REVOKING ARE DIFFERENT EVENTS and the previous status is
+     * what separates them. Answering no to a pending request never granted
+     * anything -- the widget calls that button `Decline` and says "Cobrowse
+     * request declined." Withdrawing consent already given is a revocation,
+     * and it is the one that means a screen stopped being shared. Recording
+     * both as `revoked` would put a withdrawal in the log for a visitor who
+     * never consented, which is exactly the kind of thing an audit trail is
+     * read to settle.
+     */
+    public function consentAnswered(
+        CobrowseSession $session,
+        ?Visitor $actor,
+        string $previousStatus,
+        bool $granted,
+    ): void {
+        $this->record(
+            $session,
+            $actor,
+            $this->consentAction($previousStatus, $granted),
+            [
+                'support_code' => $this->supportCode($session),
+                'previous_status' => $previousStatus,
+                'status' => $session->status,
+                'consented_at' => $session->consented_at?->toJSON(),
+                'ended_at' => $session->ended_at?->toJSON(),
+                // Only on a grant. The field names the party who GRANTED, so
+                // carrying it on a decline would have the row assert a consent
+                // that never happened -- the very thing distinguishing the two
+                // actions was meant to stop. Who answered is recorded either
+                // way, as the event's actor.
+                ...($granted ? ['granted_by' => 'visitor'] : []),
+            ],
+        );
+    }
+
+    /**
+     * `granted` was never a state this session reached, so a no is a decline.
+     */
+    private function consentAction(string $previousStatus, bool $granted): string
+    {
+        if ($granted) {
+            return 'cobrowse.consent_granted';
+        }
+
+        return $previousStatus === 'granted'
+            ? 'cobrowse.consent_revoked'
+            : 'cobrowse.consent_declined';
+    }
+
     public function snapshotReceived(CobrowseSession $session, Visitor $actor, array $snapshot, ?array $reportedRuleset, array $siteRuleset): void
     {
         $this->record($session, $actor, 'cobrowse.snapshot_received', [

@@ -909,3 +909,34 @@ test('an advertised lifetime counts from when the request left, not when it answ
     `expected the 2s spent in flight to count against the 4s lifetime, got ${delay}`,
   );
 });
+
+test('bootstrap presents the token we already hold, so the session clock continues', async () => {
+  // The wire between the two halves of this change, and the only test on it.
+  // The server half is covered -- VisitorSessionRefreshTest's "reopening the
+  // panel does not restart the session clock" -- but that hand-builds the
+  // request body, so it proves the server HONOURS a presented token, never
+  // that the widget presents one.
+  //
+  // Without this, the widget could stop sending visitor_token on bootstrap and
+  // every suite stays green (verified: mutating the conditional to `false &&`
+  // left 331/331 passing). The consequence is quiet and exactly undoes the
+  // point of the change: continuingSessionStartedAt() finds no token, stamps a
+  // fresh session_started_at on every panel reopen, sessionIdentity() changes
+  // with it, and the per-session refresh budget resets each time instead of
+  // binding -- with the absolute session cap this exists to enable never
+  // measuring a reopened session at all.
+  //
+  // The token also rides as a POSITIONAL fourth argument to
+  // withVisitorContext(), which is the kind of thing a refactor drops silently.
+  const { requests } = widgetForRefresh();
+  await settle();
+
+  const bootstrap = requests.find((request) => request.url.endsWith('/api/widget/bootstrap'));
+
+  assert.ok(bootstrap, 'the widget never bootstrapped');
+  assert.equal(
+    bootstrap.body.visitor_token,
+    'token-first',
+    'bootstrap did not present the stored token, so the server will start a new session',
+  );
+});
