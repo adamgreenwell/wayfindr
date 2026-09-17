@@ -4,6 +4,7 @@ use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationPresenceUpdated;
 use App\Events\ConversationReadReceiptUpdated;
 use App\Events\ConversationTypingUpdated;
+use App\Models\AuditEvent;
 use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
 use App\Models\CobrowseSession;
@@ -12,6 +13,7 @@ use App\Models\ConversationMessage;
 use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
+use App\Support\CobrowseAuditTrail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -2016,3 +2018,137 @@ function widgetVisitorToken($test, string $sitePublicKey, string $anonymousId): 
         ->assertSuccessful()
         ->json('data.visitor.token');
 }
+
+test('granting cobrowse consent records who answered and what it changed', function (): void {
+    // SECURITY.md:120 requires auditing actions that change who can see visitor
+    // data. Consent is THE action that does that for cobrowse -- every other
+    // step in the lifecycle already wrote a row, and this one did not, so a
+    // real grant and a forged one were indistinguishable after the fact.
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-AUDITGRANT',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'requested',
+        'consented_at' => null,
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'granted' => true,
+    ])->assertOk();
+
+    $event = AuditEvent::query()->where('action', 'cobrowse.consent_granted')->sole();
+
+    expect($event->account_id)->toBe($site->account_id)
+        ->and($event->site_id)->toBe($site->id)
+        ->and($event->actor_type)->toBe($visitor->getMorphClass())
+        ->and($event->actor_id)->toBe($visitor->id)
+        ->and($event->subject_type)->toBe($session->getMorphClass())
+        ->and($event->subject_id)->toBe($session->id)
+        ->and($event->metadata['support_code'])->toBe('WF-AUDITGRANT')
+        ->and($event->metadata['previous_status'])->toBe('requested')
+        ->and($event->metadata['status'])->toBe('granted')
+        ->and($event->metadata['granted_by'])->toBe('visitor')
+        ->and($event->metadata['consented_at'])->not->toBeNull();
+});
+
+test('revoking cobrowse consent records the answer too', function (): void {
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-AUDITREVOKE',
+    ]);
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'granted',
+        'consented_at' => now()->subMinute(),
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'granted' => false,
+    ])->assertOk();
+
+    $event = AuditEvent::query()->where('action', 'cobrowse.consent_revoked')->sole();
+
+    expect($event->metadata['previous_status'])->toBe('granted')
+        ->and($event->metadata['status'])->toBe('revoked')
+        ->and($event->metadata['ended_at'])->not->toBeNull();
+});
+
+test('repeating a grant on an already-granted session records nothing further', function (): void {
+    // The consent endpoint has no idempotency guard and the widget polls, so
+    // auditing every REQUEST would bury the real decision under repeats. The
+    // auditable event is the transition, not the post.
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-AUDITREPEAT',
+    ]);
+    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'requested',
+        'consented_at' => null,
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $payload = [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'granted' => true,
+    ];
+
+    foreach (range(1, 3) as $ignored) {
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", $payload)->assertOk();
+    }
+
+    expect(AuditEvent::query()->where('action', 'cobrowse.consent_granted')->count())->toBe(1);
+});
+
+test('a grant that cannot be audited does not start screen sharing', function (): void {
+    // The write sits inside the transaction deliberately: the capability must
+    // not outlive a failed record of who authorised it.
+    $site = Site::factory()->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-AUDITFAIL',
+    ]);
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+        'status' => 'requested',
+        'consented_at' => null,
+        'ended_at' => null,
+    ]);
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+
+    $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
+    {
+        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted): void
+        {
+            throw new RuntimeException('audit sink unavailable');
+        }
+    });
+
+    try {
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
+            'site_public_key' => 'site_public_docs',
+            'anonymous_id' => 'anon-docs',
+            'visitor_token' => $token,
+            'granted' => true,
+        ]);
+    } catch (Throwable) {
+        // The request fails; what matters is the row it left behind.
+    }
+
+    expect($session->fresh()->status)->toBe('requested')
+        ->and(AuditEvent::query()->where('action', 'cobrowse.consent_granted')->count())->toBe(0);
+});

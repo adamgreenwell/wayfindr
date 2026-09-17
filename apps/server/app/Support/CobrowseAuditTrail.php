@@ -82,6 +82,46 @@ class CobrowseAuditTrail
      * @param  array{selectors: array<int, string>, terms: array<int, string>}|null  $reportedRuleset
      * @param  array{selectors: array<int, string>, terms: array<int, string>}  $siteRuleset
      */
+    /**
+     * Who answered the consent prompt, and what it changed.
+     *
+     * The one cobrowse lifecycle step that had no audit row. Everything else
+     * here records watching or receiving a screen; this records the decision
+     * that ALLOWS those, which is the one `SECURITY.md:120` names -- an action
+     * that changes who can see visitor data.
+     *
+     * Keyed on the TRANSITION rather than the request. A widget that posts
+     * `granted: true` against an already-granted session is repeating itself,
+     * not consenting again, and the consent endpoint has no idempotency guard
+     * of its own -- so auditing every request would bury the real decision
+     * under repeats at the poll rate.
+     *
+     * `granted_by` is recorded explicitly rather than inferred from the actor
+     * type. This endpoint is the visitor surface, so the answer is always
+     * `visitor` today; naming it means a future agent- or system-initiated
+     * end is distinguishable in the same log rather than by absence.
+     */
+    public function consentAnswered(
+        CobrowseSession $session,
+        ?Visitor $actor,
+        string $previousStatus,
+        bool $granted,
+    ): void {
+        $this->record(
+            $session,
+            $actor,
+            $granted ? 'cobrowse.consent_granted' : 'cobrowse.consent_revoked',
+            [
+                'support_code' => $this->supportCode($session),
+                'previous_status' => $previousStatus,
+                'status' => $session->status,
+                'granted_by' => 'visitor',
+                'consented_at' => $session->consented_at?->toJSON(),
+                'ended_at' => $session->ended_at?->toJSON(),
+            ],
+        );
+    }
+
     public function snapshotReceived(CobrowseSession $session, Visitor $actor, array $snapshot, ?array $reportedRuleset, array $siteRuleset): void
     {
         $this->record($session, $actor, 'cobrowse.snapshot_received', [

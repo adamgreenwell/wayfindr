@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Widget;
 
 use App\Http\Controllers\Controller;
 use App\Models\CobrowseSession;
+use App\Support\CobrowseAuditTrail;
 use App\Support\VisitorConversationResolver;
 use App\Support\Visitors\VisitorConversationWriteAuthorization;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,7 @@ class CobrowseConsentController extends Controller
         string $supportCode,
         VisitorConversationResolver $conversations,
         VisitorConversationWriteAuthorization $conversationWrites,
+        CobrowseAuditTrail $cobrowseAudit,
     ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -32,9 +34,14 @@ class CobrowseConsentController extends Controller
             $validated['anonymous_id'],
         );
 
-        [$conversation, $cobrowseSession] = DB::transaction(function () use ($conversation, $conversationWrites, $validated): array {
+        [$conversation, $cobrowseSession] = DB::transaction(function () use ($conversation, $conversationWrites, $validated, $cobrowseAudit): array {
             $conversation = $conversationWrites->lock($conversation, $validated['anonymous_id']);
             $cobrowseSession = $conversationWrites->lockCobrowseSession($conversation, grantedOnly: false);
+
+            // Read under the same lock the write takes, so the recorded
+            // `previous_status` is the state this answer actually changed and
+            // not one a racing request has already moved on from.
+            $previousStatus = (string) $cobrowseSession->status;
 
             if ($validated['granted']) {
                 $cobrowseSession = $cobrowseSession->updateAtomically(function (CobrowseSession $session): void {
@@ -56,6 +63,18 @@ class CobrowseConsentController extends Controller
                         'ended_at' => now(),
                     ]);
                 });
+            }
+
+            // Inside the transaction on purpose: screen sharing must not begin
+            // on a record that failed to write. If the audit insert throws, the
+            // grant rolls back with it.
+            if ($previousStatus !== $cobrowseSession->status) {
+                $cobrowseAudit->consentAnswered(
+                    $cobrowseSession,
+                    $conversation->visitor,
+                    $previousStatus,
+                    $validated['granted'],
+                );
             }
 
             return [$conversation, $cobrowseSession];
