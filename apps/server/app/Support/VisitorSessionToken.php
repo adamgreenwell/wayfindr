@@ -12,13 +12,18 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use JsonException;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class VisitorSessionToken
 {
     public function __construct(private readonly VisitorIdentityResolver $identities) {}
 
-    public function issue(Site $site, Visitor $visitor, ?string $anonymousId = null): string
-    {
+    public function issue(
+        Site $site,
+        Visitor $visitor,
+        ?string $anonymousId = null,
+        ?DateTimeInterface $sessionStartedAt = null,
+    ): string {
         $anonymousId ??= (string) $visitor->anonymous_id;
 
         if ($anonymousId !== (string) $visitor->anonymous_id
@@ -34,7 +39,46 @@ class VisitorSessionToken
             }
         }
 
-        return $this->encode($site, $visitor, $anonymousId, now());
+        return $this->encode($site, $visitor, $anonymousId, now(), $sessionStartedAt);
+    }
+
+    /**
+     * When the session this request belongs to began, if it is continuing one.
+     *
+     * Bootstrap re-mints on every panel open, so without this an ordinary
+     * reopen would restart the clock an absolute session cap is meant to
+     * measure -- and a visitor could hold a session open indefinitely by
+     * closing and reopening the widget.
+     *
+     * Deliberately TOLERANT, unlike `refresh()`. Bootstrap is reachable with
+     * no token at all and must stay that way; a caller presenting nothing, or
+     * a token for another site or visitor, is simply starting a new session
+     * rather than being refused. The only thing a presented token buys is
+     * continuity of a clock that is not in the caller's favour.
+     */
+    public function continuingSessionStartedAt(Request $request, Site $site, string $anonymousId): ?CarbonImmutable
+    {
+        $token = $this->tokenFromRequest($request);
+
+        if (! is_string($token) || $token === '') {
+            return null;
+        }
+
+        try {
+            $payload = $this->decode($token);
+        } catch (HttpException) {
+            return null;
+        }
+
+        if ((int) ($payload['site_id'] ?? 0) !== $site->id) {
+            return null;
+        }
+
+        if (! hash_equals((string) ($payload['anonymous_id'] ?? ''), $anonymousId)) {
+            return null;
+        }
+
+        return $this->sessionStartedAt($payload);
     }
 
     /**

@@ -32,6 +32,10 @@ class BootstrapController extends Controller
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
+            // Optional, and never a credential here: bootstrap mints for
+            // anybody, which is the whole shape of the thing. A token that
+            // verifies only continues the session clock it already started.
+            'visitor_token' => ['nullable', 'string', 'max:4096'],
             'external_id' => ['nullable', 'string', 'max:255'],
             'page_url' => ['nullable', 'url', 'max:2048'],
             'context' => ['nullable', 'array', 'max:50'],
@@ -92,7 +96,15 @@ class BootstrapController extends Controller
                     // row, and changing it in the response would disagree with
                     // every request the already-running widget sends.
                     'anonymous_id' => $validated['anonymous_id'],
-                    'token' => $visitorSessionToken->issue($site, $visitor, $validated['anonymous_id']),
+                    'token' => $visitorSessionToken->issue(
+                        $site,
+                        $visitor,
+                        $validated['anonymous_id'],
+                        // Reopening the panel re-bootstraps, so without this an
+                        // ordinary reopen would restart the clock an absolute
+                        // session cap is meant to measure.
+                        $visitorSessionToken->continuingSessionStartedAt($request, $site, $validated['anonymous_id']),
+                    ),
                     // Whether the host app told us who this is, as the SERVER
                     // sees it. The widget's own option can be set while the
                     // value was rejected -- sanitised away, or already claimed

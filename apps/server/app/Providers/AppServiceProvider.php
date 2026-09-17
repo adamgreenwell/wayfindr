@@ -218,16 +218,23 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'bootstrap_per_minute', 'bootstrap')
         );
 
-        // A refreshing widget is one established session, not a population, so
-        // this is sized for a tab rather than for an office: a token near its
-        // life asks once, and a retry after a transient failure asks again.
-        // Deliberately far below the bootstrap budget -- anything hammering
-        // this endpoint already holds a valid token, so the useful bound is on
-        // grinding rather than on volume.
-        RateLimiter::for(
-            'widget-session',
-            fn (Request $request): Limit => $this->widgetLimit($request, 'session_refresh_per_minute', 'session')
-        );
+        // Per VISITOR, with a much higher per-IP ceiling as the abuse cap --
+        // the shape presence and proactive already use, and for the same
+        // reason. A refreshing widget is one established session, so a budget
+        // keyed only by site and source IP divides by however many people sit
+        // behind that address: an office, a school or a carrier NAT would
+        // share thirty refreshes a minute between all of them.
+        //
+        // That failure is quiet, which is what makes it worth avoiding here.
+        // `refreshSession()` reduces any refusal to `false`, so a 429 looks
+        // exactly like a declined refresh -- and once a lifetime is enforced,
+        // a visitor whose neighbours spent the budget simply stops being able
+        // to renew.
+        RateLimiter::for('widget-session', fn (Request $request): array => [
+            $this->widgetLimit($request, 'session_refresh_per_minute', 'session')
+                ->by($this->widgetVisitorKey($request, 'session-visitor')),
+            $this->widgetLimit($request, 'session_refresh_per_ip_per_minute', 'session-ip'),
+        ]);
 
         // Presence reports at 45-second intervals, so a genuine tab makes about
         // 1.33 requests a minute and 80 an hour.

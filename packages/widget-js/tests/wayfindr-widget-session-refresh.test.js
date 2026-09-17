@@ -173,15 +173,25 @@ test('the realtime auth payload reflects a refreshed token rather than the one i
   widget.client.subscribeToConversation('WF-DOCS', () => {}, () => {}, () => {});
 
   assert.ok(captured, 'the realtime layer was never handed a subscription');
-  assert.equal(typeof captured.authPayload, 'function', 'a frozen object cannot see a later refresh');
-  assert.equal(captured.authPayload().visitor_token, 'token-first');
+
+  // The object stays for custom adapters written against the old contract...
+  assert.equal(typeof captured.authPayload, 'object');
+  assert.equal(captured.authPayload.visitor_token, 'token-first');
+
+  // ...and the provider is what the built-in adapter reads.
+  assert.equal(typeof captured.authPayloadProvider, 'function');
+  assert.equal(captured.authPayloadProvider().visitor_token, 'token-first');
 
   await widget.client.refreshSession();
   await settle();
 
   assert.equal(
-    captured.authPayload().visitor_token,
+    captured.authPayloadProvider().visitor_token,
     'token-second',
     'the already-created subscription must authorise with the current token',
   );
+
+  // The frozen object is deliberately NOT updated -- an adapter holding it has
+  // the contract it was written against, which is what keeps it working.
+  assert.equal(captured.authPayload.visitor_token, 'token-first');
 });

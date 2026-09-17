@@ -184,3 +184,147 @@ function decodeVisitorSessionPayload(string $token): array
 {
     return json_decode(Crypt::decryptString($token), true);
 }
+
+test('reopening the panel does not restart the session clock', function (): void {
+    // Bootstrap re-mints on every panel open. Without continuity a visitor
+    // could hold a session open indefinitely by closing and reopening the
+    // widget, which is exactly what an absolute cap exists to prevent.
+    [$site, $visitor] = refreshSessionFixture();
+
+    Carbon::setTestNow(Carbon::parse('2026-09-17 09:00:00'));
+
+    try {
+        $first = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-refresh');
+
+        Carbon::setTestNow(Carbon::parse('2026-09-17 11:00:00'));
+
+        $reopened = $this->postJson('/api/widget/bootstrap', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-refresh',
+            'page_url' => 'https://docs.example.test/install',
+            'visitor_token' => $first,
+        ])->assertSuccessful()->json('data.visitor.token');
+
+        $payload = decodeVisitorSessionPayload($reopened);
+
+        expect(Carbon::parse($payload['issued_at'])->format('H:i'))->toBe('11:00')
+            ->and(Carbon::parse($payload['session_started_at'])->format('H:i'))->toBe('09:00');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('bootstrapping without a token starts a genuinely new session', function (): void {
+    // The tolerant half. Bootstrap must keep working for a first-time visitor
+    // who has nothing to present, and for them the session begins now.
+    refreshSessionFixture();
+
+    Carbon::setTestNow(Carbon::parse('2026-09-17 12:00:00'));
+
+    try {
+        $token = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-refresh');
+        $payload = decodeVisitorSessionPayload($token);
+
+        expect(Carbon::parse($payload['session_started_at'])->format('H:i'))->toBe('12:00');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('another visitor token cannot lend its session start', function (): void {
+    // Tolerant is not the same as credulous: a token that does not name this
+    // visitor is ignored rather than honoured, so nobody can inherit somebody
+    // else's clock -- in either direction.
+    [$site] = refreshSessionFixture();
+    Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-someone-else']);
+
+    Carbon::setTestNow(Carbon::parse('2026-09-17 09:00:00'));
+
+    try {
+        $theirs = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-someone-else');
+
+        Carbon::setTestNow(Carbon::parse('2026-09-17 14:00:00'));
+
+        $mine = $this->postJson('/api/widget/bootstrap', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-refresh',
+            'page_url' => 'https://docs.example.test/install',
+            'visitor_token' => $theirs,
+        ])->assertSuccessful()->json('data.visitor.token');
+
+        $payload = decodeVisitorSessionPayload($mine);
+
+        expect(Carbon::parse($payload['session_started_at'])->format('H:i'))->toBe('14:00');
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('a junk token on bootstrap is ignored rather than refused', function (): void {
+    // Bootstrap is reachable with no token at all and must stay that way.
+    refreshSessionFixture();
+
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_refresh',
+        'anonymous_id' => 'anon-refresh',
+        'page_url' => 'https://docs.example.test/install',
+        'visitor_token' => 'not-a-real-token',
+    ])->assertSuccessful();
+});
+
+test('one visitor cannot spend another visitor behind the same address', function (): void {
+    // The same shape presence already learned. Keyed only by site and source
+    // IP, thirty refreshes a minute is divided between everyone behind an
+    // office, a school or a carrier NAT -- and the failure is silent, because
+    // `refreshSession()` reduces a 429 to the same `false` a declined refresh
+    // gives. Once a lifetime is enforced, a visitor whose neighbours spent the
+    // budget simply stops being able to renew.
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_ip_per_minute', 1000);
+
+    [$site] = refreshSessionFixture('anon-noisy');
+    Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-quiet']);
+
+    $noisy = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-noisy');
+    $quiet = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-quiet');
+
+    $refresh = fn (string $anonymousId, string $token) => $this->postJson('/api/widget/session', [
+        'site_public_key' => 'site_public_refresh',
+        'anonymous_id' => $anonymousId,
+        'visitor_token' => $token,
+    ]);
+
+    $refresh('anon-noisy', $noisy)->assertOk();
+    $refresh('anon-noisy', $noisy)->assertOk();
+    $refresh('anon-noisy', $noisy)->assertStatus(429);
+
+    // The quiet visitor, same address, untouched.
+    $refresh('anon-quiet', $quiet)->assertOk();
+});
+
+test('the per-address ceiling still bounds a client rotating identities', function (): void {
+    // Rekeying to the visitor must not remove the abuse cap: otherwise a
+    // forged client mints a fresh anonymous id per request and the per-visitor
+    // budget never binds.
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_minute', 1000);
+    config()->set('wayfindr.widget_rate_limits.session_refresh_per_ip_per_minute', 2);
+
+    [$site] = refreshSessionFixture('anon-rot-1');
+    Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-rot-2']);
+    Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-rot-3']);
+
+    $tokens = [];
+    foreach (['anon-rot-1', 'anon-rot-2', 'anon-rot-3'] as $id) {
+        $tokens[$id] = refreshSessionBootstrapToken($this, 'site_public_refresh', $id);
+    }
+
+    $refresh = fn (string $anonymousId) => $this->postJson('/api/widget/session', [
+        'site_public_key' => 'site_public_refresh',
+        'anonymous_id' => $anonymousId,
+        'visitor_token' => $tokens[$anonymousId],
+    ]);
+
+    $refresh('anon-rot-1')->assertOk();
+    $refresh('anon-rot-2')->assertOk();
+    $refresh('anon-rot-3')->assertStatus(429);
+});

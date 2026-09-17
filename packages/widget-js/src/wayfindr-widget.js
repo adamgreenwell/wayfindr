@@ -587,11 +587,17 @@
       bootstrap: function (pageUrl, context) {
         var ticket = ++bootstrapTicket;
 
+        // The token, when we hold one, so the server can tell a reopened panel
+        // from a new session. It is not a credential here -- bootstrap mints
+        // for anybody -- it only keeps the session clock from restarting.
         return postJson(fetcher, apiBaseUrl + '/api/widget/bootstrap', withVisitorContext({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           page_url: pageUrl || null,
-        }, context, visitorExternalId)).then(function (result) {
+          // Only when we hold one. A first bootstrap has nothing to continue,
+          // and sending an explicit null would put a field on the wire that
+          // says the same thing as its absence.
+        }, context, visitorExternalId, visitorToken)).then(function (result) {
           // Overlapping bootstraps finishing out of order would otherwise let
           // an older answer restore obsolete masking rules -- and a stale mask
           // is a field the visitor believes is protected. The client sequences
@@ -940,11 +946,25 @@
           eventName: 'conversation.message.created',
           events: events,
           authEndpoint: apiBaseUrl + '/api/widget/broadcasting/auth',
-          // A FUNCTION, not an object. Reverb re-authorises on every reconnect,
-          // and an object literal freezes whichever token was current when the
-          // subscription was created -- so a refreshed session would keep
-          // presenting the token it replaced. Read at auth time instead.
-          authPayload: function () {
+          // TWO shapes, deliberately, because `options.realtime` is a public
+          // integration surface: a host can supply its own adapter and
+          // `resolveRealtime()` hands it this config untouched.
+          //
+          // `authPayload` stays an object so an adapter written against the
+          // old contract keeps working exactly as it did -- it would otherwise
+          // serialise a function and send no credentials at all, failing
+          // authorisation in a way that looks like a server problem.
+          //
+          // `authPayloadProvider` is what the built-in adapter reads. Reverb
+          // re-authorises on every reconnect, and the frozen object carries
+          // whichever token was current when the subscription was created, so
+          // a refreshed session would keep presenting the token it replaced.
+          authPayload: {
+            site_public_key: sitePublicKey,
+            anonymous_id: anonymousId,
+            visitor_token: requireVisitorToken(visitorToken),
+          },
+          authPayloadProvider: function () {
             return {
               site_public_key: sitePublicKey,
               anonymous_id: anonymousId,
@@ -5257,8 +5277,11 @@
           enableStats: false,
           channelAuthorization: {
             customHandler: function (params, callback) {
-              var authPayload = typeof config.authPayload === 'function'
-                ? config.authPayload()
+              // The provider when it is there, so a reconnect authorises with
+              // the token in force now rather than the one this subscription
+              // was created with.
+              var authPayload = typeof config.authPayloadProvider === 'function'
+                ? config.authPayloadProvider()
                 : config.authPayload;
 
               postJsonRaw(fetcher, config.authEndpoint, Object.assign({}, authPayload, {
@@ -7247,9 +7270,16 @@
     return value ? value : null;
   }
 
-  function withVisitorContext(payload, context, visitorExternalId) {
+  function withVisitorContext(payload, context, visitorExternalId, visitorToken) {
     if (visitorExternalId) {
       payload.external_id = visitorExternalId;
+    }
+
+    // Present only when we hold one. Bootstrap does not authenticate -- this
+    // lets the server continue an existing session's clock rather than
+    // restarting it on an ordinary panel reopen.
+    if (visitorToken) {
+      payload.visitor_token = visitorToken;
     }
 
     if (context && typeof context === 'object' && !Array.isArray(context)) {
