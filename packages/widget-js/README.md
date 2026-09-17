@@ -108,6 +108,15 @@ const result = await client.sendFirstMessage('Can you help me?', {
 const timeline = await client.fetchMessages(result.conversation.support_code);
 ```
 
+**`createClient` does not rotate the visitor session token.** The refresh timer
+lives in `Wayfindr.init()`. The client exposes the two pieces --
+`nextSessionRefreshDelay()` for when to refresh and `refreshSession()` for doing
+it, resolving `refreshed` / `rejected` / `unavailable` / `idle` -- but nothing
+drives them for you. That is harmless while `WAYFINDR_VISITOR_SESSION_TTL_MINUTES`
+is 0, its shipped default, because tokens then never expire. If the install you
+integrate with sets a lifetime, a `createClient` session will stop working when
+it elapses.
+
 `sendFirstMessage` bootstraps the visitor session automatically when needed.
 Lower-level calls such as `startConversation`, `sendMessage`,
 `fetchMessages`, and `fetchCobrowseStatus` expect the visitor to have been

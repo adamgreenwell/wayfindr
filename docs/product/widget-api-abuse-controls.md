@@ -143,6 +143,14 @@ Raise or lower it freely afterwards: the widget reads the deadline from each
 response rather than caching a policy, and it will not schedule a refresh past
 an expiry it has been told about.
 
+**One gap to know about before you set this.** Rotation lives in
+`Wayfindr.init()`, the embedded widget. A host integrating through
+`Wayfindr.createClient()` directly -- a documented path in the widget package's
+README -- gets the token but no timer, and nothing in that API tells the
+integrator to drive one. Those sessions will bootstrap, work, and then stop
+working once the lifetime you set elapses. If any of your sites integrate that
+way, leave this at 0 until they rotate.
+
 The residual: two sessions begun for the same visitor in the same microsecond
 share a budget. The value is inside the encrypted token, so it cannot be read
 and aimed at -- but it is a timestamp rather than a secret, and the real remedy
