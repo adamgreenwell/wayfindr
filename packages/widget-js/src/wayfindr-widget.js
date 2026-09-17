@@ -615,6 +615,43 @@
           return result;
         });
       },
+      /**
+       * Trade the current token for a fresh one.
+       *
+       * Unlike bootstrap this proves possession of a working token, so it is
+       * the path that can survive a server-side token lifetime. It updates the
+       * same two places bootstrap does -- the closure variable and storage --
+       * so every later consumer reads the new value rather than a copy taken
+       * when the session started.
+       *
+       * Resolves false rather than throwing when there is nothing to refresh
+       * or the server declines: a failed refresh is not an error the visitor
+       * did anything about, and the caller decides whether to re-bootstrap.
+       */
+      refreshSession: function () {
+        if (!visitorToken) {
+          return Promise.resolve(false);
+        }
+
+        return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: visitorToken,
+        }).then(function (result) {
+          var token = result && result.visitor ? result.visitor.token : null;
+
+          if (!token) {
+            return false;
+          }
+
+          visitorToken = token;
+          storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
+
+          return true;
+        }).catch(function () {
+          return false;
+        });
+      },
       // Somebody is on the site. Public and unauthenticated by necessity: a
       // visitor who has never made contact has no token, and that is the whole
       // population this reports.
@@ -903,10 +940,16 @@
           eventName: 'conversation.message.created',
           events: events,
           authEndpoint: apiBaseUrl + '/api/widget/broadcasting/auth',
-          authPayload: {
-            site_public_key: sitePublicKey,
-            anonymous_id: anonymousId,
-            visitor_token: requireVisitorToken(visitorToken),
+          // A FUNCTION, not an object. Reverb re-authorises on every reconnect,
+          // and an object literal freezes whichever token was current when the
+          // subscription was created -- so a refreshed session would keep
+          // presenting the token it replaced. Read at auth time instead.
+          authPayload: function () {
+            return {
+              site_public_key: sitePublicKey,
+              anonymous_id: anonymousId,
+              visitor_token: requireVisitorToken(visitorToken),
+            };
           },
           onMessage: onMessage,
           onConnectionState: onConnectionState,
@@ -5214,7 +5257,11 @@
           enableStats: false,
           channelAuthorization: {
             customHandler: function (params, callback) {
-              postJsonRaw(fetcher, config.authEndpoint, Object.assign({}, config.authPayload, {
+              var authPayload = typeof config.authPayload === 'function'
+                ? config.authPayload()
+                : config.authPayload;
+
+              postJsonRaw(fetcher, config.authEndpoint, Object.assign({}, authPayload, {
                 socket_id: params.socketId,
                 channel_name: params.channelName,
               })).then(function (payload) {

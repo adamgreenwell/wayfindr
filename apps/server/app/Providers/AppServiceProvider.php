@@ -218,6 +218,17 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'bootstrap_per_minute', 'bootstrap')
         );
 
+        // A refreshing widget is one established session, not a population, so
+        // this is sized for a tab rather than for an office: a token near its
+        // life asks once, and a retry after a transient failure asks again.
+        // Deliberately far below the bootstrap budget -- anything hammering
+        // this endpoint already holds a valid token, so the useful bound is on
+        // grinding rather than on volume.
+        RateLimiter::for(
+            'widget-session',
+            fn (Request $request): Limit => $this->widgetLimit($request, 'session_refresh_per_minute', 'session')
+        );
+
         // Presence reports at 45-second intervals, so a genuine tab makes about
         // 1.33 requests a minute and 80 an hour.
         //
