@@ -65,12 +65,37 @@ Two limits of that, worth knowing rather than discovering:
   `TRUSTED_PROXIES="*"` when you answer yes to running behind a proxy; a
   hand-built deployment has to set it.
 
-  This degrades quietly — nothing errors, and **Wayfindr cannot currently show
-  you whether it is happening**: no client address is stored on a visitor or
-  rendered anywhere in the dashboard. Check it from the other side, at your
-  proxy: confirm it sends `X-Forwarded-For`, and that `TRUSTED_PROXIES` names
-  that proxy (or `*`) in the environment the application actually booted with.
-  A worked check is in the self-hosting guide's proxy section.
+  This degrades quietly — nothing errors, and **no Wayfindr screen shows you
+  whether it is happening**: no client address is stored on a visitor or
+  rendered anywhere in the dashboard.
+
+  You can measure it directly, though, because the throttle reports its own
+  state. Every widget response carries `X-RateLimit-Remaining` for whichever
+  bucket is the most constrained — for presence that is the per-visitor one.
+  Send the same `anonymous_id` from two different networks and watch what that
+  number does:
+
+  ```bash
+  # Run this from two genuinely different addresses -- an office machine and a
+  # phone on mobile data is enough. Use the same made-up anonymous_id for both.
+  curl -si https://support.example.com/api/widget/presence \
+    -H 'Content-Type: application/json' \
+    -d '{"site_public_key":"YOUR_SITE_KEY","anonymous_id":"partition-probe"}' \
+    | grep -i x-ratelimit-remaining
+  ```
+
+  Run it twice from the first address, then once from the second.
+
+  - **Partition intact:** the second address starts its own countdown, at or
+    near the full limit.
+  - **Partition collapsed:** the second address continues the first's
+    countdown. Wayfindr is resolving both to one address, and this protection
+    is not in effect.
+
+  If it has collapsed, confirm your proxy sends `X-Forwarded-For` and that
+  `TRUSTED_PROXIES` names that proxy (or `*`) in the environment the
+  application actually booted with — a worker or FPM pool started before the
+  variable was set still holds the old value.
 
 - **A page the attacker controls, loaded in the visitor's own browser**, posts
   from the visitor's address, so the address does not separate it. The request's
