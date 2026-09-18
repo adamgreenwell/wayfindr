@@ -406,6 +406,24 @@
       root.console.error('[wayfindr] ' + what + ' failed:', error);
     }
   }
+  // Visitor tokens do not expire today. This interval exists so that when a
+  // lifetime IS switched on server-side, the widgets already embedded on
+  // customers' sites are rotating rather than waiting to be stranded -- the
+  // script is cached for five minutes and carries no version, so client
+  // capability can never be deployed in step with a server rule.
+  //
+  // Ten minutes is six requests an hour against a per-tab budget of thirty a
+  // minute, and it is short enough that any plausible lifetime exceeds it.
+  var DEFAULT_SESSION_REFRESH_MS = 600000;
+
+  // Never hammer: the floor applies to a configured interval and to the
+  // "expiring imminently" case alike.
+  var MIN_SESSION_REFRESH_MS = 30000;
+
+  // Written where a deadline would go when the server declared there is none,
+  // so that an ABSENT key keeps meaning "nobody recorded one".
+  var NO_TOKEN_EXPIRY = 'none';
+
   var DEFAULT_COBROWSE_PAYLOAD_BUDGET = {
     mutationBatchMaxBytes: 60000,
     mutationQueueMaxRecords: 250,
@@ -548,6 +566,36 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
+    // Declared before the storage restore below assigns it. `var` hoists the
+    // binding but not the initialiser, so declaring it further down would let
+    // `= null` run afterwards and silently discard the restored deadline.
+    var tokenExpiresAt = null;
+
+    // A supplied token whose lifetime nobody stated. Distinct from `null`,
+    // which means the server said there is no expiry: this means we were not
+    // told, and the two want opposite scheduling.
+    var visitorTokenLifetimeUnknown = false;
+
+    // Set by stop(), which the widget calls from destroy(). Adoption is the
+    // one thing that must honour it: a response already in flight resolves
+    // after teardown and would otherwise persist a token and mutate the
+    // realtime payload for a widget that no longer exists -- overwriting what
+    // a freshly re-initialised instance had just minted.
+    var clientStopped = false;
+
+    // Counts ADOPTIONS, not bootstraps. Recovery has to know whether a token
+    // was actually taken up, and a bootstrap can resolve carrying one without
+    // adopting it -- see the stale-ticket branch.
+    var visitorTokenGeneration = 0;
+    // The object handed to a custom realtime adapter. Kept so that adopting a
+    // token can refresh the credentials INSIDE it -- see adoptVisitorToken.
+    var realtimeAuthPayload = null;
+    var sessionRefreshMs = typeof options.sessionRefreshMs === 'number'
+      ? Math.max(0, options.sessionRefreshMs)
+      : DEFAULT_SESSION_REFRESH_MS;
+    var onSessionTokenChanged = typeof options.onSessionTokenChanged === 'function'
+      ? options.onSessionTokenChanged
+      : null;
     // A function, not a value: the panel re-resolves its language when
     // bootstrap returns the site default, so a locale captured at construction
     // would be the one we had before we knew anything.
@@ -573,6 +621,47 @@
 
     if (!visitorToken) {
       visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
+
+      // A record is only read when it NAMES the token beside it. Anything else
+      // -- a deadline left by another tab, or one written before this widget
+      // recorded the pairing -- is a lifetime we do not know.
+      var storedRecord = storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey));
+      var recordParts = typeof storedRecord === 'string' ? storedRecord.split('|') : [];
+      var storedExpiry = recordParts.length === 2
+        && visitorToken
+        && recordParts[1] === visitorTokenFingerprint(visitorToken)
+        ? recordParts[0]
+        : null;
+      var restoredExpiry = Number(storedExpiry);
+
+      // Both branches require a token, because a deadline without one is not
+      // a deadline -- it is an orphaned key, which these being separate writes
+      // makes reachable. Honouring it put the scheduler past an expiry it had
+      // no credential for: the delay collapses to "now", `refreshSession()`
+      // answers `idle` because there is nothing to trade, and the cycle repeats
+      // as fast as timers fire.
+      if (visitorToken && isFinite(restoredExpiry) && restoredExpiry > 0) {
+        tokenExpiresAt = restoredExpiry;
+      } else if (visitorToken && storedExpiry !== NO_TOKEN_EXPIRY) {
+        // A token with no record of its lifetime beside it. Only an older
+        // widget writes that -- this one always records something -- so the
+        // lifetime is unknown rather than absent, and it is worth one early
+        // refresh to find out which.
+        visitorTokenLifetimeUnknown = true;
+      }
+    } else if (typeof options.visitorTokenExpiresIn === 'number' && isFinite(options.visitorTokenExpiresIn)) {
+      // A host handing over a token may hand over its lifetime with it, in the
+      // same seconds-from-now form the server uses.
+      tokenExpiresAt = Date.now() + Math.max(0, options.visitorTokenExpiresIn) * 1000;
+    } else {
+      // And when it does not, the lifetime is UNKNOWN rather than absent.
+      // Treating the two alike waits the full ten-minute interval, so a host
+      // supplying a five-minute token gets its first refresh after the token
+      // is already dead -- and `createClient` is a public integration surface,
+      // so this path is reachable without the widget's own bootstrap to cover
+      // it moments later. Ask early instead: the refresh response carries the
+      // real deadline, and everything after it schedules properly.
+      visitorTokenLifetimeUnknown = true;
     }
 
     if (!fetcher) {
@@ -581,11 +670,226 @@
 
     var bootstrapTicket = 0;
 
+    /**
+     * Take ownership of a freshly-minted token.
+     *
+     * Both mint paths -- bootstrap and refresh -- land here so they cannot
+     * disagree about what "we now hold a token" means. The expiry the server
+     * advertises is recorded with it, because the two are only meaningful
+     * together: a lifetime that outlives the token it described would schedule
+     * a refresh for a credential already replaced.
+     */
+    function adoptVisitorToken(token, expiresInSeconds, requestedAtMs) {
+      // Checked HERE rather than by the caller, because adoption happens inside
+      // the awaited client methods -- a guard after the await runs when the
+      // token has already been stored.
+      if (clientStopped) {
+        return;
+      }
+
+      visitorToken = token;
+      visitorTokenGeneration += 1;
+
+      // Whatever the server just said is now what we know, including when it
+      // said nothing: that is an absent expiry, not an unstated one.
+      visitorTokenLifetimeUnknown = false;
+
+      var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
+
+      // A DURATION, so both ends of the arithmetic use our own clock and a
+      // fast or slow browser cancels out. Subtracting local `now` from a
+      // server-authored instant would not.
+      var seconds = typeof expiresInSeconds === 'number' && isFinite(expiresInSeconds)
+        ? expiresInSeconds
+        : null;
+
+      // Anchored to when the REQUEST left, because time spent in flight -- or
+      // across a sleep holding a buffered response -- is life already spent.
+      // The mint happened somewhere between the two, so this under-counts what
+      // is left but never over-counts it.
+      var anchor = typeof requestedAtMs === 'number' && isFinite(requestedAtMs)
+        ? requestedAtMs
+        : Date.now();
+
+      tokenExpiresAt = seconds === null ? null : anchor + Math.max(0, seconds) * 1000;
+
+      // Stored WITH the token: restoring the credential alone would treat a
+      // nearly-dead token as non-expiring. "No expiry" is written down rather
+      // than expressed by removing the key, because an absent key already
+      // means "an older widget recorded nothing", which wants the opposite
+      // scheduling.
+      // Only for a token that actually persisted: these are separate writes,
+      // either can be refused alone, and pairing this deadline with an OLD
+      // token left in storage would have the next page wait past the point
+      // that one dies. Dropping it reads as an unknown lifetime and probes
+      // early instead.
+      // EITHER write can be refused alone, and both directions leave a
+      // deadline paired with a token it does not describe -- a stale `none`
+      // being the worst, since it says "never expires" about a token that now
+      // does. So the record only survives when the pair did; removing it reads
+      // as an unknown lifetime next load and probes early.
+      var expiryRecorded = tokenStored && storageKept(
+        storage,
+        visitorTokenExpiryStorageKey(sitePublicKey),
+        (tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt))
+          + '|' + visitorTokenFingerprint(token),
+      );
+
+      if (! expiryRecorded) {
+        storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
+      }
+
+      // A new token can carry a SOONER deadline than the one a pending timer
+      // was scheduled against -- an operator enabling a five-minute lifetime
+      // while a tab sits on a ten-minute timer, for instance. Whoever owns the
+      // timer has to hear about it, or the token expires before the timer
+      // fires.
+      // Keep the legacy object CURRENT rather than merely intact. An adapter
+      // written against `authPayload` was promised the credentials to
+      // authorise with, not a snapshot of the ones that were current when it
+      // subscribed -- so freezing it preserves the shape and breaks the
+      // meaning. After rotation it would hold a token that is about to be
+      // refused, and the reconnect that needs it is exactly the one that fails.
+      if (realtimeAuthPayload) {
+        realtimeAuthPayload.visitor_token = visitorToken;
+      }
+
+      if (typeof onSessionTokenChanged === 'function') {
+        onSessionTokenChanged();
+      }
+    }
+
+    /**
+     * Trade the current token for a fresh one, reporting WHICH result it was.
+     *
+     * A closure function rather than a method, so neither public wrapper
+     * depends on its receiver -- `refreshSession` did not before, and a caller
+     * holding a detached reference should not start throwing.
+     *
+     *   'refreshed'   -- a new token is in hand and stored
+     *   'rejected'    -- the server refused this token; it is dead
+     *   'unavailable' -- we could not ask, so the token may still be good
+     *   'idle'        -- there was nothing to trade
+     */
+    function refreshVisitorSession() {
+      if (!visitorToken) {
+        return Promise.resolve('idle');
+      }
+
+      var requestedAt = Date.now();
+
+      return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
+        site_public_key: sitePublicKey,
+        anonymous_id: anonymousId,
+        visitor_token: visitorToken,
+      }).then(function (result) {
+        var token = result && result.visitor ? result.visitor.token : null;
+
+        if (!token) {
+          return 'rejected';
+        }
+
+        adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
+
+        return 'refreshed';
+      }).catch(function (error) {
+        // WHICH failure it was decides what the caller should do. A refused
+        // token is dead and asking again with it will never succeed; an
+        // unreachable server is temporary and re-minting would throw away a
+        // perfectly good session. `postJson` attaches the status when there
+        // was a response at all.
+        var status = error && typeof error.status === 'number' ? error.status : 0;
+
+        return status === 401 || status === 403 ? 'rejected' : 'unavailable';
+      });
+    }
+
+    /**
+     * The legacy `authPayload` object, created ONCE and shared by every
+     * subscription.
+     *
+     * Building a fresh object per subscription left only the newest one
+     * reachable from `adoptVisitorToken`, so a consumer holding several live
+     * subscriptions through a custom adapter had all but the last go stale: an
+     * earlier one reconnecting after a rotation would re-authorise with the
+     * token it was created with. Sharing one object means adopting a token
+     * updates every subscription at once, which is what the contract -- "the
+     * credentials to authorise with" -- always implied.
+     */
+    function legacyRealtimeAuthPayload() {
+      if (!realtimeAuthPayload) {
+        realtimeAuthPayload = {
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+        };
+      }
+
+      // Refreshed on every read as well as on adoption, so a subscription
+      // created before the first token still authorises with the current one.
+      realtimeAuthPayload.visitor_token = requireVisitorToken(visitorToken);
+
+      return realtimeAuthPayload;
+    }
+
+    /**
+     * How long to wait before trading this token in.
+     *
+     * With no advertised expiry, a steady interval: the token does not expire
+     * today, but a lifetime can be switched on server-side at any time and the
+     * widgets already in browsers are the ones that have to survive it. A
+     * client that is already rotating cannot be stranded by that change.
+     *
+     * With an expiry, refresh at the HALFWAY point rather than near the edge,
+     * so one failed attempt still leaves a whole half-life to retry in.
+     */
+    function visitorTokenRefreshDelay(now, floorMs) {
+      // Zero means refreshing is off, and it has to mean that whether or not
+      // the server advertised an expiry -- otherwise disabling the interval
+      // would still schedule as soon as a lifetime appeared.
+      if (sessionRefreshMs <= 0) {
+        return 0;
+      }
+
+      floorMs = typeof floorMs === 'number' && floorMs > 0 ? floorMs : 0;
+
+      if (tokenExpiresAt === null) {
+        // A lifetime nobody stated could be anything, so find out rather than
+        // assume ten minutes of it. One early refresh answers the question.
+        //
+        // Sooner than the interval, never later than it: this is a probe, and
+        // a caller who configured a five-second rotation did not ask to wait
+        // thirty. The retry floor still applies on top, as everywhere else.
+        if (visitorTokenLifetimeUnknown) {
+          return Math.max(floorMs, Math.min(sessionRefreshMs, MIN_SESSION_REFRESH_MS));
+        }
+
+        // Nothing to be late for, so pacing a retry costs nothing here.
+        return Math.max(sessionRefreshMs, floorMs);
+      }
+
+      var remaining = tokenExpiresAt - now;
+
+      if (remaining > 0) {
+        // The expiry is a CEILING that nothing may raise a delay above --
+        // neither the steady interval nor a retry floor. No floor is wanted
+        // while the token is alive: halving what remains is itself a backoff,
+        // so repeated failures converge on the deadline instead of
+        // overshooting it.
+        return Math.min(sessionRefreshMs, Math.max(1, Math.floor(remaining / 2)));
+      }
+
+      // Already dead: retry at once on first discovering it -- `1`, not `0`,
+      // which means refreshing is switched off -- and at the floor once an
+      // attempt has failed, since from here the delay is permanently "now".
+      return floorMs > 0 ? floorMs : 1;
+    }
+
     return {
       anonymousId: anonymousId,
       sitePublicKey: sitePublicKey,
       bootstrap: function (pageUrl, context) {
         var ticket = ++bootstrapTicket;
+        var requestedAt = Date.now();
 
         // The token, when we hold one, so the server can tell a reopened panel
         // from a new session. It is not a credential here -- bootstrap mints
@@ -611,8 +915,7 @@
           var token = result && result.visitor ? result.visitor.token : null;
 
           if (token) {
-            visitorToken = token;
-            storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
+            adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
           }
 
           maskSelectors = siteMaskSelectors(result);
@@ -622,41 +925,38 @@
         });
       },
       /**
-       * Trade the current token for a fresh one.
-       *
-       * Unlike bootstrap this proves possession of a working token, so it is
-       * the path that can survive a server-side token lifetime. It updates the
-       * same two places bootstrap does -- the closure variable and storage --
-       * so every later consumer reads the new value rather than a copy taken
-       * when the session started.
-       *
-       * Resolves false rather than throwing when there is nothing to refresh
-       * or the server declines: a failed refresh is not an error the visitor
-       * did anything about, and the caller decides whether to re-bootstrap.
+       * How long to wait before refreshing, in ms. The client owns this because
+       * it owns the advertised expiry; the widget owns the timer because it
+       * owns the lifecycle that has to stop.
+       */
+      // Teardown. After this, a response still in flight can resolve but
+      // cannot take its token up.
+      stop: function () {
+        clientStopped = true;
+      },
+      // Recovery reads this across a bootstrap to learn whether a token was
+      // actually taken up, which a resolved promise does not tell it.
+      visitorTokenGeneration: function () {
+        return visitorTokenGeneration;
+      },
+      nextSessionRefreshDelay: function (now, floorMs) {
+        return visitorTokenRefreshDelay(typeof now === 'number' ? now : Date.now(), floorMs);
+      },
+      /**
+       * Resolves TRUE only when a new token was taken up -- the contract this
+       * has always had, and load-bearing: `if (!await client.refreshSession())`
+       * is how an integration recovers, and a truthy failure breaks it
+       * silently. The detail is refreshSessionOutcome().
        */
       refreshSession: function () {
-        if (!visitorToken) {
-          return Promise.resolve(false);
-        }
-
-        return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
-          site_public_key: sitePublicKey,
-          anonymous_id: anonymousId,
-          visitor_token: visitorToken,
-        }).then(function (result) {
-          var token = result && result.visitor ? result.visitor.token : null;
-
-          if (!token) {
-            return false;
-          }
-
-          visitorToken = token;
-          storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
-
-          return true;
-        }).catch(function () {
-          return false;
+        return refreshVisitorSession().then(function (outcome) {
+          return outcome === 'refreshed';
         });
+      },
+      // The same exchange, reporting WHICH result it was. See
+      // refreshVisitorSession() for what each outcome means.
+      refreshSessionOutcome: function () {
+        return refreshVisitorSession();
       },
       // Somebody is on the site. Public and unauthenticated by necessity: a
       // visitor who has never made contact has no token, and that is the whole
@@ -950,20 +1250,18 @@
           // integration surface: a host can supply its own adapter and
           // `resolveRealtime()` hands it this config untouched.
           //
-          // `authPayload` stays an object so an adapter written against the
-          // old contract keeps working exactly as it did -- it would otherwise
-          // serialise a function and send no credentials at all, failing
-          // authorisation in a way that looks like a server problem.
+          // `authPayload` stays an OBJECT so an adapter written against the
+          // old contract keeps working -- it would otherwise serialise a
+          // function and send no credentials at all. It is also kept current:
+          // adopting a token writes the new one into this same object, because
+          // the contract was "the credentials to authorise with", not "the
+          // credentials as of subscribe time".
           //
           // `authPayloadProvider` is what the built-in adapter reads. Reverb
           // re-authorises on every reconnect, and the frozen object carries
           // whichever token was current when the subscription was created, so
           // a refreshed session would keep presenting the token it replaced.
-          authPayload: {
-            site_public_key: sitePublicKey,
-            anonymous_id: anonymousId,
-            visitor_token: requireVisitorToken(visitorToken),
-          },
+          authPayload: legacyRealtimeAuthPayload(),
           authPayloadProvider: function () {
             return {
               site_public_key: sitePublicKey,
@@ -1032,6 +1330,13 @@
       // client config, bypassing the own-property guard in resolveStorageOption.
       storage: resolveStorageOption(options),
       visitorToken: options.visitorToken,
+      // Forwarded with the token, because a token without its lifetime is the
+      // case the client has to schedule defensively for.
+      visitorTokenExpiresIn: options.visitorTokenExpiresIn,
+      sessionRefreshMs: options.sessionRefreshMs,
+      onSessionTokenChanged: function () {
+        restartSessionRefresh();
+      },
       realtime: options.realtime,
       reverb: options.reverb,
       Pusher: options.Pusher,
@@ -1302,6 +1607,18 @@
       : DEFAULT_COBROWSE_PAYLOAD_BUDGET.mutationQueueMaxRecords;
     var messagePollMs = typeof options.messagePollMs === 'number' ? Math.max(0, options.messagePollMs) : 5000;
     var messagePollTimer = null;
+    var sessionRefreshTimer = null;
+    // Stopping is permanent. The refresh cycle nulls its own timer, awaits the
+    // network, and reschedules -- so a destroy() landing inside that await
+    // would clear nothing and then be undone by the callback resuming. A
+    // widget that has been torn down must not be able to resurrect itself.
+    var sessionRefreshStopped = false;
+
+    // AFTER those two declarations: `var` hoists the binding but not the
+    // initialiser, so calling this earlier left a timer destroy() could not
+    // cancel. Rotation is deliberately not tied to the panel -- a visitor who
+    // never opens the widget still holds and uses a restored token.
+    scheduleSessionRefresh();
     var readReceiptDwellMs = typeof options.readReceiptDwellMs === 'number' ? Math.max(0, options.readReceiptDwellMs) : 1200;
     var readReceiptTimer = null;
     var pendingReadReceiptMessageId = null;
@@ -1807,6 +2124,122 @@
       }
 
       renderConnectionState(stableConnectionState || 'polling');
+    }
+
+    /**
+     * Keep the visitor token fresh for as long as this widget is alive.
+     *
+     * Not tied to a conversation: the token authorises every visitor-side
+     * request, so it has to stay valid whether or not a panel is open, and
+     * whether or not anyone is typing.
+     *
+     * Runs while the tab is hidden too, deliberately. Stopping would leave a
+     * backgrounded tab holding a token that expires -- the visitor returns to a
+     * widget that has to recover rather than one that works -- and browsers
+     * already throttle background timers, which at ten-minute spacing costs
+     * nothing and changes nothing.
+     */
+    function scheduleSessionRefresh(floorMs) {
+      if (sessionRefreshStopped || sessionRefreshTimer) {
+        return;
+      }
+
+      // The interval is the client's, because the client owns the token and
+      // the expiry the server advertised for it -- and therefore owns whether
+      // a retry floor may apply at all, which depends on how much life the
+      // token has left. Applying the floor out here instead was how it came to
+      // override the expiry ceiling. The widget owns only the timer.
+      //
+      // Zero still means refreshing is switched off, and the floor cannot
+      // change that: it is passed in, not max()-ed over the answer.
+      var delay = client.nextSessionRefreshDelay(Date.now(), floorMs);
+
+      if (delay <= 0) {
+        return;
+      }
+
+      sessionRefreshTimer = setTimeout(async function () {
+        sessionRefreshTimer = null;
+
+        var outcome = await client.refreshSessionOutcome();
+
+        // Everything below starts new work or persists a token, and a
+        // destroyed widget must do neither.
+        if (sessionRefreshStopped) {
+          return;
+        }
+
+        // Only a REJECTED token is re-minted, and only through bootstrap,
+        // which is the one path that mints without presenting anything.
+        // 'unavailable' deliberately is not: the token is probably fine and
+        // the network is not, so re-minting discards a working session.
+        //
+        // Recovery counts ADOPTIONS rather than reading the response, because
+        // a bootstrap superseded by a later one returns its answer -- token
+        // and all -- without adopting it, and would otherwise look successful
+        // while the dead token stayed in place.
+        var recovered = true;
+
+        if (outcome === 'rejected') {
+          var generationBefore = client.visitorTokenGeneration();
+
+          recovered = await client.bootstrap(pageUrlForReporting(), visitorContext)
+            .then(function () {
+              // A concurrent bootstrap adopting instead of this one counts:
+              // the question is whether a token was taken up at all.
+              return client.visitorTokenGeneration() !== generationBefore;
+            })
+            .catch(function () {
+              return false;
+            });
+
+          // destroy() can land during the recovery request too, not only
+          // during the refresh that preceded it.
+          if (sessionRefreshStopped) {
+            return;
+          }
+        }
+
+        // Always rescheduled -- giving up after one failure abandons the
+        // session silently -- but paced whenever the cycle ended with no
+        // usable token, `idle` included, since asking sooner cannot produce
+        // one. The floor is a request, not a command: the client ignores it
+        // while the token is still alive and honours the deadline instead.
+        var pace = outcome === 'unavailable' || outcome === 'idle' || !recovered;
+
+        scheduleSessionRefresh(pace ? MIN_SESSION_REFRESH_MS : 0);
+      }, delay);
+
+      if (typeof sessionRefreshTimer.unref === 'function') {
+        sessionRefreshTimer.unref();
+      }
+    }
+
+    function clearSessionRefreshTimer() {
+      if (!sessionRefreshTimer) {
+        return;
+      }
+
+      clearTimeout(sessionRefreshTimer);
+      sessionRefreshTimer = null;
+    }
+
+    function stopSessionRefresh() {
+      sessionRefreshStopped = true;
+      clearSessionRefreshTimer();
+    }
+
+    /**
+     * Re-aim the timer at a deadline that has moved.
+     *
+     * Not the same as stopping: this keeps rotation on. A pending timer is
+     * scheduled against the token that existed when it was set, so adopting a
+     * token with a sooner expiry has to discard it -- otherwise the timer
+     * fires after the credential it was meant to renew has already died.
+     */
+    function restartSessionRefresh() {
+      clearSessionRefreshTimer();
+      scheduleSessionRefresh();
     }
 
     function scheduleMessagePoll() {
@@ -2938,6 +3371,7 @@
 
         bootstrapped = true;
         applyBootstrapResult(result, settingsSeq);
+        scheduleSessionRefresh();
       });
 
       // Opening the panel must not surface a failure: the fallback state is
@@ -5194,6 +5628,14 @@
 
         stopCobrowseStatusPoll();
         stopMessagePoll();
+        stopSessionRefresh();
+
+        // Stops the timer AND disarms adoption, so a refresh or bootstrap whose
+        // answer is still on the wire cannot write a token after teardown.
+        if (typeof client.stop === 'function') {
+          client.stop();
+        }
+
         cancelPendingReadReceipt();
         clearAgentTypingExpiry();
         stopMutationStream();
@@ -7101,6 +7543,30 @@
     return 'wayfindr:' + sitePublicKey + ':visitor-token';
   }
 
+  // Enough to tell whether a stored deadline describes the stored TOKEN.
+  //
+  // Tabs share one storage and each writes the token and its deadline as two
+  // operations, so they interleave: tab A writes token A, tab B writes its whole
+  // pair, tab A writes deadline A -- and the deadline now describes a token that
+  // is gone. Every write succeeded and neither tab did anything wrong, so no
+  // amount of verifying a write catches this; only the pair can.
+  //
+  // Not a security boundary and not collision-proof. A mismatch costs one early
+  // probe, which is the direction this path already fails in.
+  function visitorTokenFingerprint(token) {
+    var hash = 0;
+
+    for (var i = 0; i < token.length; i++) {
+      hash = ((hash << 5) - hash + token.charCodeAt(i)) | 0;
+    }
+
+    return hash.toString(36);
+  }
+
+  function visitorTokenExpiryStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':visitor-token-expires-at';
+  }
+
   function appearanceStorageKey(sitePublicKey) {
     return 'wayfindr:' + sitePublicKey + ':appearance';
   }
@@ -7311,9 +7777,33 @@
     try {
       if (storage) {
         storage.setItem(key, value);
+
+        return true;
       }
     } catch (error) {
       // Private browsing and locked-down embeds can reject storage writes.
+    }
+
+    // Reported so a caller writing a PAIR can keep both consistent.
+    return false;
+  }
+
+  // Writes, then CONFIRMS by reading back.
+  //
+  // `storageSet` reports only that setItem did not throw, and a custom adapter
+  // can accept a write and quietly forget it -- the same hazard
+  // `storageRemembers` already guards for presence. A caller writing a PAIR
+  // needs the stronger answer, because a write believed and not kept leaves
+  // the two describing different things.
+  function storageKept(storage, key, value) {
+    if (! storageSet(storage, key, value)) {
+      return false;
+    }
+
+    try {
+      return storage.getItem(key) === value;
+    } catch (error) {
+      return false;
     }
   }
 

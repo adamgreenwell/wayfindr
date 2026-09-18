@@ -108,6 +108,24 @@ const result = await client.sendFirstMessage('Can you help me?', {
 const timeline = await client.fetchMessages(result.conversation.support_code);
 ```
 
+**`createClient` does not rotate the visitor session token.** The refresh timer
+lives in `Wayfindr.init()`. The client exposes the two pieces --
+`nextSessionRefreshDelay()` for when to refresh and `refreshSession()` for doing
+it -- but nothing drives them for you.
+
+`refreshSession()` resolves `true` only when a new token was taken up, and
+`false` for every other result, which is what it has always done.
+`refreshSessionOutcome()` reports which result it was -- `refreshed`,
+`rejected` (the server refused this token; it is dead), `unavailable` (the
+request did not get through, so the token is probably still good) or `idle`
+(there was nothing to trade). Recovering from `rejected` means bootstrapping;
+recovering from `unavailable` means waiting, since re-minting there discards a
+working session. No Wayfindr install refuses an expired visitor token today, so an
+unrotated session keeps working however long it lives. That is what will change:
+an install that advertises a lifetime is preparing to enforce one, and an
+unrotated `createClient` session is exactly the case enforcement ends. Build
+rotation before the install you integrate with gets there.
+
 `sendFirstMessage` bootstraps the visitor session automatically when needed.
 Lower-level calls such as `startConversation`, `sendMessage`,
 `fetchMessages`, and `fetchCobrowseStatus` expect the visitor to have been

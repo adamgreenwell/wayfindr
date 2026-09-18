@@ -211,6 +211,50 @@ class VisitorSessionToken
     }
 
     /**
+     * When this token stops being usable, or null if nothing expires.
+     *
+     * Advertised to the widget so it can refresh ahead of the moment rather
+     * than discovering it as a failure. Nothing VERIFIES this yet -- see the
+     * config note -- so today it is a promise the server makes and does not
+     * keep, on purpose and in the safe direction: a widget that refreshes too
+     * eagerly costs a request, one that refreshes too late loses a session.
+     */
+    public function expiresAt(string $token): ?CarbonImmutable
+    {
+        $minutes = (int) config('wayfindr.visitor_session_ttl_minutes', 0);
+
+        if ($minutes <= 0) {
+            return null;
+        }
+
+        return $this->issuedAt($token)?->addMinutes($minutes);
+    }
+
+    /**
+     * How much longer this token has, in seconds, or null if nothing expires.
+     *
+     * RELATIVE on purpose. An absolute instant is only meaningful against a
+     * clock, and the clock that would read it is the visitor's browser -- which
+     * can be wrong by any amount. A browser running ten minutes slow subtracts
+     * its own `now` from a server-authored deadline and concludes it has
+     * fifteen minutes left on a five-minute token, then schedules its refresh
+     * for after the credential is already dead.
+     *
+     * A duration is skew-free: the widget adds it to its own clock, so both
+     * ends of the arithmetic are the same clock and the error cancels.
+     */
+    public function expiresInSeconds(string $token): ?int
+    {
+        $expiresAt = $this->expiresAt($token);
+
+        if ($expiresAt === null) {
+            return null;
+        }
+
+        return max(0, (int) round(CarbonImmutable::now()->diffInSeconds($expiresAt, false)));
+    }
+
+    /**
      * When this token was minted. Written since the beginning and, until the
      * refresh path existed, never read by anything.
      */

@@ -54,6 +54,7 @@ class VisitorSessionController extends Controller
                 'visitor' => [
                     'anonymous_id' => $validated['anonymous_id'],
                     'token' => $token,
+                    'token_expires_in' => $visitorSessionToken->expiresInSeconds($token),
                 ],
             ],
         ]);

@@ -96,7 +96,7 @@ class BootstrapController extends Controller
                     // row, and changing it in the response would disagree with
                     // every request the already-running widget sends.
                     'anonymous_id' => $validated['anonymous_id'],
-                    'token' => $visitorSessionToken->issue(
+                    'token' => $token = $visitorSessionToken->issue(
                         $site,
                         $visitor,
                         $validated['anonymous_id'],
@@ -105,6 +105,11 @@ class BootstrapController extends Controller
                         // session cap is meant to measure.
                         $visitorSessionToken->continuingSessionStartedAt($request, $site, $visitor, $validated['anonymous_id']),
                     ),
+                    // A DURATION, not an instant: the browser clock that would
+                    // read an instant can be wrong by any amount, and a slow one
+                    // would schedule its refresh for after the token had died.
+                    // Null while no lifetime is configured.
+                    'token_expires_in' => $visitorSessionToken->expiresInSeconds($token),
                     // Whether the host app told us who this is, as the SERVER
                     // sees it. The widget's own option can be set while the
                     // value was rejected -- sanitised away, or already claimed
