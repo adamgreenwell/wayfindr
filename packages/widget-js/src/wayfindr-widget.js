@@ -622,7 +622,16 @@
     if (!visitorToken) {
       visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
 
-      var storedExpiry = storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey));
+      // A record is only read when it NAMES the token beside it. Anything else
+      // -- a deadline left by another tab, or one written before this widget
+      // recorded the pairing -- is a lifetime we do not know.
+      var storedRecord = storageGet(storage, visitorTokenExpiryStorageKey(sitePublicKey));
+      var recordParts = typeof storedRecord === 'string' ? storedRecord.split('|') : [];
+      var storedExpiry = recordParts.length === 2
+        && visitorToken
+        && recordParts[1] === visitorTokenFingerprint(visitorToken)
+        ? recordParts[0]
+        : null;
       var restoredExpiry = Number(storedExpiry);
 
       // Both branches require a token, because a deadline without one is not
@@ -722,7 +731,8 @@
       var expiryRecorded = tokenStored && storageKept(
         storage,
         visitorTokenExpiryStorageKey(sitePublicKey),
-        tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt),
+        (tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt))
+          + '|' + visitorTokenFingerprint(token),
       );
 
       if (! expiryRecorded) {
@@ -7531,6 +7541,26 @@
 
   function visitorTokenStorageKey(sitePublicKey) {
     return 'wayfindr:' + sitePublicKey + ':visitor-token';
+  }
+
+  // Enough to tell whether a stored deadline describes the stored TOKEN.
+  //
+  // Tabs share one storage and each writes the token and its deadline as two
+  // operations, so they interleave: tab A writes token A, tab B writes its whole
+  // pair, tab A writes deadline A -- and the deadline now describes a token that
+  // is gone. Every write succeeded and neither tab did anything wrong, so no
+  // amount of verifying a write catches this; only the pair can.
+  //
+  // Not a security boundary and not collision-proof. A mismatch costs one early
+  // probe, which is the direction this path already fails in.
+  function visitorTokenFingerprint(token) {
+    var hash = 0;
+
+    for (var i = 0; i < token.length; i++) {
+      hash = ((hash << 5) - hash + token.charCodeAt(i)) | 0;
+    }
+
+    return hash.toString(36);
   }
 
   function visitorTokenExpiryStorageKey(sitePublicKey) {

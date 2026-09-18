@@ -690,7 +690,7 @@ test('a seeded expiry is honoured on restore', async () => {
     storage: memoryStorage({
       'wayfindr:site_public_docs:anonymous-id': 'anon-docs',
       'wayfindr:site_public_docs:visitor-token': 'token-restored',
-      'wayfindr:site_public_docs:visitor-token-expires-at': String(expiry),
+      'wayfindr:site_public_docs:visitor-token-expires-at': expiryRecord(String(expiry), 'token-restored'),
     }),
     realtime: false,
     messagePollMs: 0,
@@ -858,6 +858,25 @@ test('a superseded bootstrap does not count as having adopted a token', async ()
 
 const EXPIRY_KEY = 'wayfindr:site_public_docs:visitor-token-expires-at';
 
+// Mirrors visitorTokenFingerprint in the widget. Duplicated deliberately: the
+// stored format is a contract between page loads, so a change to it should turn
+// these red rather than pass by moving in step.
+function fingerprint(token) {
+  let hash = 0;
+
+  for (let i = 0; i < token.length; i++) {
+    hash = ((hash << 5) - hash + token.charCodeAt(i)) | 0;
+  }
+
+  return hash.toString(36);
+}
+
+// A deadline record as the widget writes it: the value, and the token it
+// describes.
+function expiryRecord(value, token) {
+  return `${value}|${fingerprint(token)}`;
+}
+
 test('a token restored with no expiry record beside it is treated as unknown', async () => {
   // The upgrade path. Storage written by a widget version that kept no expiry
   // has the token and nothing else -- which is exactly what "the server said
@@ -881,7 +900,7 @@ test('a token restored with a recorded absence waits the full interval', async (
   // absence is a fact rather than a gap, and there is nothing to probe for.
   const now = Date.now();
   const { widget } = widgetForRefresh({
-    storageSeed: { [EXPIRY_KEY]: 'none' },
+    storageSeed: { [EXPIRY_KEY]: expiryRecord('none', 'token-first') },
     bootstrapGate: new Promise(() => {}),
   });
   await settle();
@@ -897,7 +916,7 @@ test('adopting a token the server gave no lifetime for records that absence', as
   });
   await settle();
 
-  assert.equal(storage.getItem(EXPIRY_KEY), 'none');
+  assert.equal(storage.getItem(EXPIRY_KEY), expiryRecord('none', 'token-first'));
 });
 
 test('the unknown-lifetime probe never outlasts a configured interval', async () => {
@@ -1179,7 +1198,7 @@ test('a stale expiry record is cleared when its update is refused', async () => 
   // expires and waits the full interval, past the point it dies.
   const { widget, storage } = widgetForRefresh({
     tokenExpiresIn: 300,
-    storageSeed: { [EXPIRY_KEY]: 'none' },
+    storageSeed: { [EXPIRY_KEY]: expiryRecord('none', 'token-first') },
     rejectWrite: ':visitor-token-expires-at',
   });
   await settle();
@@ -1212,7 +1231,7 @@ test('a write that is accepted and forgotten does not count as persisted', async
   // which writes a sentinel and reads it back rather than trusting the write.
   const { widget, storage } = widgetForRefresh({
     tokenExpiresIn: 300,
-    storageSeed: { [EXPIRY_KEY]: 'none' },
+    storageSeed: { [EXPIRY_KEY]: expiryRecord('none', 'token-first') },
     swallowWrite: ':visitor-token-expires-at',
   });
   await settle();
@@ -1224,5 +1243,31 @@ test('a write that is accepted and forgotten does not count as persisted', async
     storage.snapshot()[EXPIRY_KEY],
     undefined,
     "a silently-dropped write was believed, so a stale 'none' stayed paired with a new token",
+  );
+});
+
+test('a deadline left by another tab is not applied to this tab’s token', async () => {
+  // Tabs share one storage and each writes the token and its deadline as two
+  // operations, so they interleave: tab A writes token A, tab B writes its whole
+  // pair, tab A writes deadline A. The deadline now sits beside a token it does
+  // not describe, and every individual write succeeded -- verifying a write
+  // cannot catch this, only checking the pair can.
+  //
+  // Seeded here as its outcome: a far-future deadline naming a token that is not
+  // the one in storage. Honouring it would have the widget sit on a credential
+  // for six more minutes on the strength of another token's lifetime.
+  const now = Date.now();
+  const { widget } = widgetForRefresh({
+    storageSeed: { [EXPIRY_KEY]: expiryRecord(String(Date.now() + 3600000), 'token-from-another-tab') },
+    bootstrapGate: new Promise(() => {}),
+  });
+  await settle();
+
+  const delay = widget.client.nextSessionRefreshDelay(now);
+
+  assert.equal(
+    delay,
+    30000,
+    'a mismatched deadline was applied instead of being treated as an unknown lifetime',
   );
 });
