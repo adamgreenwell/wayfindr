@@ -759,8 +759,9 @@ makes none.
   session shared while telling the visitor it had stopped, which is the
   opposite of failing closed. Recording a refusal is therefore best-effort,
   deliberately -- the stop itself never depends on it. The entry keys on the
-  status changing rather than on each of the widget's five-second polls, so a
-  repeat answer is not logged as a fresh consent.
+  status changing, so a repeat or racing answer is not logged as a fresh
+  consent; the widget's five-second loop polls status with a GET and never
+  posts an answer of its own.
 
 - **Query strings are no longer stored with the page addresses Wayfindr keeps**,
   and the ones already stored have been rewritten. A visitor carrying a password
