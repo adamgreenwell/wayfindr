@@ -142,9 +142,14 @@ gh api repos/adamgreenwell/wayfindr/rulesets --jq '.[].id' |
 
 An empty response, an inactive rule, a pattern that misses the proposed tag, or
 a broad bypass is a **stop-before-tagging** result. The September 9, 2026 audit
-returned no repository rulesets, so this gate is currently unmet. Creating the
-rule is a separate repository-settings change and requires explicit owner
-authorization; merging release code does not silently authorize it.
+returned no repository rulesets. One was created on September 14, 2026 —
+`Protect v* release tags`, enforcement active, covering `refs/tags/v*` with
+creation, update and deletion restricted and bypass limited to the repository
+owner — so this gate is now met. **Re-run the check above rather than trusting
+this paragraph**; it records one audit, and a ruleset can be changed or removed
+after it. Creating or altering the rule is a repository-settings change and
+requires explicit owner authorization; merging release code does not silently
+authorize it.
 
 ```bash
 # VERSION and the tag must agree; the tag carries the conventional "v".
