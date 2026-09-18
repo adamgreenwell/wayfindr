@@ -239,22 +239,6 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'session_refresh_per_ip_per_minute', 'session-ip')
         );
 
-        // Presence reports at 45-second intervals, so a genuine tab makes about
-        // 1.33 requests a minute and 80 an hour.
-        //
-        // TWO limits, because one cannot do this job. Every other widget
-        // limiter is keyed by site and source IP, which is right for endpoints
-        // a visitor hits occasionally -- but this one every visitor hits
-        // continuously, so a shared per-IP bucket divides by the number of
-        // people behind the address. An office, a school or a carrier NAT would
-        // have put roughly sixteen simultaneous visitors over the old ceiling,
-        // and the symptom is not an error anybody reports: valid heartbeats
-        // take a 429 and those visitors flicker to inactive on the board.
-        //
-        // So the everyday quota is per VISITOR, and a much higher per-IP
-        // ceiling stays as the abuse cap -- which is the limit that actually
-        // wants to be there, because the thing worth bounding is a forged
-        // client rotating anonymous IDs to create rows, not a busy office.
         // Public site configuration, read once per page load. Sized for that
         // rather than for the panel being opened: a page view is not a visitor
         // doing anything, and several people behind one address browsing
@@ -266,6 +250,22 @@ class AppServiceProvider extends ServiceProvider
             fn (Request $request): Limit => $this->widgetLimit($request, 'config_per_minute', 'config')
         );
 
+        // Presence reports at 45-second intervals, so a genuine tab makes about
+        // 1.33 requests a minute and 80 an hour.
+        //
+        // TWO limits, because one cannot do this job. Every other widget limiter
+        // is keyed by site and source IP, which is right for endpoints a visitor
+        // hits occasionally -- but this one every visitor hits continuously, so a
+        // shared per-IP bucket divides by the number of people behind the
+        // address. An office, a school or a carrier NAT would have put roughly
+        // sixteen simultaneous visitors over the old ceiling, and the symptom is
+        // not an error anybody reports: valid heartbeats take a 429 and those
+        // visitors flicker to inactive on the board.
+        //
+        // So the everyday quota is per visitor AT AN ADDRESS, and a much higher
+        // per-IP ceiling stays as the abuse cap -- which is the limit that
+        // actually wants to be there, because the thing worth bounding is a
+        // forged client rotating anonymous IDs to create rows, not a busy office.
         RateLimiter::for('widget-presence', fn (Request $request): array => [
             $this->widgetLimit($request, 'presence_per_minute', 'presence')
                 ->by($this->widgetPresenceVisitorKey($request)),
@@ -361,6 +361,43 @@ class AppServiceProvider extends ServiceProvider
         return $this->widgetVisitorKey($request, 'presence-visitor');
     }
 
+    /**
+     * The everyday quota for one visitor, scoped to the address they arrive from.
+     *
+     * The anonymous id alone cannot scope it. Wayfindr prints that value on
+     * /dashboard/visitors/{id} for every visitor, and the widget puts it in
+     * query strings that stock access logs record -- so a bucket keyed on it is
+     * a bucket anyone who has read it can spend. Route middleware runs before
+     * anything is verified, so there is nothing here to check a caller against.
+     *
+     * Including the source address does not authenticate anybody. It PARTITIONS:
+     * a stranger flooding a victim's anonymous id from somewhere else spends
+     * their own bucket, not the victim's, so the victim keeps heartbeating and
+     * stays on the board. Someone sharing the victim's address can still spend
+     * it -- see the abuse-controls guide, which says so plainly.
+     *
+     * The ORIGIN is folded in for the case the address alone does not cover: a
+     * page the attacker controls, loaded in the VICTIM'S browser, posting here
+     * cross-origin. Nothing on /api checks CSRF or origin and a flood does not
+     * need to read the response, so those requests arrive from the victim's own
+     * address and would otherwise land in the victim's own bucket. A browser
+     * sets Origin on them and cannot be scripted into lying about it, so the
+     * attacker's page spends the attacker's page's budget.
+     *
+     * Forging Origin is not a gap in that: forging it means not being a
+     * browser, and a client that is not a browser is not borrowing the
+     * victim's address to begin with. It can mint buckets of its own, which is
+     * what the per-IP ceiling above is for.
+     *
+     * NAT fairness is untouched: every visitor behind one office address still
+     * has a distinct anonymous id and therefore still has their own bucket.
+     *
+     * Falls back to the IP-scoped key when no anonymous id is present. That is
+     * not a loophole -- the endpoint requires one, so a request without it is
+     * rejected by validation before it can spend the quota, and keying those to
+     * the address means a client sending malformed requests cannot mint an
+     * unlimited number of empty buckets.
+     */
     private function widgetVisitorKey(Request $request, string $scope): string
     {
         $anonymousId = $request->input('anonymous_id');
@@ -371,6 +408,8 @@ class AppServiceProvider extends ServiceProvider
 
         return implode('|', [
             $scope,
+            $request->ip() ?? 'unknown-ip',
+            hash('sha256', (string) $request->headers->get('Origin', '')),
             hash('sha256', $this->widgetSitePublicKeyForRateLimit($request)),
             hash('sha256', (string) $anonymousId),
         ]);

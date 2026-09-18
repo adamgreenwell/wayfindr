@@ -10,16 +10,16 @@ without pretending these controls replace network-level protection.
 
 The Laravel server applies named throttles to every public widget API route.
 Most defaults are counted per minute using the request client IP and
-`site_public_key`. **Presence is the exception and is keyed per visitor**; see
-below.
+`site_public_key`. **Presence and proactive authorization also count per
+visitor, within the address the request came from**; see below.
 
 | Area | Routes | Keyed by | Default |
 | --- | --- | --- | --- |
 | Widget bootstrap | `POST /api/widget/bootstrap` | IP + site | 120 |
 | Site configuration | `GET /api/widget/appearance` | IP + site | 3000 |
-| Presence heartbeats | `POST /api/widget/presence` | anonymous ID + site | 30 |
+| Presence heartbeats | `POST /api/widget/presence` | IP + origin + anonymous ID + site | 30 |
 | Presence heartbeats, ceiling | `POST /api/widget/presence` | IP + site | 1200 |
-| Proactive authorization and outcomes | `POST /api/widget/proactive-messages/{id}/authorize`, `POST /api/widget/proactive-messages/{id}/outcomes` | anonymous ID + site | 120 |
+| Proactive authorization and outcomes | `POST /api/widget/proactive-messages/{id}/authorize`, `POST /api/widget/proactive-messages/{id}/outcomes` | IP + origin + anonymous ID + site | 120 |
 | Proactive authorization and outcomes, ceiling | Same routes | IP + site | 1200 |
 | Realtime auth | `POST /api/widget/broadcasting/auth` | IP + site | 120 |
 | Conversation starts | `POST /api/conversations` | IP + site | 30 |
@@ -34,11 +34,75 @@ office or one carrier-grade NAT would exhaust the budget and stop presence for
 everybody behind that address — and the visitors it stopped would be told
 nothing, because a throttled heartbeat looks exactly like a quiet site.
 
-So the per-minute limit is keyed by the visitor's own anonymous ID, which
-bounds a single misbehaving tab, and a much larger **per-IP ceiling** sits
-behind it to bound an address as a whole. A request with no anonymous ID falls
-back to the IP-keyed bucket, so an omitted field cannot buy an unlimited number
-of empty buckets.
+So the per-minute limit is keyed by the visitor's own anonymous ID **within the
+address the request arrived from**, which bounds a single misbehaving tab, and a
+much larger **per-IP ceiling** sits behind it to bound an address as a whole. A
+request with no anonymous ID falls back to the IP-keyed bucket, so an omitted
+field cannot buy an unlimited number of empty buckets.
+
+**Why the address is part of that key.** The anonymous ID is not a secret:
+Wayfindr shows it on `/dashboard/visitors/{id}` for every visitor, and the
+widget puts it in query strings that a normal access log records. These
+throttles are applied by route middleware, which runs before anything about a
+request is verified, so a budget keyed on the ID alone is a budget anyone who
+has read that ID can spend — thirty forged heartbeats a minute and the real
+visitor's own heartbeats start taking 429s, drop off *active* after two minutes
+and leave the board entirely after fifteen. Including the address does not
+authenticate anybody; it partitions, so a stranger elsewhere spends their own
+budget instead of the visitor's. Visitors behind one office address each keep
+their own budget, because they each have their own anonymous ID.
+
+Two limits of that, worth knowing rather than discovering:
+
+- **Someone sharing the visitor's address can still spend their budget** — a
+  colleague on the same office network, or another customer behind the same
+  carrier NAT. The precondition rises from "has read the ID" to "has read the ID
+  and shares the address", which is a real reduction and not a closure.
+- **If Wayfindr cannot see the real client address, this protection is lost.**
+  An install terminating TLS at a proxy or load balancer without setting
+  `TRUSTED_PROXIES` sees every visitor as the proxy, which collapses the
+  partition and returns the behaviour above. Wayfindr's own installer sets
+  `TRUSTED_PROXIES="*"` when you answer yes to running behind a proxy; a
+  hand-built deployment has to set it.
+
+  This degrades quietly — nothing errors, and **no Wayfindr screen shows you
+  whether it is happening**: no client address is stored on a visitor or
+  rendered anywhere in the dashboard.
+
+  You can measure it directly, though, because the throttle reports its own
+  state. Every widget response carries `X-RateLimit-Remaining` for whichever
+  bucket is the most constrained — for presence that is the per-visitor one.
+  Send the same `anonymous_id` from two different networks and watch what that
+  number does:
+
+  ```bash
+  # Run this from two genuinely different addresses -- an office machine and a
+  # phone on mobile data is enough. Use the same made-up anonymous_id for both.
+  curl -si https://support.example.com/api/widget/presence \
+    -H 'Content-Type: application/json' \
+    -d '{"site_public_key":"YOUR_SITE_KEY","anonymous_id":"partition-probe"}' \
+    | grep -i x-ratelimit-remaining
+  ```
+
+  Run it twice from the first address, then once from the second.
+
+  - **Partition intact:** the second address starts its own countdown, at or
+    near the full limit.
+  - **Partition collapsed:** the second address continues the first's
+    countdown. Wayfindr is resolving both to one address, and this protection
+    is not in effect.
+
+  If it has collapsed, confirm your proxy sends `X-Forwarded-For` and that
+  `TRUSTED_PROXIES` names that proxy (or `*`) in the environment the
+  application actually booted with — a worker or FPM pool started before the
+  variable was set still holds the old value.
+
+- **A page the attacker controls, loaded in the visitor's own browser**, posts
+  from the visitor's address, so the address does not separate it. The request's
+  `Origin` is part of the key for that reason — a browser sets it and cannot be
+  scripted into lying about it, so the attacker's page spends its own budget.
+  A client that forges `Origin` is not a browser, and so is not borrowing the
+  visitor's address in the first place.
 
 Site configuration is separated from bootstrap for the same reason: it is read
 once per **page load** rather than once per panel opening, so passive browsing

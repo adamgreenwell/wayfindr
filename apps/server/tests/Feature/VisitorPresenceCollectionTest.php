@@ -45,6 +45,20 @@ function reportPresence(Site $site, string $anonymousId, ?string $pageUrl = null
     ], fn ($v): bool => $v !== null));
 }
 
+/**
+ * The same report, from a named source address.
+ *
+ * Named for this file rather than for the concept, because Pest helpers are
+ * global and a generic name collides across the suite.
+ */
+function reportPresenceFromAddress(Site $site, string $anonymousId, string $ip): TestResponse
+{
+    return test()->withServerVariables(['REMOTE_ADDR' => $ip])->postJson(route('widget.presence'), [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => $anonymousId,
+    ]);
+}
+
 test('a site that has not opted in stores nothing at all', function (): void {
     // ADR 0019 §1. Not "records but declines to show" -- a desk that has not
     // chosen to watch does not watch, and the default install keeps exactly the
@@ -2060,4 +2074,66 @@ test('the settings page renders no Blade directive as literal text', function ()
             'a Blade directive reached the browser as text with page_urls '.var_export($pageUrls, true)
         );
     }
+});
+
+test('a stranger elsewhere cannot spend a visitor presence quota', function (): void {
+    // The anonymous id is not a secret. Wayfindr prints it on
+    // /dashboard/visitors/{id} for every visitor, and the widget puts it in
+    // query strings that stock access logs record -- which is the premise the
+    // visitor-session work was built on. Keyed on that value alone, the
+    // everyday quota belonged to whoever had read it rather than to the
+    // visitor: thirty forged heartbeats a minute and the real tab starts taking
+    // 429s, stops reading as active after two minutes (ACTIVE_MINUTES) and
+    // leaves the board entirely after fifteen (PRESENT_MINUTES). Nothing errors
+    // where anyone would see it; the visitor simply goes away.
+    //
+    // Route middleware runs before anything is verified, so there is no caller
+    // to check here. Including the source address does not authenticate anyone
+    // -- it PARTITIONS, so the flood spends the stranger's bucket instead.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 1000);
+
+    $site = presenceSite();
+
+    // A stranger somewhere else spends the victim's id to its limit.
+    reportPresenceFromAddress($site, 'anon-victim', '203.0.113.9')->assertSuccessful();
+    reportPresenceFromAddress($site, 'anon-victim', '203.0.113.9')->assertSuccessful();
+    reportPresenceFromAddress($site, 'anon-victim', '203.0.113.9')->assertStatus(429);
+
+    // The victim, at their own address, still holds their whole quota.
+    reportPresenceFromAddress($site, 'anon-victim', '198.51.100.4')->assertSuccessful();
+    reportPresenceFromAddress($site, 'anon-victim', '198.51.100.4')->assertSuccessful();
+});
+
+test('a cross-origin flood from the visitor own browser is partitioned too', function (): void {
+    // The address alone does not cover this one. An attacker who can get the
+    // victim to load a page they control -- an ad, an iframe, any embed -- can
+    // POST here cross-origin from the VICTIM'S browser: nothing on /api checks
+    // CSRF or origin, and a flood does not need to read the response. Those
+    // requests carry the victim's own address, so an address-only partition
+    // puts them straight into the victim's bucket.
+    //
+    // The browser sets Origin on them and cannot be scripted into lying about
+    // it, so folding it in spends the attacker's page's budget instead.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 1000);
+
+    $site = presenceSite();
+
+    $fromPage = fn (string $origin) => test()
+        ->withServerVariables(['REMOTE_ADDR' => '198.51.100.4'])
+        ->withHeaders(['Origin' => $origin])
+        ->postJson(route('widget.presence'), [
+            'site_public_key' => $site->public_key,
+            'anonymous_id' => 'anon-victim',
+        ]);
+
+    // The attacker's page, running in the victim's browser at the victim's address.
+    $fromPage('https://attacker.example')->assertSuccessful();
+    $fromPage('https://attacker.example')->assertSuccessful();
+    $fromPage('https://attacker.example')->assertStatus(429);
+
+    // The real widget, same browser and same address, still has its own quota.
+    $fromPage('https://docs.example.test')->assertSuccessful();
+    $fromPage('https://docs.example.test')->assertSuccessful();
 });
