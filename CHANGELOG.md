@@ -142,7 +142,10 @@ makes none.
   access, integrations, account/team management, the principal operator
   console workflows, ticket detail, alerts, reports, sites, the hosted tester,
   and site settings. The remaining ordinary dashboard pages intentionally left
-  in English are the dashboard home, readiness, and support-code lookup. `DashboardLanguage::EXTRACTED_ROUTES` remains the executable authority
+  in English are the dashboard home and support-code lookup. Readiness is not
+  one of them: the guided setup checklist and all nineteen readiness checks are
+  translated in this release, and both surfaces are registered in
+  `DashboardLanguage::EXTRACTED_ROUTES`, which remains the executable authority
   on that boundary.
 
   Both packs have now been through the review the translation policy defines:
@@ -610,8 +613,9 @@ makes none.
   `2026-08-24T15:05:00.000000Z`, mid-sentence — instead of a readable time on
   the recipient's own clock.
 
-- **Blade directives were reaching the browser as text** on one page, where a
-  directive written flush against a word character was never compiled.
+- **Blade directives were reaching the browser as text** on two pages -- a
+  site's settings and the account's API token list -- where a directive written
+  flush against a word character was never compiled.
 
 - **The agent conversation socket** now reconnects with the same discipline the
   visitor board already had, rather than going quiet after a drop.
