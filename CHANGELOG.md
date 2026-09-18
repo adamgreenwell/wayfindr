@@ -754,11 +754,13 @@ makes none.
 
   A grant is audited inside the same transaction that writes it, so screen
   sharing cannot begin on a record that failed to persist. A decline or a
-  revocation is audited after the commit instead: rolling one of those back
-  would leave the session shared while telling the visitor it had stopped, which
-  is the opposite of failing closed. The entry keys on the status changing
-  rather than on each of the widget's five-second polls, so a repeat answer is
-  not logged as a fresh consent.
+  revocation is audited after the commit instead, and a failure there is
+  reported rather than raised: rolling one of those back would leave the
+  session shared while telling the visitor it had stopped, which is the
+  opposite of failing closed. Recording a refusal is therefore best-effort,
+  deliberately -- the stop itself never depends on it. The entry keys on the
+  status changing rather than on each of the widget's five-second polls, so a
+  repeat answer is not logged as a fresh consent.
 
 - **Query strings are no longer stored with the page addresses Wayfindr keeps**,
   and the ones already stored have been rewritten. A visitor carrying a password
