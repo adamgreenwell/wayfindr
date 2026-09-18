@@ -15,7 +15,7 @@ region, scanning, mail, Web Push, agent-copilot, attachment storage, and backup
 surfaces.
 
 The ordinary dashboard pages still intentionally rendered in English are the
-agent home, readiness, and support-code lookup. Custom-role management was on
+agent home and support-code lookup. Custom-role management was on
 that list while its German and Italian catalogues already existed, complete and
 in the right register — the routes had simply never been added to
 `EXTRACTED_ROUTES`, so the locale never resolved to anything but English and
