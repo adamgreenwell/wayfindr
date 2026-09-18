@@ -2104,3 +2104,36 @@ test('a stranger elsewhere cannot spend a visitor presence quota', function (): 
     reportPresenceFromAddress($site, 'anon-victim', '198.51.100.4')->assertSuccessful();
     reportPresenceFromAddress($site, 'anon-victim', '198.51.100.4')->assertSuccessful();
 });
+
+test('a cross-origin flood from the visitor own browser is partitioned too', function (): void {
+    // The address alone does not cover this one. An attacker who can get the
+    // victim to load a page they control -- an ad, an iframe, any embed -- can
+    // POST here cross-origin from the VICTIM'S browser: nothing on /api checks
+    // CSRF or origin, and a flood does not need to read the response. Those
+    // requests carry the victim's own address, so an address-only partition
+    // puts them straight into the victim's bucket.
+    //
+    // The browser sets Origin on them and cannot be scripted into lying about
+    // it, so folding it in spends the attacker's page's budget instead.
+    config()->set('wayfindr.widget_rate_limits.presence_per_minute', 2);
+    config()->set('wayfindr.widget_rate_limits.presence_per_ip_per_minute', 1000);
+
+    $site = presenceSite();
+
+    $fromPage = fn (string $origin) => test()
+        ->withServerVariables(['REMOTE_ADDR' => '198.51.100.4'])
+        ->withHeaders(['Origin' => $origin])
+        ->postJson(route('widget.presence'), [
+            'site_public_key' => $site->public_key,
+            'anonymous_id' => 'anon-victim',
+        ]);
+
+    // The attacker's page, running in the victim's browser at the victim's address.
+    $fromPage('https://attacker.example')->assertSuccessful();
+    $fromPage('https://attacker.example')->assertSuccessful();
+    $fromPage('https://attacker.example')->assertStatus(429);
+
+    // The real widget, same browser and same address, still has its own quota.
+    $fromPage('https://docs.example.test')->assertSuccessful();
+    $fromPage('https://docs.example.test')->assertSuccessful();
+});

@@ -376,6 +376,19 @@ class AppServiceProvider extends ServiceProvider
      * stays on the board. Someone sharing the victim's address can still spend
      * it -- see the abuse-controls guide, which says so plainly.
      *
+     * The ORIGIN is folded in for the case the address alone does not cover: a
+     * page the attacker controls, loaded in the VICTIM'S browser, posting here
+     * cross-origin. Nothing on /api checks CSRF or origin and a flood does not
+     * need to read the response, so those requests arrive from the victim's own
+     * address and would otherwise land in the victim's own bucket. A browser
+     * sets Origin on them and cannot be scripted into lying about it, so the
+     * attacker's page spends the attacker's page's budget.
+     *
+     * Forging Origin is not a gap in that: forging it means not being a
+     * browser, and a client that is not a browser is not borrowing the
+     * victim's address to begin with. It can mint buckets of its own, which is
+     * what the per-IP ceiling above is for.
+     *
      * NAT fairness is untouched: every visitor behind one office address still
      * has a distinct anonymous id and therefore still has their own bucket.
      *
@@ -396,6 +409,7 @@ class AppServiceProvider extends ServiceProvider
         return implode('|', [
             $scope,
             $request->ip() ?? 'unknown-ip',
+            hash('sha256', (string) $request->headers->get('Origin', '')),
             hash('sha256', $this->widgetSitePublicKeyForRateLimit($request)),
             hash('sha256', (string) $anonymousId),
         ]);

@@ -17,9 +17,9 @@ visitor, within the address the request came from**; see below.
 | --- | --- | --- | --- |
 | Widget bootstrap | `POST /api/widget/bootstrap` | IP + site | 120 |
 | Site configuration | `GET /api/widget/appearance` | IP + site | 3000 |
-| Presence heartbeats | `POST /api/widget/presence` | IP + anonymous ID + site | 30 |
+| Presence heartbeats | `POST /api/widget/presence` | IP + origin + anonymous ID + site | 30 |
 | Presence heartbeats, ceiling | `POST /api/widget/presence` | IP + site | 1200 |
-| Proactive authorization and outcomes | `POST /api/widget/proactive-messages/{id}/authorize`, `POST /api/widget/proactive-messages/{id}/outcomes` | IP + anonymous ID + site | 120 |
+| Proactive authorization and outcomes | `POST /api/widget/proactive-messages/{id}/authorize`, `POST /api/widget/proactive-messages/{id}/outcomes` | IP + origin + anonymous ID + site | 120 |
 | Proactive authorization and outcomes, ceiling | Same routes | IP + site | 1200 |
 | Realtime auth | `POST /api/widget/broadcasting/auth` | IP + site | 120 |
 | Conversation starts | `POST /api/conversations` | IP + site | 30 |
@@ -63,9 +63,21 @@ Two limits of that, worth knowing rather than discovering:
   `TRUSTED_PROXIES` sees every visitor as the proxy, which collapses the
   partition and returns the behaviour above. Wayfindr's own installer sets
   `TRUSTED_PROXIES="*"` when you answer yes to running behind a proxy; a
-  hand-built deployment has to set it. This degrades quietly — nothing errors —
-  so it is worth checking that a visitor's IP on `/dashboard/visitors/{id}`
-  is not the same address for everybody.
+  hand-built deployment has to set it.
+
+  This degrades quietly — nothing errors, and **Wayfindr cannot currently show
+  you whether it is happening**: no client address is stored on a visitor or
+  rendered anywhere in the dashboard. Check it from the other side, at your
+  proxy: confirm it sends `X-Forwarded-For`, and that `TRUSTED_PROXIES` names
+  that proxy (or `*`) in the environment the application actually booted with.
+  A worked check is in the self-hosting guide's proxy section.
+
+- **A page the attacker controls, loaded in the visitor's own browser**, posts
+  from the visitor's address, so the address does not separate it. The request's
+  `Origin` is part of the key for that reason — a browser sets it and cannot be
+  scripted into lying about it, so the attacker's page spends its own budget.
+  A client that forges `Origin` is not a browser, and so is not borrowing the
+  visitor's address in the first place.
 
 Site configuration is separated from bootstrap for the same reason: it is read
 once per **page load** rather than once per panel opening, so passive browsing
