@@ -51,6 +51,19 @@ function widgetForRefresh(options) {
 
   const storage = memoryStorage(seed);
 
+  // Storage that silently ACCEPTS a write for one key and keeps nothing, the
+  // way a custom adapter can. No throw, so the write looks successful.
+  if (options.swallowWrite) {
+    const realSet2 = storage.setItem;
+    storage.setItem = (key, value) => {
+      if (key.endsWith(options.swallowWrite)) {
+        return undefined;
+      }
+
+      return realSet2(key, value);
+    };
+  }
+
   // Storage that refuses ONE key, the way private browsing or a quota can
   // refuse a single write while accepting others.
   if (options.rejectWrite) {
@@ -1185,5 +1198,31 @@ test('a stale expiry record is cleared when its update is refused', async () => 
     snapshot[EXPIRY_KEY],
     undefined,
     "a stale 'none' survived, so the next load reads a now-expiring token as non-expiring",
+  );
+});
+
+test('a write that is accepted and forgotten does not count as persisted', async () => {
+  // A custom options.storage adapter can accept setItem without keeping the
+  // value, and never throw. storageSet() only knows the call did not throw, so
+  // it would report success and leave the old expiry record paired with the new
+  // token -- a stale 'none' telling the next load that an expiring token does
+  // not expire.
+  //
+  // This repo already guards the same hazard for presence, in storageRemembers,
+  // which writes a sentinel and reads it back rather than trusting the write.
+  const { widget, storage } = widgetForRefresh({
+    tokenExpiresIn: 300,
+    storageSeed: { [EXPIRY_KEY]: 'none' },
+    swallowWrite: ':visitor-token-expires-at',
+  });
+  await settle();
+
+  assert.equal(await widget.client.refreshSession(), true);
+  await settle();
+
+  assert.equal(
+    storage.snapshot()[EXPIRY_KEY],
+    undefined,
+    "a silently-dropped write was believed, so a stale 'none' stayed paired with a new token",
   );
 });

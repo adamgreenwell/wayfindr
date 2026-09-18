@@ -685,7 +685,7 @@
       // said nothing: that is an absent expiry, not an unstated one.
       visitorTokenLifetimeUnknown = false;
 
-      var tokenStored = storageSet(storage, visitorTokenStorageKey(sitePublicKey), token);
+      var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
 
       // A DURATION, so both ends of the arithmetic use our own clock and a
       // fast or slow browser cancels out. Subtracting local `now` from a
@@ -719,7 +719,7 @@
       // being the worst, since it says "never expires" about a token that now
       // does. So the record only survives when the pair did; removing it reads
       // as an unknown lifetime next load and probes early.
-      var expiryRecorded = tokenStored && storageSet(
+      var expiryRecorded = tokenStored && storageKept(
         storage,
         visitorTokenExpiryStorageKey(sitePublicKey),
         tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt),
@@ -7756,6 +7756,25 @@
 
     // Reported so a caller writing a PAIR can keep both consistent.
     return false;
+  }
+
+  // Writes, then CONFIRMS by reading back.
+  //
+  // `storageSet` reports only that setItem did not throw, and a custom adapter
+  // can accept a write and quietly forget it -- the same hazard
+  // `storageRemembers` already guards for presence. A caller writing a PAIR
+  // needs the stronger answer, because a write believed and not kept leaves
+  // the two describing different things.
+  function storageKept(storage, key, value) {
+    if (! storageSet(storage, key, value)) {
+      return false;
+    }
+
+    try {
+      return storage.getItem(key) === value;
+    } catch (error) {
+      return false;
+    }
   }
 
   // Does this storage actually keep things?
