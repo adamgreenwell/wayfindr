@@ -87,7 +87,15 @@ each and they do not overlap — 0.8.0 had 65 squash-merges and 112 merge commit
 zero in common, so either list alone surveys a fraction of the release:
 
 ```bash
-LAST_TAG=$(git describe --tags --abbrev=0)
+# Abort rather than reconcile an empty set: on a shallow or tag-filtered clone
+# `git describe` fails, LAST_TAG is empty, the range collapses to HEAD..main,
+# and the pass reports nothing to do while omitting the entire release.
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+if [ -z "$LAST_TAG" ]; then
+    echo 'No prior release tag is reachable. Run: git fetch --tags --force' >&2
+    exit 1
+fi
+
 git log --oneline "$LAST_TAG"..main \
   | grep -oE '\(#[0-9]+\)$' | grep -oE '[0-9]+' | sort -n -u > /tmp/squashed.txt
 git log --merges --format='%s' "$LAST_TAG"..main \
