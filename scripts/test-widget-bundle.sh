@@ -131,8 +131,13 @@ WIDGET_SRC_GZIP_BUDGET=90000
 
 command -v php >/dev/null 2>&1 || fail "php is required to measure the widget bundle.
 This script pins the compressor to PHP's gzencode so the figure is the same on
-every machine and matches the served-payload budget. Install PHP, or run this
-through 'make self-host-test', which sets it up."
+every machine and matches the served-payload budget in
+apps/server/tests/Feature/WidgetScriptBundleTest.php.
+
+Install PHP and put it on PATH -- 'brew install php' on macOS, 'apt install
+php-cli' on Debian or Ubuntu. This measurement needs only PHP with zlib, which
+is on by default; the wider suite needs 8.4.1 or newer, which
+docs/self-hosting/runtime-requirements.md covers."
 
 src_raw="$(wc -c < "$WIDGET_SRC" | tr -d ' ')"
 src_gzip="$(php -r 'echo strlen(gzencode(file_get_contents($argv[1]), 9));' "$WIDGET_SRC")"
