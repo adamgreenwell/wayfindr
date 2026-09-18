@@ -290,6 +290,19 @@ the event never contains snapshot content. Paired with the preview-view log,
 "what ruleset governed what the agent saw at time T" is reconstructible from
 the audit trail alone.
 
+Answering the consent prompt is recorded too. Granting, declining or revoking
+writes a `cobrowse.consent_granted`, `cobrowse.consent_declined` or
+`cobrowse.consent_revoked` audit event, subject to the cobrowse session and
+carrying provenance only: the support code, the status before and after, and
+the consent and end timestamps. The entry keys on the status actually changing
+rather than on each of the widget's five-second polls, so a repeated answer is
+not logged as a fresh consent. A grant is written inside the same transaction
+as the status, so sharing cannot begin on a record that failed to persist; a
+decline or revocation is written after that transaction commits, because
+rolling one back would leave the session shared while telling the visitor it
+had stopped. What the row establishes is that the prompt was answered, which
+way, and when — it is a record of the answer, not proof of who produced it.
+
 Cobrowse content is deliberately **not** retained as history. Wayfindr keeps
 only the latest snapshot per session, and the scheduled
 `wayfindr:prune-cobrowse-content` command strips raw snapshot HTML, page text,
