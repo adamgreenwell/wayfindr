@@ -83,10 +83,22 @@ fi
 # multiplied by more than anything else in the product. Until this check existed
 # there was no budget anywhere and nothing would have reported a doubling.
 #
-# The yardstick is GZIPPED bytes, because that is what crosses the wire; `gzip -9`
-# is used so the number is reproducible rather than dependent on whatever level a
-# given nginx is configured for. Raw size is reported alongside for context but is
-# not what the budget is set against.
+# The yardstick is GZIPPED bytes, because that is what crosses the wire, at level
+# 9 so the figure does not depend on whatever level a given nginx is configured
+# for. Raw size is reported alongside for context but is not what the budget is
+# set against.
+#
+# Measured with PHP's gzencode rather than the system gzip, and that matters more
+# than it looks. Apple gzip, GNU gzip and zlib disagree by a hundred bytes or two
+# on the same input, so shelling out made this number a property of whoever ran
+# it: a figure read on a Mac was wrong in CI, and two successive attempts to
+# write it down accurately were wrong for that reason rather than for want of
+# care. gzencode gives the same answer everywhere.
+#
+# It is also the SAME compressor the served-payload budget uses, in
+# apps/server/tests/Feature/WidgetScriptBundleTest.php. Those two numbers now
+# measure one artifact the same way, which is what that test's comment had
+# claimed before it was true.
 #
 # These ceilings are deliberately close to today's figures. Raising one is a fine
 # thing to do -- it just has to be a decision somebody took, rather than a drift
@@ -101,16 +113,34 @@ WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
 # lines were comments against a 22% house norm -- so 54 lines of narrative were
 # cut before this number was touched. What is left is the feature.
 #
-# The figure restores the margin this guard shipped with. It was set 6654 bytes
-# (8%) above the file at the time; #1002 left 69 bytes, which is not a budget,
-# it is a tripwire for whoever edits the widget next. 90000 puts roughly 5KB
-# back -- still far below the doubling this exists to catch.
+# 90000 was chosen to put roughly 5KB back; #1002 had left 69 bytes, which is
+# not a budget but a tripwire for whoever edits the widget next.
+#
+# When 85000 was set at a9cde76b the source measured 77368 by this yardstick, so
+# that guard sat about 10% above the file. At 90000 against today's 85585 this
+# one carries about 5%, so it is TIGHTER than it began rather than restored to
+# it -- a deliberate choice, not a restoration. Raise it again if a widget change
+# trips it for no reason of its own.
+#
+# Those figures are quotable now only because the compressor is pinned. Earlier
+# versions of this comment quoted local gzip output to four digits and were wrong
+# in CI twice.
 WIDGET_SRC_GZIP_BUDGET=90000
 
 [ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"
 
+command -v php >/dev/null 2>&1 || fail "php is required to measure the widget bundle.
+This script pins the compressor to PHP's gzencode so the figure is the same on
+every machine and matches the served-payload budget in
+apps/server/tests/Feature/WidgetScriptBundleTest.php.
+
+Install PHP and put it on PATH -- 'brew install php' on macOS, 'apt install
+php-cli' on Debian or Ubuntu. This measurement needs only PHP with zlib, which
+is on by default; the wider suite needs 8.4.1 or newer, which
+docs/self-hosting/runtime-requirements.md covers."
+
 src_raw="$(wc -c < "$WIDGET_SRC" | tr -d ' ')"
-src_gzip="$(gzip -9 -c "$WIDGET_SRC" | wc -c | tr -d ' ')"
+src_gzip="$(php -r 'echo strlen(gzencode(file_get_contents($argv[1]), 9));' "$WIDGET_SRC")"
 
 if [ "$src_gzip" -gt "$WIDGET_SRC_GZIP_BUDGET" ]; then
     fail "The widget source is over its size budget.
