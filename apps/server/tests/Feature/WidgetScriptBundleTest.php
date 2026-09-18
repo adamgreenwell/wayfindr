@@ -82,7 +82,17 @@ test('the served widget payload stays within its size budget', function (): void
     // yardstick rather than merely similar.
     $gzipped = strlen((string) gzencode($body, 9));
 
-    expect($gzipped)->toBeLessThanOrEqual(105_000);
+    // Raised from 105_000 for the visitor-session refresh lifecycle that #1002
+    // added to the widget. This is the budget that matters: it counts what a
+    // browser actually downloads, wrapper and vendored realtime client
+    // included, where the shell script counts only the source.
+    //
+    // The figure restores the margin this guard shipped with. When 105_000 was
+    // set the served payload measured 95_725, leaving 9_275 bytes -- 9.7%.
+    // Today it is 103_955, leaving 1_045, which is not a budget but a tripwire
+    // for whoever edits the widget next. 114_000 puts roughly ten thousand
+    // back, the same proportion it began with.
+    expect($gzipped)->toBeLessThanOrEqual(114_000);
 
     // The wrapper is the part the shell script cannot see, so pin that it is
     // actually present in what was just measured. Without this the test would
