@@ -746,6 +746,31 @@ makes none.
   break at the later enforcement step, so finish that integration before it
   rather than holding the lifetime at zero.
 
+- **A visitor's presence budget can no longer be spent by a stranger.** The
+  per-minute quota on presence heartbeats and proactive authorization was keyed
+  on the anonymous id the caller supplied. These throttles are applied by route
+  middleware, which runs before anything about a request is verified, so that
+  quota belonged to whoever could read the id rather than to the visitor —
+  thirty forged heartbeats a minute and the real visitor's own started taking
+  429s, dropping them off *active* after two minutes and off the agent board
+  after fifteen, with nothing erroring where anyone would see it.
+
+  Charging the budget after verifying a token, which is what the refresh
+  endpoint does, is not available here: presence is unauthenticated by design
+  and serves exactly the visitors who have no token. So the key partitions
+  instead, by source address and by request origin. Neither authenticates
+  anybody. The address separates a stranger somewhere else; the origin
+  separates a page an attacker controls running in the *visitor's own* browser,
+  which carries the visitor's address and would otherwise land in the visitor's
+  own bucket. Visitors behind one office address keep their own budgets, because
+  they each have their own anonymous id.
+
+  Two limits are stated in the abuse-control guide rather than left to be
+  found. Someone sharing the visitor's address can still spend their budget. And
+  an install behind a proxy without `TRUSTED_PROXIES` sees every visitor as one
+  address, which collapses the partition and returns the old behaviour without
+  erroring — the guide carries a check that measures whether that is happening,
+  since no Wayfindr screen shows it.
 - **Answering a cobrowse consent prompt is recorded.** Granting, declining or
   revoking screen sharing now writes to the account audit log as
   `cobrowse.consent_granted`, `cobrowse.consent_revoked` or
