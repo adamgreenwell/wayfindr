@@ -48,7 +48,7 @@ class WidgetScriptController extends Controller
         // The bytes change only when the release or the realtime configuration
         // does, both install-wide, so the tag is stable for every visitor and
         // needs no Vary. A revalidation that matches costs a bare 304 instead
-        // of ~97KB gzipped, which is the difference that actually shows up on
+        // of ~104KB gzipped, which is the difference that actually shows up on
         // an operator's bandwidth bill.
         $response->setEtag(hash('xxh128', $body));
 

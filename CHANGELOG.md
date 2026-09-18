@@ -92,11 +92,20 @@ broken:**
 - **Every agent's profile gains a third language.** Italian ships in this
   release. See the caveat under *Added* before you promise it to anyone.
 
-**And one change to your traffic.** The widget now makes one additional
+**And two changes to your traffic.** The widget now makes one additional
 unauthenticated `GET /api/widget/appearance` per page view, on every install,
 whether or not you turn presence on. It writes nothing and returns the same
 bytes to every visitor on a site, so it is cacheable — but it is a request per
 page view that was not there before.
+
+The second is recurring rather than per-page. A widget holding a visitor token
+now trades it for a fresh one roughly every ten minutes per open tab, through
+the new `POST /api/widget/session`. This happens on every install, including
+the default where tokens never expire — a widget that only began rotating once
+a lifetime was configured would already be holding a token it could not renew,
+because `widget.js` is cached for five minutes and carries no version. An idle
+tab left open for an hour makes about six of these; a visitor holding no token
+makes none.
 
 ### Added
 
@@ -366,7 +375,7 @@ page view that was not there before.
   now carries `max-age=300` — chosen deliberately, because the URL has no
   version in it, so that number is also how long a visitor can keep running the
   previous release's widget after an upgrade — plus an `ETag`, so a revalidation
-  that matches costs a bare `304` instead of roughly 97 KB gzipped. Two size
+  that matches costs a bare `304` instead of roughly 104 KB gzipped. Two size
   budgets now exist where there had been none anywhere in the repository: the
   widget source is budgeted by `make self-host-test`, and the served response —
   which is not the source files concatenated, because the realtime client is
@@ -424,7 +433,7 @@ page view that was not there before.
 
 - **A visitor is called the same thing on every surface that names one.** Eight
   surfaces each decided it privately — three controllers with a `visitorContext()`
-  apiece, the visitor directory, the ticket queue, the merge candidate list, the
+  apiece, the visitor directory, the conversation queue, the merge candidate list, the
   live board and the account audit log — so one person could be eight different
   names depending on where you were looking. The conversation page printed a raw
   `anon-6871486e` beside a tab showing that person's name; the ticket page put
@@ -516,6 +525,15 @@ page view that was not there before.
 
 ### Fixed
 
+- **The ticket queue was issuing one `audit_events` query per ticket.** On a
+  desk of 12,500 tickets that was 12,518 queries and about nine and a half
+  seconds of the page, because the external-issue helper read the relation
+  directly instead of using the eager load the page had already paid for. It is
+  now a bounded 20. This is why the ticket queue was slower than the
+  conversation queue while holding a quarter as many rows, and it is a real
+  speed-up for any install with a busy ticket desk, independent of the 200-row
+  cap described above.
+
 - **Container upgrades no longer reuse compiled pages from the previous
   release.** By default, each container keeps its Blade cache outside shared storage,
   preventing sign-in and dashboard errors after upgrading from 0.7.0. Stored
@@ -579,8 +597,11 @@ page view that was not there before.
   workflow is pinned by commit. Pre-guard workflow runs remain a release blocker
   until their 30-day rerun window expires or the repository owner explicitly
   approves their removal after evidence is preserved. Publication also requires
-  an active immutable `v*` tag ruleset; the September 9 audit found none, and
-  changing repository settings remains a separately authorized operation. The
+  an active immutable `v*` tag ruleset. The September 9 audit found none; one was
+  created on September 14 covering `refs/tags/v*` with creation, update and
+  deletion restricted and bypass limited to the repository owner, so this
+  requirement is now met. Changing repository settings remains a separately
+  authorized operation. The
   guarded publisher is intentionally stable-only until a prerelease-to-stable
   operator-action contract is designed; historical dash-tag alpha support is
   not silently inherited by this stricter pipeline.
@@ -686,6 +707,56 @@ page view that was not there before.
   before rejecting anyone, which they did not before.
 
 ### Security
+
+- **A visitor session can now be re-minted, and the widget rotates it.** A
+  visitor token was obtainable from widget bootstrap, which asks only for a
+  site's public key and an anonymous id — both values Wayfindr publishes or
+  displays by design, the anonymous id appearing on `/dashboard/visitors/{id}`
+  for every visitor. Nothing else could mint one, so a token could not be given
+  a life: shortening it would have stranded every session that outlived it.
+
+  `POST /api/widget/session` closes that. It exchanges a currently valid token
+  for a fresh one, verifying the presented token exactly as every conversation
+  endpoint does, so it cannot be reached with bootstrap's weaker proof. Its
+  per-session budget is charged after that verification rather than by route
+  middleware, because middleware runs before any token is checked and could only
+  key on the caller-supplied anonymous id — a budget keyed there is spendable by
+  anyone who can read that value.
+
+  It rotates; it does not revoke. The previous token stays valid, so this is the
+  plumbing for a lifetime rather than a control on its own.
+
+  **Nothing expires yet.** `WAYFINDR_VISITOR_SESSION_TTL_MINUTES` defaults to
+  `0`, which means no expiry and no change for any existing install. Setting it
+  makes bootstrap and refresh advertise a lifetime so widgets rotate ahead of
+  it, while the server still accepts an older token — advertise first, enforce
+  later, because the widgets already embedded in customers' pages are the ones
+  that have to survive the change. Two optional throttles come with it:
+  `WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE` (30, per session) and
+  `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE` (600).
+
+  One gap to know before you set a lifetime: rotation lives in
+  `Wayfindr.init()`. A host integrating through `Wayfindr.createClient()`
+  directly gets the token and no timer. Those sessions are not broken by setting
+  the value — nothing refuses an expired token yet — but they are the ones that
+  break at the later enforcement step, so finish that integration before it
+  rather than holding the lifetime at zero.
+
+- **Answering a cobrowse consent prompt is recorded.** Granting, declining or
+  revoking screen sharing now writes to the account audit log as
+  `cobrowse.consent_granted`, `cobrowse.consent_revoked` or
+  `cobrowse.consent_declined`, labelled in all three dashboard languages and
+  included in the audit CSV export. Until now the grant branch wrote nothing at
+  all, so a genuine consent and a forged one were indistinguishable after the
+  fact, and nothing anywhere recorded who had answered.
+
+  A grant is audited inside the same transaction that writes it, so screen
+  sharing cannot begin on a record that failed to persist. A decline or a
+  revocation is audited after the commit instead: rolling one of those back
+  would leave the session shared while telling the visitor it had stopped, which
+  is the opposite of failing closed. The entry keys on the status changing
+  rather than on each of the widget's five-second polls, so a repeat answer is
+  not logged as a fresh consent.
 
 - **Query strings are no longer stored with the page addresses Wayfindr keeps**,
   and the ones already stored have been rewritten. A visitor carrying a password
