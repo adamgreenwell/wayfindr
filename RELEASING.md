@@ -75,6 +75,53 @@ the heading and the committer, and an upper edge so a mistyped year cannot
 publish. Both edges are measured against the commit rather than the clock, so
 neither can fail a rerun of the publish job.
 
+**Reconcile the section against everything merged since it was written, in one
+pass, immediately before the cut.** A section that has been moved out of
+Unreleased is frozen, but work keeps merging into the release it describes, so
+it is stale the moment the next thing lands. Doing this once, last, is the point
+— an earlier pass is a snapshot of a moving target and no amount of care in it
+survives the following merge.
+
+Enumerate what actually landed. **Both merge styles**, because this repo uses
+each and they do not overlap — 0.8.0 had 65 squash-merges and 112 merge commits,
+zero in common, so either list alone surveys a fraction of the release:
+
+```bash
+# Abort rather than reconcile an empty set: on a shallow or tag-filtered clone
+# `git describe` fails, LAST_TAG is empty, the range collapses to HEAD..main,
+# and the pass reports nothing to do while omitting the entire release.
+LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
+if [ -z "$LAST_TAG" ]; then
+    echo 'No prior release tag is reachable. Run: git fetch --tags --force' >&2
+    exit 1
+fi
+
+git log --oneline "$LAST_TAG"..main \
+  | grep -oE '\(#[0-9]+\)$' | grep -oE '[0-9]+' | sort -n -u > /tmp/squashed.txt
+git log --merges --format='%s' "$LAST_TAG"..main \
+  | grep -oE 'Merge pull request #[0-9]+' | grep -oE '[0-9]+' | sort -n -u > /tmp/merged.txt
+sort -n -u /tmp/squashed.txt /tmp/merged.txt   # the set to check
+```
+
+Then check each against the section's **content**, not against dates. Diffing by
+the changelog's last-modified date only finds work merged after it, and misses
+anything merged before a reconciliation that failed to describe it. Pick two or
+three distinctive strings per change — a command name, a config key, a route, an
+env var — and grep the version's section for them.
+
+Three rules that pass has repeatedly needed:
+
+- **One entry per surface, not per pull request.** If three PRs reshaped the
+  same thing, a reader wants where it ended up, not the order it got there.
+- **Every figure from merged code**, never from the PR that proposed it. Numbers
+  move during review; a retention figure moved three times and a throttle
+  shipped its fourth design.
+- **An entry that exists can still be false.** Completeness checks pass over it
+  because its PR is accounted for. 0.8.0 shipped a reviewed entry naming "the
+  ticket queue" among surfaces that display no visitor name, and another
+  claiming a fix touched one page when it touched two. Read what the entry
+  claims against the code, not just whether an entry is present.
+
 Write it for someone several releases behind who has never read the PR.
 
 Every human action in the changelog needs a matching action in `release.json`.
