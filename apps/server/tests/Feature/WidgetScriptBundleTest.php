@@ -78,13 +78,12 @@ test('the served widget payload stays within its size budget', function (): void
     // invisible, which near a ceiling is the difference between a guard and a
     // decoration.
     //
-    // Level 9, matching the shell script's setting -- but not the same
-    // compressor: this is zlib through PHP, and scripts/test-widget-bundle.sh
-    // shells out to whatever gzip the machine has. Apple gzip, GNU gzip and
-    // zlib disagree by a hundred bytes or two on the same input, so the two
-    // budgets are close rather than identical and neither figure is a portable
-    // property of a commit. THIS one is the reproducible half: gzencode gives
-    // the same answer on every platform.
+    // gzencode at level 9, which is now what scripts/test-widget-bundle.sh uses
+    // too -- so this number and that one are genuinely the same yardstick rather
+    // than merely similar. They were not until the script stopped shelling out
+    // to the system gzip: Apple gzip, GNU gzip and zlib disagree by a hundred
+    // bytes or two on the same input, which made every figure either file quoted
+    // a property of whoever ran it.
     $gzipped = strlen((string) gzencode($body, 9));
 
     // Raised from 105_000 for the visitor-session refresh lifecycle that #1002
