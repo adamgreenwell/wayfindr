@@ -104,12 +104,18 @@ WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
 # 90000 was chosen to put roughly 5KB back; #1002 had left 69 bytes, which is
 # not a budget but a tripwire for whoever edits the widget next.
 #
-# Stated precisely, because the first version of this comment was not: when
-# 85000 was set at a9cde76b the source measured 77371, so the margin it shipped
-# with was 7629 bytes, or 9.9%. At 90000 against today's file this guard carries
-# about 5%, so it is TIGHTER than it began rather than restored to it -- a
-# deliberate choice, not a restoration. Raise it again if a widget change trips
-# it for no reason of its own.
+# Stated in PROPORTION rather than bytes, because the byte figure is not a
+# property of a commit. This line shells out to whatever gzip the machine has,
+# and Apple gzip, GNU gzip and zlib disagree by a hundred bytes or two on the
+# same input -- the first version of this comment quoted a local number to four
+# digits and was wrong in CI for exactly that reason.
+#
+# So: when 85000 was set at a9cde76b it sat roughly 10% above the file. At 90000
+# this guard carries roughly 5% against today's source, so it is TIGHTER than it
+# began rather than restored to it -- a deliberate choice, not a restoration.
+# Raise it again if a widget change trips it for no reason of its own, and trust
+# the figure this script PRINTS on the machine you are standing on over any
+# number written here.
 WIDGET_SRC_GZIP_BUDGET=90000
 
 [ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"

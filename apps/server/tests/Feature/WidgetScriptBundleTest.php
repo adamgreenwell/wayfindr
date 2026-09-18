@@ -78,8 +78,13 @@ test('the served widget payload stays within its size budget', function (): void
     // invisible, which near a ceiling is the difference between a guard and a
     // decoration.
     //
-    // gzip level 9 so this number and the shell script's are the same
-    // yardstick rather than merely similar.
+    // Level 9, matching the shell script's setting -- but not the same
+    // compressor: this is zlib through PHP, and scripts/test-widget-bundle.sh
+    // shells out to whatever gzip the machine has. Apple gzip, GNU gzip and
+    // zlib disagree by a hundred bytes or two on the same input, so the two
+    // budgets are close rather than identical and neither figure is a portable
+    // property of a commit. THIS one is the reproducible half: gzencode gives
+    // the same answer on every platform.
     $gzipped = strlen((string) gzencode($body, 9));
 
     // Raised from 105_000 for the visitor-session refresh lifecycle that #1002
@@ -88,7 +93,8 @@ test('the served widget payload stays within its size budget', function (): void
     // included, where the shell script counts only the source.
     //
     // The figure restores the margin this guard shipped with. When 105_000 was
-    // set the served payload measured 95_725, leaving 9_275 bytes -- 9.7%.
+    // set the served payload measured 95_725 by this same gzencode yardstick,
+    // leaving 9_275 bytes -- 9.7%.
     // Today it is 103_955, leaving 1_045, which is not a budget but a tripwire
     // for whoever edits the widget next. 114_000 puts roughly ten thousand
     // back, the same proportion it began with.
