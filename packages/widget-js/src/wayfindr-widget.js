@@ -1055,6 +1055,21 @@
       // The download URL an <img> or link can point at. The visitor session
       // params ride in the query string, exactly as they do for fetchMessages;
       // the server streams the file with a forced attachment disposition.
+      // Its own builder, no longer shared with the download URL. The download
+      // URL is becoming a signed link minted by the server; a delete still
+      // needs the visitor's own credentials, and pointing it at a GET-only
+      // signature route would simply break it.
+      // Resolve a server-minted relative URL against this widget's API base.
+      apiUrl: function (path) {
+        return /^https?:\/\//i.test(path) ? path : apiBaseUrl + path;
+      },
+      attachmentDeleteUrl: function (supportCode, attachmentId) {
+        return apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments/' + encodeURIComponent(attachmentId) + '?' + toQueryString({
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: requireVisitorToken(visitorToken),
+        });
+      },
       attachmentDownloadUrl: function (supportCode, attachmentId) {
         return apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments/' + encodeURIComponent(attachmentId) + '?' + toQueryString({
           site_public_key: sitePublicKey,
@@ -1068,7 +1083,7 @@
         // REQUEST_PRIVACY explicitly: this is the one request that does not go
         // through the JSON or form helpers, so it did not inherit the policy
         // they apply and sent the host page address like any ordinary fetch.
-        return fetcher(this.attachmentDownloadUrl(supportCode, attachmentId), Object.assign({
+        return fetcher(this.attachmentDeleteUrl(supportCode, attachmentId), Object.assign({
           method: 'DELETE',
           headers: {
             Accept: 'application/json',
@@ -1877,7 +1892,13 @@
           message.body,
           message.created_at,
           (Array.isArray(message.attachments) ? message.attachments : []).map(function (attachment) {
-            return [attachment.id, attachment.is_image, attachment.filename, attachment.size_bytes];
+            // `download_url` belongs here. Without it the early return below
+            // leaves a stale `href` in the DOM, pointing at a link that has
+            // since rotated out, and downloads break with nothing to say why.
+            // Affordable ONLY because the server quantises the mint: the value
+            // changes once per window, so this costs one re-render per window
+            // rather than one per poll.
+            return [attachment.id, attachment.is_image, attachment.filename, attachment.size_bytes, attachment.download_url];
           }),
         ];
       }));
@@ -3229,17 +3250,36 @@
 
       // The link/image target is the authorized download endpoint; the server
       // streams it with a forced attachment disposition and nosniff.
-      var url = client.attachmentDownloadUrl(supportCode, attachment.id);
+      //
+      // ONLY the signed link the server minted for this attachment. It is
+      // relative, so it needs the API base in front of it.
+      //
+      // There is deliberately NO fallback to a credential-bearing URL. This
+      // value is set as an `href` and an `<img src>`, so it lands in the DOM of
+      // the customer's page where any script running there can read it, and a
+      // fallback would put the visitor's session straight back into the place
+      // this exists to remove it from. The realtime `message.created` payload
+      // carries no signed link -- that broadcast is shared with agents, so it
+      // cannot -- which makes this the common path, not a rare one.
+      //
+      // With no link the attachment renders without a target and the next poll
+      // fills it in. Briefly unclickable is the right way to fail here.
+      var url = attachment.download_url ? client.apiUrl(attachment.download_url) : '';
       var link = doc.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('target', '_blank');
-      link.setAttribute('rel', 'noopener noreferrer');
+
+      if (url) {
+        link.setAttribute('href', url);
+        link.setAttribute('target', '_blank');
+        link.setAttribute('rel', 'noopener noreferrer');
+      }
 
       if (attachment.is_image) {
         link.className = 'wayfindr-widget__attachment wayfindr-widget__attachment--image';
         var img = doc.createElement('img');
         img.className = 'wayfindr-widget__attachment-image';
-        img.setAttribute('src', url);
+        if (url) {
+          img.setAttribute('src', url);
+        }
         img.setAttribute('alt', attachment.filename || t('attachment.fallbackName'));
         img.setAttribute('loading', 'lazy');
         // The BROWSER fetches this one, not us, so the policy the widget puts

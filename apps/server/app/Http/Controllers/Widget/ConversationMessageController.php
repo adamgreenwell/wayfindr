@@ -9,10 +9,12 @@ use App\Http\Controllers\Controller;
 use App\Models\ApiToken;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\ConversationMessageAttachment;
 use App\Models\ProactiveMessageRule;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentBinder;
+use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Conversations\ConversationLifecycleLog;
 use App\Support\ProactiveMessages\ProactiveConversationOpening;
@@ -73,7 +75,7 @@ class ConversationMessageController extends Controller
                 'sender' => $this->senderPayload($message),
                 'type' => $message->type,
                 'body' => $message->body,
-                'attachments' => $message->attachments->map->toPayload()->all(),
+                'attachments' => $this->attachmentPayloads($conversation, $message),
                 'created_at' => $message->created_at?->toJSON(),
             ]);
 
@@ -264,7 +266,7 @@ class ConversationMessageController extends Controller
                     ],
                     'type' => $message->type,
                     'body' => $message->body,
-                    'attachments' => $message->attachments->map->toPayload()->all(),
+                    'attachments' => $this->attachmentPayloads($conversation, $message),
                     'created_at' => $message->created_at?->toJSON(),
                 ],
                 'visitor_presence' => $conversation->visitorPresencePayload(),
@@ -334,6 +336,29 @@ class ConversationMessageController extends Controller
         }
 
         return $query->update(['seen_at' => now()]) > 0;
+    }
+
+    /**
+     * Attachment payloads for the VISITOR's own transcript, each carrying a
+     * signed download link.
+     *
+     * Deliberately not folded into `ConversationMessageAttachment::toPayload()`.
+     * That method also feeds the agent controller and the realtime broadcast,
+     * and this link is a visitor-scoped capability: putting it there would send
+     * it to agents and out over the websocket. It belongs at the edge of the
+     * response that the visitor themselves receives, and nowhere else.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachmentPayloads(Conversation $conversation, ConversationMessage $message): array
+    {
+        return $message->attachments
+            ->map(function (ConversationMessageAttachment $attachment) use ($conversation): array {
+                return $attachment->toPayload() + [
+                    'download_url' => AttachmentDownloadLink::for($conversation, $attachment),
+                ];
+            })
+            ->all();
     }
 
     private function senderPayload($message): array
