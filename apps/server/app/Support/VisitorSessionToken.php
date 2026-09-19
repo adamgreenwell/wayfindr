@@ -214,10 +214,11 @@ class VisitorSessionToken
      * When this token stops being usable, or null if nothing expires.
      *
      * Advertised to the widget so it can refresh ahead of the moment rather
-     * than discovering it as a failure. Nothing VERIFIES this yet -- see the
-     * config note -- so today it is a promise the server makes and does not
-     * keep, on purpose and in the safe direction: a widget that refreshes too
-     * eagerly costs a request, one that refreshes too late loses a session.
+     * than discovering it as a failure -- and now also ENFORCED, by
+     * `abortIfExpired()`, against the same `issued_at` this computes from. The
+     * two must keep agreeing: the widget refreshes at the half-life of what
+     * this returns, so a server refusing earlier than it advertises would
+     * strand sessions that did exactly what they were told.
      */
     public function expiresAt(string $token): ?CarbonImmutable
     {
@@ -309,6 +310,8 @@ class VisitorSessionToken
 
         $payload = $this->decode($token);
 
+        $this->abortIfExpired($payload);
+
         abort_if((int) ($payload['site_id'] ?? 0) !== $site->id, 403, 'Visitor token does not match this site.');
         abort_if(! hash_equals((string) ($payload['anonymous_id'] ?? ''), $anonymousId), 403, 'Visitor token does not match this visitor.');
 
@@ -341,6 +344,77 @@ class VisitorSessionToken
         // an unrelated row that later reuses the anonymous id.
 
         return $visitor;
+    }
+
+    /**
+     * Refuse a token past its lifetime, once an install has configured one.
+     *
+     * Measured from `issued_at`, which is exactly what `expiresAt()` already
+     * advertises to the widget as `token_expires_in` -- so the server refuses
+     * at the moment it told the widget to expect, and the widget has been
+     * refreshing at the half-life to stay ahead of it.
+     *
+     * Deliberately NOT measured from `session_started_at`. That would be an
+     * absolute cap, which is a good idea and a different change, because
+     * `continuingSessionStartedAt()` carries a presented token's session start
+     * forward with no age check of its own. A capped session would refuse, the
+     * widget would bootstrap to recover, and the replacement token would be
+     * born already expired -- forever, surviving a page reload, because the
+     * widget presents the same stored token to bootstrap again. It would also
+     * silence its own recovery: `sessionIdentity()` hashes the session start,
+     * so every re-mint lands in one rate-limit bucket and the 429 that follows
+     * reads to the widget as "server unavailable" rather than "token
+     * rejected", at which point it stops trying. A cap needs
+     * `continuingSessionStartedAt()` bounded first.
+     *
+     * 401 rather than 403, matching what this file already does: 403 here means
+     * the token names a different site or visitor, and the widget treats 403 as
+     * terminal. An expired token is the one refusal with a defined recovery.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function abortIfExpired(array $payload): void
+    {
+        $minutes = (int) config('wayfindr.visitor_session_ttl_minutes', 0);
+
+        if ($minutes <= 0) {
+            return;
+        }
+
+        $issuedAt = $this->issuedAtFromPayload($payload);
+
+        // A token minted before this field existed carries no issue time. Treat
+        // it as current rather than as infinitely old: expiring every one of
+        // them the moment an operator sets the value would log out every open
+        // session at once, which is the stranding this ordering exists to
+        // avoid. They age out as soon as the widget next rotates.
+        if ($issuedAt === null) {
+            return;
+        }
+
+        abort_if(
+            $issuedAt->addMinutes($minutes)->isPast(),
+            401,
+            'Visitor session has expired.',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function issuedAtFromPayload(array $payload): ?CarbonImmutable
+    {
+        $value = $payload['issued_at'] ?? null;
+
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value);
+        } catch (InvalidFormatException) {
+            return null;
+        }
     }
 
     /**
