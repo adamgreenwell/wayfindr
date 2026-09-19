@@ -20,6 +20,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\WhitespacePathNormalizer;
 use Throwable;
 
 /**
@@ -132,12 +134,47 @@ class OperatorBackupSettingsController extends Controller
             'disk' => ['nullable', Rule::in($allowedDisks)],
             'retention_days' => ['nullable', 'integer', 'between:0,3650'],
             // Mirror BackupService::backupPrefix(): a prefix is a namespace UNDER
-            // the destination, never an escape. Reject `..` segments here so an
-            // unusable prefix can't be saved (and pass the probe) only to fail
-            // every backup at runtime.
+            // the destination, never an escape and never the destination itself.
+            // Reject here so an unusable prefix cannot be saved (and pass the
+            // probe) only to fail every backup at runtime.
             'prefix' => ['nullable', 'string', 'max:255', function (string $attribute, mixed $value, Closure $fail): void {
-                if (preg_match('#(^|/)\.\.(/|$)#', trim((string) $value, '/')) === 1) {
+                $prefix = trim((string) $value, '/');
+
+                if ($prefix === '') {
+                    return;
+                }
+
+                if (preg_match('#(^|/)\.\.(/|$)#', $prefix) === 1) {
                     $fail(__('operator.backups.validation.prefix_segments'));
+
+                    return;
+                }
+
+                // Refused, not rewritten: Flysystem treats a backslash as a
+                // separator but a POSIX filesystem does not, so rewriting one
+                // would move where local archives are looked for and orphan
+                // whatever is already under the literal name.
+                if (str_contains($prefix, '\\')) {
+                    $fail(__('operator.backups.validation.prefix_backslash'));
+
+                    return;
+                }
+
+                // The literal check above reads the raw string; the filesystem
+                // does not. Flysystem collapses `.` and `..` before using a
+                // path, so `.`, `./` and `./.` carry no `/../` yet resolve to
+                // the destination root -- where this install would write its
+                // archives, and prune anything old it finds beside them.
+                try {
+                    $resolved = (new WhitespacePathNormalizer)->normalizePath($prefix);
+                } catch (FilesystemException) {
+                    $fail(__('operator.backups.validation.prefix_segments'));
+
+                    return;
+                }
+
+                if ($resolved === '') {
+                    $fail(__('operator.backups.validation.prefix_root'));
                 }
             }],
             'bucket' => [$offsite, 'required', 'string', 'max:255'],

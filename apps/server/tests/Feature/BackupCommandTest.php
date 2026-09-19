@@ -710,3 +710,106 @@ test('a dump failure surfaces as a command failure, not a half-written archive',
 
     exec('rm -rf '.escapeshellarg($dest));
 });
+
+// #1012. The `..` guard reads the raw string, but Flysystem rewrites `\` to `/`
+// and collapses `.` and `..` before using a path. So a prefix carrying no
+// `/../` could still resolve to the destination ROOT -- and retention deletes
+// what it lists, which on a shared bucket is a sibling install's archives.
+test('offsite retention never prunes another install when the prefix resolves to the destination root', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('filesystems.disks.backups', ['driver' => 'local', 'root' => sys_get_temp_dir().'/wf-backups-'.bin2hex(random_bytes(4))]);
+    Storage::fake('backups');
+    config()->set('wayfindr.backup.disk', 'backups');
+    config()->set('wayfindr.backup.retention_days', 7);
+
+    // Passes the literal `..` guard; Flysystem resolves it to ''.
+    config()->set('wayfindr.backup.prefix', '.');
+
+    // At the ROOT of the shared disk, which is where a prefix resolving to ''
+    // makes this install both write and prune. `files()` is not recursive, so
+    // root level is exactly the blast radius: a neighbour nested under its own
+    // prefix is out of reach, and one at root is not.
+    $othersOld = 'wayfindr-backup-'.now()->subDays(60)->format('Ymd-His').'-cccccc.tar.gz';
+    Storage::disk('backups')->put($othersOld, 'x');
+
+    $dest = sys_get_temp_dir().'/wayfindr-backup-root-'.bin2hex(random_bytes(6));
+
+    // Deliberately not asserting the exit code: whether the run is refused or
+    // merely scoped correctly is incidental. What must never happen is the
+    // sibling's archive disappearing, so that is the assertion that should be
+    // the one to fail.
+    $this->artisan('wayfindr:backup', ['--path' => $dest]);
+
+    expect(Storage::disk('backups')->exists($othersOld))
+        ->toBeTrue('A prefix that resolves to the destination root made retention list the root and delete an archive this install never wrote.');
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('a backup prefix that resolves to the destination root is rejected before writing', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+
+    $dest = sys_get_temp_dir().'/wayfindr-root-'.bin2hex(random_bytes(6));
+    mkdir($dest, 0700, true);
+
+    foreach (['.', './', './.'] as $prefix) {
+        config()->set('wayfindr.backup.prefix', $prefix);
+
+        $this->artisan('wayfindr:backup', ['--path' => $dest])
+            ->assertFailed()
+            ->expectsOutputToContain('must name a location under the backup destination');
+    }
+
+    expect(glob($dest.'/*.tar.gz'))->toBe([], 'An archive was written under a prefix that resolves to the destination root.');
+
+    exec('rm -rf '.escapeshellarg($dest));
+});
+
+test('a backup prefix keeps working when it merely needs tidying', function (): void {
+    // The guard must reject what resolves to the root without rejecting a
+    // prefix that is simply untidy -- it resolves the same way Flysystem does.
+    config()->set('wayfindr.backup.prefix', 'inst-a/./sub');
+
+    expect(app(BackupService::class)->backupPrefix())
+        ->toBe('inst-a/sub', 'A tidy-able prefix must resolve to the location Flysystem would already have used, not be refused.');
+});
+
+// A backslash must be REFUSED, not rewritten. Flysystem treats it as a
+// separator; a POSIX filesystem does not, so `tenant\backups` is one literal
+// directory on disk. Silently normalising it would point local discovery and
+// retention at `tenant/backups` instead, and every archive already written
+// under the literal name would stop being listed or retained while still
+// sitting there.
+test('a backup prefix containing a backslash is refused rather than quietly relocated', function (): void {
+    app()->instance(DatabaseDumper::class, fakeDumper());
+    config()->set('wayfindr.attachments.storage_disk', 'attachments');
+    Storage::fake('attachments');
+    config()->set('wayfindr.backup.prefix', 'tenant\backups');
+
+    $dest = sys_get_temp_dir().'/wayfindr-bslash-'.bin2hex(random_bytes(6));
+    $legacy = $dest.'/tenant\backups';
+    mkdir($legacy, 0700, true);
+
+    $existing = 'wayfindr-backup-'.now()->subDays(2)->format('Ymd-His').'-dddddd.tar.gz';
+    file_put_contents($legacy.'/'.$existing, 'x');
+
+    // Run bare first, so the assertion that fails is the one naming the harm
+    // rather than the exit code.
+    $this->artisan('wayfindr:backup', ['--path' => $dest]);
+
+    expect(is_dir($dest.'/tenant/backups'))
+        ->toBeFalse('The prefix was rewritten to a different directory, orphaning every archive already written under the literal backslash name.')
+        ->and(is_file($legacy.'/'.$existing))
+        ->toBeTrue('The archive already written under the literal backslash directory must still be there.');
+
+    // And that the refusal says what to change.
+    $this->artisan('wayfindr:backup', ['--path' => $dest])
+        ->assertFailed()
+        ->expectsOutputToContain('must not contain backslashes');
+
+    exec('rm -rf '.escapeshellarg($dest));
+});

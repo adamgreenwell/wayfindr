@@ -1375,6 +1375,8 @@ return [
         ],
         'validation' => [
             'prefix_segments' => 'Il prefisso non deve contenere segmenti di percorso “..”.',
+            'prefix_root' => 'Il prefisso deve indicare una posizione sotto la destinazione del backup, non la destinazione stessa.',
+            'prefix_backslash' => 'Il prefisso non deve contenere barre rovesciate. Usare “/” per separare i segmenti.',
             'clear_or_static' => 'Cancellare le chiavi salvate per usare un ruolo oppure inserire nuove chiavi statiche, ma non entrambe le cose.',
             'paired_keys' => 'Inserisca insieme la chiave di accesso e il segreto oppure lasci entrambi i campi vuoti per mantenere la coppia salvata.',
         ],

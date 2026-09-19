@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\WhitespacePathNormalizer;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
@@ -785,9 +787,23 @@ class RestoreService
 
     private function keyIsSafe(string $key): bool
     {
-        return $key !== ''
-            && ! str_starts_with($key, '/')
-            && preg_match('#(^|/)\.\.(/|$)#', $key) !== 1;
+        if ($key === '' || str_starts_with($key, '/') || preg_match('#(^|/)\.\.(/|$)#', $key) === 1) {
+            return false;
+        }
+
+        // The checks above read the raw string; the disk this key is written to
+        // does not. Flysystem rewrites `\` to `/` and collapses `.` and `..`
+        // segments first, so an archived name like `a\..\b` carries no `/../`
+        // yet resolves somewhere else. Flysystem refuses to escape its own root
+        // -- it throws rather than popping past it -- so this guard is what
+        // stops a key SILENTLY landing at a path nobody archived.
+        try {
+            $resolved = (new WhitespacePathNormalizer)->normalizePath($key);
+        } catch (FilesystemException) {
+            return false;
+        }
+
+        return $resolved !== '' && $resolved === $key;
     }
 
     /**
