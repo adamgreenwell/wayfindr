@@ -361,8 +361,12 @@ class VisitorSessionToken
 
     private function tokenFromRequest(Request $request): ?string
     {
+        // `input()` already reads the query string on a GET and the body on a
+        // POST, so the explicit `query()` read that used to follow was dead.
+        // Removing it changes no behaviour -- a query-supplied token is still
+        // accepted, which the widgets already embedded in customers' pages
+        // depend on. Refusing that transport is a later, separate step.
         return $request->bearerToken()
-            ?: $request->input('visitor_token')
-            ?: $request->query('visitor_token');
+            ?: $request->input('visitor_token');
     }
 }

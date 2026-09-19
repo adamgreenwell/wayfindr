@@ -493,8 +493,13 @@ test('fetches visitor-visible conversation messages', async () => {
   assert.equal(calls.length, 1);
   assert.equal(
     calls[0].url,
-    'http://127.0.0.1:8000/api/conversations/WF-TEST123/messages?site_public_key=site_public_docs&anonymous_id=anon-browser-123&visitor_token=visitor-token-123',
+    'http://127.0.0.1:8000/api/conversations/WF-TEST123/messages?site_public_key=site_public_docs&anonymous_id=anon-browser-123',
   );
+  assert.ok(
+    !calls[0].url.includes('visitor_token'),
+    'the visitor token must not appear in the message poll URL -- a URL reaches access logs, history and Referer',
+  );
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer visitor-token-123');
   assert.equal(calls[0].options.method, 'GET');
   assert.equal(result.conversation.support_code, 'WF-TEST123');
   assert.equal(result.messages[0].sender.kind, 'agent');
@@ -527,7 +532,7 @@ test('can request a visitor read receipt when fetching messages', async () => {
   assert.equal(calls.length, 1);
   assert.equal(
     calls[0].url,
-    'http://127.0.0.1:8000/api/conversations/WF-TEST123/messages?site_public_key=site_public_docs&anonymous_id=anon-browser-123&visitor_token=visitor-token-123&mark_seen=1&seen_message_id=42',
+    'http://127.0.0.1:8000/api/conversations/WF-TEST123/messages?site_public_key=site_public_docs&anonymous_id=anon-browser-123&mark_seen=1&seen_message_id=42',
   );
   assert.equal(calls[0].options.method, 'GET');
 });
@@ -640,8 +645,13 @@ test('fetches cobrowse status through the public visitor API', async () => {
   assert.equal(calls.length, 1);
   assert.equal(
     calls[0].url,
-    'http://127.0.0.1:8000/api/conversations/WF-TEST123/cobrowse?site_public_key=site_public_docs&anonymous_id=anon-browser-123&visitor_token=visitor-token-123',
+    'http://127.0.0.1:8000/api/conversations/WF-TEST123/cobrowse?site_public_key=site_public_docs&anonymous_id=anon-browser-123',
   );
+  assert.ok(
+    !calls[0].url.includes('visitor_token'),
+    'the visitor token must not appear in the cobrowse status URL',
+  );
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer visitor-token-123');
   assert.equal(calls[0].options.method, 'GET');
   assert.equal(result.conversation.support_code, 'WF-TEST123');
   assert.equal(result.cobrowse.status, 'requested');
