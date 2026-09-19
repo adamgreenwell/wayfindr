@@ -201,9 +201,15 @@ value never reaches a token already in a visitor's browser. Turning it on does
 not log anybody out. Lowering it does not cut short a token the server itself
 advertised a longer life for.
 
-Tokens issued *before* you set it record no lifetime, and get a finite grace
-window instead — `WAYFINDR_VISITOR_SESSION_LEGACY_GRACE_MINUTES`, seven days by
-default — after which they are refused. Rotation alone would not retire them: a
+Tokens issued *before* you set it record no lifetime and are refused once you do.
+They have to be: rotation would never retire them, because a replacement token
+does not revoke its predecessor — these tokens are stateless and the server keeps
+no record of them. Rotation stops the *browser* using an old token and does
+nothing to a copy of one.
+
+That refusal is not a logout. The expiry check is unreachable from bootstrap, so
+a pre-policy token still buys a fresh one; the widget already treats the refusal
+as a reason to bootstrap, and the session recovers on the next request. Rotation alone would not retire them: a
 replacement token does not revoke its predecessor, because these tokens are
 stateless and the server keeps no record of them. Rotation stops the *browser*
 using an old token; only the grace window stops a copy of it working.

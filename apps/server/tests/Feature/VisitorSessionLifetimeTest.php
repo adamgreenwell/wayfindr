@@ -136,31 +136,43 @@ test('bootstrapping after an expired session yields a token that actually works'
         ->toBe($f['visitor']->id, 'The token minted to recover an expired session is refused too. That is what measuring the lifetime from the session start rather than the issue time does: bootstrap carries the old session start forward, so every replacement is born expired and the visitor loops forever -- through page reloads, because the widget presents the same stored token again.');
 })->group('lifetime');
 
-test('a token minted before issue times were recorded is not refused', function (): void {
-    // Expiring every one of these the moment an operator sets the value would
-    // log out every open session at once -- the stranding the rollout ordering
-    // exists to avoid. They age out as soon as the widget next rotates.
+// A token predating `issued_at` predates lifetimes entirely, so it is refused on
+// the same footing as any other pre-policy token rather than by a separate rule.
+// It buys a replacement the same way, which is what keeps that safe.
+test('a token minted before issue times were recorded is refused once a lifetime exists', function (): void {
     config(['wayfindr.visitor_session_ttl_minutes' => 30]);
     $f = lifetimeFixture();
 
-    // Built the way `encode()` does, minus the field that did not exist yet.
     $legacy = Crypt::encryptString(json_encode([
         'site_id' => $f['site']->id,
         'visitor_id' => $f['visitor']->id,
         'anonymous_id' => 'anon-life',
-        // no issued_at, as tokens predating the field have
+        // no issued_at and no ttl_minutes, as tokens predating both have
     ], JSON_THROW_ON_ERROR));
-
-    $request = Request::create('/api/x', 'GET', [], [], [], [
-        'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
-    ]);
 
     $svc = app(VisitorSessionToken::class);
     $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
     $method->setAccessible(true);
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
+    ]);
 
-    expect($method->invoke($svc, $request, $f['site'], 'anon-life')->id)
-        ->toBe($f['visitor']->id, 'A token with no recorded issue time was treated as infinitely old, which would log out every session an install had open the moment a lifetime was configured.');
+    $status = 200;
+
+    try {
+        $method->invoke($svc, $request, $f['site'], 'anon-life');
+    } catch (HttpException $e) {
+        $status = $e->getStatusCode();
+    }
+
+    expect($status)->toBe(401, 'A token with neither an issue time nor a lifetime was accepted, which makes it the one token an install can never retire.');
+
+    // And it still recovers, so the refusal is not a dead end.
+    expect(test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_life',
+        'anonymous_id' => 'anon-life',
+        'visitor_token' => $legacy,
+    ])->assertOk()->json('data.visitor.token'))->toBeString();
 })->group('lifetime');
 
 // The lifetime is a property of the TOKEN, not of the config at the moment it is
@@ -198,36 +210,6 @@ test('lowering the lifetime does not retroactively expire a token issued under a
     );
 })->group('lifetime');
 
-test('enabling a lifetime does not expire tokens minted before it', function (): void {
-    // The whole rollout hazard, removed rather than documented: a token minted
-    // while the setting was 0 was never promised a lifetime, so it does not get
-    // held to one. It ages out as the widget rotates.
-    config(['wayfindr.visitor_session_ttl_minutes' => 0]);
-    $f = lifetimeFixture();
-    $token = lifetimeToken($f);
-
-    config(['wayfindr.visitor_session_ttl_minutes' => 30]);
-    test()->travel(90)->minutes();
-
-    $request = Request::create('/api/x', 'GET', [], [], [], [
-        'HTTP_AUTHORIZATION' => 'Bearer '.$token,
-    ]);
-    $svc = app(VisitorSessionToken::class);
-    $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
-    $method->setAccessible(true);
-
-    try {
-        $resolved = $method->invoke($svc, $request, $f['site'], 'anon-life');
-    } catch (HttpException $e) {
-        $resolved = null;
-    }
-
-    expect($resolved?->id)->toBe(
-        $f['visitor']->id,
-        'Enabling a lifetime retroactively expired every token an install already had out, which logs out every open session at once.',
-    );
-})->group('lifetime');
-
 test('a token minted under a lifetime is still refused past it', function (): void {
     // The control: stamping the lifetime must not stop it being enforced.
     config(['wayfindr.visitor_session_ttl_minutes' => 30]);
@@ -255,66 +237,75 @@ test('a token minted under a lifetime is still refused past it', function (): vo
 })->group('lifetime');
 
 // Exempting a pre-policy token forever is not an option: `refresh()` does not
-// revoke its predecessor, so rotation only stops the BROWSER using the old
-// token. A copy of it would otherwise outlive the policy indefinitely.
-test('a pre-policy token is refused once its grace window has passed', function (): void {
-    config([
-        'wayfindr.visitor_session_ttl_minutes' => 0,
-        'wayfindr.visitor_session_legacy_grace_minutes' => 60,
-    ]);
+// revoke its predecessor, so a copy of one would work for as long as the install
+// lived. Refusing one costs a live visitor nothing, because this check cannot be
+// reached from bootstrap -- which is what makes the 401 buy a replacement rather
+// than end a session.
+test('a pre-policy token is refused once the install has a lifetime', function (): void {
+    config(['wayfindr.visitor_session_ttl_minutes' => 0]);
     $f = lifetimeFixture();
     $legacy = lifetimeToken($f);
 
-    // The operator switches the policy on afterwards.
     config(['wayfindr.visitor_session_ttl_minutes' => 30]);
 
     $svc = app(VisitorSessionToken::class);
     $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
     $method->setAccessible(true);
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
+    ]);
 
-    $resolve = function () use ($svc, $method, $legacy, $f): ?int {
-        $request = Request::create('/api/x', 'GET', [], [], [], [
-            'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
-        ]);
+    $status = 200;
 
-        try {
-            return $method->invoke($svc, $request, $f['site'], 'anon-life')->id;
-        } catch (HttpException) {
-            return null;
-        }
-    };
+    try {
+        $method->invoke($svc, $request, $f['site'], 'anon-life');
+    } catch (HttpException $e) {
+        $status = $e->getStatusCode();
+    }
 
-    // Inside the grace: still accepted, so switching the policy on logs nobody out.
-    test()->travel(59)->minutes();
-    expect($resolve())->toBe($f['visitor']->id, 'A live session was logged out the moment the policy was switched on.');
+    expect($status)->toBe(401, 'A token carrying no lifetime is still accepted after the install configured one. Rotation does not revoke it, so a copy taken from a log or the DOM would work for as long as the install lives.');
+})->group('lifetime');
 
-    // Past it: refused, so a copy cannot outlive the policy.
-    test()->travel(2)->minutes();
-    expect($resolve())->toBeNull(
-        'A token minted before the install had a lifetime is still accepted after its grace window. Rotation does not revoke it -- `refresh()` leaves the predecessor valid -- so a copy taken from a log or the DOM would work for as long as the install lives.',
+test('a pre-policy token still buys a replacement, so refusing it strands nobody', function (): void {
+    config(['wayfindr.visitor_session_ttl_minutes' => 0]);
+    $f = lifetimeFixture();
+    $legacy = lifetimeToken($f);
+
+    config(['wayfindr.visitor_session_ttl_minutes' => 30]);
+
+    $fresh = test()->postJson('/api/widget/bootstrap', [
+        'site_public_key' => 'site_public_life',
+        'anonymous_id' => 'anon-life',
+        'visitor_token' => $legacy,
+    ])->assertOk()->json('data.visitor.token');
+
+    $svc = app(VisitorSessionToken::class);
+    $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
+    $method->setAccessible(true);
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$fresh,
+    ]);
+
+    expect($method->invoke($svc, $request, $f['site'], 'anon-life')->id)->toBe(
+        $f['visitor']->id,
+        'Bootstrap refused a pre-policy token instead of replacing it, so a visitor holding one has no way back and the refusal above becomes a permanent logout.',
     );
 })->group('lifetime');
 
-test('a pre-policy token never expires while the install has no lifetime at all', function (): void {
-    // The grace is about being late for a policy. With no policy there is
-    // nothing to be late for, and an install that never opts in must not start
-    // refusing tokens because a grace default exists.
-    config([
-        'wayfindr.visitor_session_ttl_minutes' => 0,
-        'wayfindr.visitor_session_legacy_grace_minutes' => 60,
-    ]);
+test('a pre-policy token is untouched while the install has no lifetime', function (): void {
+    config(['wayfindr.visitor_session_ttl_minutes' => 0]);
     $f = lifetimeFixture();
     $legacy = lifetimeToken($f);
 
     test()->travel(400)->days();
 
-    $request = Request::create('/api/x', 'GET', [], [], [], [
-        'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
-    ]);
     $svc = app(VisitorSessionToken::class);
     $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
     $method->setAccessible(true);
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
+    ]);
 
     expect($method->invoke($svc, $request, $f['site'], 'anon-life')->id)
-        ->toBe($f['visitor']->id, 'An install with no lifetime configured started refusing tokens because a grace default exists.');
+        ->toBe($f['visitor']->id, 'An install with no lifetime configured started refusing tokens.');
 })->group('lifetime');

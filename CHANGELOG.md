@@ -740,9 +740,12 @@ makes none.
   already in a visitor's browser. Turning it on logs nobody out, and lowering it
   later does not cut short a token the server advertised a longer life for.
 
-  Tokens issued while the value was `0` record no lifetime and instead get a
-  finite grace window — `WAYFINDR_VISITOR_SESSION_LEGACY_GRACE_MINUTES`, seven
-  days by default — after which they are refused. That bound matters: a
+  Tokens issued while the value was `0` record no lifetime and are refused once
+  one is configured. They have to be: a replacement token does not revoke its
+  predecessor, so rotation stops a browser using an old token and does nothing to
+  a copy of one. The refusal is not a logout — the expiry check cannot be reached
+  from bootstrap, so such a token still buys a fresh one and the session recovers
+  on its next request. That bound matters: a
   replacement token does not revoke its predecessor, so rotation stops a browser
   using an old token but would not stop a copy of one working.
 

@@ -183,21 +183,6 @@ return [
     // `abortIfExpired()` for why it cannot simply be added here.
     'visitor_session_ttl_minutes' => (int) env('WAYFINDR_VISITOR_SESSION_TTL_MINUTES', 0),
 
-    // How long a token minted BEFORE the install had a lifetime stays usable,
-    // once the install has one. Seven days.
-    //
-    // Such a token records no lifetime of its own, and exempting it forever is
-    // not an option: `refresh()` mints a replacement without revoking the
-    // previous token -- they are stateless, with no server-side record -- so
-    // rotation only stops the BROWSER using the old one. A copy taken from a log
-    // or a DOM would otherwise outlive the policy indefinitely, which is the
-    // thing a lifetime exists to prevent.
-    //
-    // Generous rather than tight, because its only job is to avoid logging out a
-    // session that is still live when an operator switches the policy on. A
-    // widget rotates every few minutes and re-bootstraps on every page load, so
-    // a token still in genuine use is replaced long before this elapses.
-    'visitor_session_legacy_grace_minutes' => (int) env('WAYFINDR_VISITOR_SESSION_LEGACY_GRACE_MINUTES', 10080),
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),

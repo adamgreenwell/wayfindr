@@ -10,7 +10,9 @@ use Carbon\Exceptions\InvalidFormatException;
 use DateTimeInterface;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use JsonException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -301,10 +303,10 @@ class VisitorSessionToken
             //
             // It also makes enabling a lifetime safe rather than safe-with-a-
             // warning: tokens minted while the value was 0 carry no lifetime and
-            // are not refused by the new policy. They are not exempt forever
-            // either -- see the grace window in `abortIfExpired()`, which exists
-            // because rotation stops a BROWSER using an old token and does
-            // nothing to a copy of one.
+            // are judged by no lifetime at all. Once the install has one they
+            // are refused instead -- see `abortIfExpired()` -- because rotation
+            // stops a BROWSER using an old token and does nothing to a copy of
+            // one.
             'ttl_minutes' => max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)),
         ], JSON_THROW_ON_ERROR));
     }
@@ -398,28 +400,29 @@ class VisitorSessionToken
 
         if ($minutes <= 0) {
             // No lifetime recorded: minted before lifetimes existed, or while
-            // the setting was 0. It was never promised one, so it is not held to
-            // the current one -- that would be the retroactive refusal this
-            // whole method exists to avoid.
+            // the setting was 0. Once the install HAS a lifetime, such a token is
+            // refused rather than grandfathered -- `refresh()` does not revoke a
+            // predecessor, so an exempt token would be usable for as long as the
+            // install lived, and that is the thing a lifetime is for.
             //
-            // But it does not get exempted forever either. `refresh()` mints a
-            // replacement WITHOUT revoking its predecessor, so rotation only
-            // stops the browser using the old token; a copy of it would keep
-            // working for as long as the install lived. A grace window bounds
-            // that, and is long enough that a session still genuinely in use has
-            // rotated many times before it elapses.
-            $configured = max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0));
-
-            if ($configured <= 0) {
-                // The install has no lifetime policy at all, so there is nothing
-                // for a pre-policy token to be late for.
+            // Refusing costs a live visitor nothing, because this check is not
+            // reachable from bootstrap. `continuingSessionStartedAt()` is
+            // bootstrap's path and calls neither this method nor
+            // `visitorFromRequest()`, so a pre-policy token always still buys a
+            // fresh one. The 401 here is what the widget already maps to
+            // `rejected`, whose recovery is exactly that bootstrap. The session
+            // heals itself on the next request.
+            //
+            // The exception is an integration built on `createClient()`, which
+            // receives a token and no refresh timer and so never re-bootstraps.
+            // That is the documented reason to finish such an integration before
+            // configuring a lifetime, and it is the same hazard a NEW token
+            // would present to it.
+            if (max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)) <= 0) {
                 return;
             }
 
-            $minutes = max(
-                $configured,
-                max(0, (int) config('wayfindr.visitor_session_legacy_grace_minutes', 10080)),
-            );
+            abort(401, 'Visitor session has expired.');
         }
 
         $issuedAt = $this->issuedAtFromPayload($payload);
