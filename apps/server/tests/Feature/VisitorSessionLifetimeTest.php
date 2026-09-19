@@ -253,3 +253,68 @@ test('a token minted under a lifetime is still refused past it', function (): vo
 
     expect($status)->toBe(401, 'The lifetime recorded in the token is not being enforced at all.');
 })->group('lifetime');
+
+// Exempting a pre-policy token forever is not an option: `refresh()` does not
+// revoke its predecessor, so rotation only stops the BROWSER using the old
+// token. A copy of it would otherwise outlive the policy indefinitely.
+test('a pre-policy token is refused once its grace window has passed', function (): void {
+    config([
+        'wayfindr.visitor_session_ttl_minutes' => 0,
+        'wayfindr.visitor_session_legacy_grace_minutes' => 60,
+    ]);
+    $f = lifetimeFixture();
+    $legacy = lifetimeToken($f);
+
+    // The operator switches the policy on afterwards.
+    config(['wayfindr.visitor_session_ttl_minutes' => 30]);
+
+    $svc = app(VisitorSessionToken::class);
+    $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
+    $method->setAccessible(true);
+
+    $resolve = function () use ($svc, $method, $legacy, $f): ?int {
+        $request = Request::create('/api/x', 'GET', [], [], [], [
+            'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
+        ]);
+
+        try {
+            return $method->invoke($svc, $request, $f['site'], 'anon-life')->id;
+        } catch (HttpException) {
+            return null;
+        }
+    };
+
+    // Inside the grace: still accepted, so switching the policy on logs nobody out.
+    test()->travel(59)->minutes();
+    expect($resolve())->toBe($f['visitor']->id, 'A live session was logged out the moment the policy was switched on.');
+
+    // Past it: refused, so a copy cannot outlive the policy.
+    test()->travel(2)->minutes();
+    expect($resolve())->toBeNull(
+        'A token minted before the install had a lifetime is still accepted after its grace window. Rotation does not revoke it -- `refresh()` leaves the predecessor valid -- so a copy taken from a log or the DOM would work for as long as the install lives.',
+    );
+})->group('lifetime');
+
+test('a pre-policy token never expires while the install has no lifetime at all', function (): void {
+    // The grace is about being late for a policy. With no policy there is
+    // nothing to be late for, and an install that never opts in must not start
+    // refusing tokens because a grace default exists.
+    config([
+        'wayfindr.visitor_session_ttl_minutes' => 0,
+        'wayfindr.visitor_session_legacy_grace_minutes' => 60,
+    ]);
+    $f = lifetimeFixture();
+    $legacy = lifetimeToken($f);
+
+    test()->travel(400)->days();
+
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$legacy,
+    ]);
+    $svc = app(VisitorSessionToken::class);
+    $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
+    $method->setAccessible(true);
+
+    expect($method->invoke($svc, $request, $f['site'], 'anon-life')->id)
+        ->toBe($f['visitor']->id, 'An install with no lifetime configured started refusing tokens because a grace default exists.');
+})->group('lifetime');

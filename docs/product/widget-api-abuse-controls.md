@@ -199,8 +199,14 @@ token ahead of that deadline, and the server refuses a token past it.
 lifetime that was in force when it was issued and is judged by that, so this
 value never reaches a token already in a visitor's browser. Turning it on does
 not log anybody out. Lowering it does not cut short a token the server itself
-advertised a longer life for. Tokens issued before you set it carry no lifetime
-and age out as widgets rotate onto ones that do.
+advertised a longer life for.
+
+Tokens issued *before* you set it record no lifetime, and get a finite grace
+window instead — `WAYFINDR_VISITOR_SESSION_LEGACY_GRACE_MINUTES`, seven days by
+default — after which they are refused. Rotation alone would not retire them: a
+replacement token does not revoke its predecessor, because these tokens are
+stateless and the server keeps no record of them. Rotation stops the *browser*
+using an old token; only the grace window stops a copy of it working.
 
 That is deliberate rather than incidental: the alternative -- reading the current
 setting when a token is checked -- refuses a token at minute five that the widget

@@ -739,9 +739,12 @@ makes none.
   was issued and is judged by that, so setting this value never reaches a token
   already in a visitor's browser. Turning it on logs nobody out, and lowering it
   later does not cut short a token the server advertised a longer life for.
-  Tokens issued while the value was `0` carry no lifetime and age out as widgets
-  rotate onto ones that do — including tokens held by a browser still running a
-  `widget.js` from before the upgrade.
+
+  Tokens issued while the value was `0` record no lifetime and instead get a
+  finite grace window — `WAYFINDR_VISITOR_SESSION_LEGACY_GRACE_MINUTES`, seven
+  days by default — after which they are refused. That bound matters: a
+  replacement token does not revoke its predecessor, so rotation stops a browser
+  using an old token but would not stop a copy of one working.
 
   One thing to finish before setting a lifetime, though. Rotation lives in
   `Wayfindr.init()`. A host integrating through `Wayfindr.createClient()`

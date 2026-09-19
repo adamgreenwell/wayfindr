@@ -299,10 +299,12 @@ class VisitorSessionToken
             // dies at minute five, before the refresh its widget scheduled from
             // the number the server itself gave it.
             //
-            // It also makes enabling a lifetime genuinely safe, rather than safe
-            // with a warning. Tokens minted while the value was 0 carry no
-            // lifetime and keep working; they age out as the widget rotates onto
-            // tokens that do carry one.
+            // It also makes enabling a lifetime safe rather than safe-with-a-
+            // warning: tokens minted while the value was 0 carry no lifetime and
+            // are not refused by the new policy. They are not exempt forever
+            // either -- see the grace window in `abortIfExpired()`, which exists
+            // because rotation stops a BROWSER using an old token and does
+            // nothing to a copy of one.
             'ttl_minutes' => max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)),
         ], JSON_THROW_ON_ERROR));
     }
@@ -394,12 +396,30 @@ class VisitorSessionToken
     {
         $minutes = $this->lifetimeFromPayload($payload);
 
-        // No lifetime recorded means this token was minted before lifetimes
-        // existed, or while the setting was 0. Either way it was never promised
-        // one, so it does not get held to one. Such tokens age out as the widget
-        // rotates onto tokens that carry a lifetime.
         if ($minutes <= 0) {
-            return;
+            // No lifetime recorded: minted before lifetimes existed, or while
+            // the setting was 0. It was never promised one, so it is not held to
+            // the current one -- that would be the retroactive refusal this
+            // whole method exists to avoid.
+            //
+            // But it does not get exempted forever either. `refresh()` mints a
+            // replacement WITHOUT revoking its predecessor, so rotation only
+            // stops the browser using the old token; a copy of it would keep
+            // working for as long as the install lived. A grace window bounds
+            // that, and is long enough that a session still genuinely in use has
+            // rotated many times before it elapses.
+            $configured = max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0));
+
+            if ($configured <= 0) {
+                // The install has no lifetime policy at all, so there is nothing
+                // for a pre-policy token to be late for.
+                return;
+            }
+
+            $minutes = max(
+                $configured,
+                max(0, (int) config('wayfindr.visitor_session_legacy_grace_minutes', 10080)),
+            );
         }
 
         $issuedAt = $this->issuedAtFromPayload($payload);
