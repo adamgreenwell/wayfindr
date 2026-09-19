@@ -6,12 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Conversation;
 use App\Models\ConversationMessageAttachment;
 use App\Models\Visitor;
+use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentRejected;
 use App\Support\Attachments\AttachmentResponder;
 use App\Support\Attachments\AttachmentUploadService;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorConversationResolver;
 use App\Support\Visitors\VisitorConversationWriteAuthorization;
+use App\Support\WidgetSiteResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -92,6 +94,66 @@ class ConversationAttachmentController extends Controller
         return response()->json([
             'data' => ['attachment' => $attachment->toPayload()],
         ], 201);
+    }
+
+    /**
+     * Stream an attachment from a signed, short-lived link.
+     *
+     * The signature proves this URL was minted by this install and not altered.
+     * It does NOT prove who is holding it -- a new-tab navigation and an
+     * `<img>` fetch carry no header and no first-party cookie, so the caller
+     * cannot be identified at all. Everything below is therefore still
+     * enforced: the signature decides that the link is real, and the same
+     * ownership checks `show()` makes decide that the file may be served.
+     */
+    public function download(
+        Request $request,
+        string $supportCode,
+        int $attachment,
+        AttachmentResponder $responder,
+    ): StreamedResponse {
+        $validated = $request->validate([
+            'site_public_key' => ['required', 'string', 'max:255'],
+            'v' => ['required', 'string', 'max:255'],
+        ]);
+
+        $site = WidgetSiteResolver::resolveOrFail($validated['site_public_key']);
+
+        $record = DB::transaction(function () use ($site, $supportCode, $attachment, $validated): ConversationMessageAttachment {
+            $conversation = Conversation::query()
+                ->where('site_id', $site->id)
+                ->where('support_code', $supportCode)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($conversation !== null, 404);
+
+            $visitor = $conversation->visitor;
+
+            abort_unless($visitor !== null, 404);
+
+            // Under the same lock a merge takes, so a link minted for a visitor
+            // who has since been merged away stops working rather than
+            // resolving to whoever holds the conversation now.
+            abort_unless(
+                hash_equals(
+                    AttachmentDownloadLink::visitorBinding($site, $visitor),
+                    (string) $validated['v'],
+                ),
+                404,
+            );
+
+            $record = ConversationMessageAttachment::query()
+                ->forConversation($conversation)
+                ->whereKey($attachment)
+                ->first();
+
+            abort_unless($record && $record->isDownloadableBy($visitor), 404);
+
+            return $record;
+        });
+
+        return $responder->stream($record);
     }
 
     public function show(

@@ -1055,6 +1055,21 @@
       // The download URL an <img> or link can point at. The visitor session
       // params ride in the query string, exactly as they do for fetchMessages;
       // the server streams the file with a forced attachment disposition.
+      // Its own builder, no longer shared with the download URL. The download
+      // URL is becoming a signed link minted by the server; a delete still
+      // needs the visitor's own credentials, and pointing it at a GET-only
+      // signature route would simply break it.
+      // Resolve a server-minted relative URL against this widget's API base.
+      apiUrl: function (path) {
+        return /^https?:\/\//i.test(path) ? path : apiBaseUrl + path;
+      },
+      attachmentDeleteUrl: function (supportCode, attachmentId) {
+        return apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments/' + encodeURIComponent(attachmentId) + '?' + toQueryString({
+          site_public_key: sitePublicKey,
+          anonymous_id: anonymousId,
+          visitor_token: requireVisitorToken(visitorToken),
+        });
+      },
       attachmentDownloadUrl: function (supportCode, attachmentId) {
         return apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/attachments/' + encodeURIComponent(attachmentId) + '?' + toQueryString({
           site_public_key: sitePublicKey,
@@ -1068,7 +1083,7 @@
         // REQUEST_PRIVACY explicitly: this is the one request that does not go
         // through the JSON or form helpers, so it did not inherit the policy
         // they apply and sent the host page address like any ordinary fetch.
-        return fetcher(this.attachmentDownloadUrl(supportCode, attachmentId), Object.assign({
+        return fetcher(this.attachmentDeleteUrl(supportCode, attachmentId), Object.assign({
           method: 'DELETE',
           headers: {
             Accept: 'application/json',
@@ -3229,7 +3244,17 @@
 
       // The link/image target is the authorized download endpoint; the server
       // streams it with a forced attachment disposition and nosniff.
-      var url = client.attachmentDownloadUrl(supportCode, attachment.id);
+      //
+      // Prefer the signed link the server minted for this attachment. It is
+      // relative, so it needs the API base in front of it. This URL is set as
+      // an `href` and an `<img src>`, so it lands in the host page's DOM where
+      // any script on the customer's page can read it -- what goes there should
+      // be a capability for this one file, not the visitor's whole session. The
+      // old builder stays as the fallback for a server that has not shipped the
+      // signed route yet.
+      var url = attachment.download_url
+        ? client.apiUrl(attachment.download_url)
+        : client.attachmentDownloadUrl(supportCode, attachment.id);
       var link = doc.createElement('a');
       link.setAttribute('href', url);
       link.setAttribute('target', '_blank');

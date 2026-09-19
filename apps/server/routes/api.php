@@ -111,6 +111,20 @@ Route::middleware('throttle:widget-attachment-upload')->group(function (): void 
 });
 
 Route::middleware('throttle:widget-attachment')->group(function (): void {
+    // Signed, short-lived, and carrying no visitor credential. This is the one
+    // widget URL that cannot use a header: the file link opens in a new tab and
+    // the image preview is fetched by `<img src>`, so whatever authorises it has
+    // to be IN the URL. A signature scoped to one attachment for a bounded time
+    // is the smallest thing that can be.
+    //
+    // `signed:relative` rather than `signed`: an absolute signature covers the
+    // scheme and host, which an install behind an untrusted proxy recomputes
+    // differently, and every download would 403 there and nowhere else.
+    Route::middleware('signed:relative')
+        ->get('/conversations/{supportCode}/attachments/{attachment}/file', [ConversationAttachmentController::class, 'download'])
+        ->whereNumber('attachment')
+        ->name('widget.conversations.attachments.download');
+
     Route::get('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'show'])
         ->whereNumber('attachment')
         ->name('conversations.attachments.show');
