@@ -102,13 +102,17 @@ class AttachmentDownloadLink
     {
         $ttl = max(1, (int) config('wayfindr.attachments.link_ttl_minutes', 60));
 
-        // Half the lifetime, so a link is always good for at least $ttl/2 and
-        // at most $ttl, and rotates once per window.
-        $window = max(1, (int) floor($ttl / 2));
-        $seconds = $window * 60;
+        // Half the lifetime, so a link rotates once per window.
+        $seconds = max(1, (int) floor($ttl / 2)) * 60;
 
+        // Quantise the MINT time, then add the lifetime -- not the other way
+        // round. Rounding `now + ttl` upward would push the expiry past the next
+        // boundary, so a link minted just after one would outlive the value the
+        // operator configured: up to 90 minutes on a 60-minute setting. This way
+        // every mint inside a window still produces an identical URL, and the
+        // lifetime is a ceiling rather than a floor.
         return Carbon::createFromTimestamp(
-            (int) (ceil((now()->getTimestamp() + ($ttl * 60)) / $seconds) * $seconds)
+            (int) (floor(now()->getTimestamp() / $seconds) * $seconds) + ($ttl * 60)
         );
     }
 }

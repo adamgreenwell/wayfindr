@@ -75,11 +75,10 @@ test('an expired signed link is refused', function (): void {
     $f = signedLinkFixture();
     $url = AttachmentDownloadLink::for($f['conversation'], $f['attachment']);
 
-    // Quantising the expiry means a link lives for at least the TTL and at most
-    // the TTL plus one window (half the TTL). Travel past that ceiling, not past
-    // the TTL, or the test lands inside a link's legitimate life.
-    $ttl = (int) config('wayfindr.attachments.link_ttl_minutes');
-    $this->travel($ttl + (int) floor($ttl / 2) + 5)->minutes();
+    // Quantising the MINT time rather than the expiry makes the configured TTL
+    // a ceiling: a link lives at most that long, and at least that minus one
+    // window. Travelling past the TTL is therefore always past the link.
+    $this->travel((int) config('wayfindr.attachments.link_ttl_minutes') + 1)->minutes();
 
     $this->get($url)->assertForbidden();
 });
@@ -145,4 +144,25 @@ test('a signed link is relative, so an untrusted proxy cannot invalidate it', fu
 
     expect(AttachmentDownloadLink::for($f['conversation'], $f['attachment']))
         ->toStartWith('/', 'The link is absolute, so its signature covers the scheme and host and will not survive an untrusted reverse proxy.');
+});
+
+test('a signed link never outlives the configured lifetime', function (): void {
+    // Quantisation must not buy extra time. Minted just after a window boundary
+    // -- the worst case -- the link must still be dead at the TTL.
+    $f = signedLinkFixture();
+
+    $ttl = (int) config('wayfindr.attachments.link_ttl_minutes');
+    $window = max(1, (int) floor($ttl / 2)) * 60;
+
+    // One second past a boundary is where rounding the EXPIRY upward would have
+    // handed out nearly another full window.
+    $this->travelTo(CarbonImmutable::createFromTimestamp(
+        (int) (floor(now()->getTimestamp() / $window) * $window) + $window + 1
+    ));
+
+    $url = AttachmentDownloadLink::for($f['conversation'], $f['attachment']);
+
+    $this->travel($ttl)->minutes();
+
+    $this->get($url)->assertForbidden();
 });
