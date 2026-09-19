@@ -206,3 +206,54 @@ test('the offsite cleanup removes only its own directory, never the operator pre
         ->and(probeCleanupLeftovers($real, '.wayfindr-backup-test-'))
         ->toBe([], 'The offsite connection test left its probe directory under the backup prefix.');
 });
+
+// The object store case Codex caught on #1011. `deleteDirectory` is
+// list-then-delete on S3, so credentials that can write and delete but NOT list
+// -- which is precisely the misconfiguration the probes report as "cannot list"
+// -- cannot reclaim the probe object through it. Deleting the known key by name
+// needs only DeleteObject, so the cleanup must do that too, not instead.
+// The readiness probe deletes its key in the main flow, but only AFTER the
+// listing check -- so when listing throws, that line is never reached and the
+// finally is the only thing left to reclaim the object.
+test('the readiness probe reclaims its object when listing throws and the directory cannot be listed either', function (): void {
+    $real = Storage::fake('attachments');
+    $proxy = Mockery::mock($real);
+    $proxy->shouldReceive('files')->andThrow(new RuntimeException('listing denied'));
+    $proxy->shouldReceive('deleteDirectory')->andReturn(false);
+    Storage::set('attachments', $proxy);
+
+    expect(probeCleanupReadinessCheck()['detail'])->toBe('listing denied');
+    expect($real->allFiles())
+        ->toBe([], 'Listing threw before the probe deleted its key, and deleteDirectory cannot reclaim it without listing. The cleanup must delete the known key by name, which needs no listing.');
+});
+
+test('the storage connection test reclaims its object when the disk cannot list at all', function (): void {
+    $real = Storage::fake('attachments');
+    $proxy = Mockery::mock($real);
+    $proxy->shouldReceive('files')->andReturn([]);
+    $proxy->shouldReceive('deleteDirectory')->andReturn(false);
+    Storage::set('attachments', $proxy);
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.test'))
+        ->assertSessionHas('error');
+
+    expect($real->allFiles())
+        ->toBe([], 'Listing is denied, so deleteDirectory cannot reclaim the probe object. The cleanup must delete the known key by name as well.');
+});
+
+test('the offsite connection test reclaims its object when the disk cannot list at all', function (): void {
+    config()->set('wayfindr.backup.disk', 'backups');
+    $real = Storage::fake('backups');
+    $proxy = Mockery::mock($real);
+    $proxy->shouldReceive('files')->andReturn([]);
+    $proxy->shouldReceive('deleteDirectory')->andReturn(false);
+    Storage::set('backups', $proxy);
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.test'))
+        ->assertSessionHas('error');
+
+    expect($real->allFiles())
+        ->toBe([], 'Listing is denied, so deleteDirectory cannot reclaim the probe object. The cleanup must delete the known key by name as well.');
+});

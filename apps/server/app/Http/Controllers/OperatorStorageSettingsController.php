@@ -333,6 +333,15 @@ class OperatorStorageSettingsController extends Controller
             // that used to leak the directory.
             if ($disk !== null) {
                 try {
+                    // The key first, and by name. On an object store
+                    // `deleteDirectory` is list-then-delete, so credentials that
+                    // can write and delete but not LIST -- the `list_failed`
+                    // result this method reports -- cannot reclaim the object
+                    // through it. Deleting the known key needs only DeleteObject.
+                    $disk->delete($probeKey);
+
+                    // Then the directory, which is what a local disk leaks and
+                    // an object store never creates.
                     $disk->deleteDirectory($dir);
                 } catch (Throwable) {
                     // best effort; the probe's verdict is the useful signal

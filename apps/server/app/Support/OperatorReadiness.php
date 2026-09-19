@@ -838,6 +838,7 @@ class OperatorReadiness
         // Declared outside the try so the finally can still reach them when
         // building the disk is what threw.
         $probeDir = null;
+        $probeKey = null;
         $disk = null;
 
         try {
@@ -922,6 +923,18 @@ class OperatorReadiness
             // exception the catch above is handling.
             if ($disk !== null && $probeDir !== null) {
                 try {
+                    // The key first, and by name. On an object store
+                    // `deleteDirectory` is list-then-delete, so credentials that
+                    // can write and delete but not LIST -- the `cannot list`
+                    // finding above, which is a real misconfiguration -- cannot
+                    // reclaim the object through it. Deleting the known key
+                    // needs only DeleteObject and works there.
+                    if ($probeKey !== null) {
+                        $disk->delete($probeKey);
+                    }
+
+                    // Then the directory, which is what a local disk leaks and
+                    // an object store never creates.
                     $disk->deleteDirectory($probeDir);
                 } catch (Throwable) {
                     // The probe's own verdict is the useful signal here.
