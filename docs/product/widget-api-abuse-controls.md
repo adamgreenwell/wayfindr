@@ -191,17 +191,21 @@ those requests in the caller's own bucket.
 ## Turning on a token lifetime
 
 `WAYFINDR_VISITOR_SESSION_TTL_MINUTES` is zero on every install today, and zero
-means a visitor session token never expires. Setting it does ONE thing: bootstrap
-and refresh begin advertising a lifetime, and the widget rotates its token ahead
-of that deadline. The server still accepts an older token.
+means a visitor session token never expires. Setting it does TWO things:
+bootstrap and refresh begin advertising a lifetime, so the widget rotates its
+token ahead of that deadline, AND the server refuses a token past it.
 
-That ordering matters and is worth not reversing. `widget.js` is cached for five
-minutes and carries no version, so the widgets holding tokens right now are the
-ones that have to survive the change. Advertise the lifetime first, let the
-installed widgets rotate against it, and only then consider refusing an expired
-token. A rule enforced before its clients can rotate strands every open
-conversation at once, and it does so quietly, because a refused refresh is
+The ordering that used to be built into this setting is now yours to keep.
+`widget.js` is cached for five minutes and carries no version, so the widgets
+holding tokens right now are the ones that have to survive the change, and they
+only begin rotating once a browser has re-fetched the asset. Wait out that cache
+before you set a lifetime. A rule enforced before its clients rotate strands
+open conversations, and it does so quietly, because a refused refresh is
 indistinguishable to the widget from a declined one.
+
+A visitor whose widget has not started rotating recovers on their next page
+load, when bootstrap mints a fresh token. One sitting in an open panel
+mid-conversation does not, until they reload.
 
 Raise or lower it freely afterwards: the widget reads the deadline from each
 response rather than caching a policy, and it will not schedule a refresh past
