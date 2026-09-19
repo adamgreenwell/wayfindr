@@ -1980,3 +1980,21 @@ test('the remediation command names the configured backup queue', function (): v
         ->assertSee('--queue=wayfindr-backups', escape: false)
         ->assertSee('--timeout=7200', escape: false);
 });
+
+test('the offsite connection test leaves nothing behind on the backup disk', function (): void {
+    config()->set('wayfindr.backup.disk', 'backups');
+    $disk = Storage::fake('backups');
+
+    $this->actingAs(backupOperator())
+        ->post(route('operator.settings.backups.test'))
+        ->assertRedirect();
+
+    // Filtered rather than asserting the disk is bare: the probe runs under the
+    // install's backup prefix, which legitimately exists.
+    $leftovers = collect($disk->allDirectories())
+        ->filter(fn (string $dir): bool => str_contains($dir, '.wayfindr-backup-test-'))
+        ->values()
+        ->all();
+
+    expect($leftovers)->toBe([], 'The offsite connection test left its probe directory behind under the backup prefix.');
+});

@@ -295,7 +295,6 @@ class OperatorStorageSettingsController extends Controller
         $dir = '.wayfindr-storage-test-'.Str::random(12);
         $probeKey = $dir.'/.probe';
         $disk = null;
-        $needsCleanup = false;
 
         try {
             // Building the disk can throw before any I/O — an unsupported custom
@@ -303,7 +302,6 @@ class OperatorStorageSettingsController extends Controller
             // the guarded block so the test reports an actionable error, not 500.
             $disk = Storage::disk($diskName);
             $wrote = $disk->put($probeKey, 'ok') !== false;
-            $needsCleanup = $wrote;
 
             if (! $wrote || $disk->get($probeKey) !== 'ok') {
                 return ['key' => 'operator.storage.flash.write_read_failed'];
@@ -317,8 +315,6 @@ class OperatorStorageSettingsController extends Controller
                 return ['key' => 'operator.storage.flash.delete_failed'];
             }
 
-            $needsCleanup = false; // deleted cleanly
-
             return null;
         } catch (Throwable $exception) {
             return [
@@ -326,14 +322,29 @@ class OperatorStorageSettingsController extends Controller
                 'parameters' => ['message' => $exception->getMessage()],
             ];
         } finally {
-            // If an intermediate step (read/list) threw or returned early after a
-            // successful write, best-effort remove the probe object — it is
-            // dotfile-prefixed, so the orphan sweep would never reclaim it.
-            if ($needsCleanup && $disk !== null) {
+            // The probe writes `.probe` inside its own directory so the listing
+            // check is one scoped call. Removing the key therefore leaves the
+            // directory behind, and on a local disk that is one empty directory
+            // per press of Test connection, forever.
+            //
+            // `deleteDirectory` covers the object too, which is why this is no
+            // longer gated on whether the write succeeded: the success path,
+            // where the key was already deleted cleanly, is exactly the path
+            // that used to leak the directory.
+            if ($disk !== null) {
                 try {
+                    // The key first, and by name. On an object store
+                    // `deleteDirectory` is list-then-delete, so credentials that
+                    // can write and delete but not LIST -- the `list_failed`
+                    // result this method reports -- cannot reclaim the object
+                    // through it. Deleting the known key needs only DeleteObject.
                     $disk->delete($probeKey);
+
+                    // Then the directory, which is what a local disk leaks and
+                    // an object store never creates.
+                    $disk->deleteDirectory($dir);
                 } catch (Throwable) {
-                    // best effort
+                    // best effort; the probe's verdict is the useful signal
                 }
             }
         }

@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Minishlink\WebPush\VAPID;
 
 uses(RefreshDatabase::class);
@@ -1816,4 +1817,15 @@ test('every scheduled prune or sweep is named on the retention panel', function 
     expect($unnamed)->toBe([], 'Scheduled prune/sweep commands the retention panel does not name: '.implode(', ', $unnamed));
 
     expect($misnamed)->toBe([], 'Scheduled commands delete rows but are not named prune-* or sweep-*, so the panel check cannot see them: '.implode(', ', $misnamed));
+});
+
+test('the attachment storage probe leaves nothing behind on a healthy disk', function (): void {
+    $disk = Storage::fake('attachments');
+
+    app(OperatorReadiness::class)->summary();
+
+    expect($disk->directories(''))
+        ->toBe([], 'The readiness probe left a directory behind on the attachments disk. It writes .probe inside a uniquely named directory and must remove BOTH.')
+        ->and($disk->allFiles())
+        ->toBe([], 'The readiness probe left a file behind on the attachments disk.');
 });

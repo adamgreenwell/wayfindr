@@ -835,6 +835,12 @@ class OperatorReadiness
         // write, reads it back, and deletes it. Durability and backups stay
         // operator-owned, per the documented posture. The probe key is a
         // dotfile so the orphan sweep never races it.
+        // Declared outside the try so the finally can still reach them when
+        // building the disk is what threw.
+        $probeDir = null;
+        $probeKey = null;
+        $disk = null;
+
         try {
             // The probe lives under its own dotfile prefix: listing that prefix
             // is a one-object ListObjects call (never a full-bucket list), and
@@ -900,6 +906,40 @@ class OperatorReadiness
                 'disk' => $diskName,
                 'error' => $exception->getMessage(),
             ]);
+        } finally {
+            // The probe writes `.probe` INSIDE a directory, so that listing it
+            // is one scoped call rather than a full-bucket list. Deleting the
+            // key therefore leaves the directory, and on a local disk that is a
+            // permanent empty directory per readiness run -- inside the very
+            // directory this check reports as healthy.
+            //
+            // `deleteDirectory` rather than a second `delete`, because it also
+            // reclaims the key on the paths where deleting it failed or never
+            // ran. Every exit above is a return or a throw, so this is the only
+            // place that covers all of them.
+            //
+            // Best effort, and deliberately silent: a cleanup failure must not
+            // replace the finding this method exists to report, nor mask the
+            // exception the catch above is handling.
+            if ($disk !== null && $probeDir !== null) {
+                try {
+                    // The key first, and by name. On an object store
+                    // `deleteDirectory` is list-then-delete, so credentials that
+                    // can write and delete but not LIST -- the `cannot list`
+                    // finding above, which is a real misconfiguration -- cannot
+                    // reclaim the object through it. Deleting the known key
+                    // needs only DeleteObject and works there.
+                    if ($probeKey !== null) {
+                        $disk->delete($probeKey);
+                    }
+
+                    // Then the directory, which is what a local disk leaks and
+                    // an object store never creates.
+                    $disk->deleteDirectory($probeDir);
+                } catch (Throwable) {
+                    // The probe's own verdict is the useful signal here.
+                }
+            }
         }
 
         return $this->withTranslation($this->check(

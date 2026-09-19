@@ -753,3 +753,16 @@ test('arriving from onboarding keeps the back link and save on the checklist', f
         ->post(route('operator.settings.storage.update'), ['disk' => 'attachments', 'from' => 'onboarding'])
         ->assertRedirect(route('operator.settings.storage.edit', ['from' => 'onboarding']));
 });
+
+test('the storage connection test leaves nothing behind on the disk', function (): void {
+    $disk = Storage::fake('attachments');
+
+    $this->actingAs(storageOperator())
+        ->post(route('operator.settings.storage.test'))
+        ->assertRedirect();
+
+    expect($disk->directories(''))
+        ->toBe([], 'The storage connection test left its probe directory behind. It writes .probe inside a uniquely named directory, so removing the key is not enough.')
+        ->and($disk->allFiles())
+        ->toBe([], 'The storage connection test left its probe object behind.');
+});
