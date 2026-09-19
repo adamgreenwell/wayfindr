@@ -222,7 +222,11 @@ class VisitorSessionToken
      */
     public function expiresAt(string $token): ?CarbonImmutable
     {
-        $minutes = (int) config('wayfindr.visitor_session_ttl_minutes', 0);
+        // The token's own recorded lifetime, for the same reason enforcement
+        // uses it: what is advertised and what is enforced have to be one
+        // number, or a widget refreshes against a deadline the server has
+        // already moved.
+        $minutes = $this->lifetimeFromPayload($this->decode($token));
 
         if ($minutes <= 0) {
             return null;
@@ -287,6 +291,19 @@ class VisitorSessionToken
             'anonymous_id' => $anonymousId,
             'issued_at' => CarbonImmutable::instance($issuedAt)->toJSON(),
             'session_started_at' => CarbonImmutable::instance($sessionStartedAt ?? $issuedAt)->toJSON(),
+            // The lifetime IN FORCE WHEN THIS TOKEN WAS MINTED, so the token is
+            // judged by the policy it was issued under and not by whatever the
+            // config says later. Reading the config at verification time would
+            // apply a change retroactively: lower the value from sixty minutes
+            // to five and every token already advertised as good for an hour
+            // dies at minute five, before the refresh its widget scheduled from
+            // the number the server itself gave it.
+            //
+            // It also makes enabling a lifetime genuinely safe, rather than safe
+            // with a warning. Tokens minted while the value was 0 carry no
+            // lifetime and keep working; they age out as the widget rotates onto
+            // tokens that do carry one.
+            'ttl_minutes' => max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)),
         ], JSON_THROW_ON_ERROR));
     }
 
@@ -375,19 +392,18 @@ class VisitorSessionToken
      */
     private function abortIfExpired(array $payload): void
     {
-        $minutes = (int) config('wayfindr.visitor_session_ttl_minutes', 0);
+        $minutes = $this->lifetimeFromPayload($payload);
 
+        // No lifetime recorded means this token was minted before lifetimes
+        // existed, or while the setting was 0. Either way it was never promised
+        // one, so it does not get held to one. Such tokens age out as the widget
+        // rotates onto tokens that carry a lifetime.
         if ($minutes <= 0) {
             return;
         }
 
         $issuedAt = $this->issuedAtFromPayload($payload);
 
-        // A token minted before this field existed carries no issue time. Treat
-        // it as current rather than as infinitely old: expiring every one of
-        // them the moment an operator sets the value would log out every open
-        // session at once, which is the stranding this ordering exists to
-        // avoid. They age out as soon as the widget next rotates.
         if ($issuedAt === null) {
             return;
         }
@@ -397,6 +413,20 @@ class VisitorSessionToken
             401,
             'Visitor session has expired.',
         );
+    }
+
+    /**
+     * The lifetime this token was minted under, in minutes, or 0 for none.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function lifetimeFromPayload(array $payload): int
+    {
+        $value = $payload['ttl_minutes'] ?? null;
+
+        return is_int($value) || (is_string($value) && $value !== '' && ctype_digit($value))
+            ? max(0, (int) $value)
+            : 0;
     }
 
     /**

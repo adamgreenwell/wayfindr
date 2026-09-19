@@ -191,21 +191,21 @@ those requests in the caller's own bucket.
 ## Turning on a token lifetime
 
 `WAYFINDR_VISITOR_SESSION_TTL_MINUTES` is zero on every install today, and zero
-means a visitor session token never expires. Setting it does TWO things:
+means a visitor session token never expires. Setting it does two things:
 bootstrap and refresh begin advertising a lifetime, so the widget rotates its
-token ahead of that deadline, AND the server refuses a token past it.
+token ahead of that deadline, and the server refuses a token past it.
 
-The ordering that used to be built into this setting is now yours to keep.
-`widget.js` is cached for five minutes and carries no version, so the widgets
-holding tokens right now are the ones that have to survive the change, and they
-only begin rotating once a browser has re-fetched the asset. Wait out that cache
-before you set a lifetime. A rule enforced before its clients rotate strands
-open conversations, and it does so quietly, because a refused refresh is
+**It applies only to tokens minted after you set it.** Each token records the
+lifetime that was in force when it was issued and is judged by that, so this
+value never reaches a token already in a visitor's browser. Turning it on does
+not log anybody out. Lowering it does not cut short a token the server itself
+advertised a longer life for. Tokens issued before you set it carry no lifetime
+and age out as widgets rotate onto ones that do.
+
+That is deliberate rather than incidental: the alternative -- reading the current
+setting when a token is checked -- refuses a token at minute five that the widget
+was told had an hour left, and it does so quietly, because a refused request is
 indistinguishable to the widget from a declined one.
-
-A visitor whose widget has not started rotating recovers on their next page
-load, when bootstrap mints a fresh token. One sitting in an open panel
-mid-conversation does not, until they reload.
 
 Raise or lower it freely afterwards: the widget reads the deadline from each
 response rather than caching a policy, and it will not schedule a refresh past
@@ -217,17 +217,15 @@ an expiry it has been told about.
 README -- gets the token but no timer, and nothing in that API tells the
 integrator to drive one.
 
-The server now refuses a token past its lifetime, so setting a value breaks
-those sessions rather than merely warning them: a `createClient` integration
-holds a token nothing is rotating, and it stops working one lifetime after it
-was issued. Finish that integration before you set this.
+The server refuses a token past its lifetime, so this is the one case that
+genuinely breaks rather than merely warns: a `createClient` integration holds a
+token nothing is rotating, and each of its sessions stops one lifetime after the
+token was issued. Finish that integration before you set a lifetime.
 
-The same applies to the embedded widget for a short while after an upgrade.
-`widget.js` is cached for five minutes and carries no version, so a browser that
-loaded it before you upgraded is holding a token it is not refreshing. Those
-visitors recover on their next page load; one sitting in an open panel
-mid-conversation does not, until they reload. Waiting out the asset cache before
-setting a lifetime is the whole precaution.
+The embedded widget needs no such preparation. A browser still running a
+`widget.js` from before your upgrade holds a token minted without a lifetime, so
+it is not refused; it starts rotating as soon as the browser re-fetches the
+asset.
 
 The residual: two sessions begun for the same visitor in the same microsecond
 share a budget. The value is inside the encrypted token, so it cannot be read

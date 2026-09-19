@@ -167,17 +167,16 @@ return [
     // How long a visitor session token stays usable, in minutes.
     //
     // ZERO MEANS NO EXPIRY, which is the shipped default and the behaviour
-    // every existing install has. Setting it now does two things: it advertises
-    // the expiry to widgets, which refresh at the half-life to stay ahead of
-    // it, AND the server refuses a token past it.
+    // every existing install has. Setting it advertises the expiry to widgets,
+    // which refresh at the half-life to stay ahead of it, and the server refuses
+    // a token past it.
     //
-    // That ordering still matters, and it is now the operator's to respect
-    // rather than the code's. A lifetime is only safe to switch on once the
-    // widgets holding tokens are already rotating -- and `widget.js` is cached
-    // for five minutes and carries no version, so an install that enables this
-    // the instant it upgrades will refuse tokens held by widgets that have not
-    // reloaded yet. Those visitors recover on their next page load; one sitting
-    // in an open panel mid-conversation does not, until they reload.
+    // It applies only to tokens minted AFTER it is set. Each token records the
+    // lifetime in force when it was issued and is judged by that, so changing
+    // this value never reaches a token already handed out -- enabling it does
+    // not log out open sessions, and lowering it does not cut short a token the
+    // server itself advertised a longer life for. Tokens issued earlier age out
+    // as widgets rotate onto ones that carry a lifetime.
     //
     // Measured from when a token was ISSUED, not when its session began. An
     // absolute session cap is a separate change -- see the note on

@@ -162,3 +162,94 @@ test('a token minted before issue times were recorded is not refused', function 
     expect($method->invoke($svc, $request, $f['site'], 'anon-life')->id)
         ->toBe($f['visitor']->id, 'A token with no recorded issue time was treated as infinitely old, which would log out every session an install had open the moment a lifetime was configured.');
 })->group('lifetime');
+
+// The lifetime is a property of the TOKEN, not of the config at the moment it is
+// checked. Reading the config at verification time applies a change
+// retroactively, which breaks the promise the server itself made to the widget.
+test('lowering the lifetime does not retroactively expire a token issued under a longer one', function (): void {
+    config(['wayfindr.visitor_session_ttl_minutes' => 60]);
+    $f = lifetimeFixture();
+    $token = lifetimeToken($f);
+
+    $svc = app(VisitorSessionToken::class);
+
+    // What the widget was told, and scheduled its refresh against.
+    expect($svc->expiresInSeconds($token))->toBeGreaterThan(3000);
+
+    // The operator tightens the policy.
+    config(['wayfindr.visitor_session_ttl_minutes' => 5]);
+    test()->travel(10)->minutes();
+
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+    ]);
+    $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
+    $method->setAccessible(true);
+
+    try {
+        $resolved = $method->invoke($svc, $request, $f['site'], 'anon-life');
+    } catch (HttpException $e) {
+        $resolved = null;
+    }
+
+    expect($resolved?->id)->toBe(
+        $f['visitor']->id,
+        'A token advertised as good for an hour was refused ten minutes in because the setting changed. The widget scheduled its refresh from the number the server gave it, so this fails requests before that refresh is due.',
+    );
+})->group('lifetime');
+
+test('enabling a lifetime does not expire tokens minted before it', function (): void {
+    // The whole rollout hazard, removed rather than documented: a token minted
+    // while the setting was 0 was never promised a lifetime, so it does not get
+    // held to one. It ages out as the widget rotates.
+    config(['wayfindr.visitor_session_ttl_minutes' => 0]);
+    $f = lifetimeFixture();
+    $token = lifetimeToken($f);
+
+    config(['wayfindr.visitor_session_ttl_minutes' => 30]);
+    test()->travel(90)->minutes();
+
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+    ]);
+    $svc = app(VisitorSessionToken::class);
+    $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
+    $method->setAccessible(true);
+
+    try {
+        $resolved = $method->invoke($svc, $request, $f['site'], 'anon-life');
+    } catch (HttpException $e) {
+        $resolved = null;
+    }
+
+    expect($resolved?->id)->toBe(
+        $f['visitor']->id,
+        'Enabling a lifetime retroactively expired every token an install already had out, which logs out every open session at once.',
+    );
+})->group('lifetime');
+
+test('a token minted under a lifetime is still refused past it', function (): void {
+    // The control: stamping the lifetime must not stop it being enforced.
+    config(['wayfindr.visitor_session_ttl_minutes' => 30]);
+    $f = lifetimeFixture();
+    $token = lifetimeToken($f);
+
+    test()->travel(31)->minutes();
+
+    $request = Request::create('/api/x', 'GET', [], [], [], [
+        'HTTP_AUTHORIZATION' => 'Bearer '.$token,
+    ]);
+    $svc = app(VisitorSessionToken::class);
+    $method = (new ReflectionClass($svc))->getMethod('visitorFromRequest');
+    $method->setAccessible(true);
+
+    $status = 200;
+
+    try {
+        $method->invoke($svc, $request, $f['site'], 'anon-life');
+    } catch (HttpException $e) {
+        $status = $e->getStatusCode();
+    }
+
+    expect($status)->toBe(401, 'The lifetime recorded in the token is not being enforced at all.');
+})->group('lifetime');

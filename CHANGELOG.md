@@ -735,25 +735,18 @@ makes none.
   `WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE` (30, per session) and
   `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE` (600).
 
-  **⚠ Operator action, only if you already set this during 0.8.0 development.**
-  An earlier draft of this note said the server would keep accepting an older
-  token, and that enforcement would come as a separate later step. It does not:
-  enforcement ships here, with the advertisement. An install that already has a
-  non-zero value therefore starts refusing its existing tokens the moment this
-  release is deployed, without anyone enabling anything. Before upgrading,
-  either finish the `createClient` rotation work below, or set the value back to
-  `0` and set it again once you have.
+  **⚠ Operator action: none.** Each token records the lifetime in force when it
+  was issued and is judged by that, so setting this value never reaches a token
+  already in a visitor's browser. Turning it on logs nobody out, and lowering it
+  later does not cut short a token the server advertised a longer life for.
+  Tokens issued while the value was `0` carry no lifetime and age out as widgets
+  rotate onto ones that do — including tokens held by a browser still running a
+  `widget.js` from before the upgrade.
 
-  Rotation lives in `Wayfindr.init()`. A host integrating through
-  `Wayfindr.createClient()` directly gets the token and no timer, so such a
-  session stops working one lifetime after each token is issued. Finish that
-  integration before setting a lifetime.
-
-  The same caution applies briefly to the embedded widget after any upgrade:
-  `widget.js` is cached for five minutes and carries no version, so a browser
-  that loaded it earlier is holding a token it is not yet refreshing. Those
-  visitors recover on their next page load; one sitting in an open panel
-  mid-conversation does not, until they reload.
+  One thing to finish before setting a lifetime, though. Rotation lives in
+  `Wayfindr.init()`. A host integrating through `Wayfindr.createClient()`
+  directly receives a token and no timer, so each of its sessions stops one
+  lifetime after that token was issued.
 
 - **Answering a cobrowse consent prompt is recorded.** Granting, declining or
   revoking screen sharing now writes to the account audit log as
