@@ -729,20 +729,31 @@ makes none.
   This is the plumbing for a session lifetime rather than a control on its own.
 
   `WAYFINDR_VISITOR_SESSION_TTL_MINUTES` defaults to `0`, which means no change
-  for any existing install. Setting it makes bootstrap and refresh advertise a
-  lifetime so widgets rotate ahead of it, while the server still accepts an
-  older token — advertise first, enforce later, because the widgets already
-  embedded in customers' pages are the ones that have to survive the change.
-  Two optional throttles come with it:
+  for any existing install. Setting it does two things: bootstrap and refresh
+  advertise a lifetime so widgets rotate ahead of it, and the server refuses a
+  token past it. Two optional throttles come with it:
   `WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE` (30, per session) and
   `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE` (600).
 
-  One gap to know before you set a lifetime: rotation lives in
-  `Wayfindr.init()`. A host integrating through `Wayfindr.createClient()`
-  directly gets the token and no timer. Those sessions are not broken by setting
-  the value, since enforcement comes at a later step — but they are exactly
-  the ones that step breaks, so finish that integration before it rather than
-  holding the lifetime at zero.
+  **⚠ Operator action, only if you already set this during 0.8.0 development.**
+  An earlier draft of this note said the server would keep accepting an older
+  token, and that enforcement would come as a separate later step. It does not:
+  enforcement ships here, with the advertisement. An install that already has a
+  non-zero value therefore starts refusing its existing tokens the moment this
+  release is deployed, without anyone enabling anything. Before upgrading,
+  either finish the `createClient` rotation work below, or set the value back to
+  `0` and set it again once you have.
+
+  Rotation lives in `Wayfindr.init()`. A host integrating through
+  `Wayfindr.createClient()` directly gets the token and no timer, so such a
+  session stops working one lifetime after each token is issued. Finish that
+  integration before setting a lifetime.
+
+  The same caution applies briefly to the embedded widget after any upgrade:
+  `widget.js` is cached for five minutes and carries no version, so a browser
+  that loaded it earlier is holding a token it is not yet refreshing. Those
+  visitors recover on their next page load; one sitting in an open panel
+  mid-conversation does not, until they reload.
 
 - **Answering a cobrowse consent prompt is recorded.** Granting, declining or
   revoking screen sharing now writes to the account audit log as
