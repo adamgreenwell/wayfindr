@@ -199,7 +199,7 @@ test('renders received image and file attachments in the transcript', async () =
         sender: { kind: 'agent', name: 'Ada' },
         type: 'text',
         body: 'Here is the diagram.',
-        attachments: [{ id: 100, filename: 'diagram.png', mime_type: 'image/png', size_bytes: 4096, is_image: true, status: 'ready' }],
+        attachments: [{ id: 100, filename: 'diagram.png', mime_type: 'image/png', size_bytes: 4096, is_image: true, status: 'ready', download_url: '/api/conversations/WF-DOCS/attachments/100/file?site_public_key=site_public_docs&v=abc&expires=9999999999&signature=deadbeef' }],
         created_at: '2026-07-15T10:00:00.000000Z',
       },
       {
@@ -207,7 +207,7 @@ test('renders received image and file attachments in the transcript', async () =
         sender: { kind: 'visitor', name: 'Visitor' },
         type: 'text',
         body: null,
-        attachments: [{ id: 101, filename: 'log.txt', mime_type: 'text/plain', size_bytes: 500, is_image: false, status: 'ready' }],
+        attachments: [{ id: 101, filename: 'log.txt', mime_type: 'text/plain', size_bytes: 500, is_image: false, status: 'ready', download_url: '/api/conversations/WF-DOCS/attachments/101/file?site_public_key=site_public_docs&v=abc&expires=9999999999&signature=deadbeef' }],
         created_at: '2026-07-15T10:01:00.000000Z',
       },
     ]),
@@ -218,7 +218,15 @@ test('renders received image and file attachments in the transcript', async () =
 
   const img = widget.root.querySelector('.wayfindr-widget__attachment-image');
   assert.ok(img, 'the image attachment renders inline');
-  assert.match(img.getAttribute('src'), /\/api\/conversations\/WF-DOCS\/attachments\/100\?/);
+  assert.match(img.getAttribute('src'), /\/api\/conversations\/WF-DOCS\/attachments\/100\/file\?/);
+  // The src lands in the host page's DOM, where any script on the customer's
+  // site can read it. It must be a capability for this file, not a session.
+  for (const credential of ['visitor_token', 'anonymous_id']) {
+    assert.ok(
+      !img.getAttribute('src').includes(credential),
+      `the image src still carries ${credential}, which any script on the host page can read`,
+    );
+  }
   assert.equal(img.getAttribute('alt'), 'diagram.png');
   // The browser fetches this URL itself, so `no-referrer` on the widget's own
   // requests does not cover it and `rel` does not apply to an image. Without
@@ -232,7 +240,13 @@ test('renders received image and file attachments in the transcript', async () =
 
   const fileLink = widget.root.querySelector('.wayfindr-widget__attachment--file');
   assert.ok(fileLink, 'the non-image attachment renders as a file row');
-  assert.match(fileLink.getAttribute('href'), /\/attachments\/101\?/);
+  assert.match(fileLink.getAttribute('href'), /\/attachments\/101\/file\?/);
+  for (const credential of ['visitor_token', 'anonymous_id']) {
+    assert.ok(
+      !fileLink.getAttribute('href').includes(credential),
+      `the file link still carries ${credential}, which any script on the host page can read`,
+    );
+  }
   assert.equal(fileLink.getAttribute('rel'), 'noopener noreferrer');
   assert.match(fileLink.textContent, /log\.txt/);
 
@@ -253,7 +267,7 @@ test('an unchanged refresh does not recreate image elements (so images are not r
       sender: { kind: 'agent', name: 'Ada' },
       type: 'text',
       body: 'Here is the diagram.',
-      attachments: [{ id: 100, filename: 'diagram.png', mime_type: 'image/png', size_bytes: 4096, is_image: true, status: 'ready' }],
+      attachments: [{ id: 100, filename: 'diagram.png', mime_type: 'image/png', size_bytes: 4096, is_image: true, status: 'ready', download_url: '/api/conversations/WF-DOCS/attachments/100/file?site_public_key=site_public_docs&v=abc&expires=9999999999&signature=deadbeef' }],
       created_at: '2026-07-15T10:00:00.000000Z',
     },
   ];
@@ -337,7 +351,23 @@ test('a live realtime message renders its attachments immediately', async () => 
 
   const img = widget.root.querySelector('.wayfindr-widget__attachment-image');
   assert.ok(img, 'the live message renders its image attachment without waiting for a poll');
-  assert.match(img.getAttribute('src'), /\/api\/conversations\/WF-DOCS\/attachments\/200\?/);
+
+  // The realtime broadcast is shared with agents, so it cannot carry a
+  // visitor-scoped signed link. The attachment therefore renders with NO target
+  // until the next poll supplies one -- and must never fall back to a URL
+  // carrying the visitor's session, which would land in the host page's DOM.
+  const liveSrc = img.getAttribute('src');
+  assert.ok(
+    liveSrc === null || liveSrc === '',
+    `a realtime attachment rendered a target before a signed link existed: ${liveSrc}`,
+  );
+
+  const liveLink = widget.root.querySelector('.wayfindr-widget__attachment');
+  const liveHref = liveLink && liveLink.getAttribute('href');
+  assert.ok(
+    liveHref === null || liveHref === '',
+    `a realtime attachment rendered an href before a signed link existed: ${liveHref}`,
+  );
 
   widget.destroy();
 });

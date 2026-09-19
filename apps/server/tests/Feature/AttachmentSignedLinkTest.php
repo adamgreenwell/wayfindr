@@ -12,6 +12,7 @@ use App\Models\Site;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentDownloadLink;
 use App\Support\Attachments\AttachmentUploadService;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -102,6 +103,15 @@ test('the link is stable within its window, so a poll does not re-render the tra
     // link that differed on every mint would either churn the whole transcript
     // every few seconds or go stale in the DOM unnoticed.
     $f = signedLinkFixture();
+
+    // Anchored mid-window on purpose. Starting from wall-clock time, a first
+    // mint in the last seconds of a window would legitimately land the second
+    // in the next one -- the test would fail for a real reason that is not the
+    // property under test, occasionally, which is the worst kind of red.
+    $window = max(1, (int) floor((int) config('wayfindr.attachments.link_ttl_minutes') / 2)) * 60;
+    $this->travelTo(CarbonImmutable::createFromTimestamp(
+        (int) (floor(now()->getTimestamp() / $window) * $window) + intdiv($window, 2)
+    ));
 
     $first = AttachmentDownloadLink::for($f['conversation'], $f['attachment']);
     $this->travel(30)->seconds();
