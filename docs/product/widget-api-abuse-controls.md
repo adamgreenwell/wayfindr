@@ -207,9 +207,23 @@ does not revoke its predecessor — these tokens are stateless and the server ke
 no record of them. Rotation stops the *browser* using an old token and does
 nothing to a copy of one.
 
-That refusal is not a logout. The expiry check is unreachable from bootstrap, so
-a pre-policy token still buys a fresh one; the widget already treats the refusal
-as a reason to bootstrap, and the session recovers on the next request. Rotation alone would not retire them: a
+How quickly a visitor recovers from that refusal depends on which `widget.js`
+their browser is running, and it is worth being exact because the difference is
+between invisible and a stuck panel.
+
+A current widget treats the refusal as a reason to bootstrap, and bootstrap
+accepts a pre-policy token and hands back a fresh one — the expiry check is not
+reachable from bootstrap. A page load recovers immediately. An already-open panel
+recovers on its next session refresh, which is up to ten minutes by default,
+because it recorded the old token as non-expiring and is not hurrying.
+
+A widget from before this release has no such recovery: a refused poll renders
+connection trouble and retries the same dead token. Those visitors recover on
+their next page load and not before.
+
+So do not switch a lifetime on at the same moment you deploy. Deploy first, give
+the five-minute asset cache time to turn over so the widgets in your visitors'
+browsers are the ones that can recover, and set the value after that. Rotation alone would not retire them: a
 replacement token does not revoke its predecessor, because these tokens are
 stateless and the server keeps no record of them. Rotation stops the *browser*
 using an old token; only the grace window stops a copy of it working.

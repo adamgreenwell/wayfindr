@@ -12,7 +12,6 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
-use Illuminate\Support\Facades\DB;
 use JsonException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -405,13 +404,18 @@ class VisitorSessionToken
             // predecessor, so an exempt token would be usable for as long as the
             // install lived, and that is the thing a lifetime is for.
             //
-            // Refusing costs a live visitor nothing, because this check is not
-            // reachable from bootstrap. `continuingSessionStartedAt()` is
-            // bootstrap's path and calls neither this method nor
-            // `visitorFromRequest()`, so a pre-policy token always still buys a
-            // fresh one. The 401 here is what the widget already maps to
-            // `rejected`, whose recovery is exactly that bootstrap. The session
-            // heals itself on the next request.
+            // A pre-policy token can still buy its replacement: this check is
+            // not reachable from bootstrap, whose path is
+            // `continuingSessionStartedAt()` and calls neither this method nor
+            // `visitorFromRequest()`. The 401 is what the widget already maps to
+            // `rejected`, whose recovery is that bootstrap.
+            //
+            // How FAST that happens is not uniform, which is why the operator
+            // guidance says to deploy before switching a lifetime on. A page load
+            // recovers at once. An already-open panel waits for its next session
+            // refresh -- ten minutes by default, because it recorded the old
+            // token as non-expiring and is not hurrying. A widget from before
+            // this release has no 401 recovery at all and waits for a reload.
             //
             // The exception is an integration built on `createClient()`, which
             // receives a token and no refresh timer and so never re-bootstraps.

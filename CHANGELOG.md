@@ -735,10 +735,22 @@ makes none.
   `WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE` (30, per session) and
   `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE` (600).
 
-  **⚠ Operator action: none.** Each token records the lifetime in force when it
-  was issued and is judged by that, so setting this value never reaches a token
-  already in a visitor's browser. Turning it on logs nobody out, and lowering it
-  later does not cut short a token the server advertised a longer life for.
+  **⚠ Operator action, only if you set this during 0.8.0 development.** The
+  advertise-only behaviour an earlier draft of this note described never shipped
+  in a release, so this applies to installs running unreleased 0.8.0 code with a
+  non-zero value — not to anyone upgrading from 0.7.0 or earlier, for whom the
+  setting is still `0`.
+
+  Tokens issued before this change record no lifetime, and are refused once one
+  is configured. So an install that already has a non-zero value refuses every
+  token it has out, the moment it deploys this, without changing anything. Set
+  the value back to `0`, deploy, let your visitors' widgets pick up the new
+  `widget.js` and start rotating, then set it again.
+
+  For everyone else the setting is still `0` and there is nothing to do. Each
+  token records the lifetime in force when it was issued and is judged by that,
+  so turning it on later reaches no token already in a visitor's browser, and
+  lowering it does not cut short one the server advertised a longer life for.
 
   Tokens issued while the value was `0` record no lifetime and are refused once
   one is configured. They have to be: a replacement token does not revoke its
