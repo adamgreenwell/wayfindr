@@ -1368,6 +1368,7 @@ return [
         'validation' => [
             'prefix_segments' => 'The prefix must not contain “..” path segments.',
             'prefix_root' => 'The prefix must name a location under the backup destination, not the destination itself.',
+            'prefix_backslash' => 'The prefix must not contain backslashes. Use “/” to separate segments.',
             'clear_or_static' => 'Either clear the stored keys to use a role, or enter new static keys — not both.',
             'paired_keys' => 'Enter both the access key and secret together, or leave both blank to keep the saved pair.',
         ],

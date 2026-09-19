@@ -150,12 +150,21 @@ class OperatorBackupSettingsController extends Controller
                     return;
                 }
 
+                // Refused, not rewritten: Flysystem treats a backslash as a
+                // separator but a POSIX filesystem does not, so rewriting one
+                // would move where local archives are looked for and orphan
+                // whatever is already under the literal name.
+                if (str_contains($prefix, '\\')) {
+                    $fail(__('operator.backups.validation.prefix_backslash'));
+
+                    return;
+                }
+
                 // The literal check above reads the raw string; the filesystem
-                // does not. Flysystem rewrites `\` to `/` and collapses `.`
-                // and `..` before using a path, so `backups\..`, `.` and `./.`
-                // carry no `/../` yet resolve to the destination root -- where
-                // retention would prune every archive it can list, including a
-                // sibling install's.
+                // does not. Flysystem collapses `.` and `..` before using a
+                // path, so `.`, `./` and `./.` carry no `/../` yet resolve to
+                // the destination root -- where this install would write its
+                // archives, and prune anything old it finds beside them.
                 try {
                     $resolved = (new WhitespacePathNormalizer)->normalizePath($prefix);
                 } catch (FilesystemException) {

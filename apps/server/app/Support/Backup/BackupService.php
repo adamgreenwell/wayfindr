@@ -258,6 +258,16 @@ class BackupService
             throw new RuntimeException("WAYFINDR_BACKUP_PREFIX must not contain '..' path segments; got [{$prefix}].");
         }
 
+        // A backslash is REFUSED rather than rewritten. Flysystem treats it as a
+        // separator, but a POSIX filesystem does not -- `tenant\backups` is one
+        // literal directory there. Normalising it would silently move where
+        // local archives are looked for, orphaning everything already written
+        // under the literal name. Refusing says so and lets the operator move
+        // the directory themselves.
+        if (str_contains($prefix, '\\')) {
+            throw new RuntimeException("WAYFINDR_BACKUP_PREFIX must not contain backslashes; use '/' to separate segments. Got [{$prefix}].");
+        }
+
         // Then validate what the filesystem will SEE rather than what was typed.
         // Flysystem rewrites `\` to `/` and collapses `.` and `..` segments
         // before it uses a path, so a guard reading the raw string passes
