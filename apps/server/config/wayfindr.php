@@ -263,6 +263,19 @@ return [
     ],
 
     'attachments' => [
+
+        // How long a signed attachment download link stays valid. The link is a
+
+        // bearer capability for one file, so this is the window in which a leaked
+
+        // URL is useful -- but it replaces a session credential that never expired
+
+        // at all. Deliberately its OWN key rather than the visitor session TTL,
+
+        // which defaults to 0 and is not enforced yet.
+
+        'link_ttl_minutes' => (int) env('WAYFINDR_ATTACHMENT_LINK_TTL_MINUTES', 60),
+
         // Which filesystem disk NEW uploads land on: 'attachments' (local
         // private disk, the default) or 'attachments-s3' (S3-compatible).
         // Every row records its own disk, so switching this affects only new
