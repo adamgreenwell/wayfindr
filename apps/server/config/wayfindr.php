@@ -164,25 +164,19 @@ return [
     // silently adopt whichever region the host happens to sit in.
     'dashboard_timezone' => (string) env('WAYFINDR_DASHBOARD_TIMEZONE', 'UTC'),
 
-    // How long a visitor session token stays usable, in minutes.
+    // How long a visitor session token stays usable, in minutes. 0 means no
+    // expiry, and is the default every existing install has.
     //
-    // ZERO MEANS NO EXPIRY, which is the shipped default and the behaviour
-    // every existing install has. Setting it advertises the expiry to widgets,
-    // which refresh at the half-life to stay ahead of it, and the server refuses
-    // a token past it.
+    // Each token records the lifetime in force when it was MINTED and is judged
+    // by that, so a change here never reaches a token already issued. Tokens
+    // predating lifetimes record none and are refused once one is configured --
+    // see `abortIfExpired()`, including why that refusal is recoverable and how
+    // fast.
     //
-    // It applies only to tokens minted AFTER it is set. Each token records the
-    // lifetime in force when it was issued and is judged by that, so changing
-    // this value never reaches a token already handed out -- enabling it does
-    // not log out open sessions, and lowering it does not cut short a token the
-    // server itself advertised a longer life for. Tokens issued earlier age out
-    // as widgets rotate onto ones that carry a lifetime.
-    //
-    // Measured from when a token was ISSUED, not when its session began. An
-    // absolute session cap is a separate change -- see the note on
-    // `abortIfExpired()` for why it cannot simply be added here.
+    // Measured from when a token was issued, not when its session began. An
+    // absolute session cap is a separate change; `abortIfExpired()` says why it
+    // cannot simply be added here.
     'visitor_session_ttl_minutes' => (int) env('WAYFINDR_VISITOR_SESSION_TTL_MINUTES', 0),
-
 
     'widget_rate_limits' => [
         'bootstrap_per_minute' => (int) env('WAYFINDR_WIDGET_BOOTSTRAP_RATE_LIMIT', 120),

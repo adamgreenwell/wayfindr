@@ -712,59 +712,39 @@ makes none.
 
 ### Security
 
-- **A visitor session can now be re-minted, and the widget rotates it.** Until
-  now widget bootstrap was the only way to obtain a visitor token, and bootstrap
-  is deliberately a low-proof endpoint: it has to answer a first page load,
-  before anything about the visitor has been established. A credential
-  obtainable only that way could not be given a life, because shortening it
-  would have stranded every session that outlived it.
+- **A visitor session can now be re-minted, the widget rotates it, and a
+  configured lifetime is enforced.** Until now widget bootstrap was the only way
+  to obtain a visitor token, and bootstrap is deliberately low-proof: it has to
+  answer a first page load. A credential obtainable only that way could not be
+  given a life, because shortening it would have stranded every session that
+  outlived it.
 
-  `POST /api/widget/session` closes that. It exchanges a currently valid token
-  for a fresh one, verifying the presented token exactly as every conversation
+  `POST /api/widget/session` closes that. It exchanges a currently valid token for
+  a fresh one, verifying the presented token exactly as every conversation
   endpoint does, so it cannot be reached with bootstrap's weaker proof. Its
   per-session budget is charged after that verification rather than by route
-  middleware, because middleware runs before any token is checked and so could
-  only be keyed on values the caller supplies.
+  middleware, because middleware runs before any token is checked.
 
-  This is the plumbing for a session lifetime rather than a control on its own.
+  `WAYFINDR_VISITOR_SESSION_TTL_MINUTES` still defaults to `0`, which means no
+  expiry and no change for any existing install. Setting it advertises a lifetime
+  so widgets rotate ahead of it, and refuses a token past it. Each token records
+  the lifetime in force when it was issued and is judged by that, so changing the
+  value never reaches a token already in a visitor's browser. Two optional
+  throttles come with it: `WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE` (30, per
+  session) and `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE` (600).
 
-  `WAYFINDR_VISITOR_SESSION_TTL_MINUTES` defaults to `0`, which means no change
-  for any existing install. Setting it does two things: bootstrap and refresh
-  advertise a lifetime so widgets rotate ahead of it, and the server refuses a
-  token past it. Two optional throttles come with it:
-  `WAYFINDR_WIDGET_SESSION_REFRESH_PER_MINUTE` (30, per session) and
-  `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE` (600).
+  **⚠ Operator action, only if you set a non-zero lifetime while running
+  unreleased 0.8.0 code.** Tokens issued before this change record no lifetime and
+  are refused once one is configured, so such an install refuses every token it
+  has out the moment it deploys. Set the value back to `0`, deploy, wait a few
+  minutes for visitors' browsers to pick up the new `widget.js`, then set it
+  again. Anyone upgrading from 0.7.0 or earlier has this at `0` and nothing to do.
 
-  **⚠ Operator action, only if you set this during 0.8.0 development.** The
-  advertise-only behaviour an earlier draft of this note described never shipped
-  in a release, so this applies to installs running unreleased 0.8.0 code with a
-  non-zero value — not to anyone upgrading from 0.7.0 or earlier, for whom the
-  setting is still `0`.
-
-  Tokens issued before this change record no lifetime, and are refused once one
-  is configured. So an install that already has a non-zero value refuses every
-  token it has out, the moment it deploys this, without changing anything. Set
-  the value back to `0`, deploy, let your visitors' widgets pick up the new
-  `widget.js` and start rotating, then set it again.
-
-  For everyone else the setting is still `0` and there is nothing to do. Each
-  token records the lifetime in force when it was issued and is judged by that,
-  so turning it on later reaches no token already in a visitor's browser, and
-  lowering it does not cut short one the server advertised a longer life for.
-
-  Tokens issued while the value was `0` record no lifetime and are refused once
-  one is configured. They have to be: a replacement token does not revoke its
-  predecessor, so rotation stops a browser using an old token and does nothing to
-  a copy of one. The refusal is not a logout — the expiry check cannot be reached
-  from bootstrap, so such a token still buys a fresh one and the session recovers
-  on its next request. That bound matters: a
-  replacement token does not revoke its predecessor, so rotation stops a browser
-  using an old token but would not stop a copy of one working.
-
-  One thing to finish before setting a lifetime, though. Rotation lives in
-  `Wayfindr.init()`. A host integrating through `Wayfindr.createClient()`
-  directly receives a token and no timer, so each of its sessions stops one
-  lifetime after that token was issued.
+  The same order applies whenever you first set a lifetime: deploy, wait out the
+  five-minute asset cache, then set the value. See
+  [widget API abuse controls](docs/product/widget-api-abuse-controls.md) for
+  why, and for the `Wayfindr.createClient()` integration that must handle its own
+  rotation first.
 
 - **Answering a cobrowse consent prompt is recorded.** Granting, declining or
   revoking screen sharing now writes to the account audit log as
