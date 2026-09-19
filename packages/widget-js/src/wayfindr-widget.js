@@ -1091,10 +1091,13 @@
       },
       fetchMessages: function (supportCode, details) {
         details = details || {};
+        // The token moves to the Authorization header. `anonymous_id` stays in
+        // the query for now: the server has to learn to do without it a release
+        // before the widget stops sending it, because a rolling deploy can serve
+        // this widget from one node and route its poll to another.
         var params = {
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
-          visitor_token: requireVisitorToken(visitorToken),
         };
 
         if (details.markSeen) {
@@ -1105,7 +1108,11 @@
           }
         }
 
-        return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages?' + toQueryString(params));
+        return getJson(
+          fetcher,
+          apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages?' + toQueryString(params),
+          visitorAuthHeader(visitorToken),
+        );
       },
       fetchAppearance: function () {
         return getJson(fetcher, apiBaseUrl + '/api/widget/appearance?' + toQueryString({
@@ -1137,11 +1144,14 @@
         }));
       },
       fetchCobrowseStatus: function (supportCode) {
-        return getJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse?' + toQueryString({
-          site_public_key: sitePublicKey,
-          anonymous_id: anonymousId,
-          visitor_token: requireVisitorToken(visitorToken),
-        }));
+        return getJson(
+          fetcher,
+          apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse?' + toQueryString({
+            site_public_key: sitePublicKey,
+            anonymous_id: anonymousId,
+          }),
+          visitorAuthHeader(visitorToken),
+        );
       },
       setCobrowseConsent: function (supportCode, granted) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse-consent', {
@@ -7598,13 +7608,20 @@
    */
   var REQUEST_PRIVACY = { referrerPolicy: 'no-referrer' };
 
-  function getJson(fetcher, url) {
+  function getJson(fetcher, url, headers) {
     return fetcher(url, Object.assign({
       method: 'GET',
-      headers: {
+      headers: Object.assign({
         Accept: 'application/json',
-      },
+      }, headers || {}),
     }, REQUEST_PRIVACY)).then(readJsonResponse);
+  }
+
+  // A visitor token belongs in this header rather than the query string: a URL
+  // is written to the web server's access log, kept in browser history and sent
+  // on in a Referer, and a credential should be in none of those.
+  function visitorAuthHeader(token) {
+    return { Authorization: 'Bearer ' + requireVisitorToken(token) };
   }
 
   function postJson(fetcher, url, payload) {
