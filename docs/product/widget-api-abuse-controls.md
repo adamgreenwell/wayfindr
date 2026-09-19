@@ -213,12 +213,17 @@ an expiry it has been told about.
 README -- gets the token but no timer, and nothing in that API tells the
 integrator to drive one.
 
-Setting a lifetime does not break those sessions today -- nothing refuses an
-expired token yet, which is the whole point of advertising first. They are the
-sessions that break at the LATER step, when the server starts refusing. So a
-`createClient` integration is work to finish before that step, not a reason to
-leave this at 0: leaving it at 0 declines the advertise-first move that makes
-enforcement safe, which is the opposite of what you want.
+The server now refuses a token past its lifetime, so setting a value breaks
+those sessions rather than merely warning them: a `createClient` integration
+holds a token nothing is rotating, and it stops working one lifetime after it
+was issued. Finish that integration before you set this.
+
+The same applies to the embedded widget for a short while after an upgrade.
+`widget.js` is cached for five minutes and carries no version, so a browser that
+loaded it before you upgraded is holding a token it is not refreshing. Those
+visitors recover on their next page load; one sitting in an open panel
+mid-conversation does not, until they reload. Waiting out the asset cache before
+setting a lifetime is the whole precaution.
 
 The residual: two sessions begun for the same visitor in the same microsecond
 share a budget. The value is inside the encrypted token, so it cannot be read

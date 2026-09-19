@@ -120,11 +120,10 @@ it -- but nothing drives them for you.
 request did not get through, so the token is probably still good) or `idle`
 (there was nothing to trade). Recovering from `rejected` means bootstrapping;
 recovering from `unavailable` means waiting, since re-minting there discards a
-working session. Wayfindr does not enforce a session lifetime yet, so an
-unrotated session keeps working until it does. That is what will change:
-an install that advertises a lifetime is preparing to enforce one, and an
-unrotated `createClient` session is exactly the case enforcement ends. Build
-rotation before the install you integrate with gets there.
+working session. An install that sets a session lifetime ENFORCES it: a token
+past that lifetime is refused, and an unrotated `createClient` session is
+exactly the case that ends. Build rotation, or your integration stops working
+one lifetime after each token is issued.
 
 `sendFirstMessage` bootstraps the visitor session automatically when needed.
 Lower-level calls such as `startConversation`, `sendMessage`,
