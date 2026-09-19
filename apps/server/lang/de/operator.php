@@ -1367,6 +1367,7 @@ return [
         ],
         'validation' => [
             'prefix_segments' => 'Das Präfix darf keine „..“-Pfadsegmente enthalten.',
+            'prefix_root' => 'Das Präfix muss einen Ort unterhalb des Sicherungsziels benennen, nicht das Ziel selbst.',
             'clear_or_static' => 'Löschen Sie entweder die gespeicherten Schlüssel, um eine Rolle zu verwenden, oder geben Sie neue statische Schlüssel ein — nicht beides.',
             'paired_keys' => 'Geben Sie Zugriffsschlüssel und Geheimnis gemeinsam ein oder lassen Sie beide Felder leer, um das gespeicherte Paar zu behalten.',
         ],

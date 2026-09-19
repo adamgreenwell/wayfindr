@@ -20,6 +20,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\WhitespacePathNormalizer;
 use Throwable;
 
 /**
@@ -132,12 +134,38 @@ class OperatorBackupSettingsController extends Controller
             'disk' => ['nullable', Rule::in($allowedDisks)],
             'retention_days' => ['nullable', 'integer', 'between:0,3650'],
             // Mirror BackupService::backupPrefix(): a prefix is a namespace UNDER
-            // the destination, never an escape. Reject `..` segments here so an
-            // unusable prefix can't be saved (and pass the probe) only to fail
-            // every backup at runtime.
+            // the destination, never an escape and never the destination itself.
+            // Reject here so an unusable prefix cannot be saved (and pass the
+            // probe) only to fail every backup at runtime.
             'prefix' => ['nullable', 'string', 'max:255', function (string $attribute, mixed $value, Closure $fail): void {
-                if (preg_match('#(^|/)\.\.(/|$)#', trim((string) $value, '/')) === 1) {
+                $prefix = trim((string) $value, '/');
+
+                if ($prefix === '') {
+                    return;
+                }
+
+                if (preg_match('#(^|/)\.\.(/|$)#', $prefix) === 1) {
                     $fail(__('operator.backups.validation.prefix_segments'));
+
+                    return;
+                }
+
+                // The literal check above reads the raw string; the filesystem
+                // does not. Flysystem rewrites `\` to `/` and collapses `.`
+                // and `..` before using a path, so `backups\..`, `.` and `./.`
+                // carry no `/../` yet resolve to the destination root -- where
+                // retention would prune every archive it can list, including a
+                // sibling install's.
+                try {
+                    $resolved = (new WhitespacePathNormalizer)->normalizePath($prefix);
+                } catch (FilesystemException) {
+                    $fail(__('operator.backups.validation.prefix_segments'));
+
+                    return;
+                }
+
+                if ($resolved === '') {
+                    $fail(__('operator.backups.validation.prefix_root'));
                 }
             }],
             'bucket' => [$offsite, 'required', 'string', 'max:255'],

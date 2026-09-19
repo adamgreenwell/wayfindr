@@ -7,6 +7,8 @@ use App\Support\Attachments\AttachmentStorage;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
+use League\Flysystem\FilesystemException;
+use League\Flysystem\WhitespacePathNormalizer;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -247,14 +249,45 @@ class BackupService
         }
 
         // A prefix is a relative namespace UNDER the backup path/bucket, never
-        // an escape from it. Reject traversal so a stray `..` cannot write
-        // archives outside the destination or point retention at a sibling
-        // install's directory (which would break the isolation guarantee).
+        // an escape from it, and never the destination itself.
+        //
+        // The literal check stays and runs first, because "remove the `..`" is
+        // a more actionable thing to tell an operator than anything the
+        // resolved-path check below can say.
         if (preg_match('#(^|/)\.\.(/|$)#', $prefix) === 1) {
             throw new RuntimeException("WAYFINDR_BACKUP_PREFIX must not contain '..' path segments; got [{$prefix}].");
         }
 
-        return $prefix;
+        // Then validate what the filesystem will SEE rather than what was typed.
+        // Flysystem rewrites `\` to `/` and collapses `.` and `..` segments
+        // before it uses a path, so a guard reading the raw string passes
+        // prefixes that resolve somewhere else entirely: `backups\..`, `.`,
+        // `./` and `./.` all reach the destination root while containing no
+        // `/../`. Normalising with Flysystem's own normaliser is what makes the
+        // two agree -- and keeps them agreeing when it changes.
+        try {
+            $resolved = (new WhitespacePathNormalizer)->normalizePath($prefix);
+        } catch (FilesystemException $exception) {
+            throw new RuntimeException(
+                "WAYFINDR_BACKUP_PREFIX is not a usable path; got [{$prefix}].",
+                previous: $exception,
+            );
+        }
+
+        // Empty means it resolved to the destination root. That is not a
+        // namespace, it is the whole bucket -- and `pruneRemoteArchives()`
+        // deletes what it lists, so the difference is between removing this
+        // install's expired archives and removing a sibling install's.
+        if ($resolved === '') {
+            throw new RuntimeException(
+                "WAYFINDR_BACKUP_PREFIX must name a location under the backup destination, not the destination itself; got [{$prefix}].",
+            );
+        }
+
+        // The resolved form, so every caller agrees on where archives live --
+        // the local path builders concatenate it raw while the remote ones hand
+        // it to Flysystem, and those two must not drift apart.
+        return $resolved;
     }
 
     /**
