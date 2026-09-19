@@ -107,7 +107,7 @@ test('the link is stable within its window, so a poll does not re-render the tra
     // mint in the last seconds of a window would legitimately land the second
     // in the next one -- the test would fail for a real reason that is not the
     // property under test, occasionally, which is the worst kind of red.
-    $window = max(1, (int) floor((int) config('wayfindr.attachments.link_ttl_minutes') / 2)) * 60;
+    $window = max(1, intdiv((int) config('wayfindr.attachments.link_ttl_minutes') * 60, 2));
     $this->travelTo(CarbonImmutable::createFromTimestamp(
         (int) (floor(now()->getTimestamp() / $window) * $window) + intdiv($window, 2)
     ));
@@ -152,7 +152,7 @@ test('a signed link never outlives the configured lifetime', function (): void {
     $f = signedLinkFixture();
 
     $ttl = (int) config('wayfindr.attachments.link_ttl_minutes');
-    $window = max(1, (int) floor($ttl / 2)) * 60;
+    $window = max(1, intdiv($ttl * 60, 2));
 
     // One second past a boundary is where rounding the EXPIRY upward would have
     // handed out nearly another full window.
@@ -165,4 +165,25 @@ test('a signed link never outlives the configured lifetime', function (): void {
     $this->travel($ttl)->minutes();
 
     $this->get($url)->assertForbidden();
+});
+
+test('even the smallest lifetime leaves a rotation overlap', function (): void {
+    // A window equal to the whole lifetime would let a link minted near the end
+    // of one expire almost immediately, and the widget only polls every few
+    // seconds -- a click in between would 403 with nothing to explain it.
+    config(['wayfindr.attachments.link_ttl_minutes' => 1]);
+    $f = signedLinkFixture();
+
+    // Worst case: one second before the window rolls.
+    $window = max(1, intdiv(1 * 60, 2));
+    $this->travelTo(CarbonImmutable::createFromTimestamp(
+        (int) (floor(now()->getTimestamp() / $window) * $window) + $window - 1
+    ));
+
+    $url = AttachmentDownloadLink::for($f['conversation'], $f['attachment']);
+
+    // Still good a poll interval later.
+    $this->travel(10)->seconds();
+
+    $this->get($url)->assertOk();
 });

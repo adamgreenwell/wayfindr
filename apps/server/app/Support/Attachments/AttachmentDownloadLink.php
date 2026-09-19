@@ -102,8 +102,15 @@ class AttachmentDownloadLink
     {
         $ttl = max(1, (int) config('wayfindr.attachments.link_ttl_minutes', 60));
 
-        // Half the lifetime, so a link rotates once per window.
-        $seconds = max(1, (int) floor($ttl / 2)) * 60;
+        // Half the lifetime, so a link rotates once per window -- computed in
+        // SECONDS, not whole minutes. Halving the minutes first floors a
+        // one-minute lifetime to a one-minute window, which is the whole
+        // lifetime: a link minted near the end of it would expire almost at
+        // once, and the widget only polls every few seconds, so a click or an
+        // image fetch in between would 403. In seconds every supported setting
+        // keeps the window strictly under the lifetime, which is what leaves
+        // the overlap a rotation needs.
+        $seconds = max(1, intdiv($ttl * 60, 2));
 
         // Quantise the MINT time, then add the lifetime -- not the other way
         // round. Rounding `now + ttl` upward would push the expiry past the next
