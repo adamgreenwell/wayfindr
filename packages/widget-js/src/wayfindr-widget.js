@@ -566,12 +566,11 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
-    // Whether this client's session began with a token a HOST handed over, in
-    // which case it is never traded for a sibling's. Set once and never cleared:
-    // if that token was valid, what we hold now CONTINUES their session, so
-    // joining a sibling would abandon the conversation it may own. Only a token
-    // that was already dead makes converging harmless, and we cannot tell those
-    // apart.
+    // Whether this client's session began with a token a HOST handed over, which
+    // is never traded for a sibling's: if it was valid, what we hold now
+    // CONTINUES their session, so joining a sibling would abandon the
+    // conversation it may own. Retired only by a refusal -- adoption alone does
+    // not, since a replacement for a valid token still continues that session.
     var visitorTokenSuppliedByHost = Boolean(options.visitorToken);
     // Declared before the storage restore below assigns it. `var` hoists the
     // binding but not the initialiser, so declaring it further down would let
@@ -808,6 +807,8 @@
         var token = result && result.visitor ? result.visitor.token : null;
 
         if (!token) {
+          visitorTokenRefused();
+
           return 'rejected';
         }
 
@@ -817,13 +818,27 @@
       }).catch(function (error) {
         // WHICH failure it was decides what the caller should do. A refused
         // token is dead and asking again with it will never succeed; an
-        // unreachable server is temporary and re-minting would throw away a
-        // perfectly good session. `postJson` attaches the status when there
-        // was a response at all.
+        // unreachable server is temporary and re-minting would throw away a good
+        // session. `postJson` attaches the status when there was a response.
         var status = error && typeof error.status === 'number' ? error.status : 0;
 
-        return status === 401 || status === 403 ? 'rejected' : 'unavailable';
+        if (status === 401 || status === 403) {
+          visitorTokenRefused();
+
+          return 'rejected';
+        }
+
+        return 'unavailable';
       });
+    }
+
+    /**
+     * The server refused the token we hold, retiring the host exemption: that
+     * rests on the token possibly still naming the session owning the host's
+     * conversation, and a refusal proves it does not.
+     */
+    function visitorTokenRefused() {
+      visitorTokenSuppliedByHost = false;
     }
 
     /**
@@ -1205,6 +1220,8 @@
           if (!error || error.status !== 401 || clientStopped) {
             throw error;
           }
+
+          visitorTokenRefused();
 
           // Counts ADOPTIONS, not responses -- the probe the session-refresh
           // recovery uses. A superseded bootstrap returns its answer, token and

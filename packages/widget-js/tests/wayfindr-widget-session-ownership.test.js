@@ -701,3 +701,40 @@ test('a token the host supplied is never traded for a sibling session', async ()
     'The replacement the server minted for the host token is used -- not the sibling session in storage.'
   );
 });
+
+test('a host token the server refuses stops exempting the client from converging', async () => {
+  // Two widgets handed the SAME explicit token, expired or minted before session
+  // ids. The exemption rests on that token possibly still naming the session that
+  // owns the host's conversation -- and a 401 is proof it does not, so holding the
+  // exemption past that point protects nothing while keeping the two tabs on two
+  // sessions.
+  const storage = memoryStorage();
+
+  const first = clientForOwnership({
+    storage,
+    visitorToken: 'token-from-the-host',
+    mintedToken: 'token-first',
+    refuseUntilBootstrapped: true,
+  });
+
+  await first.client.startConversation('Hello?', {});
+
+  // The first tab recovered and published. The second is still holding the same
+  // dead host token.
+  const second = clientForOwnership({
+    storage,
+    visitorToken: 'token-from-the-host',
+    mintedToken: 'token-second',
+    refuseUntilBootstrapped: true,
+  });
+
+  await second.client.startConversation('Me too?', {});
+
+  const creates = second.requests.filter((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    creates[creates.length - 1].body.visitor_token,
+    'token-first',
+    'Once refused, the host token proves nothing, so the second tab joins the session already in storage instead of minting a rival.'
+  );
+});
