@@ -98,6 +98,7 @@ return [
         'api_token_revoked_with_issuer' => 'Token API revocato insieme a chi lo ha emesso',
         'outbound_webhook_created' => 'Webhook in uscita creato',
         'outbound_webhook_disabled' => 'Webhook in uscita disattivato',
+        'outbound_webhook_disabled_with_creator' => 'Webhook in uscita disattivato insieme a chi lo ha creato',
         'outbound_webhook_delivery_retried' => 'Consegna webhook riprovata',
         'account_oidc_connection_updated' => 'Impostazioni Single Sign-on aggiornate',
         'account_oidc_provisioning_updated' => 'Provisioning Single Sign-on aggiornato',

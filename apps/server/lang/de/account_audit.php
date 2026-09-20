@@ -98,6 +98,7 @@ return [
         'api_token_revoked_with_issuer' => 'API-Token mit dem Aussteller widerrufen',
         'outbound_webhook_created' => 'Ausgehender Webhook erstellt',
         'outbound_webhook_disabled' => 'Ausgehender Webhook deaktiviert',
+        'outbound_webhook_disabled_with_creator' => 'Ausgehender Webhook mit dem Ersteller deaktiviert',
         'outbound_webhook_delivery_retried' => 'Webhook-Zustellung erneut versucht',
         'account_oidc_connection_updated' => 'Single-Sign-on-Einstellungen aktualisiert',
         'account_oidc_provisioning_updated' => 'Single-Sign-on-Bereitstellung aktualisiert',

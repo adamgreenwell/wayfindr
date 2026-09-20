@@ -5,6 +5,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
+use App\Models\OutboundWebhookEndpoint;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
@@ -226,7 +227,7 @@ test('the sweep revokes a token whose issuer was deactivated before this shipped
 
     $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->assertOk();
 
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')->assertSuccessful();
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
 
     $this->getJson('/api/v1/me', ['Authorization' => 'Bearer '.$plain])->assertStatus(401);
 });
@@ -241,7 +242,7 @@ test('the sweep leaves tokens issued by active agents alone', function (): void 
 
     $gone->forceFill(['deactivated_at' => now()->subDay()])->save();
 
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')->assertSuccessful();
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
 
     // This is the assertion that makes the sweep safe to run on every deploy
     // and nightly. A sweep that took the whole table would pass every other
@@ -265,7 +266,7 @@ test('the sweep leaves a token with no issuer alone', function (): void {
         'abilities' => [ApiToken::ABILITY_READ],
     ]);
 
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')->assertSuccessful();
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
 
     // A null issuer is nobody's departure. Revoking these would disable an
     // account's integrations because an unrelated agent left.
@@ -279,7 +280,7 @@ test('the sweep records a system action rather than blaming an administrator', f
     ['token' => $token] = offboardingTokenIssuedBy($issuer);
     $issuer->forceFill(['deactivated_at' => now()->subDay()])->save();
 
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')->assertSuccessful();
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
 
     $event = AuditEvent::query()
         ->where('subject_type', $token->getMorphClass())
@@ -301,12 +302,12 @@ test('running the sweep twice revokes once and keeps the first moment', function
     ['token' => $token] = offboardingTokenIssuedBy($issuer);
     $issuer->forceFill(['deactivated_at' => now()->subDay()])->save();
 
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')->assertSuccessful();
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
 
     $firstRevokedAt = $token->fresh()->revoked_at;
 
     $this->travel(5)->minutes();
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')->assertSuccessful();
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
 
     // Idempotent, because it runs on every deploy and every night. A second
     // pass that re-stamped would rewrite when the credential stopped working,
@@ -324,11 +325,159 @@ test('the sweep says what it did', function (): void {
 
     // Silence would be the wrong behaviour for something that disables live
     // credentials on a schedule.
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')
-        ->expectsOutputToContain('Revoked 1 API token issued by 1 deactivated agent.')
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')
+        ->expectsOutputToContain('Revoked 1 API token and disabled 0 webhook endpoints created by 1 deactivated agent.')
         ->assertSuccessful();
 
-    $this->artisan('wayfindr:revoke-deactivated-issuer-api-tokens')
-        ->expectsOutputToContain('No API tokens are held by deactivated issuers.')
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')
+        ->expectsOutputToContain('No API tokens or webhook endpoints are held by deactivated agents.')
         ->assertSuccessful();
+});
+
+/*
+ * The other half. An outbound webhook endpoint is not a credential the agent
+ * carries -- its secret lives in the subscriber system -- so what outlives them
+ * is the DESTINATION they chose, still receiving events nobody re-approved. It
+ * has no expiry column either, so nothing ever closes it on its own.
+ */
+
+function offboardingEndpointCreatedBy(User $creator, string $name = 'Ops feed'): OutboundWebhookEndpoint
+{
+    return OutboundWebhookEndpoint::factory()->for($creator->account)->create([
+        'created_by_id' => $creator->id,
+        'name' => $name,
+        'disabled_at' => null,
+    ]);
+}
+
+test('a webhook endpoint stops delivering when the agent who created it is deactivated', function (): void {
+    $account = offboardingAccount();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $creator = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $endpoint = offboardingEndpointCreatedBy($creator);
+
+    expect($endpoint->isEnabled())->toBeTrue();
+
+    offboardingDeactivate($owner, $creator);
+
+    // `isEnabled()` is what the publisher and the delivery job both consult, so
+    // this is the state that actually stops a POST leaving the install.
+    expect($endpoint->fresh()->isEnabled())->toBeFalse();
+});
+
+test('deactivating one agent leaves another agent webhook endpoints delivering', function (): void {
+    $account = offboardingAccount();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $leaver = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $stayer = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $leaverEndpoint = offboardingEndpointCreatedBy($leaver, 'Leaver feed');
+    $stayerEndpoint = offboardingEndpointCreatedBy($stayer, 'Stayer feed');
+
+    offboardingDeactivate($owner, $leaver);
+
+    // Endpoints are account-owned. Disabling all of them because one admin left
+    // would cut an install's integrations off, and would pass every other test
+    // in this file.
+    expect($leaverEndpoint->fresh()->isEnabled())->toBeFalse()
+        ->and($stayerEndpoint->fresh()->isEnabled())->toBeTrue();
+});
+
+test('an endpoint already disabled keeps the moment it was actually disabled', function (): void {
+    $account = offboardingAccount();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $creator = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $endpoint = offboardingEndpointCreatedBy($creator);
+    $disabledAt = now()->subDays(2)->startOfSecond();
+    $endpoint->forceFill(['disabled_at' => $disabledAt])->save();
+
+    offboardingDeactivate($owner, $creator);
+
+    expect($endpoint->fresh()->disabled_at->equalTo($disabledAt))->toBeTrue();
+});
+
+test('the trail records the destination, never the signing secret', function (): void {
+    $account = offboardingAccount();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $creator = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'name' => 'Ada Admin',
+    ]);
+
+    $endpoint = offboardingEndpointCreatedBy($creator, 'Billing feed');
+
+    offboardingDeactivate($owner, $creator);
+
+    $event = AuditEvent::query()
+        ->where('subject_type', $endpoint->getMorphClass())
+        ->where('subject_id', $endpoint->id)
+        ->sole();
+
+    expect($event->action)->toBe('outbound_webhook.disabled_with_creator')
+        ->and($event->metadata['name'])->toBe('Billing feed')
+        // The destination is the point of the record: it is what an
+        // administrator has to look at to decide whether to re-enable this
+        // under their own name.
+        ->and($event->metadata['url'])->toBe($endpoint->url)
+        ->and($event->metadata['issuer_name'])->toBe('Ada Admin');
+
+    // The signing secret is a credential the subscriber holds. The audit log is
+    // exportable, so it must never be copied into it.
+    expect(json_encode($event->metadata))->not->toContain($endpoint->secret);
+});
+
+test('the sweep disables an endpoint whose creator was deactivated before this shipped', function (): void {
+    $account = offboardingAccount();
+    $creator = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $endpoint = offboardingEndpointCreatedBy($creator);
+    $creator->forceFill(['deactivated_at' => now()->subMonths(3)])->save();
+
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
+
+    expect($endpoint->fresh()->isEnabled())->toBeFalse();
+});
+
+test('the sweep reaches an agent who left only an endpoint behind', function (): void {
+    $account = offboardingAccount();
+    $creator = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    // No API token at all. The agent set is drawn from BOTH credential tables,
+    // so an agent who issued no token must still be found by the endpoint half
+    // -- taking the set from tokens alone would silently skip them.
+    $endpoint = offboardingEndpointCreatedBy($creator);
+    $creator->forceFill(['deactivated_at' => now()->subDay()])->save();
+
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')
+        ->expectsOutputToContain('disabled 1 webhook endpoint')
+        ->assertSuccessful();
+
+    expect($endpoint->fresh()->isEnabled())->toBeFalse();
+});
+
+test('the sweep leaves endpoints created by active agents alone', function (): void {
+    $account = offboardingAccount();
+    $active = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $gone = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $activeEndpoint = offboardingEndpointCreatedBy($active, 'Live feed');
+    $goneEndpoint = offboardingEndpointCreatedBy($gone, 'Stale feed');
+
+    $gone->forceFill(['deactivated_at' => now()->subDay()])->save();
+
+    $this->artisan('wayfindr:withdraw-deactivated-agent-credentials')->assertSuccessful();
+
+    expect($activeEndpoint->fresh()->isEnabled())->toBeTrue()
+        ->and($goneEndpoint->fresh()->isEnabled())->toBeFalse();
+});
+
+test('the webhook audit action has a label in every shipped language', function (): void {
+    foreach (['en', 'de', 'it'] as $locale) {
+        expect(__('account_audit.actions.outbound_webhook_disabled_with_creator', [], $locale))
+            ->not->toBe('account_audit.actions.outbound_webhook_disabled_with_creator')
+            ->and(__('account_audit.actions.outbound_webhook_disabled_with_creator', [], $locale))
+            ->not->toBe(__('account_audit.actions.other', [], $locale));
+    }
 });

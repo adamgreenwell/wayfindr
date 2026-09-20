@@ -101,6 +101,7 @@ return [
         'api_token_revoked_with_issuer' => 'API token revoked with its issuer',
         'outbound_webhook_created' => 'Outbound webhook created',
         'outbound_webhook_disabled' => 'Outbound webhook disabled',
+        'outbound_webhook_disabled_with_creator' => 'Outbound webhook disabled with its creator',
         'outbound_webhook_delivery_retried' => 'Outbound webhook delivery retried',
         'account_oidc_connection_updated' => 'Single sign-on settings updated',
         'account_oidc_provisioning_updated' => 'Single sign-on provisioning updated',

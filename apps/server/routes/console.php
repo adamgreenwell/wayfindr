@@ -101,14 +101,16 @@ Schedule::command('wayfindr:claim-legacy-conversation-sessions')
     ->daily()
     ->description('Claim conversations written by a previous release as predating session ownership.');
 
-// Offboarding has to reach the credentials a departing agent issued. Deactivation
-// revokes them synchronously from this release on, so this finds nothing once the
-// backlog is clear -- which is the point: a run that DOES revoke something after
-// that is a deactivation that reached the database without going through
-// `UpdateAgentAccess`, and the command says so rather than working silently.
-Schedule::command('wayfindr:revoke-deactivated-issuer-api-tokens')
+// Offboarding has to reach what a departing agent left behind: an API token that
+// keeps authenticating, and a webhook endpoint that keeps POSTing to a
+// destination they chose. Deactivation withdraws both synchronously from this
+// release on, so this finds nothing once the backlog is clear -- which is the
+// point: a run that DOES withdraw something after that is a deactivation that
+// reached the database without going through `UpdateAgentAccess`, and the
+// command says so rather than working silently.
+Schedule::command('wayfindr:withdraw-deactivated-agent-credentials')
     ->daily()
-    ->description('Revoke API tokens issued by agents who have since been deactivated.');
+    ->description('Withdraw API tokens and webhook endpoints created by agents who have since been deactivated.');
 
 // Retention for presence-only visitors (ADR 0019 §4). Daily, because the window
 // is measured in days and an hourly pass would scan for nothing 23 times over.
