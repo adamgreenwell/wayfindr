@@ -699,7 +699,7 @@
       // is none.
       visitorTokenLifetimeUnknown = lifetimeUnknown === true;
 
-      var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
+      var tokenStored = storeSharedVisitorToken(token);
 
       // A DURATION, so both ends of the arithmetic use our own clock and a
       // fast or slow browser cancels out. Subtracting local `now` from a
@@ -743,20 +743,6 @@
 
       if (! expiryRecorded) {
         storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
-      }
-
-      // Recorded the same way and on the same condition as the deadline: it names
-      // the token beside it, so a record left by a previous write cannot be read
-      // as describing this one. A sibling tab reads this to decide whether the
-      // token it found belongs to the same visitor before joining its session.
-      var ownerRecorded = tokenStored && storageKept(
-        storage,
-        visitorTokenOwnerStorageKey(sitePublicKey),
-        visitorTokenFingerprint(String(anonymousId)) + '|' + visitorTokenFingerprint(token),
-      );
-
-      if (! ownerRecorded) {
-        storageRemove(storage, visitorTokenOwnerStorageKey(sitePublicKey));
       }
 
       // A new token can carry a SOONER deadline than the one a pending timer
@@ -902,6 +888,41 @@
       // which means refreshing is switched off -- and at the floor once an
       // attempt has failed, since from here the delay is permanently "now".
       return floorMs > 0 ? floorMs : 1;
+    }
+
+    /**
+     * Put a token in shared storage together with the record of whose it is.
+     *
+     * One writer, because these are two keys describing one fact. Written apart,
+     * a caller that stored only the token would leave a record naming the
+     * previous one -- and `sharedTokenBelongsToUs()` would then refuse a token
+     * that really is ours, which is the same incoherent pair the record exists to
+     * prevent, arrived at from the other side.
+     *
+     * Recorded on the same condition as the deadline beside it: the record names
+     * the exact token, and it only survives when the token write did.
+     *
+     * Naming the token is what protects, not the removal. A record left over from
+     * an earlier write names a token that is no longer in storage, and
+     * `sharedTokenBelongsToUs()` refuses it on that basis alone -- so the removal
+     * below is hygiene rather than the guard, and a reader must not drop the
+     * pairing check on the strength of it. It is kept for symmetry with the
+     * deadline record, where a stale value genuinely does lie.
+     */
+    function storeSharedVisitorToken(token) {
+      var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
+
+      var ownerRecorded = tokenStored && storageKept(
+        storage,
+        visitorTokenOwnerStorageKey(sitePublicKey),
+        visitorTokenFingerprint(String(anonymousId)) + '|' + visitorTokenFingerprint(token),
+      );
+
+      if (! ownerRecorded) {
+        storageRemove(storage, visitorTokenOwnerStorageKey(sitePublicKey));
+      }
+
+      return tokenStored;
     }
 
     /**
@@ -1145,7 +1166,12 @@
           // shared storage; the pair has to name the same session or the next
           // load restores a code it cannot reach.
             if (!clientStopped && visitorToken) {
-              storageKept(storage, visitorTokenStorageKey(sitePublicKey), visitorToken);
+              // The PAIR. Another client can have replaced both keys while this
+              // request was in flight; writing only the token back would leave a
+              // record naming theirs, and a same-visitor bootstrap already in
+              // flight would then refuse to join a session that is genuinely
+              // ours and overwrite the credential this support code needs.
+              storeSharedVisitorToken(visitorToken);
             }
 
             return conversation;
@@ -1174,8 +1200,24 @@
             throw error;
           }
 
+          // Counts ADOPTIONS, not responses -- the same probe the session-refresh
+          // recovery uses, for the same reason. A bootstrap superseded by a later
+          // one returns its answer, token and all, WITHOUT adopting it, so a
+          // recovery that read the response would look successful while the
+          // refused token stayed in place and the retry posted it again.
+          //
+          // When nothing was adopted the original refusal is what the caller
+          // hears. The superseding bootstrap will adopt its own token shortly,
+          // and a rejected send is already offered a retry -- which is a better
+          // answer than a second request we know will be refused.
+          var generationBefore = visitorTokenGeneration;
+
           return performBootstrap(details.pageUrl || null, details.context)
             .then(function () {
+              if (visitorTokenGeneration === generationBefore) {
+                throw error;
+              }
+
               return openConversation();
             });
         });

@@ -12,17 +12,27 @@ const Wayfindr = require('../src/wayfindr-widget.js');
 // Both tests below are about keeping that pair naming ONE session.
 
 const TOKEN_KEY = 'wayfindr:site_public_own:visitor-token';
+const OWNER_KEY = 'wayfindr:site_public_own:visitor-token-owner';
 
 function jsonResponse(status, payload) {
   return { ok: status >= 200 && status < 300, status, json: async () => payload };
 }
 
-function memoryStorage(seed) {
+function memoryStorage(seed, refuseKeySuffix) {
   const values = new Map(Object.entries(seed || {}));
 
   return {
     getItem: (key) => (values.has(key) ? values.get(key) : null),
-    setItem: (key, value) => values.set(key, value),
+    setItem: (key, value) => {
+      // One key refused while the others are accepted, the way private browsing
+      // or a quota can refuse a single write. Two keys describing one fact can
+      // therefore be torn apart, which is the case the removal below exists for.
+      if (refuseKeySuffix && key.endsWith(refuseKeySuffix)) {
+        throw new Error('storage refused ' + key);
+      }
+
+      return values.set(key, value);
+    },
     removeItem: (key) => values.delete(key),
   };
 }
@@ -34,6 +44,11 @@ function clientForOwnership(options) {
   const requests = [];
   let bootstrapped = false;
   let sibling = false;
+  let bootstrapCalls = 0;
+  let release = () => {};
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
 
   const client = Wayfindr.createClient({
     apiBaseUrl: 'http://127.0.0.1:8000',
@@ -45,6 +60,32 @@ function clientForOwnership(options) {
 
       if (url.endsWith('/api/widget/bootstrap')) {
         bootstrapped = true;
+
+        // Captured locally. The counter is shared, and the superseding call below
+        // increments it before this invocation reaches its own check -- so
+        // reading the shared value there made the FIRST call hold too, and
+        // nothing ever answered.
+        const call = ++bootstrapCalls;
+
+        // A concurrent panel reopen (or a host calling bootstrap() directly)
+        // starts AFTER this one and is STILL IN FLIGHT when it lands. The later
+        // call takes the ticket the moment it is made, so this response is
+        // discarded unadopted -- and the token that will eventually replace it
+        // has not arrived yet. Not awaited: it is meant to stay pending.
+        if (call === 1 && options.supersededBy) {
+          options.supersededBy();
+        }
+
+        if (call === 1 && options.duringBootstrap) {
+          await options.duringBootstrap();
+        }
+
+        // Every call after the first is held until the test releases it, which is
+        // what keeps its adoption from happening before the recovery decides.
+        // Released rather than abandoned, so the runner can exit.
+        if (call > 1) {
+          await held;
+        }
 
         // A sibling tab comes up while our request is in flight, which is the
         // race that leaves the pair naming two sessions. It is a REAL client on
@@ -102,7 +143,7 @@ function clientForOwnership(options) {
     },
   });
 
-  return { client, storage, requests };
+  return { client, storage, requests, release };
 }
 
 test('bootstrap re-reads the shared token rather than minting a second session', async () => {
@@ -282,4 +323,104 @@ test('a stale owner record does not vouch for the token now in storage', async (
     'token-mine',
     'A record that names a different token vouches for nothing.'
   );
+});
+
+test('a superseded recovery does not retry with the refused token', async () => {
+  // The recovery bootstrap is overtaken by a later one, so its answer comes back
+  // unadopted. Retrying on the strength of that response would post the very
+  // credential the server just refused.
+  const storage = memoryStorage({ [TOKEN_KEY]: 'token-pre-session' });
+  let harness = null;
+
+  harness = clientForOwnership({
+    storage,
+    mintedToken: 'token-upgraded',
+    refuseUntilBootstrapped: true,
+    // Started, deliberately not awaited: it takes the ticket and then hangs.
+    supersededBy: () => {
+      harness.client.bootstrap(null, null).catch(() => {});
+    },
+  });
+
+  await assert.rejects(
+    () => harness.client.startConversation('Hello?', {}),
+    (error) => error.status === 401,
+    'With nothing adopted, the caller hears the original refusal rather than a second doomed request.'
+  );
+
+  const creates = harness.requests.filter((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    creates.length,
+    1,
+    'One refused attempt and no retry: a bootstrap whose answer was discarded is not a recovery.'
+  );
+
+  harness.release();
+});
+
+test('a conversation re-asserts the record that vouches for its token, not just the token', async () => {
+  // The exact race: a client asks for a session of its own, and while its request
+  // is in flight two other clients for the same visitor store their pairs and one
+  // of them opens a conversation. That conversation's token has to be the one the
+  // record vouches for, or the waiting client refuses to join a session that is
+  // genuinely its visitor's and overwrites the credential the support code needs.
+  const storage = memoryStorage();
+
+  const owner = clientForOwnership({ storage, mintedToken: 'token-owner' });
+  const other = clientForOwnership({ storage, mintedToken: 'token-other' });
+
+  const waiting = clientForOwnership({
+    storage,
+    mintedToken: 'token-waiting',
+    duringBootstrap: async () => {
+      await owner.client.bootstrap(null, null);
+      // A second client for the same visitor replaces the pair...
+      await other.client.bootstrap(null, null);
+      // ...and then the first one opens a conversation, re-asserting its own.
+      await owner.client.startConversation('Hello?', {});
+    },
+  });
+
+  await waiting.client.bootstrap(null, null);
+  await waiting.client.startConversation('Me too?', {});
+
+  const create = waiting.requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-owner',
+    'The waiting client must join the session the stored record vouches for; a record left naming another token makes it keep its own and overwrite the credential.'
+  );
+});
+
+test('a torn pair vouches for nothing', async () => {
+  // The token stores and the record does not. Keeping the record would leave it
+  // describing whatever was there before -- and a record that lies is worse than
+  // none, because the whole point of it is to be trusted.
+  const storage = memoryStorage({}, ':visitor-token-owner');
+  const { client } = clientForOwnership({ storage, mintedToken: 'token-mine' });
+
+  await client.bootstrap(null, null);
+
+  assert.equal(storage.getItem(TOKEN_KEY), 'token-mine');
+  assert.equal(storage.getItem(OWNER_KEY), null, 'A record that could not be written must not be left behind.');
+
+  // And behaviourally: a client asking for its own session will not join it.
+  const storageB = memoryStorage({}, ':visitor-token-owner');
+  const waiting = clientForOwnership({
+    storage: storageB,
+    mintedToken: 'token-waiting',
+    duringBootstrap: async () => {
+      await clientForOwnership({ storage: storageB, mintedToken: 'token-unvouched' })
+        .client.bootstrap(null, null);
+    },
+  });
+
+  await waiting.client.bootstrap(null, null);
+  await waiting.client.startConversation('Hello?', {});
+
+  const create = waiting.requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(create.body.visitor_token, 'token-waiting');
 });
