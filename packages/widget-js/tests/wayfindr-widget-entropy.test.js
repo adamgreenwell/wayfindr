@@ -81,6 +81,41 @@ test('every byte contributes two hex digits, including the low ones', () => {
   assert.equal(id, 'anon_' + '05'.repeat(16));
 });
 
+test('a Math.random-backed randomUUID polyfill is not preferred over the real source', () => {
+  // `randomUUID` is the secure-context-gated member and `getRandomValues` is not,
+  // so every environment with the first has the second -- consulting the first
+  // can only lose. What it loses is a page that polyfills `randomUUID` over
+  // `Math.random`, which plenty do: the id comes out the right shape and length
+  // and is indistinguishable by inspection, so only its provenance gives it away.
+  const real = globalThis.crypto;
+  const polyfilled = {
+    getRandomValues: real.getRandomValues.bind(real),
+    randomUUID: () => 'deadbeef-dead-beef-dead-beefdeadbeef',
+  };
+
+  const id = withCrypto(polyfilled, () => clientWith(memoryStorage()).anonymousId);
+
+  assert.notEqual(
+    id,
+    'anon_deadbeefdeadbeefdeadbeefdeadbeef',
+    'A polyfilled randomUUID must never be preferred over the native CSPRNG beside it.'
+  );
+  assert.match(id, /^anon_[0-9a-f]{32}$/);
+});
+
+test('a source that hands the array back untouched is refused', () => {
+  // The array arrives zeroed, so a no-op shim produces sixteen zero bytes and an
+  // id that reads as perfectly well formed. A real draw is all zeroes once in
+  // 2^128, so refusing costs nothing.
+  const noop = { getRandomValues: (array) => array };
+
+  assert.throws(
+    () => withCrypto(noop, () => clientWith(memoryStorage())),
+    /secure random source/,
+    'Sixteen zero bytes is not an identity.'
+  );
+});
+
 test('two ids from the insecure-context path do not collide', () => {
   const real = globalThis.crypto;
   const seen = new Set();
