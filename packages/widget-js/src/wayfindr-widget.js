@@ -8112,6 +8112,23 @@
     return payload;
   }
 
+  /**
+   * 128 bits of unguessable hex, or nothing at all.
+   *
+   * This builds the visitor's anonymous id, and bootstrap mints a working
+   * visitor session from that id plus the site's public key -- so an id anyone
+   * can guess is a session anyone can mint. It used to fall back to
+   * `Math.random()` and `Date.now()` in base36, which is neither.
+   *
+   * The fallback existed because `randomUUID` is SECURE-CONTEXT ONLY, so it is
+   * absent on a plain http:// page -- exactly where the weak path ran.
+   * `getRandomValues` covers that case: it is the one member of `Crypto`
+   * available in an insecure context, which MDN states outright.
+   *
+   * Failing closed after that costs nothing real. `createClient` already refuses
+   * to run without `fetch`, and `fetch` shipped years after `getRandomValues`
+   * -- so a browser that can reach this throw cannot have run the widget anyway.
+   */
   function randomToken() {
     var crypto = root && root.crypto;
 
@@ -8119,7 +8136,23 @@
       return crypto.randomUUID().replace(/-/g, '');
     }
 
-    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+    if (crypto && typeof crypto.getRandomValues === 'function') {
+      var bytes = new Uint8Array(16);
+      var hex = '';
+
+      crypto.getRandomValues(bytes);
+
+      for (var i = 0; i < bytes.length; i++) {
+        // `+ 0x100` then dropping the leading 1 pads a single digit, which a
+        // bare toString(16) would not -- and an id that silently loses a
+        // character per low byte is an id with less entropy than it claims.
+        hex += (bytes[i] + 0x100).toString(16).slice(1);
+      }
+
+      return hex;
+    }
+
+    throw new Error('Wayfindr requires a secure random source.');
   }
 
   function storageGet(storage, key) {

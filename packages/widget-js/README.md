@@ -188,6 +188,42 @@ declarations survive.
 `createCobrowseMutationBatch` applies the same masking posture to text, safe
 attribute, added-node, and removed-node mutation records before they are sent.
 
+## Supplying your own `anonymousId`
+
+`Wayfindr.init` and `Wayfindr.createClient` both accept an `anonymousId`. Left
+out, the widget mints one itself from the browser's cryptographic random source
+and keeps it in `localStorage`.
+
+**If you supply one, it must be unguessable.** A visitor session is minted from a
+site's public key and an anonymous id, and nothing else. The public key is public
+by design, so the anonymous id is the whole of the secret: anyone who can guess
+or derive one can hold a session as that visitor.
+
+That rules out anything built from values someone else can work out or count
+through:
+
+```js
+// Don't. Every one of these can be guessed or enumerated.
+Wayfindr.init({ anonymousId: 'user-' + user.id });
+Wayfindr.init({ anonymousId: customerEmail });
+Wayfindr.init({ anonymousId: 'session-' + Date.now() });
+```
+
+Use a value with real entropy that your server generates and your page does not
+derive — for example a random 128-bit token minted per customer and stored with
+them, or a keyed digest of your own identifier that never leaves your server:
+
+```js
+// A value your server produced, unguessable without its key.
+Wayfindr.init({ anonymousId: '<%= wayfindrVisitorHandle(currentUser) %>' });
+```
+
+If you want Wayfindr to recognise the person across devices, use
+`visitorExternalId` for that. It is the field meant to carry your identifier, and
+it is not a credential.
+
+The widget cannot check any of this: an id you supply is used exactly as given.
+
 ## Development
 
 ```bash

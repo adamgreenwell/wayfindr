@@ -319,7 +319,23 @@ class AgentSiteController extends Controller
             'account' => $this->account($request),
             'agent' => $request->user(),
             'site' => $site,
-            'testerAnonymousId' => "tester-site-{$site->id}-agent-{$request->user()->id}",
+            // Unguessable, and stable for this agent on this site so the tester
+            // stays one visitor rather than a new one per page load.
+            //
+            // It used to be "tester-site-{id}-agent-{id}" -- two sequential
+            // database ids. A site's public key is public by policy, and
+            // bootstrap mints a working visitor session from a public key and an
+            // anonymous id, so anyone could guess `tester-site-3-agent-7` and
+            // hold a session for it. Being filtered off the live board hid it;
+            // it did not stop it.
+            //
+            // The `tester-site-` prefix is load-bearing: six places filter on it,
+            // so the shape stays and only the guessable part changes.
+            'testerAnonymousId' => 'tester-site-'.substr(
+                hash_hmac('sha256', $site->id."\0".$request->user()->id, (string) config('app.key')),
+                0,
+                32,
+            ),
             'widgetBaseUrl' => $this->widgetBaseUrl(),
             'widgetReverbConfig' => WidgetRealtimeConfig::public(),
         ]);

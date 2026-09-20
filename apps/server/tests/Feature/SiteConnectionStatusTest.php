@@ -162,13 +162,62 @@ test('agents can open a hosted tester page for sites they support', function ():
         ->assertSee('Sample page')
         ->assertSee('visitor@example.test')
         ->assertSee('data-wayfindr-mask', false)
-        ->assertSee('tester-site-'.$site->id.'-agent-'.$agent->id)
+        // The prefix, which six places filter the live board on -- but NOT the
+        // old `tester-site-{id}-agent-{id}`, which was two sequential database
+        // ids and so a guessable identity anyone could mint a session for.
+        ->assertSee('tester-site-')
+        ->assertDontSee('tester-site-'.$site->id.'-agent-'.$agent->id)
         ->assertSee('src="http://localhost:8000/widget.js"', false)
         ->assertSee('apiBaseUrl: "http:\/\/localhost:8000"', false)
         ->assertSee('sitePublicKey: "site_public_docs"', false)
         ->assertSee("wayfindr_source: 'tester'", false)
         ->assertSee('/dashboard/conversations', false)
         ->assertSee("/dashboard/sites/{$site->id}", false);
+});
+
+/** @return array{0: User, 1: Site} */
+function testerPageWorld(): array
+{
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create(['public_key' => 'site_public_tester']);
+    $site->supportAgents()->attach($agent);
+
+    return [$agent, $site];
+}
+
+function testerAnonymousIdOnPage($test, User $agent, Site $site): string
+{
+    $html = $test->actingAs($agent)->get("/dashboard/sites/{$site->id}/tester")->assertOk()->getContent();
+
+    // Read back from the page the agent is actually served, rather than
+    // recomputing it here -- a test that derives the value the same way the
+    // controller does would pass however wrong both of them were.
+    preg_match('/tester-site-[A-Za-z0-9_-]+/', (string) $html, $matches);
+
+    return $matches[0] ?? '';
+}
+
+test('the tester identity is unguessable and stable for one agent on one site', function (): void {
+    // Bootstrap mints a working visitor session from a site's public key -- which
+    // is public by policy -- and an anonymous id. A tester id built from two
+    // sequential database ids was therefore a session anyone could hold by
+    // guessing small integers; being filtered off the live board hid that
+    // without stopping it.
+    //
+    // Stable, because the tester should stay ONE visitor rather than become a
+    // new one on every page load.
+    [$agent, $site] = testerPageWorld();
+
+    $read = fn () => testerAnonymousIdOnPage($this, $agent, $site);
+
+    $first = $read();
+    $second = $read();
+
+    expect($first)->toStartWith('tester-site-')
+        ->and($first)->toBe($second)
+        ->and($first)->not->toBe('tester-site-'.$site->id.'-agent-'.$agent->id)
+        ->and(strlen($first))->toBeGreaterThan(strlen('tester-site-') + 24);
 });
 
 test('tester visitors do not satisfy install health check ins', function (): void {
