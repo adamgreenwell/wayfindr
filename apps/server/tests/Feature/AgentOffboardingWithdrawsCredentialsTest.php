@@ -5,6 +5,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
+use App\Models\OutboundWebhookDelivery;
 use App\Models\OutboundWebhookEndpoint;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -480,4 +481,40 @@ test('the webhook audit action has a label in every shipped language', function 
             ->and(__('account_audit.actions.outbound_webhook_disabled_with_creator', [], $locale))
             ->not->toBe(__('account_audit.actions.other', [], $locale));
     }
+});
+
+test('withdrawing an endpoint cancels the deliveries still waiting on it', function (): void {
+    $account = offboardingAccount();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $creator = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $endpoint = offboardingEndpointCreatedBy($creator);
+
+    // Distinct sequences: (endpoint_id, sequence) is unique.
+    $pending = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'sequence' => 1,
+        'delivered_at' => null,
+        'failed_at' => null,
+        'cancelled_at' => null,
+    ]);
+    $delivered = OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'sequence' => 2,
+        'delivered_at' => now()->subHour(),
+        'failed_at' => null,
+        'cancelled_at' => null,
+    ]);
+
+    offboardingDeactivate($owner, $creator);
+
+    // The manual disable in AgentAccountOutboundWebhookController cancels
+    // pending rows before stamping `disabled_at`, and the delivery job's own
+    // comment states that as the contract: disable "locks the endpoint only
+    // long enough to stop publishers, then cancels this row". Withdrawing an
+    // endpoint on offboarding has to honour the same contract, or the queue
+    // keeps waking up on a backoff for work that can never succeed and the
+    // operator's delivery log shows them as still pending.
+    expect($pending->fresh()->cancelled_at)->not->toBeNull();
+
+    // A delivery that already went is history, not pending work.
+    expect($delivered->fresh()->cancelled_at)->toBeNull();
 });

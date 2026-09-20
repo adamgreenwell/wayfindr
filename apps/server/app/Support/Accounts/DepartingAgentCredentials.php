@@ -94,6 +94,24 @@ final class DepartingAgentCredentials
             ->get();
 
         foreach ($endpoints as $endpoint) {
+            // Cancel what is still queued BEFORE stamping the endpoint, which
+            // is the order the administrator's manual disable uses and the
+            // order `DeliverOutboundWebhook` documents as the contract: disable
+            // "locks the endpoint only long enough to stop publishers, then
+            // cancels this row".
+            //
+            // Not a security step -- the job re-reads the endpoint and refuses
+            // a disabled one, so nothing escapes either way. It is a
+            // housekeeping one: without it those rows sit in a non-terminal
+            // state, the retry backoff keeps waking for work that can never
+            // succeed, and the operator's delivery log reports them as still
+            // pending rather than as stopped when the agent left.
+            $endpoint->deliveries()
+                ->whereNull('delivered_at')
+                ->whereNull('failed_at')
+                ->whereNull('cancelled_at')
+                ->update(['cancelled_at' => $at]);
+
             $endpoint->forceFill(['disabled_at' => $at])->save();
 
             $this->audit($endpoint, $agent, $actor, $at, 'outbound_webhook.disabled_with_creator', [
