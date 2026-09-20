@@ -78,13 +78,17 @@ class ConversationController extends Controller
         // storing null would leave the visitor unable to reach a conversation
         // they just opened.
         //
-        // Refusing with the status an expired token uses is deliberate: the
-        // widget maps 401 to `rejected`, and recovery is a bootstrap, which is
-        // the one path that mints a token naming a session. Opening the panel
-        // already bootstraps unconditionally, so reaching this needs a visitor
-        // who typed a whole first message faster than that round-trip -- and
-        // their retry, offered for any rejected send, then carries the new
-        // token.
+        // Refusing with the status an expired token uses is deliberate: 401 has
+        // one defined recovery, and it is a bootstrap -- the only path that mints
+        // a token naming a session. The client now takes that recovery at this
+        // call site rather than leaving it to the panel: `startConversation()`
+        // bootstraps once on a 401 and retries.
+        //
+        // That matters for the case the panel does not cover. An integration
+        // built on `createClient()` is handed a token, gets no refresh timer, and
+        // `sendFirstMessage()` skips bootstrap whenever the restored token is
+        // truthy -- so one holding a pre-session token would have posted it and
+        // been refused for as long as the host page stayed loaded.
         $ownerSessionId = $visitorSessionToken->sessionIdFromRequest($request);
 
         abort_if($ownerSessionId === '', 401, 'Visitor session has expired.');
