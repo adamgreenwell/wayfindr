@@ -188,6 +188,52 @@ declarations survive.
 `createCobrowseMutationBatch` applies the same masking posture to text, safe
 attribute, added-node, and removed-node mutation records before they are sent.
 
+## Supplying your own `anonymousId`
+
+`Wayfindr.init` and `Wayfindr.createClient` both accept an `anonymousId`. Left
+out, the widget mints one itself from the browser's cryptographic random source
+and keeps it in `localStorage`.
+
+**If you supply one, it must be unguessable.** A visitor session is minted from a
+site's public key and an anonymous id, and nothing else. The public key is public
+by design, so the anonymous id is the whole of the secret: anyone who can guess
+or derive one can hold a session as that visitor.
+
+That rules out anything built from values someone else can work out or count
+through:
+
+```js
+// Don't. Every one of these can be guessed or enumerated.
+Wayfindr.init({ anonymousId: 'user-' + user.id });
+Wayfindr.init({ anonymousId: customerEmail });
+Wayfindr.init({ anonymousId: 'session-' + Date.now() });
+```
+
+Use a value with real entropy that your server generates and your page does not
+derive — for example a random 128-bit token minted per customer and stored with
+them, or a keyed digest of your own identifier that never leaves your server:
+
+```js
+// A value your server produced, unguessable without its key.
+Wayfindr.init({ anonymousId: '<%= wayfindrVisitorHandle(currentUser) %>' });
+```
+
+`visitorExternalId` is the field meant to carry your own identifier, and it is
+not a credential — but it does not join two browsers into one visitor. Wayfindr
+resolves a visitor by `anonymousId` alone; an external id is recorded on whichever
+visitor presents it first, and a second browser presenting the same one is left
+without it. If you want the same person recognised on their laptop and their
+phone, the `anonymousId` is what has to be the same on both — which is the reason
+to mint it per customer on your server rather than per browser.
+
+Two things the widget cannot do for you:
+
+- **An id you supply is used exactly as given.** It is never checked, so its
+  unguessability is yours to guarantee.
+- **A supplied id is not stored.** The widget only persists one it minted itself,
+  so a page that supplies an id on some views and omits it on others produces two
+  different visitors. Supply it everywhere, or nowhere.
+
 ## Development
 
 ```bash

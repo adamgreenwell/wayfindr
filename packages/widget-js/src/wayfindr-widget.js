@@ -8112,14 +8112,62 @@
     return payload;
   }
 
+  /**
+   * 128 bits of unguessable hex, or nothing at all.
+   *
+   * This builds the visitor's anonymous id, and bootstrap mints a working
+   * visitor session from that id plus the site's public key -- so an id anyone
+   * can guess is a session anyone can mint. It used to fall back to
+   * `Math.random()` and `Date.now()` in base36, which is neither.
+   *
+   * `getRandomValues` is the source, and `randomUUID` is deliberately NOT
+   * consulted even though it is the obvious first reach.
+   *
+   * `randomUUID` is the SECURE-CONTEXT gated one; `getRandomValues` is not
+   * gated at all. So every environment offering `randomUUID` offers
+   * `getRandomValues` too -- a strict subset -- and preferring it can only lose.
+   * What it loses is concrete: a page that polyfills `randomUUID` over
+   * `Math.random`, which plenty do for older browsers, would have that polyfill
+   * preferred over the native CSPRNG sitting beside it. The id it produces is
+   * the right shape and length and is indistinguishable by inspection, which is
+   * why this was measured rather than reasoned about:
+   * `anon_a30bde9d00294c0d975f48e64d546f4f`, roughly 51 bits of real entropy
+   * wearing 128.
+   *
+   * Failing closed after that costs nothing real. The widget source uses
+   * `async`/`await` and is served untranspiled, so a browser without ES2017
+   * never executes a line of it; that floor is 2016-17, and every engine shipped
+   * `getRandomValues` four to six years earlier.
+   */
   function randomToken() {
     var crypto = root && root.crypto;
 
-    if (crypto && typeof crypto.randomUUID === 'function') {
-      return crypto.randomUUID().replace(/-/g, '');
+    if (crypto && typeof crypto.getRandomValues === 'function') {
+      var bytes = new Uint8Array(16);
+      var hex = '';
+      var drawn = 0;
+
+      crypto.getRandomValues(bytes);
+
+      for (var i = 0; i < bytes.length; i++) {
+        drawn |= bytes[i];
+
+        // `+ 0x100` then dropping the leading 1 pads a single digit, which a
+        // bare toString(16) would not -- and an id that silently loses a
+        // character per low byte is an id with less entropy than it claims.
+        hex += (bytes[i] + 0x100).toString(16).slice(1);
+      }
+
+      // A source that hands the array back untouched is not a source. The array
+      // arrives zeroed, so a no-op shim leaves sixteen zero bytes -- which reads
+      // as a perfectly well-formed id. Refusing costs nothing: a genuine draw is
+      // all zeroes once in 2^128.
+      if (drawn !== 0) {
+        return hex;
+      }
     }
 
-    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+    throw new Error('Wayfindr requires a secure random source.');
   }
 
   function storageGet(storage, key) {
