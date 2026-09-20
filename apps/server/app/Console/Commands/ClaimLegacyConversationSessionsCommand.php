@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Jobs\ClaimLegacyConversationSessionsAfterDrain;
 use App\Support\Conversations\LegacyOwnerSessionSweep;
 use Illuminate\Console\Command;
 
@@ -27,12 +28,32 @@ use Illuminate\Console\Command;
  */
 class ClaimLegacyConversationSessionsCommand extends Command
 {
-    protected $signature = 'wayfindr:claim-legacy-conversation-sessions';
+    /**
+     * Long enough for a request that was already executing at activation to
+     * finish and commit. Matches the delay the alert-publication sweep uses for
+     * the same reason, so the two do not need separate reasoning.
+     */
+    public const DRAIN_DELAY_SECONDS = 120;
+
+    protected $signature = 'wayfindr:claim-legacy-conversation-sessions
+        {--after-request-drain : Queue one final pass after the previous release\'s in-flight requests have finished}';
 
     protected $description = 'Mark conversations with no owning session as predating session ownership';
 
     public function handle(): int
     {
+        if ($this->option('after-request-drain')) {
+            ClaimLegacyConversationSessionsAfterDrain::dispatch()
+                ->delay(now()->addSeconds(self::DRAIN_DELAY_SECONDS));
+
+            $this->info(sprintf(
+                'Queued a final owning-session pass for %d seconds after activation.',
+                self::DRAIN_DELAY_SECONDS,
+            ));
+
+            return self::SUCCESS;
+        }
+
         $claimed = LegacyOwnerSessionSweep::run();
 
         // Nothing to do is the expected result on every run after the first, and

@@ -745,6 +745,20 @@
         storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
       }
 
+      // Recorded the same way and on the same condition as the deadline: it names
+      // the token beside it, so a record left by a previous write cannot be read
+      // as describing this one. A sibling tab reads this to decide whether the
+      // token it found belongs to the same visitor before joining its session.
+      var ownerRecorded = tokenStored && storageKept(
+        storage,
+        visitorTokenOwnerStorageKey(sitePublicKey),
+        visitorTokenFingerprint(String(anonymousId)) + '|' + visitorTokenFingerprint(token),
+      );
+
+      if (! ownerRecorded) {
+        storageRemove(storage, visitorTokenOwnerStorageKey(sitePublicKey));
+      }
+
       // A new token can carry a SOONER deadline than the one a pending timer
       // was scheduled against -- an operator enabling a five-minute lifetime
       // while a tab sits on a ten-minute timer, for instance. Whoever owns the
@@ -891,6 +905,28 @@
     }
 
     /**
+     * Whether the token in shared storage can be attributed to this visitor.
+     *
+     * Absent or mismatched records answer NO, deliberately: an unattributable
+     * token is one we must not adopt, and treating "cannot tell" as "yes" is how
+     * a client would end up presenting another visitor's credential with its own
+     * anonymous id.
+     */
+    function sharedTokenBelongsToUs(token) {
+      var record = storageGet(storage, visitorTokenOwnerStorageKey(sitePublicKey));
+
+      if (typeof record !== 'string') {
+        return false;
+      }
+
+      var parts = record.split('|');
+
+      return parts.length === 2
+        && parts[1] === visitorTokenFingerprint(token)
+        && parts[0] === visitorTokenFingerprint(String(anonymousId));
+    }
+
+    /**
      * Ask the server for this session's state, minting a token if we hold none.
      *
      * A named function rather than only a property, so the client's own methods
@@ -965,6 +1001,21 @@
           var shared = askingForOwnSession
             ? storageGet(storage, visitorTokenStorageKey(sitePublicKey))
             : null;
+
+          // Fails closed. A sibling token is only joined when the record beside
+          // it names THIS visitor and that exact token; anything else -- no
+          // record, a record naming a different token, or one naming another
+          // anonymous id -- means we cannot attribute it, so we keep the session
+          // the server just minted for us.
+          //
+          // Joining a token for a different visitor would pair our own
+          // `anonymous_id` with a foreign credential, which the server refuses
+          // with 403 -- terminal, and deliberately not covered by the 401
+          // recovery, because re-minting cannot fix a token that names somebody
+          // else.
+          if (shared && ! sharedTokenBelongsToUs(shared)) {
+            shared = null;
+          }
 
           if (shared && shared !== token) {
             // Its lifetime was stated to the tab that minted it, not to us, so
@@ -5756,7 +5807,31 @@
         status.textContent = t('status.conversationRestored', { code: supportCode });
         await refreshCobrowseStatus({ silent: true });
       } catch (error) {
-        if (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
+        // 403 and 410 are answers ABOUT this code: another site's key, or a
+        // conversation deliberately gone. Forgetting it is right, and keeping it
+        // would retry something that will never succeed.
+        //
+        // 404 is not, and that is deliberate on the server's side: a conversation
+        // this session does not own is refused with exactly the status of one
+        // that does not exist, so that a caller cannot use the difference to ask
+        // whether a support code belongs to a visitor. The client therefore
+        // cannot tell "gone" from "not reachable yet".
+        //
+        // So a 404 no longer discards the code. It used to, and that turned a
+        // repairable state into a permanent loss: a conversation opened by the
+        // previous release during a deployment carries no owning session until a
+        // sweep claims it, and a visitor reloading in that window would have had
+        // their only reference to a live conversation deleted before the repair
+        // arrived. The cost of keeping it is one failed request per load for a
+        // code that really is gone, which is the cheaper mistake by a wide
+        // margin on a support product.
+        // NOT named `status`: this function's scope already has one -- the DOM
+        // element the success path writes the restored notice to -- and `var`
+        // hoists, so a second `status` here shadows it for the whole function and
+        // silently breaks the resume it is not even involved in.
+        var refusal = error && typeof error.status === 'number' ? error.status : 0;
+
+        if (refusal === 403 || refusal === 410) {
           storageRemove(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
         }
       } finally {
@@ -7725,6 +7800,16 @@
 
   function visitorTokenExpiryStorageKey(sitePublicKey) {
     return 'wayfindr:' + sitePublicKey + ':visitor-token-expires-at';
+  }
+
+  // Which visitor the token in shared storage belongs to.
+  //
+  // The token key is scoped to the SITE, so two clients on one page can share it
+  // while naming different visitors -- `createClient()` takes an explicit
+  // `anonymousId`, which is the only way that happens. Nothing can be read out of
+  // the token itself, so whoever writes it records whose it is.
+  function visitorTokenOwnerStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':visitor-token-owner';
   }
 
   function appearanceStorageKey(sitePublicKey) {

@@ -33,11 +33,12 @@ function clientForOwnership(options) {
   const storage = options.storage || memoryStorage();
   const requests = [];
   let bootstrapped = false;
+  let sibling = false;
 
   const client = Wayfindr.createClient({
     apiBaseUrl: 'http://127.0.0.1:8000',
     sitePublicKey: 'site_public_own',
-    anonymousId: 'anon-own',
+    anonymousId: options.anonymousId || 'anon-own',
     storage,
     fetch: async (url, init) => {
       requests.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
@@ -45,17 +46,39 @@ function clientForOwnership(options) {
       if (url.endsWith('/api/widget/bootstrap')) {
         bootstrapped = true;
 
-        // A sibling tab can be made to store its own token while ours is in
-        // flight, which is the race that leaves the pair naming two sessions.
-        if (options.siblingStoresWhileInFlight) {
-          storage.setItem(TOKEN_KEY, options.siblingStoresWhileInFlight);
+        // A sibling tab comes up while our request is in flight, which is the
+        // race that leaves the pair naming two sessions. It is a REAL client on
+        // the same storage, not a hand-written token: what it records is part of
+        // what is being tested, and a fixture that wrote only the token would
+        // pass a guard the product would fail.
+        // A token written with no record beside it, which is what an OLDER widget
+        // leaves: it stores the credential and knows nothing about recording
+        // whose it is.
+        if (options.bareTokenWhileInFlight && !sibling) {
+          sibling = true;
+          storage.setItem(TOKEN_KEY, options.bareTokenWhileInFlight);
+        }
+
+        if (options.siblingWhileInFlight && !sibling) {
+          sibling = true;
+          await clientForOwnership({
+            storage,
+            anonymousId: options.siblingWhileInFlight.anonymousId,
+            mintedToken: options.siblingWhileInFlight.token,
+          }).client.bootstrap(null, null);
+
+          // ...and then an older widget overwrites only the token, leaving the
+          // sibling's record naming one that is no longer there.
+          if (options.thenOverwriteTokenOnly) {
+            storage.setItem(TOKEN_KEY, options.thenOverwriteTokenOnly);
+          }
         }
 
         return jsonResponse(200, {
           data: {
             site: { public_key: 'site_public_own', settings: {} },
             visitor: {
-              anonymous_id: 'anon-own',
+              anonymous_id: options.anonymousId || 'anon-own',
               token: options.mintedToken || 'token-minted',
               token_expires_in: null,
             },
@@ -131,7 +154,7 @@ test('a tab that minted its own session joins the sibling that got there first',
   const { client, requests } = clientForOwnership({
     storage,
     mintedToken: 'token-mine',
-    siblingStoresWhileInFlight: 'token-sibling',
+    siblingWhileInFlight: { anonymousId: 'anon-own', token: 'token-sibling' },
   });
 
   await client.bootstrap(null, null);
@@ -181,5 +204,82 @@ test('a refused conversation create recovers through bootstrap and retries', asy
     creates[1].body.visitor_token,
     'token-upgraded',
     'The retry has to carry the NEW token; a payload captured once would post the refused one again.'
+  );
+});
+
+test('a sibling token that names another visitor is not joined', async () => {
+  // `createClient()` takes an explicit `anonymousId`, and the token key is scoped
+  // to the SITE -- so two clients on one page can share it while naming different
+  // visitors. Joining across that boundary would pair our own `anonymous_id` with
+  // a foreign credential, which the server refuses with a terminal 403 that the
+  // 401 recovery deliberately does not cover.
+  const storage = memoryStorage();
+  const { client, requests } = clientForOwnership({
+    storage,
+    mintedToken: 'token-mine',
+    siblingWhileInFlight: { anonymousId: 'anon-somebody-else', token: 'token-theirs' },
+  });
+
+  await client.bootstrap(null, null);
+
+  assert.equal(
+    storage.getItem(TOKEN_KEY),
+    'token-mine',
+    'A token we cannot attribute to this visitor must not be joined, and the session the server minted for us is kept instead.'
+  );
+
+  await client.startConversation('Hello?', {});
+
+  const create = requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(create.body.visitor_token, 'token-mine');
+});
+
+test('a shared token that cannot be attributed at all is not joined', async () => {
+  // Two widget versions in one browser is a real, if transient, state: the older
+  // one writes a token and no record of whose it is.
+  const storage = memoryStorage();
+  const { client, requests } = clientForOwnership({
+    storage,
+    mintedToken: 'token-mine',
+    bareTokenWhileInFlight: 'token-unattributable',
+  });
+
+  await client.bootstrap(null, null);
+  await client.startConversation('Hello?', {});
+
+  // What the client USES is the question. Storage is not: this test writes to it
+  // too, so whichever write lands last would answer about the test rather than
+  // the product.
+  const create = requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-mine',
+    'Cannot tell whose it is means do not join it; the session the server minted for us is used.'
+  );
+});
+
+test('a stale owner record does not vouch for the token now in storage', async () => {
+  // The other half of the same hazard: a newer widget records an owner, an older
+  // one then overwrites only the token, and the record is left naming a token
+  // that is no longer there.
+  const storage = memoryStorage();
+  const { client, requests } = clientForOwnership({
+    storage,
+    mintedToken: 'token-mine',
+    siblingWhileInFlight: { anonymousId: 'anon-own', token: 'token-sibling' },
+    thenOverwriteTokenOnly: 'token-from-an-older-widget',
+  });
+
+  await client.bootstrap(null, null);
+  await client.startConversation('Hello?', {});
+
+  const create = requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-mine',
+    'A record that names a different token vouches for nothing.'
   );
 });

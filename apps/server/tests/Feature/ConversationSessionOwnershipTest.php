@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ClaimLegacyConversationSessionsAfterDrain;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -8,6 +9,7 @@ use App\Support\ContinuedVisitorSession;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\Queue;
 
 uses(RefreshDatabase::class);
 
@@ -387,6 +389,36 @@ test('the post-activation sweep claims what a previous release left with no sess
     $this->artisan('wayfindr:claim-legacy-conversation-sessions')
         ->expectsOutputToContain('No conversation needed')
         ->assertSuccessful();
+});
+
+test('the drain pass is queued for after the previous release stops writing', function (): void {
+    Queue::fake();
+
+    $this->artisan('wayfindr:claim-legacy-conversation-sessions --after-request-drain')
+        ->expectsOutputToContain('Queued a final owning-session pass')
+        ->assertSuccessful();
+
+    // Activation stops NEW requests reaching the old release; it does not cancel
+    // the ones already executing. The immediate pass can therefore finish before
+    // one of those commits another conversation with no owning session, and the
+    // daily sweep is a long time to wait for a visitor who is reloading now.
+    Queue::assertPushed(
+        ClaimLegacyConversationSessionsAfterDrain::class,
+        fn ($job) => $job->delay !== null,
+    );
+});
+
+test('the drain pass claims what the immediate pass could not have seen', function (): void {
+    [$site, $visitor] = sessionOwnershipWorld();
+
+    // Committed after the immediate pass ran, by a request that was already
+    // executing when the release was activated.
+    $late = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-OWN-LATE']);
+    expect($late->owner_session_id)->toBeNull();
+
+    (new ClaimLegacyConversationSessionsAfterDrain)->handle();
+
+    expect($late->refresh()->owner_session_id)->toBe(Conversation::LEGACY_OWNER_SESSION);
 });
 
 test('a conversation opened outside any widget session is reachable by nobody', function (): void {

@@ -387,7 +387,12 @@ forge_php artisan wayfindr:sanitise-page-urls
 # exist. Idempotent, and the daily scheduled run covers the final old request
 # that finishes after this pass.
 echo "Claiming conversations with no owning session."
+# The immediate pass covers everything already committed. The queued pass runs
+# two minutes later, because activation stops NEW requests reaching the old
+# release but does not cancel the ones already executing -- and one of those can
+# commit a conversation with no owning session after this pass has finished.
 forge_php artisan wayfindr:claim-legacy-conversation-sessions
+forge_php artisan wayfindr:claim-legacy-conversation-sessions --after-request-drain
 
 echo "Restarting Laravel queues."
 forge_php artisan queue:restart

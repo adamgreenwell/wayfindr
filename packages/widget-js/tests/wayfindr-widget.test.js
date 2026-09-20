@@ -1787,7 +1787,16 @@ test('resumes the persisted conversation after a page reload', async () => {
   widget2.destroy();
 });
 
-test('clears a stored support code the server rejects and starts fresh', async () => {
+// This test used to assert that ANY 4xx cleared the code, and a 404 was how it
+// proved it. A 404 no longer does, and the change is deliberate: the server
+// refuses a conversation this session does not own with exactly the status of one
+// that does not exist -- so that the difference cannot be used to ask whether a
+// support code belongs to a visitor -- which leaves the client unable to tell
+// "gone" from "not reachable yet". A conversation opened by the previous release
+// during a deployment is in the second state until a sweep claims it, and
+// discarding the code there destroyed the visitor's only reference to a live
+// conversation before the repair could arrive. The two cases below are now split.
+test('starts fresh on a rejected support code, and keeps one that may yet be repaired', async () => {
   const storage = memoryStorage();
   const supportCodeKey = 'wayfindr:site_public_docs:support-code';
   storage.setItem(supportCodeKey, 'WF-RESUME1');
@@ -1807,6 +1816,41 @@ test('clears a stored support code the server rejects and starts fresh', async (
     cobrowseStatusPollMs: 0,
     fetch: resumeFetchMock(calls, {
       messages: () => jsonResponse(404, { message: 'No visible conversation.' }),
+    }),
+  });
+
+  await settle();
+
+  // Kept, because a sweep may still claim the conversation this names.
+  assert.equal(storage.getItem(supportCodeKey), 'WF-RESUME1');
+  // The visitor still starts fresh: nothing was restored, so the intake gate asks.
+  assert.deepEqual(messageSummaries(widget), []);
+
+  widget.destroy();
+});
+
+test('clears a stored support code the server answers about, and starts fresh', async () => {
+  const storage = memoryStorage();
+  const supportCodeKey = 'wayfindr:site_public_docs:support-code';
+  storage.setItem(supportCodeKey, 'WF-RESUME1');
+
+  const dom = new JSDOM('<!doctype html><html><head></head><body><div id="support"></div></body></html>', {
+    url: 'https://docs.example.test/install',
+  });
+  const calls = [];
+  const widget = Wayfindr.init({
+    document: dom.window.document,
+    location: dom.window.location,
+    mount: '#support',
+    apiBaseUrl: 'http://127.0.0.1:8000/',
+    sitePublicKey: 'site_public_docs',
+    storage,
+    mutationFlushMs: 0,
+    cobrowseStatusPollMs: 0,
+    fetch: resumeFetchMock(calls, {
+      // 403 is an answer ABOUT this code -- another site's key -- rather than a
+      // refusal that says nothing. Retrying it could never succeed.
+      messages: () => jsonResponse(403, { message: 'Visitor token does not match this site.' }),
     }),
   });
 
