@@ -566,6 +566,17 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
+    // Whether this client's session began with a token a HOST handed over, in
+    // which case it is never traded for a sibling's -- see the convergence in
+    // `performBootstrap`.
+    //
+    // Set once and never cleared, deliberately. Adopting a replacement does not
+    // make the session ours to give away: if the host's token was valid, what we
+    // now hold CONTINUES their session, and joining a sibling would abandon the
+    // conversation it may own. Only if their token was already dead is converging
+    // harmless, and the client cannot tell those apart -- so it takes the answer
+    // that cannot lose a host's conversation.
+    var visitorTokenSuppliedByHost = Boolean(options.visitorToken);
     // Declared before the storage restore below assigns it. `var` hoists the
     // binding but not the initialiser, so declaring it further down would let
     // `= null` run afterwards and silently discard the restored deadline.
@@ -1017,21 +1028,25 @@
         visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey)) || null;
       }
 
-      // What shared storage held when we dispatched.
+      // What we are PRESENTING, which is what convergence compares against.
       //
-      // The question convergence actually turns on is "did a SIBLING write while
-      // we waited", and this is how to ask it: a value that changed during our
-      // own request window was written by somebody else, just now. Anything
-      // sitting there before we dispatched is not a sibling's answer -- it may be
-      // the very token we are replacing -- and must not beat ours.
+      // The question is whether shared storage holds a token other than the one
+      // this request is built on. If it does, somebody else put it there -- before
+      // we dispatched or while we waited, it makes no difference -- and our answer
+      // is a second session for a browser that can only keep one, because the
+      // support code is a single site-wide key.
       //
-      // This used to be `!visitorToken`, which asked whether we were starting a
-      // session of our own. That missed the case where we presented a token that
-      // could not continue one: expired, or minted before sessions were
-      // identified, which at upgrade is EVERY tab. Two tabs presenting the same
-      // dead token are asking for their own sessions just as surely as two tabs
-      // presenting nothing, and each was quietly getting a different one.
-      var storedAtDispatch = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
+      // If it holds exactly what we presented, our replacement is that token's
+      // legitimate successor and must win, or an ordinary rotation would be undone
+      // by the value it was replacing.
+      //
+      // Two earlier versions of this asked narrower questions and each missed a
+      // case. `!visitorToken` asked whether we were starting a session of our own,
+      // and missed a tab presenting a token that cannot continue one -- expired, or
+      // minted before sessions were identified, which at upgrade is EVERY tab.
+      // Comparing against storage AT DISPATCH asked whether a sibling wrote while
+      // we waited, and missed a sibling that had already written before we started.
+      var presentedToken = visitorToken;
 
       // The token, when we hold one, so the server can continue the session
       // it names rather than starting another. It is not a credential here --
@@ -1075,11 +1090,16 @@
           // same browser, same origin, same site, same visitor, and the widget
           // already shares this token across tabs by design.
           //
-          // Comparing against what was there AT DISPATCH is what keeps this from
-          // re-adopting a token we are in the middle of replacing: that value did
-          // not change, so it is not a sibling's answer.
+          // Comparing against what we PRESENTED is what keeps this from re-adopting
+          // a token we are in the middle of replacing: that one is ours, and the
+          // answer we just received is its successor.
+          //
+          // A token the host supplied is never traded. It was handed over
+          // deliberately, it may be the session that owns the host's conversation,
+          // and we have no way to ask which of the two is wanted.
           var storedNow = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
-          var shared = storedNow && storedNow !== storedAtDispatch && storedNow !== token
+          var shared = storedNow && storedNow !== presentedToken && storedNow !== token
+            && ! visitorTokenSuppliedByHost
             ? storedNow
             : null;
 

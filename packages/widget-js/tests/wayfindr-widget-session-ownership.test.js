@@ -34,6 +34,7 @@ function memoryStorage(seed, refuseKeySuffix) {
       tokenReads = 0;
       interpose = { n, fn };
     },
+    tokenReadsSinceInterpose: () => tokenReads,
     getItem: (key) => {
       if (key.endsWith(':visitor-token')) {
         tokenReads += 1;
@@ -78,6 +79,7 @@ function clientForOwnership(options) {
     apiBaseUrl: 'http://127.0.0.1:8000',
     sitePublicKey: 'site_public_own',
     anonymousId: options.anonymousId || 'anon-own',
+    visitorToken: options.visitorToken,
     storage,
     fetch: async (url, init) => {
       requests.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
@@ -532,15 +534,29 @@ test('a sibling that publishes in the gap is not overwritten', async () => {
   const { client, requests } = clientForOwnership({ storage, mintedToken: 'token-mine' });
 
   // Reads of the token key during one bootstrap, in order: the re-read before
-  // dispatch, the dispatch snapshot, the convergence read, and then the check
-  // the write itself makes. The sibling lands just before that last one, which
-  // is precisely the gap being tested.
-  storage.interposeBeforeTokenRead(4, () => {
+  // dispatch, the convergence read, and then the check the write itself makes.
+  // The sibling lands just before that last one, which is precisely the gap.
+  //
+  // This index tracks the implementation, so the read count is asserted below --
+  // when a change adds or removes a read, this test must FAIL rather than quietly
+  // interpose somewhere harmless and go on passing. It has already drifted once.
+  const GAP_READ = 3;
+
+  storage.interposeBeforeTokenRead(GAP_READ, () => {
     storage.setItem(TOKEN_KEY, siblingToken);
     storage.setItem(OWNER_KEY, siblingOwner);
   });
 
   await client.bootstrap(null, null);
+
+  assert.equal(
+    storage.tokenReadsSinceInterpose(),
+    // Six on THIS path, not the five a bootstrap that wins the publication makes:
+    // losing it costs one more read to see what actually landed.
+    6,
+    'The bootstrap read the token key a different number of times, so GAP_READ no longer names the gap. Re-measure it.'
+  );
+
   await client.startConversation('Hello?', {});
 
   const create = requests.find((r) => r.url.endsWith('/api/conversations'));
@@ -618,5 +634,70 @@ test('an anonymous id containing the record delimiter is compared whole', async 
     create.body.visitor_token,
     'token-sibling',
     'The same visitor, so their session is joined -- which only happens if the id survived the round trip through the record intact.'
+  );
+});
+
+test('a sibling that published before we dispatched is joined too', async () => {
+  // Sequential, not concurrent: tab A upgraded its token and stored the
+  // replacement, and tab B only then dispatches -- still holding the old token in
+  // memory, so it never re-read A's. Comparing against what storage held at
+  // dispatch called that "unchanged" and let B publish a second session, which
+  // strands any conversation A had opened. Comparing against what we PRESENTED
+  // sees it for what it is: somebody else's token, already there.
+  const storage = memoryStorage();
+
+  const upgraded = clientForOwnership({ storage, mintedToken: 'token-upgraded' });
+  await upgraded.client.bootstrap(null, null);
+  await upgraded.client.startConversation('Hello?', {});
+
+  // B is constructed while the old token is what storage holds...
+  const stale = memoryStorage({ [TOKEN_KEY]: 'token-pre-session' });
+  const behind = clientForOwnership({ storage: stale, mintedToken: 'token-behind' });
+
+  // ...and by the time it bootstraps, A's pair is what is actually stored.
+  stale.setItem(TOKEN_KEY, storage.getItem(TOKEN_KEY));
+  stale.setItem(OWNER_KEY, storage.getItem(OWNER_KEY));
+
+  await behind.client.bootstrap(null, null);
+  await behind.client.startConversation('Me too?', {});
+
+  const create = behind.requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-upgraded',
+    'A token already in storage that is not the one we presented belongs to a sibling, whenever it got there.'
+  );
+});
+
+test('a token the host supplied is never traded for a sibling session', async () => {
+  // `createClient()` is handed a token deliberately, and it may be the session
+  // that owns the host's conversation. Joining a sibling would abandon it, and
+  // there is no way to ask which of the two was wanted.
+  const storage = memoryStorage();
+
+  const sibling = clientForOwnership({ storage, mintedToken: 'token-sibling' });
+  await sibling.client.bootstrap(null, null);
+
+  const hosted = clientForOwnership({
+    storage,
+    mintedToken: 'token-minted',
+    visitorToken: 'token-from-the-host',
+  });
+
+  await hosted.client.bootstrap(null, null);
+
+  const bootstrapRequest = hosted.requests.find((r) => r.url.endsWith('/api/widget/bootstrap'));
+
+  assert.equal(bootstrapRequest.body.visitor_token, 'token-from-the-host');
+
+  await hosted.client.startConversation('Hello?', {});
+
+  const create = hosted.requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-minted',
+    'The replacement the server minted for the host token is used -- not the sibling session in storage.'
   );
 });

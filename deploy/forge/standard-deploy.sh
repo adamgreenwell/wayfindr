@@ -405,6 +405,13 @@ forge_php artisan queue:restart
 # the daily compatibility sweep.
 forge_php artisan wayfindr:reconcile-agent-alert-publications
 forge_php artisan wayfindr:reconcile-agent-alert-publications --after-worker-drain
+# Same window, same reason. `artisan down` blocks NEW requests and cannot cut off
+# one already executing, so an old widget request can commit a conversation after
+# the sweep inside `migrate` has passed -- with no owning session, which grants
+# access to nobody. The immediate pass covers what is already committed; the
+# queued pass runs two minutes later, after such a request has finished.
+forge_php artisan wayfindr:claim-legacy-conversation-sessions
+forge_php artisan wayfindr:claim-legacy-conversation-sessions --after-request-drain
 forge_php artisan reverb:restart
 forge_php artisan up
 maintenance_enabled=0

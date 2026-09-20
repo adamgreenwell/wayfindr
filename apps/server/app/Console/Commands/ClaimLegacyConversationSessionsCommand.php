@@ -17,12 +17,15 @@ use Illuminate\Console\Command;
  * batch was passed keeps a null owning session. Null grants nothing, so that
  * visitor could not reach the conversation they had just started.
  *
- * The zero-downtime deploy script calls this after activation, when the only
- * code serving is the code that records a session. `standard-deploy.sh` does not
- * and does not need to: it takes the site down before migrating, so no
- * conversation can be opened during the window at all. The scheduler runs this
- * daily for the install shapes that run neither script, and for the last old
- * request that finishes after the post-activation pass.
+ * Both deploy scripts call this after the new code is the only code serving. The
+ * zero-downtime one runs it after activation; `standard-deploy.sh` runs it too,
+ * because `artisan down` blocks NEW requests and cannot cut off one already
+ * executing -- the same reason the restore flow makes an operator attest that
+ * nothing is in flight. Maintenance mode narrows that window; it does not close
+ * it.
+ *
+ * The scheduler runs this daily as well, for the install shapes that run neither
+ * script and for the last old request to finish after the post-activation pass.
  *
  * Idempotent, so running it again costs a scan and changes nothing.
  */
