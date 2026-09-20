@@ -212,12 +212,33 @@ test('the tester identity is unguessable and stable for one agent on one site', 
     $read = fn () => testerAnonymousIdOnPage($this, $agent, $site);
 
     $first = $read();
-    $second = $read();
 
     expect($first)->toStartWith('tester-site-')
-        ->and($first)->toBe($second)
-        ->and($first)->not->toBe('tester-site-'.$site->id.'-agent-'.$agent->id)
-        ->and(strlen($first))->toBeGreaterThan(strlen('tester-site-') + 24);
+        ->and($first)->toBe($read(), 'The tester must stay one visitor rather than become a new one per load.')
+        ->and($first)->not->toBe('tester-site-'.$site->id.'-agent-'.$agent->id);
+
+    // The property the name claims, and the only one the assertions above miss:
+    // the id is a function of a SECRET. Every one of them is satisfied by an
+    // unkeyed digest of the same two database ids -- which is public arithmetic
+    // on small sequential integers, so it is exactly as guessable as the value
+    // being replaced. Shape is not provenance.
+    config(['app.key' => 'base64:'.base64_encode(str_repeat('k', 32))]);
+
+    expect($read())->not->toBe($first,
+        'An id that survives a key change is not derived from the key, so anyone can recompute it.');
+});
+
+test('two agents on one site get different tester identities', function (): void {
+    // "Stable for one agent on one site" cannot be checked with one agent: an id
+    // that ignored the agent entirely would satisfy every stability assertion
+    // while letting one agent's tester traffic land on another's.
+    [$agent, $site] = testerPageWorld();
+
+    $other = User::factory()->for($site->account)->create();
+    $site->supportAgents()->attach($other);
+
+    expect(testerAnonymousIdOnPage($this, $agent, $site))
+        ->not->toBe(testerAnonymousIdOnPage($this, $other, $site));
 });
 
 test('tester visitors do not satisfy install health check ins', function (): void {

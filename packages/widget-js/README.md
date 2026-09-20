@@ -218,11 +218,21 @@ them, or a keyed digest of your own identifier that never leaves your server:
 Wayfindr.init({ anonymousId: '<%= wayfindrVisitorHandle(currentUser) %>' });
 ```
 
-If you want Wayfindr to recognise the person across devices, use
-`visitorExternalId` for that. It is the field meant to carry your identifier, and
-it is not a credential.
+`visitorExternalId` is the field meant to carry your own identifier, and it is
+not a credential — but it does not join two browsers into one visitor. Wayfindr
+resolves a visitor by `anonymousId` alone; an external id is recorded on whichever
+visitor presents it first, and a second browser presenting the same one is left
+without it. If you want the same person recognised on their laptop and their
+phone, the `anonymousId` is what has to be the same on both — which is the reason
+to mint it per customer on your server rather than per browser.
 
-The widget cannot check any of this: an id you supply is used exactly as given.
+Two things the widget cannot do for you:
+
+- **An id you supply is used exactly as given.** It is never checked, so its
+  unguessability is yours to guarantee.
+- **A supplied id is not stored.** The widget only persists one it minted itself,
+  so a page that supplies an id on some views and omits it on others produces two
+  different visitors. Supply it everywhere, or nowhere.
 
 ## Development
 

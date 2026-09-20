@@ -66,10 +66,15 @@ test('every byte contributes two hex digits, including the low ones', () => {
     // that only shows up when such a byte happens to be drawn, so the obvious
     // regex assertion above catches it roughly two runs in three. This one
     // catches it every time.
+  // Each byte DISTINCT, and all of them below 0x10. A constant fill would assert
+  // only that sixteen pairs come out -- it cannot tell `bytes[i]` from
+  // `bytes[i % 4]`, which is 32 bits of entropy wearing 32 hex characters, and
+  // the format would still be perfect. Ascending values pin position as well as
+  // padding.
   const lowBytes = {
     getRandomValues: (array) => {
       for (let i = 0; i < array.length; i += 1) {
-        array[i] = 0x05;
+        array[i] = i;
       }
 
       return array;
@@ -78,7 +83,7 @@ test('every byte contributes two hex digits, including the low ones', () => {
 
   const id = withCrypto(lowBytes, () => clientWith(memoryStorage()).anonymousId);
 
-  assert.equal(id, 'anon_' + '05'.repeat(16));
+  assert.equal(id, 'anon_000102030405060708090a0b0c0d0e0f');
 });
 
 test('a Math.random-backed randomUUID polyfill is not preferred over the real source', () => {
