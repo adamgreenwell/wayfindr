@@ -937,10 +937,29 @@
 
       var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
 
+      // The anonymous id VERBATIM, and the token by fingerprint.
+      //
+      // The id is not a secret to protect -- it is already in storage under its
+      // own key and travels in every request -- so there was never a reason to
+      // hash it, and `visitorTokenFingerprint` is 32 bits and not
+      // collision-proof: `Aa` and `BB` collide under it. Attribution decided on a
+      // collision joins another visitor's session, and the request that follows
+      // pairs their token with our id, which the server refuses with a terminal
+      // 403 that conversation creation deliberately does not recover from.
+      //
+      // The token stays a fingerprint. It answers a narrower question -- is this
+      // record about the token now in storage -- and a collision there can only
+      // vouch for a stale token belonging to THIS visitor, which the dispatch
+      // comparison already refuses. It also keeps the shape of the deadline
+      // record beside it.
+      //
+      // The fingerprint goes FIRST so the id can be recovered as the remainder:
+      // an explicit id from a host may contain the delimiter, and splitting on
+      // every one of them would corrupt it.
       var ownerRecorded = tokenStored && storageKept(
         storage,
         visitorTokenOwnerStorageKey(sitePublicKey),
-        visitorTokenFingerprint(String(anonymousId)) + '|' + visitorTokenFingerprint(token),
+        visitorTokenFingerprint(token) + '|' + String(anonymousId),
       );
 
       if (! ownerRecorded) {
@@ -965,11 +984,14 @@
         return false;
       }
 
-      var parts = record.split('|');
+      var delimiter = record.indexOf('|');
 
-      return parts.length === 2
-        && parts[1] === visitorTokenFingerprint(token)
-        && parts[0] === visitorTokenFingerprint(String(anonymousId));
+      if (delimiter < 0) {
+        return false;
+      }
+
+      return record.slice(0, delimiter) === visitorTokenFingerprint(token)
+        && record.slice(delimiter + 1) === String(anonymousId);
     }
 
     /**

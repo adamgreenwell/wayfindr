@@ -551,3 +551,72 @@ test('a sibling that publishes in the gap is not overwritten', async () => {
     'A publication that lost the race must converge on what is actually stored, not overwrite it.'
   );
 });
+
+test('two visitors whose ids collide under the fingerprint are still told apart', async () => {
+  // `Aa` and `BB` hash to the same value under `visitorTokenFingerprint` -- it is
+  // 32 bits and not collision-proof. Attribution decided on a collision joins
+  // another visitor's session, and the request that follows pairs their token
+  // with our id, which the server refuses with a terminal 403 that conversation
+  // creation deliberately does not recover from.
+  //
+  // Generated ids never collide in practice; `createClient()` takes an explicit
+  // one, which is how short values reach this at all.
+  const storage = memoryStorage();
+
+  const other = clientForOwnership({ storage, anonymousId: 'Aa', mintedToken: 'token-theirs' });
+
+  const mine = clientForOwnership({
+    storage,
+    anonymousId: 'BB',
+    mintedToken: 'token-mine',
+    duringBootstrap: async () => {
+      await other.client.bootstrap(null, null);
+    },
+  });
+
+  await mine.client.bootstrap(null, null);
+  await mine.client.startConversation('Hello?', {});
+
+  const create = mine.requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.anonymous_id,
+    'BB',
+    'Sanity: this client speaks for its own visitor.'
+  );
+  assert.equal(
+    create.body.visitor_token,
+    'token-mine',
+    'A token belonging to a different visitor must not be joined just because their ids hash alike.'
+  );
+});
+
+test('an anonymous id containing the record delimiter is compared whole', async () => {
+  // A host can pass anything as an explicit id, the delimiter included. Splitting
+  // on every delimiter would compare a truncated id -- which either refuses a
+  // token that is ours, or worse, matches a different visitor whose id shares the
+  // prefix.
+  const storage = memoryStorage();
+
+  const sibling = clientForOwnership({ storage, anonymousId: 'tenant|7', mintedToken: 'token-sibling' });
+
+  const mine = clientForOwnership({
+    storage,
+    anonymousId: 'tenant|7',
+    mintedToken: 'token-mine',
+    duringBootstrap: async () => {
+      await sibling.client.bootstrap(null, null);
+    },
+  });
+
+  await mine.client.bootstrap(null, null);
+  await mine.client.startConversation('Hello?', {});
+
+  const create = mine.requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-sibling',
+    'The same visitor, so their session is joined -- which only happens if the id survived the round trip through the record intact.'
+  );
+});
