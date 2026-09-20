@@ -114,12 +114,20 @@ final class DepartingAgentCredentials
 
             $endpoint->forceFill(['disabled_at' => $at])->save();
 
+            // Name only, which is what `outbound_webhook.created` and the
+            // manual `outbound_webhook.disabled` both record.
+            //
+            // NOT the destination, though an earlier version of this recorded
+            // it as "what an administrator needs in order to decide whether to
+            // re-enable". `OutboundWebhookEndpoint` casts `url` as `encrypted`,
+            // so the product treats a destination as sensitive at rest -- and
+            // `audit_events.metadata` is a plain array cast on an exportable
+            // table. Copying it here would take a value the model encrypts and
+            // write it in clear into a CSV anybody with the audit page can
+            // download. The administrator reads the destination from the
+            // integrations page, which is where it is already shown.
             $this->audit($endpoint, $agent, $actor, $at, 'outbound_webhook.disabled_with_creator', [
                 'name' => $endpoint->name,
-                // The destination is the whole point of this record: it is what
-                // an administrator has to look at to decide whether to re-enable
-                // the endpoint under their own name.
-                'url' => $endpoint->url,
             ]);
         }
 

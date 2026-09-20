@@ -399,7 +399,7 @@ test('an endpoint already disabled keeps the moment it was actually disabled', f
     expect($endpoint->fresh()->disabled_at->equalTo($disabledAt))->toBeTrue();
 });
 
-test('the trail records the destination, never the signing secret', function (): void {
+test('the trail records neither the signing secret nor the destination', function (): void {
     $account = offboardingAccount();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
     $creator = User::factory()->for($account)->create([
@@ -418,15 +418,15 @@ test('the trail records the destination, never the signing secret', function ():
 
     expect($event->action)->toBe('outbound_webhook.disabled_with_creator')
         ->and($event->metadata['name'])->toBe('Billing feed')
-        // The destination is the point of the record: it is what an
-        // administrator has to look at to decide whether to re-enable this
-        // under their own name.
-        ->and($event->metadata['url'])->toBe($endpoint->url)
         ->and($event->metadata['issuer_name'])->toBe('Ada Admin');
 
-    // The signing secret is a credential the subscriber holds. The audit log is
-    // exportable, so it must never be copied into it.
-    expect(json_encode($event->metadata))->not->toContain($endpoint->secret);
+    // Neither the signing secret nor the destination. The secret is a
+    // credential the subscriber holds; the destination is cast `encrypted` on
+    // the model, so the product treats it as sensitive at rest -- and this
+    // table is a plain array cast that an admin can export as CSV.
+    expect(json_encode($event->metadata))->not->toContain($endpoint->secret)
+        ->and(json_encode($event->metadata))->not->toContain($endpoint->url)
+        ->and($event->metadata)->not->toHaveKey('url');
 });
 
 test('the sweep disables an endpoint whose creator was deactivated before this shipped', function (): void {
