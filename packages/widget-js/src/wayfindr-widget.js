@@ -891,9 +891,22 @@
         var ticket = ++bootstrapTicket;
         var requestedAt = Date.now();
 
-        // The token, when we hold one, so the server can tell a reopened panel
-        // from a new session. It is not a credential here -- bootstrap mints
-        // for anybody -- it only keeps the session clock from restarting.
+        // Re-read before minting. This client captured storage once, when it
+        // was constructed; another tab may have written a token since. Both
+        // tabs bootstrapping with nothing get two DIFFERENT sessions, and only
+        // one of those can own a conversation -- while the support code is a
+        // single site-wide key both of them share, so the loser reloads, tries
+        // to restore a code its session does not own, and is told the
+        // conversation does not exist.
+        if (!visitorToken) {
+          visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey)) || null;
+        }
+
+        // The token, when we hold one, so the server can continue the session
+        // it names rather than starting another. It is not a credential here --
+        // bootstrap mints for anybody -- but it is no longer only the session
+        // CLOCK that rides on it: a conversation belongs to the session that
+        // opened it, so which token we present decides what this tab can reach.
         return postJson(fetcher, apiBaseUrl + '/api/widget/bootstrap', withVisitorContext({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
@@ -1017,7 +1030,18 @@
           payload[key] = details.intake[key];
         });
 
-        return postJson(fetcher, apiBaseUrl + '/api/conversations', payload);
+        return postJson(fetcher, apiBaseUrl + '/api/conversations', payload).then(function (conversation) {
+          // Re-assert OUR token beside the support code the caller is about to
+          // store. The conversation is bound to the session inside this token,
+          // and a tab that bootstrapped later may have left a different one in
+          // shared storage; the pair has to name the same session or the next
+          // load restores a code it cannot reach.
+          if (!clientStopped && visitorToken) {
+            storageKept(storage, visitorTokenStorageKey(sitePublicKey), visitorToken);
+          }
+
+          return conversation;
+        });
       },
       sendMessage: function (supportCode, body, clientMessageId, attachmentIds) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages', withoutNullValues({

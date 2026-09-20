@@ -83,6 +83,23 @@ class VisitorSessionToken
             return null;
         }
 
+        // An expired token continues nothing.
+        //
+        // Tolerant still means tolerant: this returns null rather than
+        // refusing, so the caller starts a new session and bootstrap stays
+        // reachable with no usable token, which the presence funnel depends on.
+        // What it must not do is carry the SESSION forward. A session id is now
+        // what reaches a conversation, so exchanging a dead token for a live one
+        // naming the same session would let anyone holding an expired token --
+        // the exact thing a lifetime exists to retire -- recover that session's
+        // conversations indefinitely, and the lifetime would bound nothing.
+        //
+        // Before sessions were recorded this path carried only a timestamp,
+        // which granted no access, and the age check genuinely did not matter.
+        if ($this->isExpired($payload)) {
+            return null;
+        }
+
         if ((int) ($payload['site_id'] ?? 0) !== $site->id) {
             return null;
         }
@@ -419,7 +436,7 @@ class VisitorSessionToken
      *
      * Deliberately NOT measured from `session_started_at`. That would be an
      * absolute cap, which is a good idea and a different change, because
-     * `continuingSessionStartedAt()` carries a presented token's session start
+     * `continuedSession()` carries a presented token's session start
      * forward with no age check of its own. A capped session would refuse, the
      * widget would bootstrap to recover, and the replacement token would be
      * born already expired -- forever, surviving a page reload, because the
@@ -428,7 +445,7 @@ class VisitorSessionToken
      * so every re-mint lands in one rate-limit bucket and the 429 that follows
      * reads to the widget as "server unavailable" rather than "token
      * rejected", at which point it stops trying. A cap needs
-     * `continuingSessionStartedAt()` bounded first.
+     * `continuedSession()` bounded first.
      *
      * 401 rather than 403, matching what this file already does: 403 here means
      * the token names a different site or visitor, and the widget treats 403 as
@@ -437,6 +454,20 @@ class VisitorSessionToken
      * @param  array<string, mixed>  $payload
      */
     private function abortIfExpired(array $payload): void
+    {
+        abort_if($this->isExpired($payload), 401, 'Visitor session has expired.');
+    }
+
+    /**
+     * Whether this payload is past the lifetime it was issued under.
+     *
+     * Split out of `abortIfExpired()` so that the two paths which care cannot
+     * drift: the authenticated endpoints refuse an expired token, and bootstrap
+     * declines to CONTINUE the session one names. One rule, asked twice.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function isExpired(array $payload): bool
     {
         $minutes = $this->lifetimeFromPayload($payload);
 
@@ -447,11 +478,18 @@ class VisitorSessionToken
             // predecessor, so an exempt token would be usable for as long as the
             // install lived, and that is the thing a lifetime is for.
             //
-            // A pre-policy token can still buy its replacement: this check is
-            // not reachable from bootstrap, whose path is
-            // `continuingSessionStartedAt()` and calls neither this method nor
-            // `visitorFromRequest()`. The 401 is what the widget already maps to
-            // `rejected`, whose recovery is that bootstrap.
+            // A pre-policy token can still buy its replacement. Bootstrap does
+            // not refuse it -- it is reachable with no token at all, and must
+            // stay that way -- it simply starts a NEW session rather than
+            // continuing the one this token names. The 401 here is what the
+            // widget already maps to `rejected`, whose recovery is that
+            // bootstrap.
+            //
+            // This paragraph used to say the check was unreachable from
+            // bootstrap. That stopped being the point when a session became
+            // load-bearing: bootstrap now asks the same question, because
+            // carrying an expired token's session forward would hand back a
+            // fresh credential for it and the lifetime would bound nothing.
             //
             // How FAST that happens is not uniform, which is why the operator
             // guidance says to deploy before switching a lifetime on. A page load
@@ -465,24 +503,16 @@ class VisitorSessionToken
             // That is the documented reason to finish such an integration before
             // configuring a lifetime, and it is the same hazard a NEW token
             // would present to it.
-            if (max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)) <= 0) {
-                return;
-            }
-
-            abort(401, 'Visitor session has expired.');
+            return max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)) > 0;
         }
 
         $issuedAt = $this->issuedAtFromPayload($payload);
 
         if ($issuedAt === null) {
-            return;
+            return false;
         }
 
-        abort_if(
-            $issuedAt->addMinutes($minutes)->isPast(),
-            401,
-            'Visitor session has expired.',
-        );
+        return $issuedAt->addMinutes($minutes)->isPast();
     }
 
     /**

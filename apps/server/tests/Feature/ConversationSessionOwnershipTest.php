@@ -273,6 +273,37 @@ test('a continued session reports no id rather than an empty one', function (): 
         ->and((new ContinuedVisitorSession($startedAt, 'sess-1'))->sessionId)->toBe('sess-1');
 });
 
+test('an expired token cannot trade itself for a live one naming the same session', function (): void {
+    config(['wayfindr.visitor_session_ttl_minutes' => 30]);
+
+    [$site] = sessionOwnershipWorld();
+    $token = ownershipToken($this, $site);
+    $supportCode = ownershipOpen($this, $site, $token)->assertCreated()->json('data.support_code');
+
+    $this->travel(31)->minutes();
+
+    // Bootstrap is deliberately tolerant -- it is reachable with no token at
+    // all, and the presence funnel needs it to stay that way -- so it answers
+    // rather than refusing. What it must not do is CONTINUE the dead token's
+    // session: that would hand back a live credential naming it, and the
+    // lifetime this install configured would bound nothing. Anyone still
+    // holding the expired token, which is exactly who a lifetime exists to
+    // retire, could recover the session's conversations indefinitely.
+    $traded = $this->withToken($token)->postJson(route('widget.bootstrap'), [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-own',
+    ])->assertSuccessful()->json('data.visitor.token');
+
+    expect(ownershipPayload($traded)['session_id'])
+        ->not->toBe(ownershipPayload($token)['session_id'], 'An expired token must not carry its session into its replacement.');
+
+    ownershipPost($this, $site, $traded, $supportCode)->assertNotFound();
+    ownershipRead($this, $site, $traded, $supportCode)->assertNotFound();
+
+    // The replacement is a working token for a NEW session, not a refusal.
+    ownershipOpen($this, $site, $traded)->assertCreated();
+});
+
 test('a conversation from before this control is reachable by a session that began before it', function (): void {
     [$site, $visitor] = sessionOwnershipWorld();
 
