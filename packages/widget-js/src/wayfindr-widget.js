@@ -941,6 +941,20 @@
       // and the write are still two operations. It narrows the gap to two
       // adjacent statements from one that spanned a decision, and the caller is
       // told when it lost so it can converge instead of clobbering.
+      //
+      // What is left cannot be closed here, and is tracked in #1018. Two tabs are
+      // separate contexts whose only shared channel is this key, so the interval
+      // between these two statements is irreducible without either real
+      // serialization (`navigator.locks`) or a design where the credential for a
+      // conversation is stored WITH it rather than in a single shared slot. Note
+      // that one atomic record does not settle it either: a single `setItem` is
+      // atomic, so it removes torn pairs, but two tabs each making one atomic
+      // write still lose an update. Atomicity is not serialization.
+      //
+      // No test can demonstrate the residue, which is worth saying plainly rather
+      // than leaving to be inferred from its absence: nothing can run between two
+      // adjacent statements in a single-threaded runtime, so a harness can only
+      // reach the gaps AROUND this one -- which is what the tests do.
       if (expectedPrevious !== undefined
         && storageGet(storage, visitorTokenStorageKey(sitePublicKey)) !== expectedPrevious) {
         return false;
