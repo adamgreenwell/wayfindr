@@ -5,6 +5,7 @@ namespace App\Actions;
 use App\Enums\AccountRole;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Support\Accounts\IssuedApiTokenRevocation;
 use App\Support\AgentRealtimeSessions;
 use App\Support\Sites\SiteManagerCoverage;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -18,6 +19,7 @@ class UpdateAgentAccess
     public function __construct(
         private readonly SiteManagerCoverage $siteManagerCoverage,
         private readonly AgentRealtimeSessions $agentRealtimeSessions,
+        private readonly IssuedApiTokenRevocation $issuedApiTokenRevocation,
     ) {}
 
     public function deactivate(User $actor, User $target): User
@@ -49,6 +51,8 @@ class UpdateAgentAccess
             ])->save();
 
             $this->recordAuditEvent($actor, $target, 'agent.deactivated');
+
+            $this->issuedApiTokenRevocation->revokeFor($target, $actor, $changedAt);
 
             if ($wasOnlineForRouting) {
                 $this->recordAuditEvent($actor, $target, 'agent.routing_status_updated', [

@@ -412,6 +412,11 @@ forge_php artisan wayfindr:reconcile-agent-alert-publications --after-worker-dra
 # queued pass runs two minutes later, after such a request has finished.
 forge_php artisan wayfindr:claim-legacy-conversation-sessions
 forge_php artisan wayfindr:claim-legacy-conversation-sessions --after-request-drain
+# Offboarding reaches the credentials a departing agent issued, from this release
+# on. Every agent deactivated BEFORE it left theirs live, and an API token has no
+# session to expire and nobody to report it -- so this clears that backlog, and
+# then finds nothing on every deploy after.
+forge_php artisan wayfindr:revoke-deactivated-issuer-api-tokens
 forge_php artisan reverb:restart
 forge_php artisan up
 maintenance_enabled=0

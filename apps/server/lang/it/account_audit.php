@@ -95,6 +95,7 @@ return [
         'visitor_merged' => 'Contatto visitatore unito',
         'api_token_created' => 'Token API emesso',
         'api_token_revoked' => 'Token API revocato',
+        'api_token_revoked_with_issuer' => 'Token API revocato insieme a chi lo ha emesso',
         'outbound_webhook_created' => 'Webhook in uscita creato',
         'outbound_webhook_disabled' => 'Webhook in uscita disattivato',
         'outbound_webhook_delivery_retried' => 'Consegna webhook riprovata',

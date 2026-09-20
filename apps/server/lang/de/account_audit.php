@@ -95,6 +95,7 @@ return [
         'visitor_merged' => 'Besucherkontakt zusammengeführt',
         'api_token_created' => 'API-Token ausgestellt',
         'api_token_revoked' => 'API-Token widerrufen',
+        'api_token_revoked_with_issuer' => 'API-Token mit dem Aussteller widerrufen',
         'outbound_webhook_created' => 'Ausgehender Webhook erstellt',
         'outbound_webhook_disabled' => 'Ausgehender Webhook deaktiviert',
         'outbound_webhook_delivery_retried' => 'Webhook-Zustellung erneut versucht',

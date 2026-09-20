@@ -98,6 +98,7 @@ return [
         'visitor_merged' => 'Visitor contact merged',
         'api_token_created' => 'API token issued',
         'api_token_revoked' => 'API token revoked',
+        'api_token_revoked_with_issuer' => 'API token revoked with its issuer',
         'outbound_webhook_created' => 'Outbound webhook created',
         'outbound_webhook_disabled' => 'Outbound webhook disabled',
         'outbound_webhook_delivery_retried' => 'Outbound webhook delivery retried',
