@@ -397,6 +397,7 @@ forge_php artisan wayfindr:claim-legacy-conversation-sessions --after-request-dr
 # on. Every agent deactivated BEFORE it left theirs live, and an API token has no
 # session to expire and nobody to report it -- so this clears that backlog, and
 # then finds nothing on every deploy after.
+echo "Revoking API tokens held by deactivated issuers."
 forge_php artisan wayfindr:revoke-deactivated-issuer-api-tokens
 
 echo "Restarting Laravel queues."
