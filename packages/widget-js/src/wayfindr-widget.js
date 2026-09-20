@@ -970,10 +970,21 @@
         visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey)) || null;
       }
 
-      // Whether we are asking for a session of our OWN, which is the only case
-      // where a sibling's answer should beat ours. Recorded before the request,
-      // because by the time it lands storage may hold one either way.
-      var askingForOwnSession = !visitorToken;
+      // What shared storage held when we dispatched.
+      //
+      // The question convergence actually turns on is "did a SIBLING write while
+      // we waited", and this is how to ask it: a value that changed during our
+      // own request window was written by somebody else, just now. Anything
+      // sitting there before we dispatched is not a sibling's answer -- it may be
+      // the very token we are replacing -- and must not beat ours.
+      //
+      // This used to be `!visitorToken`, which asked whether we were starting a
+      // session of our own. That missed the case where we presented a token that
+      // could not continue one: expired, or minted before sessions were
+      // identified, which at upgrade is EVERY tab. Two tabs presenting the same
+      // dead token are asking for their own sessions just as surely as two tabs
+      // presenting nothing, and each was quietly getting a different one.
+      var storedAtDispatch = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
 
       // The token, when we hold one, so the server can continue the session
       // it names rather than starting another. It is not a credential here --
@@ -1001,26 +1012,28 @@
         var token = result && result.visitor ? result.visitor.token : null;
 
         if (token) {
-          // FIRST WRITER WINS, when we were asking for a session of our own.
+          // FIRST WRITER WINS.
           //
           // Re-reading before the request narrows the two-tab race but cannot
-          // close it: both tabs can dispatch while storage is still empty, and
-          // then each adopts its own answer. Whichever lands last overwrites the
-          // shared token -- possibly after the other has already opened a
-          // conversation under its own -- and the support code is a single
-          // site-wide key, so the pair ends up naming two different sessions.
-          // The next load presents the wrong one, is told the conversation does
-          // not exist, and forgets it.
+          // close it: both tabs can dispatch together, and then each adopts its
+          // own answer. Whichever lands last overwrites the shared token --
+          // possibly after the other has already opened a conversation under its
+          // own -- and the support code is a single site-wide key, so the pair
+          // ends up naming two different sessions. The next load presents the
+          // wrong one and is told the conversation does not exist.
           //
           // So if a sibling stored one while we waited, join THAT session and
-          // discard the one we just minted: converging is what makes the pair
+          // discard the one we just took: converging is what makes the pair
           // coherent, and ours has nothing attached to it yet. Safe to adopt --
           // same browser, same origin, same site, same visitor, and the widget
-          // already shares this token across tabs by design. A token that
-          // appeared inside our own request window was minted moments ago rather
-          // than left over from an old visit.
-          var shared = askingForOwnSession
-            ? storageGet(storage, visitorTokenStorageKey(sitePublicKey))
+          // already shares this token across tabs by design.
+          //
+          // Comparing against what was there AT DISPATCH is what keeps this from
+          // re-adopting a token we are in the middle of replacing: that value did
+          // not change, so it is not a sibling's answer.
+          var storedNow = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
+          var shared = storedNow && storedNow !== storedAtDispatch && storedNow !== token
+            ? storedNow
             : null;
 
           // Fails closed. A sibling token is only joined when the record beside

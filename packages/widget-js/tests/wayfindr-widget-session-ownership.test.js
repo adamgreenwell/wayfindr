@@ -424,3 +424,64 @@ test('a torn pair vouches for nothing', async () => {
 
   assert.equal(create.body.visitor_token, 'token-waiting');
 });
+
+test('two tabs holding the same dead token converge instead of splitting', async () => {
+  // The upgrade case, and the most reachable of these races: at upgrade EVERY
+  // tab holds a token minted before sessions were identified, so every tab
+  // presents something truthy that cannot continue a session. Each gets a new
+  // and different one. Keying convergence on "did I dispatch without a token"
+  // missed this entirely -- both tabs have one.
+  const storage = memoryStorage({ [TOKEN_KEY]: 'token-pre-session' });
+
+  const faster = clientForOwnership({ storage, mintedToken: 'token-faster' });
+
+  const slower = clientForOwnership({
+    storage,
+    mintedToken: 'token-slower',
+    duringBootstrap: async () => {
+      await faster.client.bootstrap(null, null);
+      await faster.client.startConversation('Hello?', {});
+    },
+  });
+
+  await slower.client.bootstrap(null, null);
+  await slower.client.startConversation('Me too?', {});
+
+  const create = slower.requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-faster',
+    'The slower tab must join the session that already owns the stored support code, not overwrite the credential it needs.'
+  );
+});
+
+test('a token left in storage before we dispatched does not beat our own', async () => {
+  // The other side of the same rule. A value that was already there is not a
+  // sibling's answer -- it can be the very token we are replacing -- so adopting
+  // it would undo a rotation we were told to make.
+  //
+  // The stale token is written by a REAL earlier client, so it carries a valid
+  // record naming this visitor. Seeding a bare token instead would be refused by
+  // the attribution check, and this test would pass without ever reaching the
+  // rule it is about.
+  const storage = memoryStorage();
+
+  await clientForOwnership({ storage, mintedToken: 'token-stale' }).client.bootstrap(null, null);
+  assert.equal(storage.getItem(TOKEN_KEY), 'token-stale');
+
+  // A later client restores it, presents it, and is given a replacement.
+  const { client, requests } = clientForOwnership({ storage, mintedToken: 'token-fresh' });
+
+  await client.bootstrap(null, null);
+  await client.startConversation('Hello?', {});
+
+  const create = requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    'token-fresh',
+    'Adopting a token that was already in storage would undo the rotation the server just made.'
+  );
+  assert.equal(storage.getItem(TOKEN_KEY), 'token-fresh');
+});
