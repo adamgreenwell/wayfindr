@@ -70,6 +70,7 @@ function clientForOwnership(options) {
   let bootstrapped = false;
   let sibling = false;
   let bootstrapCalls = 0;
+  let createHeld = false;
   let release = () => {};
   const held = new Promise((resolve) => {
     release = resolve;
@@ -154,6 +155,17 @@ function clientForOwnership(options) {
       }
 
       if (url.endsWith('/api/conversations')) {
+        // Held so a rotation can land first, which is how a 401 about a
+        // PREDECESSOR token arrives after a valid replacement is in hand.
+        if (options.holdFirstCreate && !createHeld) {
+          createHeld = true;
+          await options.holdFirstCreate();
+
+          const stale = new Error('Visitor session has expired.');
+          stale.status = 401;
+          throw stale;
+        }
+
         // A token minted before sessions were identified is refused here, and
         // 401 is the status whose recovery is a bootstrap.
         if (options.refuseUntilBootstrapped && !bootstrapped) {
@@ -163,6 +175,12 @@ function clientForOwnership(options) {
         }
 
         return jsonResponse(201, { data: { support_code: 'WF-OWN1', status: 'open' } });
+      }
+
+      if (url.endsWith('/api/widget/session')) {
+        return jsonResponse(200, {
+          data: { visitor: { anonymous_id: options.anonymousId || 'anon-own', token: options.rotatedToken || 'token-rotated', token_expires_in: null } },
+        });
       }
 
       return jsonResponse(200, { data: {} });
@@ -736,5 +754,48 @@ test('a host token the server refuses stops exempting the client from converging
     creates[creates.length - 1].body.visitor_token,
     'token-first',
     'Once refused, the host token proves nothing, so the second tab joins the session already in storage instead of minting a rival.'
+  );
+});
+
+test('a refusal about a superseded token does not retire the exemption', async () => {
+  // Requests overlap. One carrying the host token can be refused AFTER a
+  // concurrent rotation has adopted a valid replacement -- and that refusal says
+  // nothing about the replacement. Acting on it would trade a live host session,
+  // and the host's conversation with it, for a sibling's.
+  const storage = memoryStorage();
+
+  let releaseCreate = () => {};
+  const createHeld = new Promise((resolve) => {
+    releaseCreate = resolve;
+  });
+
+  const hosted = clientForOwnership({
+    storage,
+    visitorToken: 'token-from-the-host',
+    mintedToken: 'token-minted',
+    rotatedToken: 'token-rotated',
+    holdFirstCreate: () => createHeld,
+    // A sibling publishes while the RECOVERY bootstrap is in flight, so storage
+    // holds somebody else's token at the moment the exemption decides. Done here
+    // rather than earlier, because the rotation's own publication would otherwise
+    // have overwritten it and the branch would never be reached.
+    siblingWhileInFlight: { anonymousId: 'anon-own', token: 'token-sibling' },
+  });
+
+  const opening = hosted.client.startConversation('Hello?', {});
+
+  // The rotation lands while the create is still in flight, so the client is
+  // holding a VALID replacement by the time the stale 401 arrives.
+  await hosted.client.refreshSessionOutcome();
+
+  releaseCreate();
+  await opening;
+
+  const creates = hosted.requests.filter((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    creates[creates.length - 1].body.visitor_token,
+    'token-minted',
+    'A 401 about a superseded token must not retire the exemption, so the sibling published during recovery is not joined.'
   );
 });

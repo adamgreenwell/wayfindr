@@ -568,9 +568,8 @@
     var visitorToken = options.visitorToken || null;
     // Whether this client's session began with a token a HOST handed over, which
     // is never traded for a sibling's: if it was valid, what we hold now
-    // CONTINUES their session, so joining a sibling would abandon the
-    // conversation it may own. Retired only by a refusal -- adoption alone does
-    // not, since a replacement for a valid token still continues that session.
+    // CONTINUES their session. Retired only by a refusal of the token actually in
+    // hand -- adoption does not, since a replacement still continues it.
     var visitorTokenSuppliedByHost = Boolean(options.visitorToken);
     // Declared before the storage restore below assigns it. `var` hoists the
     // binding but not the initialiser, so declaring it further down would let
@@ -798,6 +797,9 @@
       }
 
       var requestedAt = Date.now();
+      // The token THIS request carries, so a refusal is attributed to it and not
+      // to whatever has been adopted by the time the answer lands.
+      var sent = visitorToken;
 
       return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
         site_public_key: sitePublicKey,
@@ -807,7 +809,7 @@
         var token = result && result.visitor ? result.visitor.token : null;
 
         if (!token) {
-          visitorTokenRefused();
+          visitorTokenRefused(sent);
 
           return 'rejected';
         }
@@ -823,7 +825,7 @@
         var status = error && typeof error.status === 'number' ? error.status : 0;
 
         if (status === 401 || status === 403) {
-          visitorTokenRefused();
+          visitorTokenRefused(sent);
 
           return 'rejected';
         }
@@ -833,12 +835,18 @@
     }
 
     /**
-     * The server refused the token we hold, retiring the host exemption: that
-     * rests on the token possibly still naming the session owning the host's
-     * conversation, and a refusal proves it does not.
+     * The server refused the token a request CARRIED, retiring the host exemption
+     * -- which rests on that token possibly still naming the session owning the
+     * host's conversation.
+     *
+     * Only for the token still in hand: requests overlap, so a 401 about a
+     * predecessor can land after a rotation has adopted a valid replacement, and
+     * it says nothing about that replacement.
      */
-    function visitorTokenRefused() {
-      visitorTokenSuppliedByHost = false;
+    function visitorTokenRefused(refused) {
+      if (refused === visitorToken) {
+        visitorTokenSuppliedByHost = false;
+      }
     }
 
     /**
@@ -1189,8 +1197,14 @@
           return payload;
         }
 
+        var sentWithCreate = null;
+
         function openConversation() {
-          return postJson(fetcher, apiBaseUrl + '/api/conversations', conversationPayload()).then(function (conversation) {
+          var payload = conversationPayload();
+
+          sentWithCreate = payload.visitor_token;
+
+          return postJson(fetcher, apiBaseUrl + '/api/conversations', payload).then(function (conversation) {
           // Re-assert OUR token beside the support code the caller is about to
           // store. The conversation is bound to the session inside this token,
           // and a tab that bootstrapped later may have left a different one in
@@ -1221,7 +1235,7 @@
             throw error;
           }
 
-          visitorTokenRefused();
+          visitorTokenRefused(sentWithCreate);
 
           // Counts ADOPTIONS, not responses -- the probe the session-refresh
           // recovery uses. A superseded bootstrap returns its answer, token and
@@ -5872,11 +5886,11 @@
         // 403 and 410 are answers ABOUT this code -- another site's key, or a
         // conversation deliberately gone -- so forgetting it is right.
         //
-        // A 404 is not. The server refuses an unowned conversation exactly as one
-        // that does not exist, deliberately, so the client cannot tell "gone" from
-        // "not reachable yet" -- and one opened mid-deploy by a previous release
-        // is the second until a sweep claims it. Discarding the code would destroy
-        // the only reference to a live conversation.
+        // A 404 is not: the server refuses an unowned conversation exactly as one
+        // that does not exist (see `VisitorConversationResolver`), so this cannot
+        // tell "gone" from "not reachable yet", and discarding the code would
+        // destroy the only reference to a conversation a sweep is about to
+        // repair.
         // NOT named `status`: this function's scope already has one -- the DOM
         // element the success path writes the restored notice to -- and `var`
         // hoists, so a second `status` here shadows it for the whole function and
