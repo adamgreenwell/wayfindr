@@ -567,15 +567,11 @@
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
     // Whether this client's session began with a token a HOST handed over, in
-    // which case it is never traded for a sibling's -- see the convergence in
-    // `performBootstrap`.
-    //
-    // Set once and never cleared, deliberately. Adopting a replacement does not
-    // make the session ours to give away: if the host's token was valid, what we
-    // now hold CONTINUES their session, and joining a sibling would abandon the
-    // conversation it may own. Only if their token was already dead is converging
-    // harmless, and the client cannot tell those apart -- so it takes the answer
-    // that cannot lose a host's conversation.
+    // which case it is never traded for a sibling's. Set once and never cleared:
+    // if that token was valid, what we hold now CONTINUES their session, so
+    // joining a sibling would abandon the conversation it may own. Only a token
+    // that was already dead makes converging harmless, and we cannot tell those
+    // apart.
     var visitorTokenSuppliedByHost = Boolean(options.visitorToken);
     // Declared before the storage restore below assigns it. `var` hoists the
     // binding but not the initialiser, so declaring it further down would let
@@ -913,48 +909,19 @@
     /**
      * Put a token in shared storage together with the record of whose it is.
      *
-     * One writer, because these are two keys describing one fact. Written apart,
-     * a caller that stored only the token would leave a record naming the
-     * previous one -- and `sharedTokenBelongsToUs()` would then refuse a token
-     * that really is ours, which is the same incoherent pair the record exists to
-     * prevent, arrived at from the other side.
-     *
-     * Recorded on the same condition as the deadline beside it: the record names
-     * the exact token, and it only survives when the token write did.
-     *
-     * Naming the token is what protects, not the removal. A record left over from
-     * an earlier write names a token that is no longer in storage, and
-     * `sharedTokenBelongsToUs()` refuses it on that basis alone -- so the removal
-     * below is hygiene rather than the guard, and a reader must not drop the
-     * pairing check on the strength of it. It is kept for symmetry with the
-     * deadline record, where a stale value genuinely does lie.
+     * One writer, because these are two keys describing one fact: store only the
+     * token and the record names the previous one, so `sharedTokenBelongsToUs()`
+     * refuses a token that really is ours. Naming the token is what protects --
+     * the removal below is hygiene, so do not drop the pairing check for it.
      */
     function storeSharedVisitorToken(token, expectedPrevious) {
-      // Checked as late as possible: immediately before the write, not when the
-      // caller made its decision. A sibling can publish in between, and a
-      // decision taken against a value that has since changed would overwrite a
-      // token that is newer than ours -- which is the whole failure this
-      // convergence exists to prevent, arrived at through a gap rather than a
-      // rule.
+      // Checked immediately before the write, not when the caller decided: a
+      // sibling can publish in between, and a stale decision would overwrite a
+      // token newer than ours.
       //
-      // This is not a compare-and-set: the Storage API has none, and the check
-      // and the write are still two operations. It narrows the gap to two
-      // adjacent statements from one that spanned a decision, and the caller is
-      // told when it lost so it can converge instead of clobbering.
-      //
-      // What is left cannot be closed here, and is tracked in #1018. Two tabs are
-      // separate contexts whose only shared channel is this key, so the interval
-      // between these two statements is irreducible without either real
-      // serialization (`navigator.locks`) or a design where the credential for a
-      // conversation is stored WITH it rather than in a single shared slot. Note
-      // that one atomic record does not settle it either: a single `setItem` is
-      // atomic, so it removes torn pairs, but two tabs each making one atomic
-      // write still lose an update. Atomicity is not serialization.
-      //
-      // No test can demonstrate the residue, which is worth saying plainly rather
-      // than leaving to be inferred from its absence: nothing can run between two
-      // adjacent statements in a single-threaded runtime, so a harness can only
-      // reach the gaps AROUND this one -- which is what the tests do.
+      // Not a compare-and-set -- the Storage API has none -- so it narrows the gap
+      // rather than closing it, and reports a loss so the caller can converge.
+      // Closing it needs cross-tab serialization; see #1018.
       if (expectedPrevious !== undefined
         && storageGet(storage, visitorTokenStorageKey(sitePublicKey)) !== expectedPrevious) {
         return false;
@@ -962,25 +929,13 @@
 
       var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
 
-      // The anonymous id VERBATIM, and the token by fingerprint.
+      // The anonymous id VERBATIM: `visitorTokenFingerprint` is 32 bits and not
+      // collision-proof (`Aa` and `BB` collide), so attribution decided on one
+      // joins another visitor's session. The token stays a fingerprint -- a
+      // collision there vouches only for a stale token of THIS visitor.
       //
-      // The id is not a secret to protect -- it is already in storage under its
-      // own key and travels in every request -- so there was never a reason to
-      // hash it, and `visitorTokenFingerprint` is 32 bits and not
-      // collision-proof: `Aa` and `BB` collide under it. Attribution decided on a
-      // collision joins another visitor's session, and the request that follows
-      // pairs their token with our id, which the server refuses with a terminal
-      // 403 that conversation creation deliberately does not recover from.
-      //
-      // The token stays a fingerprint. It answers a narrower question -- is this
-      // record about the token now in storage -- and a collision there can only
-      // vouch for a stale token belonging to THIS visitor, which the dispatch
-      // comparison already refuses. It also keeps the shape of the deadline
-      // record beside it.
-      //
-      // The fingerprint goes FIRST so the id can be recovered as the remainder:
-      // an explicit id from a host may contain the delimiter, and splitting on
-      // every one of them would corrupt it.
+      // The fingerprint goes FIRST so the id is the remainder: a host's id may
+      // contain the delimiter.
       var ownerRecorded = tokenStored && storageKept(
         storage,
         visitorTokenOwnerStorageKey(sitePublicKey),
@@ -997,9 +952,8 @@
     /**
      * Whether the token in shared storage can be attributed to this visitor.
      *
-     * Absent or mismatched records answer NO, deliberately: an unattributable
-     * token is one we must not adopt, and treating "cannot tell" as "yes" is how
-     * a client would end up presenting another visitor's credential with its own
+     * Absent or mismatched records answer NO: treating "cannot tell" as "yes" is
+     * how a client ends up presenting another visitor's credential with its own
      * anonymous id.
      */
     function sharedTokenBelongsToUs(token) {
@@ -1031,35 +985,17 @@
       var ticket = ++bootstrapTicket;
       var requestedAt = Date.now();
 
-      // Re-read before minting. This client captured storage once, when it
-      // was constructed; another tab may have written a token since. Both
-      // tabs bootstrapping with nothing get two DIFFERENT sessions, and only
-      // one of those can own a conversation -- while the support code is a
-      // single site-wide key both of them share, so the loser reloads, tries
-      // to restore a code its session does not own, and is told the
-      // conversation does not exist.
+      // Re-read before minting: this client captured storage once, at
+      // construction, and another tab may have written a token since. Two tabs
+      // bootstrapping with nothing get two different sessions, and only one can
+      // own the conversation behind the shared support code.
       if (!visitorToken) {
         visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey)) || null;
       }
 
-      // What we are PRESENTING, which is what convergence compares against.
-      //
-      // The question is whether shared storage holds a token other than the one
-      // this request is built on. If it does, somebody else put it there -- before
-      // we dispatched or while we waited, it makes no difference -- and our answer
-      // is a second session for a browser that can only keep one, because the
-      // support code is a single site-wide key.
-      //
-      // If it holds exactly what we presented, our replacement is that token's
-      // legitimate successor and must win, or an ordinary rotation would be undone
-      // by the value it was replacing.
-      //
-      // Two earlier versions of this asked narrower questions and each missed a
-      // case. `!visitorToken` asked whether we were starting a session of our own,
-      // and missed a tab presenting a token that cannot continue one -- expired, or
-      // minted before sessions were identified, which at upgrade is EVERY tab.
-      // Comparing against storage AT DISPATCH asked whether a sibling wrote while
-      // we waited, and missed a sibling that had already written before we started.
+      // What we are PRESENTING, which is what convergence compares against below.
+      // Storage holding anything else means somebody else put it there, whenever
+      // that was.
       var presentedToken = visitorToken;
 
       // The token, when we hold one, so the server can continue the session
@@ -1088,46 +1024,23 @@
         var token = result && result.visitor ? result.visitor.token : null;
 
         if (token) {
-          // FIRST WRITER WINS.
-          //
-          // Re-reading before the request narrows the two-tab race but cannot
-          // close it: both tabs can dispatch together, and then each adopts its
-          // own answer. Whichever lands last overwrites the shared token --
-          // possibly after the other has already opened a conversation under its
-          // own -- and the support code is a single site-wide key, so the pair
-          // ends up naming two different sessions. The next load presents the
-          // wrong one and is told the conversation does not exist.
-          //
-          // So if a sibling stored one while we waited, join THAT session and
-          // discard the one we just took: converging is what makes the pair
-          // coherent, and ours has nothing attached to it yet. Safe to adopt --
-          // same browser, same origin, same site, same visitor, and the widget
-          // already shares this token across tabs by design.
-          //
-          // Comparing against what we PRESENTED is what keeps this from re-adopting
-          // a token we are in the middle of replacing: that one is ours, and the
-          // answer we just received is its successor.
-          //
-          // A token the host supplied is never traded. It was handed over
-          // deliberately, it may be the session that owns the host's conversation,
-          // and we have no way to ask which of the two is wanted.
+          // FIRST WRITER WINS. Two tabs can each mint a session while the support
+          // code is one site-wide key, so whichever the code does not belong to
+          // cannot reach it. Joining the stored token makes the pair coherent, and
+          // ours has nothing attached yet. Comparing against what we PRESENTED is
+          // what stops this re-adopting a token we are replacing; a host-supplied
+          // one is never traded.
           var storedNow = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
           var shared = storedNow && storedNow !== presentedToken && storedNow !== token
             && ! visitorTokenSuppliedByHost
             ? storedNow
             : null;
 
-          // Fails closed. A sibling token is only joined when the record beside
-          // it names THIS visitor and that exact token; anything else -- no
-          // record, a record naming a different token, or one naming another
-          // anonymous id -- means we cannot attribute it, so we keep the session
-          // the server just minted for us.
-          //
-          // Joining a token for a different visitor would pair our own
-          // `anonymous_id` with a foreign credential, which the server refuses
-          // with 403 -- terminal, and deliberately not covered by the 401
-          // recovery, because re-minting cannot fix a token that names somebody
-          // else.
+          // Fails closed: joined only when the record beside it names THIS
+          // visitor and that exact token. Anything else cannot be attributed, and
+          // joining another visitor's token would pair our `anonymous_id` with a
+          // foreign credential -- refused with a terminal 403 that re-minting
+          // cannot fix.
           if (shared && ! sharedTokenBelongsToUs(shared)) {
             shared = null;
           }
@@ -1270,10 +1183,9 @@
           // load restores a code it cannot reach.
             if (!clientStopped && visitorToken) {
               // The PAIR. Another client can have replaced both keys while this
-              // request was in flight; writing only the token back would leave a
-              // record naming theirs, and a same-visitor bootstrap already in
-              // flight would then refuse to join a session that is genuinely
-              // ours and overwrite the credential this support code needs.
+              // request was in flight, and writing only the token back leaves a
+              // record naming theirs -- so a bootstrap still in flight refuses to
+              // join a session that is genuinely ours.
               storeSharedVisitorToken(visitorToken);
             }
 
@@ -1282,37 +1194,25 @@
         }
 
         return openConversation().catch(function (error) {
-          // A refused token has exactly one defined recovery, and it is the same
-          // one the widget's refresh loop takes: bootstrap, which is the only
-          // path that mints without presenting anything.
+          // A refused token has one recovery -- bootstrap, the only path that
+          // mints without presenting anything -- taken HERE because the refresh
+          // loop is not always running: a `createClient()` integration has no
+          // refresh timer, and `sendFirstMessage()` skips bootstrap while the
+          // restored token is truthy.
           //
-          // Done HERE rather than left to that loop, because the loop is not
-          // always running. A `createClient()` integration is handed a token and
-          // gets no refresh timer at all, and `sendFirstMessage()` skips
-          // bootstrap whenever the restored token is truthy -- so an integration
-          // holding a token minted before sessions were identified would post it,
-          // be refused, and keep being refused until the host page reloaded. It
-          // also covers a visitor who typed their first message faster than the
-          // bootstrap their panel-open had already dispatched.
-          //
-          // 401 only. 403 means the token names another site or visitor and the
-          // widget treats it as terminal, and re-minting would not change it.
-          // Once only, so a server refusing a freshly minted token cannot turn
-          // one send into a loop.
+          // 401 only, since 403 names another site or visitor. Once only, so a
+          // refusal cannot become a loop.
           if (!error || error.status !== 401 || clientStopped) {
             throw error;
           }
 
-          // Counts ADOPTIONS, not responses -- the same probe the session-refresh
-          // recovery uses, for the same reason. A bootstrap superseded by a later
-          // one returns its answer, token and all, WITHOUT adopting it, so a
-          // recovery that read the response would look successful while the
-          // refused token stayed in place and the retry posted it again.
+          // Counts ADOPTIONS, not responses -- the probe the session-refresh
+          // recovery uses. A superseded bootstrap returns its answer, token and
+          // all, WITHOUT adopting it, so reading the response would look
+          // successful while the refused token stayed in place.
           //
-          // When nothing was adopted the original refusal is what the caller
-          // hears. The superseding bootstrap will adopt its own token shortly,
-          // and a rejected send is already offered a retry -- which is a better
-          // answer than a second request we know will be refused.
+          // With nothing adopted the caller hears the original refusal, which
+          // beats a second request we know will be refused.
           var generationBefore = visitorTokenGeneration;
 
           return performBootstrap(details.pageUrl || null, details.context)
@@ -5952,24 +5852,14 @@
         status.textContent = t('status.conversationRestored', { code: supportCode });
         await refreshCobrowseStatus({ silent: true });
       } catch (error) {
-        // 403 and 410 are answers ABOUT this code: another site's key, or a
-        // conversation deliberately gone. Forgetting it is right, and keeping it
-        // would retry something that will never succeed.
+        // 403 and 410 are answers ABOUT this code -- another site's key, or a
+        // conversation deliberately gone -- so forgetting it is right.
         //
-        // 404 is not, and that is deliberate on the server's side: a conversation
-        // this session does not own is refused with exactly the status of one
-        // that does not exist, so that a caller cannot use the difference to ask
-        // whether a support code belongs to a visitor. The client therefore
-        // cannot tell "gone" from "not reachable yet".
-        //
-        // So a 404 no longer discards the code. It used to, and that turned a
-        // repairable state into a permanent loss: a conversation opened by the
-        // previous release during a deployment carries no owning session until a
-        // sweep claims it, and a visitor reloading in that window would have had
-        // their only reference to a live conversation deleted before the repair
-        // arrived. The cost of keeping it is one failed request per load for a
-        // code that really is gone, which is the cheaper mistake by a wide
-        // margin on a support product.
+        // A 404 is not. The server refuses an unowned conversation exactly as one
+        // that does not exist, deliberately, so the client cannot tell "gone" from
+        // "not reachable yet" -- and one opened mid-deploy by a previous release
+        // is the second until a sweep claims it. Discarding the code would destroy
+        // the only reference to a live conversation.
         // NOT named `status`: this function's scope already has one -- the DOM
         // element the success path writes the restored notice to -- and `var`
         // hoists, so a second `status` here shadows it for the whole function and
