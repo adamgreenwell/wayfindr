@@ -2194,7 +2194,7 @@ test('a grant that cannot be audited does not start screen sharing', function ()
 
     $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
     {
-        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted): void
+        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted, bool $namedItsRequest = true): void
         {
             throw new RuntimeException('audit sink unavailable');
         }
@@ -2310,7 +2310,7 @@ test('a revocation that cannot be audited still stops the sharing', function ():
 
     $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
     {
-        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted): void
+        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted, bool $namedItsRequest = true): void
         {
             throw new RuntimeException('audit sink unavailable');
         }

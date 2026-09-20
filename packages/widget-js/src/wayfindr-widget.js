@@ -1406,6 +1406,18 @@
         );
       },
       setCobrowseConsent: function (supportCode, granted, consentTicket) {
+        // `consentTicket` comes from the status response that drew the prompt --
+        // pass the one the person was SHOWN.
+        //
+        // Deliberately not fetched here when a caller omits it, though that
+        // would make older two-argument integrations work on every conversation.
+        // Fetching at answer time would name whichever request is pending WHEN
+        // THE POST IS MADE rather than the one the person agreed to, which is
+        // precisely the substitution this argument exists to prevent -- the
+        // client would be performing it on its own behalf. An unnamed answer is
+        // accepted by the server only where no other request exists to have been
+        // substituted.
+
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse-consent', withoutNullValues({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,

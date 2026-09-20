@@ -117,6 +117,7 @@ class CobrowseAuditTrail
         ?Visitor $actor,
         string $previousStatus,
         bool $granted,
+        bool $namedItsRequest = true,
     ): void {
         $this->record(
             $session,
@@ -134,6 +135,15 @@ class CobrowseAuditTrail
                 // actions was meant to stop. Who answered is recorded either
                 // way, as the event's actor.
                 ...($granted ? ['granted_by' => 'visitor'] : []),
+                // Whether the answer NAMED the request it was answering. False
+                // means a client old enough not to send the name was accepted,
+                // which is only allowed where the conversation has had no other
+                // request and so nothing could have been replayed. It is written
+                // down because it is the evidence for deciding when that
+                // allowance can be withdrawn -- and because an investigator
+                // asking "did the visitor answer THIS request" deserves to see
+                // that the answer did not say.
+                ...($granted && ! $namedItsRequest ? ['named_its_request' => false] : []),
             ],
         );
     }

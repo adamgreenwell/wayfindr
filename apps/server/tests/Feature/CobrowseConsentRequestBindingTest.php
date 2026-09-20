@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Account;
+use App\Models\AuditEvent;
 use App\Models\CobrowseSession;
 use App\Models\Conversation;
 use App\Models\Site;
@@ -92,14 +93,79 @@ test('an answer captured for one request does not grant a later one', function (
         ->and($second->consented_at)->toBeNull();
 });
 
-test('a grant naming no request at all is refused', function (): void {
+test('a grant naming no request is accepted where there is nothing to replay', function (): void {
+    // A widget loaded before this shipped never fetches `widget.js` again, so
+    // its script is fixed until the visitor reloads -- `max-age` bounds the next
+    // page LOAD, not a tab that is already open. The same is true of a
+    // `createClient()` integration calling the two-argument form. Refusing them
+    // outright would leave long-lived tabs unable to grant at all, for a window
+    // nothing bounds.
+    //
+    // On a conversation whose only request is this one, an answer can have been
+    // captured from no other request, so there is nothing a replay could carry.
     [$site, $visitor, $conversation] = consentBindingWorld();
     $token = consentBindingToken($this, $site, $conversation);
     $request = consentBindingRequest($site, $visitor, $conversation);
 
+    consentBindingAnswer($this, $token, $conversation, ['granted' => true])->assertOk();
+
+    expect($request->refresh()->status)->toBe('granted');
+
+    // And the row says the answer did not name its request, which is the
+    // evidence for deciding when the allowance can be withdrawn.
+    $event = AuditEvent::query()->where('action', 'cobrowse.consent_granted')->sole();
+
+    expect($event->metadata['named_its_request'] ?? null)->toBeFalse();
+});
+
+test('a grant naming no request is refused once the conversation has had another', function (): void {
+    // A second request is exactly where a captured answer becomes dangerous, so
+    // that is exactly where the name stops being optional.
+    [$site, $visitor, $conversation] = consentBindingWorld();
+    $token = consentBindingToken($this, $site, $conversation);
+
+    $first = consentBindingRequest($site, $visitor, $conversation);
+    $first->forceFill(['status' => 'ended', 'ended_at' => now()])->save();
+
+    $second = consentBindingRequest($site, $visitor, $conversation);
+
     consentBindingAnswer($this, $token, $conversation, ['granted' => true])->assertStatus(422);
 
-    expect($request->refresh()->status)->toBe('requested');
+    expect($second->refresh()->status)->toBe('requested');
+});
+
+test('another conversation\'s requests do not make this one look replayable', function (): void {
+    // The allowance asks whether THIS conversation has had another request.
+    // Scoped to the conversation, or any cobrowse row anywhere would answer yes
+    // -- which is always, on any real install -- and the allowance that keeps
+    // already-loaded widgets working would never apply to anyone.
+    [$site, $visitor, $conversation] = consentBindingWorld();
+    $token = consentBindingToken($this, $site, $conversation);
+
+    $elsewhere = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-OTHER']);
+    consentBindingRequest($site, $visitor, $elsewhere);
+    consentBindingRequest($site, $visitor, $elsewhere);
+
+    $ours = consentBindingRequest($site, $visitor, $conversation);
+
+    consentBindingAnswer($this, $token, $conversation, ['granted' => true])->assertOk();
+
+    expect($ours->refresh()->status)->toBe('granted');
+});
+
+test('a named answer records that it named its request', function (): void {
+    [$site, $visitor, $conversation] = consentBindingWorld();
+    $token = consentBindingToken($this, $site, $conversation);
+    $request = consentBindingRequest($site, $visitor, $conversation);
+
+    consentBindingAnswer($this, $token, $conversation, [
+        'granted' => true,
+        'consent_ticket' => $request->consentTicket(),
+    ])->assertOk();
+
+    $event = AuditEvent::query()->where('action', 'cobrowse.consent_granted')->sole();
+
+    expect($event->metadata)->not->toHaveKey('named_its_request');
 });
 
 test('the ticket the prompt publishes is the one the answer needs', function (): void {

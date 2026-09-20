@@ -49,6 +49,12 @@ class CobrowseConsentController extends Controller
             // not one a racing request has already moved on from.
             $previousStatus = (string) $cobrowseSession->status;
 
+            // Declared here, not inside the branch below. It is read by the
+            // audit call, whose guard happens to match that branch's today --
+            // and a variable that exists only when two conditions agree is one
+            // refactor away from being undefined.
+            $namedItsRequest = true;
+
             // The answer is bound to the request it was SHOWN for.
             //
             // Without this the server picks the target itself -- `latest('id')`
@@ -75,7 +81,39 @@ class CobrowseConsentController extends Controller
             if ($validated['granted'] && $previousStatus !== 'granted') {
                 $ticket = (string) ($validated['consent_ticket'] ?? '');
 
-                if ($ticket === '' || ! hash_equals((string) $cobrowseSession->consentTicket(), $ticket)) {
+                // A named answer is always checked. An UNNAMED one is accepted
+                // only where there is nothing to replay: on a conversation whose
+                // only cobrowse request is this one, an answer can have been
+                // captured from no other request, and a replay of this request's
+                // own answer either finds it already granted -- no transition, so
+                // this branch is not even reached -- or finds it unanswered, in
+                // which case nobody has answered it to capture.
+                //
+                // That is what keeps a widget loaded BEFORE this shipped working.
+                // Such a page never fetches `widget.js` again, so its script is
+                // fixed until the visitor reloads: `max-age` bounds the next page
+                // load, not a tab that is already open. The same is true of a
+                // `createClient()` integration calling the two-argument
+                // `setCobrowseConsent()`. Refusing them outright would have left
+                // long-lived tabs unable to grant at all, for a window nothing
+                // bounds.
+                //
+                // So the requirement bites exactly where the attack lives: a
+                // second request on a conversation that has had one before.
+                $replayable = CobrowseSession::query()
+                    ->where('conversation_id', $cobrowseSession->conversation_id)
+                    ->whereKeyNot($cobrowseSession->getKey())
+                    ->exists();
+
+                $namedItsRequest = $ticket !== '';
+
+                if ($ticket === '' && $replayable) {
+                    throw ValidationException::withMessages([
+                        'consent_ticket' => 'This cobrowse request has changed since it was shown.',
+                    ]);
+                }
+
+                if ($ticket !== '' && ! hash_equals((string) $cobrowseSession->consentTicket(), $ticket)) {
                     throw ValidationException::withMessages([
                         'consent_ticket' => 'This cobrowse request has changed since it was shown.',
                     ]);
@@ -122,6 +160,7 @@ class CobrowseConsentController extends Controller
                     $conversation->visitor,
                     $previousStatus,
                     true,
+                    $namedItsRequest,
                 );
             }
 
