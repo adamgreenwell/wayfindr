@@ -359,6 +359,77 @@ test('a visitor mid-conversation when the install upgrades keeps their conversat
         ->assertJsonPath('data.messages.0.body', 'Still here?');
 });
 
+test('the post-activation sweep claims what a previous release left with no session', function (): void {
+    [$site, $visitor] = sessionOwnershipWorld();
+
+    // The shape the OLD release writes during a zero-downtime upgrade: it does
+    // not know the column exists, so a conversation it opens after the
+    // migration's sweep has passed carries a null -- and a null grants nothing,
+    // so the visitor who just started it would be told it does not exist.
+    $left = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-OWN-OLD']);
+    expect($left->owner_session_id)->toBeNull();
+
+    // And a row that legitimately has no widget session, created by the NEW
+    // release alongside it. The sweep must tell these apart: claiming this one
+    // as legacy would hand it to the time rule, reachable by any earlier session
+    // of that visitor, when the answer is nobody.
+    $none = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-OWN-API']);
+    $none->forceFill(['owner_session_id' => Conversation::NO_OWNER_SESSION])->save();
+
+    $this->artisan('wayfindr:claim-legacy-conversation-sessions')
+        ->expectsOutputToContain('Claimed 1 conversation')
+        ->assertSuccessful();
+
+    expect($left->refresh()->owner_session_id)->toBe(Conversation::LEGACY_OWNER_SESSION)
+        ->and($none->refresh()->owner_session_id)->toBe(Conversation::NO_OWNER_SESSION);
+
+    // Idempotent, which is what lets it be scheduled daily.
+    $this->artisan('wayfindr:claim-legacy-conversation-sessions')
+        ->expectsOutputToContain('No conversation needed')
+        ->assertSuccessful();
+});
+
+test('a conversation opened outside any widget session is reachable by nobody', function (): void {
+    [$site, $visitor] = sessionOwnershipWorld();
+
+    // Email intake and the public API both record this. A session that began
+    // before the row would pass the legacy time rule, so the distinction between
+    // "predates the control" and "no widget session" has to be a real one.
+    $token = ownershipToken($this, $site);
+
+    $this->travel(5)->minutes();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-OWN-MAIL']);
+    $conversation->forceFill(['owner_session_id' => Conversation::NO_OWNER_SESSION])->save();
+
+    ownershipPost($this, $site, $token, 'WF-OWN-MAIL')->assertNotFound();
+    ownershipRead($this, $site, $token, 'WF-OWN-MAIL')->assertNotFound();
+});
+
+test('an already-open pre-upgrade widget keeps the conversation it was in', function (): void {
+    [$site, $visitor] = sessionOwnershipWorld();
+
+    // A panel open across the upgrade holds a token minted before sessions were
+    // identified and does not re-bootstrap on its own. An integration built on
+    // `createClient()` never does at all -- it is handed a token and has no
+    // refresh timer -- so refusing it here would lock it out until the host page
+    // reloaded.
+    $sessionBegan = CarbonImmutable::now();
+    $old = ownershipPreSessionToken($site, $visitor, $sessionBegan);
+
+    $this->travel(2)->minutes();
+    $legacy = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-OWN-OPEN']);
+    $legacy->forceFill(['owner_session_id' => Conversation::LEGACY_OWNER_SESSION])->save();
+
+    ownershipPost($this, $site, $old, 'WF-OWN-OPEN', 'Still here?')->assertCreated();
+
+    // It concedes nothing the sentinel does not. A row owned by a real session
+    // still requires that session, and a token naming none can never match one.
+    $owned = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-OWN-HELD']);
+    conversationOwnedBySession($owned, ownershipToken($this, $site));
+
+    ownershipPost($this, $site, $old, 'WF-OWN-HELD')->assertNotFound();
+});
+
 test('a conversation stored with no session is reachable by nobody', function (): void {
     [$site, $visitor] = sessionOwnershipWorld();
 

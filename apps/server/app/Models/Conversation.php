@@ -53,6 +53,19 @@ class Conversation extends Model
     public const LEGACY_OWNER_SESSION = '~legacy';
 
     /**
+     * `owner_session_id` for a conversation no widget session opened.
+     *
+     * Email intake and the public API create conversations outside any widget
+     * session, so there is genuinely nobody to record. Stated explicitly rather
+     * than left null for two reasons: null has to keep meaning "a path that
+     * should have recorded a session did not", which is how two such bugs were
+     * caught while this was built; and the post-activation sweep claims nulls as
+     * `LEGACY_OWNER_SESSION`, which would hand these rows the time rule --
+     * reachable by any earlier session of that visitor -- rather than to nobody.
+     */
+    public const NO_OWNER_SESSION = '~none';
+
+    /**
      * @return array<int, string>
      */
     protected static function pageUrlPaths(): array

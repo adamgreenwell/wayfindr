@@ -1,8 +1,8 @@
 <?php
 
+use App\Support\Conversations\LegacyOwnerSessionSweep;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -32,19 +32,20 @@ return new class extends Migration
         });
 
         // Every conversation that predates the control gets a sentinel rather
-        // than NULL, so the three states each mean exactly one thing: the
-        // sentinel is "older than this control", a digest is "this session", and
-        // NULL is "written by a path that had no session", which is a bug.
+        // than NULL, so each stored value means exactly one thing: the sentinel
+        // is "older than this control", `~none` is "a path that legitimately has
+        // no widget session", a digest is "this session", and NULL is "a path
+        // that should have recorded one and did not", which is a bug.
         //
-        // A self-terminating loop rather than chunkById: that needs a stable
-        // order and behaves differently on sqlite and Postgres. This is
-        // idempotent and safe to re-run.
-        do {
-            $updated = DB::table('conversations')
-                ->whereNull('owner_session_id')
-                ->limit(1000)
-                ->update(['owner_session_id' => '~legacy']);
-        } while ($updated > 0);
+        // NOT the last word. On the supported zero-downtime path this runs while
+        // the PREVIOUS release is still serving widget traffic, and that release
+        // does not know the column exists -- so a conversation opened after this
+        // sweep's batch was passed keeps a null. The deploy scripts run
+        // `wayfindr:claim-legacy-conversation-sessions` after activation, and the
+        // scheduler runs it daily for the install shapes that never run them.
+        //
+        // Shared with that command rather than written twice.
+        LegacyOwnerSessionSweep::run();
     }
 
     public function down(): void

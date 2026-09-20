@@ -14,6 +14,7 @@ use App\Models\Site;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Support\Attachments\AttachmentUploadService;
+use App\Support\Conversations\LegacyOwnerSessionSweep;
 use App\Support\Mail\InboundMailRouter;
 use App\Support\Mail\InboundMessage;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -516,4 +517,24 @@ test('the files an agent attaches travel with the emailed reply', function (): v
         ConversationReplyMessage::class,
         fn (ConversationReplyMessage $mail): bool => count($mail->attachments()) === 1,
     );
+});
+
+test('an emailed conversation records that no widget session owns it', function (): void {
+    $site = mailSite();
+
+    deliver(mailPayload());
+
+    $conversation = Conversation::query()->where('site_id', $site->id)->sole();
+
+    // Not null. A conversation belongs to the widget session that opened it, and
+    // there is no widget session behind an email -- but null is the state that
+    // means "a path that should have recorded one did not", and the sweep that
+    // closes the upgrade window claims nulls as predating the control. Claimed,
+    // this row would become reachable by any earlier session of that visitor.
+    expect($conversation->owner_session_id)->toBe(Conversation::NO_OWNER_SESSION);
+
+    LegacyOwnerSessionSweep::run();
+
+    expect($conversation->refresh()->owner_session_id)
+        ->toBe(Conversation::NO_OWNER_SESSION, 'The sweep must not claim a row that states nobody owns it.');
 });

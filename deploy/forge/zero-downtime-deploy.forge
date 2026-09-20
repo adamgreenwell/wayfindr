@@ -380,6 +380,15 @@ cd "$FORGE_SITE_PATH/apps/server"
 echo "Sweeping stored page addresses."
 forge_php artisan wayfindr:sanitise-page-urls
 
+# Same window, same reason: the sweep inside `migrate` ran while the previous
+# release was still opening conversations, and that release did not know the
+# owning-session column existed. A row it left null grants access to nobody, so
+# the visitor who had just started that conversation would be told it does not
+# exist. Idempotent, and the daily scheduled run covers the final old request
+# that finishes after this pass.
+echo "Claiming conversations with no owning session."
+forge_php artisan wayfindr:claim-legacy-conversation-sessions
+
 echo "Restarting Laravel queues."
 forge_php artisan queue:restart
 

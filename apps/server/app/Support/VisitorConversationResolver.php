@@ -95,27 +95,55 @@ class VisitorConversationResolver
     /**
      * Whether this session may act on this conversation.
      *
-     * Three states, each meaning one thing. A digest matches exactly. The
-     * sentinel means the conversation predates this control, and is reachable by
-     * a session that could plausibly have opened it -- one that began at or
-     * before the conversation did. A session cannot start after the conversation
-     * it created, so every legitimate owner passes; a caller who bootstrapped
-     * after the upgrade has a start later than every sentinel row and cannot
-     * forge one earlier, because a session start is only carried forward from a
-     * token that already proved it. NULL means a path wrote a conversation
-     * without a session, which is a bug rather than a state to tolerate.
+     * Four states, each meaning one thing.
+     *
+     * A DIGEST matches exactly, and only a token naming that session passes.
+     *
+     * The LEGACY sentinel means the conversation predates this control, and is
+     * reachable by a session that could plausibly have opened it -- one that
+     * began at or before the conversation did. A session cannot start after the
+     * conversation it created, so every legitimate owner passes; a caller who
+     * bootstrapped after the upgrade has a start later than every sentinel row
+     * and cannot forge one earlier, because a session start is only carried
+     * forward from a token that already proved it.
+     *
+     * `NO_OWNER_SESSION` means no widget session opened it -- email intake, the
+     * public API -- so no widget session may reach it.
+     *
+     * NULL means a path that should have recorded a session did not, which is a
+     * bug rather than a state to tolerate. It grants nothing, and that is what
+     * caught two such bugs while this was built. It is also transient by design:
+     * the post-activation sweep claims nulls left by a previous release.
      */
     private function sessionOwns(Request $request, Conversation $conversation, string $sessionId): bool
     {
         $owner = $conversation->owner_session_id;
 
-        if ($owner === null || $owner === '' || $sessionId === '') {
+        if ($owner === null || $owner === '' || $owner === Conversation::NO_OWNER_SESSION) {
             return false;
         }
 
         if ($owner !== Conversation::LEGACY_OWNER_SESSION) {
+            // An empty session id cannot equal a digest, so a token naming no
+            // session is refused here without needing its own branch.
             return hash_equals($owner, $sessionId);
         }
+
+        // A token naming NO session reaches this check, deliberately.
+        //
+        // The only thing that presents one is a browser holding a token minted
+        // before sessions were identified -- bootstrap has stamped one ever
+        // since -- and during an upgrade that browser's conversation has just
+        // been claimed as legacy. Refusing it here would lock an already-open
+        // panel out of its own conversation until its refresh timer rotated the
+        // token or the page reloaded, and an integration built on
+        // `createClient()` has neither: it is handed a token, never re-bootstraps,
+        // and would stay locked out until the host page reloaded.
+        //
+        // It concedes nothing the sentinel does not already concede. What passes
+        // below is a session that began before the row, which is exactly the rule
+        // for every other caller; the token cannot be forged, and no NEW token
+        // lacks a session id, so this population only shrinks.
 
         $sessionStartedAt = $this->visitorSessionToken->sessionStartedAtFromRequest($request);
 
