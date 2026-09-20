@@ -102,6 +102,47 @@ class CobrowseSession extends Model
     }
 
     /**
+     * Whether this session is waiting for the visitor to answer a prompt.
+     *
+     * Exactly one state does: `requested`. A granted session is answerable too --
+     * the visitor can still stop it -- but stopping is not what this gates.
+     */
+    public function isAwaitingConsent(): bool
+    {
+        return $this->status === 'requested' && $this->ended_at === null;
+    }
+
+    /**
+     * An opaque handle for the request a consent answer is answering.
+     *
+     * A CORRELATOR, not a credential, and the distinction matters enough to say
+     * twice: it is derived from the row id with an unkeyed hash, so anyone who
+     * can read the status response can also compute it. It buys nothing against
+     * someone holding the visitor's token, because the endpoint that publishes it
+     * takes the same token as the endpoint it protects.
+     *
+     * What it buys is that an answer NAMES the request it answers. Without that
+     * the server picks the target itself -- `latest('id')` among rows with no
+     * `ended_at` -- so a consent answer captured for one request grants whichever
+     * request happens to be open when it is replayed, including a later one the
+     * visitor never saw.
+     *
+     * Unkeyed on purpose. `Conversation::currentCloseEpisodeToken()` solves the
+     * identical problem for ratings the same way, and keying it would tie live
+     * prompts to `config('app.key')` -- so rotating the key would refuse every
+     * prompt a visitor was mid-answer on, in exchange for secrecy that no
+     * attacker has to defeat anyway.
+     */
+    public function consentTicket(): ?string
+    {
+        if (! $this->isAwaitingConsent()) {
+            return null;
+        }
+
+        return substr(hash('sha256', 'cobrowse-consent:'.$this->id), 0, 32);
+    }
+
+    /**
      * @param  callable(self): void  $callback
      */
     public function updateAtomically(callable $callback): self

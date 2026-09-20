@@ -1405,13 +1405,29 @@
           visitorAuthHeader(visitorToken),
         );
       },
-      setCobrowseConsent: function (supportCode, granted) {
-        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse-consent', {
+      setCobrowseConsent: function (supportCode, granted, consentTicket) {
+        // `consentTicket` comes from the status response that drew the prompt --
+        // pass the one the person was SHOWN.
+        //
+        // Deliberately not fetched here when a caller omits it, though that
+        // would make older two-argument integrations work on every conversation.
+        // Fetching at answer time would name whichever request is pending WHEN
+        // THE POST IS MADE rather than the one the person agreed to, which is
+        // precisely the substitution this argument exists to prevent -- the
+        // client would be performing it on its own behalf. An unnamed answer is
+        // accepted by the server only where no other request exists to have been
+        // substituted.
+
+        return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/cobrowse-consent', withoutNullValues({
           site_public_key: sitePublicKey,
           anonymous_id: anonymousId,
           visitor_token: requireVisitorToken(visitorToken),
           granted: Boolean(granted),
-        });
+          // Names the request being answered, so a grant cannot land on one the
+          // visitor never saw. Omitted when we hold none: a stop must not be
+          // refused for want of it, and the server asks for it only on a grant.
+          consent_ticket: typeof consentTicket === 'string' && consentTicket !== '' ? consentTicket : null,
+        }));
       },
       reportCobrowseTelemetry: function (supportCode, telemetry) {
         telemetry = telemetry || {};
@@ -1844,6 +1860,8 @@
     var cobrowseState = 'unavailable';
     var cobrowseRequestedBy = null;
     var cobrowseVisitorNotice = null;
+    // The request the prompt on screen is asking about, as the server named it.
+    var cobrowseConsentTicket = null;
     var pendingCobrowseConsentFocus = false;
     var mutationObserver = null;
     var cobrowseResumeInFlight = false;
@@ -2738,6 +2756,11 @@
         ? nextCobrowse.visitor_notice.message
         : null;
       cobrowseGranted = cobrowseState === 'granted' || nextCobrowse.consent === 'granted';
+      // Published only with a prompt, so it is null in every other state -- which
+      // is exactly when an answer needs none.
+      cobrowseConsentTicket = typeof nextCobrowse.consent_ticket === 'string'
+        ? nextCobrowse.consent_ticket
+        : null;
 
       if (!cobrowseGranted) {
         stopMutationStream();
@@ -3108,7 +3131,7 @@
       status.textContent = t(nextGranted ? 'cobrowse.granting' : 'cobrowse.revoking');
 
       try {
-        var result = await client.setCobrowseConsent(supportCode, nextGranted);
+        var result = await client.setCobrowseConsent(supportCode, nextGranted, cobrowseConsentTicket);
         var consent = result && result.cobrowse ? result.cobrowse.consent : null;
 
         applyCobrowseStatus(result && result.cobrowse ? result.cobrowse : {
@@ -3151,6 +3174,22 @@
 
         status.textContent = t(cobrowseGranted ? 'cobrowse.granted' : 'cobrowse.revoked');
       } catch (error) {
+        // The request moved on between the poll that drew this prompt and the
+        // click: the agent cancelled and asked again, so the answer named a
+        // request that is no longer the open one. Re-ask once, which redraws the
+        // prompt with the current request, and let the visitor answer THAT --
+        // rather than leaving them clicking a button that cannot work.
+        //
+        // Not retried automatically: the visitor agreed to the request they were
+        // shown, and a different one deserves to be looked at.
+        //
+        // Not narrowed to grants, though only a grant is refused this way today.
+        // A guard for a case the server cannot produce is a line no test can
+        // reach, and re-asking after any refusal is right anyway.
+        if (error && error.status === 422) {
+          await refreshCobrowseStatus({ silent: true });
+        }
+
         status.textContent = errorText(error, 'cobrowse.consentFailed');
       } finally {
         cobrowseResumeInFlight = false;

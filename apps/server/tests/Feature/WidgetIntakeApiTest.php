@@ -725,6 +725,7 @@ test('visitor can grant cobrowse consent for their conversation', function (): v
         'anonymous_id' => 'anon-docs',
         'visitor_token' => $token,
         'granted' => true,
+        'consent_ticket' => $session->consentTicket(),
     ]);
 
     $response
@@ -2097,6 +2098,7 @@ test('granting cobrowse consent records who answered and what it changed', funct
         'anonymous_id' => 'anon-docs',
         'visitor_token' => $token,
         'granted' => true,
+        'consent_ticket' => $session->consentTicket(),
     ])->assertOk();
 
     $event = AuditEvent::query()->where('action', 'cobrowse.consent_granted')->sole();
@@ -2151,7 +2153,7 @@ test('repeating a grant on an already-granted session records nothing further', 
     $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-AUDITREPEAT',
     ]);
-    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
         'status' => 'requested',
         'consented_at' => null,
         'ended_at' => null,
@@ -2164,6 +2166,7 @@ test('repeating a grant on an already-granted session records nothing further', 
         'anonymous_id' => 'anon-docs',
         'visitor_token' => $token,
         'granted' => true,
+        'consent_ticket' => $session->consentTicket(),
     ];
 
     foreach (range(1, 3) as $ignored) {
@@ -2191,7 +2194,7 @@ test('a grant that cannot be audited does not start screen sharing', function ()
 
     $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
     {
-        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted): void
+        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted, bool $namedItsRequest = true): void
         {
             throw new RuntimeException('audit sink unavailable');
         }
@@ -2307,7 +2310,7 @@ test('a revocation that cannot be audited still stops the sharing', function ():
 
     $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
     {
-        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted): void
+        public function consentAnswered(CobrowseSession $session, ?Visitor $actor, string $previousStatus, bool $granted, bool $namedItsRequest = true): void
         {
             throw new RuntimeException('audit sink unavailable');
         }
@@ -2333,7 +2336,7 @@ test('a repeated grant does not move the time consent was given', function (): v
     $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-STAMP',
     ]);
-    CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
+    $session = CobrowseSession::factory()->for($conversation)->for($site)->for($visitor)->create([
         'status' => 'requested',
         'consented_at' => null,
         'ended_at' => null,
@@ -2346,6 +2349,7 @@ test('a repeated grant does not move the time consent was given', function (): v
         'anonymous_id' => 'anon-docs',
         'visitor_token' => $token,
         'granted' => true,
+        'consent_ticket' => $session->consentTicket(),
     ];
 
     Carbon::setTestNow(Carbon::parse('2026-09-17 10:00:00'));

@@ -59,6 +59,7 @@ class CobrowseStatusController extends Controller
             return [
                 'status' => 'unavailable',
                 'consent' => 'unavailable',
+                'consent_ticket' => null,
                 'requested_by' => null,
                 'requested_at' => null,
                 'consented_at' => null,
@@ -76,6 +77,11 @@ class CobrowseStatusController extends Controller
                 'requested', 'granted', 'revoked', 'ended' => $status,
                 default => 'unavailable',
             },
+            // Published with the prompt, and only with the prompt: the answer has
+            // to name the request it is answering, and this is the only response
+            // that tells a widget a request exists. Null in every other state,
+            // where there is nothing outstanding to answer.
+            'consent_ticket' => $cobrowseSession->consentTicket(),
             'requested_by' => $cobrowseSession->requestedBy ? [
                 'name' => $cobrowseSession->requestedBy->name,
             ] : null,
