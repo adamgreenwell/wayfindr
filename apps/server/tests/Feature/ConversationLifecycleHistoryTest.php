@@ -62,10 +62,13 @@ test('a visitor reply to a closed conversation is recorded as the reopen it is',
     $w = lifecycleWorld();
     $w['conversation']->forceFill(['status' => 'closed', 'closed_at' => now()])->save();
 
+    $token = app(VisitorSessionToken::class)->issue($w['site'], $w['visitor']);
+    conversationOwnedBySession($w['conversation'], $token);
+
     $this->postJson('/api/conversations/'.$w['conversation']->support_code.'/messages', [
         'site_public_key' => $w['site']->public_key,
         'anonymous_id' => $w['visitor']->anonymous_id,
-        'visitor_token' => app(VisitorSessionToken::class)->issue($w['site'], $w['visitor']),
+        'visitor_token' => $token,
         'body' => 'This is still broken.',
     ])->assertSuccessful();
 
@@ -80,10 +83,13 @@ test('replying to an open conversation records nothing', function (): void {
     // Only a transition is an event. Otherwise this writes a row per message.
     $w = lifecycleWorld();
 
+    $token = app(VisitorSessionToken::class)->issue($w['site'], $w['visitor']);
+    conversationOwnedBySession($w['conversation'], $token);
+
     $this->postJson('/api/conversations/'.$w['conversation']->support_code.'/messages', [
         'site_public_key' => $w['site']->public_key,
         'anonymous_id' => $w['visitor']->anonymous_id,
-        'visitor_token' => app(VisitorSessionToken::class)->issue($w['site'], $w['visitor']),
+        'visitor_token' => $token,
         'body' => 'One more thing.',
     ])->assertSuccessful();
 
@@ -110,6 +116,7 @@ test('the whole sequence survives, which is the point', function (): void {
     // support lead asks -- did this keep coming back? -- needs the sequence.
     $w = lifecycleWorld();
     $token = app(VisitorSessionToken::class)->issue($w['site'], $w['visitor']);
+    conversationOwnedBySession($w['conversation'], $token);
 
     foreach (range(1, 2) as $round) {
         $this->actingAs($w['agent'])
@@ -278,6 +285,8 @@ test('a visitor reply that lost the race to a close still opens the row it repor
         'site_public_key' => 'site_public_race',
         'anonymous_id' => 'anon-race',
     ])->assertSuccessful()->json('data.visitor.token');
+
+    conversationOwnedBySession($conversation, $token);
 
     $this->app->extend(VisitorConversationResolver::class, fn ($resolver) => new class($resolver) extends VisitorConversationResolver
     {

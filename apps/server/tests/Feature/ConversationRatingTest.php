@@ -89,6 +89,15 @@ function reopenAndCloseConversation(Conversation $conversation, DateTimeInterfac
         ->update(['occurred_at' => $at]);
 }
 
+/**
+ * A visitor token for the site and browser identity every test here uses.
+ *
+ * Only the session that opened a conversation may act on it, and the session id
+ * lives inside this token -- so a test acting on the fabricated conversation
+ * declares the ownership the widget endpoint would have recorded, with
+ * `conversationOwnedBySession()`, AFTER calling this. The order is not optional:
+ * there is no session to name until the token exists.
+ */
 function ratingToken($test): string
 {
     return $test->postJson('/api/widget/bootstrap', [
@@ -100,6 +109,9 @@ function ratingToken($test): string
 test('a visitor says how it went', function (): void {
     $w = ratingWorld();
     $token = ratingToken($this);
+    // A factory does not record which session opened the conversation; the
+    // widget endpoint does, so the session about to answer says so itself.
+    conversationOwnedBySession($w['conversation'], $token);
 
     $this->postJson(route('conversations.rating.store', 'WF-RATE1'), [
         'site_public_key' => 'site_public_rate',
@@ -140,8 +152,9 @@ test('a stranger cannot score somebody else’s conversation', function (): void
 });
 
 test('a score nobody offered is refused', function (): void {
-    ratingWorld();
+    $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     $this->postJson(route('conversations.rating.store', 'WF-RATE1'), [
         'site_public_key' => 'site_public_rate',
@@ -163,6 +176,7 @@ test('a reopened conversation can be rated again without erasing the first answe
     // was describing a property nothing implemented.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     postRating($this, $token, 'bad')->assertCreated();
 
@@ -183,6 +197,7 @@ test('answering twice about the same close replaces the answer rather than stuff
     // hundred times.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     postRating($this, $token, 'bad')->assertCreated();
 
@@ -473,6 +488,7 @@ test('a site that turned the prompt off does not collect ratings anyway', functi
     $w = ratingWorld();
     $w['site']->forceFill(['settings' => ['rating' => ['enabled' => false]]])->save();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     postRating($this, $token, 'good')->assertStatus(422);
 
@@ -484,6 +500,7 @@ test('a conversation that has never closed cannot be rated', function (): void {
     // nobody was ever asked for.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     AuditEvent::query()
         ->where('subject_id', $w['conversation']->id)
@@ -504,6 +521,7 @@ test('a conversation reopened after closing can still be rated for that close', 
     // is worse than attributing it to the wrong episode.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     $w['conversation']->forceFill(['status' => 'open', 'closed_at' => null])->save();
 
@@ -568,6 +586,7 @@ test('the widget is told whether an answer is being waited for', function (): vo
     // genuine reopen, so they would never be asked about the next one.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     $read = fn () => $this->getJson(route('conversations.messages.index', 'WF-RATE1').'?'.http_build_query([
         'site_public_key' => 'site_public_rate',
@@ -612,6 +631,7 @@ test('a close that was never recorded cannot be rated', function (): void {
     // cohort filter closes.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     // The legacy shape: closed_at set, no lifecycle event on record.
     AuditEvent::query()
@@ -643,6 +663,7 @@ test('two closes inside one second are two episodes, not one', function (): void
     // free -- the close event already has a row id.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     $at = now()->startOfSecond();
 
@@ -685,6 +706,7 @@ test('an answer about a close that is no longer current is refused', function ()
     // answered -- so nobody is ever asked about it.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     $stale = $w['conversation']->currentCloseEpisodeToken();
 
@@ -704,6 +726,7 @@ test('an answer with no episode at all is refused', function (): void {
     // that does not bother to send it.
     $w = ratingWorld();
     $token = ratingToken($this);
+    conversationOwnedBySession($w['conversation'], $token);
 
     $this->postJson(route('conversations.rating.store', 'WF-RATE1'), [
         'site_public_key' => 'site_public_rate',

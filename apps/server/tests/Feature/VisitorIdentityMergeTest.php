@@ -428,6 +428,12 @@ test('a conversation that loses the merge race follows the alias instead of recr
     $source = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-conversation']);
     $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-canonical']);
 
+    // Only the visitor lookup is stubbed below. The endpoint reads the SESSION
+    // out of the presented token itself -- a conversation records the session
+    // that opened it -- so this has to be a token the real service minted rather
+    // than a string standing in for one.
+    $tokenResolvedBeforeMerge = app(VisitorSessionToken::class)->issue($site, $source);
+
     $sessionTokens = Mockery::mock(VisitorSessionToken::class, [app(VisitorIdentityResolver::class)])
         ->makePartial();
     $sessionTokens->shouldReceive('visitorFromRequest')
@@ -446,7 +452,7 @@ test('a conversation that loses the merge race follows the alias instead of recr
     $this->postJson('/api/conversations', [
         'site_public_key' => $site->public_key,
         'anonymous_id' => 'anon-racing-conversation',
-        'visitor_token' => 'resolved-before-merge',
+        'visitor_token' => $tokenResolvedBeforeMerge,
         'subject' => 'Do not recreate me',
     ])->assertCreated();
 
@@ -464,6 +470,7 @@ test('conversation resolution retries through the alias when a merge lands after
     $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-RESOLVERACE']);
     $realSessionTokens = app(VisitorSessionToken::class);
     $token = $realSessionTokens->issue($site, $source);
+    conversationOwnedBySession($conversation, $token);
 
     $sessionTokens = Mockery::mock(VisitorSessionToken::class, [app(VisitorIdentityResolver::class)])
         ->makePartial();
@@ -541,6 +548,7 @@ test('a message that loses the merge race uses the canonical sender and pending 
     $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE1']);
     $attachment = ConversationMessageAttachment::factory()->pendingFor($conversation, $source)->create();
     $token = app(VisitorSessionToken::class)->issue($site, $source);
+    conversationOwnedBySession($conversation, $token);
 
     mergeAfterVisitorConversationResolution($manager, $source, $target);
 
@@ -575,6 +583,7 @@ test('a typing write that loses the merge race updates the canonical visitor', f
     ]);
     $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGETYPING']);
     $token = app(VisitorSessionToken::class)->issue($site, $source);
+    conversationOwnedBySession($conversation, $token);
 
     mergeAfterVisitorConversationResolution($manager, $source, $target);
 
@@ -600,6 +609,7 @@ test('an upload that loses the merge race belongs to the canonical visitor', fun
     $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-upload-canonical']);
     $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE2']);
     $token = app(VisitorSessionToken::class)->issue($site, $source);
+    conversationOwnedBySession($conversation, $token);
 
     mergeAfterVisitorConversationResolution($manager, $source, $target);
 
@@ -645,6 +655,7 @@ test('a rejected upload that loses the merge race audits the canonical visitor',
     $target = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-racing-rejected-canonical']);
     $conversation = Conversation::factory()->for($site)->for($source)->create(['support_code' => 'WF-MERGERACE3']);
     $token = app(VisitorSessionToken::class)->issue($site, $source);
+    conversationOwnedBySession($conversation, $token);
 
     mergeAfterVisitorConversationResolution($manager, $source, $target);
 
@@ -677,6 +688,7 @@ test('a cobrowse snapshot that loses the merge race audits the canonical visitor
         'metadata' => [],
     ]);
     $token = app(VisitorSessionToken::class)->issue($site, $source);
+    conversationOwnedBySession($conversation, $token);
 
     mergeAfterVisitorConversationResolution($manager, $source, $target);
 
@@ -718,6 +730,7 @@ test('cobrowse telemetry that loses the merge race audits the canonical visitor'
         ],
     ]);
     $token = app(VisitorSessionToken::class)->issue($site, $source);
+    conversationOwnedBySession($conversation, $token);
 
     mergeAfterVisitorConversationResolution($manager, $source, $target);
 

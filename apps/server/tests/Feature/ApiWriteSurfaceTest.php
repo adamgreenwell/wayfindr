@@ -304,10 +304,16 @@ test('an API message is integration-authored, reopens the conversation, and broa
     expect($reopen->actor_type)->toBe(ApiToken::class)
         ->and($reopen->metadata['actor'])->toBe('integration');
 
+    // The widget endpoint stamps the opening session on a conversation it
+    // creates; this one came from a factory, so the session that is about to
+    // read it has to be named as its owner first.
+    $visitorToken = apiWriteVisitorToken($this, $world);
+    conversationOwnedBySession($conversation, $visitorToken);
+
     $visitorView = $this->getJson('/api/conversations/WF-APIWRITE/messages?'.http_build_query([
         'site_public_key' => $world['site']->public_key,
         'anonymous_id' => $world['visitor']->anonymous_id,
-        'visitor_token' => apiWriteVisitorToken($this, $world),
+        'visitor_token' => $visitorToken,
     ]));
 
     $visitorView->assertOk()
@@ -530,10 +536,15 @@ test('an integration message can bound a visitor read receipt without becoming h
         'body' => 'An automated follow-up rendered last.',
     ], apiWriteHeaders($world, 'read-boundary'))->assertCreated()->json('data.message.id');
 
+    // A factory-made conversation records no opening session, so the session
+    // that is about to mark it seen has to be named as its owner first.
+    $visitorToken = apiWriteVisitorToken($this, $world);
+    conversationOwnedBySession($conversation, $visitorToken);
+
     $this->getJson('/api/conversations/WF-APISEEN/messages?'.http_build_query([
         'site_public_key' => $world['site']->public_key,
         'anonymous_id' => $world['visitor']->anonymous_id,
-        'visitor_token' => apiWriteVisitorToken($this, $world),
+        'visitor_token' => $visitorToken,
         'mark_seen' => true,
         'seen_message_id' => $integrationMessageId,
     ]))->assertOk();

@@ -23,6 +23,10 @@ use Illuminate\Support\Str;
 #[Fillable([
     'site_id',
     'visitor_id',
+    // Server-computed, never request input, but it has to be listed: an
+    // unlisted key is dropped by `create()` without a word, and the row then
+    // stores null, which `sessionOwns()` reads as owned by nobody.
+    'owner_session_id',
     'assigned_agent_id',
     'support_code',
     'status',
@@ -38,6 +42,15 @@ use Illuminate\Support\Str;
 class Conversation extends Model
 {
     use SanitisesStoredPageUrls;
+
+    /**
+     * `owner_session_id` for a conversation that predates session ownership.
+     *
+     * Not null, because null has to keep meaning "written without a session",
+     * which is a bug. A sentinel says "older than this control" and lets the
+     * reachability rule for such rows be stated in one place.
+     */
+    public const LEGACY_OWNER_SESSION = '~legacy';
 
     /**
      * @return array<int, string>

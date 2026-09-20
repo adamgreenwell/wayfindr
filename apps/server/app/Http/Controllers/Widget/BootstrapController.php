@@ -103,7 +103,7 @@ class BootstrapController extends Controller
                         // Reopening the panel re-bootstraps, so without this an
                         // ordinary reopen would restart the clock an absolute
                         // session cap is meant to measure.
-                        $visitorSessionToken->continuingSessionStartedAt($request, $site, $visitor, $validated['anonymous_id']),
+                        $visitorSessionToken->continuedSession($request, $site, $visitor, $validated['anonymous_id']),
                     ),
                     // A DURATION, not an instant: the browser clock that would
                     // read an instant can be wrong by any amount, and a slow one

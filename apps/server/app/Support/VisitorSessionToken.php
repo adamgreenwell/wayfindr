@@ -12,6 +12,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Str;
 use JsonException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -23,7 +24,7 @@ class VisitorSessionToken
         Site $site,
         Visitor $visitor,
         ?string $anonymousId = null,
-        ?DateTimeInterface $sessionStartedAt = null,
+        ?ContinuedVisitorSession $continued = null,
     ): string {
         $anonymousId ??= (string) $visitor->anonymous_id;
 
@@ -40,7 +41,14 @@ class VisitorSessionToken
             }
         }
 
-        return $this->encode($site, $visitor, $anonymousId, now(), $sessionStartedAt);
+        return $this->encode(
+            $site,
+            $visitor,
+            $anonymousId,
+            now(),
+            $continued?->startedAt,
+            $continued?->sessionId,
+        );
     }
 
     /**
@@ -57,12 +65,12 @@ class VisitorSessionToken
      * rather than being refused. The only thing a presented token buys is
      * continuity of a clock that is not in the caller's favour.
      */
-    public function continuingSessionStartedAt(
+    public function continuedSession(
         Request $request,
         Site $site,
         Visitor $visitor,
         string $anonymousId,
-    ): ?CarbonImmutable {
+    ): ?ContinuedVisitorSession {
         $token = $this->tokenFromRequest($request);
 
         if (! is_string($token) || $token === '') {
@@ -96,7 +104,14 @@ class VisitorSessionToken
             return null;
         }
 
-        return $this->sessionStartedAt($payload);
+        // Both halves, under this one condition. A caller that wanted only the
+        // start would be tempted to fetch the id separately, and the second
+        // condition would drift from this one -- silently, because the symptom is
+        // a visitor locked out of their own conversation rather than an error.
+        return new ContinuedVisitorSession(
+            $this->sessionStartedAt($payload),
+            $this->sessionIdFromPayload($payload),
+        );
     }
 
     /**
@@ -152,9 +167,20 @@ class VisitorSessionToken
     {
         $visitor = $this->visitorFromRequest($request, $site, $anonymousId);
 
-        $sessionStartedAt = $this->sessionStartedAt($this->decode((string) $this->tokenFromRequest($request)));
+        // Both halves carried forward, from the token this request already
+        // proved. Rotation must not change which session a request belongs to:
+        // drop the id here and every rotating widget is locked out of its own
+        // conversation one refresh later.
+        $payload = $this->decode((string) $this->tokenFromRequest($request));
 
-        return $this->encode($site, $visitor, $anonymousId, now(), $sessionStartedAt);
+        return $this->encode(
+            $site,
+            $visitor,
+            $anonymousId,
+            now(),
+            $this->sessionStartedAt($payload),
+            $this->sessionIdFromPayload($payload),
+        );
     }
 
     /**
@@ -285,13 +311,30 @@ class VisitorSessionToken
         string $anonymousId,
         DateTimeInterface $issuedAt,
         ?DateTimeInterface $sessionStartedAt = null,
+        ?string $sessionId = null,
     ): string {
+        // Empty as well as null. A token minted before sessions were identified
+        // carries no id, and `??=` does not fire on ''; a session-less token
+        // would then mint a successor naming no session either, forever, and its
+        // holder could never own a conversation again. Every token this method
+        // returns names exactly one session -- that is the invariant the
+        // ownership check downstream is entitled to assume.
+        if ($sessionId === null || $sessionId === '') {
+            $sessionId = Str::random(32);
+        }
+
         return Crypt::encryptString(json_encode([
             'site_id' => $site->id,
             'visitor_id' => $visitor->id,
             'anonymous_id' => $anonymousId,
             'issued_at' => CarbonImmutable::instance($issuedAt)->toJSON(),
             'session_started_at' => CarbonImmutable::instance($sessionStartedAt ?? $issuedAt)->toJSON(),
+            // Names the SESSION, not the visitor. A conversation records the id
+            // of the session that opened it, so reaching that conversation needs
+            // this rather than only the visitor's displayed browser identity.
+            // Opaque and random: it identifies, it does not encode anything, and
+            // nothing should be derivable from it.
+            'session_id' => $sessionId,
             // The lifetime IN FORCE WHEN THIS TOKEN WAS MINTED, so the token is
             // judged by the policy it was issued under and not by whatever the
             // config says later. Reading the config at verification time would
@@ -440,6 +483,79 @@ class VisitorSessionToken
             401,
             'Visitor session has expired.',
         );
+    }
+
+    /**
+     * When the session a request's token belongs to began, or null.
+     *
+     * Only meaningful for deciding whether a session could have opened a
+     * conversation that predates session ownership. A conversation created
+     * before its own session started is impossible, which is what makes the
+     * comparison safe to rely on.
+     */
+    public function sessionStartedAtFromRequest(Request $request): ?CarbonImmutable
+    {
+        $token = $this->tokenFromRequest($request);
+
+        if (! is_string($token) || $token === '') {
+            return null;
+        }
+
+        try {
+            return $this->sessionStartedAt($this->decode($token));
+        } catch (HttpException) {
+            return null;
+        }
+    }
+
+    /**
+     * The session a token belongs to, or '' when it names none.
+     *
+     * The request-level readers below are the same question asked of whatever
+     * token a request carried; this is it asked of a token directly.
+     */
+    public function sessionIdFromToken(string $token): string
+    {
+        if ($token === '') {
+            return '';
+        }
+
+        try {
+            return $this->sessionIdFromPayload($this->decode($token));
+        } catch (HttpException) {
+            return '';
+        }
+    }
+
+    /**
+     * The session a request's token belongs to, or '' when it names none.
+     *
+     * Empty for a token minted before sessions were identified. The caller
+     * decides what that means; this only reports it.
+     */
+    public function sessionIdFromRequest(Request $request): string
+    {
+        $token = $this->tokenFromRequest($request);
+
+        if (! is_string($token) || $token === '') {
+            return '';
+        }
+
+        try {
+            return $this->sessionIdFromPayload($this->decode($token));
+        } catch (HttpException) {
+            return '';
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function sessionIdFromPayload(array $payload): string
+    {
+        $value = $payload['session_id'] ?? null;
+
+        return is_string($value) ? $value : '';
     }
 
     /**

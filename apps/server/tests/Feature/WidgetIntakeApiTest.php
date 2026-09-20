@@ -404,6 +404,7 @@ test('visitor can add a message to their conversation', function (): void {
             'support_code' => 'WF-MESSAGE',
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
         $seenAt = Carbon::parse('2026-06-17 12:00:00', 'UTC');
         Carbon::setTestNow($seenAt);
 
@@ -441,6 +442,7 @@ test('repeated client_message_id is idempotent and does not duplicate the messag
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
     $conversation = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-IDEM']);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $payload = [
         'site_public_key' => 'site_public_docs',
@@ -463,6 +465,7 @@ test('messages without a client_message_id are each created', function (): void 
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
     $conversation = Conversation::factory()->for($site)->for($visitor)->create(['support_code' => 'WF-NOIDEM']);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $payload = [
         'site_public_key' => 'site_public_docs',
@@ -492,10 +495,13 @@ test('visitor message fetch broadcasts fresh visitor presence', function (): voi
 
         Event::fake([ConversationPresenceUpdated::class]);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $response = $this->getJson("/api/conversations/{$conversation->support_code}/messages?".http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]));
 
         $response
@@ -525,6 +531,7 @@ test('visitor message reopens a closed conversation', function (): void {
         'closed_at' => now()->subMinute(),
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     DB::flushQueryLog();
     DB::enableQueryLog();
@@ -580,6 +587,7 @@ test('visitor can report a fresh typing signal for their conversation', function
             'support_code' => 'WF-TYPING',
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
 
         Event::fake([
             ConversationPresenceUpdated::class,
@@ -658,10 +666,13 @@ test('visitor message fetch includes only fresh agent typing state', function ()
             ],
         ]);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $response = $this->getJson("/api/conversations/{$conversation->support_code}/messages?".http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]));
 
         $response
@@ -684,7 +695,7 @@ test('visitor message fetch includes only fresh agent typing state', function ()
         $this->getJson("/api/conversations/{$conversation->support_code}/messages?".http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]))
             ->assertOk()
             ->assertJsonPath('data.agent_typing.state', 'idle')
@@ -707,6 +718,7 @@ test('visitor can grant cobrowse consent for their conversation', function (): v
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
         'site_public_key' => 'site_public_docs',
@@ -745,6 +757,7 @@ test('visitor can revoke cobrowse consent for their conversation', function (): 
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
         'site_public_key' => 'site_public_docs',
@@ -778,10 +791,13 @@ test('visitor can read their cobrowse request status', function (): void {
         'ended_at' => null,
     ]);
 
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
+
     $response = $this->getJson('/api/conversations/WF-STATUS/cobrowse?'.http_build_query([
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
-        'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        'visitor_token' => $token,
     ]));
 
     $response
@@ -829,10 +845,13 @@ test('visitor cobrowse status includes calm degraded transport copy', function (
             ],
         ]);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $response = $this->getJson('/api/conversations/WF-DEGRADED/cobrowse?'.http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]));
 
         $response
@@ -876,10 +895,13 @@ test('visitor cobrowse status includes a pending agent snapshot resync request',
             ],
         ]);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $response = $this->getJson('/api/conversations/WF-RESYNC/cobrowse?'.http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]));
 
         $response
@@ -919,10 +941,13 @@ test('visitor cobrowse status omits expired agent snapshot resync requests', fun
             ],
         ]);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $response = $this->getJson('/api/conversations/WF-RESYNC-OLD/cobrowse?'.http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]));
 
         $response
@@ -962,10 +987,13 @@ test('visitor cobrowse status omits exhausted agent snapshot resync requests', f
             ],
         ]);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $response = $this->getJson('/api/conversations/WF-RESYNC-EXHAUSTED-STATUS/cobrowse?'.http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]));
 
         $response
@@ -1054,6 +1082,7 @@ test('visitor cobrowse snapshot fulfills a matching agent resync request', funct
             ],
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
 
         $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
             'site_public_key' => 'site_public_docs',
@@ -1115,6 +1144,7 @@ test('visitor cobrowse snapshot does not fulfill an expired agent resync request
             ],
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
 
         $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
             'site_public_key' => 'site_public_docs',
@@ -1171,6 +1201,7 @@ test('visitor cobrowse snapshot records mismatched resync responses without fulf
             ],
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
 
         $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
             'site_public_key' => 'site_public_docs',
@@ -1228,6 +1259,7 @@ test('visitor cobrowse snapshot records duplicate fulfilled resync responses wit
             ],
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
 
         $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
             'site_public_key' => 'site_public_docs',
@@ -1262,14 +1294,17 @@ test('visitor cobrowse snapshot records duplicate fulfilled resync responses wit
 test('visitor cobrowse status is unavailable without a request', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
-    Conversation::factory()->for($site)->for($visitor)->create([
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-NOCOBROWSE',
     ]);
+
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->getJson('/api/conversations/WF-NOCOBROWSE/cobrowse?'.http_build_query([
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
-        'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        'visitor_token' => $token,
     ]));
 
     $response
@@ -1283,14 +1318,17 @@ test('visitor cobrowse status is unavailable without a request', function (): vo
 test('visitor cannot grant cobrowse without an active request', function (): void {
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
-    Conversation::factory()->for($site)->for($visitor)->create([
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-NOREQUEST',
     ]);
+
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson('/api/conversations/WF-NOREQUEST/cobrowse-consent', [
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
-        'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        'visitor_token' => $token,
         'granted' => true,
     ])
         ->assertNotFound()
@@ -1329,6 +1367,7 @@ test('visitor can report cobrowse telemetry for their active session', function 
         'metadata' => [],
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-telemetry", [
         'site_public_key' => 'site_public_docs',
@@ -1412,6 +1451,7 @@ test('visitor telemetry can mark a matching cobrowse resync request as attempt e
             ],
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
 
         $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-telemetry", [
             'site_public_key' => 'site_public_docs',
@@ -1464,6 +1504,7 @@ test('resync exhaustion telemetry does not overwrite existing cobrowse transport
             ],
         ]);
         $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
 
         $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-telemetry", [
             'site_public_key' => 'site_public_docs',
@@ -1505,6 +1546,7 @@ test('visitor can report cobrowse page state for their active session', function
         'metadata' => [],
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-page-state", [
         'site_public_key' => 'site_public_docs',
@@ -1563,6 +1605,7 @@ test('visitor can report a cobrowse snapshot for their active session', function
         ],
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
         'site_public_key' => 'site_public_docs',
@@ -1628,6 +1671,7 @@ test('cobrowse snapshot rejects oversized html payloads', function (): void {
         'metadata' => [],
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", [
         'site_public_key' => 'site_public_docs',
@@ -1682,6 +1726,7 @@ test('visitor can report bounded cobrowse mutation batches for their active sess
         ],
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-mutations", [
         'site_public_key' => 'site_public_docs',
@@ -1759,6 +1804,7 @@ test('cobrowse mutations reject oversized batches', function (): void {
         'metadata' => [],
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-mutations", [
         'site_public_key' => 'site_public_docs',
@@ -1842,10 +1888,13 @@ test('visitor can read their conversation messages', function (): void {
     $seenAt = Carbon::parse('2026-06-01 12:00:00', 'UTC');
     $this->travelTo($seenAt);
 
+    $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
+
     $response = $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
-        'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+        'visitor_token' => $token,
         'mark_seen' => true,
     ]));
 
@@ -1901,10 +1950,13 @@ test('visitor read receipt can be limited to a rendered agent message', function
             'created_at' => now(),
         ]);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $response = $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
             'mark_seen' => true,
             'seen_message_id' => $seenAgentMessage->id,
         ]));
@@ -1948,10 +2000,13 @@ test('visitor message fetch does not mark agent replies seen without a read sign
         $seenAt = Carbon::parse('2026-06-17 12:00:00', 'UTC');
         Carbon::setTestNow($seenAt);
 
+        $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+        conversationOwnedBySession($conversation, $token);
+
         $this->getJson('/api/conversations/WF-MESSAGES/messages?'.http_build_query([
             'site_public_key' => 'site_public_docs',
             'anonymous_id' => 'anon-docs',
-            'visitor_token' => widgetVisitorToken($this, 'site_public_docs', 'anon-docs'),
+            'visitor_token' => $token,
         ]))->assertOk();
 
         expect($agentMessage->fresh()->seen_at)->toBeNull()
@@ -2035,6 +2090,7 @@ test('granting cobrowse consent records who answered and what it changed', funct
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
         'site_public_key' => 'site_public_docs',
@@ -2070,6 +2126,7 @@ test('revoking cobrowse consent records the answer too', function (): void {
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
         'site_public_key' => 'site_public_docs',
@@ -2100,6 +2157,7 @@ test('repeating a grant on an already-granted session records nothing further', 
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $payload = [
         'site_public_key' => 'site_public_docs',
@@ -2129,6 +2187,7 @@ test('a grant that cannot be audited does not start screen sharing', function ()
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
     {
@@ -2169,6 +2228,7 @@ test('declining a pending request is recorded as a decline, not a revocation', f
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
         'site_public_key' => 'site_public_docs',
@@ -2206,6 +2266,7 @@ test('withdrawing consent already given is still a revocation', function (): voi
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-consent", [
         'site_public_key' => 'site_public_docs',
@@ -2242,6 +2303,7 @@ test('a revocation that cannot be audited still stops the sharing', function ():
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->app->bind(CobrowseAuditTrail::class, fn (): CobrowseAuditTrail => new class extends CobrowseAuditTrail
     {
@@ -2277,6 +2339,7 @@ test('a repeated grant does not move the time consent was given', function (): v
         'ended_at' => null,
     ]);
     $token = widgetVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $payload = [
         'site_public_key' => 'site_public_docs',

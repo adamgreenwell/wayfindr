@@ -711,6 +711,8 @@ test('invalid cross-account site agent links are ignored for support alerts', fu
         ->assertSuccessful()
         ->json('data.visitor.token');
 
+    conversationOwnedBySession($conversation, $token);
+
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
@@ -742,6 +744,8 @@ test('unassigned visitor messages notify only agents assigned to that site', fun
         ->assertSuccessful()
         ->json('data.visitor.token');
 
+    conversationOwnedBySession($conversation, $token);
+
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
@@ -772,6 +776,8 @@ test('visitor messages fall back to site agents when the assigned agent no longe
     ])
         ->assertSuccessful()
         ->json('data.visitor.token');
+
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',

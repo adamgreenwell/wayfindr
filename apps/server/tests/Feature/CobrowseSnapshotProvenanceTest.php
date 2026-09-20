@@ -47,6 +47,13 @@ function reportProvenanceSnapshot($test, Conversation $conversation, array $extr
         'page_url' => 'https://docs.example.test/install',
     ])->assertSuccessful()->json('data.visitor.token');
 
+    // The fixture fabricates the conversation, so nothing has recorded which
+    // session opened it. Production reaches this endpoint on a conversation the
+    // widget's own store() stamped; say so here, now that the token naming the
+    // session exists. Provenance is what these tests are about -- the
+    // conversation being the caller's is the precondition, not the subject.
+    conversationOwnedBySession($conversation, $token);
+
     $test->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", array_merge([
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-prov',

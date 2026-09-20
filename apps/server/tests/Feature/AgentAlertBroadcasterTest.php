@@ -148,11 +148,12 @@ test('new and batched conversation alerts both broadcast their durable database 
     $agent = User::factory()->for($account)->create();
     $site = Site::factory()->for($account)->create(['public_key' => 'site_alert_stream']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-alert-stream']);
-    Conversation::factory()->for($site)->for($visitor)->create([
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'assigned_agent_id' => $agent->id,
         'support_code' => 'WF-ALERT-STREAM',
     ]);
     $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+    conversationOwnedBySession($conversation, $token);
 
     foreach (['First visitor message.', 'Second visitor message.'] as $body) {
         $this->postJson('/api/conversations/WF-ALERT-STREAM/messages', [

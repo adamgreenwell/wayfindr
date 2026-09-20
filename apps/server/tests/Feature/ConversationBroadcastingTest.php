@@ -514,6 +514,7 @@ test('visitor cobrowse updates dispatch cobrowse state broadcasts', function (st
         'ended_at' => null,
     ]);
     $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/WF-COBROWSE/{$endpoint}", array_merge([
         'site_public_key' => 'site_public_docs',
@@ -591,6 +592,7 @@ test('visitor messages dispatch conversation message broadcasts', function (): v
         'support_code' => 'WF-VISITOR',
     ]);
     $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson('/api/conversations/WF-VISITOR/messages', [
         'site_public_key' => 'site_public_docs',
@@ -690,10 +692,11 @@ test('visitor broadcast auth signs their private conversation channel', function
 
     $site = Site::factory()->create(['public_key' => 'site_public_docs']);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
-    Conversation::factory()->for($site)->for($visitor)->create([
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'support_code' => 'WF-LIVE',
     ]);
     $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+    conversationOwnedBySession($conversation, $token);
 
     $response = $this->postJson('/api/widget/broadcasting/auth', [
         'site_public_key' => 'site_public_docs',
