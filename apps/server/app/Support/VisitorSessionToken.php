@@ -10,6 +10,7 @@ use Carbon\Exceptions\InvalidFormatException;
 use DateTimeInterface;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use JsonException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -214,14 +215,19 @@ class VisitorSessionToken
      * When this token stops being usable, or null if nothing expires.
      *
      * Advertised to the widget so it can refresh ahead of the moment rather
-     * than discovering it as a failure. Nothing VERIFIES this yet -- see the
-     * config note -- so today it is a promise the server makes and does not
-     * keep, on purpose and in the safe direction: a widget that refreshes too
-     * eagerly costs a request, one that refreshes too late loses a session.
+     * than discovering it as a failure -- and now also ENFORCED, by
+     * `abortIfExpired()`, against the same `issued_at` this computes from. The
+     * two must keep agreeing: the widget refreshes at the half-life of what
+     * this returns, so a server refusing earlier than it advertises would
+     * strand sessions that did exactly what they were told.
      */
     public function expiresAt(string $token): ?CarbonImmutable
     {
-        $minutes = (int) config('wayfindr.visitor_session_ttl_minutes', 0);
+        // The token's own recorded lifetime, for the same reason enforcement
+        // uses it: what is advertised and what is enforced have to be one
+        // number, or a widget refreshes against a deadline the server has
+        // already moved.
+        $minutes = $this->lifetimeFromPayload($this->decode($token));
 
         if ($minutes <= 0) {
             return null;
@@ -286,6 +292,21 @@ class VisitorSessionToken
             'anonymous_id' => $anonymousId,
             'issued_at' => CarbonImmutable::instance($issuedAt)->toJSON(),
             'session_started_at' => CarbonImmutable::instance($sessionStartedAt ?? $issuedAt)->toJSON(),
+            // The lifetime IN FORCE WHEN THIS TOKEN WAS MINTED, so the token is
+            // judged by the policy it was issued under and not by whatever the
+            // config says later. Reading the config at verification time would
+            // apply a change retroactively: lower the value from sixty minutes
+            // to five and every token already advertised as good for an hour
+            // dies at minute five, before the refresh its widget scheduled from
+            // the number the server itself gave it.
+            //
+            // It also makes enabling a lifetime safe rather than safe-with-a-
+            // warning: tokens minted while the value was 0 carry no lifetime and
+            // are judged by no lifetime at all. Once the install has one they
+            // are refused instead -- see `abortIfExpired()` -- because rotation
+            // stops a BROWSER using an old token and does nothing to a copy of
+            // one.
+            'ttl_minutes' => max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)),
         ], JSON_THROW_ON_ERROR));
     }
 
@@ -308,6 +329,8 @@ class VisitorSessionToken
         abort_if(! $token, 401, 'Visitor token is required.');
 
         $payload = $this->decode($token);
+
+        $this->abortIfExpired($payload);
 
         abort_if((int) ($payload['site_id'] ?? 0) !== $site->id, 403, 'Visitor token does not match this site.');
         abort_if(! hash_equals((string) ($payload['anonymous_id'] ?? ''), $anonymousId), 403, 'Visitor token does not match this visitor.');
@@ -341,6 +364,114 @@ class VisitorSessionToken
         // an unrelated row that later reuses the anonymous id.
 
         return $visitor;
+    }
+
+    /**
+     * Refuse a token past its lifetime, once an install has configured one.
+     *
+     * Measured from `issued_at`, which is exactly what `expiresAt()` already
+     * advertises to the widget as `token_expires_in` -- so the server refuses
+     * at the moment it told the widget to expect, and the widget has been
+     * refreshing at the half-life to stay ahead of it.
+     *
+     * Deliberately NOT measured from `session_started_at`. That would be an
+     * absolute cap, which is a good idea and a different change, because
+     * `continuingSessionStartedAt()` carries a presented token's session start
+     * forward with no age check of its own. A capped session would refuse, the
+     * widget would bootstrap to recover, and the replacement token would be
+     * born already expired -- forever, surviving a page reload, because the
+     * widget presents the same stored token to bootstrap again. It would also
+     * silence its own recovery: `sessionIdentity()` hashes the session start,
+     * so every re-mint lands in one rate-limit bucket and the 429 that follows
+     * reads to the widget as "server unavailable" rather than "token
+     * rejected", at which point it stops trying. A cap needs
+     * `continuingSessionStartedAt()` bounded first.
+     *
+     * 401 rather than 403, matching what this file already does: 403 here means
+     * the token names a different site or visitor, and the widget treats 403 as
+     * terminal. An expired token is the one refusal with a defined recovery.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function abortIfExpired(array $payload): void
+    {
+        $minutes = $this->lifetimeFromPayload($payload);
+
+        if ($minutes <= 0) {
+            // No lifetime recorded: minted before lifetimes existed, or while
+            // the setting was 0. Once the install HAS a lifetime, such a token is
+            // refused rather than grandfathered -- `refresh()` does not revoke a
+            // predecessor, so an exempt token would be usable for as long as the
+            // install lived, and that is the thing a lifetime is for.
+            //
+            // A pre-policy token can still buy its replacement: this check is
+            // not reachable from bootstrap, whose path is
+            // `continuingSessionStartedAt()` and calls neither this method nor
+            // `visitorFromRequest()`. The 401 is what the widget already maps to
+            // `rejected`, whose recovery is that bootstrap.
+            //
+            // How FAST that happens is not uniform, which is why the operator
+            // guidance says to deploy before switching a lifetime on. A page load
+            // recovers at once. An already-open panel waits for its next session
+            // refresh -- ten minutes by default, because it recorded the old
+            // token as non-expiring and is not hurrying. A widget from before
+            // this release has no 401 recovery at all and waits for a reload.
+            //
+            // The exception is an integration built on `createClient()`, which
+            // receives a token and no refresh timer and so never re-bootstraps.
+            // That is the documented reason to finish such an integration before
+            // configuring a lifetime, and it is the same hazard a NEW token
+            // would present to it.
+            if (max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)) <= 0) {
+                return;
+            }
+
+            abort(401, 'Visitor session has expired.');
+        }
+
+        $issuedAt = $this->issuedAtFromPayload($payload);
+
+        if ($issuedAt === null) {
+            return;
+        }
+
+        abort_if(
+            $issuedAt->addMinutes($minutes)->isPast(),
+            401,
+            'Visitor session has expired.',
+        );
+    }
+
+    /**
+     * The lifetime this token was minted under, in minutes, or 0 for none.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function lifetimeFromPayload(array $payload): int
+    {
+        $value = $payload['ttl_minutes'] ?? null;
+
+        return is_int($value) || (is_string($value) && $value !== '' && ctype_digit($value))
+            ? max(0, (int) $value)
+            : 0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function issuedAtFromPayload(array $payload): ?CarbonImmutable
+    {
+        $value = $payload['issued_at'] ?? null;
+
+        if (! is_string($value) || $value === '') {
+            return null;
+        }
+
+        try {
+            return CarbonImmutable::parse($value);
+        } catch (InvalidFormatException) {
+            return null;
+        }
     }
 
     /**

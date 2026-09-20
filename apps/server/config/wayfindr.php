@@ -164,15 +164,18 @@ return [
     // silently adopt whichever region the host happens to sit in.
     'dashboard_timezone' => (string) env('WAYFINDR_DASHBOARD_TIMEZONE', 'UTC'),
 
-    // How long a visitor session token stays usable, in minutes.
+    // How long a visitor session token stays usable, in minutes. 0 means no
+    // expiry, and is the default every existing install has.
     //
-    // ZERO MEANS NO EXPIRY, which is the shipped default and the behaviour
-    // every existing install has. Setting it advertises an expiry to widgets
-    // -- they refresh ahead of it -- WITHOUT the server refusing an older
-    // token yet. That ordering is deliberate: a token lifetime is only safe to
-    // enforce once the widgets holding tokens are already refreshing, and
-    // `widget.js` is cached for five minutes and versionless, so client
-    // capability always lands before the server rule that depends on it.
+    // Each token records the lifetime in force when it was MINTED and is judged
+    // by that, so a change here never reaches a token already issued. Tokens
+    // predating lifetimes record none and are refused once one is configured --
+    // see `abortIfExpired()`, including why that refusal is recoverable and how
+    // fast.
+    //
+    // Measured from when a token was issued, not when its session began. An
+    // absolute session cap is a separate change; `abortIfExpired()` says why it
+    // cannot simply be added here.
     'visitor_session_ttl_minutes' => (int) env('WAYFINDR_VISITOR_SESSION_TTL_MINUTES', 0),
 
     'widget_rate_limits' => [

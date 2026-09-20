@@ -190,45 +190,32 @@ those requests in the caller's own bucket.
 
 ## Turning on a token lifetime
 
-`WAYFINDR_VISITOR_SESSION_TTL_MINUTES` is zero on every install today, and zero
-means a visitor session token never expires. Setting it does ONE thing: bootstrap
-and refresh begin advertising a lifetime, and the widget rotates its token ahead
-of that deadline. The server still accepts an older token.
+`WAYFINDR_VISITOR_SESSION_TTL_MINUTES` is `0` on a new install, and `0` means a
+visitor session token never expires. Setting it advertises a lifetime to widgets,
+which rotate ahead of it, and refuses a token past it.
 
-That ordering matters and is worth not reversing. `widget.js` is cached for five
-minutes and carries no version, so the widgets holding tokens right now are the
-ones that have to survive the change. Advertise the lifetime first, let the
-installed widgets rotate against it, and only then consider refusing an expired
-token. A rule enforced before its clients can rotate strands every open
-conversation at once, and it does so quietly, because a refused refresh is
-indistinguishable to the widget from a declined one.
+**The order matters.** Tokens issued before you set a lifetime record none, and
+are refused once one exists — they have to be, because a replacement token does
+not revoke its predecessor, so rotation alone would never retire them. So:
 
-Raise or lower it freely afterwards: the widget reads the deadline from each
-response rather than caching a policy, and it will not schedule a refresh past
-an expiry it has been told about.
+1. Deploy.
+2. Wait a few minutes. `widget.js` is cached for five and carries no version, so
+   this is how long it takes for visitors' browsers to be running a widget that
+   recovers from the refusal by itself.
+3. Set the value.
 
-**One gap to know about before you set this.** Rotation lives in
-`Wayfindr.init()`, the embedded widget. A host integrating through
-`Wayfindr.createClient()` directly -- a documented path in the widget package's
-README -- gets the token but no timer, and nothing in that API tells the
-integrator to drive one.
+Recovery after that is quiet but not instant. Bootstrap accepts a pre-policy
+token and returns a fresh one, so a page load fixes it immediately; an
+already-open panel waits for its next session refresh, up to ten minutes.
 
-Setting a lifetime does not break those sessions today -- nothing refuses an
-expired token yet, which is the whole point of advertising first. They are the
-sessions that break at the LATER step, when the server starts refusing. So a
-`createClient` integration is work to finish before that step, not a reason to
-leave this at 0: leaving it at 0 declines the advertise-first move that makes
-enforcement safe, which is the opposite of what you want.
+**Finish any `Wayfindr.createClient()` integration first.** Rotation lives in
+`Wayfindr.init()`. A host using `createClient()` directly gets a token and no
+timer, so each of its sessions stops one lifetime after that token was issued,
+and it never re-bootstraps to recover.
 
-The residual: two sessions begun for the same visitor in the same microsecond
-share a budget. The value is inside the encrypted token, so it cannot be read
-and aimed at -- but it is a timestamp rather than a secret, and the real remedy
-is for bootstrap to stop minting on a published identifier at all.
+Raise or lower it freely afterwards. A token is judged by the lifetime it was
+issued under, so a change never shortens one already in a visitor's browser.
 
-For a shared address specifically, `WAYFINDR_WIDGET_PRESENCE_PER_MINUTE` is
-usually the wrong one to raise: it is already per visitor, so a busy office
-does not consume it faster than one person does. Raise
-`WAYFINDR_WIDGET_PRESENCE_PER_IP_PER_MINUTE` and the creation budgets instead.
 
 ## Scope And Limitations
 
