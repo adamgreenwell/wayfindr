@@ -3209,6 +3209,15 @@ test('the widget attachment endpoint answers the visitor, not the install', func
     config(['app.locale' => 'de']);
     app()->setLocale('de');
 
+    // One visitor session does all the uploading below, and it says so once.
+    // The widget endpoint stamps the session that opens a conversation; a
+    // factory-made one names none, so without this the session is a stranger to
+    // its own conversation and every upload is refused before a word of copy is
+    // written -- which would make this a test of the access boundary rather
+    // than of the language the rejection is written in.
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+    conversationOwnedBySession($conversation, $token);
+
     $cases = [
         ['en', 'en', 'a site pinned to English'],
         ['de', 'de', 'a site pinned to German'],
@@ -3228,7 +3237,7 @@ test('the widget attachment endpoint answers the visitor, not the install', func
             [
                 'site_public_key' => $site->public_key,
                 'anonymous_id' => $visitor->anonymous_id,
-                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'visitor_token' => $token,
                 'file' => UploadedFile::fake()->create('payload.exe', 8),
             ],
         );
@@ -3248,7 +3257,7 @@ test('the widget attachment endpoint answers the visitor, not the install', func
             [
                 'site_public_key' => $site->public_key,
                 'anonymous_id' => $visitor->anonymous_id,
-                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'visitor_token' => $token,
                 'file' => UploadedFile::fake()->create(
                     'huge.txt',
                     (int) ceil(((int) config('wayfindr.attachments.max_file_bytes')) / 1024) + 64,
@@ -3314,7 +3323,13 @@ test('the widget can say which language it actually resolved', function (): void
     config(['app.locale' => 'de']);
     app()->setLocale('de');
 
-    $upload = function (?string $pinned, ?string $requested) use ($site, $visitor, $conversation) {
+    // One session, three uploads. A factory-made conversation records no owning
+    // session, so the session about to act on it declares that it owns it --
+    // the same statement the widget endpoint makes when it creates one.
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+    conversationOwnedBySession($conversation, $token);
+
+    $upload = function (?string $pinned, ?string $requested) use ($site, $visitor, $conversation, $token) {
         $settings = $site->settings ?? [];
         $settings['locale'] = $pinned;
         $site->forceFill(['settings' => $settings])->save();
@@ -3324,7 +3339,7 @@ test('the widget can say which language it actually resolved', function (): void
             array_filter([
                 'site_public_key' => $site->public_key,
                 'anonymous_id' => $visitor->anonymous_id,
-                'visitor_token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+                'visitor_token' => $token,
                 'locale' => $requested,
                 'file' => UploadedFile::fake()->create('payload.exe', 8),
             ], fn ($value): bool => $value !== null),

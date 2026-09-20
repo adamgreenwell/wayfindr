@@ -543,6 +543,11 @@ test('fetching messages runs the visit transition like every other writer', func
 
     $token = app(VisitorSessionToken::class)->issue($site, $visitor);
 
+    // The factory leaves no owning session, which the endpoint would have
+    // stamped. Declared after the token exists, because the session id comes out
+    // of it.
+    conversationOwnedBySession($conversation, $token);
+
     test()->getJson(route('conversations.messages.index', [
         'supportCode' => $conversation->support_code,
     ]).'?'.http_build_query([

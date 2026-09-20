@@ -243,6 +243,11 @@ final class InboundMailRouter
 
         return $site->conversations()->create([
             'visitor_id' => $visitor->id,
+            // Nobody, explicitly. There is no widget session behind an inbound
+            // email, and leaving this null would let the post-activation sweep
+            // claim the row as predating session ownership -- which grants it to
+            // any earlier session of that visitor instead of to no one.
+            'owner_session_id' => Conversation::NO_OWNER_SESSION,
             'support_code' => Conversation::generateSupportCode(),
             'status' => 'open',
             'subject' => $message->subject,

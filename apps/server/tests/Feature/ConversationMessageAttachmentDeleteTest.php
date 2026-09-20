@@ -58,13 +58,15 @@ test('a visitor deletes their own unbound upload and frees its quota', function 
     $f = deleteFixture();
     $attachment = ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create(['size_bytes' => 5000]);
     seedAttachmentFile($attachment);
+    $token = deleteTestToken($f['site'], $f['visitor']);
+    conversationOwnedBySession($f['conversation'], $token);
 
     expect((int) ConversationMessageAttachment::where('conversation_id', $f['conversation']->id)->sum('size_bytes'))->toBe(5000);
 
     $this->delete(visitorDeleteUrl($f['conversation'], $attachment, [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => deleteTestToken($f['site'], $f['visitor']),
+        'visitor_token' => $token,
     ]))->assertNoContent();
 
     expect(ConversationMessageAttachment::whereKey($attachment->id)->exists())->toBeFalse();
@@ -81,11 +83,15 @@ test('a visitor cannot delete a bound (sent) attachment', function (): void {
     ]);
     $attachment = ConversationMessageAttachment::factory()->forMessage($message)->create();
     seedAttachmentFile($attachment);
+    // Owned by the requesting session, so the refusal below is the bound-attachment
+    // rule this test names and not the conversation-ownership gate in front of it.
+    $token = deleteTestToken($f['site'], $f['visitor']);
+    conversationOwnedBySession($f['conversation'], $token);
 
     $this->delete(visitorDeleteUrl($f['conversation'], $attachment, [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => deleteTestToken($f['site'], $f['visitor']),
+        'visitor_token' => $token,
     ]))->assertNotFound();
 
     expect(ConversationMessageAttachment::whereKey($attachment->id)->exists())->toBeTrue();
@@ -98,11 +104,15 @@ test('a visitor cannot delete an upload another visitor made', function (): void
     // A pending upload owned by the intruder, but living in the same conversation.
     $attachment = ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $intruder)->create();
     seedAttachmentFile($attachment);
+    // The requester owns the CONVERSATION -- they reach it legitimately. What they
+    // do not own is this upload, which is the whole point of the test.
+    $token = deleteTestToken($f['site'], $f['visitor']);
+    conversationOwnedBySession($f['conversation'], $token);
 
     $this->delete(visitorDeleteUrl($f['conversation'], $attachment, [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => deleteTestToken($f['site'], $f['visitor']),
+        'visitor_token' => $token,
     ]))->assertNotFound();
 
     expect(ConversationMessageAttachment::whereKey($attachment->id)->exists())->toBeTrue();
@@ -111,6 +121,10 @@ test('a visitor cannot delete an upload another visitor made', function (): void
 test('an unauthenticated visitor cannot delete an upload', function (): void {
     $f = deleteFixture();
     $attachment = ConversationMessageAttachment::factory()->pendingFor($f['conversation'], $f['visitor'])->create();
+    // The conversation has an owning session, as one opened through the widget
+    // always does. This request simply presents no credential for it, so the
+    // refusal is the missing token rather than an unowned fixture.
+    conversationOwnedBySession($f['conversation'], deleteTestToken($f['site'], $f['visitor']));
 
     $this->delete(visitorDeleteUrl($f['conversation'], $attachment, [
         'site_public_key' => $f['site']->public_key,

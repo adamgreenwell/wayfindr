@@ -67,6 +67,32 @@ class ConversationController extends Controller
 
         $visitor = $visitorSessionToken->visitorFromRequest($request, $site, $validated['anonymous_id']);
 
+        // A conversation belongs to the session that opened it, so a token
+        // naming no session cannot open one. The one thing that presents such a
+        // token is a browser holding one minted before sessions were identified,
+        // which makes this the upgrade path rather than an edge case.
+        //
+        // Refused rather than recorded. Storing the legacy sentinel instead
+        // would let this row be reached by the time rule -- by ANY session that
+        // began before it, which is exactly the property being removed -- and
+        // storing null would leave the visitor unable to reach a conversation
+        // they just opened.
+        //
+        // Refusing with the status an expired token uses is deliberate: 401 has
+        // one defined recovery, and it is a bootstrap -- the only path that mints
+        // a token naming a session. The client now takes that recovery at this
+        // call site rather than leaving it to the panel: `startConversation()`
+        // bootstraps once on a 401 and retries.
+        //
+        // That matters for the case the panel does not cover. An integration
+        // built on `createClient()` is handed a token, gets no refresh timer, and
+        // `sendFirstMessage()` skips bootstrap whenever the restored token is
+        // truthy -- so one holding a pre-session token would have posted it and
+        // been refused for as long as the host page stayed loaded.
+        $ownerSessionId = $visitorSessionToken->sessionIdFromRequest($request);
+
+        abort_if($ownerSessionId === '', 401, 'Visitor session has expired.');
+
         // The stamp and the insert are ONE transaction, against a locked row.
         //
         // `wayfindr:prune-presence-visitors` deletes visitors who never made
@@ -82,7 +108,12 @@ class ConversationController extends Controller
         // second sees what the first one did rather than a stale copy of the
         // world from before it started.
         $conversation = DB::transaction(function () use (
-
+            // Captured explicitly. A closure does not take this by itself, and
+            // the failure is quiet in the wrong direction: the insert would
+            // store NULL, which `sessionOwns()` reads as owned by nobody, so
+            // the visitor who just opened the conversation could never post to
+            // it.
+            $ownerSessionId,
             $site,
             $siteManagerCoverage,
             $validated,
@@ -195,6 +226,11 @@ class ConversationController extends Controller
             $conversation = Conversation::query()->create([
                 'site_id' => $site->id,
                 'visitor_id' => $visitor->id,
+                // The session that opened it, which is what may later reach it.
+                // Refused above if the token names none, so this is never the
+                // sentinel: that value means "older than this control" and
+                // nothing else.
+                'owner_session_id' => $ownerSessionId,
                 'support_code' => Conversation::generateSupportCode(),
                 'status' => 'open',
                 'subject' => $validated['subject'] ?? null,

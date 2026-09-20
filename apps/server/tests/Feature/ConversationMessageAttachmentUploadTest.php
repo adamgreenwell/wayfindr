@@ -38,7 +38,18 @@ function uploadFixture(array $siteOverrides = []): array
         'support_code' => 'WF-'.strtoupper(Str::random(8)),
     ]);
 
-    return compact('account', 'site', 'visitor', 'conversation');
+    // One token per fixture, and the conversation belongs to the session that
+    // token names. Both halves matter. The widget's create endpoint stamps the
+    // owning session itself, so a production conversation always has one; a
+    // factory leaves it NULL, which the resolver refuses with the same 404 a
+    // missing conversation gets. And every request below has to present THIS
+    // token, because each `issue()` mints a new session id -- a second token
+    // for the same visitor is a different session, which the endpoint refuses
+    // exactly as it would refuse a stranger's.
+    $token = tokenFor($site, $visitor);
+    conversationOwnedBySession($conversation, $token);
+
+    return compact('account', 'site', 'visitor', 'conversation', 'token');
 }
 
 function tokenFor(Site $site, Visitor $visitor): string
@@ -66,14 +77,22 @@ function uploadUrl(Conversation $conversation): string
     return "/api/conversations/{$conversation->support_code}/attachments";
 }
 
-function visitorUpload(Conversation $conversation, Site $site, Visitor $visitor, UploadedFile $file, $test)
+/**
+ * Upload as the fixture's visitor, on the session that owns its conversation.
+ *
+ * Takes the whole fixture rather than its parts so the token travels with it:
+ * re-issuing one here would upload on a session the conversation does not
+ * belong to, and every case below would fail as a 404 for a reason none of them
+ * is about.
+ */
+function visitorUpload(array $fixture, UploadedFile $file, $test)
 {
     // Accept JSON so a validation failure renders as 422 (as the widget's XHR
     // receives it) rather than a redirect.
-    return $test->post(uploadUrl($conversation), [
-        'site_public_key' => $site->public_key,
-        'anonymous_id' => $visitor->anonymous_id,
-        'visitor_token' => tokenFor($site, $visitor),
+    return $test->post(uploadUrl($fixture['conversation']), [
+        'site_public_key' => $fixture['site']->public_key,
+        'anonymous_id' => $fixture['visitor']->anonymous_id,
+        'visitor_token' => $fixture['token'],
         'file' => $file,
     ], ['Accept' => 'application/json']);
 }
@@ -83,7 +102,7 @@ function visitorUpload(Conversation $conversation, Site $site, Visitor $visitor,
 test('a visitor uploads an image as a pending, unbound attachment', function (): void {
     $f = uploadFixture();
 
-    $response = visitorUpload($f['conversation'], $f['site'], $f['visitor'], UploadedFile::fake()->image('shot.png'), $this);
+    $response = visitorUpload($f, UploadedFile::fake()->image('shot.png'), $this);
 
     $response->assertCreated()
         ->assertJsonPath('data.attachment.filename', 'shot.png')
@@ -109,7 +128,7 @@ test('a plain text upload is allowed based on its sniffed content, not extension
     $f = uploadFixture();
 
     // Extension says .bin; the bytes are plain text, which is what counts.
-    visitorUpload($f['conversation'], $f['site'], $f['visitor'], realUpload('data.bin', 'hello there'), $this)
+    visitorUpload($f, realUpload('data.bin', 'hello there'), $this)
         ->assertCreated()
         ->assertJsonPath('data.attachment.mime_type', 'text/plain');
 });
@@ -119,9 +138,7 @@ test('an SVG disguised with an image extension is rejected by the sniffed-type a
 
     // Extension says .png; the bytes are SVG (active content), so it is rejected.
     visitorUpload(
-        $f['conversation'],
-        $f['site'],
-        $f['visitor'],
+        $f,
         realUpload('logo.png', '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
         $this,
     )->assertStatus(422);
@@ -134,9 +151,7 @@ test('an HTML file disguised with an image extension is rejected', function (): 
     $f = uploadFixture();
 
     visitorUpload(
-        $f['conversation'],
-        $f['site'],
-        $f['visitor'],
+        $f,
         realUpload('sneaky.png', '<!DOCTYPE html><html><head><title>x</title></head><body><script>alert(1)</script></body></html>'),
         $this,
     )->assertStatus(422);
@@ -149,7 +164,7 @@ test('an oversize file is rejected before it is stored', function (): void {
     $f = uploadFixture();
 
     // 2 MB fake file (size-only) trips the max rule.
-    visitorUpload($f['conversation'], $f['site'], $f['visitor'], UploadedFile::fake()->create('big.png', 2048), $this)
+    visitorUpload($f, UploadedFile::fake()->create('big.png', 2048), $this)
         ->assertStatus(422);
 
     expect(ConversationMessageAttachment::count())->toBe(0);
@@ -165,7 +180,7 @@ test('the per-conversation storage cap is enforced', function (): void {
         ->pendingFor($f['conversation'], $f['visitor'])
         ->create(['size_bytes' => 1000]);
 
-    visitorUpload($f['conversation'], $f['site'], $f['visitor'], UploadedFile::fake()->image('shot.png'), $this)
+    visitorUpload($f, UploadedFile::fake()->image('shot.png'), $this)
         ->assertStatus(422);
 });
 
@@ -202,7 +217,7 @@ test('sending a message binds the visitor\'s pending upload to it', function ():
     $this->postJson("/api/conversations/{$f['conversation']->support_code}/messages", [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
         'body' => 'Here is the screenshot.',
         'attachment_ids' => [$attachment->id],
     ])->assertCreated()
@@ -218,7 +233,7 @@ test('a message may carry only an attachment and no text', function (): void {
     $this->postJson("/api/conversations/{$f['conversation']->support_code}/messages", [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
         'attachment_ids' => [$attachment->id],
     ])->assertCreated();
 
@@ -231,7 +246,7 @@ test('a message with neither text nor attachment is rejected', function (): void
     $this->postJson("/api/conversations/{$f['conversation']->support_code}/messages", [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
     ])->assertStatus(422);
 });
 
@@ -244,7 +259,7 @@ test('binding another visitor\'s upload is rejected and rolls the send back', fu
     $this->postJson("/api/conversations/{$f['conversation']->support_code}/messages", [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
         'body' => 'Trying to attach someone else\'s file.',
         'attachment_ids' => [$foreign->id],
     ])->assertStatus(422);
@@ -263,7 +278,7 @@ test('exceeding the per-message attachment count is rejected', function (): void
     $this->postJson("/api/conversations/{$f['conversation']->support_code}/messages", [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
         'body' => 'Too many.',
         'attachment_ids' => [$a->id, $b->id],
     ])->assertStatus(422);
@@ -278,7 +293,7 @@ test('an idempotent retry binds the attachment exactly once', function (): void 
     $payload = [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
         'body' => 'Screenshot attached.',
         'client_message_id' => 'client-abc',
         'attachment_ids' => [$attachment->id],
@@ -298,7 +313,7 @@ test('an already-bound attachment cannot be re-bound to another message', functi
     $base = [
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
         'attachment_ids' => [$attachment->id],
     ];
 
@@ -341,7 +356,7 @@ test('an uploader may preview their own unsent upload but the other party may no
     $this->get("/api/conversations/{$f['conversation']->support_code}/attachments/{$attachment->id}?".http_build_query([
         'site_public_key' => $f['site']->public_key,
         'anonymous_id' => $f['visitor']->anonymous_id,
-        'visitor_token' => tokenFor($f['site'], $f['visitor']),
+        'visitor_token' => $f['token'],
     ]))->assertOk();
 
     // The agent cannot — it is not bound to a message yet, and they did not

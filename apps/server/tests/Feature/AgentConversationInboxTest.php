@@ -4041,6 +4041,10 @@ test('message direction changes the conversation attention state', function (): 
         ->assertSuccessful()
         ->json('data.visitor.token');
 
+    // The widget endpoint stamps the opening session; this conversation came
+    // from a factory, so say which session owns it before replying as it.
+    conversationOwnedBySession($conversation, $token);
+
     $this->postJson('/api/conversations/WF-ATTEND1/messages', [
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-acme',
@@ -4096,6 +4100,10 @@ test('visitor reply reopens a pending linked ticket for agent attention', functi
     ])
         ->assertSuccessful()
         ->json('data.visitor.token');
+
+    // The widget endpoint stamps the opening session; this conversation came
+    // from a factory, so say which session owns it before replying as it.
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson('/api/conversations/WF-CUSTOMER/messages', [
         'site_public_key' => 'site_public_docs',

@@ -33,6 +33,7 @@ test('visitor messages notify the assigned agent', function (): void {
         'subject' => 'Checkout trouble',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -79,6 +80,7 @@ test('conversation alerts with digest cadence keep dashboard delivery but skip i
         'subject' => 'Checkout trouble',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -170,6 +172,7 @@ test('conversation alerts stay dashboard only when email alerts are disabled', f
         'support_code' => 'WF-MAIL2',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -197,6 +200,7 @@ test('assigned conversation alerts batch repeated visitor messages', function ()
         'subject' => 'Checkout trouble',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -244,6 +248,7 @@ test('visitor messages notify all account agents when a conversation is unassign
         'support_code' => 'WF-UNASSIGNED',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -268,6 +273,7 @@ test('unassigned conversation alerts batch for each account agent', function ():
         'support_code' => 'WF-BATCH2',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     foreach (['Can someone help?', 'I am still blocked.'] as $body) {
         $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
@@ -316,6 +322,7 @@ test('unassigned conversation alerts honor agent alert preferences', function ()
         'support_code' => 'WF-PREF1',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -345,6 +352,7 @@ test('unassigned conversation alerts fall back when only deactivated agents are 
         'support_code' => 'WF-FALLBACK1',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -370,6 +378,7 @@ test('assigned only agents still receive alerts for conversations assigned to th
         'support_code' => 'WF-PREF2',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -397,6 +406,7 @@ test('quiet assigned agents do not fan out conversation alerts to other agents',
         'support_code' => 'WF-PREF3',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -613,6 +623,7 @@ test('dashboard shows unread conversation alerts', function (): void {
         'subject' => 'Install help',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',
@@ -1880,6 +1891,7 @@ test('opening a conversation marks its unread alerts as read', function (): void
         'support_code' => 'WF-READ1',
     ]);
     $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
 
     $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
         'site_public_key' => 'site_public_docs',

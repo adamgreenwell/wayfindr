@@ -21,6 +21,7 @@ use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
 use App\Notifications\TicketAssigned;
+use App\Support\Conversations\LegacyOwnerSessionSweep;
 use App\Support\Reporting\ReportingScope;
 use App\Support\Reporting\ReportingWindow;
 use App\Support\Reporting\SupportReport;
@@ -304,10 +305,16 @@ test('an API message is integration-authored, reopens the conversation, and broa
     expect($reopen->actor_type)->toBe(ApiToken::class)
         ->and($reopen->metadata['actor'])->toBe('integration');
 
+    // The widget endpoint stamps the opening session on a conversation it
+    // creates; this one came from a factory, so the session that is about to
+    // read it has to be named as its owner first.
+    $visitorToken = apiWriteVisitorToken($this, $world);
+    conversationOwnedBySession($conversation, $visitorToken);
+
     $visitorView = $this->getJson('/api/conversations/WF-APIWRITE/messages?'.http_build_query([
         'site_public_key' => $world['site']->public_key,
         'anonymous_id' => $world['visitor']->anonymous_id,
-        'visitor_token' => apiWriteVisitorToken($this, $world),
+        'visitor_token' => $visitorToken,
     ]));
 
     $visitorView->assertOk()
@@ -530,10 +537,15 @@ test('an integration message can bound a visitor read receipt without becoming h
         'body' => 'An automated follow-up rendered last.',
     ], apiWriteHeaders($world, 'read-boundary'))->assertCreated()->json('data.message.id');
 
+    // A factory-made conversation records no opening session, so the session
+    // that is about to mark it seen has to be named as its owner first.
+    $visitorToken = apiWriteVisitorToken($this, $world);
+    conversationOwnedBySession($conversation, $visitorToken);
+
     $this->getJson('/api/conversations/WF-APISEEN/messages?'.http_build_query([
         'site_public_key' => $world['site']->public_key,
         'anonymous_id' => $world['visitor']->anonymous_id,
-        'visitor_token' => apiWriteVisitorToken($this, $world),
+        'visitor_token' => $visitorToken,
         'mark_seen' => true,
         'seen_message_id' => $integrationMessageId,
     ]))->assertOk();
@@ -931,4 +943,35 @@ test('expired idempotency receipts are pruned without touching live ones', funct
             fn ($event): bool => str_contains((string) $event->command, 'wayfindr:prune-api-idempotency-keys')
                 && $event->getExpression() === '0 * * * *',
         ))->toBeTrue();
+});
+
+test('an API-created conversation records that no widget session owns it', function (): void {
+    $writer = apiWriteWorld();
+
+    $supportCode = $this->postJson('/api/v1/conversations', [
+        'site_id' => $writer['site']->id,
+        'visitor_id' => $writer['visitor']->id,
+        'subject' => 'Printer offline',
+    ], apiWriteHeaders($writer))->assertCreated()->json('data.support_code');
+
+    $conversation = Conversation::query()->where('support_code', $supportCode)->sole();
+
+    // An API caller is not a widget session. Stated, rather than left null: the
+    // sweep that closes the upgrade window claims nulls as predating the
+    // control, which would hand this row to any earlier session of that visitor.
+    expect($conversation->owner_session_id)->toBe(Conversation::NO_OWNER_SESSION);
+
+    LegacyOwnerSessionSweep::run();
+
+    expect($conversation->refresh()->owner_session_id)
+        ->toBe(Conversation::NO_OWNER_SESSION, 'The sweep must not claim a row that states nobody owns it.');
+
+    // And the widget side cannot reach it, even from a session older than the row.
+    $visitorToken = apiWriteVisitorToken($this, $writer);
+
+    $this->withToken($visitorToken)->postJson('/api/conversations/'.$supportCode.'/messages', [
+        'site_public_key' => $writer['site']->public_key,
+        'anonymous_id' => $writer['visitor']->anonymous_id,
+        'body' => 'Can I see this?',
+    ])->assertNotFound();
 });

@@ -86,6 +86,11 @@ class ConversationController extends Controller
                 $conversation = Conversation::query()->create([
                     'site_id' => $site->id,
                     'visitor_id' => $visitor->id,
+                    // Nobody, explicitly. An API caller is not a widget session,
+                    // so no session may reach this from the widget side; left
+                    // null, the post-activation sweep would claim it as
+                    // predating session ownership and hand it to the time rule.
+                    'owner_session_id' => Conversation::NO_OWNER_SESSION,
                     'support_code' => Conversation::generateSupportCode(),
                     'status' => 'open',
                     'subject' => $validated['subject'] ?? null,

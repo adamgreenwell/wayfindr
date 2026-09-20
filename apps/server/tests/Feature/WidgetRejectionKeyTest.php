@@ -33,12 +33,21 @@ function rejectionFixture(array $siteAttributes = []): array
     $site = Site::factory()->create(array_merge(['public_key' => 'site_public_reject'], $siteAttributes));
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-reject']);
     $conversation = Conversation::factory()->for($site)->for($visitor)->create(['status' => 'open']);
+    $token = app(VisitorSessionToken::class)->issue($site, $visitor);
+
+    // The widget endpoint that opens a conversation records the session that
+    // opened it, and only that session may act on it afterwards. A factory
+    // leaves that unsaid, so these uploads would be refused as if the
+    // conversation did not exist -- nothing to do with a rejection key. Declare
+    // the ownership the endpoint would have, so each test below is about the
+    // rejection it names.
+    conversationOwnedBySession($conversation, $token);
 
     return [
         'site' => $site,
         'visitor' => $visitor,
         'conversation' => $conversation,
-        'token' => app(VisitorSessionToken::class)->issue($site, $visitor),
+        'token' => $token,
     ];
 }
 

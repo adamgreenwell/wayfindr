@@ -29,6 +29,14 @@ beforeEach(function (): void {
 /**
  * Build a site + visitor + conversation + message + stored attachment. Returns
  * everything a test needs to exercise either access path.
+ *
+ * The conversation belongs to a visitor SESSION, as one created through the
+ * widget endpoint always does, and the returned `visitorToken` is that session's
+ * token. Tests acting as the owner must present it rather than minting a fresh
+ * one: a new token names a new session, which is exactly the caller this
+ * boundary refuses. Without the ownership here every refusal below would be
+ * answered by the missing owner instead of the thing it names — quarantine, a
+ * deleted binary, an attachment from another conversation.
  */
 function attachmentFixture(array $siteOverrides = [], array $visitorOverrides = [], array $conversationOverrides = []): array
 {
@@ -43,6 +51,10 @@ function attachmentFixture(array $siteOverrides = [], array $visitorOverrides = 
         'visitor_id' => $visitor->id,
         'support_code' => 'WF-'.strtoupper(Str::random(8)),
     ], $conversationOverrides));
+
+    $visitorToken = visitorToken($site, $visitor);
+    conversationOwnedBySession($conversation, $visitorToken);
+
     $message = ConversationMessage::factory()->for($conversation)->create([
         'sender_type' => Visitor::class,
         'sender_id' => $visitor->id,
@@ -59,7 +71,7 @@ function attachmentFixture(array $siteOverrides = [], array $visitorOverrides = 
         'mime_type' => 'image/png',
     ]);
 
-    return compact('account', 'site', 'visitor', 'conversation', 'message', 'attachment', 'bytes');
+    return compact('account', 'site', 'visitor', 'conversation', 'message', 'attachment', 'bytes', 'visitorToken');
 }
 
 function visitorToken(Site $site, Visitor $visitor): string
@@ -85,7 +97,7 @@ test('the owning visitor downloads their attachment with hardened headers', func
     $response = $this->get(visitorAttachmentUrl($fixture['conversation'], $fixture['attachment'], [
         'site_public_key' => $fixture['site']->public_key,
         'anonymous_id' => $fixture['visitor']->anonymous_id,
-        'visitor_token' => visitorToken($fixture['site'], $fixture['visitor']),
+        'visitor_token' => $fixture['visitorToken'],
     ]));
 
     $response->assertOk()
@@ -145,10 +157,16 @@ test('a visitor cannot fetch an attachment from a conversation that is not their
         'support_code' => 'WF-OWNCONV',
     ]);
 
+    // Their own conversation genuinely is theirs, session included — otherwise
+    // the 404 below would be the ownership gate answering, and this test would
+    // never reach the attachment lookup it is about.
+    $intruderToken = visitorToken($victim['site'], $intruderVisitor);
+    conversationOwnedBySession($intruderConversation, $intruderToken);
+
     $this->get(visitorAttachmentUrl($intruderConversation, $victim['attachment'], [
         'site_public_key' => $victim['site']->public_key,
         'anonymous_id' => $intruderVisitor->anonymous_id,
-        'visitor_token' => visitorToken($victim['site'], $intruderVisitor),
+        'visitor_token' => $intruderToken,
     ]))->assertNotFound();
 });
 
@@ -159,7 +177,7 @@ test('a quarantined attachment is not downloadable even by its owner', function 
     $this->get(visitorAttachmentUrl($fixture['conversation'], $fixture['attachment'], [
         'site_public_key' => $fixture['site']->public_key,
         'anonymous_id' => $fixture['visitor']->anonymous_id,
-        'visitor_token' => visitorToken($fixture['site'], $fixture['visitor']),
+        'visitor_token' => $fixture['visitorToken'],
     ]))->assertNotFound();
 });
 
@@ -170,7 +188,7 @@ test('a row whose binary is gone returns not found rather than erroring', functi
     $this->get(visitorAttachmentUrl($fixture['conversation'], $fixture['attachment'], [
         'site_public_key' => $fixture['site']->public_key,
         'anonymous_id' => $fixture['visitor']->anonymous_id,
-        'visitor_token' => visitorToken($fixture['site'], $fixture['visitor']),
+        'visitor_token' => $fixture['visitorToken'],
     ]))->assertNotFound();
 });
 

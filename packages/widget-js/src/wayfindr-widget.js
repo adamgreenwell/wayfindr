@@ -566,6 +566,11 @@
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
+    // Whether this client's session began with a token a HOST handed over, which
+    // is never traded for a sibling's: if it was valid, what we hold now
+    // CONTINUES their session. Retired only by a refusal of the token actually in
+    // hand -- adoption does not, since a replacement still continues it.
+    var visitorTokenSuppliedByHost = Boolean(options.visitorToken);
     // Declared before the storage restore below assigns it. `var` hoists the
     // binding but not the initialiser, so declaring it further down would let
     // `= null` run afterwards and silently discard the restored deadline.
@@ -679,7 +684,7 @@
      * together: a lifetime that outlives the token it described would schedule
      * a refresh for a credential already replaced.
      */
-    function adoptVisitorToken(token, expiresInSeconds, requestedAtMs) {
+    function adoptVisitorToken(token, expiresInSeconds, requestedAtMs, lifetimeUnknown, expectedPrevious) {
       // Checked HERE rather than by the caller, because adoption happens inside
       // the awaited client methods -- a guard after the await runs when the
       // token has already been stored.
@@ -692,14 +697,27 @@
 
       // Whatever the server just said is now what we know, including when it
       // said nothing: that is an absent expiry, not an unstated one.
-      visitorTokenLifetimeUnknown = false;
+      //
+      // Unless we are adopting a token the server did not just mint FOR US -- a
+      // sibling tab's, joined below -- in which case nobody stated its lifetime
+      // to us and the right answer is to probe early rather than assume there
+      // is none.
+      visitorTokenLifetimeUnknown = lifetimeUnknown === true;
 
-      var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
+      var tokenStored = storeSharedVisitorToken(token, expectedPrevious);
+
+      // Lost the publication to a sibling. Nothing in memory is taken up, so the
+      // caller can look again and converge on what is actually there.
+      if (expectedPrevious !== undefined && tokenStored === false
+        && storageGet(storage, visitorTokenStorageKey(sitePublicKey)) !== token) {
+        return false;
+      }
 
       // A DURATION, so both ends of the arithmetic use our own clock and a
       // fast or slow browser cancels out. Subtracting local `now` from a
       // server-authored instant would not.
-      var seconds = typeof expiresInSeconds === 'number' && isFinite(expiresInSeconds)
+      var seconds = ! visitorTokenLifetimeUnknown
+        && typeof expiresInSeconds === 'number' && isFinite(expiresInSeconds)
         ? expiresInSeconds
         : null;
 
@@ -757,6 +775,8 @@
       if (typeof onSessionTokenChanged === 'function') {
         onSessionTokenChanged();
       }
+
+      return true;
     }
 
     /**
@@ -777,6 +797,9 @@
       }
 
       var requestedAt = Date.now();
+      // The token THIS request carries, so a refusal is attributed to it and not
+      // to whatever has been adopted by the time the answer lands.
+      var sent = visitorToken;
 
       return postJson(fetcher, apiBaseUrl + '/api/widget/session', {
         site_public_key: sitePublicKey,
@@ -786,6 +809,8 @@
         var token = result && result.visitor ? result.visitor.token : null;
 
         if (!token) {
+          visitorTokenRefused(sent);
+
           return 'rejected';
         }
 
@@ -795,13 +820,33 @@
       }).catch(function (error) {
         // WHICH failure it was decides what the caller should do. A refused
         // token is dead and asking again with it will never succeed; an
-        // unreachable server is temporary and re-minting would throw away a
-        // perfectly good session. `postJson` attaches the status when there
-        // was a response at all.
+        // unreachable server is temporary and re-minting would throw away a good
+        // session. `postJson` attaches the status when there was a response.
         var status = error && typeof error.status === 'number' ? error.status : 0;
 
-        return status === 401 || status === 403 ? 'rejected' : 'unavailable';
+        if (status === 401 || status === 403) {
+          visitorTokenRefused(sent);
+
+          return 'rejected';
+        }
+
+        return 'unavailable';
       });
+    }
+
+    /**
+     * The server refused the token a request CARRIED, retiring the host exemption
+     * -- which rests on that token possibly still naming the session owning the
+     * host's conversation.
+     *
+     * Only for the token still in hand: requests overlap, so a 401 about a
+     * predecessor can land after a rotation has adopted a valid replacement, and
+     * it says nothing about that replacement.
+     */
+    function visitorTokenRefused(refused) {
+      if (refused === visitorToken) {
+        visitorTokenSuppliedByHost = false;
+      }
     }
 
     /**
@@ -884,46 +929,174 @@
       return floorMs > 0 ? floorMs : 1;
     }
 
+    /**
+     * Put a token in shared storage together with the record of whose it is.
+     *
+     * One writer, because these are two keys describing one fact: store only the
+     * token and the record names the previous one, so `sharedTokenBelongsToUs()`
+     * refuses a token that really is ours. Naming the token is what protects --
+     * the removal below is hygiene, so do not drop the pairing check for it.
+     */
+    function storeSharedVisitorToken(token, expectedPrevious) {
+      // Checked immediately before the write, not when the caller decided: a
+      // sibling can publish in between, and a stale decision would overwrite a
+      // token newer than ours.
+      //
+      // Not a compare-and-set -- the Storage API has none -- so it narrows the gap
+      // rather than closing it, and reports a loss so the caller can converge.
+      // Closing it needs cross-tab serialization; see #1018.
+      if (expectedPrevious !== undefined
+        && storageGet(storage, visitorTokenStorageKey(sitePublicKey)) !== expectedPrevious) {
+        return false;
+      }
+
+      var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
+
+      // The anonymous id VERBATIM: `visitorTokenFingerprint` is 32 bits and not
+      // collision-proof (`Aa` and `BB` collide), so attribution decided on one
+      // joins another visitor's session. The token stays a fingerprint -- a
+      // collision there vouches only for a stale token of THIS visitor.
+      //
+      // The fingerprint goes FIRST so the id is the remainder: a host's id may
+      // contain the delimiter.
+      var ownerRecorded = tokenStored && storageKept(
+        storage,
+        visitorTokenOwnerStorageKey(sitePublicKey),
+        visitorTokenFingerprint(token) + '|' + String(anonymousId),
+      );
+
+      if (! ownerRecorded) {
+        storageRemove(storage, visitorTokenOwnerStorageKey(sitePublicKey));
+      }
+
+      return tokenStored;
+    }
+
+    /**
+     * Whether the token in shared storage can be attributed to this visitor.
+     *
+     * Absent or mismatched records answer NO: treating "cannot tell" as "yes" is
+     * how a client ends up presenting another visitor's credential with its own
+     * anonymous id.
+     */
+    function sharedTokenBelongsToUs(token) {
+      var record = storageGet(storage, visitorTokenOwnerStorageKey(sitePublicKey));
+
+      if (typeof record !== 'string') {
+        return false;
+      }
+
+      var delimiter = record.indexOf('|');
+
+      if (delimiter < 0) {
+        return false;
+      }
+
+      return record.slice(0, delimiter) === visitorTokenFingerprint(token)
+        && record.slice(delimiter + 1) === String(anonymousId);
+    }
+
+    /**
+     * Ask the server for this session's state, minting a token if we hold none.
+     *
+     * A named function rather than only a property, so the client's own methods
+     * can recover through it -- see `startConversation`, where a refused token
+     * has exactly one defined recovery and reaching it through `this` would
+     * break for any caller that destructured the client.
+     */
+    function performBootstrap(pageUrl, context) {
+      var ticket = ++bootstrapTicket;
+      var requestedAt = Date.now();
+
+      // Re-read before minting: this client captured storage once, at
+      // construction, and another tab may have written a token since. Two tabs
+      // bootstrapping with nothing get two different sessions, and only one can
+      // own the conversation behind the shared support code.
+      if (!visitorToken) {
+        visitorToken = storageGet(storage, visitorTokenStorageKey(sitePublicKey)) || null;
+      }
+
+      // What we are PRESENTING, which is what convergence compares against below.
+      // Storage holding anything else means somebody else put it there, whenever
+      // that was.
+      var presentedToken = visitorToken;
+
+      // The token, when we hold one, so the server can continue the session
+      // it names rather than starting another. It is not a credential here --
+      // bootstrap mints for anybody -- but it is no longer only the session
+      // CLOCK that rides on it: a conversation belongs to the session that
+      // opened it, so which token we present decides what this tab can reach.
+      return postJson(fetcher, apiBaseUrl + '/api/widget/bootstrap', withVisitorContext({
+        site_public_key: sitePublicKey,
+        anonymous_id: anonymousId,
+        page_url: pageUrl || null,
+        // Only when we hold one. A first bootstrap has nothing to continue,
+        // and sending an explicit null would put a field on the wire that
+        // says the same thing as its absence.
+      }, context, visitorExternalId, visitorToken)).then(function (result) {
+        // Overlapping bootstraps finishing out of order would otherwise let
+        // an older answer restore obsolete masking rules -- and a stale mask
+        // is a field the visitor believes is protected. The client sequences
+        // its own state for the same reason the panel sequences its own:
+        // this applies to host pages calling bootstrap() directly too, which
+        // a caller-applied version would have left unguarded.
+        if (ticket !== bootstrapTicket) {
+          return result;
+        }
+
+        var token = result && result.visitor ? result.visitor.token : null;
+
+        if (token) {
+          // FIRST WRITER WINS. Two tabs can each mint a session while the support
+          // code is one site-wide key, so whichever the code does not belong to
+          // cannot reach it. Joining the stored token makes the pair coherent, and
+          // ours has nothing attached yet. Comparing against what we PRESENTED is
+          // what stops this re-adopting a token we are replacing; a host-supplied
+          // one is never traded.
+          var storedNow = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
+          var shared = storedNow && storedNow !== presentedToken && storedNow !== token
+            && ! visitorTokenSuppliedByHost
+            ? storedNow
+            : null;
+
+          // Fails closed: joined only when the record beside it names THIS
+          // visitor and that exact token. Anything else cannot be attributed, and
+          // joining another visitor's token would pair our `anonymous_id` with a
+          // foreign credential -- refused with a terminal 403 that re-minting
+          // cannot fix.
+          if (shared && ! sharedTokenBelongsToUs(shared)) {
+            shared = null;
+          }
+
+          if (shared && shared !== token) {
+            // Its lifetime was stated to the tab that minted it, not to us, so
+            // this probes early rather than assuming it never expires.
+            adoptVisitorToken(shared, null, requestedAt, true);
+          } else if (adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt, false, storedNow) === false) {
+            // A sibling published between the decision above and the write. Look
+            // once more and join it if it is ours; otherwise keep our own
+            // session, which is what an unattributable token always means.
+            var published = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
+
+            if (published && published !== token && sharedTokenBelongsToUs(published)) {
+              adoptVisitorToken(published, null, requestedAt, true);
+            } else {
+              adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
+            }
+          }
+        }
+
+        maskSelectors = siteMaskSelectors(result);
+        sensitiveTerms = siteSensitiveTerms(result);
+
+        return result;
+      });
+    }
+
     return {
       anonymousId: anonymousId,
       sitePublicKey: sitePublicKey,
-      bootstrap: function (pageUrl, context) {
-        var ticket = ++bootstrapTicket;
-        var requestedAt = Date.now();
-
-        // The token, when we hold one, so the server can tell a reopened panel
-        // from a new session. It is not a credential here -- bootstrap mints
-        // for anybody -- it only keeps the session clock from restarting.
-        return postJson(fetcher, apiBaseUrl + '/api/widget/bootstrap', withVisitorContext({
-          site_public_key: sitePublicKey,
-          anonymous_id: anonymousId,
-          page_url: pageUrl || null,
-          // Only when we hold one. A first bootstrap has nothing to continue,
-          // and sending an explicit null would put a field on the wire that
-          // says the same thing as its absence.
-        }, context, visitorExternalId, visitorToken)).then(function (result) {
-          // Overlapping bootstraps finishing out of order would otherwise let
-          // an older answer restore obsolete masking rules -- and a stale mask
-          // is a field the visitor believes is protected. The client sequences
-          // its own state for the same reason the panel sequences its own:
-          // this applies to host pages calling bootstrap() directly too, which
-          // a caller-applied version would have left unguarded.
-          if (ticket !== bootstrapTicket) {
-            return result;
-          }
-
-          var token = result && result.visitor ? result.visitor.token : null;
-
-          if (token) {
-            adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
-          }
-
-          maskSelectors = siteMaskSelectors(result);
-          sensitiveTerms = siteSensitiveTerms(result);
-
-          return result;
-        });
-      },
+      bootstrap: performBootstrap,
       /**
        * How long to wait before refreshing, in ms. The client owns this because
        * it owns the advertised expiry; the widget owns the timer because it
@@ -991,33 +1164,97 @@
         details = details || {};
         var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
 
-        var payload = withVisitorContext({
-          site_public_key: sitePublicKey,
-          anonymous_id: anonymousId,
-          visitor_token: requireVisitorToken(visitorToken),
-          subject: details.subject || summarize(body),
-          page_url: details.pageUrl || null,
-        }, details.context, externalId);
+        // Rebuilt per attempt, because it BAKES IN the token: a retry after a
+        // recovery has to carry the new one, and a payload captured once would
+        // post the refused credential again and again.
+        function conversationPayload() {
+          var payload = withVisitorContext({
+            site_public_key: sitePublicKey,
+            anonymous_id: anonymousId,
+            visitor_token: requireVisitorToken(visitorToken),
+            subject: details.subject || summarize(body),
+            page_url: details.pageUrl || null,
+          }, details.context, externalId);
 
-        if (details.proactiveMessageDeliveryId) {
-          payload.proactive_message_delivery_id = details.proactiveMessageDeliveryId;
+          if (details.proactiveMessageDeliveryId) {
+            payload.proactive_message_delivery_id = details.proactiveMessageDeliveryId;
+          }
+
+          // The FIRST conversation runs the site's intake rules, and their
+          // failures are the first words a new visitor ever reads from us.
+          // Omitted rather than sent as null when there is nothing to say, so a
+          // caller driving the client directly sends the payload it always did.
+          if (currentLocale && currentLocale()) {
+            payload.locale = currentLocale();
+          }
+
+          // Only fields the site actually asked for. Sending a blank key for a
+          // field it does not ask for is refused by the server, and rightly.
+          Object.keys(details.intake || {}).forEach(function (key) {
+            payload[key] = details.intake[key];
+          });
+
+          return payload;
         }
 
-        // The FIRST conversation runs the site's intake rules, and their
-        // failures are the first words a new visitor ever reads from us.
-        // Omitted rather than sent as null when there is nothing to say, so a
-        // caller driving the client directly sends the payload it always did.
-        if (currentLocale && currentLocale()) {
-          payload.locale = currentLocale();
+        var sentWithCreate = null;
+
+        function openConversation() {
+          var payload = conversationPayload();
+
+          sentWithCreate = payload.visitor_token;
+
+          return postJson(fetcher, apiBaseUrl + '/api/conversations', payload).then(function (conversation) {
+          // Re-assert OUR token beside the support code the caller is about to
+          // store. The conversation is bound to the session inside this token,
+          // and a tab that bootstrapped later may have left a different one in
+          // shared storage; the pair has to name the same session or the next
+          // load restores a code it cannot reach.
+            if (!clientStopped && visitorToken) {
+              // The PAIR. Another client can have replaced both keys while this
+              // request was in flight, and writing only the token back leaves a
+              // record naming theirs -- so a bootstrap still in flight refuses to
+              // join a session that is genuinely ours.
+              storeSharedVisitorToken(visitorToken);
+            }
+
+            return conversation;
+          });
         }
 
-        // Only fields the site actually asked for. Sending a blank key for a
-        // field it does not ask for is refused by the server, and rightly.
-        Object.keys(details.intake || {}).forEach(function (key) {
-          payload[key] = details.intake[key];
+        return openConversation().catch(function (error) {
+          // A refused token has one recovery -- bootstrap, the only path that
+          // mints without presenting anything -- taken HERE because the refresh
+          // loop is not always running: a `createClient()` integration has no
+          // refresh timer, and `sendFirstMessage()` skips bootstrap while the
+          // restored token is truthy.
+          //
+          // 401 only, since 403 names another site or visitor. Once only, so a
+          // refusal cannot become a loop.
+          if (!error || error.status !== 401 || clientStopped) {
+            throw error;
+          }
+
+          visitorTokenRefused(sentWithCreate);
+
+          // Counts ADOPTIONS, not responses -- the probe the session-refresh
+          // recovery uses. A superseded bootstrap returns its answer, token and
+          // all, WITHOUT adopting it, so reading the response would look
+          // successful while the refused token stayed in place.
+          //
+          // With nothing adopted the caller hears the original refusal, which
+          // beats a second request we know will be refused.
+          var generationBefore = visitorTokenGeneration;
+
+          return performBootstrap(details.pageUrl || null, details.context)
+            .then(function () {
+              if (visitorTokenGeneration === generationBefore) {
+                throw error;
+              }
+
+              return openConversation();
+            });
         });
-
-        return postJson(fetcher, apiBaseUrl + '/api/conversations', payload);
       },
       sendMessage: function (supportCode, body, clientMessageId, attachmentIds) {
         return postJson(fetcher, apiBaseUrl + '/api/conversations/' + encodeURIComponent(supportCode) + '/messages', withoutNullValues({
@@ -5646,7 +5883,21 @@
         status.textContent = t('status.conversationRestored', { code: supportCode });
         await refreshCobrowseStatus({ silent: true });
       } catch (error) {
-        if (error && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
+        // 403 and 410 are answers ABOUT this code -- another site's key, or a
+        // conversation deliberately gone -- so forgetting it is right.
+        //
+        // A 404 is not: the server refuses an unowned conversation exactly as one
+        // that does not exist (see `VisitorConversationResolver`), so this cannot
+        // tell "gone" from "not reachable yet", and discarding the code would
+        // destroy the only reference to a conversation a sweep is about to
+        // repair.
+        // NOT named `status`: this function's scope already has one -- the DOM
+        // element the success path writes the restored notice to -- and `var`
+        // hoists, so a second `status` here shadows it for the whole function and
+        // silently breaks the resume it is not even involved in.
+        var refusal = error && typeof error.status === 'number' ? error.status : 0;
+
+        if (refusal === 403 || refusal === 410) {
           storageRemove(widgetStorage, supportCodeStorageKey(options.sitePublicKey));
         }
       } finally {
@@ -7615,6 +7866,16 @@
 
   function visitorTokenExpiryStorageKey(sitePublicKey) {
     return 'wayfindr:' + sitePublicKey + ':visitor-token-expires-at';
+  }
+
+  // Which visitor the token in shared storage belongs to.
+  //
+  // The token key is scoped to the SITE, so two clients on one page can share it
+  // while naming different visitors -- `createClient()` takes an explicit
+  // `anonymousId`, which is the only way that happens. Nothing can be read out of
+  // the token itself, so whoever writes it records whose it is.
+  function visitorTokenOwnerStorageKey(sitePublicKey) {
+    return 'wayfindr:' + sitePublicKey + ':visitor-token-owner';
   }
 
   function appearanceStorageKey(sitePublicKey) {

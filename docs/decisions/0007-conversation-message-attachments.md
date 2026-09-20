@@ -47,10 +47,18 @@ Isolation is the primary requirement of this feature. An attachment is reachable
 **only** through an authorized Wayfindr endpoint, and **every** fetch re-derives
 its message → conversation → site and enforces:
 
-- **Visitor path** — the request's **signed visitor session/token must match the
-  visitor who owns the conversation** the attachment's message belongs to. A
-  visitor can reach only their own conversation's attachments — never another
-  session's, never another visitor's.
+- **Visitor path** — the request's **signed visitor token must name the session
+  that opened the conversation** the attachment's message belongs to. A visitor
+  can reach only their own conversation's attachments — never another session's,
+  never another visitor's.
+
+  Originally this said the token had to match the **visitor** who owns the
+  conversation. That was weaker than it read: a visitor's `anonymous_id` is
+  shown to agents, and bootstrap mints a valid token for anyone presenting one
+  with the site's public key, so the check was satisfiable by anyone who had
+  seen the id. Ownership is now recorded per session
+  (`conversations.owner_session_id`) and enforced in `VisitorConversationResolver`
+  for every widget endpoint, attachments included.
 - **Agent path** — the agent must be authenticated and pass the existing
   conversation **`view` policy**: they must **support the site** that owns the
   conversation (`Site::supportsAgent`, respecting explicit support-agent

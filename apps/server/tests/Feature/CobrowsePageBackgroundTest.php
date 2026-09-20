@@ -44,6 +44,13 @@ function reportPageBackgroundSnapshot($test, Conversation $conversation, array $
         'page_url' => 'https://docs.example.test/install',
     ])->assertSuccessful()->json('data.visitor.token');
 
+    // The fixture's conversation comes from a factory, which stamps no owning
+    // session -- the widget endpoint that creates one in production does. This
+    // is the visitor's own session reporting on its own conversation, so say
+    // which session that is, exactly as `store()` would have. It has to happen
+    // after the bootstrap: the session id is carried in the token.
+    conversationOwnedBySession($conversation, $token);
+
     return $test->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", array_merge([
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-bg',

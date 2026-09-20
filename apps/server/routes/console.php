@@ -90,6 +90,17 @@ Schedule::command('wayfindr:reconcile-agent-alert-publications')
     ->daily()
     ->description('Backfill browser alert publications written by a previous release.');
 
+// Close the same migrate-before-activate window for conversation ownership.
+// A conversation opened by the previous release after the migration's sweep has
+// passed carries no owning session, and no session grants access to it -- so the
+// visitor who just started it would be told it does not exist. This is what
+// covers the install shapes that never run a deploy script, and the final old
+// request that finishes after Forge's post-activation pass. Retire it once no
+// supported install can still be carrying pre-ownership rows.
+Schedule::command('wayfindr:claim-legacy-conversation-sessions')
+    ->daily()
+    ->description('Claim conversations written by a previous release as predating session ownership.');
+
 // Retention for presence-only visitors (ADR 0019 §4). Daily, because the window
 // is measured in days and an hourly pass would scan for nothing 23 times over.
 Schedule::command('wayfindr:prune-presence-visitors')

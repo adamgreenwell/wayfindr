@@ -12,6 +12,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Str;
 use JsonException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
@@ -23,7 +24,7 @@ class VisitorSessionToken
         Site $site,
         Visitor $visitor,
         ?string $anonymousId = null,
-        ?DateTimeInterface $sessionStartedAt = null,
+        ?ContinuedVisitorSession $continued = null,
     ): string {
         $anonymousId ??= (string) $visitor->anonymous_id;
 
@@ -40,7 +41,14 @@ class VisitorSessionToken
             }
         }
 
-        return $this->encode($site, $visitor, $anonymousId, now(), $sessionStartedAt);
+        return $this->encode(
+            $site,
+            $visitor,
+            $anonymousId,
+            now(),
+            $continued?->startedAt,
+            $continued?->sessionId,
+        );
     }
 
     /**
@@ -57,12 +65,12 @@ class VisitorSessionToken
      * rather than being refused. The only thing a presented token buys is
      * continuity of a clock that is not in the caller's favour.
      */
-    public function continuingSessionStartedAt(
+    public function continuedSession(
         Request $request,
         Site $site,
         Visitor $visitor,
         string $anonymousId,
-    ): ?CarbonImmutable {
+    ): ?ContinuedVisitorSession {
         $token = $this->tokenFromRequest($request);
 
         if (! is_string($token) || $token === '') {
@@ -72,6 +80,23 @@ class VisitorSessionToken
         try {
             $payload = $this->decode($token);
         } catch (HttpException) {
+            return null;
+        }
+
+        // An expired token continues nothing.
+        //
+        // Tolerant still means tolerant: this returns null rather than
+        // refusing, so the caller starts a new session and bootstrap stays
+        // reachable with no usable token, which the presence funnel depends on.
+        // What it must not do is carry the SESSION forward. A session id is now
+        // what reaches a conversation, so exchanging a dead token for a live one
+        // naming the same session would let anyone holding an expired token --
+        // the exact thing a lifetime exists to retire -- recover that session's
+        // conversations indefinitely, and the lifetime would bound nothing.
+        //
+        // Before sessions were recorded this path carried only a timestamp,
+        // which granted no access, and the age check genuinely did not matter.
+        if ($this->isExpired($payload)) {
             return null;
         }
 
@@ -96,7 +121,14 @@ class VisitorSessionToken
             return null;
         }
 
-        return $this->sessionStartedAt($payload);
+        // Both halves, under this one condition. A caller that wanted only the
+        // start would be tempted to fetch the id separately, and the second
+        // condition would drift from this one -- silently, because the symptom is
+        // a visitor locked out of their own conversation rather than an error.
+        return new ContinuedVisitorSession(
+            $this->sessionStartedAt($payload),
+            $this->sessionIdFromPayload($payload),
+        );
     }
 
     /**
@@ -152,9 +184,20 @@ class VisitorSessionToken
     {
         $visitor = $this->visitorFromRequest($request, $site, $anonymousId);
 
-        $sessionStartedAt = $this->sessionStartedAt($this->decode((string) $this->tokenFromRequest($request)));
+        // Both halves carried forward, from the token this request already
+        // proved. Rotation must not change which session a request belongs to:
+        // drop the id here and every rotating widget is locked out of its own
+        // conversation one refresh later.
+        $payload = $this->decode((string) $this->tokenFromRequest($request));
 
-        return $this->encode($site, $visitor, $anonymousId, now(), $sessionStartedAt);
+        return $this->encode(
+            $site,
+            $visitor,
+            $anonymousId,
+            now(),
+            $this->sessionStartedAt($payload),
+            $this->sessionIdFromPayload($payload),
+        );
     }
 
     /**
@@ -285,13 +328,30 @@ class VisitorSessionToken
         string $anonymousId,
         DateTimeInterface $issuedAt,
         ?DateTimeInterface $sessionStartedAt = null,
+        ?string $sessionId = null,
     ): string {
+        // Empty as well as null. A token minted before sessions were identified
+        // carries no id, and `??=` does not fire on ''; a session-less token
+        // would then mint a successor naming no session either, forever, and its
+        // holder could never own a conversation again. Every token this method
+        // returns names exactly one session -- that is the invariant the
+        // ownership check downstream is entitled to assume.
+        if ($sessionId === null || $sessionId === '') {
+            $sessionId = Str::random(32);
+        }
+
         return Crypt::encryptString(json_encode([
             'site_id' => $site->id,
             'visitor_id' => $visitor->id,
             'anonymous_id' => $anonymousId,
             'issued_at' => CarbonImmutable::instance($issuedAt)->toJSON(),
             'session_started_at' => CarbonImmutable::instance($sessionStartedAt ?? $issuedAt)->toJSON(),
+            // Names the SESSION, not the visitor. A conversation records the id
+            // of the session that opened it, so reaching that conversation needs
+            // this rather than only the visitor's displayed browser identity.
+            // Opaque and random: it identifies, it does not encode anything, and
+            // nothing should be derivable from it.
+            'session_id' => $sessionId,
             // The lifetime IN FORCE WHEN THIS TOKEN WAS MINTED, so the token is
             // judged by the policy it was issued under and not by whatever the
             // config says later. Reading the config at verification time would
@@ -376,7 +436,7 @@ class VisitorSessionToken
      *
      * Deliberately NOT measured from `session_started_at`. That would be an
      * absolute cap, which is a good idea and a different change, because
-     * `continuingSessionStartedAt()` carries a presented token's session start
+     * `continuedSession()` carries a presented token's session start
      * forward with no age check of its own. A capped session would refuse, the
      * widget would bootstrap to recover, and the replacement token would be
      * born already expired -- forever, surviving a page reload, because the
@@ -385,7 +445,7 @@ class VisitorSessionToken
      * so every re-mint lands in one rate-limit bucket and the 429 that follows
      * reads to the widget as "server unavailable" rather than "token
      * rejected", at which point it stops trying. A cap needs
-     * `continuingSessionStartedAt()` bounded first.
+     * `continuedSession()` bounded first.
      *
      * 401 rather than 403, matching what this file already does: 403 here means
      * the token names a different site or visitor, and the widget treats 403 as
@@ -394,6 +454,20 @@ class VisitorSessionToken
      * @param  array<string, mixed>  $payload
      */
     private function abortIfExpired(array $payload): void
+    {
+        abort_if($this->isExpired($payload), 401, 'Visitor session has expired.');
+    }
+
+    /**
+     * Whether this payload is past the lifetime it was issued under.
+     *
+     * Split out of `abortIfExpired()` so that the two paths which care cannot
+     * drift: the authenticated endpoints refuse an expired token, and bootstrap
+     * declines to CONTINUE the session one names. One rule, asked twice.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function isExpired(array $payload): bool
     {
         $minutes = $this->lifetimeFromPayload($payload);
 
@@ -404,11 +478,18 @@ class VisitorSessionToken
             // predecessor, so an exempt token would be usable for as long as the
             // install lived, and that is the thing a lifetime is for.
             //
-            // A pre-policy token can still buy its replacement: this check is
-            // not reachable from bootstrap, whose path is
-            // `continuingSessionStartedAt()` and calls neither this method nor
-            // `visitorFromRequest()`. The 401 is what the widget already maps to
-            // `rejected`, whose recovery is that bootstrap.
+            // A pre-policy token can still buy its replacement. Bootstrap does
+            // not refuse it -- it is reachable with no token at all, and must
+            // stay that way -- it simply starts a NEW session rather than
+            // continuing the one this token names. The 401 here is what the
+            // widget already maps to `rejected`, whose recovery is that
+            // bootstrap.
+            //
+            // This paragraph used to say the check was unreachable from
+            // bootstrap. That stopped being the point when a session became
+            // load-bearing: bootstrap now asks the same question, because
+            // carrying an expired token's session forward would hand back a
+            // fresh credential for it and the lifetime would bound nothing.
             //
             // How FAST that happens is not uniform, which is why the operator
             // guidance says to deploy before switching a lifetime on. A page load
@@ -422,24 +503,89 @@ class VisitorSessionToken
             // That is the documented reason to finish such an integration before
             // configuring a lifetime, and it is the same hazard a NEW token
             // would present to it.
-            if (max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)) <= 0) {
-                return;
-            }
-
-            abort(401, 'Visitor session has expired.');
+            return max(0, (int) config('wayfindr.visitor_session_ttl_minutes', 0)) > 0;
         }
 
         $issuedAt = $this->issuedAtFromPayload($payload);
 
         if ($issuedAt === null) {
-            return;
+            return false;
         }
 
-        abort_if(
-            $issuedAt->addMinutes($minutes)->isPast(),
-            401,
-            'Visitor session has expired.',
-        );
+        return $issuedAt->addMinutes($minutes)->isPast();
+    }
+
+    /**
+     * When the session a request's token belongs to began, or null.
+     *
+     * Only meaningful for deciding whether a session could have opened a
+     * conversation that predates session ownership. A conversation created
+     * before its own session started is impossible, which is what makes the
+     * comparison safe to rely on.
+     */
+    public function sessionStartedAtFromRequest(Request $request): ?CarbonImmutable
+    {
+        $token = $this->tokenFromRequest($request);
+
+        if (! is_string($token) || $token === '') {
+            return null;
+        }
+
+        try {
+            return $this->sessionStartedAt($this->decode($token));
+        } catch (HttpException) {
+            return null;
+        }
+    }
+
+    /**
+     * The session a token belongs to, or '' when it names none.
+     *
+     * The request-level readers below are the same question asked of whatever
+     * token a request carried; this is it asked of a token directly.
+     */
+    public function sessionIdFromToken(string $token): string
+    {
+        if ($token === '') {
+            return '';
+        }
+
+        try {
+            return $this->sessionIdFromPayload($this->decode($token));
+        } catch (HttpException) {
+            return '';
+        }
+    }
+
+    /**
+     * The session a request's token belongs to, or '' when it names none.
+     *
+     * Empty for a token minted before sessions were identified. The caller
+     * decides what that means; this only reports it.
+     */
+    public function sessionIdFromRequest(Request $request): string
+    {
+        $token = $this->tokenFromRequest($request);
+
+        if (! is_string($token) || $token === '') {
+            return '';
+        }
+
+        try {
+            return $this->sessionIdFromPayload($this->decode($token));
+        } catch (HttpException) {
+            return '';
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function sessionIdFromPayload(array $payload): string
+    {
+        $value = $payload['session_id'] ?? null;
+
+        return is_string($value) ? $value : '';
     }
 
     /**

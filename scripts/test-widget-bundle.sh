@@ -125,7 +125,24 @@ WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
 # Those figures are quotable now only because the compressor is pinned. Earlier
 # versions of this comment quoted local gzip output to four digits and were wrong
 # in CI twice.
-WIDGET_SRC_GZIP_BUDGET=90000
+#
+# Raised to 92000 for session ownership (#1017), which binds a conversation to the
+# session that opened it and coordinates that across tabs. The source measures
+# 90120 by this yardstick at the raise, so this guard now carries about 2% -- the
+# tightest it has been, continuing the direction above rather than restoring the
+# 5% or the original 10%.
+#
+# The change earned only part of that. Of 402 lines it added, 248 were comment
+# against 126 of code, and those comments were cut roughly in half TWICE before
+# this number moved: first from 16264 bytes to 9193, then again. What is left is
+# the rule at each decision point and the trap a reader would otherwise fall into,
+# which is the house style this file is written in -- retrospective "why" comments
+# are everywhere in it. Squeezing further was deleting reasoning to save twenty
+# bytes a time.
+#
+# The real headroom is still minification, which nothing here does yet. A change
+# that needs more than this 2% should do that rather than move this number again.
+WIDGET_SRC_GZIP_BUDGET=92000
 
 [ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"
 

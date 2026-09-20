@@ -66,12 +66,16 @@ test('visitor snapshot resync fulfillment creates a metadata-only audit event', 
             ],
         ]);
 
-        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", cobrowseSnapshotPayload($site, $visitor, [
+        $payload = cobrowseSnapshotPayload($site, $visitor, [
             'resync_request_id' => 'resync_current',
             'html' => '<main><h1>Billing</h1><p>Card 4242 4242 4242 4242.</p></main>',
             'text' => 'Billing Card 4242 4242 4242 4242.',
             'page_url' => 'https://docs.example.test/billing?token=secret',
-        ]))->assertOk();
+        ]);
+        conversationOwnedBySession($conversation, $payload['visitor_token']);
+
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", $payload)
+            ->assertOk();
 
         $auditEvent = AuditEvent::query()
             ->where('action', 'cobrowse.resync_fulfilled')
@@ -108,12 +112,16 @@ test('ignored visitor resync responses create metadata-only audit events', funct
             ],
         ]);
 
-        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", cobrowseSnapshotPayload($site, $visitor, [
+        $payload = cobrowseSnapshotPayload($site, $visitor, [
             'resync_request_id' => 'resync_wrong',
             'html' => '<main><h1>Checkout</h1><p>Password hunter2.</p></main>',
             'text' => 'Checkout Password hunter2.',
             'page_url' => 'https://docs.example.test/checkout?session=secret',
-        ]))->assertOk();
+        ]);
+        conversationOwnedBySession($conversation, $payload['visitor_token']);
+
+        $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-snapshot", $payload)
+            ->assertOk();
 
         $auditEvent = AuditEvent::query()
             ->where('action', 'cobrowse.resync_ignored')
@@ -161,6 +169,7 @@ test('visitor resync exhaustion creates one metadata-only audit event per reques
             'dropped_batches' => 3,
             'reconnects' => 2,
         ];
+        conversationOwnedBySession($conversation, $payload['visitor_token']);
 
         $this->postJson("/api/conversations/{$conversation->support_code}/cobrowse-telemetry", $payload)
             ->assertOk();
