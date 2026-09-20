@@ -679,7 +679,7 @@
      * together: a lifetime that outlives the token it described would schedule
      * a refresh for a credential already replaced.
      */
-    function adoptVisitorToken(token, expiresInSeconds, requestedAtMs, lifetimeUnknown) {
+    function adoptVisitorToken(token, expiresInSeconds, requestedAtMs, lifetimeUnknown, expectedPrevious) {
       // Checked HERE rather than by the caller, because adoption happens inside
       // the awaited client methods -- a guard after the await runs when the
       // token has already been stored.
@@ -699,7 +699,14 @@
       // is none.
       visitorTokenLifetimeUnknown = lifetimeUnknown === true;
 
-      var tokenStored = storeSharedVisitorToken(token);
+      var tokenStored = storeSharedVisitorToken(token, expectedPrevious);
+
+      // Lost the publication to a sibling. Nothing in memory is taken up, so the
+      // caller can look again and converge on what is actually there.
+      if (expectedPrevious !== undefined && tokenStored === false
+        && storageGet(storage, visitorTokenStorageKey(sitePublicKey)) !== token) {
+        return false;
+      }
 
       // A DURATION, so both ends of the arithmetic use our own clock and a
       // fast or slow browser cancels out. Subtracting local `now` from a
@@ -763,6 +770,8 @@
       if (typeof onSessionTokenChanged === 'function') {
         onSessionTokenChanged();
       }
+
+      return true;
     }
 
     /**
@@ -909,7 +918,23 @@
      * pairing check on the strength of it. It is kept for symmetry with the
      * deadline record, where a stale value genuinely does lie.
      */
-    function storeSharedVisitorToken(token) {
+    function storeSharedVisitorToken(token, expectedPrevious) {
+      // Checked as late as possible: immediately before the write, not when the
+      // caller made its decision. A sibling can publish in between, and a
+      // decision taken against a value that has since changed would overwrite a
+      // token that is newer than ours -- which is the whole failure this
+      // convergence exists to prevent, arrived at through a gap rather than a
+      // rule.
+      //
+      // This is not a compare-and-set: the Storage API has none, and the check
+      // and the write are still two operations. It narrows the gap to two
+      // adjacent statements from one that spanned a decision, and the caller is
+      // told when it lost so it can converge instead of clobbering.
+      if (expectedPrevious !== undefined
+        && storageGet(storage, visitorTokenStorageKey(sitePublicKey)) !== expectedPrevious) {
+        return false;
+      }
+
       var tokenStored = storageKept(storage, visitorTokenStorageKey(sitePublicKey), token);
 
       var ownerRecorded = tokenStored && storageKept(
@@ -1055,8 +1080,17 @@
             // Its lifetime was stated to the tab that minted it, not to us, so
             // this probes early rather than assuming it never expires.
             adoptVisitorToken(shared, null, requestedAt, true);
-          } else {
-            adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
+          } else if (adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt, false, storedNow) === false) {
+            // A sibling published between the decision above and the write. Look
+            // once more and join it if it is ours; otherwise keep our own
+            // session, which is what an unattributable token always means.
+            var published = storageGet(storage, visitorTokenStorageKey(sitePublicKey));
+
+            if (published && published !== token && sharedTokenBelongsToUs(published)) {
+              adoptVisitorToken(published, null, requestedAt, true);
+            } else {
+              adoptVisitorToken(token, result.visitor.token_expires_in, requestedAt);
+            }
           }
         }
 

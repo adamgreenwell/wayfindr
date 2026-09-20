@@ -20,9 +20,33 @@ function jsonResponse(status, payload) {
 
 function memoryStorage(seed, refuseKeySuffix) {
   const values = new Map(Object.entries(seed || {}));
+  let tokenReads = 0;
+  let interpose = null;
 
   return {
-    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    // Act just before the Nth read of the token key. Counting reads is the only
+    // way to land inside a specific time-of-check/time-of-use gap from a
+    // single-threaded runtime: a real sibling publishes asynchronously, which
+    // lands between whole turns rather than between two adjacent statements.
+    interposeBeforeTokenRead: (n, fn) => {
+      // Counted from HERE, not from the storage's creation: other clients may
+      // already have read it, and an absolute index would drift with them.
+      tokenReads = 0;
+      interpose = { n, fn };
+    },
+    getItem: (key) => {
+      if (key.endsWith(':visitor-token')) {
+        tokenReads += 1;
+
+        if (interpose && interpose.n === tokenReads) {
+          const act = interpose.fn;
+          interpose = null;
+          act();
+        }
+      }
+
+      return values.has(key) ? values.get(key) : null;
+    },
     setItem: (key, value) => {
       // One key refused while the others are accepted, the way private browsing
       // or a quota can refuse a single write. Two keys describing one fact can
@@ -484,4 +508,46 @@ test('a token left in storage before we dispatched does not beat our own', async
     'Adopting a token that was already in storage would undo the rotation the server just made.'
   );
   assert.equal(storage.getItem(TOKEN_KEY), 'token-fresh');
+});
+
+test('a sibling that publishes in the gap is not overwritten', async () => {
+  // The decision to keep our own session is taken against what storage held a
+  // moment earlier. If a sibling publishes between that read and the write, a
+  // decision already made would overwrite a token newer than ours, and the
+  // support code would then belong to the sibling while the credential named us.
+  const storage = memoryStorage();
+
+  // A real sibling first, so its pair is what a sibling actually writes rather
+  // than what this test imagines. Its values are then replayed synchronously
+  // inside the gap, which is the only place they can land between two adjacent
+  // statements.
+  await clientForOwnership({ storage, mintedToken: 'token-sibling' }).client.bootstrap(null, null);
+
+  const siblingToken = storage.getItem(TOKEN_KEY);
+  const siblingOwner = storage.getItem(OWNER_KEY);
+
+  storage.removeItem(TOKEN_KEY);
+  storage.removeItem(OWNER_KEY);
+
+  const { client, requests } = clientForOwnership({ storage, mintedToken: 'token-mine' });
+
+  // Reads of the token key during one bootstrap, in order: the re-read before
+  // dispatch, the dispatch snapshot, the convergence read, and then the check
+  // the write itself makes. The sibling lands just before that last one, which
+  // is precisely the gap being tested.
+  storage.interposeBeforeTokenRead(4, () => {
+    storage.setItem(TOKEN_KEY, siblingToken);
+    storage.setItem(OWNER_KEY, siblingOwner);
+  });
+
+  await client.bootstrap(null, null);
+  await client.startConversation('Hello?', {});
+
+  const create = requests.find((r) => r.url.endsWith('/api/conversations'));
+
+  assert.equal(
+    create.body.visitor_token,
+    siblingToken,
+    'A publication that lost the race must converge on what is actually stored, not overwrite it.'
+  );
 });
