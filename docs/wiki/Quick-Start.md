@@ -32,6 +32,11 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
   | bash -s -- --app-url https://support.example.com
 ```
 
+Replace `support.example.com` with the hostname your operators will visit. The
+installer refuses the example rather than installing something that cannot
+serve: a reserved name gets no certificate, so a pasted-as-is run would report
+success over a stack that answers nothing.
+
 For evaluation on a private network, name the address you will actually browse
 to. The certificate is issued locally during install, so no DNS record and no
 public port are required:
@@ -46,7 +51,7 @@ serves:
 
 | Value | Use it when |
 | --- | --- |
-| `https://support.example.com` | A real hostname, reachable from the internet |
+| `https://support.yourdomain` (your own) | A real hostname, reachable from the internet. The `example.com` shown above is a placeholder the installer refuses |
 | `https://192.168.1.50` | Browsing from another machine on your network |
 | `https://wayfindr.local` | Same, with a name — you still arrange DNS or mDNS yourself |
 | `localhost` | Browsing **on the VM itself**; binds to loopback only |

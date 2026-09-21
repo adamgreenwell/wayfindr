@@ -64,6 +64,11 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
   | bash -s -- --app-url https://support.example.com
 ```
 
+Replace `support.example.com` with the hostname your operators will visit. The
+installer refuses the example rather than installing something that cannot
+serve: a reserved name gets no certificate, so a pasted-as-is run would report
+success over a stack that answers nothing.
+
 Use the [Forge deployment guide](docs/self-hosting/laravel-forge.md) for
 Laravel-native hosting, or the
 [generic runtime requirements](docs/self-hosting/runtime-requirements.md) when
