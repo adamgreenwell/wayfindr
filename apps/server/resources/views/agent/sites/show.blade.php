@@ -1232,6 +1232,16 @@
                     @endif
                 </div>
 
+                @if (! $identitySecretHint && $identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED)
+                    {{-- The state a new site is born in. It fails closed, which is
+                         correct and also invisible from the outside, so say it here
+                         rather than leaving an operator to wonder why nobody is
+                         identified. --}}
+                    <div class="notice-list">
+                        <p>{{ __('site_settings.identity_verification.awaiting_secret') }}</p>
+                    </div>
+                @endif
+
                 @if ($canUpdateSite)
                     <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-verification.update', $site) }}">
                         @csrf
@@ -1248,14 +1258,19 @@
                         <button type="submit">{{ __('site_settings.identity_verification.save') }}</button>
                     </form>
 
-                    @if ($identitySecretHint)
-                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-secret.rotate', $site) }}">
-                            @csrf
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-secret.rotate', $site) }}">
+                        @csrf
 
+                        {{-- A new site starts requiring verification with no secret, so
+                             the first issue has to be reachable -- not just a rotate. The
+                             warning belongs only to the replacement case, because there is
+                             nothing to break when there is nothing to replace. --}}
+                        @if ($identitySecretHint)
                             <p class="lede">{{ __('site_settings.identity_verification.rotate_warning') }}</p>
-                            <button type="submit">{{ __('site_settings.identity_verification.rotate') }}</button>
-                        </form>
-                    @endif
+                        @endif
+
+                        <button type="submit">{{ __($identitySecretHint ? 'site_settings.identity_verification.rotate' : 'site_settings.identity_verification.issue') }}</button>
+                    </form>
                 @endif
             </section>
 

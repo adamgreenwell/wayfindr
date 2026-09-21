@@ -467,6 +467,8 @@ return [
         'submit' => 'Elimina definitivamente questo sito',
     ],
     'identity_verification' => [
+        'issue' => 'Emetti un segreto',
+        'awaiting_secret' => 'Questo sito richiede la verifica e non ha ancora un segreto, quindi gli identificativi cliente vengono ignorati. Ne emetta uno e lo usi per firmare, per iniziare a identificare i visitatori.',
         'heading' => 'Verifica dell\'identità dei visitatori',
         'lede' => 'Dimostra che un identificativo cliente arriva dal suo server e non da chi ha chiamato il widget.',
         'on' => 'Attiva',

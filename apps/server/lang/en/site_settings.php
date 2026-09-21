@@ -466,6 +466,8 @@ return [
         'submit' => 'Permanently delete this site',
     ],
     'identity_verification' => [
+        'issue' => 'Issue a secret',
+        'awaiting_secret' => 'This site requires verification and has no secret yet, so customer identifiers are ignored. Issue one and sign with it to start identifying visitors.',
         'heading' => 'Visitor identity verification',
         'lede' => 'Prove that a customer identifier came from your server, not from whoever called the widget.',
         'on' => 'On',

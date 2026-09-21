@@ -229,7 +229,8 @@ to mint it per customer on your server rather than per browser.
 Two things the widget cannot do for you:
 
 - **An id you supply is used exactly as given** *unless the site requires
-  identity verification*, which is off by default. Without it the id is never
+  identity verification*. Sites created from 0.8.0 onwards require it; sites
+  that existed before do not, until you turn it on. Without it the id is never
   checked, so its unguessability is yours to guarantee. See
   [Identity verification](#identity-verification) below.
 - **A supplied id is not stored.** The widget only persists one it minted itself,
@@ -275,6 +276,12 @@ const hash = require('crypto')
 
 The hash covers the identifier alone, so it is stable for a given customer and
 you can compute it once when you render the page.
+
+**A site created today already requires it.** Wayfindr turns verification on
+for new sites, with no secret issued yet — which means customer identifiers are
+ignored until you issue one from the site's settings and sign with it. If your
+integration sends `visitorExternalId` and nobody is being identified, that is
+the first thing to check. Sites that existed before 0.8.0 are untouched.
 
 Three things worth knowing before you turn it on:
 

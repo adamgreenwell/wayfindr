@@ -38,6 +38,29 @@ final class VisitorIdentityVerification
 
     public const SECRET_PREFIX = 'wfid_';
 
+    /**
+     * What a site created from today onwards starts as.
+     *
+     * New sites verify; EXISTING ones do not, and that asymmetry is the whole
+     * design. Turning verification on for a site whose host has already shipped
+     * pages that send an unsigned identifier would stop identifying every one
+     * of their customers, silently, on upgrade. A site being created now has no
+     * such pages, so the safe default costs nobody anything.
+     *
+     * No secret is issued here on purpose. One minted at creation and never
+     * shown is dead -- the plaintext exists for a single response, and there is
+     * no response here that an operator is reading. So a new site starts
+     * REQUIRED with nothing to verify against, which fails closed: an external
+     * id is ignored until somebody issues a secret from the site's settings and
+     * signs with it. For a site with no integration yet, that is exactly right.
+     *
+     * @return array{identity_verification: string}
+     */
+    public static function newSiteDefaults(): array
+    {
+        return ['identity_verification' => self::REQUIRED];
+    }
+
     /** @return array{plain: string, last_four: string} */
     public static function generateSecret(): array
     {

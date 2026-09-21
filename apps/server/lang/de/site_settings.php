@@ -467,6 +467,8 @@ return [
         'submit' => 'Website endgültig löschen',
     ],
     'identity_verification' => [
+        'issue' => 'Geheimnis ausgeben',
+        'awaiting_secret' => 'Diese Website verlangt eine Prüfung und hat noch kein Geheimnis, daher werden Kundenkennungen ignoriert. Geben Sie eines aus und signieren Sie damit, um Besucher zu erkennen.',
         'heading' => 'Identitätsprüfung für Besucher',
         'lede' => 'Belegen Sie, dass eine Kundenkennung von Ihrem Server stammt und nicht von wem auch immer das Widget aufgerufen hat.',
         'on' => 'Ein',

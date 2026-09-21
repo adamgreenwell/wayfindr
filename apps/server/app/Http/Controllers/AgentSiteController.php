@@ -186,6 +186,7 @@ class AgentSiteController extends Controller
                 'settings' => [
                     'mask_selectors' => [],
                 ],
+                ...VisitorIdentityVerification::newSiteDefaults(),
             ]);
 
             $site->supportAgents()->syncWithoutDetaching($actor->id);

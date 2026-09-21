@@ -9,6 +9,7 @@ use App\Models\Account;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\FirstRunState;
+use App\Support\Visitors\VisitorIdentityVerification;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -103,6 +104,11 @@ class FirstRunSetupController extends Controller
                 $site = Site::query()->create([
                     ...$siteAttributes,
                     'public_key' => $this->publicKey(),
+                    // Only on the create branch. Re-running setup against an
+                    // existing site must not flip its verification mode as a
+                    // side effect -- that site may already have pages sending
+                    // unsigned identifiers.
+                    ...VisitorIdentityVerification::newSiteDefaults(),
                 ]);
             }
 

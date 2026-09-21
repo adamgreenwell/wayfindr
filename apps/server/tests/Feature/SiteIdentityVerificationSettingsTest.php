@@ -180,3 +180,137 @@ test('the page never shows the whole secret outside its one reveal', function ()
         ->assertSee(VisitorIdentityVerification::SECRET_PREFIX.'…'.$generated['last_four'])
         ->assertDontSee($generated['plain']);
 });
+
+/*
+ * New sites verify; existing ones do not. That asymmetry is the design, not an
+ * oversight: an existing site may already have pages sending unsigned
+ * identifiers, and turning verification on for them would stop identifying
+ * every one of their customers, silently, on upgrade.
+ */
+
+test('a site created from the dashboard requires verification', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $this->actingAs($owner)
+        ->post(route('dashboard.sites.store'), [
+            'name' => 'New Site',
+            'domain' => 'new.example.test',
+        ])->assertRedirect();
+
+    $site = Site::query()->where('name', 'New Site')->sole();
+
+    expect($site->identity_verification)->toBe(VisitorIdentityVerification::REQUIRED)
+        // No secret: one minted here and never shown would be dead, since the
+        // plaintext exists for a single response and nobody is reading this
+        // one. The site fails closed until an operator issues one.
+        ->and($site->identity_secret)->toBeNull();
+});
+
+test('a new site ignores an unsigned identifier until a secret is issued', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $this->actingAs($owner)->post(route('dashboard.sites.store'), [
+        'name' => 'Fresh Site',
+        'domain' => 'fresh.example.test',
+    ]);
+
+    $site = Site::query()->where('name', 'Fresh Site')->sole();
+
+    // The whole point of the default: out of the box, a caller cannot claim an
+    // identifier on a site nobody has configured yet.
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-fresh',
+        'external_id' => 'customer-123',
+    ])->assertSuccessful()
+        ->assertJsonPath('data.visitor.identified', false);
+});
+
+test('the settings page offers a first secret, not only a replacement', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $this->actingAs($owner)->post(route('dashboard.sites.store'), [
+        'name' => 'Needs Secret',
+        'domain' => 'needs.example.test',
+    ]);
+
+    $site = Site::query()->where('name', 'Needs Secret')->sole();
+
+    // Without this the form only appeared once a secret existed, which left a
+    // brand-new site requiring verification with no way to get one.
+    $this->actingAs($owner)->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee(__('site_settings.identity_verification.issue'))
+        ->assertSee(__('site_settings.identity_verification.awaiting_secret'));
+
+    $this->actingAs($owner)
+        ->post(route('dashboard.sites.identity-secret.rotate', $site))
+        ->assertRedirect();
+
+    expect($site->fresh()->identity_secret)->toBeString();
+});
+
+test('an existing site keeps verification off', function (): void {
+    // The upgrade case: a row that existed before this shipped takes the
+    // column default, and nothing turns it on behind the operator's back.
+    $site = Site::factory()->create();
+
+    expect($site->fresh()->identity_verification)->toBe(VisitorIdentityVerification::OFF);
+
+    $this->postJson('/api/widget/bootstrap', [
+        'site_public_key' => $site->public_key,
+        'anonymous_id' => 'anon-existing',
+        'external_id' => 'customer-123',
+    ])->assertSuccessful()
+        ->assertJsonPath('data.visitor.identified', true);
+});
+
+test('first run setup creates a verifying site', function (): void {
+    $this->post('/setup', [
+        'account_name' => 'Acme Support',
+        'agent_name' => 'Ada Agent',
+        'agent_email' => 'ada@example.com',
+        'password' => 'correct-horse-battery-staple',
+        'password_confirmation' => 'correct-horse-battery-staple',
+        'site_name' => 'Acme Docs',
+        'site_domain' => 'docs.example.test',
+    ])->assertRedirect();
+
+    // A fresh install has no pages sending identifiers yet, so the secure
+    // default costs nobody anything here either.
+    expect(Site::query()->sole()->identity_verification)
+        ->toBe(VisitorIdentityVerification::REQUIRED);
+});
+
+test('first run setup claiming an existing site leaves its mode alone', function (): void {
+    $account = Account::factory()->create([
+        'name' => 'Half Built Support',
+        'slug' => 'half-built-support',
+    ]);
+
+    // A site that predates this release, which setup adopts rather than
+    // creates. Flipping it on here would be the upgrade hazard the whole
+    // existing/new asymmetry exists to avoid -- and the branch that does the
+    // adopting is one line away from the branch that creates.
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Half Built Docs',
+        'domain' => 'half-built.example.test',
+    ]);
+
+    expect($site->identity_verification)->toBe(VisitorIdentityVerification::OFF);
+
+    $this->post('/setup', [
+        'account_name' => 'Acme Support',
+        'agent_name' => 'Ada Agent',
+        'agent_email' => 'ada@example.com',
+        'password' => 'correct-horse-battery-staple',
+        'password_confirmation' => 'correct-horse-battery-staple',
+        'site_name' => 'Acme Docs',
+        'site_domain' => 'docs.example.test',
+    ])->assertRedirect();
+
+    expect($site->fresh()->identity_verification)->toBe(VisitorIdentityVerification::OFF);
+});
