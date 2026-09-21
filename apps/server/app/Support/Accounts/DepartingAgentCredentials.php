@@ -63,6 +63,14 @@ final class DepartingAgentCredentials
             // the record of when the credential actually stopped working, which
             // is the single question the timestamp exists to answer.
             ->whereNull('revoked_at')
+            // Locked in id order, because this takes a lock on a SET of rows
+            // and two transactions locking the same set in different orders
+            // deadlock. `OutboundWebhookPublisher` orders its multi-row endpoint
+            // lock for this reason, and `lockedUsers()` above sorts its ids for
+            // the same one. Called from `deactivate()` the exclusive account
+            // lock already serialises us; the SWEEP takes no account lock, so
+            // there it is the only thing imposing an order.
+            ->orderBy('id')
             // `lockForUpdate` is the contract, not a precaution. ADR 0018
             // settles concurrent writes by serializing them on the token's own
             // row and says revocation takes that same lock, "which leaves a
@@ -90,6 +98,9 @@ final class DepartingAgentCredentials
         $endpoints = OutboundWebhookEndpoint::query()
             ->where('created_by_id', $agent->getKey())
             ->whereNull('disabled_at')
+            // Same reason, and this is the table it matters most on: the
+            // publisher locks these rows too, in id order.
+            ->orderBy('id')
             ->lockForUpdate()
             ->get();
 
@@ -121,11 +132,16 @@ final class DepartingAgentCredentials
             // it as "what an administrator needs in order to decide whether to
             // re-enable". `OutboundWebhookEndpoint` casts `url` as `encrypted`,
             // so the product treats a destination as sensitive at rest -- and
-            // `audit_events.metadata` is a plain array cast on an exportable
-            // table. Copying it here would take a value the model encrypts and
-            // write it in clear into a CSV anybody with the audit page can
-            // download. The administrator reads the destination from the
-            // integrations page, which is where it is already shown.
+            // `audit_events.metadata` is a plain array cast. Copying it here
+            // would take a value the model encrypts and store it beside the
+            // ciphertext in clear.
+            //
+            // Not via the CSV export, which an earlier version of this comment
+            // claimed: that writes six named columns and metadata is not among
+            // them. The exposure is at rest -- every database dump from then
+            // on, including ADR 0010's offsite push -- which is precisely what
+            // the `encrypted` cast exists to prevent. The administrator reads
+            // the destination from the integrations page, where it is shown.
             $this->audit($endpoint, $agent, $actor, $at, 'outbound_webhook.disabled_with_creator', [
                 'name' => $endpoint->name,
             ]);

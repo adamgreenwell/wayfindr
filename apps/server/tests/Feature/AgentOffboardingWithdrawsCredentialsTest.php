@@ -9,6 +9,7 @@ use App\Models\OutboundWebhookDelivery;
 use App\Models\OutboundWebhookEndpoint;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
@@ -422,8 +423,9 @@ test('the trail records neither the signing secret nor the destination', functio
 
     // Neither the signing secret nor the destination. The secret is a
     // credential the subscriber holds; the destination is cast `encrypted` on
-    // the model, so the product treats it as sensitive at rest -- and this
-    // table is a plain array cast that an admin can export as CSV.
+    // the model, so the product treats it as sensitive at rest, and this table
+    // is a plain array cast -- so a copy here would sit in every database dump
+    // beside the ciphertext it defeats.
     expect(json_encode($event->metadata))->not->toContain($endpoint->secret)
         ->and(json_encode($event->metadata))->not->toContain($endpoint->url)
         ->and($event->metadata)->not->toHaveKey('url');
@@ -540,4 +542,57 @@ test('the audit export names both withdrawals instead of headline-casing them', 
         ->and($body)->toContain('Outbound webhook disabled with its creator')
         ->and($body)->not->toContain('Api Token Revoked With Issuer')
         ->and($body)->not->toContain('Outbound Webhook Disabled With Creator');
+});
+
+test('both credential sets are locked in a deterministic order', function (): void {
+    if (DB::getDriverName() !== 'pgsql') {
+        // SQLite compiles `lockForUpdate()` to nothing, so the clause this
+        // asserts on does not exist there. Same reason, same words, as
+        // 'routing mutations take the account lock before mutable routing rows'.
+        $this->markTestSkipped('PostgreSQL exposes the row-lock clauses used by this contract.');
+    }
+
+    $account = offboardingAccount();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $creator = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    offboardingTokenIssuedBy($creator, 'One');
+    offboardingTokenIssuedBy($creator, 'Two');
+    offboardingEndpointCreatedBy($creator, 'Feed one');
+    offboardingEndpointCreatedBy($creator, 'Feed two');
+
+    $locking = [];
+    DB::listen(function ($query) use (&$locking): void {
+        if (str_contains($query->sql, 'for update')) {
+            $locking[] = $query->sql;
+        }
+    });
+
+    offboardingDeactivate($owner, $creator);
+
+    // This asserts the SQL rather than reproducing a deadlock, and that is a
+    // deliberate limit: two transactions taking the same row set in opposite
+    // orders is not something a single-process test reproduces cheaply. What it
+    // does catch is the ordering going missing, which is the whole mechanism.
+    //
+    // `OutboundWebhookPublisher` locks the endpoints table in id order, so an
+    // unordered lock here can deadlock against a live publish. From
+    // `deactivate()` the account lock serialises us anyway; the sweep has no
+    // account lock, so the order is all there is.
+    $tokenLocks = array_values(array_filter($locking, fn (string $sql): bool => str_contains($sql, 'api_tokens')));
+    $endpointLocks = array_values(array_filter($locking, fn (string $sql): bool => str_contains($sql, 'outbound_webhook_endpoints')));
+
+    expect($tokenLocks)->not->toBeEmpty('expected a locking read of api_tokens')
+        ->and($endpointLocks)->not->toBeEmpty('expected a locking read of outbound_webhook_endpoints');
+
+    foreach ([...$tokenLocks, ...$endpointLocks] as $sql) {
+        // `assertStringContainsString` rather than `expect()->toContain()`:
+        // `toContain` is variadic, so a message passed to it becomes a second
+        // NEEDLE and the assertion can never pass.
+        $this->assertStringContainsString(
+            'order by',
+            $sql,
+            'a multi-row "for update" with no ordering can deadlock: '.$sql,
+        );
+    }
 });
