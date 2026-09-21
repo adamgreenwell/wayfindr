@@ -150,7 +150,22 @@ WIDGET_SRC="$ROOT_DIR/packages/widget-js/src/wayfindr-widget.js"
 # remains is the rule a reader needs to not reintroduce the bug the pairing
 # prevents. The minification point still stands for the next change that wants
 # real room.
-WIDGET_SRC_GZIP_BUDGET=92500
+#
+# And to 93500 for the single-instance guard (#1032), which stops a page that
+# uses BOTH entry points -- the snippet's data attributes and `init()` -- from
+# building two widgets that then race on one set of per-site storage keys.
+#
+# THIS IS THE SECOND RAISE IN ONE DAY, 1500 bytes between them, and that is the
+# signal the paragraph above was describing rather than a licence to keep
+# going. The next change that needs room should minify instead: the source ships
+# unminified, so the headroom is real and nobody has spent it yet. Both raises
+# were measured after tightening the new prose and the new code, not before.
+#
+# Note this guard REDUCES what an affected page transfers: two widgets meant two
+# appearance fetches, two bootstraps and two polling loops for every visitor on
+# it. The budget measures the script, which is the right thing to measure, but
+# the net effect on wayfindr.cc is less traffic, not more.
+WIDGET_SRC_GZIP_BUDGET=93500
 
 [ -f "$WIDGET_SRC" ] || fail "The widget source is missing: $WIDGET_SRC"
 
