@@ -45,6 +45,65 @@
                     @endcan
                 </section>
             @endif
+            <section id="install-snippet" class="section" aria-labelledby="install-snippet-heading">
+                <div class="section-header">
+                    <h2 id="install-snippet-heading">{{ __('site_settings.snippet.heading') }}</h2>
+                    <div class="section-actions">
+                        @if ($agent->isPlatformOperator())
+                            <a class="text-link" href="{{ route('operator.dashboard') }}">{{ __('site_settings.snippet.operator') }}</a>
+                        @endif
+                        <span class="lede">{{ __('site_settings.snippet.copy_ready') }}</span>
+                    </div>
+                </div>
+
+                <div class="notice-copy">
+                    <p>
+                        @if ($site->domain)
+                            <x-translated-feedback :feedback="['key' => 'site_settings.snippet.use_domain', 'parameters' => ['domain' => $site->domain]]" />
+                        @else
+                            {{ __('site_settings.snippet.use_site') }}
+                        @endif
+                    </p>
+                    <p>{!! __('site_settings.snippet.paste', ['closing_tag' => '<code lang="">&lt;/body&gt;</code>']) !!}</p>
+
+                    <div class="notice-list" aria-label="{{ __('site_settings.snippet.steps_aria') }}">
+                        <p><strong>{{ __('site_settings.snippet.steps.heading') }}</strong></p>
+                        <p><x-translated-feedback :feedback="[
+                            'key' => 'site_settings.snippet.steps.copy',
+                            ...($site->domain
+                                ? ['parameters' => ['site' => $site->domain]]
+                                : ['localized_parameters' => ['site' => __('site_settings.snippet.steps.fallback_site')]]),
+                        ]" /></p>
+                        <p>{{ __('site_settings.snippet.steps.tester') }}</p>
+                        <p>{{ __('site_settings.snippet.steps.message') }}</p>
+                        @if ($agent->isPlatformOperator())
+                            <p>{{ __('site_settings.snippet.steps.operator') }}</p>
+                        @endif
+                        <p>{{ __('site_settings.snippet.steps.readiness') }}</p>
+                    </div>
+                </div>
+
+                <pre class="code-block"><code lang="">{{ $widgetInstallSnippet }}</code></pre>
+                <div class="notice-actions">
+                    <a class="button secondary" href="{{ route('dashboard.sites.tester', $site) }}">{{ __('site_settings.common.open_tester') }}</a>
+                </div>
+            </section>
+
+            {{-- Platform operator only. This was `ManageSites || operator`, so an
+                 account admin with no shell got six steps of server commands --
+                 `php artisan queue:work`, a cron line containing the literal
+                 `/path/to/apps/server`, each with a Copy button and each marked
+                 "Needs attention". In a hosted Wayfindr that is every customer
+                 who can manage a site, permanently.
+
+                 They lose nothing: the dashboard readiness panel already tells
+                 an account reader whether the instance is healthy and whose job
+                 it is to fix, without the commands (#968). This component is the
+                 command-by-command version, which is the operator's tool. --}}
+            @if ($agent->isPlatformOperator())
+                <x-operator-smoke-path :smoke-path="$operatorSmokePath" />
+            @endif
+
 
             @php
                 $latestVisitor = $site->latestVisitor;
@@ -59,13 +118,13 @@
                     ->map(fn ($capability) => (string) $capability)
                     ->all();
                 $siteMapSections = [
-                    ['label' => __('site_settings.map.sections.site'), 'href' => '#site-context-heading'],
                     ['label' => __('site_settings.map.sections.snippet'), 'href' => '#install-snippet-heading'],
+                    ['label' => __('site_settings.map.sections.site'), 'href' => '#site-context-heading'],
                     ['label' => __('site_settings.map.sections.access'), 'href' => '#support-access-heading'],
                     ['label' => __('site_settings.map.sections.automatic_routing'), 'href' => '#automatic-routing-heading'],
                     ['label' => __('site_settings.map.sections.routing'), 'href' => '#external-issue-routing-heading'],
-                    ['label' => __('site_settings.map.sections.rating'), 'href' => '#rating-prompt-heading'],
                     ['label' => __('site_settings.map.sections.data'), 'href' => '#data-responsibility-heading'],
+                    ['label' => __('site_settings.map.sections.rating'), 'href' => '#rating-prompt-heading'],
                     ['label' => __('site_settings.map.sections.presence'), 'href' => '#presence-settings-heading'],
                     ['label' => __('site_settings.map.sections.privacy'), 'href' => '#privacy-settings-heading'],
                 ];
@@ -175,7 +234,7 @@
                             </div>
 
                             <fieldset class="field">
-                                <legend>{{ __('site_settings.site.colour') }}</legend>
+                                <legend id="site-colour-heading">{{ __('site_settings.site.colour') }}</legend>
                                 <div class="wf-color-picker">
                                     @foreach (\App\Enums\SiteColor::cases() as $option)
                                         <span class="wf-color-option">
@@ -211,65 +270,6 @@
                 @endcan
             </section>
 
-
-            <section id="install-snippet" class="section" aria-labelledby="install-snippet-heading">
-                <div class="section-header">
-                    <h2 id="install-snippet-heading">{{ __('site_settings.snippet.heading') }}</h2>
-                    <div class="section-actions">
-                        @if ($agent->isPlatformOperator())
-                            <a class="text-link" href="{{ route('operator.dashboard') }}">{{ __('site_settings.snippet.operator') }}</a>
-                        @endif
-                        <span class="lede">{{ __('site_settings.snippet.copy_ready') }}</span>
-                    </div>
-                </div>
-
-                <div class="notice-copy">
-                    <p>
-                        @if ($site->domain)
-                            <x-translated-feedback :feedback="['key' => 'site_settings.snippet.use_domain', 'parameters' => ['domain' => $site->domain]]" />
-                        @else
-                            {{ __('site_settings.snippet.use_site') }}
-                        @endif
-                    </p>
-                    <p>{!! __('site_settings.snippet.paste', ['closing_tag' => '<code lang="">&lt;/body&gt;</code>']) !!}</p>
-
-                    <div class="notice-list" aria-label="{{ __('site_settings.snippet.steps_aria') }}">
-                        <p><strong>{{ __('site_settings.snippet.steps.heading') }}</strong></p>
-                        <p><x-translated-feedback :feedback="[
-                            'key' => 'site_settings.snippet.steps.copy',
-                            ...($site->domain
-                                ? ['parameters' => ['site' => $site->domain]]
-                                : ['localized_parameters' => ['site' => __('site_settings.snippet.steps.fallback_site')]]),
-                        ]" /></p>
-                        <p>{{ __('site_settings.snippet.steps.tester') }}</p>
-                        <p>{{ __('site_settings.snippet.steps.message') }}</p>
-                        @if ($agent->isPlatformOperator())
-                            <p>{{ __('site_settings.snippet.steps.operator') }}</p>
-                        @endif
-                        <p>{{ __('site_settings.snippet.steps.readiness') }}</p>
-                    </div>
-                </div>
-
-                <pre class="code-block"><code lang="">{{ $widgetInstallSnippet }}</code></pre>
-                <div class="notice-actions">
-                    <a class="button secondary" href="{{ route('dashboard.sites.tester', $site) }}">{{ __('site_settings.common.open_tester') }}</a>
-                </div>
-            </section>
-
-            {{-- Platform operator only. This was `ManageSites || operator`, so an
-                 account admin with no shell got six steps of server commands --
-                 `php artisan queue:work`, a cron line containing the literal
-                 `/path/to/apps/server`, each with a Copy button and each marked
-                 "Needs attention". In a hosted Wayfindr that is every customer
-                 who can manage a site, permanently.
-
-                 They lose nothing: the dashboard readiness panel already tells
-                 an account reader whether the instance is healthy and whose job
-                 it is to fix, without the commands (#968). This component is the
-                 command-by-command version, which is the operator's tool. --}}
-            @if ($agent->isPlatformOperator())
-                <x-operator-smoke-path :smoke-path="$operatorSmokePath" />
-            @endif
 
             <section class="section" aria-labelledby="support-access-heading">
                 <div class="section-header">

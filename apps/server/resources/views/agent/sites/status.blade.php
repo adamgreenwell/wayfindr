@@ -4,14 +4,17 @@
                 <x-slot:subtitleContent>{{ __('site_settings.status.subtitle') }}</x-slot:subtitleContent>
             </x-page-header>
 
-{{-- Read-only, all of it. Seven blocks that used to sit among the twenty-six
-     sections of `sites/show`, where a reader configuring the widget scrolled
-     past them and a reader diagnosing a problem scrolled past the widget
-     settings to reach them (#985).
+{{-- Read-only, all of it. Six blocks that used to sit among the settings of
+     `sites/show`, where a reader configuring the widget scrolled past them and
+     a reader diagnosing a problem scrolled past the widget settings to reach
+     them (#985).
 
      Ordered by the question somebody actually arrives with: what needs my
      attention, is support covered, is the ticket path wired, did the install
-     land, who changed what, and where is everything. --}}
+     land, and who changed what.
+
+     No site map here. That is a table of contents for the page it sits on, so
+     it stayed on Settings and lost the entries whose sections left. --}}
 
 @php
     $latestVisitor = $site->latestVisitor;
@@ -117,7 +120,7 @@
 
                 <div class="notice-copy notice-copy-bordered">
                     <p>{{ $externalIssueHealth['detail'] }}</p>
-                    <p><a class="text-link" href="#external-issue-routing-heading">{{ __('site_settings.external.review_routing') }}</a></p>
+                    <p><a class="text-link" href="{{ route('dashboard.sites.show', $site) }}#external-issue-routing-heading">{{ __('site_settings.external.review_routing') }}</a></p>
                 </div>
 
                 <div class="meta-grid">
