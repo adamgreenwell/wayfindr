@@ -650,8 +650,9 @@
       if (visitorToken && isFinite(restoredExpiry) && restoredExpiry > 0) {
         tokenExpiresAt = restoredExpiry;
       } else if (visitorToken && storedExpiry !== NO_TOKEN_EXPIRY) {
-        // A token with no record of its lifetime beside it. Only an older
-        // widget writes that -- this one always records something -- so the
+        // A token with no record of its lifetime beside it. An older widget
+        // leaves that, and so does this one deliberately when it joined a
+        // sibling's token and was never told the lifetime -- either way the
         // lifetime is unknown rather than absent, and it is worth one early
         // refresh to find out which.
         visitorTokenLifetimeUnknown = true;
@@ -748,12 +749,22 @@
       // being the worst, since it says "never expires" about a token that now
       // does. So the record only survives when the pair did; removing it reads
       // as an unknown lifetime next load and probes early.
-      var expiryRecorded = tokenStored && storageKept(
-        storage,
-        visitorTokenExpiryStorageKey(sitePublicKey),
-        (tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt))
-          + '|' + visitorTokenFingerprint(token),
-      );
+      // And never when the lifetime is merely UNKNOWN. `none` and no-record are
+      // different readings: `none` says this token never expires, while an
+      // absent record says find out. Joining a sibling's token is the unknown
+      // case by definition -- its deadline was stated to the tab that minted
+      // it, not to us -- so writing `none` would tell the next page load the
+      // opposite of what THIS tab concluded, and it compensates only in memory,
+      // which does not survive the load. Measured: a joined 10-minute token was
+      // scheduled for refresh in 10 minutes, by which time it is dead.
+      var expiryRecorded = tokenStored
+        && ! visitorTokenLifetimeUnknown
+        && storageKept(
+          storage,
+          visitorTokenExpiryStorageKey(sitePublicKey),
+          (tokenExpiresAt === null ? NO_TOKEN_EXPIRY : String(tokenExpiresAt))
+            + '|' + visitorTokenFingerprint(token),
+        );
 
       if (! expiryRecorded) {
         storageRemove(storage, visitorTokenExpiryStorageKey(sitePublicKey));
