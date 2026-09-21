@@ -5,6 +5,7 @@ use App\Models\Visitor;
 use App\Support\Visitors\VisitorIdentityVerification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
 
 uses(RefreshDatabase::class);
 
@@ -35,7 +36,7 @@ function identityHashFor(Site $site, string $externalId): string
     return hash_hmac('sha256', $externalId, $site->identity_secret);
 }
 
-function bootstrapAs(Site $site, string $anonymousId, array $extra = []): \Illuminate\Testing\TestResponse
+function bootstrapAs(Site $site, string $anonymousId, array $extra = []): TestResponse
 {
     return test()->postJson('/api/widget/bootstrap', array_merge([
         'site_public_key' => $site->public_key,
