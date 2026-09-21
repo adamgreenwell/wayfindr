@@ -20,6 +20,7 @@ use App\Support\Visitors\VisitorIdentityResolver;
 use App\Support\Visitors\VisitorPageUrl;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -112,7 +113,7 @@ class ConversationController extends Controller
         // Locking here puts both sides in the same queue. Whoever arrives
         // second sees what the first one did rather than a stale copy of the
         // world from before it started.
-        $conversation = DB::transaction(function () use (
+        $openConversation = function () use (
             // Captured explicitly. A closure does not take this by itself, and
             // the failure is quiet in the wrong direction: the insert would
             // store NULL, which `sessionOwns()` reads as owned by nobody, so
@@ -270,7 +271,33 @@ class ConversationController extends Controller
             }
 
             return $conversation;
-        });
+        };
+
+        try {
+            $conversation = DB::transaction($openConversation);
+        } catch (UniqueConstraintViolationException) {
+            // The exclusivity check on `(site_id, external_id)` is a read
+            // followed by a write with nothing holding the gap, so two browsers
+            // presenting the same unheld identifier at once can both pass it and
+            // the loser's insert violates the constraint. That surfaced here as
+            // a 500: a visitor's first message failing to send, for a reason
+            // that has nothing to do with them.
+            //
+            // Retried rather than guarded, because there is no row to lock for
+            // an identifier nobody holds yet, and locking the site would put
+            // every conversation on one install behind a single queue. The
+            // retry is exactly what makes it correct: the winner has committed
+            // by then, so the second pass SEES them, declines the identifier and
+            // stores the conversation without it -- the same outcome as arriving
+            // second by a wider margin.
+            //
+            // Safe to run twice. The transaction commits or it does not, and
+            // `ConversationCreated` is dispatched below it, so a failed attempt
+            // leaves nothing behind and announces nothing. This mirrors
+            // BootstrapController, which has carried the same catch for the
+            // sibling `(site_id, anonymous_id)` constraint.
+            $conversation = DB::transaction($openConversation);
+        }
 
         event(new ConversationCreated($conversation));
 
