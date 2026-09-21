@@ -406,6 +406,27 @@
       root.console.error('[wayfindr] ' + what + ' failed:', error);
     }
   }
+  // One widget per site. There are two ways in -- the script tag auto-inits
+  // from its `data-wayfindr-*` attributes, and a host can call init() -- and
+  // nothing stopped both, so a page doing both got two launchers and two
+  // clients racing on one set of per-site storage keys. Keyed by site, not
+  // global: a page may legitimately carry two different sites' widgets.
+  var widgetsBySite = {};
+
+  function widgetAlreadyRunningFor(sitePublicKey, doc) {
+    var existing = sitePublicKey ? widgetsBySite[sitePublicKey] : null;
+
+    // Torn out without destroy(): registered state must not outlive what it
+    // describes, or the next init hands back chrome that is gone.
+    if (existing && existing.root && doc && doc.contains && ! doc.contains(existing.root)) {
+      delete widgetsBySite[sitePublicKey];
+
+      return null;
+    }
+
+    return existing || null;
+  }
+
   // Visitor tokens do not expire today. This interval exists so that when a
   // lifetime IS switched on server-side, the widgets already embedded on
   // customers' sites are rotating rather than waiting to be stranded -- the
@@ -1596,6 +1617,23 @@
 
     if (!doc) {
       throw new Error('Wayfindr requires a browser document.');
+    }
+
+    // Returned rather than thrown: the common way here is a host pasting our
+    // snippet (which carries the attributes) and then calling init() for an
+    // option the attributes cannot express, and throwing would break the page.
+    // Not silent, though -- this call's options are being dropped, and since
+    // auto-init is deferred by a timer the host cannot win the race by calling
+    // earlier, so without the warning the only symptom is settings that do
+    // nothing.
+    var alreadyRunning = widgetAlreadyRunningFor(options.sitePublicKey, doc);
+
+    if (alreadyRunning) {
+      if (root && root.console && typeof root.console.warn === 'function') {
+        root.console.warn('[wayfindr] this site already has a widget, so init() was ignored. The script tag auto-initialises when it carries data-wayfindr-site-key; drop those to configure from init().');
+      }
+
+      return alreadyRunning;
     }
 
     // Resolved before anything is drawn. The chrome is built once, at init,
@@ -5974,7 +6012,7 @@
       resumePromise = resumeConversation(storedSupportCode);
     }
 
-    return {
+    var widget = {
       anonymousId: client.anonymousId,
       client: client,
       root: rootEl,
@@ -5982,6 +6020,12 @@
       close: closePanel,
       refreshCobrowseStatus: refreshCobrowseStatus,
       destroy: function () {
+        // Released before teardown, so destroy-then-init gets a new widget
+        // rather than a handle to the one being dismantled.
+        if (options.sitePublicKey && widgetsBySite[options.sitePublicKey] === widget) {
+          delete widgetsBySite[options.sitePublicKey];
+        }
+
         if (realtimeSubscription && typeof realtimeSubscription.unsubscribe === 'function') {
           realtimeSubscription.unsubscribe();
         }
@@ -6008,6 +6052,12 @@
         rootEl.remove();
       },
     };
+
+    if (options.sitePublicKey) {
+      widgetsBySite[options.sitePublicKey] = widget;
+    }
+
+    return widget;
   }
 
   function isPanelReadable(options) {
