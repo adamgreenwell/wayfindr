@@ -314,3 +314,70 @@ test('first run setup claiming an existing site leaves its mode alone', function
 
     expect($site->fresh()->identity_verification)->toBe(VisitorIdentityVerification::OFF);
 });
+
+test('the bootstrap command creates a verifying site', function (): void {
+    // The third creation path, and the one a self-hosting operator is most
+    // likely to use -- docs/self-hosting/laravel-forge.md prints this command.
+    // A sweep for `->create(` does not find it, because it is `updateOrCreate`.
+    $this->artisan('wayfindr:bootstrap', ['--email' => 'op@example.test'])
+        ->assertSuccessful();
+
+    expect(Site::query()->sole()->identity_verification)
+        ->toBe(VisitorIdentityVerification::REQUIRED);
+});
+
+test('re-running the bootstrap command leaves an existing site alone', function (): void {
+    $this->artisan('wayfindr:bootstrap', ['--email' => 'op@example.test'])->assertSuccessful();
+
+    $site = Site::query()->sole();
+    $site->forceFill(['identity_verification' => VisitorIdentityVerification::OFF])->save();
+
+    // `updateOrCreate` applies its attributes on both paths, so an
+    // unconditional default here would quietly re-enable verification on a site
+    // an operator had deliberately turned off. `--force` is required because
+    // the command refuses to touch an install that already has bootstrap data.
+    $this->artisan('wayfindr:bootstrap', [
+        '--email' => 'op@example.test',
+        '--force' => true,
+    ])->assertSuccessful();
+
+    expect($site->fresh()->identity_verification)->toBe(VisitorIdentityVerification::OFF);
+});
+
+test('a read-only agent sees the state without an instruction they cannot act on', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $this->actingAs($owner)->post(route('dashboard.sites.store'), [
+        'name' => 'Read Only Site',
+        'domain' => 'ro.example.test',
+    ]);
+
+    $site = Site::query()->where('name', 'Read Only Site')->sole();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    $response = $this->actingAs($agent)->get(route('dashboard.sites.show', $site))->assertOk();
+
+    // The fact is still visible; the call to action is not, because there is no
+    // control beside it for this reader.
+    $response->assertSee(__('site_settings.identity_verification.secret_none'))
+        ->assertDontSee(__('site_settings.identity_verification.awaiting_secret'))
+        ->assertDontSee(__('site_settings.identity_verification.issue'));
+});
+
+test('the section controls carry the design system button class', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create();
+
+    $body = $this->actingAs($owner)->get(route('dashboard.sites.show', $site))->assertOk()->getContent();
+
+    // Unclassed submits render as native OS push buttons next to the styled
+    // controls either side of them (ADR 0014). Asserted rather than eyeballed,
+    // since nothing else in the suite renders this section.
+    $section = str($body)->after('identity-verification-heading')->before('</section>')->toString();
+
+    expect($section)->toContain('<button class="button" type="submit"')
+        ->and($section)->toContain('class="button secondary" type="submit"');
+});

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Support\Visitors;
 
 use App\Models\Site;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Str;
 
 /**
@@ -91,9 +92,9 @@ final class VisitorIdentityVerification
      */
     public function verifies(Site $site, string $externalId, mixed $presented): bool
     {
-        $secret = $site->identity_secret;
+        $secret = $this->secretFor($site);
 
-        if (! is_string($secret) || $secret === '') {
+        if ($secret === null) {
             return false;
         }
 
@@ -115,12 +116,43 @@ final class VisitorIdentityVerification
      */
     public function expectedHash(Site $site, string $externalId): ?string
     {
-        $secret = $site->identity_secret;
+        $secret = $this->secretFor($site);
 
-        if (! is_string($secret) || $secret === '') {
+        if ($secret === null) {
             return null;
         }
 
         return hash_hmac('sha256', $externalId, $secret);
+    }
+
+    /**
+     * The site's secret, or null when there is not a usable one.
+     *
+     * `identity_secret` carries the `encrypted` cast, so simply READING it
+     * decrypts -- and a ciphertext this install has no key for throws
+     * `DecryptException` rather than returning anything. That state is not
+     * hypothetical: it is what a restore under a rotated `APP_KEY` leaves
+     * behind, which is the situation the key-loss runbook in
+     * docs/self-hosting/backup-restore.md exists for.
+     *
+     * Uncaught, it surfaced as a 500 from the PUBLIC widget bootstrap -- so the
+     * panel failed to draw for every identified visitor on the site, while
+     * anonymous ones were served normally. Every other encrypted read in this
+     * codebase already catches this and degrades; this was the only one that
+     * did not, and the only one on an unauthenticated endpoint.
+     *
+     * An unreadable secret is just another kind of "no": it cannot verify
+     * anything, so nothing is identified, which is the same fail-closed
+     * outcome as having no secret at all.
+     */
+    private function secretFor(Site $site): ?string
+    {
+        try {
+            $secret = $site->identity_secret;
+        } catch (DecryptException) {
+            return null;
+        }
+
+        return is_string($secret) && $secret !== '' ? $secret : null;
     }
 }

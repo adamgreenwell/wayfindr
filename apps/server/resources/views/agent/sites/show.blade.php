@@ -1232,7 +1232,7 @@
                     @endif
                 </div>
 
-                @if (! $identitySecretHint && $identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED)
+                @if ($canUpdateSite && ! $identitySecretHint && $identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED)
                     {{-- The state a new site is born in. It fails closed, which is
                          correct and also invisible from the outside, so say it here
                          rather than leaving an operator to wonder why nobody is
@@ -1255,7 +1255,7 @@
                             </label>
                         @endforeach
 
-                        <button type="submit">{{ __('site_settings.identity_verification.save') }}</button>
+                        <button class="button" type="submit">{{ __('site_settings.identity_verification.save') }}</button>
                     </form>
 
                     <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-secret.rotate', $site) }}">
@@ -1269,7 +1269,7 @@
                             <p class="lede">{{ __('site_settings.identity_verification.rotate_warning') }}</p>
                         @endif
 
-                        <button type="submit">{{ __($identitySecretHint ? 'site_settings.identity_verification.rotate' : 'site_settings.identity_verification.issue') }}</button>
+                        <button class="button secondary" type="submit">{{ __($identitySecretHint ? 'site_settings.identity_verification.rotate' : 'site_settings.identity_verification.issue') }}</button>
                     </form>
                 @endif
             </section>

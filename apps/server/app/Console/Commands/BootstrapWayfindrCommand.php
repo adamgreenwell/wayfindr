@@ -7,6 +7,7 @@ use App\Enums\PlatformRole;
 use App\Models\Account;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\Visitors\VisitorIdentityVerification;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
@@ -95,6 +96,13 @@ class BootstrapWayfindrCommand extends Command
             ],
         );
 
+        // Read before the write, because `updateOrCreate` applies its second
+        // array on BOTH paths: naming the verification mode there
+        // unconditionally would flip an EXISTING site every time an operator
+        // re-ran bootstrap, which is exactly the upgrade hazard the
+        // new-versus-existing asymmetry exists to avoid.
+        $siteExists = Site::query()->where('public_key', $sitePublicKey)->exists();
+
         $site = Site::query()->updateOrCreate(
             ['public_key' => $sitePublicKey],
             [
@@ -104,6 +112,7 @@ class BootstrapWayfindrCommand extends Command
                 'settings' => [
                     'mask_selectors' => ['input[type="password"]', '[data-wayfindr-mask]'],
                 ],
+                ...($siteExists ? [] : VisitorIdentityVerification::newSiteDefaults()),
             ],
         );
 

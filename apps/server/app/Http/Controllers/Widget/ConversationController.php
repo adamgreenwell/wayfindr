@@ -221,7 +221,10 @@ class ConversationController extends Controller
                 // somebody who had just written in.
                 'presence_only' => false,
             ]
-                + $externalIdentifierUpdate->for($site, $visitor, $validated)
+                // $current, not $site, for the reason the comment above gives
+                // about the domain: decide from the locked row rather than the
+                // stale pre-transaction copy.
+                + $externalIdentifierUpdate->for($current, $visitor, $validated)
                 + $this->intakeAnswers($validated))->save();
 
             $proactiveDelivery = $proactiveOpening->lockForVisitor(

@@ -318,3 +318,66 @@ test('surrounding whitespace is gone before verification, both ways', function (
     ])->assertSuccessful()
         ->assertJsonPath('data.visitor.identified', true);
 });
+
+test('a secret this install cannot decrypt refuses rather than breaking the widget', function (): void {
+    $site = verifyingSite();
+
+    // A ciphertext from a different APP_KEY, which is what a restore under a
+    // rotated key leaves behind -- the exact situation the key-loss runbook in
+    // docs/self-hosting/backup-restore.md exists for.
+    DB::table('sites')->where('id', $site->id)->update([
+        'identity_secret' => 'eyJpdiI6ImJvZ3VzIiwidmFsdWUiOiJib2d1cyIsIm1hYyI6ImJvZ3VzIn0=',
+    ]);
+
+    // The whole widget must not fall over for it. Every other place in this
+    // codebase that reads an encrypted column catches DecryptException and
+    // degrades; this is the only one on a public, unauthenticated endpoint, so
+    // it is the one where throwing is worst: the panel would fail to draw for
+    // every identified visitor on the site.
+    bootstrapAs($site, 'anon-undecryptable', [
+        'external_id' => 'customer-123',
+        'identity_hash' => str_repeat('a', 64),
+    ])->assertSuccessful()
+        ->assertJsonPath('data.visitor.identified', false);
+
+    // And an anonymous visitor is unaffected either way.
+    bootstrapAs($site, 'anon-plain')->assertSuccessful();
+});
+
+test('verification is decided from the locked row, not the request arrival snapshot', function (): void {
+    $generated = VisitorIdentityVerification::generateSecret();
+
+    // Starts OFF, with a secret ready so that turning it on mid-request is a
+    // one-column change.
+    $site = Site::factory()->create([
+        'identity_secret' => $generated['plain'],
+        'identity_secret_last_four' => $generated['last_four'],
+        'identity_verification' => VisitorIdentityVerification::OFF,
+    ]);
+
+    // The operator's switch lands while the request is in flight. A single
+    // process cannot interleave two requests, so this fires on the first query
+    // the request makes -- which is before the controller re-reads the site
+    // under its shared lock, and therefore reproduces exactly the window:
+    // resolved while off, written after on.
+    $flipped = false;
+    DB::listen(function () use ($site, &$flipped): void {
+        if ($flipped) {
+            return;
+        }
+
+        $flipped = true;
+
+        DB::table('sites')->where('id', $site->id)->update([
+            'identity_verification' => VisitorIdentityVerification::REQUIRED,
+        ]);
+    });
+
+    bootstrapAs($site, 'anon-toctou', ['external_id' => 'customer-123'])
+        ->assertSuccessful();
+
+    // Deciding from the arrival-time copy would record the unsigned identifier,
+    // because that copy still says the site does not care.
+    expect(Visitor::query()->where('anonymous_id', 'anon-toctou')->first()->external_id)
+        ->toBeNull();
+});

@@ -209,7 +209,18 @@ class BootstrapController extends Controller
             // because somebody loaded a page stops being presence-only the
             // moment they open the panel, and stops being prunable with it.
             'presence_only' => false,
-        ] + $externalIdentifierUpdate->for($site, $visitor, $validated))->save();
+        ] + $externalIdentifierUpdate->for(
+            // $current, not $site: whether this site requires a signed
+            // identifier is read from the row under the shared lock, not from
+            // the copy resolved before the transaction. An operator turning
+            // verification on commits under the exclusive lock, so a request
+            // that started while it was off would otherwise still record an
+            // unsigned identifier after the switch. Same reason $storePageUrl
+            // and the domain comparison already read from $current.
+            $current,
+            $visitor,
+            $validated,
+        ))->save();
 
         return $visitor;
     }
