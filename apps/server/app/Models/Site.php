@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
-#[Fillable(['account_id', 'name', 'domain', 'color', 'public_key', 'settings', 'inbound_address'])]
+#[Fillable(['account_id', 'name', 'domain', 'color', 'public_key', 'settings', 'inbound_address', 'identity_secret', 'identity_secret_last_four', 'identity_verification'])]
 class Site extends Model
 {
     /** @use HasFactory<SiteFactory> */
@@ -27,6 +27,9 @@ class Site extends Model
             'settings' => 'array',
             'archived_at' => 'datetime',
             'color' => SiteColor::class,
+            // Encrypted at rest: the server must recompute the HMAC, so this
+            // is reversible by design and therefore worth protecting in dumps.
+            'identity_secret' => 'encrypted',
         ];
     }
 

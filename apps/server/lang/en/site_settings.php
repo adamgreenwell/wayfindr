@@ -15,6 +15,9 @@ return [
     'back' => 'Back to sites',
 
     'flash' => [
+        'identity_verification_on' => 'Visitor identity verification is on.',
+        'identity_verification_off' => 'Visitor identity verification is off.',
+        'identity_secret_rotated' => 'A new identity secret was issued. Pages using the old one will not identify visitors until you redeploy.',
         'privacy_saved' => 'Site privacy settings saved.',
         'rating_saved' => 'Rating prompt saved.',
         'intake_saved' => 'Visitor intake saved.',
@@ -461,5 +464,20 @@ return [
         'audit' => 'This site’s audit history. A record that you deleted it is kept against the account.',
         'confirm' => 'Type :site to confirm',
         'submit' => 'Permanently delete this site',
+    ],
+    'identity_verification' => [
+        'heading' => 'Visitor identity verification',
+        'lede' => 'Prove that a customer identifier came from your server, not from whoever called the widget.',
+        'on' => 'On',
+        'off' => 'Off',
+        'explain' => 'Without verification, an identifier your pages send is a claim by whoever is calling, and agents see it as the visitor\'s name. With it on, Wayfindr records the identifier only when your server has signed it.',
+        'deploy_first' => 'Deploy the signing code before turning this on. While it is on, an identifier arriving without a valid signature is ignored and the visitor shows as anonymous.',
+        'secret_label' => 'Identity secret',
+        'secret_none' => 'No secret issued yet.',
+        'issued_heading' => 'Copy this secret now',
+        'issued_note' => 'It is shown once and cannot be recovered. Compute the signature on your server with it, never in page JavaScript.',
+        'rotate' => 'Issue a new secret',
+        'rotate_warning' => 'Issuing a new secret stops the old one verifying immediately. Pages still holding it will identify nobody until you redeploy.',
+        'save' => 'Save',
     ],
 ];

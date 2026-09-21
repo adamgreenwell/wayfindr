@@ -16,6 +16,9 @@ return [
     'back' => 'Torna ai siti',
 
     'flash' => [
+        'identity_verification_on' => 'La verifica dell\'identità dei visitatori è attiva.',
+        'identity_verification_off' => 'La verifica dell\'identità dei visitatori è disattivata.',
+        'identity_secret_rotated' => 'È stato emesso un nuovo segreto di identità. Le pagine che usano quello precedente non identificheranno i visitatori fino al nuovo deploy.',
         'privacy_saved' => 'Impostazioni della privacy del sito salvate.',
         'rating_saved' => 'Domanda di valutazione salvata.',
         'intake_saved' => 'Raccolta iniziale dei visitatori salvata.',
@@ -462,5 +465,20 @@ return [
         'audit' => 'La cronologia di audit del sito. Nell’account viene conservato un record della sua eliminazione.',
         'confirm' => 'Digiti :site per confermare',
         'submit' => 'Elimina definitivamente questo sito',
+    ],
+    'identity_verification' => [
+        'heading' => 'Verifica dell\'identità dei visitatori',
+        'lede' => 'Dimostra che un identificativo cliente arriva dal suo server e non da chi ha chiamato il widget.',
+        'on' => 'Attiva',
+        'off' => 'Disattivata',
+        'explain' => 'Senza verifica, un identificativo inviato dalle sue pagine è solo un\'affermazione di chi effettua la chiamata, e gli agenti lo vedono come il nome del visitatore. Con la verifica attiva, Wayfindr registra l\'identificativo solo se il suo server lo ha firmato.',
+        'deploy_first' => 'Distribuisca il codice di firma prima di attivare questa opzione. Mentre è attiva, un identificativo senza firma valida viene ignorato e il visitatore appare anonimo.',
+        'secret_label' => 'Segreto di identità',
+        'secret_none' => 'Nessun segreto ancora emesso.',
+        'issued_heading' => 'Copi subito questo segreto',
+        'issued_note' => 'Viene mostrato una sola volta e non può essere recuperato. Calcoli la firma sul suo server, mai nel JavaScript della pagina.',
+        'rotate' => 'Emetti un nuovo segreto',
+        'rotate_warning' => 'Emettere un nuovo segreto invalida immediatamente quello precedente. Le pagine che lo usano ancora non identificheranno nessuno fino al nuovo deploy.',
+        'save' => 'Salva',
     ],
 ];

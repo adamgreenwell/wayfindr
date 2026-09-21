@@ -98,7 +98,7 @@ screens, those are authenticated HTTP routes, maintenance mode blocks them — a
 lifting maintenance first leaves agents unable to sign in at all, because
 reading their encrypted two-factor secret throws.
 
-**Clearing is not one operation.** Nine columns across seven tables use
+**Clearing is not one operation.** Ten columns across eight tables use
 Laravel's `encrypted` cast, and they do not all clear the same way, because five
 of them are `NOT NULL`. Setting those to `''` does not help either — the cast
 still tries to decrypt an empty string and still throws `DecryptException`. For
@@ -114,12 +114,23 @@ those, the row itself goes.
                     two_factor_recovery_codes = NULL,
                     two_factor_confirmed_at = NULL;
    UPDATE external_issue_provider_connections SET credentials = NULL;
+   UPDATE sites SET identity_secret = NULL,
+                    identity_secret_last_four = NULL,
+                    identity_verification = 'off';
    ```
 
    Plus any operator settings row holding a secret. Only
    `users.two_factor_secret` and `credentials` are encrypted here; the two
    two-factor companions go with the secret because they describe an enrolment
    that no longer exists, not because they throw.
+
+   `sites.identity_verification` goes back to `'off'` in the same statement,
+   and that part is not tidying. Visitor identity verification fails CLOSED: a
+   site left asking for verification with no secret to verify against refuses
+   every identifier a host sends, silently, and every visitor on it shows up
+   anonymous to agents. Clearing the secret without clearing the mode trades a
+   loud failure for a quiet one. Issue each site a new secret from its settings
+   page and turn verification back on once the host has redeployed with it.
 
    `NOT NULL` — delete the rows, because the column cannot hold `NULL` and an
    empty string still throws on read:

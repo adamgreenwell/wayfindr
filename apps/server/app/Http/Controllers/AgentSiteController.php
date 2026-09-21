@@ -31,13 +31,16 @@ use App\Support\Sla\SlaClockManager;
 use App\Support\TicketExternalIssueState;
 use App\Support\UnattendedConversationAlertCollector;
 use App\Support\Visitors\LiveVisitorBoard;
+use App\Support\Visitors\VisitorIdentityVerification;
 use App\Support\Visitors\VisitorPresence;
 use App\Support\WidgetRealtimeConfig;
 use DateTimeZone;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -259,6 +262,12 @@ class AgentSiteController extends Controller
             // @php...@endphp blocks silently breaks everything after it.
             'availabilityWeekdays' => $this->availabilityWeekdaysForForm($site),
             'intake' => SiteIntake::for($site),
+            'identityVerification' => $site->identity_verification,
+            'identitySecretHint' => is_string($site->identity_secret_last_four)
+                ? VisitorIdentityVerification::SECRET_PREFIX.'…'.$site->identity_secret_last_four
+                : null,
+            // Shown once, immediately after it is issued, and never again.
+            'issuedIdentitySecret' => $this->issuedIdentitySecret($request),
             'ratingPrompt' => SiteRatingPrompt::for($site),
             'routing' => SiteRouting::for($site),
             'widgetLocale' => WidgetLanguage::for($site),
@@ -850,6 +859,112 @@ class AgentSiteController extends Controller
         return redirect()
             ->route('dashboard.sites.show', $site)
             ->with('status', 'site_settings.flash.intake_saved');
+    }
+
+    /**
+     * The identity secret to show once, if this request is the one that made it.
+     *
+     * Forgotten rather than reported when it cannot be decrypted: a rotated app
+     * key or a hand-edited session should render the page without its banner,
+     * not an error about a credential.
+     */
+    private function issuedIdentitySecret(Request $request): ?string
+    {
+        $flashed = $request->session()->get('issued_identity_secret');
+
+        if (! is_string($flashed) || $flashed === '') {
+            return null;
+        }
+
+        try {
+            return Crypt::decryptString($flashed);
+        } catch (DecryptException) {
+            return null;
+        }
+    }
+
+    /**
+     * Turn visitor identity verification on or off for a site.
+     *
+     * The mode and the secret are separate actions on purpose. Turning
+     * verification ON is reversible and safe to click; issuing a new secret
+     * BREAKS every page still sending hashes made with the old one, so it is
+     * not something to do as a side effect of changing a dropdown.
+     */
+    public function updateIdentityVerification(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $validated = $request->validate([
+            'identity_verification' => ['required', Rule::in(VisitorIdentityVerification::MODES)],
+        ]);
+
+        $issued = null;
+
+        DB::transaction(function () use ($request, $site, $validated, &$issued): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+
+            $attributes = ['identity_verification' => $validated['identity_verification']];
+
+            // A site asking for verification with no secret refuses every
+            // identifier a host sends -- it fails closed, deliberately. Issuing
+            // one here means turning the setting on cannot leave the site in
+            // that state by accident. An existing secret is never replaced:
+            // that is the rotate action, and doing it silently would break
+            // pages mid-flight.
+            if ($validated['identity_verification'] === VisitorIdentityVerification::REQUIRED
+                && ! is_string($site->identity_secret)) {
+                $generated = VisitorIdentityVerification::generateSecret();
+                $attributes['identity_secret'] = $generated['plain'];
+                $attributes['identity_secret_last_four'] = $generated['last_four'];
+                $issued = $generated['plain'];
+            }
+
+            $site->forceFill($attributes)->save();
+        });
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            ->with($issued === null ? [] : ['issued_identity_secret' => Crypt::encryptString($issued)])
+            ->with('status', $validated['identity_verification'] === VisitorIdentityVerification::REQUIRED
+                ? 'site_settings.flash.identity_verification_on'
+                : 'site_settings.flash.identity_verification_off');
+    }
+
+    /**
+     * Issue a replacement identity secret, shown once.
+     *
+     * Destructive by nature: from the moment this commits, a hash made with the
+     * previous secret no longer verifies, so any page still holding the old one
+     * identifies nobody until it is redeployed. There is no overlap window --
+     * two live secrets would need somewhere to put the second, and that is
+     * worth building deliberately rather than implying it here.
+     */
+    public function rotateIdentitySecret(Request $request, Site $site): RedirectResponse
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+        $this->authorizeSiteAbility($request, 'update', $site);
+
+        $generated = VisitorIdentityVerification::generateSecret();
+
+        DB::transaction(function () use ($request, $site, $generated): void {
+            [, $site] = $this->lockedSiteManagerAndSite($request->user(), $site, 'update');
+
+            $site->forceFill([
+                'identity_secret' => $generated['plain'],
+                'identity_secret_last_four' => $generated['last_four'],
+            ])->save();
+        });
+
+        return redirect()
+            ->route('dashboard.sites.show', $site)
+            // Encrypted before it touches the session: the default driver is
+            // `database`, so flashing plaintext writes a live signing secret
+            // into the `sessions` table, recoverable from a dump. Same
+            // reasoning, same remedy, as the issued API token.
+            ->with('issued_identity_secret', Crypt::encryptString($generated['plain']))
+            ->with('status', 'site_settings.flash.identity_secret_rotated');
     }
 
     /**

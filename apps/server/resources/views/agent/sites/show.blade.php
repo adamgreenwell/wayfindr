@@ -1200,6 +1200,65 @@
                 </div>
             </section>
 
+            <section class="section" aria-labelledby="identity-verification-heading">
+                <div class="section-header">
+                    <div>
+                        <h2 id="identity-verification-heading">{{ __('site_settings.identity_verification.heading') }}</h2>
+                        <p class="lede">{{ __('site_settings.identity_verification.lede') }}</p>
+                    </div>
+                    <span class="lede">{{ __($identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED ? 'site_settings.identity_verification.on' : 'site_settings.identity_verification.off') }}</span>
+                </div>
+
+                @if ($issuedIdentitySecret)
+                    <div class="notice-list">
+                        <p><strong>{{ __('site_settings.identity_verification.issued_heading') }}</strong></p>
+                        {{-- `lang=""` because a secret is not prose in the reader's language. --}}
+                        <p><code lang="">{{ $issuedIdentitySecret }}</code></p>
+                        <p>{{ __('site_settings.identity_verification.issued_note') }}</p>
+                    </div>
+                @endif
+
+                <div class="notice-list">
+                    <p>{{ __('site_settings.identity_verification.explain') }}</p>
+                    <p>{{ __('site_settings.identity_verification.deploy_first') }}</p>
+                </div>
+
+                <div class="meta-item">
+                    <span class="meta-label">{{ __('site_settings.identity_verification.secret_label') }}</span>
+                    @if ($identitySecretHint)
+                        <span class="meta-value" lang="">{{ $identitySecretHint }}</span>
+                    @else
+                        <span class="meta-value">{{ __('site_settings.identity_verification.secret_none') }}</span>
+                    @endif
+                </div>
+
+                @if ($canUpdateSite)
+                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-verification.update', $site) }}">
+                        @csrf
+                        @method('PUT')
+
+                        @foreach (\App\Support\Visitors\VisitorIdentityVerification::MODES as $mode)
+                            <label>
+                                <input type="radio" name="identity_verification" value="{{ $mode }}"
+                                    @checked(old('identity_verification', $identityVerification) === $mode)>
+                                {{ __('site_settings.identity_verification.'.($mode === 'required' ? 'on' : 'off')) }}
+                            </label>
+                        @endforeach
+
+                        <button type="submit">{{ __('site_settings.identity_verification.save') }}</button>
+                    </form>
+
+                    @if ($identitySecretHint)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-secret.rotate', $site) }}">
+                            @csrf
+
+                            <p class="lede">{{ __('site_settings.identity_verification.rotate_warning') }}</p>
+                            <button type="submit">{{ __('site_settings.identity_verification.rotate') }}</button>
+                        </form>
+                    @endif
+                @endif
+            </section>
+
             <section class="section" aria-labelledby="visitor-intake-heading">
                 <div class="section-header">
                     <div>

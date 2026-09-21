@@ -13,6 +13,7 @@ use App\Support\Sites\SiteRatingPrompt;
 use App\Support\Sites\WidgetAppearance;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\ExternalIdentifierUpdate;
 use App\Support\Visitors\VisitorIdentityResolver;
 use App\Support\VisitorSessionToken;
 use App\Support\WidgetSiteResolver;
@@ -28,6 +29,7 @@ class BootstrapController extends Controller
         VisitorSessionToken $visitorSessionToken,
         VisitorContextSanitizer $visitorContextSanitizer,
         VisitorIdentityResolver $visitorIdentityResolver,
+        ExternalIdentifierUpdate $externalIdentifierUpdate,
     ): JsonResponse {
         $validated = $request->validate([
             'site_public_key' => ['required', 'string', 'max:255'],
@@ -37,6 +39,9 @@ class BootstrapController extends Controller
             // verifies only continues the session clock it already started.
             'visitor_token' => ['nullable', 'string', 'max:4096'],
             'external_id' => ['nullable', 'string', 'max:255'],
+            // A hex SHA-256, so its length is fixed. Bounding it here keeps a
+            // multi-megabyte string from reaching `hash_equals`.
+            'identity_hash' => ['nullable', 'string', 'max:64'],
             'page_url' => ['nullable', 'url', 'max:2048'],
             'context' => ['nullable', 'array', 'max:50'],
         ]);
@@ -66,24 +71,24 @@ class BootstrapController extends Controller
             // every statement. DB::transaction() is a real transaction standing
             // alone and a SAVEPOINT inside a caller's, and either is enough to
             // leave something usable to retry on.
-            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, &$current): Visitor {
+            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $externalIdentifierUpdate, &$current): Visitor {
                 // A real closure with `&$current`, not an arrow function: those
                 // capture by VALUE, so the by-reference parameter would bind to
                 // the closure's own copy and the locked site never reaches the
                 // payload.
-                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $current);
+                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $externalIdentifierUpdate, $current);
             });
         } catch (UniqueConstraintViolationException) {
             // Wrapped as well. Outside a transaction every statement
             // autocommits, so the lockForUpdate() inside stampVisitor() is
             // released the moment its select finishes -- which is exactly when
             // it is supposed to still be held.
-            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, &$current): Visitor {
+            $visitor = DB::transaction(function () use ($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $externalIdentifierUpdate, &$current): Visitor {
                 // A real closure with `&$current`, not an arrow function: those
                 // capture by VALUE, so the by-reference parameter would bind to
                 // the closure's own copy and the locked site never reaches the
                 // payload.
-                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $current);
+                return $this->stampVisitor($site, $validated, $visitorContextSanitizer, $visitorIdentityResolver, $externalIdentifierUpdate, $current);
             });
         }
 
@@ -133,6 +138,7 @@ class BootstrapController extends Controller
         array $validated,
         VisitorContextSanitizer $visitorContextSanitizer,
         VisitorIdentityResolver $visitorIdentityResolver,
+        ExternalIdentifierUpdate $externalIdentifierUpdate,
         ?Site &$current = null,
     ): Visitor {
         // Locked, and re-created if the lock finds nothing.
@@ -203,7 +209,7 @@ class BootstrapController extends Controller
             // because somebody loaded a page stops being presence-only the
             // moment they open the panel, and stops being prunable with it.
             'presence_only' => false,
-        ] + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer))->save();
+        ] + $externalIdentifierUpdate->for($site, $visitor, $validated))->save();
 
         return $visitor;
     }
@@ -264,30 +270,5 @@ class BootstrapController extends Controller
     private function stringList(mixed $value): array
     {
         return is_array($value) ? array_values(array_filter($value, 'is_string')) : [];
-    }
-
-    /**
-     * @param  array<string, mixed>  $validated
-     * @return array{external_id?: string}
-     */
-    private function externalIdentifierUpdate(Site $site, Visitor $visitor, array $validated, VisitorContextSanitizer $visitorContextSanitizer): array
-    {
-        if (! array_key_exists('external_id', $validated)) {
-            return [];
-        }
-
-        $externalId = $visitorContextSanitizer->sanitizeIdentifier($validated['external_id']);
-
-        if ($externalId === null) {
-            return [];
-        }
-
-        $belongsToAnotherVisitor = Visitor::query()
-            ->where('site_id', $site->id)
-            ->where('external_id', $externalId)
-            ->when($visitor->exists, fn ($query) => $query->where('id', '!=', $visitor->getKey()))
-            ->exists();
-
-        return $belongsToAnotherVisitor ? [] : ['external_id' => $externalId];
     }
 }

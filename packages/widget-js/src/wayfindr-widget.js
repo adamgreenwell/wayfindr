@@ -563,6 +563,8 @@
     var sitePublicKey = options.sitePublicKey;
     var anonymousId = options.anonymousId;
     var visitorExternalId = normalizeVisitorExternalId(options.visitorExternalId);
+    // An opaque string the host computes server-side; we never interpret it.
+    var visitorIdentityHash = normalizeVisitorExternalId(options.visitorIdentityHash);
     var fetcher = options.fetch || (root && root.fetch ? root.fetch.bind(root) : null);
     var storage = resolveStorageOption(options);
     var visitorToken = options.visitorToken || null;
@@ -1033,7 +1035,7 @@
         // Only when we hold one. A first bootstrap has nothing to continue,
         // and sending an explicit null would put a field on the wire that
         // says the same thing as its absence.
-      }, context, visitorExternalId, visitorToken)).then(function (result) {
+      }, context, visitorExternalId, visitorToken, visitorIdentityHash)).then(function (result) {
         // Overlapping bootstraps finishing out of order would otherwise let
         // an older answer restore obsolete masking rules -- and a stale mask
         // is a field the visitor believes is protected. The client sequences
@@ -1162,7 +1164,13 @@
       },
       startConversation: function (body, details) {
         details = details || {};
-        var externalId = normalizeVisitorExternalId(details.visitorExternalId) || visitorExternalId;
+        var overrideId = normalizeVisitorExternalId(details.visitorExternalId);
+        var externalId = overrideId || visitorExternalId;
+        // The hash follows whichever id won: one minted at init does not vouch
+        // for a per-conversation override, so it is not carried over to it.
+        var identityHash = overrideId
+          ? normalizeVisitorExternalId(details.visitorIdentityHash)
+          : visitorIdentityHash;
 
         // Rebuilt per attempt, because it BAKES IN the token: a retry after a
         // recovery has to carry the new one, and a payload captured once would
@@ -1174,7 +1182,7 @@
             visitor_token: requireVisitorToken(visitorToken),
             subject: details.subject || summarize(body),
             page_url: details.pageUrl || null,
-          }, details.context, externalId);
+          }, details.context, externalId, undefined, identityHash);
 
           if (details.proactiveMessageDeliveryId) {
             payload.proactive_message_delivery_id = details.proactiveMessageDeliveryId;
@@ -1602,6 +1610,7 @@
       },
       anonymousId: options.anonymousId,
       visitorExternalId: options.visitorExternalId,
+      visitorIdentityHash: options.visitorIdentityHash,
       fetch: options.fetch,
       // Resolve here rather than forwarding options.storage blindly: property
       // access would flatten an inherited value into an own property on the
@@ -8093,9 +8102,14 @@
     return value ? value : null;
   }
 
-  function withVisitorContext(payload, context, visitorExternalId, visitorToken) {
+  function withVisitorContext(payload, context, visitorExternalId, visitorToken, visitorIdentityHash) {
     if (visitorExternalId) {
       payload.external_id = visitorExternalId;
+
+      // Only beside the id it vouches for: alone it names nothing.
+      if (visitorIdentityHash) {
+        payload.identity_hash = visitorIdentityHash;
+      }
     }
 
     // Present only when we hold one. Bootstrap does not authenticate -- this
@@ -8630,6 +8644,7 @@
       apiBaseUrl: script.dataset.wayfindrApiBaseUrl || root.location.origin,
       sitePublicKey: script.dataset.wayfindrSiteKey,
       visitorExternalId: script.dataset.wayfindrVisitorExternalId,
+      visitorIdentityHash: script.dataset.wayfindrVisitorIdentityHash,
       launcherLabel: script.dataset.wayfindrLauncherLabel,
       title: script.dataset.wayfindrTitle,
       // The host page's answer, and the only one that outranks the visitor's
