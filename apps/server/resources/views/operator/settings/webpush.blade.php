@@ -5,9 +5,6 @@
         :title="__('operator.webpush.title')"
         :subtitle="__('operator.webpush.subtitle')" />
 
-    @if (session('status'))
-        <p class="status-message">{{ __(session('status')) }}</p>
-    @endif
 
     <section class="section" aria-labelledby="webpush-config-heading">
         <div class="section-header">

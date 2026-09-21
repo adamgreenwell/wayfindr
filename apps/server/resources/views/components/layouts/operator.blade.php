@@ -45,6 +45,27 @@
         </nav>
 
         <div class="wf-context-body">
+            {{-- Rendered HERE, once, rather than by each page.
+                 Operator controllers flash a result on 35 paths and only five
+                 pages rendered anywhere for one to land, so most of them --
+                 including confirming a readiness item from the console itself
+                 -- did the work and answered with a silent page.
+
+                 `x-operator-feedback` takes a bare catalogue key as well as a
+                 key with runtime parameters, so one region serves both shapes
+                 and a page never needs its own.
+
+                 `status` is polite and `alert` is assertive, which is the
+                 distinction the roles exist for: a confirmation can wait for a
+                 pause in what a screen reader is saying, and a failure cannot. --}}
+            @if (session('status'))
+                <p class="status-message" role="status"><x-operator-feedback :feedback="session('status')" /></p>
+            @endif
+
+            @if (session('error'))
+                <p class="status-message" role="alert"><x-operator-feedback :feedback="session('error')" /></p>
+            @endif
+
             {{ $slot }}
         </div>
     </div>

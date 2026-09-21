@@ -6,9 +6,6 @@
         :title="__('operator.localization.title')"
         :subtitle="__('operator.localization.subtitle')" />
 
-    @if (session('status'))
-        <p class="status-message">{{ __(session('status')) }}</p>
-    @endif
 
     <section class="section" aria-labelledby="localization-config-heading">
         <div class="section-header">
