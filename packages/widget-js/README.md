@@ -305,6 +305,10 @@ Three things worth knowing before you turn it on:
   left without it, for the reason above: Wayfindr resolves a visitor by
   `anonymousId`.
 
+The reasoning behind all of this — including why new sites verify and older ones
+do not — is recorded in
+[ADR 0025](https://github.com/adamgreenwell/wayfindr/blob/main/docs/decisions/0025-visitor-identity-verification.md).
+
 ## Development
 
 ```bash

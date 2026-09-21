@@ -122,7 +122,7 @@ php vendor/bin/pint app/Support/Visitors/VisitorLabel.php   # or any path(s)
 
 ## Where the rest lives
 
-- `docs/decisions/` — 24 ADRs. ADR 0004 (AI boundary), 0012/0013 (versioning and
+- `docs/decisions/` — 25 ADRs. ADR 0004 (AI boundary), 0012/0013 (versioning and
   upgrade guards) and 0014 (design system) come up most often.
 - **Six shipped docs are under test.** Six Pest tests read a document off disk
   with `base_path('../../docs/...')` and assert its literal content against the
