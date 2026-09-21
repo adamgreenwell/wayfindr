@@ -370,45 +370,84 @@
                 @endif
             </section>
 
-            <section class="section" aria-labelledby="automatic-routing-heading">
-                <div class="section-header">
-                    <h2 id="automatic-routing-heading">{{ __('site_settings.automatic_routing.heading') }}</h2>
-                    <span class="readiness-status" data-status="{{ $routing->enabled ? 'ready' : 'manual' }}">
-                        {{ __($routing->enabled ? 'site_settings.common.on' : 'site_settings.common.off') }}
-                    </span>
-                </div>
+            <div class="wf-pair">
+                <section class="section" aria-labelledby="automatic-routing-heading">
+                    <div class="section-header">
+                        <h2 id="automatic-routing-heading">{{ __('site_settings.automatic_routing.heading') }}</h2>
+                        <span class="readiness-status" data-status="{{ $routing->enabled ? 'ready' : 'manual' }}">
+                            {{ __($routing->enabled ? 'site_settings.common.on' : 'site_settings.common.off') }}
+                        </span>
+                    </div>
 
-                <p>{{ __('site_settings.automatic_routing.lede') }}</p>
+                    <p>{{ __('site_settings.automatic_routing.lede') }}</p>
 
-                @if ($canUpdateSite)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.routing.update', $site) }}">
-                        @csrf
-                        @method('PUT')
+                    @if ($canUpdateSite)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.routing.update', $site) }}">
+                            @csrf
+                            @method('PUT')
 
-                        <div class="field">
-                            <label for="routing_enabled">
-                                <input type="hidden" name="routing_enabled" value="0">
-                                <input id="routing_enabled" name="routing_enabled" type="checkbox" value="1" @checked(old('routing_enabled', $routing->enabled))>
-                                {{ __('site_settings.automatic_routing.enabled') }}
-                            </label>
-                            <p class="field-help">{{ __('site_settings.automatic_routing.enabled_help') }}</p>
+                            <div class="field">
+                                <label for="routing_enabled">
+                                    <input type="hidden" name="routing_enabled" value="0">
+                                    <input id="routing_enabled" name="routing_enabled" type="checkbox" value="1" @checked(old('routing_enabled', $routing->enabled))>
+                                    {{ __('site_settings.automatic_routing.enabled') }}
+                                </label>
+                                <p class="field-help">{{ __('site_settings.automatic_routing.enabled_help') }}</p>
+                            </div>
+
+                            <div class="field">
+                                <label for="routing_conversation_capacity">{{ __('site_settings.automatic_routing.capacity') }}</label>
+                                <input id="routing_conversation_capacity" name="routing_conversation_capacity" type="number" min="1" max="100" value="{{ old('routing_conversation_capacity', $routing->conversationCapacity) }}" required>
+                                <p class="field-help">{{ __('site_settings.automatic_routing.capacity_help') }}</p>
+                                @error('routing_conversation_capacity')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <button class="button" type="submit">{{ __('site_settings.automatic_routing.save') }}</button>
+                        </form>
+                    @else
+                        <p class="empty">{{ __('site_settings.automatic_routing.restricted') }}</p>
+                    @endif
+                </section>
+
+                <section class="section" aria-labelledby="inbound-email-heading">
+                    <div class="section-header">
+                        <div>
+                            <h2 id="inbound-email-heading">{{ __('site_settings.inbound.heading') }}</h2>
+                            <p class="lede">{{ __('site_settings.inbound.lede') }}</p>
                         </div>
+                        <span class="readiness-status" data-status="{{ $site->inbound_address ? 'ready' : 'manual' }}">
+                            {{ __($site->inbound_address ? 'site_settings.inbound.receiving' : 'site_settings.inbound.not_receiving') }}
+                        </span>
+                    </div>
 
-                        <div class="field">
-                            <label for="routing_conversation_capacity">{{ __('site_settings.automatic_routing.capacity') }}</label>
-                            <input id="routing_conversation_capacity" name="routing_conversation_capacity" type="number" min="1" max="100" value="{{ old('routing_conversation_capacity', $routing->conversationCapacity) }}" required>
-                            <p class="field-help">{{ __('site_settings.automatic_routing.capacity_help') }}</p>
-                            @error('routing_conversation_capacity')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
+                    @if ($canUpdateSite)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.inbound-address.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+
+                            <div class="field">
+                                <label for="inbound_address">{{ __('site_settings.inbound.address') }}</label>
+                                <input type="email" id="inbound_address" name="inbound_address" maxlength="255"
+                                    placeholder="support@example.com" value="{{ old('inbound_address', $site->inbound_address) }}" lang="">
+                                <p class="field-hint">
+                                    {{ __('site_settings.inbound.help') }}
+                                </p>
+                                @error('inbound_address')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <button class="button" type="submit">{{ __('site_settings.inbound.save') }}</button>
+                        </form>
+                    @else
+                        <div class="notice-copy">
+                            <p>{{ __('site_settings.inbound.restricted') }}</p>
                         </div>
-
-                        <button class="button" type="submit">{{ __('site_settings.automatic_routing.save') }}</button>
-                    </form>
-                @else
-                    <p class="empty">{{ __('site_settings.automatic_routing.restricted') }}</p>
-                @endif
-            </section>
+                    @endif
+                </section>
+            </div>
 
             <section class="section" aria-labelledby="external-issue-routing-heading">
                 <div class="section-header">
@@ -623,106 +662,118 @@
                 </div>
             </section>
 
-            <section class="section" aria-labelledby="inbound-email-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="inbound-email-heading">{{ __('site_settings.inbound.heading') }}</h2>
-                        <p class="lede">{{ __('site_settings.inbound.lede') }}</p>
-                    </div>
-                    <span class="readiness-status" data-status="{{ $site->inbound_address ? 'ready' : 'manual' }}">
-                        {{ __($site->inbound_address ? 'site_settings.inbound.receiving' : 'site_settings.inbound.not_receiving') }}
-                    </span>
-                </div>
-
-                @if ($canUpdateSite)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.inbound-address.update', $site) }}">
-                        @csrf
-                        @method('PUT')
-
-                        <div class="field">
-                            <label for="inbound_address">{{ __('site_settings.inbound.address') }}</label>
-                            <input type="email" id="inbound_address" name="inbound_address" maxlength="255"
-                                placeholder="support@example.com" value="{{ old('inbound_address', $site->inbound_address) }}" lang="">
-                            <p class="field-hint">
-                                {{ __('site_settings.inbound.help') }}
-                            </p>
-                            @error('inbound_address')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
+            <div class="wf-pair">
+                <section class="section" aria-labelledby="widget-appearance-heading">
+                    <div class="section-header">
+                        <div>
+                            <h2 id="widget-appearance-heading">{{ __('site_settings.appearance.heading') }}</h2>
+                            <p class="lede">{{ __('site_settings.appearance.lede') }}</p>
                         </div>
+                        <span class="readiness-status" data-status="{{ $appearance->accent ? 'ready' : 'manual' }}">
+                            {{ __($appearance->accent ? 'site_settings.appearance.branded' : 'site_settings.appearance.default') }}
+                        </span>
+                    </div>
 
-                        <button class="button" type="submit">{{ __('site_settings.inbound.save') }}</button>
-                    </form>
-                @else
+                    @if ($canUpdateSite)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.appearance.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+
+                            <div class="field">
+                                <label for="widget_accent">{{ __('site_settings.appearance.accent') }}</label>
+                                <input type="text" id="widget_accent" name="widget_accent" maxlength="9"
+                                    placeholder="#7C3AED" value="{{ old('widget_accent', $appearance->accent) }}" lang="">
+                                <p class="field-hint">
+                                    {!! __('site_settings.appearance.accent_help', ['site_colour' => '<a href="#site-colour-heading">'.e(__('site_settings.appearance.site_colour')).'</a>']) !!}
+                                    @if ($appearance->accent)
+                                        <x-translated-feedback :feedback="['key' => 'site_settings.appearance.rendered', 'parameters' => ['light' => $appearance->accentLight, 'dark' => $appearance->accentDark]]" />
+                                    @else
+                                        {{ __('site_settings.appearance.empty') }}
+                                    @endif
+                                </p>
+                                @error('widget_accent')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <div class="field">
+                                <label for="widget_position">{{ __('site_settings.appearance.position') }}</label>
+                                <select id="widget_position" name="widget_position">
+                                    <option value="right" @selected(old('widget_position', $appearance->position) === 'right')>{{ __('site_settings.appearance.right') }}</option>
+                                    <option value="left" @selected(old('widget_position', $appearance->position) === 'left')>{{ __('site_settings.appearance.left') }}</option>
+                                </select>
+                                <p class="field-hint">{{ __('site_settings.appearance.position_help') }}</p>
+                            </div>
+
+                            <div class="field">
+                                <label for="widget_greeting">{{ __('site_settings.appearance.greeting') }}</label>
+                                <input type="text" id="widget_greeting" name="widget_greeting" maxlength="120"
+                                    placeholder="{{ __('site_settings.appearance.greeting_placeholder') }}" value="{{ old('widget_greeting', $appearance->greeting) }}" lang="">
+                            </div>
+
+                            <div class="field">
+                                <label for="widget_placeholder">{{ __('site_settings.appearance.placeholder') }}</label>
+                                <input type="text" id="widget_placeholder" name="widget_placeholder" maxlength="120"
+                                    placeholder="{{ __('site_settings.appearance.composer_placeholder') }}" value="{{ old('widget_placeholder', $appearance->placeholder) }}" lang="">
+                                <p class="field-hint">{{ __('site_settings.appearance.copy_help') }}</p>
+                            </div>
+
+                            <button class="button" type="submit">{{ __('site_settings.appearance.save') }}</button>
+                        </form>
+                    @else
+                        <div class="notice-copy">
+                            <p>{{ __('site_settings.appearance.restricted') }}</p>
+                        </div>
+                    @endif
+                </section>
+
+                <section class="section" aria-labelledby="widget-language-heading">
+                    <div class="section-header">
+                        <div>
+                            <h2 id="widget-language-heading">{{ __('site_settings.language.heading') }}</h2>
+                            <p class="lede">{{ __('site_settings.language.lede') }}</p>
+                        </div>
+                        @if ($widgetLocale)
+                            <span class="lede" lang="">{{ $widgetLanguages[$widgetLocale] ?? $widgetLocale }}</span>
+                        @else
+                            <span class="lede">{{ __('site_settings.language.following') }}</span>
+                        @endif
+                    </div>
+
                     <div class="notice-copy">
-                        <p>{{ __('site_settings.inbound.restricted') }}</p>
+                        <p>{{ __('site_settings.language.body') }}</p>
+                        <p>{{ __('site_settings.language.authored') }}</p>
                     </div>
-                @endif
-            </section>
 
-            <section class="section" aria-labelledby="widget-appearance-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="widget-appearance-heading">{{ __('site_settings.appearance.heading') }}</h2>
-                        <p class="lede">{{ __('site_settings.appearance.lede') }}</p>
-                    </div>
-                    <span class="readiness-status" data-status="{{ $appearance->accent ? 'ready' : 'manual' }}">
-                        {{ __($appearance->accent ? 'site_settings.appearance.branded' : 'site_settings.appearance.default') }}
-                    </span>
-                </div>
+                    @if ($canUpdateSite)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.language.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+                            <div class="meta-grid">
+                                <div class="meta-item">
+                                    <label class="meta-label" for="widget_locale">{{ __('site_settings.language.default') }}</label>
+                                    <select id="widget_locale" name="widget_locale">
+                                        <option value="" @selected(old('widget_locale', $widgetLocale) === null || old('widget_locale', $widgetLocale) === '')>{{ __('site_settings.language.browser') }}</option>
+                                        @foreach ($widgetLanguages as $code => $label)
+                                            <option value="{{ $code }}" lang="" @selected(old('widget_locale', $widgetLocale) === $code)>{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                                <div class="meta-item">
+                                    <span class="meta-label">{{ __('site_settings.language.label') }}</span>
+                                    <button class="button" type="submit">{{ __('site_settings.language.save') }}</button>
+                                </div>
+                            </div>
+                        </form>
+                    @else
+                        <p class="lede">{{ __('site_settings.language.restricted') }}</p>
+                    @endif
 
-                @if ($canUpdateSite)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.appearance.update', $site) }}">
-                        @csrf
-                        @method('PUT')
-
-                        <div class="field">
-                            <label for="widget_accent">{{ __('site_settings.appearance.accent') }}</label>
-                            <input type="text" id="widget_accent" name="widget_accent" maxlength="9"
-                                placeholder="#7C3AED" value="{{ old('widget_accent', $appearance->accent) }}" lang="">
-                            <p class="field-hint">
-                                {!! __('site_settings.appearance.accent_help', ['site_colour' => '<a href="#site-colour-heading">'.e(__('site_settings.appearance.site_colour')).'</a>']) !!}
-                                @if ($appearance->accent)
-                                    <x-translated-feedback :feedback="['key' => 'site_settings.appearance.rendered', 'parameters' => ['light' => $appearance->accentLight, 'dark' => $appearance->accentDark]]" />
-                                @else
-                                    {{ __('site_settings.appearance.empty') }}
-                                @endif
-                            </p>
-                            @error('widget_accent')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <div class="field">
-                            <label for="widget_position">{{ __('site_settings.appearance.position') }}</label>
-                            <select id="widget_position" name="widget_position">
-                                <option value="right" @selected(old('widget_position', $appearance->position) === 'right')>{{ __('site_settings.appearance.right') }}</option>
-                                <option value="left" @selected(old('widget_position', $appearance->position) === 'left')>{{ __('site_settings.appearance.left') }}</option>
-                            </select>
-                            <p class="field-hint">{{ __('site_settings.appearance.position_help') }}</p>
-                        </div>
-
-                        <div class="field">
-                            <label for="widget_greeting">{{ __('site_settings.appearance.greeting') }}</label>
-                            <input type="text" id="widget_greeting" name="widget_greeting" maxlength="120"
-                                placeholder="{{ __('site_settings.appearance.greeting_placeholder') }}" value="{{ old('widget_greeting', $appearance->greeting) }}" lang="">
-                        </div>
-
-                        <div class="field">
-                            <label for="widget_placeholder">{{ __('site_settings.appearance.placeholder') }}</label>
-                            <input type="text" id="widget_placeholder" name="widget_placeholder" maxlength="120"
-                                placeholder="{{ __('site_settings.appearance.composer_placeholder') }}" value="{{ old('widget_placeholder', $appearance->placeholder) }}" lang="">
-                            <p class="field-hint">{{ __('site_settings.appearance.copy_help') }}</p>
-                        </div>
-
-                        <button class="button" type="submit">{{ __('site_settings.appearance.save') }}</button>
-                    </form>
-                @else
                     <div class="notice-copy">
-                        <p>{{ __('site_settings.appearance.restricted') }}</p>
+                        <p>{!! __('site_settings.language.sdk', ['attribute' => '<code lang="">data-wayfindr-locale="de"</code>']) !!}</p>
                     </div>
-                @endif
-            </section>
+                </section>
+            </div>
 
             <section class="section" aria-labelledby="support-hours-heading">
                 <div class="section-header">
@@ -877,53 +928,6 @@
                 @endif
             </section>
 
-            <section class="section" aria-labelledby="widget-language-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="widget-language-heading">{{ __('site_settings.language.heading') }}</h2>
-                        <p class="lede">{{ __('site_settings.language.lede') }}</p>
-                    </div>
-                    @if ($widgetLocale)
-                        <span class="lede" lang="">{{ $widgetLanguages[$widgetLocale] ?? $widgetLocale }}</span>
-                    @else
-                        <span class="lede">{{ __('site_settings.language.following') }}</span>
-                    @endif
-                </div>
-
-                <div class="notice-copy">
-                    <p>{{ __('site_settings.language.body') }}</p>
-                    <p>{{ __('site_settings.language.authored') }}</p>
-                </div>
-
-                @if ($canUpdateSite)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.language.update', $site) }}">
-                        @csrf
-                        @method('PUT')
-                        <div class="meta-grid">
-                            <div class="meta-item">
-                                <label class="meta-label" for="widget_locale">{{ __('site_settings.language.default') }}</label>
-                                <select id="widget_locale" name="widget_locale">
-                                    <option value="" @selected(old('widget_locale', $widgetLocale) === null || old('widget_locale', $widgetLocale) === '')>{{ __('site_settings.language.browser') }}</option>
-                                    @foreach ($widgetLanguages as $code => $label)
-                                        <option value="{{ $code }}" lang="" @selected(old('widget_locale', $widgetLocale) === $code)>{{ $label }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="meta-item">
-                                <span class="meta-label">{{ __('site_settings.language.label') }}</span>
-                                <button class="button" type="submit">{{ __('site_settings.language.save') }}</button>
-                            </div>
-                        </div>
-                    </form>
-                @else
-                    <p class="lede">{{ __('site_settings.language.restricted') }}</p>
-                @endif
-
-                <div class="notice-copy">
-                    <p>{!! __('site_settings.language.sdk', ['attribute' => '<code lang="">data-wayfindr-locale="de"</code>']) !!}</p>
-                </div>
-            </section>
-
             <section class="section" aria-labelledby="rating-prompt-heading">
                 <div class="section-header">
                     <div>
@@ -980,287 +984,291 @@
                 </div>
             </section>
 
-            <section class="section" aria-labelledby="identity-verification-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="identity-verification-heading">{{ __('site_settings.identity_verification.heading') }}</h2>
-                        <p class="lede">{{ __('site_settings.identity_verification.lede') }}</p>
+            <div class="wf-pair wf-pair--wide">
+                <section class="section" aria-labelledby="identity-verification-heading">
+                    <div class="section-header">
+                        <div>
+                            <h2 id="identity-verification-heading">{{ __('site_settings.identity_verification.heading') }}</h2>
+                            <p class="lede">{{ __('site_settings.identity_verification.lede') }}</p>
+                        </div>
+                        <span class="lede">{{ __($identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED ? 'site_settings.identity_verification.on' : 'site_settings.identity_verification.off') }}</span>
                     </div>
-                    <span class="lede">{{ __($identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED ? 'site_settings.identity_verification.on' : 'site_settings.identity_verification.off') }}</span>
-                </div>
 
-                @if ($issuedIdentitySecret)
-                    <div class="notice-list">
-                        <p><strong>{{ __('site_settings.identity_verification.issued_heading') }}</strong></p>
-                        {{-- `lang=""` because a secret is not prose in the reader's language. --}}
-                        <p><code lang="">{{ $issuedIdentitySecret }}</code></p>
-                        <p>{{ __('site_settings.identity_verification.issued_note') }}</p>
-                    </div>
-                @endif
-
-                <div class="notice-list">
-                    <p>{{ __('site_settings.identity_verification.explain') }}</p>
-                    <p>{{ __('site_settings.identity_verification.deploy_first') }}</p>
-                </div>
-
-                <div class="meta-item">
-                    <span class="meta-label">{{ __('site_settings.identity_verification.secret_label') }}</span>
-                    @if ($identitySecretHint)
-                        <span class="meta-value" lang="">{{ $identitySecretHint }}</span>
-                    @else
-                        <span class="meta-value">{{ __('site_settings.identity_verification.secret_none') }}</span>
+                    @if ($issuedIdentitySecret)
+                        <div class="notice-list">
+                            <p><strong>{{ __('site_settings.identity_verification.issued_heading') }}</strong></p>
+                            {{-- `lang=""` because a secret is not prose in the reader's language. --}}
+                            <p><code lang="">{{ $issuedIdentitySecret }}</code></p>
+                            <p>{{ __('site_settings.identity_verification.issued_note') }}</p>
+                        </div>
                     @endif
-                </div>
 
-                @if ($canUpdateSite && ! $identitySecretHint && $identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED)
-                    {{-- The state a new site is born in. It fails closed, which is
-                         correct and also invisible from the outside, so say it here
-                         rather than leaving an operator to wonder why nobody is
-                         identified. --}}
                     <div class="notice-list">
-                        <p>{{ __('site_settings.identity_verification.awaiting_secret') }}</p>
+                        <p>{{ __('site_settings.identity_verification.explain') }}</p>
+                        <p>{{ __('site_settings.identity_verification.deploy_first') }}</p>
                     </div>
-                @endif
 
-                @if ($canUpdateSite)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-verification.update', $site) }}">
-                        @csrf
-                        @method('PUT')
-
-                        @foreach (\App\Support\Visitors\VisitorIdentityVerification::MODES as $mode)
-                            <label>
-                                <input type="radio" name="identity_verification" value="{{ $mode }}"
-                                    @checked(old('identity_verification', $identityVerification) === $mode)>
-                                {{ __('site_settings.identity_verification.'.($mode === 'required' ? 'on' : 'off')) }}
-                            </label>
-                        @endforeach
-
-                        <button class="button" type="submit">{{ __('site_settings.identity_verification.save') }}</button>
-                    </form>
-
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-secret.rotate', $site) }}">
-                        @csrf
-
-                        {{-- A new site starts requiring verification with no secret, so
-                             the first issue has to be reachable -- not just a rotate. The
-                             warning belongs only to the replacement case, because there is
-                             nothing to break when there is nothing to replace. --}}
+                    <div class="meta-item">
+                        <span class="meta-label">{{ __('site_settings.identity_verification.secret_label') }}</span>
                         @if ($identitySecretHint)
-                            <p class="lede">{{ __('site_settings.identity_verification.rotate_warning') }}</p>
+                            <span class="meta-value" lang="">{{ $identitySecretHint }}</span>
+                        @else
+                            <span class="meta-value">{{ __('site_settings.identity_verification.secret_none') }}</span>
+                        @endif
+                    </div>
+
+                    @if ($canUpdateSite && ! $identitySecretHint && $identityVerification === \App\Support\Visitors\VisitorIdentityVerification::REQUIRED)
+                        {{-- The state a new site is born in. It fails closed, which is
+                             correct and also invisible from the outside, so say it here
+                             rather than leaving an operator to wonder why nobody is
+                             identified. --}}
+                        <div class="notice-list">
+                            <p>{{ __('site_settings.identity_verification.awaiting_secret') }}</p>
+                        </div>
+                    @endif
+
+                    @if ($canUpdateSite)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-verification.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+
+                            @foreach (\App\Support\Visitors\VisitorIdentityVerification::MODES as $mode)
+                                <label>
+                                    <input type="radio" name="identity_verification" value="{{ $mode }}"
+                                        @checked(old('identity_verification', $identityVerification) === $mode)>
+                                    {{ __('site_settings.identity_verification.'.($mode === 'required' ? 'on' : 'off')) }}
+                                </label>
+                            @endforeach
+
+                            <button class="button" type="submit">{{ __('site_settings.identity_verification.save') }}</button>
+                        </form>
+
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.identity-secret.rotate', $site) }}">
+                            @csrf
+
+                            {{-- A new site starts requiring verification with no secret, so
+                                 the first issue has to be reachable -- not just a rotate. The
+                                 warning belongs only to the replacement case, because there is
+                                 nothing to break when there is nothing to replace. --}}
+                            @if ($identitySecretHint)
+                                <p class="lede">{{ __('site_settings.identity_verification.rotate_warning') }}</p>
+                            @endif
+
+                            <button class="button secondary" type="submit">{{ __($identitySecretHint ? 'site_settings.identity_verification.rotate' : 'site_settings.identity_verification.issue') }}</button>
+                        </form>
+                    @endif
+                </section>
+
+                <section class="section" aria-labelledby="visitor-intake-heading">
+                    <div class="section-header">
+                        <div>
+                            <h2 id="visitor-intake-heading">{{ __('site_settings.intake.heading') }}</h2>
+                            <p class="lede">{{ __('site_settings.intake.lede') }}</p>
+                        </div>
+                        <span class="lede">{{ __($intake->asks() ? 'site_settings.intake.asking' : 'site_settings.intake.nothing') }}</span>
+                    </div>
+
+                    @if ($canUpdateSite)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.intake.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr><th>{{ __('site_settings.intake.columns.field') }}</th><th>{{ __('site_settings.intake.columns.off') }}</th><th>{{ __('site_settings.intake.columns.optional') }}</th><th>{{ __('site_settings.intake.columns.required') }}</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (\App\Support\Sites\SiteIntake::FIELDS as $field)
+                                            <tr>
+                                                <td>{{ __('site_settings.intake.fields.'.$field) }}</td>
+                                                @foreach ([\App\Support\Sites\SiteIntake::OFF, \App\Support\Sites\SiteIntake::OPTIONAL, \App\Support\Sites\SiteIntake::REQUIRED] as $mode)
+                                                    <td>
+                                                        <input type="radio" name="intake_fields[{{ $field }}]" value="{{ $mode }}"
+                                                            aria-label="{{ __('site_settings.intake.choice', ['field' => __('site_settings.intake.fields.'.$field), 'mode' => __('site_settings.intake.modes.'.$mode)]) }}"
+                                                            @checked(old('intake_fields.'.$field, $intake->fields[$field]) === $mode)>
+                                                    </td>
+                                                @endforeach
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <p class="field-help">
+                                {{ __('site_settings.intake.known_help') }}
+                            </p>
+                            <p class="field-help">
+                                {{ __('site_settings.intake.identity_help') }}
+                            </p>
+
+                            <div class="field">
+                                <label for="intake_intro">{{ __('site_settings.intake.intro') }}</label>
+                                <textarea id="intake_intro" name="intake_intro" rows="2"
+                                    placeholder="{{ __('site_settings.intake.intro_placeholder') }}" lang="">{{ old('intake_intro', $intake->intro) }}</textarea>
+                                <p class="field-help">{{ __('site_settings.intake.intro_help') }}</p>
+                                @error('intake_intro')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <button class="button" type="submit">{{ __('site_settings.intake.save') }}</button>
+                        </form>
+                    @else
+                        <div class="notice-copy">
+                            <p>{{ __('site_settings.intake.restricted') }}</p>
+                        </div>
+                    @endif
+                </section>
+            </div>
+
+            <div class="wf-pair">
+                <section class="section" aria-labelledby="presence-settings-heading">
+                    <div class="section-header">
+                        <h2 id="presence-settings-heading">{{ __('site_settings.presence.heading') }}</h2>
+                        <span class="lede">{{ __($presenceEnabled ? 'site_settings.common.on' : 'site_settings.common.off') }}</span>
+                    </div>
+
+                    @if ($canUpdatePrivacy)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.presence.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+
+                            <div class="field field-check">
+                                <label for="presence_enabled">
+                                    <input type="checkbox" id="presence_enabled" name="presence_enabled" value="1" @checked(old('presence_enabled', $presenceEnabled))>
+                                    {{ __('site_settings.presence.enabled') }}
+                                </label>
+                                @error('presence_enabled')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <p class="field-help">
+                                {{-- Echoes rather than inline conditionals. A Blade directive
+                                     written flush against a word character is not compiled at
+                                     all, so this paragraph shipped to stage with two directives
+                                     as literal text in it -- and the one that DID compile then
+                                     wrapped the wrong span, because its partner had been left
+                                     behind. An echo has no such adjacency rule, and reads no
+                                     worse here. --}}
+                                {{ __('site_settings.presence.summary', [
+                                    'seconds' => \App\Support\ReaderNumber::count($presenceEvery),
+                                    'pages' => $presencePageUrls ? __('site_settings.presence.pages') : '',
+                                    'storage' => $presencePageUrls ? __('site_settings.presence.storage') : '',
+                                    'retention' => trans_choice('site_settings.presence.retention', $presenceRetentionDays, ['count' => \App\Support\ReaderNumber::count($presenceRetentionDays)]),
+                                ]) }}
+                            </p>
+
+                            <div class="field field-check">
+                                <label for="presence_page_urls">
+                                    <input type="checkbox" id="presence_page_urls" name="presence_page_urls" value="1" @checked(old('presence_page_urls', $presencePageUrls))>
+                                    {{ __('site_settings.presence.include_page') }}
+                                </label>
+                            </div>
+
+                            <p class="field-help">
+                                {{ __('site_settings.presence.page_help') }}
+                            </p>
+
+                            <p class="field-help">
+                                {{ __('site_settings.presence.off_help') }}
+                            </p>
+
+                            <button class="button" type="submit">{{ __('site_settings.presence.save') }}</button>
+                        </form>
+                    @else
+                        <div class="notice-copy">
+                            <p>{{ __('site_settings.presence.restricted') }}</p>
+                            <p>{{ __($presenceEnabled ? 'site_settings.presence.restricted_on' : 'site_settings.presence.restricted_off') }}</p>
+                        </div>
+                    @endif
+
+                    {{-- Outside the privacy-settings branch because operating the
+                         live board and changing its collection settings answer to
+                         different permissions. The link follows the same support
+                         permission as the route and broadcast channel. --}}
+                    @if ($presenceEnabled && $canViewLiveBoard)
+                        <p class="field-help">
+                            {!! __('site_settings.presence.board_help', ['board' => '<a href="'.e(route('dashboard.sites.live', $site)).'">'.e(__('site_settings.presence.board')).'</a>']) !!}
+                        </p>
+                    @endif
+                </section>
+
+                <section class="section" aria-labelledby="privacy-settings-heading">
+                    <div class="section-header">
+                        <h2 id="privacy-settings-heading">{{ __('site_settings.privacy.heading') }}</h2>
+                        <span class="lede">{{ trans_choice('site_settings.privacy.configured', count($maskSelectors), ['count' => \App\Support\ReaderNumber::count(count($maskSelectors))]) }}</span>
+                    </div>
+
+                    @if ($canUpdatePrivacy)
+                        <form class="section-form" method="POST" action="{{ route('dashboard.sites.update', $site) }}">
+                            @csrf
+                            @method('PUT')
+
+                            <div class="field">
+                                <label for="mask_selectors">{{ __('site_settings.privacy.selectors') }}</label>
+                                <textarea id="mask_selectors" name="mask_selectors" spellcheck="false" lang="">{{ old('mask_selectors', implode("\n", $maskSelectors)) }}</textarea>
+                                @error('mask_selectors')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <p class="field-help">
+                                {{ __('site_settings.privacy.selectors_help') }}
+                            </p>
+
+                            <div class="field">
+                                <label for="mask_terms">{{ __('site_settings.privacy.terms') }}</label>
+                                <textarea id="mask_terms" name="mask_terms" spellcheck="false" lang="">{{ old('mask_terms', implode("\n", $maskTerms)) }}</textarea>
+                                @error('mask_terms')
+                                    <p class="field-error">{{ $message }}</p>
+                                @enderror
+                            </div>
+
+                            <p class="field-help">
+                                {!! __('site_settings.privacy.terms_help', ['password' => '<code lang="">contraseña</code>', 'number' => '<code lang="">NHS number</code>']) !!}
+                            </p>
+
+                            <div class="notice-list">
+                                <p>{!! __('site_settings.privacy.force', ['mask' => '<code lang="">data-wayfindr-mask</code>', 'private' => '<code lang="">data-wayfindr-private</code>']) !!}</p>
+                                <p>{!! __('site_settings.privacy.allow', ['allow' => '<code lang="">data-wayfindr-allow</code>']) !!}</p>
+                            </div>
+
+                            <button class="button" type="submit">{{ __('site_settings.privacy.save') }}</button>
+                        </form>
+                    @else
+                        <div class="notice-copy">
+                            <p>{{ __('site_settings.privacy.restricted') }}</p>
+                        </div>
+
+                        @if (count($maskSelectors) === 0)
+                            <p class="empty">{{ __('site_settings.privacy.empty_selectors') }}</p>
+                        @else
+                            <div class="notice-list">
+                                @foreach ($maskSelectors as $maskSelector)
+                                    <p><code lang="">{{ $maskSelector }}</code></p>
+                                @endforeach
+                            </div>
                         @endif
 
-                        <button class="button secondary" type="submit">{{ __($identitySecretHint ? 'site_settings.identity_verification.rotate' : 'site_settings.identity_verification.issue') }}</button>
-                    </form>
-                @endif
-            </section>
-
-            <section class="section" aria-labelledby="visitor-intake-heading">
-                <div class="section-header">
-                    <div>
-                        <h2 id="visitor-intake-heading">{{ __('site_settings.intake.heading') }}</h2>
-                        <p class="lede">{{ __('site_settings.intake.lede') }}</p>
-                    </div>
-                    <span class="lede">{{ __($intake->asks() ? 'site_settings.intake.asking' : 'site_settings.intake.nothing') }}</span>
-                </div>
-
-                @if ($canUpdateSite)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.intake.update', $site) }}">
-                        @csrf
-                        @method('PUT')
-
-                        <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr><th>{{ __('site_settings.intake.columns.field') }}</th><th>{{ __('site_settings.intake.columns.off') }}</th><th>{{ __('site_settings.intake.columns.optional') }}</th><th>{{ __('site_settings.intake.columns.required') }}</th></tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (\App\Support\Sites\SiteIntake::FIELDS as $field)
-                                        <tr>
-                                            <td>{{ __('site_settings.intake.fields.'.$field) }}</td>
-                                            @foreach ([\App\Support\Sites\SiteIntake::OFF, \App\Support\Sites\SiteIntake::OPTIONAL, \App\Support\Sites\SiteIntake::REQUIRED] as $mode)
-                                                <td>
-                                                    <input type="radio" name="intake_fields[{{ $field }}]" value="{{ $mode }}"
-                                                        aria-label="{{ __('site_settings.intake.choice', ['field' => __('site_settings.intake.fields.'.$field), 'mode' => __('site_settings.intake.modes.'.$mode)]) }}"
-                                                        @checked(old('intake_fields.'.$field, $intake->fields[$field]) === $mode)>
-                                                </td>
-                                            @endforeach
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <p class="field-help">
-                            {{ __('site_settings.intake.known_help') }}
-                        </p>
-                        <p class="field-help">
-                            {{ __('site_settings.intake.identity_help') }}
-                        </p>
-
-                        <div class="field">
-                            <label for="intake_intro">{{ __('site_settings.intake.intro') }}</label>
-                            <textarea id="intake_intro" name="intake_intro" rows="2"
-                                placeholder="{{ __('site_settings.intake.intro_placeholder') }}" lang="">{{ old('intake_intro', $intake->intro) }}</textarea>
-                            <p class="field-help">{{ __('site_settings.intake.intro_help') }}</p>
-                            @error('intake_intro')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <button class="button" type="submit">{{ __('site_settings.intake.save') }}</button>
-                    </form>
-                @else
-                    <div class="notice-copy">
-                        <p>{{ __('site_settings.intake.restricted') }}</p>
-                    </div>
-                @endif
-            </section>
-
-            <section class="section" aria-labelledby="presence-settings-heading">
-                <div class="section-header">
-                    <h2 id="presence-settings-heading">{{ __('site_settings.presence.heading') }}</h2>
-                    <span class="lede">{{ __($presenceEnabled ? 'site_settings.common.on' : 'site_settings.common.off') }}</span>
-                </div>
-
-                @if ($canUpdatePrivacy)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.presence.update', $site) }}">
-                        @csrf
-                        @method('PUT')
-
-                        <div class="field field-check">
-                            <label for="presence_enabled">
-                                <input type="checkbox" id="presence_enabled" name="presence_enabled" value="1" @checked(old('presence_enabled', $presenceEnabled))>
-                                {{ __('site_settings.presence.enabled') }}
-                            </label>
-                            @error('presence_enabled')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <p class="field-help">
-                            {{-- Echoes rather than inline conditionals. A Blade directive
-                                 written flush against a word character is not compiled at
-                                 all, so this paragraph shipped to stage with two directives
-                                 as literal text in it -- and the one that DID compile then
-                                 wrapped the wrong span, because its partner had been left
-                                 behind. An echo has no such adjacency rule, and reads no
-                                 worse here. --}}
-                            {{ __('site_settings.presence.summary', [
-                                'seconds' => \App\Support\ReaderNumber::count($presenceEvery),
-                                'pages' => $presencePageUrls ? __('site_settings.presence.pages') : '',
-                                'storage' => $presencePageUrls ? __('site_settings.presence.storage') : '',
-                                'retention' => trans_choice('site_settings.presence.retention', $presenceRetentionDays, ['count' => \App\Support\ReaderNumber::count($presenceRetentionDays)]),
-                            ]) }}
-                        </p>
-
-                        <div class="field field-check">
-                            <label for="presence_page_urls">
-                                <input type="checkbox" id="presence_page_urls" name="presence_page_urls" value="1" @checked(old('presence_page_urls', $presencePageUrls))>
-                                {{ __('site_settings.presence.include_page') }}
-                            </label>
-                        </div>
-
-                        <p class="field-help">
-                            {{ __('site_settings.presence.page_help') }}
-                        </p>
-
-                        <p class="field-help">
-                            {{ __('site_settings.presence.off_help') }}
-                        </p>
-
-                        <button class="button" type="submit">{{ __('site_settings.presence.save') }}</button>
-                    </form>
-                @else
-                    <div class="notice-copy">
-                        <p>{{ __('site_settings.presence.restricted') }}</p>
-                        <p>{{ __($presenceEnabled ? 'site_settings.presence.restricted_on' : 'site_settings.presence.restricted_off') }}</p>
-                    </div>
-                @endif
-
-                {{-- Outside the privacy-settings branch because operating the
-                     live board and changing its collection settings answer to
-                     different permissions. The link follows the same support
-                     permission as the route and broadcast channel. --}}
-                @if ($presenceEnabled && $canViewLiveBoard)
-                    <p class="field-help">
-                        {!! __('site_settings.presence.board_help', ['board' => '<a href="'.e(route('dashboard.sites.live', $site)).'">'.e(__('site_settings.presence.board')).'</a>']) !!}
-                    </p>
-                @endif
-            </section>
-
-            <section class="section" aria-labelledby="privacy-settings-heading">
-                <div class="section-header">
-                    <h2 id="privacy-settings-heading">{{ __('site_settings.privacy.heading') }}</h2>
-                    <span class="lede">{{ trans_choice('site_settings.privacy.configured', count($maskSelectors), ['count' => \App\Support\ReaderNumber::count(count($maskSelectors))]) }}</span>
-                </div>
-
-                @if ($canUpdatePrivacy)
-                    <form class="section-form" method="POST" action="{{ route('dashboard.sites.update', $site) }}">
-                        @csrf
-                        @method('PUT')
-
-                        <div class="field">
-                            <label for="mask_selectors">{{ __('site_settings.privacy.selectors') }}</label>
-                            <textarea id="mask_selectors" name="mask_selectors" spellcheck="false" lang="">{{ old('mask_selectors', implode("\n", $maskSelectors)) }}</textarea>
-                            @error('mask_selectors')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <p class="field-help">
-                            {{ __('site_settings.privacy.selectors_help') }}
-                        </p>
-
-                        <div class="field">
-                            <label for="mask_terms">{{ __('site_settings.privacy.terms') }}</label>
-                            <textarea id="mask_terms" name="mask_terms" spellcheck="false" lang="">{{ old('mask_terms', implode("\n", $maskTerms)) }}</textarea>
-                            @error('mask_terms')
-                                <p class="field-error">{{ $message }}</p>
-                            @enderror
-                        </div>
-
-                        <p class="field-help">
-                            {!! __('site_settings.privacy.terms_help', ['password' => '<code lang="">contraseña</code>', 'number' => '<code lang="">NHS number</code>']) !!}
-                        </p>
+                        @if (count($maskTerms) === 0)
+                            <p class="empty">{{ __('site_settings.privacy.empty_terms') }}</p>
+                        @else
+                            <div class="notice-list">
+                                @foreach ($maskTerms as $maskTerm)
+                                    <p><code lang="">{{ $maskTerm }}</code></p>
+                                @endforeach
+                            </div>
+                        @endif
 
                         <div class="notice-list">
                             <p>{!! __('site_settings.privacy.force', ['mask' => '<code lang="">data-wayfindr-mask</code>', 'private' => '<code lang="">data-wayfindr-private</code>']) !!}</p>
                             <p>{!! __('site_settings.privacy.allow', ['allow' => '<code lang="">data-wayfindr-allow</code>']) !!}</p>
                         </div>
-
-                        <button class="button" type="submit">{{ __('site_settings.privacy.save') }}</button>
-                    </form>
-                @else
-                    <div class="notice-copy">
-                        <p>{{ __('site_settings.privacy.restricted') }}</p>
-                    </div>
-
-                    @if (count($maskSelectors) === 0)
-                        <p class="empty">{{ __('site_settings.privacy.empty_selectors') }}</p>
-                    @else
-                        <div class="notice-list">
-                            @foreach ($maskSelectors as $maskSelector)
-                                <p><code lang="">{{ $maskSelector }}</code></p>
-                            @endforeach
-                        </div>
                     @endif
-
-                    @if (count($maskTerms) === 0)
-                        <p class="empty">{{ __('site_settings.privacy.empty_terms') }}</p>
-                    @else
-                        <div class="notice-list">
-                            @foreach ($maskTerms as $maskTerm)
-                                <p><code lang="">{{ $maskTerm }}</code></p>
-                            @endforeach
-                        </div>
-                    @endif
-
-                    <div class="notice-list">
-                        <p>{!! __('site_settings.privacy.force', ['mask' => '<code lang="">data-wayfindr-mask</code>', 'private' => '<code lang="">data-wayfindr-private</code>']) !!}</p>
-                        <p>{!! __('site_settings.privacy.allow', ['allow' => '<code lang="">data-wayfindr-allow</code>']) !!}</p>
-                    </div>
-                @endif
-            </section>
+                </section>
+            </div>
 
             @can('archive', $site)
                 @unless ($site->isArchived())
