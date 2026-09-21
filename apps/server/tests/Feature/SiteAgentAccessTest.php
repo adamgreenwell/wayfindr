@@ -9,7 +9,9 @@ use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
 use App\Models\CustomRole;
+use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
+use App\Models\SiteExternalIssueProject;
 use App\Models\Ticket;
 use App\Models\User;
 use App\Models\Visitor;
@@ -999,6 +1001,107 @@ test('site access rosters display custom role names', function (): void {
         ->get(route('dashboard.sites.show', $site))
         ->assertOk()
         ->assertSee('Escalation captain');
+});
+
+test('every same-page anchor on the site surfaces lands on something', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'domain' => 'docs.example.test',
+    ]);
+    $connection = ExternalIssueProviderConnection::factory()->for($account)->create();
+    SiteExternalIssueProject::factory()
+        ->for($account)
+        ->for($site)
+        ->for($connection, 'providerConnection')
+        ->create(['project_key' => 'acme/docs']);
+
+    // Splitting one page into two turns same-page anchors into links to
+    // nothing, silently: the href still resolves, the page still renders, and
+    // clicking simply does not move. Two shipped this way -- one on the status
+    // page the moment readiness left settings, and one that had never had a
+    // target on any branch.
+    $seen = 0;
+
+    foreach ([
+        'site settings' => "/dashboard/sites/{$site->id}",
+        'site status' => "/dashboard/sites/{$site->id}/status",
+    ] as $label => $url) {
+        $html = (string) $this->actingAs($owner)->get($url)->assertOk()->getContent();
+
+        preg_match_all('/href="#([A-Za-z][\w:.-]*)"/', $html, $anchors);
+
+        $seen += count($anchors[1]);
+
+        foreach (array_unique($anchors[1]) as $target) {
+            expect(str_contains($html, 'id="'.$target.'"'))->toBeTrue(
+                "{$label} links to #{$target}, which nothing on that page carries",
+            );
+        }
+    }
+
+    expect($seen)->toBeGreaterThan(0, 'neither page rendered a same-page anchor; this guard is checking nothing');
+});
+
+test('the install snippet is the first thing on site settings', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'domain' => 'docs.example.test',
+    ]);
+
+    // Position, not presence. The snippet is the reason most visits to this page
+    // happen (#985) and it used to sit below readiness and the site context;
+    // asserting only that it renders would not notice it sliding back down.
+    // Ids rather than headings because 'Install snippet' is also the map's own
+    // chip label for it, and a heading assertion would match either.
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->assertSeeInOrder([
+            'id="install-snippet-heading"',
+            'id="site-map-heading"',
+            'id="site-context-heading"',
+            'id="support-access-heading"',
+        ], false);
+});
+
+test('the site map lists sections in the order the page renders them', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    $html = (string) $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->getContent();
+
+    // A jump list that disagrees with the page it indexes is worse than none.
+    // Every chip must name an id that exists, and the chips must be in the same
+    // order those ids appear in the document.
+    preg_match_all('/class="filter-chip" href="#([a-z-]+)"/', $html, $chips);
+
+    expect($chips[1])->not->toBeEmpty('the site map rendered no chips; this guard is checking nothing');
+
+    $positions = [];
+
+    foreach ($chips[1] as $anchor) {
+        $at = strpos($html, 'id="'.$anchor.'"');
+
+        expect($at)->not->toBeFalse("site map points at #{$anchor}, which no element on the page carries");
+
+        $positions[$anchor] = $at;
+    }
+
+    $sorted = $positions;
+    asort($sorted);
+
+    expect(array_keys($positions))->toBe(
+        array_keys($sorted),
+        'site map chips are not in the order the page renders their sections',
+    );
 });
 
 test('site detail summarizes support load for the selected site only', function (): void {

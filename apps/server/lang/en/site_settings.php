@@ -69,7 +69,7 @@ return [
     'archived' => [
         'heading' => 'This site is archived',
         'status' => 'Archived :elapsed',
-        'body' => 'The widget stopped serving this site when it was archived, so the install and readiness panels below describe a widget that is no longer answering. Nothing has been deleted — every conversation, ticket and audit record is intact, and restoring the site puts it straight back into service.',
+        'body' => 'The widget stopped serving this site when it was archived, so the install snippet below, and everything on site status, describe a widget that is no longer answering. Nothing has been deleted — every conversation, ticket and audit record is intact, and restoring the site puts it straight back into service.',
         'restore' => 'Restore this site',
     ],
 
@@ -199,11 +199,11 @@ return [
 
     'setup' => [
         'heading' => 'Setup attention',
-        'not_installed' => 'Finish the widget install by copying the snippet below, loading :target, then using Verify again.',
+        'not_installed' => 'Finish the widget install by copying the snippet from site settings, loading :target, then using Verify again.',
         'stale' => 'Check whether the widget still loads on :target. If it does, use Verify again. If it does not, revisit the snippet.',
         'site_fallback' => 'the site',
         'open_site' => 'Open site',
-        'snippet' => 'Jump to snippet',
+        'snippet' => 'Open install snippet',
         'verify' => 'Verify again',
     ],
 
@@ -224,7 +224,7 @@ return [
         'colour' => 'Colour',
         'colours' => ['red' => 'Red', 'blue' => 'Blue', 'ochre' => 'Ochre', 'pine' => 'Pine', 'violet' => 'Violet', 'rust' => 'Rust'],
         'colour_help' => 'How this site is recognised across the queues, in conversation transcripts, and on the widget your visitors see. Pick a different colour for each site so an agent covering several can tell them apart without reading.',
-        'details_help' => 'Name and domain are labels. The widget identifies this site by its public key, so changing either is safe and will not interrupt a live install — the domain is used for display and for the install checks on this page.',
+        'details_help' => 'Name and domain are labels. The widget identifies this site by its public key, so changing either is safe and will not interrupt a live install — the domain is used for display and for the install checks on site status.',
         'save' => 'Save site details',
     ],
 

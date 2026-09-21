@@ -70,7 +70,7 @@ return [
     'archived' => [
         'heading' => 'Diese Website ist archiviert',
         'status' => 'Archiviert :elapsed',
-        'body' => 'Seit der Archivierung bedient das Widget diese Website nicht mehr. Die folgenden Installations- und Bereitschaftsbereiche beschreiben daher ein Widget, das nicht mehr antwortet. Nichts wurde gelöscht — alle Unterhaltungen, Tickets und Audit-Datensätze sind intakt, und die Wiederherstellung nimmt die Website sofort wieder in Betrieb.',
+        'body' => 'Seit der Archivierung bedient das Widget diese Website nicht mehr. Das Installations-Snippet unten und alle Angaben im Website-Status beschreiben daher ein Widget, das nicht mehr antwortet. Nichts wurde gelöscht — alle Unterhaltungen, Tickets und Audit-Datensätze sind intakt, und die Wiederherstellung nimmt die Website sofort wieder in Betrieb.',
         'restore' => 'Website wiederherstellen',
     ],
 
@@ -200,11 +200,11 @@ return [
 
     'setup' => [
         'heading' => 'Einrichtung prüfen',
-        'not_installed' => 'Schließen Sie die Widget-Installation ab: Kopieren Sie das folgende Snippet, laden Sie :target und wählen Sie dann erneut Prüfen.',
+        'not_installed' => 'Schließen Sie die Widget-Installation ab: Kopieren Sie das Snippet aus den Website-Einstellungen, laden Sie :target und wählen Sie dann erneut Prüfen.',
         'stale' => 'Prüfen Sie, ob das Widget noch auf :target geladen wird. Falls ja, wählen Sie erneut Prüfen. Falls nicht, prüfen Sie das Snippet.',
         'site_fallback' => 'die Website',
         'open_site' => 'Website öffnen',
-        'snippet' => 'Zum Snippet springen',
+        'snippet' => 'Installations-Snippet öffnen',
         'verify' => 'Erneut prüfen',
     ],
 
@@ -225,7 +225,7 @@ return [
         'colour' => 'Farbe',
         'colours' => ['red' => 'Rot', 'blue' => 'Blau', 'ochre' => 'Ocker', 'pine' => 'Kieferngrün', 'violet' => 'Violett', 'rust' => 'Rostrot'],
         'colour_help' => 'So wird diese Website in Warteschlangen, Gesprächsverläufen und im Widget für Besuchende erkannt. Wählen Sie für jede Website eine andere Farbe, damit eine Supportperson mehrere Websites unterscheiden kann, ohne lesen zu müssen.',
-        'details_help' => 'Name und Domain sind Bezeichnungen. Das Widget erkennt diese Website anhand ihres öffentlichen Schlüssels. Änderungen an Name oder Domain sind daher sicher und unterbrechen eine aktive Installation nicht — die Domain dient der Anzeige und den Installationsprüfungen auf dieser Seite.',
+        'details_help' => 'Name und Domain sind Bezeichnungen. Das Widget erkennt diese Website anhand ihres öffentlichen Schlüssels. Änderungen an Name oder Domain sind daher sicher und unterbrechen eine aktive Installation nicht — die Domain dient der Anzeige und den Installationsprüfungen im Website-Status.',
         'save' => 'Website-Details speichern',
     ],
 

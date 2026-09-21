@@ -326,7 +326,12 @@ test('site settings show the latest widget check in details', function (): void 
         ->assertSee('Verify again')
         ->assertDontSee('Setup attention')
         ->assertSee("/dashboard/sites/{$site->id}/status?verify=", false)
-        ->assertDontSee("href=\"http://localhost/dashboard/sites/{$site->id}/status#install-verification\"", false);
+        // A scroll, not a reload: the readiness list sits on the same page as
+        // the section it points at. Asserted positively because the negative
+        // form of this named a host the app never renders -- APP_URL carries
+        // :8000 -- so it passed whatever the link said.
+        ->assertSee('href="#install-verification"', false)
+        ->assertDontSee(url("/dashboard/sites/{$site->id}/status").'#install-verification"', false);
 });
 
 test('site settings summarize support readiness from existing site signals', function (): void {
@@ -861,9 +866,9 @@ test('site settings guide agents when the widget has not checked in yet', functi
         ->assertSee('Not seen yet')
         ->assertSee('Wayfindr has not seen this widget check in yet.')
         ->assertSee('Copy the snippet, load the site, then refresh this page.')
-        ->assertSee('Finish the widget install by copying the snippet below, loading')
+        ->assertSee('Finish the widget install by copying the snippet from site settings, loading')
         ->assertSee('fresh.example.test')
-        ->assertSee('Jump to snippet')
+        ->assertSee('Open install snippet')
         ->assertSee('#install-snippet', false)
         ->assertSee('Verify again');
 });
@@ -897,7 +902,7 @@ test('site settings call out stale widget check ins', function (): void {
         ->assertSee('If it does, use Verify again. If it does not, revisit the snippet.')
         ->assertSee('Open site')
         ->assertSee('https://quiet.example.test', false)
-        ->assertSee('Jump to snippet')
+        ->assertSee('Open install snippet')
         ->assertSee('Last verified page')
         ->assertSee('https://quiet.example.test/help');
 });

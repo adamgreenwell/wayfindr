@@ -544,7 +544,8 @@ class AgentSiteController extends Controller
                 'detail' => $installHealth['needs_attention']
                     ? $installHealth['detail']
                     : __('site_settings.readiness.items.install.recent'),
-                'href' => route('dashboard.sites.status', $site).'#install-verification',
+                // The one readiness item whose target is on this same page.
+                'href' => '#install-verification',
                 'action' => __('site_settings.readiness.items.install.action'),
             ],
             [

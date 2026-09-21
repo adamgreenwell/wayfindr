@@ -70,7 +70,7 @@ return [
     'archived' => [
         'heading' => 'Questo sito è archiviato',
         'status' => 'Archiviato :elapsed',
-        'body' => 'Il widget ha smesso di servire questo sito quando è stato archiviato, quindi i riquadri di installazione e preparazione qui sotto descrivono un widget che non risponde più. Non è stato eliminato nulla: tutte le conversazioni, i ticket e i record di audit sono intatti; ripristinando il sito lo si rimette subito in servizio.',
+        'body' => 'Il widget ha smesso di servire questo sito quando è stato archiviato, quindi lo snippet di installazione qui sotto, e tutto ciò che si trova nello Stato del sito, descrivono un widget che non risponde più. Non è stato eliminato nulla: tutte le conversazioni, i ticket e i record di audit sono intatti; ripristinando il sito lo si rimette subito in servizio.',
         'restore' => 'Ripristina questo sito',
     ],
 
@@ -200,11 +200,11 @@ return [
 
     'setup' => [
         'heading' => 'Configurazione da controllare',
-        'not_installed' => 'Completi l’installazione del widget copiando lo snippet qui sotto, caricando :target e poi usando di nuovo Verifica.',
+        'not_installed' => 'Completi l’installazione del widget copiando lo snippet dalle impostazioni del sito, caricando :target e poi usando di nuovo Verifica.',
         'stale' => 'Controlli se il widget viene ancora caricato su :target. Se sì, usi di nuovo Verifica. In caso contrario, ricontrolli lo snippet.',
         'site_fallback' => 'il sito',
         'open_site' => 'Apri sito',
-        'snippet' => 'Vai allo snippet',
+        'snippet' => 'Apri snippet di installazione',
         'verify' => 'Verifica di nuovo',
     ],
 
@@ -225,7 +225,7 @@ return [
         'colour' => 'Colore',
         'colours' => ['red' => 'Rosso', 'blue' => 'Blu', 'ochre' => 'Ocra', 'pine' => 'Verde pino', 'violet' => 'Viola', 'rust' => 'Ruggine'],
         'colour_help' => 'Il modo in cui questo sito viene riconosciuto nelle code, nelle trascrizioni delle conversazioni e nel widget visto dai visitatori. Scelga un colore diverso per ogni sito, così un agente che ne segue diversi può distinguerli senza leggere.',
-        'details_help' => 'Nome e dominio sono etichette. Il widget identifica questo sito tramite la chiave pubblica, quindi modificare uno dei due è sicuro e non interrompe un’installazione attiva; il dominio serve per la visualizzazione e per le verifiche di installazione in questa pagina.',
+        'details_help' => 'Nome e dominio sono etichette. Il widget identifica questo sito tramite la chiave pubblica, quindi modificare uno dei due è sicuro e non interrompe un’installazione attiva; il dominio serve per la visualizzazione e per le verifiche di installazione nello Stato del sito.',
         'save' => 'Salva dettagli del sito',
     ],
 
