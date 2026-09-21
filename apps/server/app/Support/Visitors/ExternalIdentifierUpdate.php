@@ -33,9 +33,19 @@ final class ExternalIdentifierUpdate
             return [];
         }
 
+        // The value as the host sent it, which is the value they HASHED. Keep
+        // it separate from the sanitised one below, because they are not the
+        // same string: `safeValue()` trims and truncates to 160 characters
+        // while validation admits 255, so any identifier in that band -- or
+        // with a stray newline from a template -- is stored shortened.
+        // Verifying the shortened form would fail against a hash the host
+        // computed correctly, and fail SILENTLY: the visitor would simply never
+        // be identified, with nothing anywhere saying why.
+        $presentedId = is_string($validated['external_id']) ? $validated['external_id'] : null;
+
         $externalId = $this->sanitizer->sanitizeIdentifier($validated['external_id']);
 
-        if ($externalId === null) {
+        if ($externalId === null || $presentedId === null) {
             return [];
         }
 
@@ -54,8 +64,13 @@ final class ExternalIdentifierUpdate
         // row was found, on behalf of somebody who has proved nothing. The
         // test below pins it by counting queries rather than by reading
         // responses, since responses cannot see it.
+        // Verified against what the host signed, not against what we are about
+        // to store. The README tells them to hash the value they pass, and that
+        // is the only contract they can implement: replicating this sanitiser
+        // on their side would be absurd, and getting it subtly wrong would look
+        // exactly like a working integration that identifies nobody.
         if ($this->verification->isRequiredFor($site)
-            && ! $this->verification->verifies($site, $externalId, $validated['identity_hash'] ?? null)) {
+            && ! $this->verification->verifies($site, $presentedId, $validated['identity_hash'] ?? null)) {
             return [];
         }
 

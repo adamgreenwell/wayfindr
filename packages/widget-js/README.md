@@ -277,6 +277,13 @@ const hash = require('crypto')
 The hash covers the identifier alone, so it is stable for a given customer and
 you can compute it once when you render the page.
 
+**Hash exactly the string you pass**, before any trimming or shortening of your
+own. Wayfindr verifies what you sent and only then stores it, and what it stores
+can differ: identifiers are kept to 160 characters, so a longer one is shortened
+for display while still verifying as signed. Surrounding whitespace is the one
+exception — it is stripped in transit and never reaches verification, so hash
+the identifier without it.
+
 **A site created today already requires it.** Wayfindr turns verification on
 for new sites, with no secret issued yet — which means customer identifiers are
 ignored until you issue one from the site's settings and sign with it. If your

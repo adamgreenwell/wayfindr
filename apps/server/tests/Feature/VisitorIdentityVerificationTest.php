@@ -273,3 +273,48 @@ test('the secret a site is issued is never served to a browser', function (): vo
     expect($body)->not->toContain($site->identity_secret)
         ->and($body)->not->toContain(VisitorIdentityVerification::SECRET_PREFIX);
 });
+
+test('a long identifier the host signed still verifies', function (): void {
+    $site = verifyingSite();
+
+    // Validation accepts up to 255 characters; VisitorContextSanitizer
+    // truncates to 160. So an id in that band is stored shortened -- and if
+    // verification runs against the SHORTENED value while the host hashed what
+    // they actually sent, every such customer silently fails to be identified.
+    $longId = 'customer-'.str_repeat('a', 200);
+
+    expect(strlen($longId))->toBeGreaterThan(160)->toBeLessThanOrEqual(255);
+
+    bootstrapAs($site, 'anon-long', [
+        'external_id' => $longId,
+        // Hashed exactly as the README tells a host to: over the value they pass.
+        'identity_hash' => identityHashFor($site, $longId),
+    ])->assertSuccessful()
+        ->assertJsonPath('data.visitor.identified', true);
+});
+
+test('surrounding whitespace is gone before verification, both ways', function (): void {
+    $site = verifyingSite();
+
+    $padded = "  customer-4821\n";
+
+    // Laravel's global TrimStrings middleware strips whitespace from request
+    // input before any of this runs, so the value that reaches verification is
+    // already the trimmed one. A host who hashed the padded string therefore
+    // does not verify -- and cannot be made to, because the padding never
+    // survives the transport.
+    bootstrapAs($site, 'anon-padded-raw', [
+        'external_id' => $padded,
+        'identity_hash' => identityHashFor($site, $padded),
+    ])->assertSuccessful()
+        ->assertJsonPath('data.visitor.identified', false);
+
+    // Hashing the identifier they actually mean works, which is what the README
+    // asks for. Recorded as a test rather than left to be rediscovered, because
+    // the difference between this and the case above is invisible in a log.
+    bootstrapAs($site, 'anon-padded-trimmed', [
+        'external_id' => $padded,
+        'identity_hash' => identityHashFor($site, 'customer-4821'),
+    ])->assertSuccessful()
+        ->assertJsonPath('data.visitor.identified', true);
+});
