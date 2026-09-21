@@ -69,7 +69,7 @@ test('host diagnostic is unverified when the site has no configured domain', fun
         ->and($diagnostic['needs_attention'])->toBeFalse();
 });
 
-test('site detail page surfaces a host mismatch to the operator', function (): void {
+test('site status page surfaces a host mismatch to the operator', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
     $site = Site::factory()->for($account)->create([
@@ -84,7 +84,7 @@ test('site detail page surfaces a host mismatch to the operator', function (): v
     ]);
 
     $this->actingAs($agent)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('Host mismatch')
         ->assertSee('stale.example.test');

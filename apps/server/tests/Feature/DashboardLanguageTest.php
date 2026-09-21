@@ -478,19 +478,26 @@ test('site settings follow the agent language without claiming the site identity
         ->assertOk()
         ->assertSee('<html lang="de"', false)
         ->assertSee('Website-Einstellungen')
-        ->assertSee('Nicht installiert')
         ->assertSee('Abmelden')
+        ->assertDontSee('Site Settings')
+        ->getContent();
+
+    $this->actingAs($agent)
+        ->get(route('dashboard.sites.status', $site))
+        ->assertOk()
+        ->assertSee('<html lang="de"', false)
+        ->assertSee('Website-Status')
+        ->assertSee('Nicht installiert')
         ->assertSee('Support-Bereitschaft')
         ->assertSee('Widget-Installation prüfen')
         ->assertSee('Support-Abdeckung prüfen')
         ->assertSee('Datenschutzmaskierung prüfen')
         ->assertSee('Externe Route prüfen')
-        ->assertDontSee('Site Settings')
+        ->assertDontSee('Site status')
         ->assertDontSee('Not installed')
         ->assertDontSee('widget-installation prüfen')
         ->assertDontSee('support-abdeckung prüfen')
-        ->assertDontSee('datenschutzmaskierung prüfen')
-        ->getContent();
+        ->assertDontSee('datenschutzmaskierung prüfen');
 
     $document = new DOMDocument;
     @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
@@ -552,8 +559,6 @@ test('populated site settings speak Italian while visitor and provider copy stay
         ->assertOk()
         ->assertSee('<html lang="it"', false)
         ->assertSee('Impostazioni del sito')
-        ->assertSee('Preparazione del supporto')
-        ->assertSee('Verifica dell’installazione')
         ->assertSee('Accesso al supporto')
         ->assertSee('Email a questo sito')
         ->assertSee('Aspetto del widget')
@@ -566,10 +571,19 @@ test('populated site settings speak Italian while visitor and provider copy stay
         ->assertSee('Presenza in tempo reale dei visitatori')
         ->assertSee('Selettori da mascherare')
         ->assertSee('Ritira questo sito')
-        ->assertDontSee('Support readiness')
         ->assertDontSee('Operator reminder')
         ->assertDontSee('Widget appearance')
         ->getContent();
+
+    $this->actingAs($owner)
+        ->get(route('dashboard.sites.status', $site))
+        ->assertOk()
+        ->assertSee('<html lang="it"', false)
+        ->assertSee('Stato del sito')
+        ->assertSee('Preparazione del supporto')
+        ->assertSee('Verifica dell’installazione')
+        ->assertDontSee('Support readiness')
+        ->assertDontSee('Install verification');
 
     $document = new DOMDocument;
     @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);

@@ -79,16 +79,10 @@ return [
         'aria' => 'Site detail sections',
         'jump' => 'Jump to',
         'sections' => [
-            'readiness' => 'Support readiness',
-            'load' => 'Support load',
-            'external_readiness' => 'External issue readiness',
-            'setup' => 'Setup attention',
             'site' => 'Site',
-            'verification' => 'Install verification',
             'snippet' => 'Install snippet',
             'access' => 'Support access',
             'automatic_routing' => 'Automatic assignment',
-            'activity' => 'Site access activity',
             'routing' => 'External issue routing',
             'rating' => 'Asking how it went',
             'data' => 'Data responsibility',
@@ -481,5 +475,11 @@ return [
         'rotate' => 'Issue a new secret',
         'rotate_warning' => 'Issuing a new secret stops the old one verifying immediately. Pages still holding it will identify nobody until you redeploy.',
         'save' => 'Save',
+    ],
+    'status' => [
+        'title' => 'Site status',
+        'back' => 'Back to site settings',
+        'subtitle' => 'How this site\'s support is running, as opposed to how it is set up.',
+        'link' => 'Site status',
     ],
 ];

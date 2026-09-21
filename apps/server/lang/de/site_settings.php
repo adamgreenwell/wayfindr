@@ -80,16 +80,10 @@ return [
         'aria' => 'Bereiche der Website-Details',
         'jump' => 'Springen zu',
         'sections' => [
-            'readiness' => 'Support-Bereitschaft',
-            'load' => 'Support-Auslastung',
-            'external_readiness' => 'Bereitschaft für externe Issues',
-            'setup' => 'Einrichtung prüfen',
             'site' => 'Website',
-            'verification' => 'Installation prüfen',
             'snippet' => 'Installations-Snippet',
             'access' => 'Support-Zugriff',
             'automatic_routing' => 'Automatische Zuweisung',
-            'activity' => 'Aktivität des Website-Zugriffs',
             'routing' => 'Route für externe Issues',
             'rating' => 'Nach der Erfahrung fragen',
             'data' => 'Datenverantwortung',
@@ -482,5 +476,11 @@ return [
         'rotate' => 'Neues Geheimnis ausgeben',
         'rotate_warning' => 'Ein neues Geheimnis setzt das alte sofort außer Kraft. Seiten, die es noch verwenden, erkennen niemanden, bis Sie neu ausliefern.',
         'save' => 'Speichern',
+    ],
+    'status' => [
+        'title' => 'Website-Status',
+        'back' => 'Zurück zu den Website-Einstellungen',
+        'subtitle' => 'Wie der Support dieser Website läuft — nicht, wie die Website eingerichtet ist.',
+        'link' => 'Website-Status',
     ],
 ];

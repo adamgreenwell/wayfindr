@@ -326,6 +326,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.sites.store');
     Route::get('/dashboard/sites/{site}', [AgentSiteController::class, 'show'])
         ->name('dashboard.sites.show');
+    Route::get('/dashboard/sites/{site}/status', [AgentSiteController::class, 'status'])
+        ->name('dashboard.sites.status');
     Route::get('/dashboard/sites/{site}/tester', [AgentSiteController::class, 'tester'])
         ->name('dashboard.sites.tester');
     Route::get('/dashboard/sites/{site}/proactive-messages', [AgentProactiveMessageRuleController::class, 'index'])

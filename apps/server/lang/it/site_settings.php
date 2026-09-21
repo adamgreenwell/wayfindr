@@ -80,16 +80,10 @@ return [
         'aria' => 'Sezioni dei dettagli del sito',
         'jump' => 'Vai a',
         'sections' => [
-            'readiness' => 'Preparazione del supporto',
-            'load' => 'Carico del supporto',
-            'external_readiness' => 'Prontezza delle segnalazioni esterne',
-            'setup' => 'Configurazione da controllare',
             'site' => 'Sito',
-            'verification' => 'Verifica dell’installazione',
             'snippet' => 'Snippet di installazione',
             'access' => 'Accesso al supporto',
             'automatic_routing' => 'Assegnazione automatica',
-            'activity' => 'Attività di accesso al sito',
             'routing' => 'Instradamento delle segnalazioni esterne',
             'rating' => 'Chiedere com’è andata',
             'data' => 'Responsabilità dei dati',
@@ -482,5 +476,11 @@ return [
         'rotate' => 'Emetti un nuovo segreto',
         'rotate_warning' => 'Emettere un nuovo segreto invalida immediatamente quello precedente. Le pagine che lo usano ancora non identificheranno nessuno fino al nuovo deploy.',
         'save' => 'Salva',
+    ],
+    'status' => [
+        'title' => 'Stato del sito',
+        'back' => 'Torna alle impostazioni del sito',
+        'subtitle' => 'Come sta funzionando il supporto di questo sito, a differenza di come è configurato.',
+        'link' => 'Stato del sito',
     ],
 ];
