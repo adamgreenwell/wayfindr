@@ -457,8 +457,13 @@ class AgentAccountAuditController extends Controller
             'conversation.priority_updated' => 'Conversation priority updated',
             'api_token.created' => 'API token issued',
             'api_token.revoked' => 'API token revoked',
+            // Same reason as the break-glass arms below: the default arm would
+            // headline-case these to "Api Token Revoked With Issuer" in an
+            // export an operator reads.
+            'api_token.revoked_with_issuer' => 'API token revoked with its issuer',
             'outbound_webhook.created' => 'Outbound webhook created',
             'outbound_webhook.disabled' => 'Outbound webhook disabled',
+            'outbound_webhook.disabled_with_creator' => 'Outbound webhook disabled with its creator',
             'outbound_webhook.delivery_retried' => 'Outbound webhook delivery retried',
             'account.oidc_connection_updated' => 'Single sign-on settings updated',
             'account.oidc_provisioning_updated' => 'Single sign-on provisioning updated',

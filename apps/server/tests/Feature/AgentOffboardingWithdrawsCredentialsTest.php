@@ -518,3 +518,26 @@ test('withdrawing an endpoint cancels the deliveries still waiting on it', funct
     // A delivery that already went is history, not pending work.
     expect($delivered->fresh()->cancelled_at)->toBeNull();
 });
+
+test('the audit export names both withdrawals instead of headline-casing them', function (): void {
+    $account = offboardingAccount();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $creator = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    offboardingTokenIssuedBy($creator);
+    offboardingEndpointCreatedBy($creator);
+    offboardingDeactivate($owner, $creator);
+
+    $csv = $this->actingAs($owner)->get('/dashboard/account/audit/export');
+    $csv->assertOk();
+
+    $body = $csv->streamedContent();
+
+    // The CSV's label map is separate from the translation catalogue, and its
+    // default arm headline-cases the raw action -- which would print "Api Token
+    // Revoked With Issuer" in the most operator-facing place these appear.
+    expect($body)->toContain('API token revoked with its issuer')
+        ->and($body)->toContain('Outbound webhook disabled with its creator')
+        ->and($body)->not->toContain('Api Token Revoked With Issuer')
+        ->and($body)->not->toContain('Outbound Webhook Disabled With Creator');
+});
