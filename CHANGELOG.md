@@ -69,7 +69,7 @@ acknowledge.
    fresh; that conservative preflight protects restored and legacy installs and
    does not redefine a demonstrably fresh install as an upgrade.
 
-**Migration footprint.** This candidate contains 37 migration files beyond
+**Migration footprint.** This candidate contains 39 migration files beyond
 v0.7.0. They stay on the normal automatic migration path, but they create the
 tables, columns, and indexes behind the features below, so allow a realistic
 upgrade window for a busy database. The stored-page query-string rewrite under
@@ -187,20 +187,18 @@ makes none.
   service**. Nothing calls it on your behalf; it exists for whoever maintains
   the packs. If that is not you, leave the key unset and the command unused.
 
-- **A narrow public API write surface and durable outbound webhooks.** Tokens can
-  independently receive write abilities for creating conversations and tickets,
-  replying, and updating the supported ticket fields. Writes require 24-hour
-  idempotency keys and preserve the integration—not the person who created its
-  token—as the actor. Account-managed webhook endpoints can receive four signed
-  support events through an ordered, retryable outbox with delivery history,
-  manual retry, one-time secret display, and SSRF-resistant destinations.
-
-  API-created email replies are also committed to a durable outbox and recovered
-  when the queue handoff or worker fails. Email remains at-least-once because a
-  generic SMTP server cannot atomically confirm mailbox delivery. Ticket notes
-  relayed to GitHub, GitLab, or Jira use a separate at-most-once outbox: after a
-  provider call begins, an uncertain result is held for reconciliation rather
-  than risking a duplicate public comment.
+- **A narrow public API write surface and durable outbound webhooks.** Tokens
+  can independently receive write abilities for creating conversations and
+  tickets, replying, and updating the supported ticket fields. The three
+  creating writes require an `Idempotency-Key`; repeating one within 24 hours
+  returns the original resource with `Idempotent-Replayed: true` instead of
+  creating a second. Updating a ticket takes no key and issues no replay
+  receipt — a repeated update converges on the same state rather than
+  recording a second event. Every write preserves the integration—not the
+  person who created its token—as the actor. Account-managed webhook endpoints
+  can receive four signed support events through an ordered, retryable outbox
+  with delivery history, manual retry, one-time secret display, and SSRF-
+  resistant destinations.
 
 - **TOTP, OpenID Connect, and account-owned roles.** Accounts can require
   encrypted TOTP with replay-safe challenges and one-time recovery codes, link
@@ -250,11 +248,17 @@ makes none.
   and exclude page URLs, raw context, notes, support history, and alias lineage.
 
 - **Opt-in proactive messages.** Disabled-by-default site rules can match URL,
-  referrer, time on page, visit count, agent availability, frequency, and prior
-  dismissal. Eligible visitors see a capped, dismissible plain-text invitation;
-  accepting it enters the ordinary conversation transcript. Ninety-day shown,
-  engaged, and dismissed evidence is reported and pruned. This is deterministic
-  rule delivery, not an autonomous AI reply.
+  referrer, time on page, visit count, agent availability, frequency, and
+  prior dismissal. Eligible visitors see a capped, dismissible plain-text
+  invitation; accepting it enters the ordinary conversation transcript.
+  Ninety-day shown, engaged, and dismissed evidence is reported and pruned.
+  This is deterministic rule delivery, not an autonomous AI reply. A rule only
+  reaches anyone on a site that also has **live visitor presence** switched
+  on, and only reaches a visitor who has not declined presence there: with
+  presence off the server publishes no rules to the widget and authorizes no
+  invitation, and presence is off by default on every site (ADR 0019). So an
+  enabled rule on an otherwise untouched site stays paused — which the rules
+  screen states beside it.
 
 - **An optional, agent-controlled copilot.** An operator can configure Anthropic,
   Gemini, OpenAI, OpenRouter, local Ollama, or an OpenAI-compatible endpoint for
@@ -306,6 +310,101 @@ makes none.
   drift resistance, provider approval, or runtime evidence. This infrastructure
   did **not** ship autonomous visitor replies. ADR 0004 remains unchanged.
 
+- **`wayfindr:seed-desk`, `wayfindr:measure-dashboard` and `wayfindr:measure-
+  attachment-retention`**, the harnesses the baselines were taken with. They
+  are in every install and nothing runs them for you. `wayfindr:seed-desk`
+  writes a throwaway account — slug `wayfindr-measurement-desk`, named
+  Measurement Desk — whose agents sign in at `desk-agent-0@example.test`
+  upward with the literal password `password`, and it says so when it
+  finishes. The environment is the only gate: on a production `APP_ENV` it
+  refuses without `--force`, and anywhere else — a staging box included — it
+  runs with no prompt. It belongs on a machine you are measuring and on no
+  other. `wayfindr:seed-desk --purge` removes exactly what it wrote, the
+  account and its seeded sign-ins, including any seeded sign-in left able to
+  log in because that account was removed some other way; it refuses if the
+  account does not look like one it seeded, and it works anywhere, production
+  included. `wayfindr:measure-dashboard` only times pages and writes nothing.
+  `wayfindr:measure-attachment-retention` writes a synthetic fixture, refuses
+  to run in production at all, and elsewhere needs both
+  `WAYFINDR_ATTACHMENT_RETENTION_DISPOSABLE=YES` and `--confirm-disposable`.
+  [The performance baseline](docs/self-hosting/performance-baseline.md) has
+  the invocations, on the host and in both Compose layouts.
+
+- **Business-hours SLAs and automatic routing.** First-response and resolution
+  targets now pause with site support hours and surface approaching, breached,
+  met, and missed states in queues, work details, alerts, mail, and reports.
+  **Conversations now carry a priority of their own** — low, normal, high, or
+  urgent — set from a control on the conversation detail page, in bulk from
+  the conversation queue, or by an automation rule, and returned by the public
+  API alongside the ticket priority it already reported. Priority is the axis
+  SLA targets are written on: **Account → SLA policies** holds one first-
+  response and one resolution target per priority, per account, and a blank
+  target is not enforced. Existing conversations start at `normal`. Sites may
+  opt into round-robin assignment using explicit agent online/away state and
+  account conversation capacity. Conversation status, ticket status, and
+  priority now share typed write boundaries so API, dashboard, routing, and
+  automation cannot quietly invent different lifecycle values.
+
+  **And one change to your agents' traffic.** Every dashboard page now holds a
+  Reverb WebSocket for the signed-in agent, not just the conversation detail
+  page — the queue, reports, a profile, a site's settings, the operator
+  console. That is at least one connection per open agent tab on any install
+  with realtime configured, and every built-in role carries the alerts
+  permission that opens it. The conversation detail page and the new live-
+  visitors board each hold a second connection of their own alongside it.
+  Visible tabs exchange a ping/pong on half the server-declared activity
+  timeout — 15 seconds at the shipped default. Size Reverb from connections,
+  not from agents: the 100-concurrent-agent planning envelope under *Changed*
+  was measured with one connection per agent, on the conversation page only.
+
+  Append to the "Background, sound, and Web Push agent alerts" bullet:
+
+  One thing to know before you touch the keys: **changing or clearing the
+  VAPID public key deletes every push subscription for every agent on the
+  install**, in the same transaction, because a subscription is
+  cryptographically bound to the public key the browser saw when it enrolled.
+  There is no confirmation step and no count beforehand; afterwards the page
+  says only that the settings were saved, and the number deleted reaches only
+  the audit event. Two things make that quieter than it sounds: each agent's
+  push preference stays switched on, so their profile simply offers to enable
+  that browser again rather than reporting anything — after a rotation the
+  `push_subscriptions` table, not the agents' preferences, is the record of
+  who is still reachable — and nothing re-subscribes them, so every agent must
+  opt in again on every browser. Rotate on purpose, not as maintenance, and
+  tell the team out of band. Note too that **Ready** is an offline self-check:
+  it verifies that the subject parses and the two keys match, and makes no
+  network call, so an install with no outbound access to push services reports
+  Ready and fails every delivery. `docs/self-hosting/web-push.md` is new and
+  covers all of this, along with why there is no test-send button and why
+  *Clear the VAPID configuration* is not a route back to the environment
+  variables.
+
+- **A site can require that an external id came from its host.**
+  `visitors.external_id` arrives through an endpoint that authenticates
+  nobody, and the product ranks it above the browser id when naming a visitor
+  — so an agent reading `customer-4821` could not tell a claim from a fact. A
+  site can now be issued a secret, which the host HMAC-SHA256s the identifier
+  with **on its own server**, passing the result as the widget's
+  `visitorIdentityHash` beside the id; Wayfindr records the id only when that
+  verifies. Turn it on under **Site settings → Visitor identity
+  verification**, where the secret is shown once and cannot be recovered (ADR
+  0025).
+
+  **Existing sites are left off, and that asymmetry is forced.** Turning it on
+  for a host that has not deployed the hashing code would stop identifying
+  every one of their customers, silently, on upgrade. **A site you create
+  after upgrading starts required with no secret**, which means its external
+  ids are ignored until you issue one — right for a site with no integration
+  yet, and worth knowing before you wonder where the names went. The secret
+  must never reach the browser; the widget README says so plainly, because
+  computing the hash in page JavaScript is the one wrong way that still
+  appears to work.
+
+  The key-loss runbook in the backup and restore guide now clears a site's
+  verification mode along with its secret. Clearing only the secret would
+  leave the site requiring a signature it can no longer check, refusing every
+  identifier silently.
+
 ### Changed
 
 - **The nginx sample now keeps proxied WebSockets open for an hour.** Add
@@ -337,13 +436,24 @@ makes none.
   yourself — `post_max_size` bounds the whole request, not one file.
 
 - **Numbers and dates follow the reading agent's language**, not the server's
-  and not the browser's. Nothing changes for an English reader's *numbers*.
-  Some English *dates* do shift, cosmetically: report and backup-history dates
-  lose the weekday (`Mon, Aug 24, 2026` → `Aug 24, 2026`), and break-glass
-  stamps move to a 12-hour clock with the year (`Aug 24, 15:05` →
-  `Aug 24, 2026 3:05 PM`). The account audit list and its CSV export
-  deliberately keep a sortable `Y-m-d H:i:s`, because a localized cell is
-  reparsed by whatever spreadsheet opens it.
+  and not the browser's. English *numbers* change only where they had never
+  been formatted at all: routing every displayed figure through one seam gave
+  English its thousands separator along the way, so a count that printed as
+  `12431` now reads `12,431` — on the support reports dashboard, in the
+  conversation and ticket queue summaries, and in the paginator's `Showing 1 to
+  25 of 12,431 results` line, that last one because the framework's own
+  pagination view had to be replaced before it could be translated at all.
+  Counts below 1,000 are unchanged.
+
+  Some English *dates* shift too, cosmetically: report, backup-history and
+  backup-restore dates lose the weekday (`Mon, Aug 24, 2026` →
+  `Aug 24, 2026`); break-glass stamps move to a 12-hour clock with the year
+  (`Aug 24, 15:05` → `Aug 24, 2026 3:05 PM`); and the account audit *list*
+  trades its sortable stamp for that same readable one (`2026-08-24 15:05:00` →
+  `Aug 24, 2026 3:05 PM`). Its **CSV export** is deliberately the exception,
+  keeping `Y-m-d H:i:s` along with English column headers and English action
+  labels, because a localized cell is reparsed by whatever spreadsheet opens
+  it.
 
 - **Busy queues now have a deliberate display boundary.** Conversation and
   ticket queues render at most 200 ordered rows while keeping uncapped lane and
@@ -353,12 +463,17 @@ makes none.
   it in PHP.
 
 - **Performance claims now come with reproducible measurements.** Production-
-  guarded harnesses and dated baselines cover a 50,000-conversation support desk,
-  report tabs and exports, heavy-page cobrowse transport, Reverb delivery through
-  200 concurrent authenticated agents, and attachment retention at a large
-  object count. The published conservative Reverb operating envelope remains
-  100 concurrent agents; these are bounded baselines, not universal capacity
-  promises for every host.
+  guarded harnesses and dated baselines cover a 50,000-conversation support
+  desk, report tabs and exports, heavy-page cobrowse transport, Reverb
+  delivery through 200 concurrent authenticated agents, and attachment
+  retention at a large object count. The Reverb envelope this publishes — the
+  first one Wayfindr has ever published — is a conservative **100 concurrent
+  active agents per process**: an opening planning figure, not a retained one
+  and not a hard `max_connections` value, set at two-times headroom under a
+  200-agent ceiling that is where the harness stopped rather than where Reverb
+  failed. These are bounded baselines, not universal capacity promises for
+  every host; `docs/self-hosting/reverb-agent-capacity.md` records the
+  topology each figure was measured on.
 
 - **Abandoned cobrowse sessions stop looking active.** Active-session queries
   now share one idle cutoff, the attention calculation hydrates recent candidates
@@ -378,7 +493,7 @@ makes none.
   now carries `max-age=300` — chosen deliberately, because the URL has no
   version in it, so that number is also how long a visitor can keep running the
   previous release's widget after an upgrade — plus an `ETag`, so a revalidation
-  that matches costs a bare `304` instead of roughly 104 KB gzipped. Two size
+  that matches costs a bare `304` instead of roughly 109 KB gzipped. Two size
   budgets now exist where there had been none anywhere in the repository: the
   widget source is budgeted by `make self-host-test`, and the served response —
   which is not the source files concatenated, because the realtime client is
@@ -389,8 +504,10 @@ makes none.
   had been complete for some time, but none of the `dashboard.account.roles.*`
   routes was listed in `DashboardLanguage::EXTRACTED_ROUTES`, so the locale
   never resolved to anything but English on that surface and none of that work
-  could reach a screen. Three documents describing it as intentionally English
-  have been corrected to match.
+  could reach a screen. Four documents describing it as intentionally English
+  have been corrected to match — `docs/product/dashboard-language.md`,
+  `docs/product/roadmap.md`, the public wiki's `Project-Status.md`, and the
+  project `README.md`.
 
 - **The retention panel documents four more classes of data this install deletes
   on a schedule, and stops claiming anything about the rest.** It had said
@@ -525,6 +642,60 @@ makes none.
 - **The Laravel scaffold page is gone.** It arrived with the first server
   commit, was reachable from nowhere, and still told anyone who rendered it
   that the core application scaffold was running and the product was pre-alpha.
+
+  The conversation detail page's queue switcher is bounded to that same window
+  of 200 rows, rather than rebuilding the whole lane on every queue-to-detail
+  click. Its position indicator now counts the rows the queue rendered — a
+  busy desk reads "3 of 200" where it used to read the full lane size — and a
+  conversation reached by a queue link that now ranks below the window shows
+  no switcher at all, rather than neighbours from a list the agent was never
+  shown. Conversations opened from a notification, a ticket, a visitor page or
+  a support-code lookup never carried a switcher and are unaffected.
+
+- **Creating a ticket from a conversation now takes a title and labels.** The
+  form offered a category and a priority, and the ticket's subject was always
+  the conversation's — which the widget fills from the visitor's first message
+  — so a ticket opened from a chat that began "hi" was filed under "hi", and
+  could not be labelled until after it existed. The title field is pre-filled
+  with that same subject, so leaving it alone produces exactly the old ticket,
+  and the account's existing ticket labels are offered beside it as
+  checkboxes, with one audit entry per label attached. Accounts that have
+  defined no labels yet see the title field alone; naming a brand-new label is
+  still the ticket page's job. None of this needs a copilot provider: both
+  fields render for any agent who can create a ticket from a conversation.
+
+- **Site settings is a settings page again, and diagnostics have their own.**
+  It carried six read-only panels among the forms — setup attention, support
+  readiness, support load, external-issue readiness, install verification and
+  access activity — so a reader configuring the widget scrolled past some two
+  hundred lines of diagnostics, and a reader diagnosing a problem scrolled
+  past the widget form to reach them. They now live at **Site → Status**
+  (`/dashboard/sites/{site}/status`), ordered by the question somebody arrives
+  with: what needs attention, is support covered, is the ticket path wired,
+  did the install land, who changed what. Settings links to it, so anyone who
+  knew where readiness lived can still find it, and the three permission gates
+  travel with their sections — support load stays behind view-conversations or
+  manage-tickets, external-issue readiness behind manage-tickets, access
+  activity behind view-audit. The page is translated in all three languages.
+  Settings itself no longer computes any of that work on the request. Two
+  read-only blocks stayed behind on purpose: the jump list, which is a table
+  of contents for its own page and simply lost the entries whose sections
+  left, and external-issue *health*, which is part of the routing section
+  rather than a panel of its own.
+
+  The install snippet, which is why most visits to that page happen, is now
+  the first section rather than the fourth, with the operator-only post-
+  install smoke path beside it. Four pieces of copy that pointed at panels
+  which had moved, two same-page links that pointed at nothing, and a jump
+  list that disagreed with the order of the page it indexes are all corrected,
+  in every language. Four pairs of cards that answer one question between them
+  — routing and inbound email, widget appearance and widget language, identity
+  verification and visitor intake, presence and privacy masking — now sit two
+  to a row once the window is wide enough for two full-measure columns, and
+  stack below that. A card whose partner is not rendered for you takes the
+  whole width rather than sitting at half beside empty space, and the pair
+  holding visitor intake's table asks for a wider column, so it stacks earlier
+  rather than scrolling that table sideways in German or Italian.
 
 ### Fixed
 
@@ -710,6 +881,121 @@ makes none.
   form previously took eight, and both password screens now state the rule
   before rejecting anyone, which they did not before.
 
+- **The widget answers a visitor in the visitor's own language.** The widget
+  works out its language from the host page, then the visitor's browser, then
+  the site's configured default, falling back to English — and the first two
+  only exist on its side of the wire. It now reports what it resolved, and the
+  server writes back in it. Three endpoints take it, each setting the
+  request's language before it validates anything: starting a conversation
+  (`POST /api/conversations`), posting a message, and uploading an attachment.
+  Until now every server-written answer a visitor read came out in the
+  install's own language — the operator's choice about their dashboard, which
+  has nothing to do with who is visiting — so a German install wrote German at
+  English visitors and an English one wrote English at everyone.
+
+  The half that matters most has no key path at all: a site's intake rules run
+  on the first conversation, and those framework validation failures are the
+  first words Wayfindr ever writes to a visitor. Attachment rejections
+  additionally stopped needing the server's sentence — they travel as a key
+  the widget says from its own catalogue, with the server's sentence kept as
+  the fallback for an older widget and for a key the widget does not carry.
+
+  **The shipped widget carries English and German catalogues only**, and a
+  site's widget-language setting offers exactly those two. Italian is a
+  dashboard language in this release, not a widget one. Nothing for an
+  operator to do.
+
+- **The one-liner installer now produces a stack whose in-GUI restore is
+  actually offered.** `scripts/self-host/generate-env.sh` never wrote
+  `WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED=true`, which `docker/self-
+  hosting/.env.example` has carried all along. Laravel's maintenance driver
+  defaults to `file`, and Wayfindr cannot detect from inside the app whether
+  the web process and the worker share a storage volume — so it accepts the
+  file marker only on that explicit assertion. Without the line, **Operator
+  console → Backups → Restore** refused to run and pointed back at `php
+  artisan wayfindr:restore`. The two supported install paths were therefore
+  shipping two different products, and nothing compared them; the generator
+  and the committed example are now checked to declare the same keys, in both
+  directions, so they cannot drift apart again.
+
+  **⚠ Operator action, only if your install came from the one-liner and you
+  want the in-GUI restore.** A new install gets the line automatically, and
+  upgrading changes nothing for anyone — an existing install keeps the `.env`
+  it was created with. To repair one, add
+  `WAYFINDR_RESTORE_FILE_MAINTENANCE_SHARED=true` to your `.env`, and only
+  where every app service mounts the same storage volume. The CLI restore was
+  available throughout and is unaffected.
+
+- **The operator console says what it just did.** Confirming a readiness item
+  from the console dashboard saved the confirmation, redirected, and came back
+  with nothing on the page to say so — the work done and no word of it, on the
+  one screen whose whole job is telling an operator where the install stands.
+  Ten of the console's fifteen pages already rendered a flashed result; five
+  did not, and the dashboard was the only one of those five that anything
+  redirected to carrying a message. Every operator page now gets that region
+  from the operator layout, so a page cannot be added without one. A
+  confirmation is announced with `role="status"` and a failure with
+  `role="alert"`, which is the distinction those roles exist for: a
+  confirmation can wait for a pause in what a screen reader is saying, and a
+  failure cannot. The guided setup checklist, Web Push, language and region,
+  and backup restore dropped their own hand-rolled copies in favour of the
+  layout's.
+
+- **A site gets one widget, however many ways `init` is reached.** There are
+  two supported entry points — the script tag auto-initialises from its `data-
+  wayfindr-*` attributes, and a host page can call `Wayfindr.init()` — and
+  nothing stopped both running. A page doing both got two launchers, and with
+  them two `GET /api/widget/appearance` requests, two bootstraps and two
+  polling loops per page view, plus two clients racing on one set of per-site
+  storage keys. A second `init()` for the same site now returns the widget
+  already running instead of building another, and logs a console warning that
+  the call was ignored, naming the remedy: the script tag auto-initialises
+  whenever it carries `data-wayfindr-site-key`, so drop those attributes if
+  you want to configure from `init()`. The registry is keyed by site, so a
+  page legitimately carrying two different sites' widgets still works, and an
+  entry whose root has left the document without `destroy()` is discarded, so
+  the next `init()` builds a fresh widget rather than handing back chrome that
+  is gone. Nothing to do on upgrade; an affected page transfers less for every
+  visitor once browsers pick up the new `widget.js`.
+
+- **A collision on a visitor's identifier no longer fails the widget.** Both
+  keys that make a visitor unique within a site — the identifier the host
+  supplies and the browser id the widget generates — were guarded by a read
+  followed by a write with nothing holding the gap, so two browsers presenting
+  the same unheld value at the same moment could both pass the check, and the
+  loser's write hit the unique constraint behind it. That surfaced as a 500 on
+  whichever endpoint the loser was calling: on the conversation endpoint, a
+  visitor's first message failing to send for a reason that had nothing to do
+  with them; on bootstrap, the panel failing to open at all. Both endpoints
+  now retry the write once. Retried rather than locked: there is no row to
+  lock for an identifier nobody holds yet, and locking the site would put
+  every conversation on the install behind a single queue. The retry is what
+  makes it correct — by the second pass the winner has committed, so the loser
+  sees them, declines the identifier and carries on without it, which is the
+  same outcome as arriving second by a wider margin.
+
+- **Storage probes now clean up the directory they create, not just the file
+  inside it.** The attachment-storage readiness check, the **Run storage
+  test** button on the operator storage settings page, and the **Run offsite
+  test** button on the backups settings page each write a probe file inside a
+  uniquely named directory, so the listing half of the check is one scoped
+  call rather than a full-bucket list. All three deleted only the file. On a
+  local disk, which is the default for self-hosting, that left an empty
+  directory behind for good on every run — inside the very storage the probe
+  had just certified as healthy. The readiness check runs on ordinary operator
+  page loads, and one development install had accumulated 265,493 of these
+  against 11 real entries. The two test buttons did have cleanup, but it was
+  gated on a flag that the success path cleared, so the common path was
+  exactly the one that leaked. All three now delete the probe file by name
+  first — which needs no listing permission, so it still works on the very
+  misconfiguration these probes exist to report — and then remove the
+  directory. Cleanup is best-effort and silent: it must never replace the
+  finding the probe exists to report. Directories left behind by earlier
+  releases are not removed for you; they are empty and safe to delete, and are
+  named `.wayfindr-readiness-probe-*` on the attachments disk, `.wayfindr-
+  storage-test-*` on the configured storage disk, and `.wayfindr-backup-
+  test-*` under your offsite backup prefix.
+
 ### Security
 
 - **A visitor session can now be re-minted, the widget rotates it, and a
@@ -765,6 +1051,41 @@ makes none.
   consent; the widget's five-second loop polls status with a GET and never
   posts an answer of its own.
 
+  **And an answer now names the request it answers.** The server used to pick
+  the target itself — the newest cobrowse row with no `ended_at` — so a grant
+  captured for one request applied to whichever one happened to be open when
+  it was replayed, including a later one the visitor never saw. Screen sharing
+  would begin with no prompt answered, and `consented_at` was stamped fresh,
+  so the audit row said the visitor had consented. The status response now
+  publishes an opaque `consent_ticket` for a pending request — only while a
+  prompt is actually on screen — and a grant must carry it back.
+
+  It is a correlator, not a credential: it is derived from the request's id
+  with an unkeyed hash, so anyone who can read the status response can compute
+  it, and anyone holding the visitor's token could already reach both
+  endpoints. Keying it would tie live prompts to `APP_KEY`, so rotating the
+  key would refuse every prompt a visitor was mid-answer on.
+
+  The gate is one-directional and only as wide as the risk. A stop, a decline
+  and a repeat grant on an already-granted session need nothing, ever — the
+  worst outcome this endpoint has is a share that will not stop, and two tabs
+  answering one prompt is ordinary. An unnamed grant is refused only on a
+  conversation that has had another cobrowse request, which is exactly where a
+  captured answer becomes dangerous; elsewhere it is allowed and the audit row
+  records `named_its_request: false`, which is the evidence for deciding when
+  that allowance can be withdrawn.
+
+  The widget carries the handle from the prompt to the answer and, when the
+  server refuses one, re-asks once so the visitor sees the current request
+  instead of clicking a button that cannot work. A widget already loaded in a
+  long-lived tab from before this shipped sends no handle — nothing bounds how
+  long that tab keeps its old script, since an evaluated `widget.js` is never
+  re-fetched — so it keeps working on a conversation's first cobrowse request
+  and gets a visible, retryable error on a later one until the page reloads. A
+  `Wayfindr.createClient()` integration is in the same position: pass the
+  `consent_ticket` from the status response as the third argument to
+  `setCobrowseConsent()`. Nothing to run on upgrade.
+
 - **Query strings are no longer stored with the page addresses Wayfindr keeps**,
   and the ones already stored have been rewritten. A visitor carrying a password
   reset token or a session id in a URL had it kept whole and shown to an agent
@@ -817,6 +1138,191 @@ makes none.
   per-source-only bucket for the same reason, and the key is hashed because
   `cache.key` is a 255-character column and a valid-but-long address composed
   raw into a key would fail the insert and return a 500 instead of a login.
+
+- **The widget sends its visitor token in a header, and preflights are now
+  cached.** Its two polls — the message poll and the cobrowse status poll —
+  carried the token in the query string, so a working credential was written
+  to the web server's access log, kept in browser history and sent on in a
+  `Referer`. Both now send `Authorization: Bearer`. No server change was
+  needed for this: the server already read a bearer token ahead of every other
+  source. A widget cached from before the upgrade keeps working because a
+  query-supplied token is *still accepted* — the widgets already embedded in
+  customers' pages depend on it, and refusing that transport is a later step.
+  `anonymous_id` deliberately stays in the query for now, so the server can
+  learn to do without it a release before the widget stops sending it.
+
+  A GET carrying only `Accept` is CORS-simple; adding `Authorization` makes it
+  preflighted, so `config/cors.php` is now published with `max_age => 600`.
+  That is a net reduction, not a cost: every widget `POST` was already
+  preflighted for its `application/json` body, and with the framework's
+  default of `0` none of those preflights were cached — during an active
+  cobrowse the mutation flush fires as often as every 50ms, so a busy page
+  could be paying up to ~1,200 needless round trips a minute today. Nothing to
+  do on upgrade; the file ships with the release. If you have customised it,
+  three values are held in place by tests and should stay as they are:
+  `allowed_headers` at `'*'` (the CORS layer answers a preflight by *echoing*
+  the header names the browser asked for, and the Fetch spec's `*` does not
+  cover `Authorization`, so an explicit list that forgot it would break every
+  widget read with nothing an operator could see), `supports_credentials` at
+  `false` (with `allowed_origins` at `'*'`, turning it on makes the layer
+  reflect the caller's origin instead of returning `'*'`), and `paths` at
+  `['api/*']`, which is the widget API and nothing beyond it.
+
+- **A visitor's browser id is minted from a strong random source, or not at
+  all.** That id is the credential that resumes a visitor's conversation:
+  bootstrap mints a working visitor session from the site's public key — which
+  is public by design — and the anonymous id, so an id anyone can guess is a
+  session anyone can mint. The widget used to fall back to `Math.random()`
+  plus `Date.now()` in base36 whenever `crypto.randomUUID()` was missing. It
+  now draws sixteen bytes from `crypto.getRandomValues()`, refuses an array
+  handed back untouched, and throws `Wayfindr requires a secure random
+  source.` rather than falling back to anything.
+
+  `randomUUID()` is deliberately not consulted even where it exists. It is the
+  secure-context-gated member of the two and `getRandomValues()` is not gated
+  at all, so every environment offering `randomUUID()` offers
+  `getRandomValues()` too and preferring it can only lose. What it loses is
+  concrete: a page that polyfills `randomUUID()` over `Math.random()`, as
+  plenty do for older browsers, would have that polyfill preferred over the
+  native generator sitting beside it, producing an id of exactly the right
+  shape and length carrying a fraction of the entropy it appears to.
+
+  **Ids already in visitors' browsers are kept.** The widget only mints one
+  when its `localStorage` entry is empty, so this governs ids issued from here
+  on. Nothing rotates and there is nothing for an operator to do.
+
+  **The hosted site tester's identity changes with it.** It was the literal
+  string `tester-site-<site id>-agent-<agent id>` — two sequential database
+  ids, so `tester-site-3-agent-7` was enough for anyone to hold a session as
+  that tester, and being filtered off the live board hid that rather than
+  stopping it. It is now `tester-site-` followed by thirty-two hex characters
+  of an HMAC-SHA256 over the same two ids, keyed with the install's `APP_KEY`,
+  so it cannot be computed from outside the install. The `tester-site-` prefix
+  is unchanged, so tester traffic stays filtered off the live visitor board
+  and the visitor queues exactly as before; an agent's earlier tester
+  conversation is not carried across, and the tester opens once as a new
+  visitor.
+
+  If you pass your own `anonymousId` to `Wayfindr.init()` or
+  `Wayfindr.createClient()`, it is used exactly as given and never checked,
+  and the widget does not store it. See [the widget README](packages/widget-
+  js/README.md) for what supplying one obliges you to.
+
+- **An attachment now downloads from a signed link instead of the visitor's
+  session credentials.** An attachment URL is the one widget request that
+  cannot carry a credential in a header — the file link opens in a new tab and
+  the image preview is fetched by `<img src>`, neither of which the widget
+  controls — so until now it carried the visitor's `visitor_token` and
+  `anonymous_id` in its query string, and the widget wrote that URL into the
+  customer's own page as an `href` and an `<img src>`, where any third-party
+  script running on that page could read it.
+
+  The server now mints a short-lived signature scoped to one attachment, on
+  its own endpoint, and the widget renders only that. New optional
+  `WAYFINDR_ATTACHMENT_LINK_TTL_MINUTES`, defaulting to 60 minutes. It is
+  deliberately its own key rather than the visitor session lifetime, which
+  still defaults to no expiry. The mint time is quantised to a window of half
+  the lifetime, so every link minted inside a window is byte-identical — the
+  widget's transcript does not re-render on every poll — and the configured
+  value is a ceiling rather than a floor: a link lives at most the lifetime
+  and at least the lifetime minus one window.
+
+  There is deliberately **no fallback** to a credential-bearing URL. An
+  attachment that arrives without a signed link — the realtime
+  `message.created` payload cannot carry one, because that broadcast is shared
+  with agents — renders briefly with no target and the next poll fills it in.
+  Be clear about what a signed link does and does not buy: for a new-tab
+  navigation or an `<img>` fetch the server cannot identify the caller at all,
+  so this is a bearer capability for one file for a bounded time, not proof of
+  who is clicking. It is bound to the conversation's visitor, so an identity
+  merge that moves the conversation retires every link already handed out.
+
+  No operator action. The older credential-bearing endpoint still answers, so
+  a widget cached from before the upgrade keeps working; `widget.js` is served
+  with `max-age=300`, so visitors pick up the new one within about five
+  minutes of deploying and the credentials stop being written into host pages
+  then.
+
+- **A conversation now belongs to the session that opened it.** Until now a
+  widget request was authorised by matching the conversation's visitor, and a
+  token naming that visitor could be minted at bootstrap from the visitor's
+  browser id and the site's public key — the first a value Wayfindr shows
+  agents on the conversation page and in the merge candidate list, the second
+  public by design. A value the product displays cannot also be the thing that
+  authorises access to it. Conversations now record the session that opened
+  them, and every widget endpoint that acts on a conversation requires the
+  presented token to name that session. A conversation no widget session
+  opened — email intake, the public API — records that explicitly, and no
+  widget session reaches it.
+
+  **⚠ Operator action: none on a healthy install.** No visitor loses a
+  conversation they were holding in the widget. Existing rows are marked as
+  predating the control and stay reachable by a session that began at or
+  before them, so a visitor mid-conversation when you upgrade keeps it. A
+  token minted before this change names no session; opening a *new*
+  conversation with one is refused, and the widget recovers by bootstrapping
+  once and retrying, so the visitor sees nothing.
+
+  Closing the deploy window is what needs saying. On a zero-downtime deploy
+  the migration's backfill runs while the *previous* release is still serving,
+  and that release does not know the column exists — so a conversation it
+  opens after the backfill has passed carries no owning session, which grants
+  access to nobody. Both deploy scripts therefore run `wayfindr:claim-legacy-
+  conversation-sessions` after activation and queue a second pass two minutes
+  later, because activation stops *new* requests reaching the old release but
+  cannot cancel one already executing. The scheduler runs the same command
+  daily, which is what covers Docker and Compose installs, exactly as the
+  page-address cleanup above does. On a host where the scheduler is not
+  running, a visitor can be told a conversation they just started does not
+  exist: repair the scheduler, then run the command once. It is idempotent and
+  reports nothing on every run after the first.
+
+- **Deactivating an agent now withdraws what they left behind.** It tore down
+  their sessions and stopped there — so an API token they had created kept
+  authenticating until somebody revoked it by hand, and an outbound webhook
+  endpoint they had added kept POSTing to a destination they chose, with no
+  expiry to close it. Both are now revoked inside the same transaction that
+  deactivates, deliveries still queued against a disabled endpoint are
+  cancelled, and reactivating the agent does not restore either: the
+  credential may have been copied while its holder was away. A token with no
+  creator is left alone — that is nobody's departure, and sweeping it in would
+  disable an account's integrations because an unrelated agent left.
+
+  The audit log names these apart from a deliberate revoke, in all three
+  languages and in the CSV export, and records neither the token hash nor the
+  webhook secret nor the destination. Agents deactivated before this release
+  left theirs live, so on this upgrade `wayfindr:withdraw-deactivated-agent-
+  credentials` clears that backlog — expect any token or webhook endpoint
+  created by an already-deactivated agent to stop working. Both deploy scripts
+  run it once the new code is the only code serving, and the scheduler runs it
+  daily for installs that use neither script. Once the backlog is clear it
+  finds nothing, so a later run that withdraws something is a signal.
+
+- **A backup prefix is now validated as the filesystem resolves it.** The `..`
+  guard read the raw string; Flysystem does not — it rewrites `\` to `/` and
+  collapses `.` and `..` segments before using a path. So `backups\..`, `.`,
+  `./` and `./.` all passed validation and resolved to the destination
+  **root**. Archives were written there instead of the configured namespace,
+  silently losing the isolation the setting exists to provide, and age-based
+  pruning then deleted any root-level object matching the archive name pattern
+  and older than the cutoff — including a neighbouring install's, if that
+  neighbour also wrote to the root. (A neighbour nested under its own prefix
+  was never reachable: the remote listing is not recursive.)
+
+  **⚠ Operator action, only if a backup prefix is set** — either
+  `WAYFINDR_BACKUP_PREFIX` or the prefix saved on the operator backups
+  settings page, which overrides it. Check the value before upgrading. One
+  containing a backslash is now refused with a message telling you to use `/`,
+  and one resolving to the destination root is refused as not naming a
+  location under it. A refused prefix fails every backup run, and the in-GUI
+  restore page at `/operator/settings/backups/restore` errors with it too,
+  because it lists local archives through the same prefix; the backups
+  settings page itself still loads, so you can correct the value there. A
+  backslash is refused rather than rewritten on purpose: a POSIX filesystem
+  treats `tenant\backups` as one literal directory, so normalising it would
+  point local discovery and retention somewhere else and orphan every archive
+  already written under the literal name. Move the directory deliberately and
+  set the prefix to the new path.
 
 ## [0.7.0] - 2026-08-25
 
