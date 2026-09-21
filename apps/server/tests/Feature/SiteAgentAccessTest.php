@@ -1044,6 +1044,65 @@ test('every same-page anchor on the site surfaces lands on something', function 
     expect($seen)->toBeGreaterThan(0, 'neither page rendered a same-page anchor; this guard is checking nothing');
 });
 
+test('site settings pairs its narrow panels two to a row', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create([
+        'name' => 'Acme Docs',
+        'domain' => 'docs.example.test',
+    ]);
+    $site->supportAgents()->attach($owner);
+
+    $html = (string) $this->actingAs($owner)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
+        ->getContent();
+
+    // The column behaviour itself is CSS and cannot be asserted without a
+    // layout engine -- it was measured in a browser at 899/900/901/1191/1192
+    // /1440. What a render CAN hold is the structure the CSS acts on: four
+    // wrappers, two cards in each, and the wide modifier on the one pair that
+    // carries a table whose Italian text runs to 478px.
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+
+    $pairs = $xpath->query('//div[contains(@class, "wf-pair")]');
+
+    expect($pairs->length)->toBe(4, 'site settings should pair four sets of narrow panels');
+
+    $paired = [];
+
+    foreach ($pairs as $pair) {
+        $sections = $xpath->query('./section', $pair);
+
+        expect($sections->length)->toBe(
+            2,
+            'a pair wrapper holding one card renders that card at half width beside dead space',
+        );
+
+        $ids = [];
+
+        foreach ($sections as $section) {
+            $ids[] = str_replace('-heading', '', (string) $section->getAttribute('aria-labelledby'));
+        }
+
+        $paired[] = $ids;
+    }
+
+    expect($paired)->toBe([
+        ['automatic-routing', 'inbound-email'],
+        ['widget-appearance', 'widget-language'],
+        ['identity-verification', 'visitor-intake'],
+        ['presence-settings', 'privacy-settings'],
+    ]);
+
+    $wide = $xpath->query('//div[contains(@class, "wf-pair--wide")]//section')->item(0);
+
+    expect($wide)->not->toBeNull('the wide modifier is not on any pair')
+        ->and($wide->getAttribute('aria-labelledby'))->toBe('identity-verification-heading');
+});
+
 test('the install snippet is the first thing on site settings', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);

@@ -1919,6 +1919,87 @@
             scroll-margin-top: 96px;
         }
 
+        /* Every site-map chip targets an `#...-heading` on an <h2>, and only
+           `.section[id]` carried a scroll margin -- three sections on that page
+           have an id, the rest are labelled by `aria-labelledby`. So six of the
+           nine chips landed the heading under the 52px sticky topbar. Pairing
+           sharpens it rather than causing it: in a two-column row both cards
+           share a y, so a chip that lands you under the bar also stops telling
+           you which of the two you jumped to. */
+        .section h2[id] {
+            scroll-margin-top: 96px;
+        }
+
+        /* ── Paired panels (#985) ──────────────────────────────────────────
+           Two cards that answer one question, side by side. The page stacked
+           twenty cards at the full measure when the competitor it was measured
+           against pairs its narrow ones.
+
+           auto-fit, not `1fr 1fr`: when a track has no item it collapses, gutter
+           and all, so a card whose partner is not rendered takes the whole width
+           instead of sitting at half width beside dead space. The house's other
+           two-column primitive, .reply-workspace, names its tracks outright and
+           unwinds them in a media query, which cannot do that.
+
+           min(var(--wf-pair-min), 100%) does two jobs. It keeps a phone at one
+           column -- a bare minmax(440px, 1fr) is wider than a 375px viewport and
+           scrolls the page sideways. And it keeps the track minimum a DEFINITE
+           length, which is what stops a grid item's automatic minimum size from
+           widening the track; .readiness-list documents the same trap above.
+
+           440px is chosen against the shell, not against the content. A 900px
+           viewport collapses the rail to a strip and drops .page padding to
+           16px, so its content measure is 868px -- the SAME as a 1152px viewport
+           with the rail. No floor can pair at 1152 without also pairing at 900,
+           which would mean a narrower window growing a column. 440 declines
+           both, and the pairing engages from a 1192px viewport up.
+
+           align-items: start, not the default stretch: stretch inflates the
+           shorter card's own border box to the row height, so it ends with a
+           band of empty card under its last control and reads as unfinished.
+           The row is as tall as its taller card either way; this only decides
+           whether the slack sits inside a border or beside it. */
+        .wf-pair {
+            /* Deliberately not `--wf-`: that prefix means a generated design
+               token, and the drift check fails any hand-written definition
+               carrying it -- correctly, since this is a layout threshold for
+               one component rather than part of the visual language. Kept as a
+               property all the same so the wide variant overrides the number
+               and not the grid mechanics. */
+            --pair-column-min: 440px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(var(--pair-column-min), 100%), 1fr));
+            gap: 28px;
+            align-items: start;
+            margin-top: 28px;
+        }
+
+        /* Visitor intake's radio table is 478px of nowrap content in Italian
+           and 433px in German against 377px in English. A floor measured in one
+           language is a table that scrolls sideways in the other two, so this
+           pair asks for a wider column and stacks earlier rather than shipping
+           that -- two-up from a 1352px viewport. */
+        .wf-pair--wide {
+            --pair-column-min: 520px;
+        }
+
+        /* The grid owns the rhythm inside a row and .section owns it between
+           rows. Without this the two halves start at different heights. */
+        .wf-pair > .section {
+            margin-top: 0;
+        }
+
+        /* Four metadata columns in a half-width card is 139px a cell, which
+           breaks a public key over three lines. Floored at 641px on purpose:
+           at 640 and below .meta-grid is already one column and must stay
+           there, and `.wf-pair .meta-grid` would outrank that rule on
+           specificity alone. */
+        @media (min-width: 641px) {
+            .wf-pair .meta-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
         .tabs__list {
             display: flex;
             flex-wrap: wrap;
