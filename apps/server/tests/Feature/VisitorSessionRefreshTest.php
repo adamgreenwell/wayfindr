@@ -546,3 +546,45 @@ test('a rotating widget keeps one budget rather than minting a fresh one each ti
     [$third] = $refresh($token);
     $third->assertStatus(429);
 });
+
+test('a rotation does not revoke the token it replaced', function (): void {
+    [$site, $visitor] = refreshSessionFixture();
+    $original = refreshSessionBootstrapToken($this, 'site_public_refresh', 'anon-refresh');
+
+    Carbon::setTestNow(now()->addMinutes(5));
+
+    try {
+        $refreshed = $this->postJson('/api/widget/session', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-refresh',
+            'visitor_token' => $original,
+        ])->assertOk()->json('data.visitor.token');
+
+        // `VisitorSessionToken::refresh()` says so in as many words -- "this
+        // rotates, it does not revoke... the previous token stays valid until
+        // something expires it" -- and until now nothing asserted it.
+        //
+        // It is load-bearing for more than the docblock. Tabs share one
+        // credential slot, so the tab that did not do the rotating keeps
+        // presenting the older token, possibly for as long as it stays open.
+        // That is harmless ONLY because the predecessor still works and still
+        // names the same session. Adding revocation here would look like
+        // hardening and would silently break every second tab: they would be
+        // refused a conversation their own visitor opened.
+        //
+        // What bounds a predecessor is the TTL from #1016, not the rotation.
+        $this->postJson('/api/widget/session', [
+            'site_public_key' => 'site_public_refresh',
+            'anonymous_id' => 'anon-refresh',
+            'visitor_token' => $original,
+        ])->assertOk();
+
+        $tokens = app(VisitorSessionToken::class);
+
+        // And it names the SAME session, which is what lets the stale tab reach
+        // a conversation the rotated tab opened.
+        expect($tokens->sessionIdFromToken($refreshed))->toBe($tokens->sessionIdFromToken($original));
+    } finally {
+        Carbon::setTestNow();
+    }
+});
