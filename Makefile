@@ -85,6 +85,7 @@ self-host-test: php-version-test host-release-manifest-test
 	bash -n scripts/self-host/install.sh scripts/test-host-release-manifest.sh scripts/test-self-host-release-resolution.sh scripts/smoke/public-artifact-install.sh scripts/smoke/public-artifact-reverify.sh scripts/smoke/disposable-vm-evidence-runner.sh scripts/smoke/support-loop.sh scripts/smoke/reverb-agent-capacity.sh scripts/smoke/attachment-retention-capacity.sh
 	scripts/test-disposable-vm-evidence-runner.sh
 	scripts/test-self-host-env-generator.sh
+	scripts/test-self-host-install-args.sh
 	scripts/test-self-host-compose-template.sh
 	scripts/test-self-host-env-value.sh
 	scripts/test-self-host-classification.sh

@@ -33,6 +33,11 @@ curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts
   | bash -s -- --app-url https://support.example.com
 ```
 
+Replace `support.example.com` with the hostname your operators will visit. The
+installer refuses the example rather than installing something that cannot
+serve: a reserved name gets no certificate, so a pasted-as-is run would report
+success over a stack that answers nothing.
+
 The installer checks Docker, downloads the stack files into `./wayfindr`,
 mints application/database/Reverb secrets, starts the services, runs
 migrations, waits for health, and prints the `/setup` URL. The first run

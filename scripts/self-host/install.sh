@@ -5,6 +5,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/adamgreenwell/wayfindr/main/scripts/self-host/install.sh \
 #     | bash -s -- --app-url https://support.example.com
 #
+# -- substituting the hostname operators will visit. The example is refused:
+# RFC 2606 reserves it, no authority will certify it, and installing it would
+# report success over a stack that can answer nothing.
+#
 # Sets up the official Docker Compose stack in a directory, mints secrets,
 # starts the services, waits for health, and prints the /setup URL. With an
 # https:// URL, FrankenPHP obtains TLS certificates automatically — DNS for
@@ -1955,7 +1959,7 @@ if [ "$UPGRADE" = "1" ]; then
     exit 0
 fi
 
-[ -n "$APP_URL" ] || die "--app-url is required, e.g. --app-url https://support.example.com"
+[ -n "$APP_URL" ] || die "--app-url is required: the hostname your operators will visit -- or --app-url https://localhost to try Wayfindr on this machine first."
 
 # Which hosts get which certificate, and what a bare host infers, live in
 # generate-env.sh and ONLY there -- that script has to agree with the binds,
@@ -1967,10 +1971,48 @@ fi
 # scheme this stack will never speak, and whitespace that would have split the
 # argument before either script saw it. A bare host falls through on purpose.
 # Failing here saves downloading the whole stack first.
+#
+# A reserved example domain also cannot become valid either way, and is
+# refused just below. It is checked HERE rather than in generate-env.sh on
+# purpose: this is the entry point a stranger reaches by pasting the README's
+# one-liner, while generate-env.sh is what someone assembling the stack
+# themselves calls directly -- and RFC 2606 exists so that example.com can be
+# used deliberately, which this repository's own env-generator tests do.
 case "$APP_URL" in
     *[[:space:]]*) die "--app-url must not contain whitespace: $APP_URL" ;;
     http://*|https://*) ;;
     *://*) die "--app-url supports http:// and https:// only: $APP_URL" ;;
+esac
+
+# RFC 2606 reserves these names for documentation, and no public CA will issue
+# for one: Let's Encrypt answers `rejectedIdentifier ... forbidden by policy`.
+# That refusal arrives long after this script has printed "Wayfindr is
+# running", inside a retry loop Caddy keeps up for thirty days -- so the
+# operator is told it worked and is left with a host that serves nothing. It
+# was the README's own example, so this is what a copy-paste produced.
+#
+# A refusal rather than the locally-issued certificate generate-env.sh gives
+# localhost and .test: those are somewhere an operator MEANT to run, while a
+# reserved example domain is a placeholder they did not replace. Issuing a
+# local certificate for it would hide that until their operators could not
+# reach the site.
+#
+# Deliberately a cheap match on the URL rather than the host: extracting the
+# host is generate-env.sh's job for the reasons above, and a spelling this
+# misses simply behaves as it did before. It cannot make the installer print a
+# URL the stack does not serve, which is what that division exists to prevent.
+reserved_host="${APP_URL#*://}"
+reserved_host="${reserved_host%%/*}"
+reserved_host="${reserved_host##*@}"
+reserved_host="${reserved_host%%\?*}"
+reserved_host="${reserved_host%%:*}"
+reserved_host="${reserved_host%.}"
+reserved_host="$(printf '%s' "$reserved_host" | tr 'A-Z' 'a-z')"
+
+case "$reserved_host" in
+    example.com|*.example.com|example.org|*.example.org|example.net|*.example.net|*.example|*.invalid)
+        die "--app-url: $reserved_host is a documentation placeholder that RFC 2606 reserves for examples, not a hostname your operators can reach. Use the hostname they will actually visit, or --app-url https://localhost to try Wayfindr on this machine first."
+        ;;
 esac
 
 mkdir -p "$TARGET_DIR"
