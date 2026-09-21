@@ -7,9 +7,6 @@
         :title="__('operator.backups.restore.title')"
         :subtitle="__('operator.backups.restore.subtitle')" />
 
-    @if (session('error'))
-        <p class="status-message"><x-operator-feedback :feedback="session('error')" /></p>
-    @endif
 
     @include('operator.settings.partials.restore-status', ['status' => $status])
 

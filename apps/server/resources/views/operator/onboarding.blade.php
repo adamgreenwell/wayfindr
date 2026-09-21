@@ -6,13 +6,7 @@
         :title="__('operator.onboarding.title')"
         :subtitle="__('operator.onboarding.subtitle')" />
 
-    @if (session('status'))
-        <p class="status-message"><x-operator-feedback :feedback="session('status')" /></p>
-    @endif
 
-    @if (session('error'))
-        <p class="status-message"><x-operator-feedback :feedback="session('error')" /></p>
-    @endif
 
     <section class="section" aria-labelledby="onboarding-progress-heading">
         <div class="section-header">
