@@ -9,6 +9,25 @@ updates:
       time: "09:00"
       timezone: America/New_York
     open-pull-requests-limit: 5
+    ignore:
+      # 13.0.1 crashes the test suite. Not a failing assertion -- the process
+      # dies with exit 2 and NO output at all, part way through, so CI shows a
+      # run that simply stops with tests passing above it.
+      #
+      # Bisected in #1025 against that release alone, both directions, on
+      # tests/Feature/AgentAlertCrossChannelDeduplicationTest.php:
+      # with 13.0.0 and the rest of the group's 19 bumps intact the file passes
+      # (17 tests, 66 assertions); with 13.0.1 it exits 2 with zero bytes.
+      # `brick/math` 0.18 -> 0.19 was the obvious suspect and was ruled out by
+      # pinning it back, which does not help.
+      #
+      # Pinned to the single bad VERSION, not the dependency, so 13.0.2 is
+      # offered as soon as it exists. Remove this entry when it is -- and if the
+      # crash survives into that release, re-measure before widening the rule
+      # rather than assuming the package is simply broken.
+      - dependency-name: laravel-notification-channels/webpush
+        versions:
+          - 13.0.1
     groups:
       routine-updates:
         patterns:
