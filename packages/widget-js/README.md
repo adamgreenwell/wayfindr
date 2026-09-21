@@ -228,11 +228,82 @@ to mint it per customer on your server rather than per browser.
 
 Two things the widget cannot do for you:
 
-- **An id you supply is used exactly as given.** It is never checked, so its
-  unguessability is yours to guarantee.
+- **An id you supply is used exactly as given** *unless the site requires
+  identity verification*. Sites created from 0.8.0 onwards require it; sites
+  that existed before do not, until you turn it on. Without it the id is never
+  checked, so its unguessability is yours to guarantee. See
+  [Identity verification](#identity-verification) below.
 - **A supplied id is not stored.** The widget only persists one it minted itself,
   so a page that supplies an id on some views and omits it on others produces two
   different visitors. Supply it everywhere, or nowhere.
+
+## Identity verification
+
+`visitorExternalId` reaches Wayfindr through an endpoint that authenticates
+nobody, so on its own it is a claim by whoever is calling — and Wayfindr shows
+it to agents as the visitor's name whenever no name or email is known. An agent
+reading `customer-4821` cannot tell a claim from a fact.
+
+Turning on identity verification for a site fixes that. Wayfindr issues the site
+a secret; your server computes an HMAC of the identifier with it, and passes the
+result beside the id:
+
+```js
+Wayfindr.init({
+  sitePublicKey: 'your-site-public-key',
+  visitorExternalId: 'customer-4821',
+  visitorIdentityHash: '<computed on your server — see below>',
+});
+```
+
+**Compute the hash on your server, never in page JavaScript.** A hash computed
+in the browser needs the secret in the browser, and a secret every visitor can
+read is not a secret. This is the one way to get this feature wrong that still
+appears to work.
+
+```php
+// PHP
+$hash = hash_hmac('sha256', $externalId, $wayfindrIdentitySecret);
+```
+
+```js
+// Node
+const hash = require('crypto')
+  .createHmac('sha256', wayfindrIdentitySecret)
+  .update(externalId)
+  .digest('hex');
+```
+
+The hash covers the identifier alone, so it is stable for a given customer and
+you can compute it once when you render the page.
+
+**Hash exactly the string you pass**, before any trimming or shortening of your
+own. Wayfindr verifies what you sent and only then stores it, and what it stores
+can differ: identifiers are kept to 160 characters, so a longer one is shortened
+for display while still verifying as signed. Surrounding whitespace is the one
+exception — it is stripped in transit and never reaches verification, so hash
+the identifier without it.
+
+**A site created today already requires it.** Wayfindr turns verification on
+for new sites, with no secret issued yet — which means customer identifiers are
+ignored until you issue one from the site's settings and sign with it. If your
+integration sends `visitorExternalId` and nobody is being identified, that is
+the first thing to check. Sites that existed before 0.8.0 are untouched.
+
+Three things worth knowing before you turn it on:
+
+- **Deploy the hashing first.** While a site requires verification, an id
+  arriving without a valid hash is ignored — the visitor is simply anonymous, as
+  they would be if you had sent no id. Turning verification on before your pages
+  send hashes stops identifying anyone, quietly.
+- **The hash must match the id it is sent with.** If you pass a different
+  identifier per conversation, pass that identifier's own hash with it; the
+  widget deliberately will not reuse the one from `init`, because it does not
+  vouch for the new id.
+- **It proves who is claiming, not which browsers are the same person.** A
+  second browser presenting a verified id another visitor already holds is still
+  left without it, for the reason above: Wayfindr resolves a visitor by
+  `anonymousId`.
 
 ## Development
 

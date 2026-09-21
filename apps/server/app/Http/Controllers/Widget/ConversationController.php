@@ -15,6 +15,7 @@ use App\Support\Sites\SiteManagerCoverage;
 use App\Support\Sites\SitePresenceReporting;
 use App\Support\Sites\WidgetLanguage;
 use App\Support\VisitorContextSanitizer;
+use App\Support\Visitors\ExternalIdentifierUpdate;
 use App\Support\Visitors\VisitorIdentityResolver;
 use App\Support\Visitors\VisitorPageUrl;
 use App\Support\VisitorSessionToken;
@@ -33,6 +34,7 @@ class ConversationController extends Controller
         SiteManagerCoverage $siteManagerCoverage,
         VisitorIdentityResolver $visitorIdentityResolver,
         ProactiveConversationOpening $proactiveOpening,
+        ExternalIdentifierUpdate $externalIdentifierUpdate,
     ): JsonResponse {
         // The site has to be resolved before the intake rules are known, and the
         // intake rules are part of validation -- so this runs in two passes
@@ -58,6 +60,9 @@ class ConversationController extends Controller
             'site_public_key' => ['required', 'string', 'max:255'],
             'anonymous_id' => ['required', 'string', 'max:255'],
             'external_id' => ['nullable', 'string', 'max:255'],
+            // A hex SHA-256, so its length is fixed. Bounding it here keeps a
+            // multi-megabyte string from reaching `hash_equals`.
+            'identity_hash' => ['nullable', 'string', 'max:64'],
             'visitor_token' => ['nullable', 'string', 'max:4096'],
             'subject' => ['nullable', 'string', 'max:255'],
             'page_url' => ['nullable', 'url', 'max:2048'],
@@ -120,6 +125,7 @@ class ConversationController extends Controller
             $visitorContextSanitizer,
             $visitorIdentityResolver,
             $proactiveOpening,
+            $externalIdentifierUpdate,
             $visitor,
         ): Conversation {
             // The synchronous conversation observer snapshots the account SLA
@@ -215,7 +221,10 @@ class ConversationController extends Controller
                 // somebody who had just written in.
                 'presence_only' => false,
             ]
-                + $this->externalIdentifierUpdate($site, $visitor, $validated, $visitorContextSanitizer)
+                // $current, not $site, for the reason the comment above gives
+                // about the domain: decide from the locked row rather than the
+                // stale pre-transaction copy.
+                + $externalIdentifierUpdate->for($current, $visitor, $validated)
                 + $this->intakeAnswers($validated))->save();
 
             $proactiveDelivery = $proactiveOpening->lockForVisitor(
@@ -306,30 +315,5 @@ class ConversationController extends Controller
         $text = is_string($value) ? trim($value) : '';
 
         return $text === '' ? null : $text;
-    }
-
-    /**
-     * @param  array<string, mixed>  $validated
-     * @return array{external_id?: string}
-     */
-    private function externalIdentifierUpdate(Site $site, Visitor $visitor, array $validated, VisitorContextSanitizer $visitorContextSanitizer): array
-    {
-        if (! array_key_exists('external_id', $validated)) {
-            return [];
-        }
-
-        $externalId = $visitorContextSanitizer->sanitizeIdentifier($validated['external_id']);
-
-        if ($externalId === null) {
-            return [];
-        }
-
-        $belongsToAnotherVisitor = Visitor::query()
-            ->where('site_id', $site->id)
-            ->where('external_id', $externalId)
-            ->when($visitor->exists, fn ($query) => $query->where('id', '!=', $visitor->getKey()))
-            ->exists();
-
-        return $belongsToAnotherVisitor ? [] : ['external_id' => $externalId];
     }
 }

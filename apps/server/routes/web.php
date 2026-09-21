@@ -347,6 +347,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
         ->name('dashboard.sites.update');
     Route::put('/dashboard/sites/{site}/intake', [AgentSiteController::class, 'updateIntake'])
         ->name('dashboard.sites.intake.update');
+    Route::put('/dashboard/sites/{site}/identity-verification', [AgentSiteController::class, 'updateIdentityVerification'])
+        ->name('dashboard.sites.identity-verification.update');
+    Route::post('/dashboard/sites/{site}/identity-verification/secret', [AgentSiteController::class, 'rotateIdentitySecret'])
+        ->name('dashboard.sites.identity-secret.rotate');
 
     Route::put('/dashboard/sites/{site}/rating', [AgentSiteController::class, 'updateRating'])
         ->name('dashboard.sites.rating.update');

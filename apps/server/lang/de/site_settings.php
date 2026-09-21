@@ -16,6 +16,9 @@ return [
     'back' => 'Zurück zu Websites',
 
     'flash' => [
+        'identity_verification_on' => 'Die Identitätsprüfung für Besucher ist aktiv.',
+        'identity_verification_off' => 'Die Identitätsprüfung für Besucher ist aus.',
+        'identity_secret_rotated' => 'Ein neues Identitätsgeheimnis wurde ausgegeben. Seiten mit dem alten Geheimnis erkennen keine Besucher, bis Sie neu ausliefern.',
         'privacy_saved' => 'Datenschutzeinstellungen der Website gespeichert.',
         'rating_saved' => 'Bewertungsfrage gespeichert.',
         'intake_saved' => 'Besucherabfrage gespeichert.',
@@ -462,5 +465,22 @@ return [
         'audit' => 'Der Audit-Verlauf dieser Website. Im Konto bleibt ein Datensatz über die Löschung erhalten.',
         'confirm' => 'Geben Sie zur Bestätigung :site ein',
         'submit' => 'Website endgültig löschen',
+    ],
+    'identity_verification' => [
+        'issue' => 'Geheimnis ausgeben',
+        'awaiting_secret' => 'Diese Website verlangt eine Prüfung und hat noch kein Geheimnis, daher werden Kundenkennungen ignoriert. Geben Sie eines aus und signieren Sie damit, um Besucher zu erkennen.',
+        'heading' => 'Identitätsprüfung für Besucher',
+        'lede' => 'Belegen Sie, dass eine Kundenkennung von Ihrem Server stammt und nicht von wem auch immer das Widget aufgerufen hat.',
+        'on' => 'Ein',
+        'off' => 'Aus',
+        'explain' => 'Ohne Prüfung ist eine von Ihren Seiten gesendete Kennung nur eine Behauptung des Aufrufers, und Agenten sehen sie als Namen des Besuchers. Ist die Prüfung aktiv, speichert Wayfindr die Kennung nur, wenn Ihr Server sie signiert hat.',
+        'deploy_first' => 'Liefern Sie den Signiercode aus, bevor Sie dies aktivieren. Solange die Prüfung aktiv ist, wird eine Kennung ohne gültige Signatur ignoriert und der Besucher erscheint anonym.',
+        'secret_label' => 'Identitätsgeheimnis',
+        'secret_none' => 'Noch kein Geheimnis ausgegeben.',
+        'issued_heading' => 'Kopieren Sie dieses Geheimnis jetzt',
+        'issued_note' => 'Es wird einmal angezeigt und kann nicht wiederhergestellt werden. Berechnen Sie die Signatur damit auf Ihrem Server, niemals im JavaScript der Seite.',
+        'rotate' => 'Neues Geheimnis ausgeben',
+        'rotate_warning' => 'Ein neues Geheimnis setzt das alte sofort außer Kraft. Seiten, die es noch verwenden, erkennen niemanden, bis Sie neu ausliefern.',
+        'save' => 'Speichern',
     ],
 ];
