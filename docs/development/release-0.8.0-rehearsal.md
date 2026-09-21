@@ -132,3 +132,55 @@ This rehearsal does not cover clean Ubuntu AMD64 VMs, public DNS/TLS, local-CA
 trust, external email/providers, VM reboot, or human acceptance. Do not reuse
 the historical latest-to-0.3.1 image-rollback scenario across the new schema
 without first establishing that downgrade is supported.
+
+## Re-rehearsal at `e7edc0e3` (2026-09-21)
+
+The rehearsal above validated `62901da4`. Twenty commits landed after it — the
+seven advisory fixes and their findings — including two schema migrations, a new
+post-activation command wired into both deploy scripts, and widget changes. A
+candidate that has not been rehearsed is not a candidate, so the scenarios were
+repeated against current `main`.
+
+| Artifact | Source commit | Resolved local image index |
+| --- | --- | --- |
+| Published 0.7.0 baseline, freshly pulled | `8c72ee6e40aeeae3a5a841f27171b2cc47a1eeca` | `sha256:70f23dab5c4ef6a5439134520cca260ea5c61c16b597ee712c781e77dce33c0b` |
+| 0.8.0 re-rehearsal candidate | `e7edc0e33ce2073c99294e2bed78183c1807a022` | `sha256:de2a678caa87cf8f8ac704f6be10e736f2c1bcca151606cce161531a5420d5ac` |
+
+The 0.7.0 digest is identical to the one the September 13 rehearsal used, so the
+upgrade comparison is against the same baseline. The candidate was built from a
+clean checkout with the guarded command in `docs/self-hosting/install.md`, which
+pins the commit only when `git diff`, the index, and `git ls-files --others` are
+all empty. It was tagged in the local engine only. Its baked manifest declares
+the `php-runtime-extensions` action for `host` profiles and the
+`backups-queue-consumer` notice.
+
+### Results
+
+| Check | Result |
+| --- | --- |
+| Clean install | CLI bootstrap, visitor intake and conversation passed on a fresh stack; 74 migrations applied. |
+| New-site default | A site created by `wayfindr:bootstrap` on a fresh 0.8.0 install carries `identity_verification=required`. |
+| Used 0.7.0 → candidate | 35 migration records became 74, applying all 39 new migrations. |
+| Upgrade data preservation | User identity, conversation, message and site-public-key hashes were identical before and after; record counts preserved. |
+| Existing-site default | The upgraded site carries `identity_verification=off`. New sites verify and existing ones do not — the asymmetry holds across a real upgrade, not only in tests. |
+| Legacy conversation ownership | The conversation opened under 0.7.0 carries `owner_session_id='~legacy'` after upgrade, is reachable by its own visitor with both its pre-upgrade token and a re-bootstrapped one (200), and is refused to a different visitor (404). |
+| Key survival | A value encrypted under 0.7.0 decrypted after the upgrade. |
+| Backup/restore | A real backup recovered a deliberately deleted conversation with its subject and `~legacy` owner intact; it was reachable by its visitor again afterwards. |
+| Stack restart | All seven services returned; `/up` and `/widget.js` served 200. |
+| Runtime checks | 74 migrations ran with none pending, no failed jobs, and the upgrade guard reported not blocked. |
+
+The same-day fork sync put stage on this exact commit, which validated the two
+riskiest changes against real data rather than fixtures: both pre-existing sites
+came out `identity_verification=off`, and the new offboarding sweep revoked
+nothing, because stage has no deactivated agents. The one revoked API token there
+was revoked by hand before this release.
+
+### Not covered
+
+Everything the first rehearsal excluded still applies: clean Ubuntu AMD64 VMs,
+public DNS/TLS, local-CA trust, external email or providers, VM reboot, and human
+acceptance. The candidate was selected by local tag, so the published-registry
+download and upgrade path is again unproven — that can only be exercised after
+publication. This pass also did not repeat the headed Chromium widget check or
+the blank view-cache probe from the first rehearsal; the view-cache defect that
+prompted that probe is covered by the four-case regression, which runs in CI.
