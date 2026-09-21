@@ -177,6 +177,9 @@ final class DashboardLanguage
         // feedback back onto it. Stored visitor-facing copy remains authored
         // data; only the agent-facing controls and explanations are localized.
         'dashboard.sites.show',
+        // Site Status reads the same catalogue as Site Settings; it was split
+        // out of that page, not authored separately (#985).
+        'dashboard.sites.status',
         'dashboard.sites.update',
         'dashboard.sites.intake.update',
         'dashboard.sites.rating.update',

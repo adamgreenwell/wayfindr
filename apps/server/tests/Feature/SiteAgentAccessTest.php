@@ -234,6 +234,35 @@ test('settings only site viewers do not receive visitor URLs or support workload
     expect($siteResponse->isOk())->toBeTrue()
         ->and($queryEvidence)->not->toContain('ticket_external_links')
         ->and($queryEvidence)->not->toContain('ticket.external_sync_failed');
+
+    // Site Status is where support load and external issue readiness are read
+    // since #985. Asserting their absence on Site Settings alone would pass for
+    // everybody, including the agents these sections are supposed to reach.
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $statusResponse = $this->actingAs($privacyManager)
+        ->get(route('dashboard.sites.status', $site))
+        ->assertOk()
+        ->assertSee('Support readiness')
+        ->assertDontSee('https://private.example.test/customer-record/secret')
+        ->assertDontSee('Support load')
+        ->assertDontSee('1 open conversation')
+        ->assertDontSee('1 open ticket')
+        ->assertDontSee('External issue readiness')
+        ->assertDontSee('private/ticket-project')
+        ->assertDontSee('Recent site access activity')
+        ->assertDontSee(route('dashboard.conversations.index', ['conversation_site' => $site->id]), false)
+        ->assertDontSee(route('dashboard.tickets.index', ['ticket_site' => $site->id]), false);
+
+    $statusQueryEvidence = collect(DB::getQueryLog())
+        ->map(fn (array $query): string => $query['query'].' '.json_encode($query['bindings'], JSON_THROW_ON_ERROR))
+        ->implode("\n");
+    DB::disableQueryLog();
+
+    expect($statusResponse->isOk())->toBeTrue()
+        ->and($statusQueryEvidence)->not->toContain('ticket_external_links')
+        ->and($statusQueryEvidence)->not->toContain('ticket.external_sync_failed');
 });
 
 test('site index summarizes visible workload without exposing restricted sites', function (): void {
@@ -592,6 +621,12 @@ test('agent cannot view or update site settings for a site they do not support',
 
     $this->actingAs($agent)
         ->get("/dashboard/sites/{$site->id}")
+        ->assertNotFound();
+
+    // Site Status is a second door onto the same site (#985) and has to be
+    // locked the same way.
+    $this->actingAs($agent)
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertNotFound();
 
     $this->actingAs($agent)
@@ -1024,17 +1059,21 @@ test('site detail summarizes support load for the selected site only', function 
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
         ->assertSee('Site map')
-        ->assertSee('href="#site-support-readiness-heading"', false)
-        ->assertSee('href="#site-support-load-heading"', false)
-        ->assertSee('href="#site-external-issue-readiness-heading"', false)
         ->assertSee('href="#site-context-heading"', false)
-        ->assertSee('href="#install-verification-heading"', false)
         ->assertSee('href="#install-snippet-heading"', false)
         ->assertSee('href="#support-access-heading"', false)
-        ->assertSee('href="#site-access-activity-heading"', false)
+        ->assertSee('href="#automatic-routing-heading"', false)
         ->assertSee('href="#external-issue-routing-heading"', false)
         ->assertSee('href="#data-responsibility-heading"', false)
         ->assertSee('href="#privacy-settings-heading"', false)
+        ->assertDontSee('href="#site-support-readiness-heading"', false)
+        ->assertDontSee('href="#site-support-load-heading"', false)
+        ->assertDontSee('href="#install-verification-heading"', false)
+        ->assertDontSee('href="#site-access-activity-heading"', false);
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}/status")
+        ->assertOk()
         ->assertSee('Support load')
         ->assertSeeInOrder([
             'Open conversations',
@@ -1057,7 +1096,7 @@ test('site detail summarizes support load for the selected site only', function 
         ->assertDontSee('Gabe Gone');
 });
 
-test('site detail map includes setup attention when the widget needs attention', function (): void {
+test('site status calls out setup attention when the widget needs attention', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
@@ -1069,10 +1108,8 @@ test('site detail map includes setup attention when the widget needs attention',
     ]);
 
     $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
-        ->assertSee('Site map')
-        ->assertSee('href="#setup-attention-heading"', false)
         ->assertSeeInOrder([
             'Setup attention',
             'Not installed',
@@ -1130,7 +1167,7 @@ test('an account admin is not shown the operator smoke path', function (): void 
         ->assertSee('Open tester');
 });
 
-test('admins can review recent site access activity from the site settings page', function (): void {
+test('admins can review recent site access activity from the site status page', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
@@ -1162,7 +1199,7 @@ test('admins can review recent site access activity from the site settings page'
     ]);
 
     $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('Recent site access activity')
         ->assertSee('1 shown')

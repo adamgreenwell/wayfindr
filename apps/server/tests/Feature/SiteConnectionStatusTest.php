@@ -77,12 +77,12 @@ test('the sites index shows widget connection status from latest visitor check i
         ->assertSee('Needs check')
         ->assertSee('Seen 2 days ago')
         ->assertSee('Review install')
-        ->assertSee("/dashboard/sites/{$staleSite->id}#install-verification", false)
+        ->assertSee("/dashboard/sites/{$staleSite->id}/status#install-verification", false)
         ->assertSee('Unused Smoke Site')
         ->assertSee('Not installed')
         ->assertSee('No check-in yet')
         ->assertSee('Finish install')
-        ->assertSee("/dashboard/sites/{$quietSite->id}#install-verification", false)
+        ->assertSee("/dashboard/sites/{$quietSite->id}/status#install-verification", false)
         ->assertDontSee('https://wayfindr.cc/old')
         ->assertDontSee('Other Site')
         ->assertDontSee('https://other.example.test');
@@ -133,12 +133,12 @@ test('site index shows install health cues for visible sites', function (): void
         ->assertSee('Needs check')
         ->assertSee('Seen 2 days ago')
         ->assertSee('Review install')
-        ->assertSee("/dashboard/sites/{$staleSite->id}#install-verification", false)
+        ->assertSee("/dashboard/sites/{$staleSite->id}/status#install-verification", false)
         ->assertSee('Unused Smoke Site')
         ->assertSee('Not installed')
         ->assertSee('No check-in yet')
         ->assertSee('Finish install')
-        ->assertSee("/dashboard/sites/{$quietSite->id}#install-verification", false)
+        ->assertSee("/dashboard/sites/{$quietSite->id}/status#install-verification", false)
         ->assertSee('https://wayfindr.cc/pricing')
         ->assertSee('https://quiet.example.test/help');
 });
@@ -268,8 +268,14 @@ test('tester visitors do not satisfy install health check ins', function (): voi
     $this->actingAs($agent)
         ->get("/dashboard/sites/{$site->id}")
         ->assertOk()
-        ->assertSee('Needs check')
         ->assertSee('Seen 2 days ago')
+        ->assertSee('https://quiet.example.test/help')
+        ->assertDontSee("http://localhost/dashboard/sites/{$site->id}/tester");
+
+    $this->actingAs($agent)
+        ->get("/dashboard/sites/{$site->id}/status")
+        ->assertOk()
+        ->assertSee('Needs check')
         ->assertSee('https://quiet.example.test/help')
         ->assertDontSee("http://localhost/dashboard/sites/{$site->id}/tester");
 });
@@ -307,7 +313,11 @@ test('site settings show the latest widget check in details', function (): void 
         ->assertOk()
         ->assertSee('Latest check-in')
         ->assertSee('Seen 3 minutes ago')
-        ->assertSee('https://wayfindr.cc/docs')
+        ->assertSee('https://wayfindr.cc/docs');
+
+    $this->actingAs($agent)
+        ->get("/dashboard/sites/{$site->id}/status")
+        ->assertOk()
         ->assertSee('Install verification')
         ->assertSee('Open tester')
         ->assertSee("/dashboard/sites/{$site->id}/tester", false)
@@ -315,8 +325,8 @@ test('site settings show the latest widget check in details', function (): void 
         ->assertSee('Last verified page')
         ->assertSee('Verify again')
         ->assertDontSee('Setup attention')
-        ->assertSee("/dashboard/sites/{$site->id}?verify=", false)
-        ->assertDontSee("href=\"http://localhost/dashboard/sites/{$site->id}#install-verification\"", false);
+        ->assertSee("/dashboard/sites/{$site->id}/status?verify=", false)
+        ->assertDontSee("href=\"http://localhost/dashboard/sites/{$site->id}/status#install-verification\"", false);
 });
 
 test('site settings summarize support readiness from existing site signals', function (): void {
@@ -356,7 +366,7 @@ test('site settings summarize support readiness from existing site signals', fun
     ]);
 
     $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('Support readiness')
         ->assertSee('Widget install')
@@ -429,7 +439,7 @@ test('site settings show external issue readiness for a mapped site', function (
         ]);
 
     $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('External issue readiness')
         ->assertSee('Needs attention')
@@ -500,16 +510,21 @@ test('site settings use singular external issue metrics in Italian', function ()
     }
 
     $this->actingAs($admin)
-        ->get(route('dashboard.sites.show', $site))
+        ->get(route('dashboard.sites.status', $site))
         ->assertOk()
         ->assertSee('1 passaggio pronto')
         ->assertSee('1 associazione disabilitata')
         ->assertSee('1 sincronizzazione non riuscita')
         ->assertSee('1 sincronizzazione in attesa')
-        ->assertSee('1 collegato')
         ->assertDontSee('1 passaggi pronti')
         ->assertDontSee('1 associazioni disabilitate')
         ->assertDontSee('1 sincronizzazioni');
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.sites.show', $site))
+        ->assertOk()
+        ->assertSee('1 collegato')
+        ->assertDontSee('1 collegati');
 });
 
 test('site settings localize the generic external issue provider label', function (): void {
@@ -656,7 +671,7 @@ test('site settings treat provider only external issue setup as not configured',
         ]);
 
     $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('External issue readiness')
         ->assertSee('Not configured')
@@ -695,14 +710,18 @@ test('site settings flag disabled external issue mappings', function (): void {
         ]);
 
     $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('External issue readiness')
         ->assertSee('Needs attention')
         ->assertSee('Enable or replace disabled provider mappings before ticket handoff depends on them.')
         ->assertSee('1 mapped project')
         ->assertSee('0 handoffs ready')
-        ->assertSee('1 disabled')
+        ->assertSee('1 disabled');
+
+    $this->actingAs($admin)
+        ->get("/dashboard/sites/{$site->id}")
+        ->assertOk()
         ->assertSee('Dormant GitLab')
         ->assertSee('internal/helpdesk');
 });
@@ -747,7 +766,7 @@ test('site external issue readiness counts audit failures beyond the displayed t
     }
 
     $response = $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('External issue readiness')
         ->assertSee('5 syncs failed')
@@ -816,7 +835,7 @@ test('site external issue readiness only links unresolved failed tickets to the 
         ]);
 
     $this->actingAs($admin)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('External issue readiness')
         ->assertDontSee(route('dashboard.tickets.index', [
@@ -835,7 +854,7 @@ test('site settings guide agents when the widget has not checked in yet', functi
     ]);
 
     $this->actingAs($agent)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('Setup attention')
         ->assertSee('Install verification')
@@ -866,7 +885,7 @@ test('site settings call out stale widget check ins', function (): void {
     ]);
 
     $this->actingAs($agent)
-        ->get("/dashboard/sites/{$site->id}")
+        ->get("/dashboard/sites/{$site->id}/status")
         ->assertOk()
         ->assertSee('Setup attention')
         ->assertSee('Install verification')

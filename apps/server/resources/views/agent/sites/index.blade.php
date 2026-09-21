@@ -217,7 +217,7 @@
                                     <span class="readiness-status" data-status="{{ $installHealth['tone'] }}">{{ $installHealth['label'] }}</span>
                                     <div class="lede">{{ $installHealth['detail'] }}</div>
                                     @if ($installHealth['needs_attention'])
-                                        <a class="health-action text-link" href="{{ route('dashboard.sites.show', $site) }}#install-verification">
+                                        <a class="health-action text-link" href="{{ route('dashboard.sites.status', $site) }}#install-verification">
                                             {{ $installHealth['action_label'] }}
                                         </a>
                                     @endif

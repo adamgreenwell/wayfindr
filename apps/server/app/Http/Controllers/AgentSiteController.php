@@ -199,6 +199,104 @@ class AgentSiteController extends Controller
             ->with('status', 'sites.flash.created');
     }
 
+    /**
+     * What this site's support is doing, as opposed to how it is configured.
+     *
+     * Six of `sites/show`'s sections were pure diagnostics -- setup attention,
+     * support readiness, support load, external-issue readiness, install
+     * verification and access activity. Nobody edits any of them, and together
+     * they were 200 lines of a page measured at 9.1 screens against a
+     * competitor's 1.6 (#985).
+     *
+     * Its own surface rather than a tab, following `tester` and `live`: a
+     * reader here is answering "is this site working", which is a different
+     * question from "what should it do", and it is the one somebody asks while
+     * something is wrong.
+     *
+     * Two read-only blocks deliberately stayed behind. The site map is a table
+     * of contents for the page it sits on, so it moved nothing and instead lost
+     * the entries whose sections left. External issue *health* is a nested part
+     * of the routing section's markup rather than a section, so it cannot be
+     * relocated without splitting that section first.
+     *
+     * The split is not only markup: `show()` no longer computes the install
+     * verification, host diagnostic, install health, activity, support load or
+     * readiness at all, so that work left the request rather than moving down
+     * the page.
+     */
+    public function status(Request $request, Site $site): View
+    {
+        $this->authorizeSiteAbility($request, 'view', $site, 404);
+
+        $agent = $request->user();
+        $canViewConversations = $agent->hasAccountPermission(AccountPermission::ViewConversations);
+        $canManageTickets = $agent->hasAccountPermission(AccountPermission::ManageTickets);
+        $canViewSupportWork = $canViewConversations || $canManageTickets;
+        $site->loadMissing('externalIssueProjects.providerConnection');
+
+        // Same narrowing as `show()`: an agent who cannot see support work gets
+        // the columns needed to answer "when was this site last used" and not
+        // the visitor's content.
+        $site->setRelation('latestVisitor', $site->latestVisitor()
+            ->when(! $canViewSupportWork, fn ($query) => $query
+                ->select(['visitors.id', 'visitors.site_id', 'visitors.last_seen_at']))
+            ->first());
+
+        $account = $agent->account()->firstOrFail();
+        $externalIssueProviderConnections = $account->externalIssueProviderConnections()
+            ->where('is_enabled', true)
+            ->orderBy('provider')
+            ->orderBy('name')
+            ->get();
+        $externalIssueProviderParts = $site->externalIssueProjects
+            ->pluck('providerConnection')
+            ->filter()
+            ->concat($externalIssueProviderConnections)
+            ->unique('id')
+            ->mapWithKeys(fn ($connection): array => [
+                (int) $connection->getKey() => $this->localizedExternalIssueProviderParts($connection->provider),
+            ]);
+        $supportAgentIds = $this->eligibleSupportAgentIds($site);
+        $maskSelectors = $this->maskSelectors($site);
+        $externalIssueHealth = $canManageTickets ? $this->externalIssueHealth($site) : null;
+
+        // Only the COUNT is needed here -- support load compares the agents
+        // who can reach this site against the account's total. `show()` loads
+        // the agents themselves because its access controls list them.
+        $accountAgentCount = $account->agents()->whereNull('deactivated_at')->count();
+
+        return view('agent.sites.status', [
+            'account' => $account,
+            'agent' => $agent,
+            'site' => $site,
+            'canManageIntegrations' => $agent->hasAccountPermission(AccountPermission::ManageIntegrations),
+            'canManageTickets' => $canManageTickets,
+            'canViewSiteActivity' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
+            'canViewSupportWork' => $canViewSupportWork,
+            'externalIssueHealth' => $externalIssueHealth,
+            'externalIssueProviderConnections' => $externalIssueProviderConnections,
+            'externalIssueProviderParts' => $externalIssueProviderParts,
+            'installHealth' => $this->localizedSiteInstallHealth($site->latestVisitor),
+            'installHostDiagnostic' => $this->localizedSiteInstallHostDiagnostic($site->latestVisitor, $site->domain),
+            'installVerification' => $this->localizedSiteInstallVerification($site->latestVisitor),
+            'siteActivity' => $this->siteActivityItems($site, $agent),
+            'siteActivityAuditUrl' => $agent->hasAccountPermission(AccountPermission::ViewAudit)
+                ? route('dashboard.account.audit.index', [
+                    'audit_action' => 'site_access.updated',
+                    'audit_site' => $site->id,
+                ])
+                : null,
+            'siteSupportLoad' => $this->siteSupportLoad(
+                $site,
+                $supportAgentIds,
+                $accountAgentCount,
+                $canViewConversations,
+                $canManageTickets,
+            ),
+            'siteSupportReadiness' => $this->siteSupportReadiness($site, $supportAgentIds, $maskSelectors, $externalIssueHealth),
+        ]);
+    }
+
     public function show(Request $request, Site $site, OperatorReadiness $readiness): View
     {
         $this->authorizeSiteAbility($request, 'view', $site, 404);
@@ -237,14 +335,11 @@ class AgentSiteController extends Controller
         $maskSelectors = $this->maskSelectors($site);
         $maskTerms = $this->maskTerms($site);
         $externalIssueHealth = $canManageTickets ? $this->externalIssueHealth($site) : null;
-        $installHealth = $this->localizedSiteInstallHealth($site->latestVisitor);
-        $installHostDiagnostic = $this->localizedSiteInstallHostDiagnostic($site->latestVisitor, $site->domain);
 
         return view('agent.sites.show', [
             'account' => $account,
             'accountAgents' => $accountAgents,
             'agent' => $agent,
-            'canViewSiteActivity' => $agent->hasAccountPermission(AccountPermission::ViewAudit),
             'canManageTickets' => $canManageTickets,
             'canViewSupportWork' => $canViewSupportWork,
             'canManageIntegrations' => Gate::forUser($agent)->allows('manageIntegrations', $site),
@@ -276,9 +371,6 @@ class AgentSiteController extends Controller
             'externalIssueHealth' => $externalIssueHealth,
             'externalIssueProviderConnections' => $externalIssueProviderConnections,
             'externalIssueProviderParts' => $externalIssueProviderParts,
-            'installHealth' => $installHealth,
-            'installHostDiagnostic' => $installHostDiagnostic,
-            'installVerification' => $this->localizedSiteInstallVerification($site->latestVisitor),
             'presenceEnabled' => SitePresenceReporting::for($site)->enabled,
             'presencePageUrls' => SitePresenceReporting::for($site)->pageUrls,
             // The same number the visitor's notice quotes. An operator reading
@@ -297,23 +389,8 @@ class AgentSiteController extends Controller
                 ? OperatorDashboardPresenter::readiness($readiness->summary())['smoke_path']
                 : null,
             'site' => $site,
-            'siteActivity' => $this->siteActivityItems($site, $agent),
-            'siteActivityAuditUrl' => $agent->hasAccountPermission(AccountPermission::ViewAudit)
-                ? route('dashboard.account.audit.index', [
-                    'audit_action' => 'site_access.updated',
-                    'audit_site' => $site->id,
-                ])
-                : null,
             'siteExternalIssueProjects' => $site->externalIssueProjects,
             'siteHasExplicitSupportAgents' => $site->hasExplicitSupportAgents(),
-            'siteSupportLoad' => $this->siteSupportLoad(
-                $site,
-                $supportAgentIds,
-                $accountAgents->count(),
-                $canViewConversations,
-                $canManageTickets,
-            ),
-            'siteSupportReadiness' => $this->siteSupportReadiness($site, $supportAgentIds, $maskSelectors, $externalIssueHealth),
             'siteStatusFeedback' => $this->siteShowStatusFeedback($request->session()->get('status')),
             'supportAgentIds' => $supportAgentIds,
             'supportAgents' => $accountAgents->whereIn('id', $supportAgentIds)->values(),
@@ -467,7 +544,7 @@ class AgentSiteController extends Controller
                 'detail' => $installHealth['needs_attention']
                     ? $installHealth['detail']
                     : __('site_settings.readiness.items.install.recent'),
-                'href' => route('dashboard.sites.show', $site).'#install-verification',
+                'href' => route('dashboard.sites.status', $site).'#install-verification',
                 'action' => __('site_settings.readiness.items.install.action'),
             ],
             [
