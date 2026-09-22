@@ -284,6 +284,23 @@ independently justified change must rotate the evidence identity and recapture
 every proposed route, preserving the historical result. Raw responses remain
 private and mode `0600`.
 
+**That rotation has since happened, and the recapture has not.** `31d8a381`
+(#997, 2026-09-13) renamed the policy key `confidence_brier_score` to
+`confidence_conformance_error` inside `fixtures.json` — an independently
+justified change, unrelated to the adjudication above — and with it moved the
+suite identity to
+`sha256:184c62862a7f06a824dd9279837fddd6a5d7337682d683a2dcbad848582a41c4`.
+The prompt identity is unchanged. The four September 10 captures therefore now
+stand exactly where the September 8 nine-case run does: valid historical
+evidence, intentionally incomparable with the current contract.
+
+The practical consequence is for anyone reaching for same-route evidence after
+elapsed time. A capture taken today carries the new suite identity, and the
+comparator will refuse to set it beside these four — correctly. Re-establishing
+a comparable baseline means recapturing **every** proposed route under
+`184c6286…`, not capturing one route and reading it against September. Until
+that happens there is no current provider evidence, only historical.
+
 The two GPT runs are only 38 minutes 11 seconds apart, the cross-model samples
 also changed upstream route, and all four captures occurred within about 78
 minutes. They establish point-in-time variability and cross-route coverage—not
