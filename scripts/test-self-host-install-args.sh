@@ -7,11 +7,12 @@
 #
 # A literal-compliance install run on a clean machine found that the README's
 # own example -- `--app-url https://support.example.com` -- produced an install
-# that exits 0, prints "Wayfindr is running.", reports seven healthy services,
-# and cannot serve a request. Let's Encrypt answers
-# `rejectedIdentifier ... forbidden by policy` for an RFC 2606 name, and Caddy
-# then retries every two minutes for thirty days while the operator has been
-# told it worked (#797).
+# that exits 0, prints "Wayfindr is running.", brings the whole stack up, and
+# answers only on the loopback probe the installer itself checks -- nothing on
+# the hostname the operator was just told to visit. Let's Encrypt answers
+# `rejectedIdentifier ... forbidden by policy` for an RFC 2606 name, so no
+# certificate is ever coming and Caddy retries in the background for weeks
+# while the operator has been told it worked (#797).
 #
 # `make self-host-test` runs `bash -n` over install.sh, which proves it parses
 # and nothing else. install.sh is the file operators curl into bash, so its
