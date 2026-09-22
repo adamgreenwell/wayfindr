@@ -364,7 +364,7 @@ if missing_ack_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
 )"; then
-    fail "an existing pre-0.8 Forge install passed without its host action acknowledgement."
+    fail "an existing pre-0.9 Forge install passed without its host action acknowledgement."
 else
     missing_ack_status=$?
 fi
@@ -373,7 +373,7 @@ fi
     || fail "a missing Forge host action acknowledgement exited $missing_ack_status instead of 78: $missing_ack_output"
 printf '%s\n' "$missing_ack_output" | grep -F 'stopped before the checkout changed' >/dev/null \
     || fail "the Forge action preflight does not explain its pre-mutation refusal."
-printf '%s\n' "$missing_ack_output" | grep -F '0.8.0/php-runtime-extensions' >/dev/null \
+printf '%s\n' "$missing_ack_output" | grep -F '0.9.0/php-runtime-extensions' >/dev/null \
     || fail "the Forge action preflight does not print the exact acknowledgement key."
 printf '%s\n' "$missing_ack_output" | grep -F 'WAYFINDR_ACKNOWLEDGED_ACTIONS' >/dev/null \
     || fail "the Forge action preflight does not name the acknowledgement setting."
@@ -381,7 +381,7 @@ if printf '%s\n' "$missing_ack_output" | grep -F 'MUTATION_REACHED' >/dev/null; 
     fail "the Forge recipe reached its mutation sentinel after refusing the acknowledgement."
 fi
 
-printf '%s\n' 'WAYFINDR_ACKNOWLEDGED_ACTIONS="0.7.0/other, 0.8.0/php-runtime-extensions"' > "$fixture_site/.env"
+printf '%s\n' 'WAYFINDR_ACKNOWLEDGED_ACTIONS="0.7.0/other, 0.9.0/php-runtime-extensions"' > "$fixture_site/.env"
 acknowledged_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
@@ -389,7 +389,7 @@ acknowledged_output="$(
 [[ "$(printf '%s\n' "$acknowledged_output" | grep -Fc 'MUTATION_REACHED')" -eq 1 ]] \
     || fail "the acknowledged Forge upgrade did not reach its mutation sentinel exactly once."
 
-printf '%s\n' 'WAYFINDR_ACKNOWLEDGED_ACTIONS=0.8.0/php-runtime-extensions-extra' > "$fixture_site/.env"
+printf '%s\n' 'WAYFINDR_ACKNOWLEDGED_ACTIONS=0.9.0/php-runtime-extensions-extra' > "$fixture_site/.env"
 if substring_ack_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
@@ -404,23 +404,23 @@ if printf '%s\n' "$substring_ack_output" | grep -F 'MUTATION_REACHED' >/dev/null
     fail "the Forge recipe reached its mutation sentinel with an inexact acknowledgement."
 fi
 
-printf '%s\n' '{"version":"0.8.0","commit":"def","satisfied_through":"0.8.0","fresh_install":false}' > "$fixture_state"
+printf '%s\n' '{"version":"0.9.0","commit":"def","satisfied_through":"0.9.0","fresh_install":false}' > "$fixture_state"
 printf '%s\n' 'OTHER=value' > "$fixture_site/.env"
 if same_cycle_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
 )"; then
-    fail "an exact 0.8.0 development-cycle state bypassed a newly added 0.8.0 host action."
+    fail "an exact 0.9.0 development-cycle state bypassed a newly added 0.9.0 host action."
 else
     same_cycle_status=$?
 fi
 [[ "$same_cycle_status" -eq 78 ]] \
-    || fail "an exact 0.8.0 development-cycle state did not exit 78."
+    || fail "an exact 0.9.0 development-cycle state did not exit 78."
 if printf '%s\n' "$same_cycle_output" | grep -F 'MUTATION_REACHED' >/dev/null; then
-    fail "the Forge recipe mutated an exact 0.8.0 development-cycle install without acknowledgement."
+    fail "the Forge recipe mutated an exact 0.9.0 development-cycle install without acknowledgement."
 fi
 
-printf '%s\n' '{"version":"0.9.0","commit":"ghi","satisfied_through":"0.7.0","fresh_install":false}' > "$fixture_state"
+printf '%s\n' '{"version":"0.10.0","commit":"ghi","satisfied_through":"0.7.0","fresh_install":false}' > "$fixture_state"
 if outstanding_prior_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
@@ -435,7 +435,7 @@ if printf '%s\n' "$outstanding_prior_output" | grep -F 'MUTATION_REACHED' >/dev/
     fail "the Forge recipe mutated an install whose clean-state marker still owes the action."
 fi
 
-printf '%s\n' '{"version":"0.9.0","commit":"jkl","satisfied_through":"0.9.0","fresh_install":false}' > "$fixture_state"
+printf '%s\n' '{"version":"0.10.0","commit":"jkl","satisfied_through":"0.10.0","fresh_install":false}' > "$fixture_state"
 if unknown_profile_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
@@ -450,7 +450,7 @@ if printf '%s\n' "$unknown_profile_output" | grep -F 'MUTATION_REACHED' >/dev/nu
     fail "the Forge recipe trusted a clean marker whose installation profile is unknown."
 fi
 
-printf '%s\n' '{"version":"0.9.0","commit":"jkl","satisfied_through":"0.9.0","installation_profile":"image","fresh_install":false}' > "$fixture_state"
+printf '%s\n' '{"version":"0.10.0","commit":"jkl","satisfied_through":"0.10.0","installation_profile":"image","fresh_install":false}' > "$fixture_state"
 if image_profile_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
@@ -465,13 +465,13 @@ if printf '%s\n' "$image_profile_output" | grep -F 'MUTATION_REACHED' >/dev/null
     fail "the Forge recipe trusted an image marker for host-only work."
 fi
 
-printf '%s\n' '{"version":"0.9.0","commit":"jkl","satisfied_through":"0.9.0","installation_profile":"host","fresh_install":false}' > "$fixture_state"
+printf '%s\n' '{"version":"0.10.0","commit":"jkl","satisfied_through":"0.10.0","installation_profile":"host","fresh_install":false}' > "$fixture_state"
 already_settled_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1
-)" || fail "a clean marker after 0.8.0 was asked to repeat the 0.8.0 host action."
+)" || fail "a clean marker after 0.9.0 was asked to repeat the 0.9.0 host action."
 [[ "$(printf '%s\n' "$already_settled_output" | grep -Fc 'MUTATION_REACHED')" -eq 1 ]] \
-    || fail "an install clean past 0.8.0 did not reach its mutation sentinel exactly once."
+    || fail "an install clean past 0.9.0 did not reach its mutation sentinel exactly once."
 
 rm "$fixture_app/vendor/autoload.php"
 rmdir "$fixture_app/vendor"
@@ -494,7 +494,7 @@ if printf '%s\n' "$ambiguous_install_output" | grep -F 'MUTATION_REACHED' >/dev/
 fi
 
 rm -rf -- "$fixture_current"
-printf '%s\n' 'WAYFINDR_ACKNOWLEDGED_ACTIONS="0.7.0/other, 0.8.0/php-runtime-extensions"' > "$fixture_site/.env"
+printf '%s\n' 'WAYFINDR_ACKNOWLEDGED_ACTIONS="0.7.0/other, 0.9.0/php-runtime-extensions"' > "$fixture_site/.env"
 first_deploy_output="$(
     FORGE_SITE_ROOT="$fixture_site" FORGE_SITE_PATH="$fixture_current" FORGE_PHP="$compatible_php" \
         bash -c "$action_preflight_runner" 2>&1

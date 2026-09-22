@@ -38,7 +38,7 @@
         "person configuring backups should not have to read a release manifest."
     ],
     "_php_runtime_extensions": [
-        "Version 0.8.0 is the first stable line whose host install declares curl,",
+        "Version 0.9.0 is the first stable line whose host install declares curl,",
         "gd, and intl as Composer platform requirements. The official image bakes",
         "all three, so asking its operator to acknowledge host work would create a",
         "false outage. A host-managed deploy uses operator-provided PHP, and",

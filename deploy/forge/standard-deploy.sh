@@ -109,7 +109,7 @@ assert_wayfindr_host_action_acknowledged() {
     # about to replace. Keep the one host-only action that belongs before the
     # pull here too, or an otherwise healthy host reaches Laravel only after its
     # source has changed and the in-place deploy has entered maintenance mode.
-    local action_key='0.8.0/php-runtime-extensions'
+    local action_key='0.9.0/php-runtime-extensions'
     local action_release="${action_key%%/*}"
     local site_root="${FORGE_SITE_ROOT:-}"
 
@@ -264,8 +264,8 @@ assert_wayfindr_host_action_acknowledged() {
         // proves the host-only action was traversed. An image can advance the
         // same marker while legitimately
         // filtering this action out; moving that state to Forge must reopen it.
-        // VERSION also stays at 0.8.0 for the whole source-development cycle, so
-        // an exact 0.8.0 state may predate the action itself.
+        // VERSION also stays at 0.9.0 for the whole source-development cycle, so
+        // an exact 0.9.0 state may predate the action itself.
         if ($installationProfile === "host"
             && is_string($satisfiedThrough)
             && preg_match(

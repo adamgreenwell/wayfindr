@@ -3,9 +3,9 @@
 This roadmap is directional and should not include private business strategy.
 
 The latest public release is `v0.7.0` (August 25, 2026), and the current
-unreleased development line is `0.8.0`. Under the project's pre-1.0 versioning
+unreleased development line is `0.9.0`. Under the project's pre-1.0 versioning
 contract, features, additive schema, or operator action advance the minor slot;
-`0.8.0` is a development identity, not a claim that the release is published.
+`0.9.0` is a development identity, not a claim that the release is published.
 
 `1.0.0` is scoped to finishing the core support product and proving it, rather
 than to feature parity. The two gaps that framed it are closed: live visitor
@@ -20,7 +20,7 @@ not the author installs Wayfindr from a published artifact and it works. The
 repaired baseline for that run does not exist publicly yet:
 [#932](https://github.com/adamgreenwell/wayfindr/issues/932) and
 [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) prepared and
-reviewed the `v0.8.0` candidate on current `main`. The stop-before-tag gates in
+reviewed the `v0.9.0` candidate on current `main`. The stop-before-tag gates in
 [RELEASING.md](../../RELEASING.md) still have to clear, the owner must separately
 authorize the repository-settings and publication changes, and the exact
 artifact must be verified before #797's brief is refreshed for a human tester.
@@ -37,7 +37,7 @@ rather than left implied.
 
 ## Implemented on Current Main
 
-This section describes the unreleased `0.8.0` development tree. Some foundation
+This section describes the unreleased `0.9.0` development tree. Some foundation
 also exists in public `v0.7.0`, but none of the post-`v0.7.0` additions below
 should be read as a public-artifact claim until a stable release containing
 them is published and verified.
@@ -196,7 +196,7 @@ timing of site-settings work in #985. Other polish stays demand-gated.
 - **Hold the reviewed release candidate at its publication gates:**
   [#932](https://github.com/adamgreenwell/wayfindr/issues/932) completed through
   [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) on the unreleased
-  `0.8.0` tree. Before any tag, wait for every eligible pre-guard release run to
+  `0.9.0` tree. Before any tag, wait for every eligible pre-guard release run to
   leave its rerun window or, with separate owner authorization, delete named
   runs after preserving their evidence. Creating the required active `v*` tag
   ruleset is a separately authorized settings change. Neither the merged

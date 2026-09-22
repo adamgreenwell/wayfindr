@@ -149,9 +149,9 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 ## Status
 
 Pre-1.0. The latest public release is `v0.7.0` (August 25, 2026), and the
-current unreleased development line is `0.8.0`. Under the project's pre-1.0
+current unreleased development line is `0.9.0`. Under the project's pre-1.0
 versioning contract, the minor bump reflects the features and schema added
-since `v0.7.0`; it does not claim that `v0.8.0` has been published.
+since `v0.7.0`; it does not claim that `v0.9.0` has been published.
 
 Self-hosting and upgrades from published artifacts have been proved repeatable
 on hosted runners and disposable bare-metal guests — **for the artifacts that
@@ -168,7 +168,7 @@ criterion is
 published-artifact install by somebody who is not the author. Its repaired
 baseline must follow this order: [#932](https://github.com/adamgreenwell/wayfindr/issues/932)
 and [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) prepared and
-reviewed the `v0.8.0` candidate on current `main`. Before any tag, wait for the
+reviewed the `v0.9.0` candidate on current `main`. Before any tag, wait for the
 eligible pre-guard release runs to leave their rerun window or, with separate
 owner authorization, delete named runs after preserving their evidence. Creating
 the required active `v*` tag ruleset is another separately authorized settings

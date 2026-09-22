@@ -3,7 +3,7 @@
 [Back to Home](Home)
 
 Wayfindr is pre-1.0. The latest public release is `v0.7.0` (August 25, 2026),
-and the current unreleased development line is `0.8.0`. Current `main` has moved
+and the current unreleased development line is `0.9.0`. Current `main` has moved
 from "the core support loop exists" to a support desk reachable by widget,
 email, and help centre, with a measurement surface of its own. Mailgun and
 Postmark can post directly to `POST /api/mail/inbound` when their matching
@@ -32,7 +32,7 @@ to 17.
 
 ## Current Development Tree
 
-This section describes unreleased `0.8.0` source. Some foundation also exists
+This section describes unreleased `0.9.0` source. Some foundation also exists
 in public `v0.7.0`, but post-`v0.7.0` work listed here is not publicly available
 until a stable artifact containing it is published and verified.
 
@@ -266,13 +266,13 @@ That was valuable cold-start evidence, not #797 acceptance. It ran in a cloud
 sandbox rather than a real VM, warmed the image cache before timing, used
 localhost over HTTP, skipped public-origin and TLS/local-CA paths, and was
 performed by an AI agent rather than a human non-author. The fixes also remain
-unreleased while `0.8.0` is only a development identity.
+unreleased while `0.9.0` is only a development identity.
 
 The next sequence is intentionally gated:
 
 1. [#932](https://github.com/adamgreenwell/wayfindr/issues/932) and
    [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) have prepared
-   and reviewed the `v0.8.0` candidate on current `main`.
+   and reviewed the `v0.9.0` candidate on current `main`.
 2. Before any tag, retire every eligible pre-guard release run and install the
    required active `v*` tag ruleset. Creating the ruleset — or deleting a run
    instead of waiting for its rerun window to expire — requires separate owner
