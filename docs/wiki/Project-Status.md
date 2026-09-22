@@ -23,9 +23,12 @@ published-artifact install by somebody who is not the author. Its prerequisite
 release sequence is recorded under *Current Release and Acceptance Gates*.
 The open `1.0.0` milestone also includes
 [#970](https://github.com/adamgreenwell/wayfindr/issues/970)'s release
-preconditions and [#985](https://github.com/adamgreenwell/wayfindr/issues/985)'s
-site-settings work; the latter still needs an owner decision on scope and
-timing. #797 is not the milestone's only open issue.
+preconditions, one of whose two gates — an active ruleset restricting `v*` tag
+creation — is now satisfied, while the other expires on its own on
+2026-09-24. #797 is not the milestone's only open issue.
+[#985](https://github.com/adamgreenwell/wayfindr/issues/985), the site-settings
+page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
+to 17.
 
 ## Current Development Tree
 
