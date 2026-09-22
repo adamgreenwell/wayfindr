@@ -598,6 +598,12 @@ location /app {
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
 
+    # Without these the location inherits nginx's 60-second default, and an
+    # idle WebSocket is torn down mid-connection roughly once a minute. See
+    # "Raise the proxy read timeout on the WebSocket location" above.
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+
     proxy_pass http://127.0.0.1:8080;
 }
 
@@ -610,6 +616,12 @@ location /apps {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection "Upgrade";
+
+    # Without these the location inherits nginx's 60-second default, and an
+    # idle WebSocket is torn down mid-connection roughly once a minute. See
+    # "Raise the proxy read timeout on the WebSocket location" above.
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
 
     proxy_pass http://127.0.0.1:8080;
 }
