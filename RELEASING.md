@@ -198,6 +198,68 @@ after it. Creating or altering the rule is a repository-settings change and
 requires explicit owner authorization; merging release code does not silently
 authorize it.
 
+### Renumbering a candidate touches more than VERSION
+
+If the number changes after the changelog section was written — 0.8.0 became
+0.9.0 in September 2026 when #994 chose to prove the third-party install first —
+the new number has to reach every place the version is a **key** rather than a
+label.
+
+The one that bites is the operator acknowledgement. It is scoped
+`<release>/<action-id>`, so an operator carrying
+`WAYFINDR_ACKNOWLEDGED_ACTIONS=0.8.0/php-runtime-extensions` after the candidate
+became 0.9.0 matches nothing the release declares, and the guard refuses their
+deploy. That string lives in the two Forge scripts operators paste, in
+`docs/self-hosting/runtime-requirements.md` (including a `required_action=`
+shell variable) and `laravel-forge.md`, on the **published wiki's** Upgrading
+page, and in the changelog entry telling them to set it.
+
+Find the candidates, then classify them by hand — the exclusions below are the
+judgement, not the search:
+
+```bash
+# From the repository root. Run it BEFORE editing, against the old number.
+git grep -ln '0\.8\.0' \
+  -- ':!docs/decisions' ':!docs/development/release-*-rehearsal.md' \
+     ':!apps/server/composer.lock'
+```
+
+Ask of each hit: **does this name the release's identity, or record what was
+true on a stated day?** Identity moves. A record does not — rewriting a number
+inside an ADR, a dated rehearsal, or one of `handoff.md`'s end-of-session
+snapshots falsifies it. `handoff.md` is both: its living sections move, and
+everything from `## 8. End-of-session snapshot` onward does not.
+
+Two traps that the search alone does not surface:
+
+- **A fixture meaning "a later release" collapses onto the new number.** The
+  PHP version contract used `0.9.0` for an install already past the action, to
+  prove it is not asked to repeat it. Renumbering onto 0.9.0 made that fixture
+  the action's own release and the suite said so —
+  *"a clean marker after 0.9.0 was asked to repeat the 0.9.0 host action."*
+  Move the fixture up a minor; the assertion is about ordering, not the number.
+- **`releases/history.json` holds a declaration for a release that will now
+  never exist.** Delete that entry and regenerate with `build-manifest.php`
+  under the new version rather than editing it by hand, so the declaration is
+  the one `release.json` renders today.
+
+Let the contracts find what the classification missed. They catch different
+things, and `release-contract-test` alone is not enough:
+
+```bash
+make release-contract-test   # VERSION, the changelog verdict, and the manifest agree
+make self-host-test          # the Forge recipe's action_key against retained history
+make wiki-test               # wiki link/navigation contract
+```
+
+`make self-host-test` is the one that caught documentation updated without the
+`deploy/forge/` scripts beneath it — *"the Forge host preflight actions have
+drifted from release.json and retained history"* — because it compares the keys
+derived from `releases/history.json` against the recipe operators actually run.
+
+If any wiki source changed, the published wiki is a manual mirror: finish with
+`scripts/sync-github-wiki.sh --push` from a clean `main` (see section 5).
+
 ```bash
 # VERSION and the tag must agree; the tag carries the conventional "v".
 # Stage both explicitly — `commit -a` would skip VERSION the first time,
