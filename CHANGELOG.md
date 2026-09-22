@@ -747,6 +747,44 @@ makes none.
   no error. It now captures the embedding script synchronously and carries that
   exact element into deferred initialization.
 
+- **The installer refuses a documentation placeholder as a hostname, rather
+  than reporting success over a stack nobody can reach.** Passing
+  `--app-url https://support.example.com` — the example the README, the install
+  guide and the public Quick Start all print — exited `0`, said *Wayfindr is
+  running*, and brought the whole stack up. It was answering, but only on the
+  loopback health probe the installer itself checks: on the hostname operators
+  had just been told to visit, nothing. `example.com` is reserved for
+  documentation by RFC 2606, no public authority will certify it, and Caddy's
+  ACME retry loop went on trying in the background for weeks.
+
+  The one-liner now stops before it creates a directory, resolves a release or
+  fetches a file, names the substitution, and offers
+  `--app-url https://localhost` for trying Wayfindr on the machine in front of
+  you. Any name under `example.com`, `example.org`, `example.net`, `.example`
+  or `.invalid` is refused the same way, in any spelling — uppercase, a
+  trailing dot, a port, a path. `myexample.com` and `example.company.io` are
+  not, and `localhost`, `.local` and `.test` are untouched: those still get a
+  locally-issued certificate, because they are somewhere an operator meant to
+  run.
+
+  The refusal does not depend on a certificate being requested. An `http://`
+  URL and an install behind the operator's own proxy contact no authority at
+  all and are refused just the same, because a reserved name is not a hostname
+  anyone can reach whatever the scheme.
+
+  **⚠ Operator action: none when upgrading.** An install already running on
+  such a hostname upgrades exactly as before — the refusal exists to stop a new
+  broken install, not to strand one somebody depends on. A *fresh* install now
+  exits non-zero with no override, so provisioning automation still passing a
+  reserved hostname needs changing before its next run.
+
+  The guides still print `support.example.com`, and now tell you to replace it.
+  Substituting a placeholder the installer accepts would only move the failure
+  later, into a certificate request for a domain the operator does not own —
+  the same unreachable stack, with nothing left able to catch it. The Quick
+  Start's table row that called `support.example.com` a real, internet-reachable
+  hostname is corrected; it never was one.
+
 - **The installer distinguishes release-discovery failure from an absent
   release.** HTTP errors, rate limits, transport failures, malformed responses,
   and an authoritatively empty release list now produce different diagnostics.
