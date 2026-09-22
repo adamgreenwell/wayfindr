@@ -239,11 +239,11 @@ confirm what is running.
 
 ## Deploy Flow
 
-Before an existing host-managed install first crosses 0.8.0, keep the old
+Before an existing host-managed install first crosses 0.9.0, keep the old
 checkout in service while you verify the PHP binary used below **and** the PHP-FPM,
-queue, scheduler, and Reverb runtimes described in the 0.8.0 changelog. Reload
+queue, scheduler, and Reverb runtimes described in the 0.9.0 changelog. Reload
 or restart those processes where needed. Only after every runtime passes, persist
-`0.8.0/php-runtime-extensions` in `WAYFINDR_ACKNOWLEDGED_ACTIONS`, export that
+`0.9.0/php-runtime-extensions` in `WAYFINDR_ACKNOWLEDGED_ACTIONS`, export that
 setting into this deploy shell, and run this gate:
 
 ```bash
@@ -251,7 +251,7 @@ set -euo pipefail
 
 php -r '$problems = []; if (PHP_VERSION_ID < 80401) { $problems[] = "PHP 8.4.1+"; } foreach (["curl", "gd", "intl"] as $extension) { if (! extension_loaded($extension)) { $problems[] = "ext-{$extension}"; } } if (extension_loaded("curl") && (! is_string($version = curl_version()["version"] ?? null) || version_compare($version, "7.59.0", "<"))) { $problems[] = "libcurl 7.59.0+"; } if ($problems !== []) { fwrite(STDERR, "Missing runtime requirements: ".implode(", ", $problems).PHP_EOL); exit(78); }'
 
-required_action="0.8.0/php-runtime-extensions"
+required_action="0.9.0/php-runtime-extensions"
 WAYFINDR_REQUIRED_ACTION="$required_action" php -r '$required = (string) getenv("WAYFINDR_REQUIRED_ACTION"); $acknowledged = array_values(array_filter(array_map("trim", explode(",", (string) getenv("WAYFINDR_ACKNOWLEDGED_ACTIONS"))), static fn (string $value): bool => $value !== "")); if (! in_array($required, $acknowledged, true)) { fwrite(STDERR, "Missing exact host-upgrade acknowledgement: {$required}. Verify every runtime and persist/export WAYFINDR_ACKNOWLEDGED_ACTIONS before replacing the checkout.".PHP_EOL); exit(78); }'
 ```
 

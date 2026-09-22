@@ -30,7 +30,7 @@ missed while skimming.
 
 ## [Unreleased]
 
-## [0.8.0] - 2026-09-10
+## [0.9.0] - 2026-09-22
 
 **Requires operator action when upgrading a host-managed PHP install, including
 Laravel Forge, from an earlier Wayfindr release.**
@@ -57,7 +57,7 @@ acknowledge.
    extensions and the libcurl minimum, and stops before migration if any are
    missing. If the host already complies, verify Composer, PHP-FPM, queues, the
    scheduler, and Reverb; otherwise remediate first and then verify every one of
-   those runtimes. Finally, add `0.8.0/php-runtime-extensions` to
+   those runtimes. Finally, add `0.9.0/php-runtime-extensions` to
    `WAYFINDR_ACKNOWLEDGED_ACTIONS` before deploying. A passing CLI check cannot
    prove those other runtimes, so the release guard deliberately requires that
    attestation; a failed machine check cannot be acknowledged away. The release
@@ -1020,7 +1020,7 @@ makes none.
   session) and `WAYFINDR_WIDGET_SESSION_REFRESH_PER_IP_PER_MINUTE` (600).
 
   **⚠ Operator action, only if you set a non-zero lifetime while running
-  unreleased 0.8.0 code.** Tokens issued before this change record no lifetime and
+  unreleased code between `v0.7.0` and this release.** Tokens issued before this change record no lifetime and
   are refused once one is configured, so such an install refuses every token it
   has out the moment it deploys. Set the value back to `0`, deploy, wait a few
   minutes for visitors' browsers to pick up the new `widget.js`, then set it

@@ -258,7 +258,7 @@ Both scripts:
 
 - verify the application and Composer CLI PHP platforms before changing the
   checkout,
-- require the exact 0.8.0 host-runtime acknowledgement before any deploy whose
+- require the exact 0.9.0 host-runtime acknowledgement before any deploy whose
   persisted state cannot prove that action was already settled,
 - link Forge's root `.env` into `apps/server/.env`,
 - install production Composer dependencies from `apps/server`,
@@ -267,9 +267,9 @@ Both scripts:
 - cache config, routes, and views,
 - restart queues and Reverb after deploy.
 
-### Before a host deploy that still owes the 0.8.0 action
+### Before a host deploy that still owes the 0.9.0 action
 
-Version 0.8.0 is the first stable line to require `curl`, `gd`, and `intl`, with
+Version 0.9.0 is the first stable line to require `curl`, `gd`, and `intl`, with
 libcurl 7.59.0 or newer, from host-managed PHP. This does not apply to a
 container built with Wayfindr's Dockerfile; it does apply to Forge.
 
@@ -296,7 +296,7 @@ temporary declaration for this check, and support Composer 2 versions whose
 The current scripts check the Forge CLI and Composer runtimes and require the
 exact acknowledgement before `$CREATE_RELEASE()` or `git pull` whenever the
 persisted release state cannot prove the action was already settled. That
-includes a first deploy, an exact 0.8.0 development-cycle state, and a later
+includes a first deploy, an exact 0.9.0 development-cycle state, and a later
 version whose `satisfied_through` marker still predates the action. A later
 marker is proof only when its recorded `installation_profile` is `host`; an
 image marker or an older state file with no profile did not assess this host-only
@@ -304,10 +304,10 @@ work. The filesystem alone cannot prove that a checkout without dependencies or
 release state is fresh: a restored database and a legacy install with a missing
 vendor tree look the same. Forge keeps the deploy script pasted into the site, so
 an existing site's older copy does not gain that preflight when the repository
-changes. Follow the 0.8.0 changelog probe first even if the saved script has no
+changes. Follow the 0.9.0 changelog probe first even if the saved script has no
 check. A successful CLI preflight cannot observe PHP-FPM or already-running
 workers: verify those too, complete any reloads/restarts, and add
-`0.8.0/php-runtime-extensions` to `WAYFINDR_ACKNOWLEDGED_ACTIONS` before the
+`0.9.0/php-runtime-extensions` to `WAYFINDR_ACKNOWLEDGED_ACTIONS` before the
 deploy. The artifact refuses a known-bad CLI runtime even if that key is set.
 
 This ordering is especially important for a standard, non-zero-downtime site:
@@ -655,7 +655,7 @@ background process reloads the active release.
 8. Turn off Forge's creation-time Composer install and frontend build options.
 9. Keep zero-downtime deployments enabled.
 10. Add the environment values above in Forge, including
-    `WAYFINDR_ACKNOWLEDGED_ACTIONS=0.8.0/php-runtime-extensions` after verifying
+    `WAYFINDR_ACKNOWLEDGED_ACTIONS=0.9.0/php-runtime-extensions` after verifying
     every PHP runtime as described above.
 11. Replace the generated deploy script with Wayfindr's deploy script.
 12. Run the first deploy.

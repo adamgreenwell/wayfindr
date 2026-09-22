@@ -26,10 +26,10 @@ checkout. Composer enforces platform requirements when it installs the target
 lockfile, but in an in-place deploy that is already after `git pull`; a platform
 failure there can leave new source beside the previous vendor tree.
 
-Version 0.8.0 requires PHP 8.4.1 with `curl`, `gd`, and `intl`, using libcurl 7.59.0
+Version 0.9.0 requires PHP 8.4.1 with `curl`, `gd`, and `intl`, using libcurl 7.59.0
 or newer. Check the PHP binaries used by Composer, PHP-FPM, queues, the scheduler,
 and Reverb, then reload or restart those processes before deploying. Add
-`0.8.0/php-runtime-extensions` to `WAYFINDR_ACKNOWLEDGED_ACTIONS` after every
+`0.9.0/php-runtime-extensions` to `WAYFINDR_ACKNOWLEDGED_ACTIONS` after every
 runtime passes; the guard requires this because one CLI process cannot prove the
 others. The exact probe and normal Debian/Ubuntu package names are in that
 release's changelog.
@@ -38,7 +38,7 @@ The current Forge scripts perform CLI checks before creating or updating a
 release. Forge stores its own pasted copy of a deploy script, however, so a
 repository update does not retrofit that preflight into an existing site. The
 release action still applies to those sites and must be completed before their
-first 0.8.0 deploy. A container built with Wayfindr's Dockerfile is the `image`
+first 0.9.0 deploy. A container built with Wayfindr's Dockerfile is the `image`
 profile and already carries these dependencies.
 
 ## Before You Upgrade

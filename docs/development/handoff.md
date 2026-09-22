@@ -41,7 +41,7 @@ is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
 **Release truth comes first.** `v0.7.0` (August 25, 2026) is the latest public
-artifact. Current `main` identifies itself as unreleased `0.8.0`; that minor
+artifact. Current `main` identifies itself as unreleased `0.9.0`; that minor
 bump reflects the features, additive schema, and operator actions added since
 `v0.7.0`, not a tag, release, registry push, deployment, or acceptance claim.
 
@@ -56,7 +56,7 @@ display timezones; stored timestamps remain UTC. These are current-source
 claims, not claims about the public `v0.7.0` artifact.
 
 **The remaining release/acceptance sequence is gated.** #932 and PR #934 have
-prepared and reviewed the `v0.8.0` candidate on current `main`. Before any tag,
+prepared and reviewed the `v0.9.0` candidate on current `main`. Before any tag,
 wait for the eligible pre-guard release runs to leave their rerun window or,
 with separate owner authorization, delete named runs after preserving their
 evidence. Creating the required active `v*` tag ruleset is another separately
@@ -375,7 +375,7 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Clear the reviewed `v0.8.0` candidate's stop-before-tag gates.** #932 and
+1. **Clear the reviewed `v0.9.0` candidate's stop-before-tag gates.** #932 and
    PR #934 completed the source, CI, and review work. Wait for every eligible
    pre-guard release run to leave its rerun window or, with separate owner
    authorization, delete named runs after preserving their evidence. Creating
