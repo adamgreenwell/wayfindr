@@ -184,3 +184,68 @@ download and upgrade path is again unproven — that can only be exercised after
 publication. This pass also did not repeat the headed Chromium widget check or
 the blank view-cache probe from the first rehearsal; the view-cache defect that
 prompted that probe is covered by the four-case regression, which runs in CI.
+
+## Re-rehearsal at `166b3706` as 0.9.0 (2026-09-22)
+
+The re-rehearsal above validated `e7edc0e3` as 0.8.0. Nineteen commits landed
+after it and the candidate was renumbered to 0.9.0, so the scenarios were
+repeated. **No migration landed in those nineteen commits** — 74 files at both
+`e7edc0e3` and `166b3706` — so the upgrade's schema shape is the one already
+rehearsed. What is new is the installer's reserved-hostname guard, four
+dependency bumps, the widget single-instance guard, the site-settings split, and
+the 0.9.0 identity itself.
+
+| Artifact | Source commit | Resolved local image id |
+| --- | --- | --- |
+| Published 0.7.0 baseline, freshly pulled | `8c72ee6e` | `sha256:70f23dab5c4ef6a5439134520cca260ea5c61c16b597ee712c781e77dce33c0b` |
+| 0.9.0 candidate | `166b3706` | `sha256:062938b19c234e819e500e7e2f9960b14ee69f8bd0d184a0fb39fdeafbfcfdf4` |
+
+The 0.7.0 digest is **identical** to the one the September 13 and September 21
+rehearsals used, so all three measure the upgrade from the same baseline.
+
+**The candidate was built twice, and the second build is the one used.** The
+guarded command in `docs/self-hosting/install.md` passes no
+`WAYFINDR_BUILD_VERSION`, so the first build baked
+`0.9.0-dev+166b3706da08ab08e2cf0ce31c2e04cc808e2697` — a source identity, not a
+release one. `.github/workflows/release-image.yml:320` passes
+`WAYFINDR_VERSION=${{ github.ref_name }}`, so the artifact that actually ships
+bakes the tag. The rehearsal was rebuilt with `WAYFINDR_BUILD_VERSION=v0.9.0`
+to exercise the path operators will take; the app normalises it and reports
+`Release 0.9.0`. Both builds pinned the commit, from a checkout where
+`git diff`, the index and `git ls-files --others --exclude-standard` were all
+empty.
+
+### Results
+
+| Check | Result |
+| --- | --- |
+| Clean install | Seven services up, four reporting healthy (queue, backup-queue and scheduler set `healthcheck: disable: true`). 74 migrations applied, none pending. |
+| Release identity | The candidate reports `Release 0.9.0` from a baked `v0.9.0`, so the tag normalises as the guard expects. |
+| New-site default | A site created by `wayfindr:bootstrap` on a fresh 0.9.0 install carries `identity_verification='required'`. |
+| Public surfaces | `/up` and `/widget.js` served 200; `/setup` redirected once an account existed. The widget payload was 413,239 bytes, matching the figure the release notes quote. |
+| Used 0.7.0 → candidate | 35 migration records became 74, applying all 39 new migrations in place. |
+| Upgrade data preservation | Content **hashes** — not counts — were identical either side for users, sites, visitors, conversations and messages. A count alone survives a migration that rewrites values. |
+| Existing-site default | The upgraded site carries `identity_verification='off'` while the fresh install carries `'required'`. The asymmetry holds across a real upgrade, not only in tests. |
+| Legacy conversation ownership | The conversation opened under 0.7.0 carries `owner_session_id='~legacy'` after upgrade. |
+| Credential survival | A password set under 0.7.0 still validates after the upgrade. |
+| Runtime checks | No pending migrations, no failed jobs, upgrade guard reports nothing outstanding, `/up` and `/widget.js` 200 on the upgraded stack. |
+
+### Not covered
+
+Everything the earlier passes excluded still applies: clean Ubuntu AMD64 VMs,
+public DNS/TLS, local-CA trust, external email or providers, VM reboot, and
+human acceptance. The candidate was selected by local tag, so the
+published-registry download and upgrade path is again unproven — that can only
+be exercised after publication.
+
+This pass did not repeat the backup/restore drill or the visitor-resume
+endpoint checks from the previous rehearsals. Neither surface changed in the
+nineteen commits, and the schema did not move, so the earlier evidence still
+describes the same code; a reader wanting those results should read the
+September 21 pass above rather than assume this one repeated them.
+
+The installer's reserved-hostname guard was exercised separately, against the
+published `main` rather than this image, on a clean `ubuntu:24.04` with a real
+Docker daemon: the README one-liner with `--app-url https://support.example.com`
+is refused before anything is fetched, and a real hostname proceeds. That is
+recorded on #797.
