@@ -283,19 +283,16 @@ run_support_loop() {
     local image expected_operator_version
 
     image="$(read_env_value WAYFINDR_IMAGE)"
-    case "$image" in
-        ghcr.io/adamgreenwell/wayfindr:*|ghcr.io/adamgreenwell/wayfindr@sha256:*) ;;
-        *)
-            echo "Expected an official public image, got: ${image:-unset}" >&2
-            return 1
-            ;;
-    esac
+    if [ -z "$image" ]; then
+        echo "No configured Wayfindr image to verify on /operator." >&2
+        return 1
+    fi
 
     if [[ "$image" =~ ^ghcr\.io/adamgreenwell/wayfindr:([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
         expected_operator_version="v${BASH_REMATCH[1]}"
     else
-        # Custom refs use :latest, and minor aliases and digest pins also lack
-        # an exact release tag. Compare their UI against the image's own bake.
+        # Custom refs, floating aliases, digest pins, and rollback overrides
+        # lack an exact official tag. Compare their UI to the image's own bake.
         expected_operator_version="$(compose_exec cat /etc/wayfindr/version)"
         if [ -z "$expected_operator_version" ]; then
             echo "The public image has no baked Wayfindr version." >&2

@@ -74,7 +74,7 @@ Available scenarios:
 - `clean-install-latest` — downloads the public one-line installer, installs the
   latest release image, completes synthetic setup, verifies runtime processes,
   signs in as the bootstrap operator and checks the version rendered on
-  `/operator` against the public image tag, runs the support-loop smoke, runs a
+  `/operator` against the public image identity, runs the support-loop smoke, runs a
   backup/restore drill, and restarts the stack.
 - `upgrade-v0.2.0-latest-custom-backup-queue` — starts from the `v0.2.0`
   installer and image, sets a custom `BACKUP_QUEUE`, upgrades to the latest
