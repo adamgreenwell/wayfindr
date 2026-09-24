@@ -273,7 +273,10 @@ Release, and stable aliases. Separate hosted runs now verify a
 [public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
 and a
 [`v0.2.0 → v0.9.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768).
-Those synthetic runs do not satisfy the human non-author install required by
+A separate [fresh-install operator probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
+matched the published image digest and read `Wayfindr version: v0.9.0` from
+rendered authenticated `/operator` after install and after restore. Those
+synthetic runs do not satisfy the human non-author install required by
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797). Record that run's
 stops and fix what it surfaces before claiming `1.0.0` acceptance.
 

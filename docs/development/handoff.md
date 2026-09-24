@@ -1163,7 +1163,7 @@ The public artifact passed a fresh Ubuntu hosted-runner
 and an [upgrade from public `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
 with a custom backup queue. Both matched the published digest, exercised the
 support loop, and passed backup/restore. A further
-[fresh-install run](https://github.com/adamgreenwell/wayfindr/actions/runs/36010842699)
+[fresh-install run](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
 signed in as the bootstrap operator and read `v0.9.0` directly from the
 rendered `/operator` System identity, including after restore. These are
 hosted-runner paths, not a bare-metal, public TLS/origin, production, or human

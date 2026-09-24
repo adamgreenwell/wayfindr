@@ -160,7 +160,7 @@ The public `v0.9.0` artifact passed a
 and an [upgrade from public `v0.2.0` with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768).
 Both runs matched the published image digest, completed the support loop, and
 passed backup/restore checks. A separate
-[fresh-install check](https://github.com/adamgreenwell/wayfindr/actions/runs/36010134076)
+[fresh-install check](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
 also opened the authenticated `/operator` console and read its rendered
 `v0.9.0` identity. These are hosted-runner paths, not a bare-metal or human
 non-author acceptance result. Earlier disposable bare-metal evidence remains

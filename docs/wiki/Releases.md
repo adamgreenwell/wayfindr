@@ -46,8 +46,11 @@ The September 24, 2026 `v0.9.0` public-artifact runs cover two hosted paths:
 Both resolved the published image to
 `sha256:5799f89e3561c0e8b8a0e2f2e9933cc1edf0292604ff36cc127608090093138a`
 and completed the synthetic support loop, backup/restore, and stack restart.
-These runs prove those public-artifact paths over loopback HTTP. They do not
-establish bare-metal reboot, operator-managed DNS/TLS, real mail, offsite
+A separate [fresh-install operator probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
+used that same published image digest and read the rendered authenticated
+`/operator` console's `Wayfindr version: v0.9.0` after install and after
+restore. These runs prove those public-artifact paths over loopback HTTP. They
+do not establish bare-metal reboot, operator-managed DNS/TLS, real mail, offsite
 backups, production restore, or the human non-author acceptance in
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797). The
 [local `v0.9.0` candidate rehearsal](https://github.com/adamgreenwell/wayfindr/blob/main/docs/development/release-0.8.0-rehearsal.md)

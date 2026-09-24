@@ -13,7 +13,7 @@ The public artifact then passed a
 [hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
 and an [upgrade from `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
 with a custom backup queue. An additional
-[fresh-install probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36010134076)
+[fresh-install probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
 read `v0.9.0` directly from authenticated `/operator`. These paths do not prove
 bare-metal operation, public TLS/origin behavior, or independent human use.
 
