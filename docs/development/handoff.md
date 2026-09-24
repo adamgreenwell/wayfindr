@@ -1,14 +1,13 @@
 # Engineering Handoff & Roadmap
 
-*Living document — last updated September 13, 2026. For an agent (or engineer) picking up
+*Living document — last updated September 24, 2026. For an agent (or engineer) picking up
 Wayfindr development. Read this, then `docs/product/roadmap.md` and
 `docs/self-hosting/` for depth.*
 
-**Taking the baton? Start at [§15](#15-release-080-rehearsal--september-13-2026)**
-— the most recent session snapshot carries the current situational state, what
-is blocked on whom, and what is actually available to pick up. Then §5
-(conventions) and §7 (gotchas). Sections 8–14 are older snapshots, kept for
-their evidence rather than their currency.
+**Taking the baton? Start at [§16](#16-published-090-and-the-next-cycle--september-24-2026)**
+for the current release and acceptance boundary. Then §5 (conventions) and §7
+(gotchas). Sections 8–15 are dated snapshots, kept for their evidence rather
+than their currency.
 
 ---
 
@@ -29,7 +28,7 @@ differentiator.
 
 ---
 
-## 2. Current state (September 2026)
+## 2. Current state (September 24, 2026)
 
 The **MVP support loop works end to end**: a visitor chats via the widget → the
 agent sees it live and replies → tickets capture durable work → cobrowse gives a
@@ -40,34 +39,32 @@ sections below accurately describe the former dash-tag alpha workflow, but that
 is not a current release path: a new prerelease channel first needs an explicit
 rule for carrying release actions into the eventual stable artifact.
 
-**Release truth comes first.** `v0.7.0` (August 25, 2026) is the latest public
-artifact. Current `main` identifies itself as unreleased `0.9.0`; that minor
-bump reflects the features, additive schema, and operator actions added since
-`v0.7.0`, not a tag, release, registry push, deployment, or acceptance claim.
+**Release truth comes first.** Public `v0.9.0` published September 24 at tag
+`b9ae8bcc`, with the manifest and multi-architecture image at
+`sha256:5799f89e3561c0e8b8a0e2f2e9933cc1edf0292604ff36cc127608090093138a`.
+Current `main` begins `1.0.0-dev`; it is not a 1.0.0 release.
 
-The Tier 1 and Tier 2 feature epics are closed in the development tree. Current
-`main` includes direct Mailgun/Postmark inbound verification, TOTP/OIDC/custom
+The Tier 1 and Tier 2 feature epics shipped in `v0.9.0`. That release includes
+direct Mailgun/Postmark inbound verification, TOTP/OIDC/custom
 roles and JIT mapping, API and outbound webhooks, SLA and routing policy,
 automation rules/macros/bulk actions/shortcuts, dashboard/Web Push alerting,
 contacts and proactive messages, an optional human-reviewed agent copilot, and
 measured performance baselines. Localization now covers the operator console
 and most dashboard workflows in English, German, and Italian, with per-agent
-display timezones; stored timestamps remain UTC. These are current-source
-claims, not claims about the public `v0.7.0` artifact.
+display timezones; stored timestamps remain UTC.
 
-**The remaining release/acceptance sequence is gated.** #932 and PR #934 have
-prepared and reviewed the `v0.9.0` candidate on current `main`. Before any tag,
-wait for the eligible pre-guard release runs to leave their rerun window or,
-with separate owner authorization, delete named runs after preserving their
-evidence. Creating the required active `v*` tag ruleset is another separately
-authorized settings change. Once those gates clear, separately authorized
-publication may publish and verify the exact tag, commit, image digest, and
-relevant install and upgrade paths; then refresh #797's baseline and give it to
-a human non-author. A cold Claude agent's no-context `v0.7.0` sandbox run was
-useful synthetic evidence — it matched the release identity, found the widget
-auto-init and installer discovery defects fixed by PRs #929/#931, and completed
-a support loop after workarounds — but it skipped a real VM, unwarmed pull,
-public TLS/origin, and local-CA trust. It does not satisfy #797.
+**Publication, scripted proof, and human acceptance remain separate.** The
+guarded-release preconditions in #970 passed and that issue closed. Two
+September 24 hosted-runner checks installed and upgraded the public `v0.9.0`
+artifact, matched the image digest, and passed support-loop and backup/restore
+drills. A fresh-install probe also read `v0.9.0` from authenticated `/operator`.
+Neither a hosted-runner script nor the earlier cold Claude agent's `v0.7.0`
+sandbox run meets #797: a human who did not write Wayfindr still needs to
+install from a published artifact using only public instructions. #994's 1.0.0
+scope also asks that human to test an upgrade.
+The older sandbox run found widget auto-init and installer-discovery defects
+fixed in `v0.9.0` by PRs #929/#931, but skipped a real VM, unwarmed pull,
+public TLS/origin, and local-CA trust.
 
 **Historical stage evidence (July 14).** The Forge stage was chosen as the
 initial controlled dogfood instance instead of creating a separate production
@@ -375,25 +372,23 @@ issue tracker for current state.
 
 Ordered by real dogfood value and dependency, not feature novelty.
 
-1. **Clear the reviewed `v0.9.0` candidate's stop-before-tag gates.** #932 and
-   PR #934 completed the source, CI, and review work. Wait for every eligible
-   pre-guard release run to leave its rerun window or, with separate owner
-   authorization, delete named runs after preserving their evidence. Creating
-   the required active `v*` tag ruleset is a separate settings change that also
-   needs explicit owner authorization. Clearing either gate does not authorize
-   a tag, release, registry push, deployment, or upgrade.
+1. **Use the published `v0.9.0` artifact as the release baseline.** The guarded
+   tag, public release, manifest, and image digest are verified. The September 24
+   hosted-runner clean-install and upgrade checks are linked in §16; keep their
+   proof distinct from the older `v0.3.2` bare-metal matrix and `v0.7.0` cold
+   sandbox run. Host-managed PHP upgrades have a scoped runtime action in the
+   `v0.9.0` manifest; the published image is exempt.
 
-2. **Publish only after explicit owner authorization, then verify it.** Record
-   the exact stable tag, commit, image digest, GitHub release metadata, and the
-   relevant clean-install and supported-upgrade evidence. Do not transfer the
-   August 12 `v0.3.2` matrix or the cold `v0.7.0` sandbox results to the new
-   artifact by implication.
+2. **Finish the account area for 1.0.0.** #994 records the measured scope.
+   #985's site-settings work and #970's guarded-tag gates have closed. Keep
+   changes tied to actual account administration rather than feature parity.
 
-3. **Refresh and run #797 with a human non-author.** The acceptance brief must
-   name the newly verified public artifact and repaired widget/installer path.
-   The cold Claude run found real defects and proved an after-workaround
-   synthetic support loop, but an AI sandbox is not the human, real-environment
-   acceptance gate.
+3. **Run #797 with a human non-author.** The acceptance brief should name the
+   verified public artifact and repaired widget/installer path. The person must
+   install using the public docs, recording where they stop or need to guess.
+   #994's 1.0.0 scope also asks that tester to upgrade. Hosted-runner scripts
+   and the older AI sandbox run do not meet the human, real-environment install
+   gate.
 
 4. **Operate the real dogfood loop.** Route Wayfindr support through Wayfindr,
    keep synthetic smoke records distinguishable from real work, and let actual
@@ -1139,3 +1134,43 @@ for that window is the selected path. The changelog date stays provisional until
 the final release commit. Public artifact checks and #797's human non-author
 installation follow publication. No deployment, fork sync, or human acceptance
 is implied by this rehearsal.
+
+## 16. Published 0.9.0 and the next cycle — September 24, 2026
+
+The first guarded release is public:
+[`v0.9.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.9.0)
+is a stable GitHub Release at protected tag
+`b9ae8bcce59ea75f2bb3f81f87239179a883fb48`. The successful
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36002701167/attempts/5)
+attached the manifest and image digest. Public GHCR tags `0.9.0`, `0.9`, and
+`latest` resolve to the same multi-architecture digest,
+`sha256:5799f89e3561c0e8b8a0e2f2e9933cc1edf0292604ff36cc127608090093138a`.
+The published manifest requires a PHP/cURL/extension action for existing
+host-managed PHP installs; the image profile is exempt. The backups queue
+consumer remains a standing notice.
+
+The required `v*` ruleset is active and owner-only, and every workflow run
+predating the guarded publisher has passed its 30-day rerun window. #970 closed
+after a fresh September 24 audit. The release draft-readback and rerun defects
+were fixed in [PR #1049](https://github.com/adamgreenwell/wayfindr/pull/1049).
+After publication, [PR #1050](https://github.com/adamgreenwell/wayfindr/pull/1050)
+advanced `VERSION` to `1.0.0` (source builds identify as `1.0.0-dev`) and
+cleared the one-time action from `release.json`, while retaining the notice and
+the published `v0.9.0` declaration in `releases/history.json`.
+
+The public artifact passed a fresh Ubuntu hosted-runner
+[clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
+and an [upgrade from public `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
+with a custom backup queue. Both matched the published digest, exercised the
+support loop, and passed backup/restore. A further
+[fresh-install run](https://github.com/adamgreenwell/wayfindr/actions/runs/36010842699)
+signed in as the bootstrap operator and read `v0.9.0` directly from the
+rendered `/operator` System identity, including after restore. These are
+hosted-runner paths, not a bare-metal, public TLS/origin, production, or human
+non-author test. #797 remains open for a person who did not build Wayfindr to
+install using only the public instructions. #994 also calls for an upgrade by
+that tester and defines the account-area work planned for 1.0.0.
+
+The canonical release does not itself deploy Forge, sync the staging fork, or
+update the separate public site and GitHub Wiki mirrors. Verify each surface
+separately before claiming its runtime or documentation has advanced.
