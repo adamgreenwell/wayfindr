@@ -313,10 +313,9 @@ separate claims.
   suite. Every proposed route needs recapture under the current identity before
   #762 can use same-route evidence after meaningful elapsed time or a model
   revision to revisit ADR 0004. All four September captures were recorded
-  within about 78 minutes, so this is point-in-time
-  variability, not long-term drift resistance, model-revision evidence,
-  provider approval, or visitor-runtime safety; #762 and the ADR boundary remain
-  open and unchanged.
+  within about 78 minutes, so this is point-in-time variability, not long-term
+  drift resistance, model-revision evidence, provider approval, or visitor-runtime
+  safety; #762 and the ADR boundary remain open and unchanged.
 
 The repository remains authoritative. See the
 [README](https://github.com/adamgreenwell/wayfindr#status),
