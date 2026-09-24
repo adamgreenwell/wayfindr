@@ -284,23 +284,24 @@ run_support_loop() {
 
     image="$(read_env_value WAYFINDR_IMAGE)"
     case "$image" in
-        ghcr.io/adamgreenwell/wayfindr:[0-9]*)
-            expected_operator_version="v${image##*:}"
-            ;;
-        ghcr.io/adamgreenwell/wayfindr:latest)
-            # Custom branch/SHA installs intentionally use the published :latest
-            # image. It has no numeric tag to compare, so use its baked identity.
-            expected_operator_version="$(compose_exec cat /etc/wayfindr/version)"
-            if [ -z "$expected_operator_version" ]; then
-                echo "The public :latest image has no baked Wayfindr version." >&2
-                return 1
-            fi
-            ;;
+        ghcr.io/adamgreenwell/wayfindr:*|ghcr.io/adamgreenwell/wayfindr@sha256:*) ;;
         *)
             echo "Expected an official public image, got: ${image:-unset}" >&2
             return 1
             ;;
     esac
+
+    if [[ "$image" =~ ^ghcr\.io/adamgreenwell/wayfindr:([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+        expected_operator_version="v${BASH_REMATCH[1]}"
+    else
+        # Custom refs use :latest, and minor aliases and digest pins also lack
+        # an exact release tag. Compare their UI against the image's own bake.
+        expected_operator_version="$(compose_exec cat /etc/wayfindr/version)"
+        if [ -z "$expected_operator_version" ]; then
+            echo "The public image has no baked Wayfindr version." >&2
+            return 1
+        fi
+    fi
 
     echo
     echo "== Support-loop smoke: $label =="
