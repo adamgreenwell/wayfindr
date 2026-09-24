@@ -5,6 +5,7 @@ base_url="${WAYFINDR_BASE_URL:?Set WAYFINDR_BASE_URL, for example https://suppor
 site_public_key="${WAYFINDR_SITE_PUBLIC_KEY:?Set WAYFINDR_SITE_PUBLIC_KEY}"
 agent_email="${WAYFINDR_AGENT_EMAIL:?Set WAYFINDR_AGENT_EMAIL}"
 agent_password="${WAYFINDR_AGENT_PASSWORD:?Set WAYFINDR_AGENT_PASSWORD}"
+expected_operator_version="${WAYFINDR_SMOKE_EXPECT_OPERATOR_VERSION:-}"
 host_page_url="${WAYFINDR_HOST_PAGE_URL:-}"
 visitor_smoke_mode="${WAYFINDR_VISITOR_SMOKE_MODE:-}"
 subject="${WAYFINDR_SMOKE_SUBJECT:-MVP support loop smoke}"
@@ -371,6 +372,52 @@ fi
 # copy. The dashboard used to say "Workspace shortcuts"; current releases expose
 # the same successful-login proof through the support queue section.
 assert_contains "$dashboard_page" "Support queues" "agent dashboard"
+
+if [[ -n "$expected_operator_version" ]]; then
+    echo "Checking the authenticated operator console release identity..."
+    operator_page="$tmp_dir/operator.html"
+    operator_code="$(curl -sS -b "$cookie_jar" -o "$operator_page" -w '%{http_code}' "$base_url/operator")"
+
+    if [[ "$operator_code" != "200" ]]; then
+        echo "Operator console did not load after login. HTTP $operator_code." >&2
+        sed -n '1,80p' "$operator_page" >&2
+        exit 1
+    fi
+
+    php_cli -r '
+        $document = new DOMDocument();
+        libxml_use_internal_errors(true);
+        $loaded = $document->loadHTML(stream_get_contents(STDIN));
+        libxml_clear_errors();
+
+        if (! $loaded) {
+            fwrite(STDERR, "Operator console returned invalid HTML.\n");
+            exit(1);
+        }
+
+        $xpath = new DOMXPath($document);
+        $values = $xpath->query(
+            "//*[@id=\"system-identity-heading\"]/ancestor::section[1]"
+            ."//span[contains(concat(\" \", normalize-space(@class), \" \"), \" meta-label \")]"
+            ."[normalize-space(.)=\"Wayfindr version\"]"
+            ."/following-sibling::span[contains(concat(\" \", normalize-space(@class), \" \"), \" meta-value \")][1]"
+        );
+
+        if ($values === false || $values->length !== 1) {
+            fwrite(STDERR, "Operator console has no unambiguous Wayfindr version field.\n");
+            exit(1);
+        }
+
+        $actual = trim($values->item(0)->textContent);
+
+        if ($actual !== $argv[1]) {
+            fwrite(STDERR, "Operator console reports {$actual}; expected {$argv[1]}.\n");
+            exit(1);
+        }
+
+        echo "Operator console Wayfindr version: {$actual}\n";
+    ' "$expected_operator_version" < "$operator_page"
+fi
 
 echo "Opening agent conversation..."
 conversation_page="$tmp_dir/conversation.html"

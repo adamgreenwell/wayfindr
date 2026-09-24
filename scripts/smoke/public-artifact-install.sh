@@ -280,6 +280,18 @@ verify_runtime() {
 
 run_support_loop() {
     local label="$1"
+    local image expected_operator_version
+
+    image="$(read_env_value WAYFINDR_IMAGE)"
+    case "$image" in
+        ghcr.io/adamgreenwell/wayfindr:[0-9]*)
+            expected_operator_version="v${image##*:}"
+            ;;
+        *)
+            echo "Expected an official version-tagged public image, got: ${image:-unset}" >&2
+            return 1
+            ;;
+    esac
 
     echo
     echo "== Support-loop smoke: $label =="
@@ -287,6 +299,7 @@ run_support_loop() {
         WAYFINDR_SITE_PUBLIC_KEY="$SITE_PUBLIC_KEY" \
         WAYFINDR_AGENT_EMAIL="$AGENT_EMAIL" \
         WAYFINDR_AGENT_PASSWORD="$AGENT_PASSWORD" \
+        WAYFINDR_SMOKE_EXPECT_OPERATOR_VERSION="$expected_operator_version" \
         WAYFINDR_SMOKE_SUBJECT="Disposable evidence $SCENARIO" \
         WAYFINDR_SMOKE_MESSAGE="Hello from disposable evidence $SCENARIO." \
         WAYFINDR_SMOKE_PHP_COMPOSE_FILE="$COMPOSE_FILE" \
