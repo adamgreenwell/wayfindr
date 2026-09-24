@@ -18,10 +18,15 @@ and upgrade runs are recorded below.
   published artifacts and operator-facing notes.
 - [`CHANGELOG.md`](https://github.com/adamgreenwell/wayfindr/blob/main/CHANGELOG.md)
   for the cumulative change history.
-- [`release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
-  for machine-enforced required actions and advisory notices.
-- [`releases/history.json`](https://github.com/adamgreenwell/wayfindr/blob/main/releases/history.json)
-  for the history an artifact uses to evaluate skipped releases.
+- The [attached `v0.9.0` release manifest](https://github.com/adamgreenwell/wayfindr/releases/download/v0.9.0/release-manifest.json)
+  for the required actions and advisory notices in that published artifact;
+  [tagged `release.json`](https://github.com/adamgreenwell/wayfindr/blob/v0.9.0/release.json)
+  is its source declaration.
+- [Tagged `releases/history.json`](https://github.com/adamgreenwell/wayfindr/blob/v0.9.0/releases/history.json)
+  for the skipped-release history carried by `v0.9.0`.
+- [Current `release.json`](https://github.com/adamgreenwell/wayfindr/blob/main/release.json)
+  for the next development line. Its cleared actions do not replace the
+  published `v0.9.0` manifest.
 
 Official images carry their release and commit identity. Source builds identify
 their development lineage, and only a clean build supplied with its commit can
