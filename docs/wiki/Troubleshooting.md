@@ -99,10 +99,12 @@ Console and Network panels. A normal load requests `widget.js` and then
   generated attributes.
 - The script returns `200`, `window.Wayfindr` exists, and no appearance request
   follows: record the release from `/operator`. Public `v0.7.0` has a known
-  generated-snippet auto-init defect fixed on `main` by
+  generated-snippet auto-init defect fixed in `v0.9.0` by
   [#929](https://github.com/adamgreenwell/wayfindr/pull/929); the tester can work
-  while the external snippet remains inert. Use a later stable release only
-  after its release notes include that fix.
+  while the external snippet remains inert. Follow [Upgrading](Upgrading) and
+  read `v0.9.0`'s operator actions before moving to that release. If the issue
+  occurs on `v0.9.0` or later, preserve redacted browser diagnostics for a new
+  report.
 - The appearance request returns `422` or `404`: copy the current snippet from
   the intended site rather than repairing its public key by hand.
 - The console blocks the request: allow the Wayfindr origin in `connect-src`

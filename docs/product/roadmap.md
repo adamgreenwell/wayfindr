@@ -2,45 +2,35 @@
 
 This roadmap is directional and should not include private business strategy.
 
-The latest public release is `v0.7.0` (August 25, 2026), and the current
-unreleased development line is `0.9.0`. Under the project's pre-1.0 versioning
-contract, features, additive schema, or operator action advance the minor slot;
-`0.9.0` is a development identity, not a claim that the release is published.
+The latest public release is
+[`v0.9.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.9.0)
+(September 24, 2026). Current `main` identifies the next development line as
+`1.0.0-dev`; no 1.0.0 artifact has been published.
 
-`1.0.0` is scoped to finishing the core support product and proving it, rather
-than to feature parity. The two gaps that framed it are closed: live visitor
-monitoring is implemented, and localization landed as a platform property —
-timezone, region, and where language is configured — rather than as a
-translation pass. Performance baselines have been measured instead of assumed.
+The first guarded release passed its tag ruleset and old-run gates, published
+the manifest and multi-architecture image, and verified stable image aliases.
+The public artifact then passed a
+[hosted-runner clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
+and an [upgrade from `v0.2.0`](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
+with a custom backup queue. An additional
+[fresh-install probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
+read `v0.9.0` directly from authenticated `/operator`. These paths do not prove
+bare-metal operation, public TLS/origin behavior, or independent human use.
 
-**One independent-install acceptance criterion is still open, and the author
-cannot satisfy it alone:**
-[#797](https://github.com/adamgreenwell/wayfindr/issues/797) — somebody who is
-not the author installs Wayfindr from a published artifact and it works. The
-repaired baseline for that run does not exist publicly yet:
-[#932](https://github.com/adamgreenwell/wayfindr/issues/932) and
-[PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) prepared and
-reviewed the `v0.9.0` candidate on current `main`. The stop-before-tag gates in
-[RELEASING.md](../../RELEASING.md) still have to clear, the owner must separately
-authorize the repository-settings and publication changes, and the exact
-artifact must be verified before #797's brief is refreshed for a human tester.
-The open `1.0.0` milestone also includes
-[#970](https://github.com/adamgreenwell/wayfindr/issues/970)'s release
-preconditions and [#985](https://github.com/adamgreenwell/wayfindr/issues/985)'s
-site-settings work. #797 is not the milestone's only open issue; the owner
-still needs to decide the settings scope and timing.
+`1.0.0` is scoped to an account experience a self-hoster can administer
+([#994](https://github.com/adamgreenwell/wayfindr/issues/994)) and the hard
+acceptance gate in [#797](https://github.com/adamgreenwell/wayfindr/issues/797):
+somebody who is not the author must install a published artifact using the
+public instructions, recording where they need to guess or get stuck. #994's
+1.0.0 scope also calls for an upgrade by that tester.
+The site-settings work in [#985](https://github.com/adamgreenwell/wayfindr/issues/985)
+and guarded-release gates in [#970](https://github.com/adamgreenwell/wayfindr/issues/970)
+are closed. The autonomous AI half remains deliberately deferred under ADR 0004.
 
-Tier 2 parity work is no longer post-1.0 either; it is implemented on current
-`main`. The AI tier has one assistive half implemented and one autonomous half
-deliberately deferred, which is recorded under *Deferred On Purpose* below
-rather than left implied.
+## Implemented in v0.9.0
 
-## Implemented on Current Main
-
-This section describes the unreleased `0.9.0` development tree. Some foundation
-also exists in public `v0.7.0`, but none of the post-`v0.7.0` additions below
-should be read as a public-artifact claim until a stable release containing
-them is published and verified.
+This section describes the public `v0.9.0` artifact. Some foundation also
+exists in older releases; the release notes define each version's boundary.
 
 The product has moved past a spine. Both competitive-gap tiers behind it —
 [#741](https://github.com/adamgreenwell/wayfindr/issues/741) (Tier 1) and
@@ -61,11 +51,13 @@ closed. It now includes:
   Coverage is now most of the product rather than a handful of pages; what is
   and is not extracted is described immediately below.
 
-  **The operator console is now fully extracted**, and so is the great majority
+  **The operator console is fully extracted**, and so is the great majority
   of the dashboard — Alerts, Reports, ticket detail, sites and site settings,
   the account audit, break-glass, and the security, SLA, automation and webhook
   pages, including Integrations. The ordinary pages that still render English
-  are the agent home page, the readiness page, and support-code lookup. The CSV exports keep stable English headers deliberately, because a
+  are the agent home page and support-code lookup. Readiness and its guided
+  checks are translated. The CSV exports keep stable English headers
+  deliberately, because a
   localized cell is reparsed by whatever spreadsheet opens it.
 
   `DashboardLanguage::EXTRACTED_ROUTES` is the list that decides which **pages**
@@ -189,38 +181,29 @@ Underneath that, the original foundation:
 
 ## Before 1.0.0
 
-The feature gaps that defined the pre-1.0 work are closed. The remaining work
-includes release and acceptance proof plus an owner decision on the scope and
-timing of site-settings work in #985. Other polish stays demand-gated.
+The support feature gaps, v0.9.0 publication, and guarded-tag preconditions are
+complete. The next work is the account area and independent installation and
+upgrade acceptance; other polish stays demand-gated.
 
-- **Hold the reviewed release candidate at its publication gates:**
-  [#932](https://github.com/adamgreenwell/wayfindr/issues/932) completed through
-  [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) on the unreleased
-  `0.9.0` tree. Before any tag, wait for every eligible pre-guard release run to
-  leave its rerun window or, with separate owner authorization, delete named
-  runs after preserving their evidence. Creating the required active `v*` tag
-  ruleset is a separately authorized settings change. Neither the merged
-  candidate nor this gate inventory authorizes a repository-settings change,
-  tag, release, registry push, or deployment.
-- **Publish only after separate owner authorization, then verify the exact
-  artifact:** record the tag, commit, image digest, release metadata, and
-  relevant clean-install/upgrade evidence before treating it as #797's new
-  baseline.
-- **Run the remaining independent-install acceptance criterion:** refresh
-  [#797](https://github.com/adamgreenwell/wayfindr/issues/797) with that verified
-  artifact and hand it to a human who is not the author. A cold, no-context
-  Claude sandbox run against `v0.7.0` was valuable synthetic evidence: it
-  matched the release, commit, and image digest, found the widget bootstrap and
-  installer discovery defects later fixed by PRs #929 and #931, and completed a
-  synthetic support loop after workarounds. It did not exercise a real VM,
-  public TLS/origin, local-CA trust, or an unwarmed image pull, and it is not the
-  human acceptance required by #797.
+- **Finish the account experience:** use the measured account-area scope in
+  [#994](https://github.com/adamgreenwell/wayfindr/issues/994). Avoid broad
+  feature-parity work that does not help a self-hoster administer the desk.
+- **Run independent acceptance against a published artifact:**
+  [#797](https://github.com/adamgreenwell/wayfindr/issues/797) needs a person
+  who is not the author to install Wayfindr using the public docs, then record
+  where they had to guess. #994's 1.0.0 scope also asks that tester to upgrade.
+  The hosted-runner v0.9.0 clean install,
+  upgrade, support-loop, and backup/restore checks are useful reproducible
+  evidence, but scripted runs cannot satisfy that human gate. A prior cold
+  Claude sandbox run against `v0.7.0` also found real widget and installer
+  defects later fixed in v0.9.0, but it was not a real-environment acceptance
+  run.
 - Keep reliability evidence repeatable: use the
   [disposable VM evidence contract](../self-hosting/disposable-vm-evidence.md)
-  for future release candidates. The August 12 matrix proved clean install,
-  supported upgrade/advisory behavior, backup/restore, narrow rollback/retry,
-  reboot recovery, and deployment-fork readiness; do not stretch that dated
-  evidence into proof for a later artifact or production restore posture.
+  for future release candidates. The August 12 bare-metal matrix remains
+  specific to `v0.3.2`; the September 24 public-artifact hosted-runner checks
+  cover the narrower `v0.9.0` paths linked above. Neither proves a production
+  restore posture.
 - MVP dogfood operation: the Forge stage has been the owner-approved initial
   dogfood instance. Keep any runtime claim dated, use
   [MVP Dogfood Readiness](mvp-dogfood-readiness.md) after deploys, and let real

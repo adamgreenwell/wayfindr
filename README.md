@@ -7,15 +7,14 @@ they ask, or by email. An agent works the queue, replies, cobrowses with
 consent, and turns any of it into a durable ticket. An owner can see whether the
 desk is actually working.
 
-One release-boundary caveat on email before you evaluate it: current `main`
-accepts Mailgun and Postmark deliveries directly at `POST /api/mail/inbound`
-when the matching provider verification is configured, and still accepts the
-original Wayfindr-signed proxy format for existing integrations. Public
-`v0.7.0` predates that direct-provider support. See the
+Published `v0.9.0` accepts Mailgun and Postmark deliveries directly at
+`POST /api/mail/inbound` when the matching provider verification is configured,
+and still accepts the original Wayfindr-signed proxy format for existing
+integrations. Older `v0.7.0` predates that direct-provider support. See the
 [inbound mail guide](docs/self-hosting/inbound-mail.md) for the exact contracts.
 
-The capability list below describes current `main`; the Status section separates
-the public v0.7.0 release from unreleased work.
+The capability list below describes the public `v0.9.0` release. The Status
+section separates published evidence from the work still needed for 1.0.0.
 
 - install a small widget on a site, themed to match it and speaking the
   visitor's language;
@@ -148,38 +147,38 @@ Start with [data-responsibility.md](docs/privacy/data-responsibility.md), the
 
 ## Status
 
-Pre-1.0. The latest public release is `v0.7.0` (August 25, 2026), and the
-current unreleased development line is `0.9.0`. Under the project's pre-1.0
-versioning contract, the minor bump reflects the features and schema added
-since `v0.7.0`; it does not claim that `v0.9.0` has been published.
+Pre-1.0. The latest public release is
+[`v0.9.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.9.0)
+(September 24, 2026). Its protected tag resolves to `b9ae8bcc`, and the
+published multi-architecture image resolves to
+`sha256:5799f89e3561c0e8b8a0e2f2e9933cc1edf0292604ff36cc127608090093138a`.
+Current `main` identifies its next development line as `1.0.0-dev`; there is
+no public 1.0.0 release.
 
-Self-hosting and upgrades from published artifacts have been proved repeatable
-on hosted runners and disposable bare-metal guests — **for the artifacts that
-were tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and
-has not been through that matrix yet; record fresh evidence from its own
-artifact before adopting it anywhere that matters.
+The public `v0.9.0` artifact passed a
+[fresh Ubuntu hosted-runner install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
+and an [upgrade from public `v0.2.0` with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768).
+Both runs matched the published image digest, completed the support loop, and
+passed backup/restore checks. A separate
+[fresh-install check](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
+also opened the authenticated `/operator` console and read its rendered
+`v0.9.0` identity. These are hosted-runner paths, not a bare-metal or human
+non-author acceptance result. Earlier disposable bare-metal evidence remains
+specific to `v0.3.2`.
 
-The feature gaps tracked in the Tier 1
+The feature gaps tracked in Tier 1
 ([#741](https://github.com/adamgreenwell/wayfindr/issues/741)) and Tier 2
-([#751](https://github.com/adamgreenwell/wayfindr/issues/751)) epics are
-implemented on current `main`. The remaining independent-install acceptance
-criterion is
-[#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
-published-artifact install by somebody who is not the author. Its repaired
-baseline must follow this order: [#932](https://github.com/adamgreenwell/wayfindr/issues/932)
-and [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) prepared and
-reviewed the `v0.9.0` candidate on current `main`. Before any tag, wait for the
-eligible pre-guard release runs to leave their rerun window or, with separate
-owner authorization, delete named runs after preserving their evidence. Creating
-the required active `v*` tag ruleset is another separately authorized settings
-change. Only after those gates clear may the owner separately authorize
-publication, verify the exact artifact, refresh the acceptance brief, and give
-it to the human tester. Candidate readiness is not permission to change
-repository settings or publish, and publication is not acceptance proof.
-The open `1.0.0` milestone also includes
-[#970](https://github.com/adamgreenwell/wayfindr/issues/970)'s release
-preconditions and [#985](https://github.com/adamgreenwell/wayfindr/issues/985)'s
-site-settings work, whose scope and timing still need an owner decision.
+([#751](https://github.com/adamgreenwell/wayfindr/issues/751)) shipped in
+`v0.9.0`. Host-managed PHP upgrades need the runtime check and acknowledgement
+documented in the [release notes](CHANGELOG.md); the published image already
+contains those requirements. The guarded-release preconditions in
+[#970](https://github.com/adamgreenwell/wayfindr/issues/970) are complete.
+Work toward 1.0.0 includes the [account area](https://github.com/adamgreenwell/wayfindr/issues/994)
+and [#797](https://github.com/adamgreenwell/wayfindr/issues/797): a person who
+is not the author must install a published artifact using the public
+instructions, recording where they need to guess or get stuck. #994's 1.0.0
+scope also calls for that person to test an upgrade. Publication and scripted
+evidence do not satisfy the human install gate.
 
 The deferred autonomous-answer capability is tracked separately in
 [#762](https://github.com/adamgreenwell/wayfindr/issues/762), outside the 1.0.0
@@ -200,8 +199,7 @@ That is point-in-time variability—not long-term drift resistance,
 model-revision evidence, provider or runtime approval, or authority to change
 ADR 0004.
 
-The list below describes the current development tree. It is not a claim that
-these post-`v0.7.0` additions are available in the latest public artifact.
+The list below describes the published `v0.9.0` capability set.
 
 - browser and CLI first-run setup;
 - authenticated account owners, admins, agents, and platform operators;
@@ -228,7 +226,7 @@ these post-`v0.7.0` additions are available in the latest public artifact.
 - an agent-selectable dashboard language in English, German, and Italian across
   the operator console and most dashboard workflows; the ordinary pages still
   intentionally outside the extracted route boundary are the agent home,
-  readiness, and support-code lookup;
+  and support-code lookup; readiness and its guided checks are translated;
 - a visitor directory, and agent-initiated password recovery;
 - a public API with a decided isolation model, scoped reads, and a narrow write surface;
 - visitor profiles, support-code lookup, and safe cross-record context;
@@ -250,15 +248,16 @@ these post-`v0.7.0` additions are available in the latest public artifact.
 - provider-neutral external issue links plus GitHub/GitLab/Jira issue creation,
   state reflection, and comment relay foundations.
 
-The self-hosting story is proved for the artifacts tested — most recently `v0.3.2`, not yet `v0.7.0` — with repeatable evidence: clean installs, supported upgrades, advisory behavior,
-backup/restore, rollback, reboot recovery, and deployment-fork readiness. See
-[disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md) for the
-evidence contract. A cold, no-context Claude sandbox run later matched the
-`v0.7.0` release, commit, and image digest and completed a synthetic support loop
-after working around two defects. Those defects were fixed on current `main` by
+The full disposable bare-metal recovery matrix remains specific to `v0.3.2`.
+The newer `v0.9.0` public-artifact hosted-runner paths above prove clean install,
+an upgrade from `v0.2.0`, support-loop health, and backup/restore within that
+environment. See [disposable-vm-evidence.md](docs/self-hosting/disposable-vm-evidence.md)
+for the evidence contract. A prior cold, no-context Claude sandbox run matched
+the `v0.7.0` release, commit, and image digest and completed a synthetic support
+loop after working around two defects. Those defects were fixed in `v0.9.0` by
 [#929](https://github.com/adamgreenwell/wayfindr/pull/929) and
 [#931](https://github.com/adamgreenwell/wayfindr/pull/931), but that run did not
 exercise a real VM, public TLS/origin, local-CA trust, or an unwarmed image pull,
-and an agent is not the human non-author required by #797. Product expansion is
-intentionally demand-gated around ticket workflow comfort, external integration
-field mapping, and any future cobrowse replay work.
+and an agent is not the human non-author required by #797. Product expansion
+remains demand-gated around ticket workflow comfort, external integration field
+mapping, and any future cobrowse replay work.

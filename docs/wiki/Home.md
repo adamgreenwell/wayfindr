@@ -7,13 +7,13 @@ working support desk rather than a spine, but operators should still treat every
 installation as an actively managed system rather than a set-and-forget
 appliance.
 
-Inbound email depends on which version you are running. **Public `v0.7.0`, the
-latest release, predates direct-provider support**: it verifies only Wayfindr's
-own `X-Wayfindr-Signature` scheme, so a provider's normal webhook returns `401`
-until something in front of it re-signs. On current `main` — the unreleased
-`0.9.0` line — Mailgun and Postmark post straight to `POST /api/mail/inbound`
-once `WAYFINDR_INBOUND_MAIL_PROVIDER` names the scheme, and the original
-proxy contract still verifies, so an install that built one can keep it.
+Inbound email depends on which version you are running. Public `v0.9.0` lets
+Mailgun and Postmark post straight to `POST /api/mail/inbound` once
+`WAYFINDR_INBOUND_MAIL_PROVIDER` names the matching verification scheme. The
+original Wayfindr-signed proxy contract still verifies, so an install that
+built one can keep it. On `v0.7.0`, direct provider webhooks are not supported:
+that release verifies only Wayfindr's `X-Wayfindr-Signature` scheme, and a
+provider's normal webhook returns `401` until a proxy re-signs it.
 `docs/self-hosting/inbound-mail.md` covers all three.
 
 ## Start Here

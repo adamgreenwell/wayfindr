@@ -5,6 +5,11 @@
 Use disposable VM evidence when a clean install, upgrade, backup/restore,
 rollback, or reboot claim needs proof from a fresh self-hosted environment.
 
+The latest public release is `v0.9.0`. Its hosted public-artifact clean-install
+and upgrade results are recorded on [Releases](Releases). The August 2026
+`v0.3.2` hosted and bare-metal matrix below remains evidence for that artifact;
+it does not establish a `v0.9.0` bare-metal reboot or rollback path.
+
 The authoritative contract lives in
 [Disposable VM Evidence Contract](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/disposable-vm-evidence.md).
 It defines the minimum VM matrix, isolation rules, public-artifact rules,
@@ -34,10 +39,11 @@ skew-restore/image-rollback scenarios, then copy the sanitized result summary
 into the relevant issue. The hosted skew-restore path uses
 `recovery-latest-synthetic-skew-restore`: latest public release install, real
 backup archive, synthetic older manifest identity, forced restore, migration,
-and post-restore support-loop proof. The hosted image rollback/retry path uses
-`recovery-latest-v0.3.1-image-rollback-retry`: latest public release install,
-rollback to the previous schema-compatible `0.3.1` image, support-loop proof,
-retry of the original image, and support-loop proof again.
+and post-restore support-loop proof. The recorded August 2026 hosted image
+rollback/retry path used `recovery-latest-v0.3.1-image-rollback-retry`:
+`v0.3.2` install, rollback to its schema-compatible `0.3.1` image, support-loop
+proof, retry of the original image, and support-loop proof again. A later
+release needs its own rollback compatibility evidence.
 
 For a real disposable VM reboot check, run the evidence installer with a
 persistent `WAYFINDR_EVIDENCE_TARGET_DIR`, fixed synthetic credentials, and
@@ -62,11 +68,11 @@ bare-metal VM reboot, rollback drill, real DNS/TLS, mail delivery, offsite
 backup, or production restore posture. If the workflow proves only part of a
 claim, record it as partial and keep the issue open.
 
-## Current Hosted Evidence
+## August 2026 Hosted Evidence — v0.3.2
 
 - August 11, 2026:
   [`clean-install-latest` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323)
-  against the latest public release, `v0.3.2`. The run installed from public
+  against the then-latest public release, `v0.3.2`. The run installed from public
   artifacts, resolved image digest
   `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
   verified healthy services, ran migrations, completed the support loop, took
@@ -90,7 +96,8 @@ claim, record it as partial and keep the issue open.
   backup/restore, post-restore smoke, and restart checks.
 - August 11, 2026:
   [`recovery-latest-synthetic-skew-restore` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31537984956).
-  The run installed the latest public release, `v0.3.2`, resolved image digest
+  The run installed the then-latest public release, `v0.3.2`, and resolved image
+  digest
   `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
   took a real backup, rewrote a copy of the backup manifest to simulate an
   archive from `v0.2.0`, asserted the `Version skew:` restore warning, ran
@@ -99,20 +106,21 @@ claim, record it as partial and keep the issue open.
   warning/recovery path, not arbitrary cross-version archive compatibility.
 - August 11, 2026:
   [`recovery-latest-v0.3.1-image-rollback-retry` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31539581605).
-  The run installed the latest public release, `v0.3.2`, resolved image digest
+  The run installed the then-latest public release, `v0.3.2`, and resolved image
+  digest
   `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
   rolled the stack back to `ghcr.io/adamgreenwell/wayfindr:0.3.1` at digest
   `sha256:36cdaf94f29372eab5b60a48eccc3ca40c3664afb9f3df01137a0a26a8941a8f`,
   verified runtime and support-loop health, retried the original `v0.3.2`
   image, verified runtime and support-loop health again, then completed the
-  normal backup/restore and restart checks. This proves the current
+  normal backup/restore and restart checks. This proves the `v0.3.2` to `0.3.1`
   schema-compatible hosted image rollback/retry path, not arbitrary downgrade
   safety.
 - The hosted matrix remains partial on its own. The owner-operated matrix below
   adds real bare-metal guest creation and reboot proof; neither matrix proves
   DNS/TLS, mail delivery, offsite backups, or production restore posture.
 
-## Current Bare-Metal Evidence
+## August 2026 Bare-Metal Evidence — v0.3.2
 
 On August 12, 2026, the owner ran the public-artifact contract on disposable
 Ubuntu 24.04.4 x86_64 guests created on an owner-operated Hyper-V host. The

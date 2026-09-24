@@ -2,45 +2,43 @@
 
 [Back to Home](Home)
 
-Wayfindr is pre-1.0. The latest public release is `v0.7.0` (August 25, 2026),
-and the current unreleased development line is `0.9.0`. Current `main` has moved
-from "the core support loop exists" to a support desk reachable by widget,
-email, and help centre, with a measurement surface of its own. Mailgun and
-Postmark can post directly to `POST /api/mail/inbound` when their matching
-verification is configured; the original Wayfindr-signed proxy format remains
-compatible. Public `v0.7.0` predates that direct-provider support. See the
+Wayfindr is pre-1.0. The latest public release is `v0.9.0` (September 24, 2026).
+It is a support desk reachable by widget, email, and help centre, with a
+measurement surface of its own. Mailgun and Postmark can post directly to
+`POST /api/mail/inbound` when their matching verification is configured; the
+original Wayfindr-signed proxy format remains
+compatible. Public `v0.7.0` predates direct-provider support. See the
 [repository inbound-mail guide](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/inbound-mail.md).
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
-hosted runners and disposable bare-metal guests — **for the artifacts that were
-tested, the most recent being `v0.3.2`**. `v0.7.0` adds ten migrations and has
-not been through that matrix; see [Releases](Releases).
+hosted runners and disposable bare-metal guests. The newest public-artifact
+hosted runs cover a `v0.9.0` clean install and `v0.2.0 → v0.9.0` upgrade with a
+custom backup queue. The newest owner-operated bare-metal guest evidence still
+covers `v0.3.2`; see [Releases](Releases).
 
-The Tier 1 and Tier 2 feature epics are closed on current `main`. The remaining
+The Tier 1 and Tier 2 feature epics are closed in `v0.9.0`. The remaining
 independent-install acceptance criterion is
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797), a successful
-published-artifact install by somebody who is not the author. Its prerequisite
-release sequence is recorded under *Current Release and Acceptance Gates*.
-The open `1.0.0` milestone also includes
-[#970](https://github.com/adamgreenwell/wayfindr/issues/970)'s release
-preconditions, one of whose two gates — an active ruleset restricting `v*` tag
-creation — is now satisfied, while the other expires on its own on
-2026-09-24. #797 is not the milestone's only open issue.
+published-artifact install by somebody who is not the author. The tag
+preconditions recorded in
+[#970](https://github.com/adamgreenwell/wayfindr/issues/970) were satisfied
+before `v0.9.0` published; they do not satisfy #797. The next work toward
+`1.0.0` also includes the account area described in
+[#994](https://github.com/adamgreenwell/wayfindr/issues/994).
 [#985](https://github.com/adamgreenwell/wayfindr/issues/985), the site-settings
 page length, closed on 2026-09-21: 11,333px to 7,610px of scroll, 23 sections
 to 17.
 
-## Current Development Tree
+## What's in `v0.9.0`
 
-This section describes unreleased `0.9.0` source. Some foundation also exists
-in public `v0.7.0`, but post-`v0.7.0` work listed here is not publicly available
-until a stable artifact containing it is published and verified.
+This section describes public `v0.9.0`. Some foundation was available in older
+releases; consult the release notes when operating one of those artifacts.
 
 - Widget install, visitor identity, live chat, agent replies, and durable
   tickets.
 - **Email as a second channel**: mail opens and continues conversations, so a
   customer replying to a notification is no longer replying into nothing.
-  Current `main` verifies Mailgun and Postmark directly and retains the original
+  `v0.9.0` verifies Mailgun and Postmark directly and retains the original
   Wayfindr-signed proxy contract for existing integrations.
 - **A help centre**: articles written in the dashboard and searchable from
   inside the widget, so a visitor can find the answer before asking.
@@ -77,7 +75,8 @@ until a stable artifact containing it is published and verified.
   until somebody saves one.
 
   The ordinary dashboard pages still intentionally rendered in English are the
-  agent home page, readiness, and support-code lookup.
+  agent home page and support-code lookup. Readiness and its guided setup checks
+  are translated in this release.
   `DashboardLanguage::EXTRACTED_ROUTES` is the executable authority; it also
   includes writes and partials whose validation or refreshed content must match
   the page that invoked them. A write shared by translated and untranslated
@@ -257,34 +256,32 @@ A cold, no-context Claude agent tested public `v0.7.0` in a cloud sandbox. It
 matched the release, commit, and image digest and completed a synthetic
 visitor-to-agent support loop after working around two defects. The run found
 that the script-tag widget did not auto-initialize and that an unreachable
-GitHub release API was misdiagnosed as "no release." Those defects were fixed on
-current `main` by
+GitHub release API was misdiagnosed as "no release." Those defects were fixed in
+`v0.9.0` by
 [#929](https://github.com/adamgreenwell/wayfindr/pull/929) and
 [#931](https://github.com/adamgreenwell/wayfindr/pull/931).
 
 That was valuable cold-start evidence, not #797 acceptance. It ran in a cloud
 sandbox rather than a real VM, warmed the image cache before timing, used
 localhost over HTTP, skipped public-origin and TLS/local-CA paths, and was
-performed by an AI agent rather than a human non-author. The fixes also remain
-unreleased while `0.9.0` is only a development identity.
+performed by an AI agent rather than a human non-author.
 
-The next sequence is intentionally gated:
+The `v0.9.0` tag at `b9ae8bcc` and its
+[release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36002701167)
+verify the published manifest, multi-architecture image and digest, GitHub
+Release, and stable aliases. Separate hosted runs now verify a
+[public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
+and a
+[`v0.2.0 → v0.9.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768).
+A separate [fresh-install operator probe](https://github.com/adamgreenwell/wayfindr/actions/runs/36013000938)
+matched the published image digest and read `Wayfindr version: v0.9.0` from
+rendered authenticated `/operator` after install and after restore. Those
+synthetic runs do not satisfy the human non-author install required by
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797). Record that run's
+stops and fix what it surfaces before claiming `1.0.0` acceptance.
 
-1. [#932](https://github.com/adamgreenwell/wayfindr/issues/932) and
-   [PR #934](https://github.com/adamgreenwell/wayfindr/pull/934) have prepared
-   and reviewed the `v0.9.0` candidate on current `main`.
-2. Before any tag, retire every eligible pre-guard release run and install the
-   required active `v*` tag ruleset. Creating the ruleset — or deleting a run
-   instead of waiting for its rerun window to expire — requires separate owner
-   authorization.
-3. After separate publication authorization, publish and verify the exact
-   stable tag, commit, image digest, release metadata, and relevant
-   install/upgrade paths.
-4. Refresh [#797](https://github.com/adamgreenwell/wayfindr/issues/797) to name
-   that verified artifact, then hand the brief to a human who is not the author.
-
-Candidate readiness, publication, artifact verification, and human acceptance
-are four different claims. None should be collapsed into the next one.
+Publication, an install from the public artifact, and human acceptance are
+separate claims.
 
 ## Parked or Demand-Gated
 
