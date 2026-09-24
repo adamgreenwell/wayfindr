@@ -106,7 +106,7 @@ jobs:
           fi
 
       # The installer reads this asset before pulling an image. Build it in the
-      # read-only job, then checksum the artifact hand-off into publication.
+      # read-only job, then verify the same bytes after rebuilding in publish.
       - name: Build the release manifest
         id: manifest
         run: |
@@ -141,16 +141,26 @@ jobs:
           ref: ${{ needs.validate.outputs.release_sha }}
           persist-credentials: false
 
-      - name: Restore the validated release manifest
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      # A failed-job rerun does not rerun validate, so an artifact named with
+      # the new run_attempt would be absent. The builder is deterministic for
+      # this tag and commit; verify its bytes against validate's checksum.
+      - name: Set up PHP 8.4 for the release manifest
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2.37.2
         with:
-          name: release-manifest-${{ github.run_id }}-${{ github.run_attempt }}
+          php-version: "8.4"
+          coverage: none
 
-      - name: Verify the manifest hand-off
+      - name: Rebuild and verify the validated release manifest
         env:
           EXPECTED_SHA256: ${{ needs.validate.outputs.manifest_sha256 }}
+          RELEASE_SHA: ${{ needs.validate.outputs.release_sha }}
+          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
+          php scripts/release/build-manifest.php \
+            --version="$TAG" \
+            --commit="$RELEASE_SHA" \
+            --out=release-manifest.json
           test -s release-manifest.json
           actual="$(sha256sum release-manifest.json | awk '{print $1}')"
           test "$actual" = "$EXPECTED_SHA256"
@@ -209,13 +219,35 @@ jobs:
               --generate-notes \
               --latest=false \
               --verify-tag
-            release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+
+            # Drafts are listed for this token, but GitHub's by-tag release
+            # endpoint returns 404 until publication. Wait for the new draft
+            # to appear in the list and use its numeric ID for read-backs.
+            for attempt in {1..12}; do
+              release_json="$(gh api --paginate \
+                "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+                --slurp \
+                | jq -c --arg tag "$TAG" '
+                    [.[][] | select(.tag_name == $tag)]
+                    | if length > 1 then error("duplicate releases for tag")
+                      elif length == 1 then .[0]
+                      else null
+                      end
+                  ')"
+              [[ "$release_json" != "null" ]] && break
+              sleep 5
+            done
+            if [[ "$release_json" == "null" ]]; then
+              echo "The draft release did not appear in the release list." >&2
+              exit 1
+            fi
           fi
 
           jq -e --arg tag "$TAG" '
             .tag_name == $tag and .prerelease == false
           ' <<< "$release_json" >/dev/null
 
+          release_id="$(jq -er '.id | select(type == "number" and . > 0)' <<< "$release_json")"
           published="$(jq -r '(.draft == false)' <<< "$release_json")"
           manifest_digest="sha256:$(sha256sum release-manifest.json | awk '{print $1}')"
           manifest_count="$(jq '[.assets[] | select(.name == "release-manifest.json")] | length' \
@@ -228,7 +260,7 @@ jobs:
                 exit 1
               fi
               gh release upload "$TAG" release-manifest.json
-              release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+              release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$release_id")"
               ;;
             1) ;;
             *)
@@ -292,6 +324,7 @@ jobs:
               ;;
           esac
 
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
           echo "already_published=$published" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU for arm64 builds
@@ -427,12 +460,13 @@ jobs:
         if: steps.release.outputs.image_recorded != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
           TAG: ${{ github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
           gh release upload "$TAG" release-image-digest.txt
-          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG")"
+          release_json="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
           digest_asset_digest="sha256:$(sha256sum release-image-digest.txt | awk '{print $1}')"
           jq -e --arg digest "$digest_asset_digest" '
             [.assets[] | select(
