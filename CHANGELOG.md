@@ -303,12 +303,16 @@ makes none.
   frozen lexical fact alternatives. The owner's September 10 adjudication
   found two matcher false negatives and one real omitted retry step. The final
   decision was no fixture or matcher change; the recorded 13/16 failure and
-  evidence identities stand. Same-route evidence after meaningful elapsed time
-  or a model revision is still required before revisiting ADR 0004. All four were
-  recorded within about 78 minutes, and the cross-model samples also changed
-  upstream route. They demonstrate point-in-time variability, not long-term
-  drift resistance, provider approval, or runtime evidence. This infrastructure
-  did **not** ship autonomous visitor replies. ADR 0004 remains unchanged.
+  evidence identities stand. A later fixture-policy and scoring-contract change
+  in #997 rotated the suite identity while leaving the prompt identity unchanged;
+  the four captures remain historical and cannot be compared with the current
+  suite. Recapture every proposed route under that identity before collecting
+  same-route evidence after meaningful elapsed time or a model revision and
+  revisiting ADR 0004. All four were recorded within about 78 minutes, and the
+  cross-model samples also changed upstream route. They demonstrate point-in-time
+  variability, not long-term drift resistance, provider approval, or runtime
+  evidence. This infrastructure did **not** ship autonomous visitor replies.
+  ADR 0004 remains unchanged.
 
 - **`wayfindr:seed-desk`, `wayfindr:measure-dashboard` and `wayfindr:measure-
   attachment-retention`**, the harnesses the baselines were taken with. They

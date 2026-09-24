@@ -311,12 +311,17 @@ are four different claims. None should be collapsed into the next one.
   found two Gemini misses were matcher brittleness and one was a real omission.
   The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
   was no fixture or matcher change, preserving the recorded 13/16 failure.
-  #762 now waits on same-route evidence after meaningful elapsed time or a
-  model revision before revisiting ADR 0004. All four captures were recorded
-  within about 78 minutes, so this is point-in-time
-  variability, not long-term drift resistance, model-revision evidence,
-  provider approval, or visitor-runtime safety; #762 and the ADR boundary remain
-  open and unchanged.
+  [#997](https://github.com/adamgreenwell/wayfindr/pull/997) later added a
+  versioned scoring contract to the suite identity, changed the evaluator and
+  Unicode phrase matching, and renamed a fixture policy key. The suite identity
+  rotated while the prompt identity stayed the same. Those captures remain valid
+  historical evidence, but cannot be compared with a new run under the current
+  suite. Every proposed route needs recapture under the current identity before
+  #762 can use same-route evidence after meaningful elapsed time or a model
+  revision to revisit ADR 0004. All four September captures were recorded
+  within about 78 minutes, so this is point-in-time variability, not long-term
+  drift resistance, model-revision evidence, provider approval, or visitor-runtime
+  safety; #762 and the ADR boundary remain open and unchanged.
 
 The repository remains authoritative. See the
 [README](https://github.com/adamgreenwell/wayfindr#status),

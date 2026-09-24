@@ -284,6 +284,24 @@ independently justified change must rotate the evidence identity and recapture
 every proposed route, preserving the historical result. Raw responses remain
 private and mode `0600`.
 
+**That rotation has since happened, and the recapture has not.** `31d8a381`
+(#997, 2026-09-13) added a versioned scoring contract to the suite identity,
+changed the evaluator and Unicode phrase matching, and renamed the fixture
+policy key `confidence_brier_score` to `confidence_conformance_error`. Those
+independently justified contract changes were unrelated to the adjudication
+above. Together they moved the suite identity to
+`sha256:184c62862a7f06a824dd9279837fddd6a5d7337682d683a2dcbad848582a41c4`.
+The prompt identity is unchanged. The four September 10 captures therefore now
+stand exactly where the September 8 nine-case run does: valid historical
+evidence, intentionally incomparable with the current contract.
+
+The practical consequence is for anyone reaching for same-route evidence after
+elapsed time. A capture taken today carries the new suite identity, and the
+comparator will refuse to set it beside these four — correctly. Re-establishing
+a comparable baseline means recapturing **every** proposed route under
+`184c6286…`, not capturing one route and reading it against September. Until
+that happens there is no current provider evidence, only historical.
+
 The two GPT runs are only 38 minutes 11 seconds apart, the cross-model samples
 also changed upstream route, and all four captures occurred within about 78
 minutes. They establish point-in-time variability and cross-route coverage—not
@@ -472,7 +490,9 @@ frozen gate. The cross-model samples also changed upstream route, all four were
 recorded within about 78 minutes. Human adjudication is complete and left the
 fixture, matcher, and recorded results unchanged. #762 still requires same-route
 evidence after meaningful elapsed time or a model revision before revisiting
-ADR 0004. The September 10 captures are not longitudinal drift evidence,
+ADR 0004. First, every proposed route needs a new capture under the current
+suite identity; the September 10 captures cannot serve as its baseline. They
+are not longitudinal drift evidence,
 representative runtime safety, or provider approval. The agent-controlled
 copilot remains the approved boundary, #762 remains open, and visitor-facing
 implementation still requires another explicit ADR decision.
