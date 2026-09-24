@@ -690,6 +690,35 @@ function assertPublishingWorkflowGuarded(string $root): void
         }
     }
 
+    $beforePublication = substr($workflow, 0, $positions['GitHub Release publication']);
+
+    if (str_contains($beforePublication, 'releases/tags/$TAG')) {
+        throw new RuntimeException(
+            'release workflow looks up an unpublished draft by tag, which GitHub returns as 404.'
+        );
+    }
+
+    $publishJob = strpos($workflow, "\n  publish:\n");
+
+    if ($publishJob === false || $publishJob >= $positions['draft release staging']) {
+        throw new RuntimeException('release workflow has no publish job before draft staging.');
+    }
+
+    $publishPreparation = substr(
+        $workflow,
+        $publishJob,
+        $positions['draft release staging'] - $publishJob,
+    );
+
+    if (! str_contains($publishPreparation, 'name: Rebuild and verify the validated release manifest')
+        || ! str_contains($publishPreparation, '--commit="$RELEASE_SHA"')
+        || ! str_contains($publishPreparation, 'test "$actual" = "$EXPECTED_SHA256"')
+        || str_contains($publishPreparation, 'actions/download-artifact@')) {
+        throw new RuntimeException(
+            'release publisher depends on a prior attempt\'s artifact instead of rebuilding the validated manifest.'
+        );
+    }
+
     if (preg_match_all('/^[ \t]*uses:[ \t]+([^@\s]+)@([^\s#]+)/m', $workflow, $uses, PREG_SET_ORDER) === false) {
         throw new RuntimeException('could not inspect release workflow action references.');
     }
