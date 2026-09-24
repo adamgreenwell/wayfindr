@@ -414,10 +414,13 @@ Ordered by real dogfood value and dependency, not feature novelty.
    pass and three machine-scored failures. The owner completed human
    adjudication on September 10: two Gemini misses were matcher brittleness and
    one was a real omission. The final decision was no fixture or matcher change;
-   the recorded 13/16 result stands. Same-route evidence after meaningful elapsed
-   time or a model revision is still required before revisiting ADR 0004. A
-   visitor-facing answer agent requires a deliberate ADR change; do not smuggle
-   it in as release polish.
+   the recorded 13/16 result stands. #997 subsequently changed the fixture
+   policy and bound a versioned scorer contract into the suite identity, so the
+   four captures are historical and incomparable with the current contract.
+   Recapture every proposed route under the current suite identity before
+   seeking same-route evidence after meaningful elapsed time or a model revision
+   and revisiting ADR 0004. A visitor-facing answer agent requires a deliberate
+   ADR change; do not smuggle it in as release polish.
 
 ---
 
@@ -1101,10 +1104,14 @@ found matcher brittleness in `conversation-csv-export` and
 The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
 was no fixture or matcher change. The recorded 13/16 machine result, scorer
 commit, and evidence identities stand; this adjudication required no recapture.
-The freeze discipline still forbids tuning to retained outputs. #762 now waits
-on same-route evidence after meaningful elapsed time or a model revision before
-ADR 0004 is revisited. No visitor-facing runtime was approved. #948 tracks the
-separately discovered evaluator defects and must preserve the historical record.
+The freeze discipline still forbids tuning to retained outputs. #997 later
+changed the fixture policy and bound a versioned scorer contract into the suite
+identity; the prompt identity stayed the same. The September captures are now
+historical and incomparable with the current suite. #762 first needs every
+proposed route recaptured under that identity, then same-route evidence after
+meaningful elapsed time or a model revision before ADR 0004 is revisited. No
+visitor-facing runtime was approved. #948 tracks the separately discovered
+evaluator defects and must preserve the historical record.
 
 One more nuance on the copilot: it is **off until an operator configures a
 provider** — `config/ai.php` defaults the driver to an empty string — so "the

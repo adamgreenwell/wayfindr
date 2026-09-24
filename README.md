@@ -189,11 +189,16 @@ Claude Sonnet 5, and Gemini 3.8 Flash produced one 16/16 pass plus 15/16,
 attributed two Gemini misses to matcher brittleness and one to a real omission.
 The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
 was no fixture or matcher change; the recorded 13/16 failure stands. #762 now
-waits on same-route evidence after meaningful elapsed time or a model revision
-before revisiting ADR 0004. The cross-model samples also changed upstream route,
-and all four were recorded within about 78 minutes. That is point-in-time
-variability—not long-term drift resistance, model-revision evidence, provider
-or runtime approval, or authority to change ADR 0004.
+needs every proposed route recaptured under the current suite identity: #997
+subsequently changed the fixture policy and bound the scorer contract, including
+evaluator and Unicode phrase matching, into that identity. The prompt identity
+did not change. The September captures remain historical and cannot form the
+current baseline. Only then can same-route evidence after meaningful elapsed
+time or a model revision support revisiting ADR 0004. The cross-model samples
+also changed upstream route, and all four were recorded within about 78 minutes.
+That is point-in-time variability—not long-term drift resistance,
+model-revision evidence, provider or runtime approval, or authority to change
+ADR 0004.
 
 The list below describes the current development tree. It is not a claim that
 these post-`v0.7.0` additions are available in the latest public artifact.

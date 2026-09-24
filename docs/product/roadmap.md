@@ -291,13 +291,18 @@ prevents a contract change from masquerading as provider/model drift, but it
 does not fingerprint every provider-side transformation.
 
 Human review of the retained private outputs is complete. Reconsideration now
-waits on same-route evidence after meaningful time or a model revision, followed
-by an explicit ADR review with that evidence. Only if the decision changes may
-the project define a visitor-facing runtime with grounding, low-confidence
-handoff, per-site opt-in and disclosure, and reply audit. Any independently
-justified fixture or matcher
-change must freeze a new evidence identity and recapture every proposed route;
-it must not rewrite the recorded September 10 outcomes.
+requires recapturing every proposed route under the current suite identity:
+#997 later changed the fixture policy and bound a versioned scorer contract,
+including evaluator and Unicode phrase matching, into that identity. The prompt
+identity stayed the same, but the September captures are historical and cannot
+serve as a comparable baseline. Same-route evidence after meaningful time or a
+model revision must follow that recapture, then an explicit ADR review with the
+evidence. Only if the decision changes may the project define a visitor-facing
+runtime with grounding, low-confidence handoff, per-site opt-in and disclosure,
+and reply audit. Any independently
+justified fixture, matcher, or scorer change must freeze a new evidence identity
+and recapture every proposed route; it must not rewrite the recorded September
+10 outcomes.
 
 Until that happens, the reply a customer reads belongs to a human.
 

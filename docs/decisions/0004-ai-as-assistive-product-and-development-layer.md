@@ -159,7 +159,12 @@ representative self-hosting or visitor-runtime safety, or provider approval. No
 stored setting, deployment, runtime, or ADR decision changed. The evidence
 strengthens rather than relaxes the reason for keeping autonomous replies
 deferred. The September 8 decision and the human-reviewed copilot boundary
-remain unchanged. Human adjudication is complete; #762 stays open for same-route
+remain unchanged. Human adjudication is complete. After that adjudication, #997
+changed the fixture policy and bound a versioned scorer contract, including
+evaluator and Unicode phrase matching, into the suite identity while leaving
+the prompt identity unchanged. The four September captures are valid historical
+evidence but cannot be compared with the current suite. #762 first needs every
+proposed route recaptured under the current suite identity, then same-route
 evidence after meaningful elapsed time or a model revision before this ADR is
 revisited. The adjudication does not approve a visitor-facing answer runtime.
 
