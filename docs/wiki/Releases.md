@@ -5,7 +5,12 @@
 Wayfindr is pre-1.0. Read each release as an operator change and validate it on
 a disposable VM before upgrading a persistent installation.
 
-The latest published release is `v0.7.0`.
+The latest published release is
+[`v0.9.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.9.0).
+Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36002701167)
+verified the tagged commit, manifest, multi-architecture image, GitHub Release,
+and stable image aliases on September 24, 2026. Publication checks do not prove
+that somebody has installed or upgraded from that public artifact.
 
 ## Where to Look
 
@@ -31,12 +36,12 @@ artifact you intend to run.
 Evidence below is recorded per artifact and is not superseded by a later
 release: each entry states what was proved, for which version, on which date.
 
-**None of it covers `v0.7.0`.** That release adds schema migrations — articles,
-inbound mail, ratings, lifecycle recording boundaries, API tokens, reporting
-indexes and per-user locales — so an older artifact's clean-install and upgrade
-runs prove nothing about this one's install path. Record fresh evidence from the
-`v0.7.0` artifact before adopting it on anything that matters, exactly as the
-rule above says.
+**The install and upgrade runs below cover `v0.3.2`, not `v0.9.0`.** The latter
+has a [local candidate rehearsal](https://github.com/adamgreenwell/wayfindr/blob/main/docs/development/release-0.8.0-rehearsal.md),
+but that used a locally built image and skipped the public manifest and registry
+handoff. Record fresh clean-install and upgrade evidence from the published
+`v0.9.0` artifact before adopting it on a persistent installation, exactly as
+the rule above says.
 
 - `v0.3.2` has passing hosted public-artifact clean-install evidence from
   August 11, 2026:

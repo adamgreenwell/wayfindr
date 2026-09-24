@@ -47,16 +47,14 @@ queues rendered every matching row. What an operator should know:
 
 - **The conversation queue is capped now.** Its closed lane went from 187 MB and
   twenty-three seconds to 1 MB and 161 ms.
-- **The ticket queue is capped on current `main`, not on the latest release.**
-  On public `v0.7.0` it still hydrates every matching row, which is why the
-  measurement needs a 1 GB PHP memory limit while the shipped image sets 256M —
-  a large desk on that release can exhaust memory, and that warning stands until
-  a release carries the fix. On `main` its attention and external-issue filters
-  moved into portable SQL, which is what the cap was waiting on, and the all
-  lane went from 62.8 MB and 7,052 ms to 1.1 MB and 227 ms. Both queues then
+- **The ticket queue is capped in `v0.9.0`.** Its attention and external-issue
+  filters moved into portable SQL, which is what the cap was waiting on, and the
+  all lane went from 62.8 MB and 7,052 ms to 1.1 MB and 227 ms. Both queues
   render at most 200 ordered rows while keeping lane and filter totals uncapped,
   so a busy desk still sees "200 of 12,431" rather than a number that quietly
-  stops counting.
+  stops counting. Older public `v0.7.0` still hydrates every matching ticket:
+  its measurement needs a 1 GB PHP memory limit while that image sets 256M, so
+  a large desk on that release can exhaust memory.
 - **The conversation detail page does not grow with the desk**, which matters
   because it is where an agent spends the day: 12–13 ms whether the desk holds a
   thousand conversations or fifty thousand.
