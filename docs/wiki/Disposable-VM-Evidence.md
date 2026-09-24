@@ -72,7 +72,7 @@ claim, record it as partial and keep the issue open.
 
 - August 11, 2026:
   [`clean-install-latest` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31535388323)
-  against the latest public release, `v0.3.2`. The run installed from public
+  against the then-latest public release, `v0.3.2`. The run installed from public
   artifacts, resolved image digest
   `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
   verified healthy services, ran migrations, completed the support loop, took
@@ -96,7 +96,8 @@ claim, record it as partial and keep the issue open.
   backup/restore, post-restore smoke, and restart checks.
 - August 11, 2026:
   [`recovery-latest-synthetic-skew-restore` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31537984956).
-  The run installed the latest public release, `v0.3.2`, resolved image digest
+  The run installed the then-latest public release, `v0.3.2`, and resolved image
+  digest
   `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
   took a real backup, rewrote a copy of the backup manifest to simulate an
   archive from `v0.2.0`, asserted the `Version skew:` restore warning, ran
@@ -105,7 +106,8 @@ claim, record it as partial and keep the issue open.
   warning/recovery path, not arbitrary cross-version archive compatibility.
 - August 11, 2026:
   [`recovery-latest-v0.3.1-image-rollback-retry` passed](https://github.com/adamgreenwell/wayfindr/actions/runs/31539581605).
-  The run installed the latest public release, `v0.3.2`, resolved image digest
+  The run installed the then-latest public release, `v0.3.2`, and resolved image
+  digest
   `sha256:3fe112ca3d3f83efb1f4d00c401b8bf43cc706ec5bfddb05244be01b2fd8e660`,
   rolled the stack back to `ghcr.io/adamgreenwell/wayfindr:0.3.1` at digest
   `sha256:36cdaf94f29372eab5b60a48eccc3ca40c3664afb9f3df01137a0a26a8941a8f`,
