@@ -9,8 +9,8 @@ The latest published release is
 [`v0.9.0`](https://github.com/adamgreenwell/wayfindr/releases/tag/v0.9.0).
 Its [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36002701167)
 verified the tagged commit, manifest, multi-architecture image, GitHub Release,
-and stable image aliases on September 24, 2026. Publication checks do not prove
-that somebody has installed or upgraded from that public artifact.
+and stable image aliases on September 24, 2026. Separate public-artifact install
+and upgrade runs are recorded below.
 
 ## Where to Look
 
@@ -36,12 +36,25 @@ artifact you intend to run.
 Evidence below is recorded per artifact and is not superseded by a later
 release: each entry states what was proved, for which version, on which date.
 
-**The install and upgrade runs below cover `v0.3.2`, not `v0.9.0`.** The latter
-has a [local candidate rehearsal](https://github.com/adamgreenwell/wayfindr/blob/main/docs/development/release-0.8.0-rehearsal.md),
-but that used a locally built image and skipped the public manifest and registry
-handoff. Record fresh clean-install and upgrade evidence from the published
-`v0.9.0` artifact before adopting it on a persistent installation, exactly as
-the rule above says.
+The September 24, 2026 `v0.9.0` public-artifact runs cover two hosted paths:
+
+- A [clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
+  on a fresh Ubuntu 24.04 runner.
+- A [`v0.2.0 → v0.9.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768)
+  on a separate fresh Ubuntu 24.04 runner.
+
+Both resolved the published image to
+`sha256:5799f89e3561c0e8b8a0e2f2e9933cc1edf0292604ff36cc127608090093138a`
+and completed the synthetic support loop, backup/restore, and stack restart.
+These runs prove those public-artifact paths over loopback HTTP. They do not
+establish bare-metal reboot, operator-managed DNS/TLS, real mail, offsite
+backups, production restore, or the human non-author acceptance in
+[#797](https://github.com/adamgreenwell/wayfindr/issues/797). The
+[local `v0.9.0` candidate rehearsal](https://github.com/adamgreenwell/wayfindr/blob/main/docs/development/release-0.8.0-rehearsal.md)
+also exercised a `v0.7.0` upgrade before publication, but its locally built
+image does not add another public-artifact upgrade path.
+
+Earlier evidence remains tied to `v0.3.2`:
 
 - `v0.3.2` has passing hosted public-artifact clean-install evidence from
   August 11, 2026:
@@ -60,9 +73,9 @@ the rule above says.
   retirement, exact restore markers, and reboot/reverify. A forced release-
   discovery failure refused before mutation and left the previous release live.
   See [Disposable VM Evidence](Disposable-VM-Evidence) for the sanitized detail.
-- Treat that as strong evidence for the tested local-only Compose paths, not a
-  substitute for your own DNS/TLS, real mail, offsite-backup, destructive-schema
-  rollback, or production restore checks.
+- Treat those `v0.3.2` guest checks as strong evidence for the tested local-only
+  Compose paths, not a substitute for your own DNS/TLS, real mail,
+  offsite-backup, destructive-schema rollback, or production restore checks.
 
 The versioning and enforcement contract is documented in the
 [platform versioning ADR](https://github.com/adamgreenwell/wayfindr/blob/main/docs/decisions/0012-platform-versioning.md)

@@ -11,10 +11,10 @@ compatible. Public `v0.7.0` predates direct-provider support. See the
 [repository inbound-mail guide](https://github.com/adamgreenwell/wayfindr/blob/main/docs/self-hosting/inbound-mail.md).
 
 Self-hosting and upgrades from public artifacts have been proved repeatable on
-hosted runners and disposable bare-metal guests — **for the artifacts that were
-tested, the most recent being `v0.3.2`**. `v0.9.0` has local candidate rehearsal
-and verified publication, but its public artifact has not been through that
-install and upgrade matrix; see [Releases](Releases).
+hosted runners and disposable bare-metal guests. The newest public-artifact
+hosted runs cover a `v0.9.0` clean install and `v0.2.0 → v0.9.0` upgrade with a
+custom backup queue. The newest owner-operated bare-metal guest evidence still
+covers `v0.3.2`; see [Releases](Releases).
 
 The Tier 1 and Tier 2 feature epics are closed in `v0.9.0`. The remaining
 independent-install acceptance criterion is
@@ -269,8 +269,11 @@ performed by an AI agent rather than a human non-author.
 The `v0.9.0` tag at `b9ae8bcc` and its
 [release workflow](https://github.com/adamgreenwell/wayfindr/actions/runs/36002701167)
 verify the published manifest, multi-architecture image and digest, GitHub
-Release, and stable aliases. The public artifact still needs clean-install and
-upgrade evidence, followed by the human non-author run required by
+Release, and stable aliases. Separate hosted runs now verify a
+[public-artifact clean install](https://github.com/adamgreenwell/wayfindr/actions/runs/36008767661)
+and a
+[`v0.2.0 → v0.9.0` upgrade with a custom backup queue](https://github.com/adamgreenwell/wayfindr/actions/runs/36008785768).
+Those synthetic runs do not satisfy the human non-author install required by
 [#797](https://github.com/adamgreenwell/wayfindr/issues/797). Record that run's
 stops and fix what it surfaces before claiming `1.0.0` acceptance.
 
