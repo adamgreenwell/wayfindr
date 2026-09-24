@@ -280,6 +280,25 @@ verify_runtime() {
 
 run_support_loop() {
     local label="$1"
+    local image expected_operator_version
+
+    image="$(read_env_value WAYFINDR_IMAGE)"
+    if [ -z "$image" ]; then
+        echo "No configured Wayfindr image to verify on /operator." >&2
+        return 1
+    fi
+
+    if [[ "$image" =~ ^ghcr\.io/adamgreenwell/wayfindr:([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+        expected_operator_version="v${BASH_REMATCH[1]}"
+    else
+        # Custom refs, floating aliases, digest pins, and rollback overrides
+        # lack an exact official tag. Compare their UI to the image's own bake.
+        expected_operator_version="$(compose_exec cat /etc/wayfindr/version)"
+        if [ -z "$expected_operator_version" ]; then
+            echo "The public image has no baked Wayfindr version." >&2
+            return 1
+        fi
+    fi
 
     echo
     echo "== Support-loop smoke: $label =="
@@ -287,6 +306,7 @@ run_support_loop() {
         WAYFINDR_SITE_PUBLIC_KEY="$SITE_PUBLIC_KEY" \
         WAYFINDR_AGENT_EMAIL="$AGENT_EMAIL" \
         WAYFINDR_AGENT_PASSWORD="$AGENT_PASSWORD" \
+        WAYFINDR_SMOKE_EXPECT_OPERATOR_VERSION="$expected_operator_version" \
         WAYFINDR_SMOKE_SUBJECT="Disposable evidence $SCENARIO" \
         WAYFINDR_SMOKE_MESSAGE="Hello from disposable evidence $SCENARIO." \
         WAYFINDR_SMOKE_PHP_COMPOSE_FILE="$COMPOSE_FILE" \
