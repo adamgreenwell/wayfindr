@@ -50,25 +50,7 @@
         "omit that optional field and continue to apply everywhere."
     ],
     "minimum_upgrade_from": "0.1.0-alpha.1",
-    "actions": [
-        {
-            "id": "php-runtime-extensions",
-            "summary": "Prepare the host-managed PHP runtime before upgrading to this release.",
-            "detail": "This applies when upgrading Laravel Forge and other deployments that run Wayfindr on host PHP. It does not apply to a known-fresh install, the published container image, or an image built locally with Wayfindr's Dockerfile. Before updating an existing checkout, enable curl, gd, and intl for PHP 8.4.1 or newer as used by Composer and the application; curl must use libcurl 7.59.0 or newer. On Debian or Ubuntu with PHP 8.4 the packages are normally php8.4-curl, php8.4-gd, and php8.4-intl. Verify Composer, PHP-FPM, queue, scheduler, and Reverb runtimes; reload PHP-FPM and restart long-running workers. Then add <release>/php-runtime-extensions to WAYFINDR_ACKNOWLEDGED_ACTIONS and deploy. Forge also asks for that key when absent state cannot prove a site is fresh. The guard rejects a failed CLI check even when that key is present; a passing CLI check remains unevaluable because it cannot prove the other runtimes.",
-            "phase": "before-pull",
-            "depends_on_release": "none",
-            "installation_profiles": [
-                "host"
-            ],
-            "applicability": {
-                "type": "always"
-            },
-            "verification": {
-                "type": "check",
-                "check": "php-runtime-extensions"
-            }
-        }
-    ],
+    "actions": [],
     "notices": [
         {
             "_note": [
