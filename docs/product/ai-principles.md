@@ -93,8 +93,13 @@ The owner's [September 10 adjudication](https://github.com/adamgreenwell/wayfind
 attributed two Gemini misses to matcher brittleness and one to a real omitted
 retry step. The [final disposition](https://github.com/adamgreenwell/wayfindr/issues/762#issuecomment-5625831620)
 was no fixture or matcher change; the recorded 13/16 failure and evidence
-identities stand. #762 now waits on same-route evidence after meaningful
-elapsed time or a model revision before revisiting ADR 0004. The cross-model samples
-also changed upstream route, and all four were recorded within about 78 minutes.
+identities stand. #997 later changed the fixture policy and bound a versioned
+scorer contract, including evaluator and Unicode phrase matching, into the suite
+identity; the prompt identity stayed the same. The four captures are historical
+and cannot be compared with the current suite. #762 first needs every proposed
+route recaptured under the current identity, then same-route evidence after
+meaningful elapsed time or a model revision before revisiting ADR 0004. The
+cross-model samples also changed upstream route, and all four were recorded
+within about 78 minutes.
 That point-in-time evidence is neither long-term drift resistance nor provider
 or runtime approval, so #762 and the ADR boundary remain unchanged.
