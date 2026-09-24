@@ -287,8 +287,17 @@ run_support_loop() {
         ghcr.io/adamgreenwell/wayfindr:[0-9]*)
             expected_operator_version="v${image##*:}"
             ;;
+        ghcr.io/adamgreenwell/wayfindr:latest)
+            # Custom branch/SHA installs intentionally use the published :latest
+            # image. It has no numeric tag to compare, so use its baked identity.
+            expected_operator_version="$(compose_exec cat /etc/wayfindr/version)"
+            if [ -z "$expected_operator_version" ]; then
+                echo "The public :latest image has no baked Wayfindr version." >&2
+                return 1
+            fi
+            ;;
         *)
-            echo "Expected an official version-tagged public image, got: ${image:-unset}" >&2
+            echo "Expected an official public image, got: ${image:-unset}" >&2
             return 1
             ;;
     esac
