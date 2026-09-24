@@ -285,10 +285,11 @@ every proposed route, preserving the historical result. Raw responses remain
 private and mode `0600`.
 
 **That rotation has since happened, and the recapture has not.** `31d8a381`
-(#997, 2026-09-13) renamed the policy key `confidence_brier_score` to
-`confidence_conformance_error` inside `fixtures.json` — an independently
-justified change, unrelated to the adjudication above — and with it moved the
-suite identity to
+(#997, 2026-09-13) added a versioned scoring contract to the suite identity,
+changed the evaluator and Unicode phrase matching, and renamed the fixture
+policy key `confidence_brier_score` to `confidence_conformance_error`. Those
+independently justified contract changes were unrelated to the adjudication
+above. Together they moved the suite identity to
 `sha256:184c62862a7f06a824dd9279837fddd6a5d7337682d683a2dcbad848582a41c4`.
 The prompt identity is unchanged. The four September 10 captures therefore now
 stand exactly where the September 8 nine-case run does: valid historical
@@ -489,7 +490,9 @@ frozen gate. The cross-model samples also changed upstream route, all four were
 recorded within about 78 minutes. Human adjudication is complete and left the
 fixture, matcher, and recorded results unchanged. #762 still requires same-route
 evidence after meaningful elapsed time or a model revision before revisiting
-ADR 0004. The September 10 captures are not longitudinal drift evidence,
+ADR 0004. First, every proposed route needs a new capture under the current
+suite identity; the September 10 captures cannot serve as its baseline. They
+are not longitudinal drift evidence,
 representative runtime safety, or provider approval. The agent-controlled
 copilot remains the approved boundary, #762 remains open, and visitor-facing
 implementation still requires another explicit ADR decision.
