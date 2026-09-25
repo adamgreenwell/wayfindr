@@ -3486,6 +3486,50 @@ test('agent reply composer exposes progressive submission affordances', function
         ->assertSee('aria-live="polite"', false);
 });
 
+test('agent reply composer stops at the length the reply endpoint accepts', function (): void {
+    // The composer had no limit while the endpoint refuses a longer body, so a
+    // long reply was typed in full and only refused after Send. The limit is
+    // read off the page and tried against the endpoint in both directions, so
+    // it cannot drift from the rule the endpoint actually applies.
+    $account = Account::factory()->create();
+    $agent = User::factory()->for($account)->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'support_code' => 'WF-REPLYMAX',
+        'subject' => 'Reply length check',
+    ]);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$this->actingAs($agent)
+        ->get('/dashboard/conversations/WF-REPLYMAX')->assertOk()->getContent());
+    $composer = (new DOMXPath($document))->query('//form[@data-reply-composer]//textarea[@data-reply-body]')->item(0);
+
+    expect($composer)->not->toBeNull('the reply composer did not render; this guard is checking nothing')
+        ->and($composer?->hasAttribute('maxlength'))->toBeTrue('the reply composer has no maxlength, so a reply the endpoint refuses can be typed in full');
+
+    $limit = (int) $composer->getAttribute('maxlength');
+
+    $this->actingAs($agent)
+        ->from('/dashboard/conversations/WF-REPLYMAX')
+        ->post('/dashboard/conversations/WF-REPLYMAX/messages', ['body' => str_repeat('a', $limit)])
+        ->assertRedirect();
+
+    expect($conversation->messages()->where('body', str_repeat('a', $limit))->exists())
+        ->toBeTrue("the composer allows {$limit} characters but the endpoint refuses a reply that long");
+
+    $tooLong = $this->actingAs($agent)
+        ->from('/dashboard/conversations/WF-REPLYMAX')
+        ->post('/dashboard/conversations/WF-REPLYMAX/messages', ['body' => str_repeat('a', $limit + 1)])
+        ->assertRedirect();
+
+    expect($conversation->messages()->count())
+        ->toBe(1, "the endpoint accepts more than the composer's {$limit} characters, so the composer cuts off replies the desk would send");
+
+    // Refused for its length, not for something else about the request.
+    $tooLong->assertSessionHasErrors('body');
+});
+
 test('agent can see latest reply read state while replying', function (): void {
     Carbon::setTestNow(Carbon::parse('2026-06-17 12:00:00', 'UTC'));
 

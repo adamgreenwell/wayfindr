@@ -514,6 +514,48 @@ test('two sites cannot claim the same address', function (): void {
     expect($second->fresh()->inbound_address)->toBeNull();
 });
 
+test('a refused address is announced on the address field itself', function (): void {
+    // The error printed under the field, attached to nothing: a screen-reader
+    // user back on the form heard no control say it was invalid, or why. The
+    // collision is the case that matters -- the browser's own email check
+    // cannot see it, so only the server can refuse it.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    Site::factory()->for($account)->create(['inbound_address' => 'support@northwind.test']);
+    $second = Site::factory()->for($account)->create(['inbound_address' => null]);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$this->actingAs($admin)
+        ->followingRedirects()
+        ->from(route('dashboard.sites.show', $second))
+        ->put(route('dashboard.sites.inbound-address.update', $second), ['inbound_address' => 'support@northwind.test'])
+        ->assertOk()->getContent());
+    $page = new DOMXPath($document);
+
+    $control = $page->query('//input[@id="inbound_address"]')->item(0);
+
+    expect($control)->not->toBeNull('the address control did not render; this guard is checking nothing')
+        ->and($control?->getAttribute('aria-invalid'))->toBe('true', 'the refused address is not marked invalid');
+
+    $described = array_values(array_filter(preg_split('/\s+/', (string) $control->getAttribute('aria-describedby')) ?: []));
+    $errors = [];
+
+    foreach ($described as $id) {
+        $target = $page->query('//*[@id="'.$id.'"]')->item(0);
+
+        expect($target)->not->toBeNull("the address control is described by #{$id}, which does not exist");
+
+        if (in_array('field-error', explode(' ', (string) $target->getAttribute('class')), true)) {
+            $errors[] = $target;
+        }
+    }
+
+    expect($errors)->toHaveCount(1, 'the address error is not bound to the address control');
+    expect(trim($errors[0]->textContent))->toBe(__('site_settings.validation.inbound_unique'));
+    expect($errors[0]->parentNode->isSameNode($control->parentNode))
+        ->toBeTrue('the address error is printed away from its control');
+});
+
 test('a plain agent cannot redirect a site’s mail', function (): void {
     $account = Account::factory()->create();
     $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);

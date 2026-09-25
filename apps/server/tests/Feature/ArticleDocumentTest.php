@@ -121,3 +121,29 @@ test('two accounts can both have an article called refunds', function (): void {
 
     expect(Article::query()->where('slug', 'refunds')->count())->toBe(2);
 });
+
+test('a space between two formatted runs is kept as the word boundary it is', function (): void {
+    // `**First** **second**` is two strong runs separated only by a space. The
+    // space used to be dropped as "only whitespace", so the widget and the
+    // preview both joined the words: "Firstsecond".
+    $spans = blocksOf('**First** **second** and [a link](https://example.test) `code`')[0]['spans'];
+
+    $text = implode('', array_map(fn (array $span): string => $span['text'], $spans));
+
+    expect($text)->toBe('First second and a link code', 'two formatted runs separated only by a space were joined into one word');
+});
+
+test('whitespace at either end of a block is still dropped', function (): void {
+    $spans = blocksOf('**Bold** trailing')[0]['spans'];
+
+    expect($spans[0])->toBe(['text' => 'Bold', 'strong' => true])
+        ->and(implode('', array_map(fn (array $span): string => $span['text'], $spans)))->toBe('Bold trailing');
+});
+
+test('a block of nothing but blank formatted runs stays empty', function (): void {
+    // Keeping the space between runs must not turn blank runs into content:
+    // `** ** ** **` would otherwise read as one space, pass the empty-body
+    // check, and save an article whose paragraph renders blank.
+    expect(ArticleDocument::text('** ** ** **'))
+        ->toBe('', 'a body of nothing but blank formatted runs reads as content, so an empty article saves');
+});

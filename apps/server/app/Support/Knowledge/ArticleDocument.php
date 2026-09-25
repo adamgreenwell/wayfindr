@@ -182,9 +182,33 @@ final class ArticleDocument
             $spans[] = ['text' => self::plain(substr($text, $offset))];
         }
 
-        // A run that is only whitespace carries nothing, but one with padding
-        // around real words keeps it -- that padding IS the word boundary.
-        return array_values(array_filter($spans, static fn (array $span): bool => trim($span['text']) !== ''));
+        // A run with padding around real words keeps it -- that padding IS the
+        // word boundary. A run that is ONLY whitespace carries nothing at either
+        // end of the block, but between two runs it is the boundary itself:
+        // `**First** **second**` is two strong runs and a space, and dropping
+        // the space rendered "Firstsecond" in the widget and the preview alike.
+        $kept = [];
+        $separatorPending = false;
+
+        foreach ($spans as $span) {
+            if (trim($span['text']) === '') {
+                // A boundary only if something visible comes before AND after
+                // it -- so a block of nothing but blank runs (`** ** **`) stays
+                // empty, and is refused as empty, rather than saving a space.
+                $separatorPending = $kept !== [];
+
+                continue;
+            }
+
+            if ($separatorPending) {
+                $kept[] = ['text' => ' '];
+                $separatorPending = false;
+            }
+
+            $kept[] = $span;
+        }
+
+        return $kept;
     }
 
     /**

@@ -40,7 +40,7 @@
                         <textarea id="article_body" name="body" rows="8" maxlength="20000" required lang=""
                             placeholder="{{ __('articles.write.body_placeholder') }}"
                             aria-describedby="article_body-help @error('body') article_body-error @enderror"
-                            @error('body') aria-invalid="true" @enderror></textarea>
+                            @error('body') aria-invalid="true" @enderror>{{ old('body') }}</textarea>
                         {{-- `##` and `-` are pure syntax and pass through. The link
                              and emphasis examples are not: their brackets are syntax
                              but the words inside them tell the reader what goes there,

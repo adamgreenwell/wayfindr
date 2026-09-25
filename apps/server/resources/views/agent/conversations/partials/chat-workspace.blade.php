@@ -96,6 +96,8 @@
                     id="body"
                     name="body"
                     rows="5"
+                    {{-- AgentConversationController::storeMessage's `max:4000`. --}}
+                    maxlength="4000"
                     placeholder="{{ __('conversations.detail.reply.guidance') }}"
                     aria-describedby="reply-shortcut-help"
                     data-reply-body
