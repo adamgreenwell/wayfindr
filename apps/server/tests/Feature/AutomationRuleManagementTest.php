@@ -625,3 +625,36 @@ test('labels referenced by automation rules cannot be deleted out from under the
 
     expect($label->fresh())->not->toBeNull();
 });
+
+test('the dry run names an older rule action its event now withholds', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $rule = AutomationRule::withoutEvents(fn (): AutomationRule => AutomationRule::factory()->for($account)->create([
+        'event' => 'conversation.visitor_message_created',
+        'actions' => [['type' => 'set_status', 'value' => 'closed']],
+    ]));
+
+    // The evaluator's shape for a close-only rule saved before the refusal:
+    // it matched, nothing runs, and the close is withheld.
+    $page = $this->actingAs($admin)
+        ->withSession(['automation_preview' => [
+            'rule_id' => $rule->id,
+            'rule_name' => $rule->name,
+            'event' => $rule->event,
+            'matched' => true,
+            'subject_label' => 'Conversation WF-PREVIEW',
+            'conditions' => [],
+            'actions' => [],
+            'withheld_actions' => [['type' => 'set_status', 'value' => 'closed']],
+        ]])
+        ->get(route('dashboard.account.automation-rules.edit', $rule))
+        ->assertOk()
+        ->getContent();
+
+    expect(str_contains($page, 'Actions that would be skipped'))
+        ->toBeTrue('A matched dry run hides the close the live run will skip, so the rule reads as "matched, and nothing happens".')
+        ->and(str_contains($page, 'A “Visitor message received” rule cannot close the conversation: the visitor is waiting for a reply.'))
+        ->toBeTrue('The dry run lists a withheld action without saying why it will not run.')
+        ->and(str_contains($page, 'Actions that would run'))
+        ->toBeFalse('The dry run offers an empty list of actions that would run.');
+});

@@ -83,6 +83,8 @@ return [
         'result' => 'Risultato dell’anteprima', 'matched' => 'Corrisponderebbe', 'not_matched' => 'Non corrisponderebbe',
         'condition_matched' => 'Corrisponde:', 'condition_not_matched' => 'Non corrisponde:', 'actual' => 'Valore effettivo: :value',
         'would_run' => 'Azioni che verrebbero eseguite', 'no_actions' => 'Nessuna azione verrebbe eseguita perché non tutte le condizioni corrispondono.',
+        'withheld' => 'Azioni che verrebbero saltate',
+        'withheld_reason' => 'Una regola «:event» non può chiudere la conversazione: il visitatore attende una risposta.',
     ],
     'executions' => [
         'heading' => 'Registro delle esecuzioni', 'lede' => 'Risultati permanenti delle regole corrispondenti e delle macro applicate manualmente, inclusi errori e azioni senza modifiche.',

@@ -141,6 +141,8 @@ return [
         'actual' => 'Actual value: :value',
         'would_run' => 'Actions that would run',
         'no_actions' => 'No actions would run because every condition did not match.',
+        'withheld' => 'Actions that would be skipped',
+        'withheld_reason' => 'A “:event” rule cannot close the conversation: the visitor is waiting for a reply.',
     ],
     'executions' => [
         'heading' => 'Execution log',
