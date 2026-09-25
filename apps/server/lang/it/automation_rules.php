@@ -91,11 +91,12 @@ return [
         'conditions' => 'Condizioni corrispondenti', 'actions' => 'Azioni pianificate', 'results' => 'Risultati delle azioni', 'error' => 'Dettaglio dell’errore',
     ],
     'execution_statuses' => ['succeeded' => 'Riuscita', 'failed' => 'Non riuscita'],
-    'result_statuses' => ['applied' => 'Applicata', 'noop' => 'Nessuna modifica necessaria', 'queued' => 'In coda'],
+    'result_statuses' => ['applied' => 'Applicata', 'noop' => 'Nessuna modifica necessaria', 'queued' => 'In coda', 'skipped' => 'Saltata'],
     'result_details' => [
         'already_assigned' => 'Già assegnato a questo agente', 'already_labeled' => 'Etichetta già presente',
         'quiet_mode' => 'L’agente usa la modalità silenziosa', 'private_ticket_note' => 'Nota privata del ticket registrata',
         'target_unavailable' => 'L’agente di destinazione non è più disponibile per questo lavoro',
+        'visitor_awaiting_reply' => 'Il visitatore attende una risposta, quindi la conversazione è rimasta aperta',
     ],
     'result_change' => 'da :before a :after', 'result_already' => 'Già :value',
     'condition_sentence' => ':field — :operator — :value', 'action_sentence' => ':action con valore :value', 'result_sentence' => ':action: :status (:detail)',
@@ -112,5 +113,6 @@ return [
         'heading' => 'Verifica della definizione della regola', 'choice' => 'Scelga un valore dal gruppo corrispondente.',
         'reference' => 'L’elemento dell’account non è disponibile o non dispone dell’accesso richiesto da questa azione.',
         'definition' => 'Questa definizione della regola non è valida: :detail', 'duplicate' => 'Esiste già una regola con questo nome.',
+        'visitor_message_close' => 'Le regole per «:event» non possono chiudere la conversazione: il visitatore attende una risposta e chiuderla impedirebbe che il team di assistenza riceva un avviso.',
     ],
 ];

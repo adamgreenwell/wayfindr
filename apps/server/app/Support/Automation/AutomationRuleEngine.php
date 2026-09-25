@@ -111,6 +111,16 @@ final readonly class AutomationRuleEngine
                     $preview['actions'],
                 );
 
+                // Said in the execution log rather than silently dropped, so
+                // an older rule's author can see why its close did not happen.
+                foreach ($preview['withheld_actions'] as $action) {
+                    $results[] = [
+                        'type' => $action['type'],
+                        'status' => 'skipped',
+                        'detail' => 'visitor_awaiting_reply',
+                    ];
+                }
+
                 AutomationRuleExecution::query()->create([
                     ...$this->executionIdentity($rule, $event, $lockedSubject, $lockedMessage),
                     'status' => AutomationExecutionStatus::Succeeded,

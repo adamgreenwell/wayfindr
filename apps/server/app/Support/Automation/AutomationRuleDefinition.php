@@ -30,6 +30,29 @@ final class AutomationRuleDefinition
         }
     }
 
+    /**
+     * Whether a stored rule action is withheld from its event instead of run.
+     *
+     * A visitor message is somebody waiting for a reply. Its rules run before
+     * the reply alert is decided, so that a rule which assigns the
+     * conversation also decides who hears about it. The same ordering means a
+     * rule that closed the conversation there would decide that nobody does:
+     * no alert is stored for a closed conversation, it leaves the default open
+     * queue, and a site that asks for ratings asks the visitor to rate a close
+     * no human made.
+     *
+     * New definitions are refused below. A rule saved before that refusal
+     * existed still runs its other actions; the evaluator leaves this one out
+     * and the engine records it as skipped.
+     */
+    public static function withholdsAction(AutomationRuleEvent $event, mixed $action): bool
+    {
+        return $event === AutomationRuleEvent::VisitorMessageCreated
+            && is_array($action)
+            && ($action['type'] ?? null) === AutomationRuleActionType::SetStatus->value
+            && ($action['value'] ?? null) === ConversationStatus::Closed->value;
+    }
+
     /** @param list<mixed> $actions */
     public static function assertActionsForSubjectType(
         AutomationMacroSubjectType $subjectType,
@@ -158,6 +181,10 @@ final class AutomationRuleDefinition
             AutomationRuleActionType::SetStatus => self::assertStatus($context, $value, "{$path}.value"),
             AutomationRuleActionType::PostInternalNote => self::assertInternalNote($value, "{$path}.value"),
         };
+
+        if ($context instanceof AutomationRuleEvent && self::withholdsAction($context, $action)) {
+            throw new InvalidArgumentException("{$path}.value cannot close the conversation for {$context->value} rules.");
+        }
     }
 
     /** @param list<string> $requiredKeys */

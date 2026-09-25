@@ -3,11 +3,13 @@
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Enums\AutomationExecutionStatus;
+use App\Events\ConversationMessageCreated;
 use App\Models\Account;
 use App\Models\AuditEvent;
 use App\Models\AutomationRule;
 use App\Models\AutomationRuleExecution;
 use App\Models\Conversation;
+use App\Models\ConversationMessage;
 use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -229,6 +231,43 @@ test('rule forms reject incompatible vocabulary and cross-account references', f
     expect(AutomationRule::query()->count())->toBe(0);
 });
 
+test('rule forms refuse a visitor message rule that closes the conversation', function (string $locale, string $expected): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => $locale,
+    ]);
+
+    $payload = automationRulePayload([
+        'event' => 'conversation.visitor_message_created',
+        'conditions' => [],
+        'actions' => [
+            ['type' => 'set_priority', 'text_value' => '', 'select_value' => 'priority:high'],
+            ['type' => 'set_status', 'text_value' => '', 'select_value' => 'status:closed'],
+        ],
+    ]);
+
+    $page = $this->actingAs($admin)
+        ->from(route('dashboard.account.automation-rules.create'))
+        ->followingRedirects()
+        ->post(route('dashboard.account.automation-rules.store'), $payload)
+        ->assertOk()
+        ->getContent();
+
+    expect(AutomationRule::query()->count())->toBe(0, 'a visitor message rule that closes its conversation was saved')
+        ->and(str_contains($page, $expected))->toBeTrue('the form did not explain why a visitor message rule cannot close the conversation');
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.automation-rules.create'))
+        ->post(route('dashboard.account.automation-rules.store'), $payload)
+        ->assertRedirect(route('dashboard.account.automation-rules.create'))
+        ->assertSessionHasErrors('actions.1.select_value');
+})->with([
+    'en' => ['en', 'Rules for “Visitor message received” cannot close the conversation'],
+    'de' => ['de', 'Regeln für „Besuchernachricht empfangen“ können die Unterhaltung nicht schließen'],
+    'it' => ['it', 'Le regole per «Messaggio del visitatore ricevuto» non possono chiudere la conversazione'],
+]);
+
 test('enabled action targets must cover every site the rule can match', function (string $actionType): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
@@ -327,6 +366,47 @@ test('preview evaluates a saved draft without changing work or recording an exec
         ->assertSee('Subject Contains “invoice”')
         ->assertSee('Actual value: “Invoice export is blocked”')
         ->assertSee('Set priority: Urgent');
+});
+
+test('preview of a saved visitor message close rule shows only what would run', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create(['priority' => 'normal']);
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Thanks, that fixed it.',
+    ]);
+    // Saved before the definition refused this shape, as an older install's
+    // row would have been; the saving guard would reject it today.
+    $rule = AutomationRule::withoutEvents(fn (): AutomationRule => AutomationRule::factory()->for($account)->create([
+        'event' => 'conversation.visitor_message_created',
+        'actions' => [
+            ['type' => 'set_status', 'value' => 'closed'],
+            ['type' => 'set_priority', 'value' => 'low'],
+        ],
+    ]));
+
+    $response = $this->actingAs($admin)
+        ->post(route('dashboard.account.automation-rules.preview', $rule), [
+            'preview_subject' => 'message:'.$message->id,
+        ]);
+
+    expect($response->status())->toBe(302, 'previewing a rule saved before the refusal existed crashed');
+
+    $response->assertRedirect(route('dashboard.account.automation-rules.edit', $rule))
+        ->assertSessionHas('automation_preview');
+
+    $preview = session('automation_preview');
+
+    expect($preview['matched'])->toBeTrue()
+        ->and($preview['actions'])->toBe(
+            [['type' => 'set_priority', 'value' => 'low']],
+            'the dry run lists a close that the live run withholds for visitor messages',
+        )
+        ->and($conversation->fresh()->status)->toBe('open');
 });
 
 test('preview refuses support work outside the managers visible scope', function (): void {
@@ -496,6 +576,36 @@ test('execution history translates changed priority and status values', function
         'Imposta priorità: Applicata (da Normale a Urgente)',
         'Imposta stato: Applicata (da Aperto a Chiuso)',
     ]],
+]);
+
+test('execution history explains a withheld visitor message close', function (string $locale, string $expected): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => $locale,
+    ]);
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create();
+    AutomationRule::withoutEvents(fn (): AutomationRule => AutomationRule::factory()->for($account)->enabled()->create([
+        'event' => 'conversation.visitor_message_created',
+        'actions' => [['type' => 'set_status', 'value' => 'closed']],
+    ]));
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'One more thing.',
+    ]);
+    event(new ConversationMessageCreated($message));
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.automation-rules.index'))
+        ->assertOk()
+        ->assertSee($expected);
+})->with([
+    'English' => ['en', 'Set status — Skipped (The visitor is waiting for a reply, so the conversation stayed open)'],
+    'German' => ['de', 'Status setzen: Übersprungen; Der Besucher wartet auf eine Antwort, daher blieb die Unterhaltung offen'],
+    'Italian' => ['it', 'Imposta stato: Saltata (Il visitatore attende una risposta, quindi la conversazione è rimasta aperta)'],
 ]);
 
 test('labels referenced by automation rules cannot be deleted out from under them', function (): void {

@@ -69,6 +69,19 @@ final class AutomationRuleForm
             ->all();
         $actions = $this->normalizeActions($validated['actions']);
 
+        // The definition refuses this too, but its reason is a developer
+        // string. This is the one refusal the builder can actually produce, so
+        // it gets words the rule's author can act on.
+        foreach ($actions as $index => $action) {
+            if (AutomationRuleDefinition::withholdsAction($event, $action)) {
+                throw ValidationException::withMessages([
+                    "actions.{$index}.select_value" => __('automation_rules.validation.visitor_message_close', [
+                        'event' => __('automation_rules.events.conversation_visitor_message_created'),
+                    ]),
+                ]);
+            }
+        }
+
         try {
             AutomationRuleDefinition::assertValid($event, $conditions, $actions);
         } catch (InvalidArgumentException $exception) {
