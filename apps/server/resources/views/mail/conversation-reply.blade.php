@@ -1,9 +1,12 @@
-{{-- Plain text, so {!! !!} throughout: {{ }} would put "We&#039;ve" in an inbox. --}}
 {!! $reply->body !!}
 
 --
-{!! $site->name !!} support
-@if ($site->inbound_address)
+{!! __('visitor_mail.reply.signature', ['site' => $site->name]) !!}
 
-Reply to this email and it will reach the same conversation.
+@if ($site->inbound_address)
+{!! __('visitor_mail.reply.reply_by_email') !!}
+@elseif ($site->domain)
+{!! __('visitor_mail.reply.continue_at', ['domain' => $site->domain]) !!}
+@else
+{!! __('visitor_mail.reply.continue_in_chat') !!}
 @endif

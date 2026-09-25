@@ -62,6 +62,13 @@
                         ? __('tickets.read_state.detail_seen', ['elapsed' => $readCue['seen_at']->diffForHumans()])
                         : __('tickets.read_state.'.$readCue['detail_key']) }}</span>
                 </div>
+                @if ($replyByEmail)
+                    <div class="reply-context-item" data-reply-by-email="{{ $replyByEmail['state'] }}">
+                        <span class="meta-label">{{ __('conversations.detail.reply.'.($replyByEmail['state'] === 'emailed' ? 'email_sent' : 'email_unsent')) }}</span>
+                        <span class="meta-value" lang="">{{ $replyByEmail['address'] }}</span>
+                        <span class="lede">{{ __('conversations.detail.reply.'.($replyByEmail['state'] === 'emailed' ? 'email_sent_detail' : 'email_unsent_detail')) }}</span>
+                    </div>
+                @endif
             </div>
 
             <div class="field">

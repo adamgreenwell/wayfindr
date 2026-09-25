@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\WayfindrMailTestMessage;
 use App\Models\AuditEvent;
+use App\Support\Mail\OutboundMail;
 use App\Support\Settings\OperatorSettings;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -218,81 +219,13 @@ class OperatorMailSettingsController extends Controller
         return $from !== null ? ['from' => $from] : [];
     }
 
+    /**
+     * The same answer that decides whether a visitor's out-of-hours reply is
+     * emailed, so the send-test and that promise cannot disagree.
+     */
     private function assessDelivery(string $mailer): string
     {
-        return $this->assessMailer(strtolower($mailer), []);
-    }
-
-    /**
-     * Recursively assess how honestly a send-test can claim delivery for a
-     * mailer, accounting for composite ORDER (a flat leaf list can't):
-     *  - 'non_delivering': the message can't leave the server — a leaf log/array/
-     *    null, a composite of only sinks, OR a failover whose first reliably-
-     *    succeeding transport is a local sink. Laravel's failover tries members
-     *    in order and stops at the first success; array/log always succeed, so a
-     *    chain like [array, smtp] never reaches smtp.
-     *  - 'may_fall_back': a real transport is attempted but a silent fallback to
-     *    a sink is possible — a failover with a real transport BEFORE a sink, or
-     *    a roundrobin (random per-send pick) that might land on a sink.
-     *  - 'deliverable': an ordinary transport with no sink fallback.
-     *
-     * @param  list<string>  $visited  composite mailer names already on this path
-     */
-    private function assessMailer(string $mailer, array $visited): string
-    {
-        $transport = strtolower((string) config("mail.mailers.{$mailer}.transport", $mailer));
-
-        if (! in_array($transport, ['failover', 'roundrobin'], true)) {
-            return in_array($transport, ['', 'log', 'array', 'null'], true) ? 'non_delivering' : 'deliverable';
-        }
-
-        // A self-referential composite can't be resolved further; treat it as an
-        // opaque real transport rather than looping (a genuine send would error
-        // and be caught).
-        if (in_array($mailer, $visited, true)) {
-            return 'deliverable';
-        }
-
-        $visited[] = $mailer;
-
-        $members = array_values(array_filter(
-            (array) config("mail.mailers.{$mailer}.mailers", []),
-            'is_string',
-        ));
-
-        if ($members === []) {
-            return 'deliverable';
-        }
-
-        $assessments = array_map(fn (string $member): string => $this->assessMailer(strtolower($member), $visited), $members);
-
-        if ($transport === 'roundrobin') {
-            // Random pick per send: a sink anywhere means it might not deliver.
-            if (! in_array('deliverable', $assessments, true) && ! in_array('may_fall_back', $assessments, true)) {
-                return 'non_delivering'; // every member is a guaranteed sink
-            }
-
-            return in_array('non_delivering', $assessments, true) || in_array('may_fall_back', $assessments, true)
-                ? 'may_fall_back'
-                : 'deliverable';
-        }
-
-        // failover: tried in order, stops at the first success. A sink always
-        // succeeds, so the first sink is terminal — everything after it is dead.
-        $realChanceSeen = false;
-        $anyMayFallBack = false;
-
-        foreach ($assessments as $assessment) {
-            if ($assessment === 'non_delivering') {
-                // First reliably-succeeding transport is a sink; nothing later runs.
-                return $realChanceSeen ? 'may_fall_back' : 'non_delivering';
-            }
-
-            $realChanceSeen = true;
-            $anyMayFallBack = $anyMayFallBack || $assessment === 'may_fall_back';
-        }
-
-        return $anyMayFallBack ? 'may_fall_back' : 'deliverable';
+        return app(OutboundMail::class)->assess($mailer);
     }
 
     /** The trimmed submitted value as an explicit override — '' for a blank field, never null. */

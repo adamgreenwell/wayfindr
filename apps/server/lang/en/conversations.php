@@ -224,6 +224,12 @@ return [
             'visitor_read' => 'Visitor read',
             'seen_by_visitor' => 'Seen by visitor :elapsed',
             'not_seen' => 'Not seen yet',
+            // Beside the reply box on a conversation opened while the desk was
+            // away. The value under the label is the visitor's address.
+            'email_sent' => 'Also emailed to',
+            'email_sent_detail' => 'They wrote while the desk was away, so replies sent here also go to this address. The visitor typed it, and it has not been verified.',
+            'email_unsent' => 'Not emailed',
+            'email_unsent_detail' => 'They left this address while the desk was away, but email is not set up on this install, so replies sent here reach them only if they come back to the chat.',
         ],
 
         'copilot' => [

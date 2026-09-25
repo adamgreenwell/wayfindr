@@ -8,6 +8,7 @@ use App\Models\Conversation;
 use App\Models\ProactiveMessageDelivery;
 use App\Models\Site;
 use App\Models\Visitor;
+use App\Support\Mail\ConversationReplyMailer;
 use App\Support\ProactiveMessages\ProactiveConversationOpening;
 use App\Support\Sites\SiteAvailability;
 use App\Support\Sites\SiteIntake;
@@ -46,7 +47,8 @@ class ConversationController extends Controller
         // Before validate(), because the intake rules below are the first words
         // a NEW visitor reads from us and they are written by the framework --
         // no catch block reaches those.
-        App::setLocale(WidgetLanguage::forVisitor($request->input('locale'), $site));
+        $visitorLocale = WidgetLanguage::forVisitor($request->input('locale'), $site);
+        App::setLocale($visitorLocale);
         $intake = SiteIntake::for($site);
         $away = ! SiteAvailability::for($site)->open;
         // What we already hold for this visitor, read from the record rather
@@ -120,6 +122,8 @@ class ConversationController extends Controller
             // the visitor who just opened the conversation could never post to
             // it.
             $ownerSessionId,
+            $away,
+            $visitorLocale,
             $site,
             $siteManagerCoverage,
             $validated,
@@ -233,6 +237,15 @@ class ConversationController extends Controller
                 $current,
                 $visitor,
             );
+
+            // Out of hours the widget demands an address because it is the only
+            // way back to somebody, and tells them we will reply when we are
+            // back -- so replies to this conversation go to that address too.
+            // Read off the saved visitor rather than the request: a stored
+            // address waives the question (SiteIntake::effectiveFields()), and
+            // that visitor was promised the same reply as one who typed it now.
+            $replyByEmail = $away && is_string($visitor->email) && trim($visitor->email) !== '';
+
             $conversation = Conversation::query()->create([
                 'site_id' => $site->id,
                 'visitor_id' => $visitor->id,
@@ -263,6 +276,11 @@ class ConversationController extends Controller
                     // the next one may be about something else entirely. Name and
                     // email go on the visitor, where they are reusable.
                     'reason' => $this->trimmedOrNull($validated['visitor_reason'] ?? null),
+                    ConversationReplyMailer::REPLY_BY_EMAIL => $replyByEmail ? true : null,
+                    // The language they were reading when they were promised a
+                    // reply, so the email that keeps the promise speaks it too.
+                    // A queued mail has no request to ask.
+                    ConversationReplyMailer::REPLY_LOCALE => $replyByEmail ? $visitorLocale : null,
                 ], fn ($value): bool => $value !== null),
             ]);
 

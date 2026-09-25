@@ -425,7 +425,9 @@ test('a widget conversation is not also emailed', function (): void {
         ->post(route('dashboard.conversations.messages.store', $conversation->support_code), ['body' => 'Hello.'])
         ->assertRedirect();
 
-    Mail::assertNothingQueued();
+    // Sent, not queued: the delivery job sends the mailable itself, so
+    // assertNothingQueued() stayed green with every widget reply emailed.
+    Mail::assertNothingSent();
 });
 
 test('the visitor’s reply threads onto the agent’s email', function (): void {

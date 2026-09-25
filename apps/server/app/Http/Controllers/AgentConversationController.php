@@ -295,6 +295,10 @@ class AgentConversationController extends Controller
             'messages' => $messages,
             'priorConversations' => $this->priorConversations($conversation, $canManageTickets),
             'realtime' => $this->realtimeConfig($conversation, $agent),
+            // Beside the reply box, from the rule that sends the email: an
+            // agent answering somebody who wrote while the desk was away is
+            // told the reply also goes to their inbox -- or that it cannot.
+            'replyByEmail' => $canReply ? app(ConversationReplyMailer::class)->awayNotice($conversation) : null,
             'replyTemplates' => $canReply ? $replyTemplateOptions->forAgent($agent) : [],
             'slaStates' => $slaStates->all($conversation),
             'tickets' => $tickets,
