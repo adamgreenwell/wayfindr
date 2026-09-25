@@ -438,6 +438,34 @@ test('a quiet assignee hands visitor message alerts to the site roster', functio
         ->and($offRosterAgent->fresh()->unreadNotifications)->toHaveCount(0, 'the fallback must stay inside the site roster like unassigned work does');
 });
 
+test('the account-wide fallback never alerts a deactivated agent', function (): void {
+    // A site with no explicit roster falls back to every agent on the account,
+    // and that list includes deactivated people. The alert preference check
+    // does not look at deactivation, so the pool has to.
+    $account = Account::factory()->create();
+    $quietAssignedAgent = User::factory()->for($account)->create(['alert_preferences' => ['mode' => 'quiet']]);
+    $activeAgent = User::factory()->for($account)->create();
+    $deactivatedAgent = User::factory()->for($account)->create(['deactivated_at' => now()->subDay()]);
+    $site = Site::factory()->for($account)->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $quietAssignedAgent->id,
+        'support_code' => 'WF-PREF-DEACT',
+    ]);
+    $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'body' => 'Is anyone there?',
+    ])->assertCreated();
+
+    expect($activeAgent->fresh()->unreadNotifications)->toHaveCount(1, 'the account-wide fallback alerted nobody')
+        ->and($deactivatedAgent->fresh()->unreadNotifications)->toHaveCount(0, 'a deactivated agent was alerted to a visitor message');
+});
+
 test('an assignee whose role cannot view alerts hands visitor message alerts to the site roster', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $role = CustomRole::factory()->for($account)->create([
