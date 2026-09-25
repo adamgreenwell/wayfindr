@@ -30,10 +30,11 @@ final class SlaAlertRouting
         if ($assignedId) {
             $assigned = $site->account->agents()->whereKey($assignedId)->first();
 
-            if ($assigned && $site->supportsAgent($assigned)) {
-                return $this->eligibleRecipient($assigned, $subject)
-                    ? collect([$assigned])
-                    : collect();
+            // Same rule as the visitor-message alert: an assignee who cannot
+            // be alerted hands the deadline to the roster unassigned work
+            // uses, rather than to nobody.
+            if ($assigned && $site->supportsAgent($assigned) && $this->eligibleRecipient($assigned, $subject)) {
+                return collect([$assigned]);
             }
         }
 

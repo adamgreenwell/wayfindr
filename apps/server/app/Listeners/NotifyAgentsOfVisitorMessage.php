@@ -63,10 +63,17 @@ class NotifyAgentsOfVisitorMessage
                 ->whereKey($conversation->assigned_agent_id)
                 ->first();
 
-            if ($assignedAgent && $conversation->site->supportsAgent($assignedAgent)) {
-                if ($assignedAgent->shouldReceiveConversationAlert($conversation)) {
-                    $this->notifyAgent($assignedAgent, new ConversationNeedsReply($message), $conversation);
-                }
+            // An assignee who can be alerted is the only one told. One who
+            // cannot be -- quiet mode, a role without the alert or conversation
+            // permission, deactivated, or off the site -- is no reason for
+            // nobody to be: the visitor is still waiting. Fall through to the
+            // roster unassigned work uses, filtered by each agent's own
+            // preference, so the quiet assignee stays quiet and someone else
+            // hears it.
+            if ($assignedAgent
+                && $conversation->site->supportsAgent($assignedAgent)
+                && $assignedAgent->shouldReceiveConversationAlert($conversation)) {
+                $this->notifyAgent($assignedAgent, new ConversationNeedsReply($message), $conversation);
 
                 return;
             }

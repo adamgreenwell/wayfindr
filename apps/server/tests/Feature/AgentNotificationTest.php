@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\AccountPermission;
 use App\Models\Account;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
+use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\SlaClock;
 use App\Models\Ticket;
@@ -390,7 +392,13 @@ test('assigned only agents still receive alerts for conversations assigned to th
     expect($assignedAgent->fresh()->unreadNotifications)->toHaveCount(1);
 });
 
-test('quiet assigned agents do not fan out conversation alerts to other agents', function (): void {
+// Quiet mode silences the agent who chose it, not the visitor. A conversation
+// whose assignee cannot be alerted is routed exactly as an unassigned one would
+// be: the site's roster, filtered by each agent's own preference. Before this,
+// the assigned branch returned whether or not it had alerted anyone, so a quiet
+// assignee (or one whose role lacks the alert permission) left the message with
+// no reader at all.
+test('a quiet assignee hands visitor message alerts to the site roster', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $quietAssignedAgent = User::factory()->for($account)->create([
         'name' => 'Ada Quiet',
@@ -399,7 +407,15 @@ test('quiet assigned agents do not fan out conversation alerts to other agents',
     $fallbackAgent = User::factory()->for($account)->create([
         'name' => 'Bea Backup',
     ]);
+    $assignedOnlyAgent = User::factory()->for($account)->create([
+        'name' => 'Cy Assigned',
+        'alert_preferences' => ['mode' => 'assigned'],
+    ]);
+    $offRosterAgent = User::factory()->for($account)->create([
+        'name' => 'Dee Elsewhere',
+    ]);
     $site = Site::factory()->for($account)->create(['public_key' => 'site_public_docs']);
+    $site->supportAgents()->attach([$quietAssignedAgent->id, $fallbackAgent->id, $assignedOnlyAgent->id]);
     $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
     $conversation = Conversation::factory()->for($site)->for($visitor)->create([
         'assigned_agent_id' => $quietAssignedAgent->id,
@@ -412,11 +428,48 @@ test('quiet assigned agents do not fan out conversation alerts to other agents',
         'site_public_key' => 'site_public_docs',
         'anonymous_id' => 'anon-docs',
         'visitor_token' => $token,
-        'body' => 'Please do not broadcast this.',
+        'body' => 'Is anyone there?',
     ])->assertCreated();
 
-    expect($quietAssignedAgent->fresh()->unreadNotifications)->toHaveCount(0)
-        ->and($fallbackAgent->fresh()->unreadNotifications)->toHaveCount(0);
+    expect($fallbackAgent->fresh()->unreadNotifications)
+        ->toHaveCount(1, 'a quiet assignee left the visitor message with nobody alerted')
+        ->and($quietAssignedAgent->fresh()->unreadNotifications)->toHaveCount(0, 'quiet mode must still silence the agent who chose it')
+        ->and($assignedOnlyAgent->fresh()->unreadNotifications)->toHaveCount(0, 'the fallback must honour assigned-only preferences like unassigned work does')
+        ->and($offRosterAgent->fresh()->unreadNotifications)->toHaveCount(0, 'the fallback must stay inside the site roster like unassigned work does');
+});
+
+test('an assignee whose role cannot view alerts hands visitor message alerts to the site roster', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $role = CustomRole::factory()->for($account)->create([
+        'permissions' => [
+            AccountPermission::ViewConversations->value,
+            AccountPermission::ReplyToConversations->value,
+        ],
+    ]);
+    $assignedAgent = User::factory()->for($account)->create([
+        'name' => 'Ada Unalerted',
+        'custom_role_id' => $role->id,
+    ]);
+    $fallbackAgent = User::factory()->for($account)->create(['name' => 'Bea Backup']);
+    $site = Site::factory()->for($account)->create(['public_key' => 'site_public_docs']);
+    $visitor = Visitor::factory()->for($site)->create(['anonymous_id' => 'anon-docs']);
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create([
+        'assigned_agent_id' => $assignedAgent->id,
+        'support_code' => 'WF-PREF4',
+    ]);
+    $token = notificationVisitorToken($this, 'site_public_docs', 'anon-docs');
+    conversationOwnedBySession($conversation, $token);
+
+    $this->postJson("/api/conversations/{$conversation->support_code}/messages", [
+        'site_public_key' => 'site_public_docs',
+        'anonymous_id' => 'anon-docs',
+        'visitor_token' => $token,
+        'body' => 'Still waiting on this one.',
+    ])->assertCreated();
+
+    expect($fallbackAgent->fresh()->unreadNotifications)
+        ->toHaveCount(1, 'an assignee without the alert permission left the visitor message with nobody alerted')
+        ->and($assignedAgent->fresh()->unreadNotifications)->toHaveCount(0, 'the fallback must not alert an agent whose role cannot view alerts');
 });
 
 test('agent replies do not create needs reply notifications', function (): void {
