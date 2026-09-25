@@ -49,9 +49,7 @@
                 </div>
 
                 @if ($pendingGrants->isEmpty())
-                    <div class="notice-copy">
-                        <p>{{ __('operator_access.pending.empty') }}</p>
-                    </div>
+                    <p class="empty">{{ __('operator_access.pending.empty') }}</p>
                 @else
                     <div class="management-list">
                         @foreach ($pendingGrants as $item)
@@ -69,7 +67,11 @@
                                     ]) !!}</span>
                                     <span class="lede">{{ __('operator_access.grant.requested', ['elapsed' => $item['requested_at']]) }}</span>
                                 </span>
-                                <span class="compact-actions">
+                                {{-- A <div>, not a <span>: `.management-link span` sets
+                                     display:block at higher specificity than
+                                     .section-actions, so a span here would stack
+                                     Approve over Deny whatever class it carried. --}}
+                                <div class="section-actions">
                                     <form class="compact-form" method="POST" action="{{ route('dashboard.account.break-glass.approve', $item['grant']) }}">
                                         @csrf
                                         <button class="button" type="submit">{{ __('operator_access.pending.approve') }}</button>
@@ -78,7 +80,7 @@
                                         @csrf
                                         <button class="button secondary" type="submit">{{ __('operator_access.pending.deny') }}</button>
                                     </form>
-                                </span>
+                                </div>
                             </div>
                         @endforeach
                     </div>
@@ -92,9 +94,7 @@
                 </div>
 
                 @if ($activeGrants->isEmpty())
-                    <div class="notice-copy">
-                        <p>{{ __('operator_access.active.empty') }}</p>
-                    </div>
+                    <p class="empty">{{ __('operator_access.active.empty') }}</p>
                 @else
                     <div class="management-list">
                         @foreach ($activeGrants as $item)
@@ -123,12 +123,12 @@
                                         @endif
                                     </span>
                                 </span>
-                                <span class="compact-actions">
+                                <div class="section-actions">
                                     <form class="compact-form" method="POST" action="{{ route('dashboard.account.break-glass.close', $item['grant']) }}">
                                         @csrf
                                         <button class="button secondary" type="submit">{{ __('operator_access.active.revoke') }}</button>
                                     </form>
-                                </span>
+                                </div>
                             </div>
                         @endforeach
                     </div>
@@ -142,9 +142,7 @@
                 </div>
 
                 @if ($pastGrants->isEmpty())
-                    <div class="notice-copy">
-                        <p>{{ __('operator_access.history.empty') }}</p>
-                    </div>
+                    <p class="empty">{{ __('operator_access.history.empty') }}</p>
                 @else
                     <div class="management-list">
                         @foreach ($pastGrants as $item)

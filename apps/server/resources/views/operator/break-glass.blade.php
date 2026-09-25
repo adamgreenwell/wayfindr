@@ -151,7 +151,11 @@
                                 @endif
                             </span>
                         </span>
-                        <span class="compact-actions">
+                        {{-- A <div>, not a <span>: `.management-link span` sets
+                             display:block at higher specificity than
+                             .section-actions, so a span here would stack these
+                             controls whatever class it carried. --}}
+                        <div class="section-actions">
                             @if ($hint && $hint['can_self_approve'])
                                 <form class="compact-form" method="POST" action="{{ route('operator.break-glass.approve', $grant) }}">
                                     @csrf
@@ -165,7 +169,7 @@
                                     <button class="button secondary" type="submit">{{ __('operator_break_glass.requests.close') }}</button>
                                 </form>
                             @endif
-                        </span>
+                        </div>
                     </div>
                 @endforeach
             </div>
