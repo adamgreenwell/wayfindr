@@ -2249,11 +2249,12 @@
         }
 
         /* A cell value the account chose and the product cannot bound -- a
-           2,048-character webhook destination, a list of every site by name --
-           wraps, and may break anywhere, so its longest run cannot set the
+           2,048-character webhook destination, a list of every site by name,
+           a 120-character endpoint name beside its creator's -- wraps, and may break anywhere, so its longest run cannot set the
            column's minimum width and push every other column off the page.
            Every table cell is nowrap otherwise. */
-        .cell-wrap {
+        .cell-wrap,
+        .cell-wrap .table-note {
             white-space: normal;
             overflow-wrap: anywhere;
         }

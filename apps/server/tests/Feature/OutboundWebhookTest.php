@@ -759,7 +759,7 @@ test('a long webhook destination wraps inside its cell instead of widening the t
     expect($note)->not->toBeNull('the destination note did not render; this guard is checking nothing')
         ->and(str_contains(' '.$note->getAttribute('class').' ', ' cell-wrap '))
         ->toBeTrue('the destination URL sits in a nowrap note, so a long URL widens the whole table')
-        ->and((bool) preg_match('/\.cell-wrap\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/', $html))
+        ->and((bool) preg_match('/\.cell-wrap[^{]*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/', $html))
         ->toBeTrue('the wrapping note has no rule that lets it wrap');
 });
 
@@ -782,4 +782,27 @@ test('a reach list naming many sites wraps in both the token and the endpoint ta
         expect(str_contains(' '.$reach->getAttribute('class').' ', ' cell-wrap '))
             ->toBeTrue('a reach list sits in a nowrap cell, so many or long site names widen the whole table');
     }
+});
+
+test('the name cells of both API tables wrap, so a long name or creator cannot widen them', function (): void {
+    // An endpoint name may be 120 characters and a creator's name is theirs to
+    // choose, and .table-note sets its own nowrap -- so the whole identity cell
+    // wraps, notes included.
+    $world = outboundWebhookWorld();
+    OutboundWebhookEndpoint::factory()->for($world['account'])->create(['name' => str_repeat('Listener', 15)]);
+    ApiToken::factory()->for($world['account'])->create(['name' => str_repeat('Token', 24)]);
+
+    $html = (string) $this->actingAs($world['admin'])->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+    $xpath = outboundWebhookPageXpath($html);
+    $identityCells = $xpath->query('//tbody/tr/td[1][strong[@lang=""]]');
+
+    expect($identityCells->length)->toBe(2, 'the token and endpoint name cells did not render; this guard is checking nothing');
+
+    foreach ($identityCells as $cell) {
+        expect(str_contains(' '.$cell->getAttribute('class').' ', ' cell-wrap '))
+            ->toBeTrue('a name cell is nowrap, so a long name or creator widens the whole table');
+    }
+
+    expect((bool) preg_match('/\.cell-wrap\s+\.table-note[^{]*\{[^}]*white-space:\s*normal;/', $html))
+        ->toBeTrue('.table-note keeps its own nowrap inside a wrapping cell');
 });

@@ -78,7 +78,7 @@
                     <tbody>
                         @foreach ($tokens as $token)
                             <tr>
-                                <td>
+                                <td class="cell-wrap">
                                     {{-- The token's name, the sites it reaches and the
                                          agent who issued it are the account's own words.
                                          `lang=""` is HTML's "unknown": the page around
@@ -291,7 +291,7 @@
                                 );
                             @endphp
                             <tr>
-                                <td>
+                                <td class="cell-wrap">
                                     {{-- Stacked lines rather than the token table's
                                          inline ones: a destination URL beside the name
                                          in an unwrapping cell pushed every other column
