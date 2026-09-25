@@ -36,7 +36,14 @@ class NotifyAgentsOfVisitorMessage
             return;
         }
 
-        $message->loadMissing(['conversation.site.account']);
+        // Loaded again, never trusted as carried. The message's own copy of
+        // its conversation can be read while the message is being written --
+        // the outbound webhook observer reads it on insert -- which is BEFORE
+        // the sending path reopens a closed conversation and before inbound
+        // mail's creation rules run. Deciding from that copy skipped every
+        // visitor reply that reopened a closed conversation, and routed an
+        // emailed conversation's first alert as though no rule had assigned it.
+        $message->load(['conversation.site.account']);
 
         $conversation = $message->conversation;
 

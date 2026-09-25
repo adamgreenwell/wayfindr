@@ -89,6 +89,7 @@ return [
         'would_run' => 'Azioni che verrebbero eseguite', 'no_actions' => 'Nessuna azione verrebbe eseguita perché non tutte le condizioni corrispondono.',
         'withheld' => 'Azioni che verrebbero saltate',
         'withheld_reason' => 'Una regola «:event» non può chiudere la conversazione: il visitatore attende una risposta.',
+        'withheld_reason_created' => 'Una regola «:event» non può chiudere una conversazione che contiene già un messaggio del visitatore: il visitatore attende una risposta.',
     ],
     'executions' => [
         'heading' => 'Registro delle esecuzioni', 'lede' => 'Risultati permanenti delle regole corrispondenti e delle macro applicate manualmente, inclusi errori e azioni senza modifiche.',

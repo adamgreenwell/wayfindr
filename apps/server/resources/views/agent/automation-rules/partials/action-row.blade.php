@@ -7,7 +7,7 @@
     // stops offering exactly what the server would refuse.
     $withheldStatusEvents = collect(\App\Enums\TicketStatus::cases())
         ->mapWithKeys(fn ($status) => [$status->value => collect(\App\Enums\AutomationRuleEvent::cases())
-            ->filter(fn ($event) => \App\Support\Automation\AutomationRuleDefinition::withholdsAction($event, [
+            ->filter(fn ($event) => \App\Support\Automation\AutomationRuleDefinition::refusesAction($event, [
                 'type' => \App\Enums\AutomationRuleActionType::SetStatus->value,
                 'value' => $status->value,
             ]))

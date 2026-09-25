@@ -148,6 +148,7 @@ return [
         'no_actions' => 'No actions would run because every condition did not match.',
         'withheld' => 'Actions that would be skipped',
         'withheld_reason' => 'A “:event” rule cannot close the conversation: the visitor is waiting for a reply.',
+        'withheld_reason_created' => 'A “:event” rule cannot close a conversation that already holds a visitor message: the visitor is waiting for a reply.',
     ],
     'executions' => [
         'heading' => 'Execution log',

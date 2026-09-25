@@ -409,6 +409,73 @@ test('preview of a saved visitor message close rule shows only what would run', 
         ->and($conversation->fresh()->status)->toBe('open');
 });
 
+test('preview of a creation close rule withholds the close only where a visitor is waiting', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    // An emailed conversation arrives holding its first message; one the
+    // widget or the API opened holds none until the visitor writes.
+    $emailed = Conversation::factory()->for($site)->for($visitor)->create();
+    ConversationMessage::factory()->for($emailed)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'My order has not arrived.',
+    ]);
+    $empty = Conversation::factory()->for($site)->for($visitor)->create();
+    // The visitor wrote, then an agent answered: nobody is waiting on support.
+    $answered = Conversation::factory()->for($site)->for($visitor)->create();
+    ConversationMessage::factory()->for($answered)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Where is it?',
+        'created_at' => now()->subMinutes(5),
+    ]);
+    ConversationMessage::factory()->for($answered)->create([
+        'sender_type' => User::class,
+        'sender_id' => $admin->id,
+        'body' => 'It ships today.',
+        'created_at' => now()->subMinute(),
+    ]);
+    $rule = AutomationRule::factory()->for($account)->create([
+        'event' => 'conversation.created',
+        'actions' => [
+            ['type' => 'set_status', 'value' => 'closed'],
+            ['type' => 'set_priority', 'value' => 'low'],
+        ],
+    ]);
+
+    $this->actingAs($admin)->post(route('dashboard.account.automation-rules.preview', $rule), [
+        'preview_subject' => 'conversation:'.$emailed->id,
+    ])->assertRedirect();
+    $waiting = session('automation_preview');
+
+    $this->actingAs($admin)->post(route('dashboard.account.automation-rules.preview', $rule), [
+        'preview_subject' => 'conversation:'.$empty->id,
+    ])->assertRedirect();
+    $nobodyWaiting = session('automation_preview');
+
+    $this->actingAs($admin)->post(route('dashboard.account.automation-rules.preview', $rule), [
+        'preview_subject' => 'conversation:'.$answered->id,
+    ])->assertRedirect();
+    $answeredPreview = session('automation_preview');
+
+    expect($waiting['actions'])->toBe([['type' => 'set_priority', 'value' => 'low']], 'the dry run lists a close the live run withholds from a conversation holding a visitor message')
+        ->and($waiting['withheld_actions'])->toBe([['type' => 'set_status', 'value' => 'closed']])
+        ->and($nobodyWaiting['actions'])->toBe($rule->actions, 'the dry run withholds a close from a conversation nobody is waiting in')
+        ->and($nobodyWaiting['withheld_actions'])->toBe([])
+        ->and($answeredPreview['withheld_actions'])->toBe([], 'the dry run withholds a close from a conversation an agent has already answered, where nobody is waiting on support');
+
+    $page = $this->actingAs($admin)
+        ->withSession(['automation_preview' => $waiting])
+        ->get(route('dashboard.account.automation-rules.edit', $rule))
+        ->assertOk()
+        ->getContent();
+
+    expect(str_contains($page, 'A “Conversation created” rule cannot close a conversation that already holds a visitor message: the visitor is waiting for a reply.'))
+        ->toBeTrue('The dry run withholds a creation rule close without saying why.');
+});
+
 test('preview refuses support work outside the managers visible scope', function (): void {
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);

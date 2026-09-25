@@ -115,11 +115,17 @@ final readonly class AutomationRuleEngine
                 // answers one per action it ran, in order -- with a withheld
                 // close recorded where the rule put it rather than after
                 // everything that ran. Said in the log rather than dropped, so
-                // an older rule's author can see why its close did not happen.
+                // the rule's author can see why its close did not happen.
+                //
+                // Which actions were withheld is read from the evaluation, not
+                // decided again here: it depends on the conversation as well as
+                // the event. Within one evaluation it depends on nothing about
+                // an action but its value, so a stored action equal to a
+                // withheld one is withheld.
                 $results = [];
 
                 foreach ($rule->actions as $action) {
-                    $results[] = AutomationRuleDefinition::withholdsAction($event, $action)
+                    $results[] = in_array($action, $preview['withheld_actions'], true)
                         ? ['type' => $action['type'], 'status' => 'skipped', 'detail' => 'visitor_awaiting_reply']
                         : array_shift($executed);
                 }
