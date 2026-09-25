@@ -17,10 +17,12 @@
                 $editingLabelId = is_scalar(old('editing_label')) ? (string) old('editing_label') : '';
 
                 // A refused delete ("remove this label from …") belongs to the
-                // row whose Delete sent it. At the top of the page it named no
-                // label, so with several in use nobody could tell which one it
-                // meant. It stays up here only when no row claims it.
-                $deletingLabelId = is_scalar(old('deleting_label')) ? (string) old('deleting_label') : '';
+                // row of the label that was refused. At the top of the page it
+                // named no label, so with several in use nobody could tell which
+                // one it meant. The controller records that label from the route,
+                // never from a form field. It stays up here only when no row
+                // claims it.
+                $deletingLabelId = (string) session('refused_label_delete', '');
                 $deleteRefusalOnRow = $deletingLabelId !== ''
                     && $ticketLabels->contains(fn ($ticketLabel): bool => (string) $ticketLabel->id === $deletingLabelId);
             @endphp
@@ -126,7 +128,6 @@
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.labels.destroy', $ticketLabel) }}">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <input type="hidden" name="deleting_label" value="{{ $ticketLabel->id }}">
                                                     <button class="button danger" type="submit" @if ($isRefusedDelete) aria-describedby="ticket-label-{{ $ticketLabel->id }}-delete-error" autofocus @endif>{{ __('ticket_labels.manage.delete') }}</button>
                                                 </form>
                                             @endif

@@ -841,17 +841,20 @@ test('a refused delete comes back on the row whose Delete sent it', function ():
     $this->assertDatabaseHas('ticket_labels', ['id' => $bystander->id]);
 });
 
-test('a refused delete that no row claims is still shown', function (): void {
-    // A request without the row's id -- an older tab, a crafted form -- must
-    // not lose the refusal: it stays at the top rather than vanishing.
+test('a refused delete lands on the refused label, whatever the form claims', function (): void {
+    // The row comes from the label in the route. A crafted request that names
+    // another label -- or an array, or a label that does not exist -- must not
+    // move the refusal onto a different row, where it would send an
+    // administrator to remove automation from the wrong label.
     $account = Account::factory()->create();
     $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
     $used = TicketLabel::factory()->for($account)->create(['name' => 'Needs Dev', 'slug' => 'needs-dev']);
+    $other = TicketLabel::factory()->for($account)->create(['name' => 'Billing', 'slug' => 'billing']);
     AutomationRule::factory()->for($account)->create([
         'actions' => [['type' => AutomationRuleActionType::AddLabel->value, 'value' => $used->id]],
     ]);
 
-    foreach ([[], ['deleting_label' => [(string) $used->id]], ['deleting_label' => '999999']] as $fields) {
+    foreach ([[], ['deleting_label' => (string) $other->id], ['deleting_label' => [(string) $other->id]], ['deleting_label' => '999999']] as $fields) {
         $xpath = ticketLabelManagementXPath((string) $this->actingAs($admin)
             ->from(route('dashboard.account.labels.index'))
             ->followingRedirects()
@@ -859,12 +862,14 @@ test('a refused delete that no row claims is still shown', function (): void {
             ->assertOk()
             ->getContent());
 
-        expect($xpath->query('//p[contains(@class, "field-error")]')->length)
-            ->toBe(1, 'a refusal no row claims vanished from the page, so the delete looks silently ignored');
+        $messages = $xpath->query('//p[contains(@class, "field-error")]');
 
-        $message = ticketLabelManagementElement($xpath, '//p[contains(@class, "field-error")]');
+        expect($messages->length)->toBe(1, 'the refusal vanished or doubled');
 
-        expect(trim($message->textContent))->toBe(__('ticket_labels.validation.in_use_automation'))
-            ->and($xpath->query('ancestor::table', $message)->length)->toBe(0, 'an unclaimed refusal landed on a row');
+        $row = $xpath->query('ancestor::tr[1]', $messages->item(0))->item(0);
+
+        expect($row)->not->toBeNull('the refusal is not on a row')
+            ->and(trim($xpath->query('td/strong', $row)->item(0)?->textContent ?? ''))
+            ->toBe('Needs Dev', 'a crafted form moved the refusal onto another label\'s row');
     }
 });
