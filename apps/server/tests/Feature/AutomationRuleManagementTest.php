@@ -423,6 +423,20 @@ test('preview of a creation close rule withholds the close only where a visitor 
         'body' => 'My order has not arrived.',
     ]);
     $empty = Conversation::factory()->for($site)->for($visitor)->create();
+    // The visitor wrote, then an agent answered: nobody is waiting on support.
+    $answered = Conversation::factory()->for($site)->for($visitor)->create();
+    ConversationMessage::factory()->for($answered)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Where is it?',
+        'created_at' => now()->subMinutes(5),
+    ]);
+    ConversationMessage::factory()->for($answered)->create([
+        'sender_type' => User::class,
+        'sender_id' => $admin->id,
+        'body' => 'It ships today.',
+        'created_at' => now()->subMinute(),
+    ]);
     $rule = AutomationRule::factory()->for($account)->create([
         'event' => 'conversation.created',
         'actions' => [
@@ -441,10 +455,16 @@ test('preview of a creation close rule withholds the close only where a visitor 
     ])->assertRedirect();
     $nobodyWaiting = session('automation_preview');
 
+    $this->actingAs($admin)->post(route('dashboard.account.automation-rules.preview', $rule), [
+        'preview_subject' => 'conversation:'.$answered->id,
+    ])->assertRedirect();
+    $answeredPreview = session('automation_preview');
+
     expect($waiting['actions'])->toBe([['type' => 'set_priority', 'value' => 'low']], 'the dry run lists a close the live run withholds from a conversation holding a visitor message')
         ->and($waiting['withheld_actions'])->toBe([['type' => 'set_status', 'value' => 'closed']])
         ->and($nobodyWaiting['actions'])->toBe($rule->actions, 'the dry run withholds a close from a conversation nobody is waiting in')
-        ->and($nobodyWaiting['withheld_actions'])->toBe([]);
+        ->and($nobodyWaiting['withheld_actions'])->toBe([])
+        ->and($answeredPreview['withheld_actions'])->toBe([], 'the dry run withholds a close from a conversation an agent has already answered, where nobody is waiting on support');
 
     $page = $this->actingAs($admin)
         ->withSession(['automation_preview' => $waiting])

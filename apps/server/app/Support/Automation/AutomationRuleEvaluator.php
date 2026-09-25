@@ -125,8 +125,12 @@ final class AutomationRuleEvaluator
     {
         return match ($event) {
             AutomationRuleEvent::VisitorMessageCreated => true,
+            // Waiting means the visitor wrote LAST, by the conversation's own
+            // human-work boundary -- not that a visitor ever wrote: a dry run
+            // against a conversation an agent has since answered must show the
+            // close running, as it would.
             AutomationRuleEvent::ConversationCreated => $subject instanceof Conversation
-                && $subject->messages()->where('sender_type', Visitor::class)->exists(),
+                && $subject->latestMessageForHumanWork()?->sender_type === Visitor::class,
             default => false,
         };
     }
