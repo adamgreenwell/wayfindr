@@ -2248,6 +2248,15 @@
             white-space: nowrap;
         }
 
+        /* A note holding a value the account chose and the product cannot
+           bound -- a webhook destination may be 2,048 characters -- wraps, and
+           may break anywhere, so its longest run cannot set the column's
+           minimum width and push every other column off the page. */
+        .table-note--wrap {
+            white-space: normal;
+            overflow-wrap: anywhere;
+        }
+
         .proactive-rules-table th,
         .proactive-rules-table td,
         .proactive-rules-table .table-note {

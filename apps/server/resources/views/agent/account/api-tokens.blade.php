@@ -297,7 +297,7 @@
                                          in an unwrapping cell pushed every other column
                                          off the page. --}}
                                     <strong lang="">{{ $endpoint->name }}</strong>
-                                    <span class="table-note"><code lang="">{{ $endpoint->url }}</code> · <code lang="">{{ $endpoint->secretHint() }}</code></span>
+                                    <span class="table-note table-note--wrap"><code lang="">{{ $endpoint->url }}</code> · <code lang="">{{ $endpoint->secretHint() }}</code></span>
                                     <span class="table-note">
                                         @if ($endpoint->createdBy)
                                             {!! __('outbound_webhooks.endpoints.created_by', [

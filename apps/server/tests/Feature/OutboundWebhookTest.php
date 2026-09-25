@@ -739,3 +739,25 @@ test('a delivery summary resets only the endpoint name, not the whole line', fun
     expect(str_contains($summary->textContent, __('outbound_webhooks.events.ticket_created', [], 'de')))
         ->toBeTrue('the delivery summary lost its translated event label');
 });
+
+test('a long webhook destination wraps inside its cell instead of widening the table', function (): void {
+    // The form accepts a 2,048-character destination, and every table cell is
+    // nowrap. Unwrapped, the URL set the first column's minimum width and
+    // pushed Events, Reaches, State and the action off the page.
+    $world = outboundWebhookWorld();
+    OutboundWebhookEndpoint::factory()->for($world['account'])->create([
+        'name' => 'Long listener',
+        'url' => 'https://hooks.example.test/'.str_repeat('segment', 200),
+    ]);
+
+    $html = (string) $this->actingAs($world['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+    $xpath = outboundWebhookPageXpath($html);
+    $note = $xpath->query('//section[@aria-labelledby="outbound-webhook-list-heading"]//tbody//td[1]//span[contains(concat(" ", @class, " "), " table-note ")][code]')->item(0);
+
+    expect($note)->not->toBeNull('the destination note did not render; this guard is checking nothing')
+        ->and(str_contains(' '.$note->getAttribute('class').' ', ' table-note--wrap '))
+        ->toBeTrue('the destination URL sits in a nowrap note, so a long URL widens the whole table')
+        ->and((bool) preg_match('/\.table-note--wrap\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/', $html))
+        ->toBeTrue('the wrapping note has no rule that lets it wrap');
+});
