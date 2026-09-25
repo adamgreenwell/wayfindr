@@ -105,20 +105,23 @@ final readonly class AutomationRuleEngine
                     return false;
                 }
 
-                $results = $this->executor->execute(
+                $executed = $this->executor->execute(
                     AutomationActionContext::forRule($rule),
                     $lockedSubject,
                     $preview['actions'],
                 );
 
-                // Said in the execution log rather than silently dropped, so
+                // One result per STORED action, in stored order -- the executor
+                // answers one per action it ran, in order -- with a withheld
+                // close recorded where the rule put it rather than after
+                // everything that ran. Said in the log rather than dropped, so
                 // an older rule's author can see why its close did not happen.
-                foreach ($preview['withheld_actions'] as $action) {
-                    $results[] = [
-                        'type' => $action['type'],
-                        'status' => 'skipped',
-                        'detail' => 'visitor_awaiting_reply',
-                    ];
+                $results = [];
+
+                foreach ($rule->actions as $action) {
+                    $results[] = AutomationRuleDefinition::withholdsAction($event, $action)
+                        ? ['type' => $action['type'], 'status' => 'skipped', 'detail' => 'visitor_awaiting_reply']
+                        : array_shift($executed);
                 }
 
                 AutomationRuleExecution::query()->create([

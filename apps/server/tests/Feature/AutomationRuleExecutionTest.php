@@ -243,9 +243,9 @@ test('a saved visitor message rule that closes the conversation cannot silence i
         ->and($execution->actions)->toBe($rule->actions, 'the execution snapshot must keep the rule as it was stored')
         ->and($execution->action_results)->toBe([
             ['type' => 'assign_agent', 'status' => 'applied', 'detail' => 'agent:'.$assignee->id],
-            ['type' => 'set_priority', 'status' => 'applied', 'detail' => 'normal->high'],
             ['type' => 'set_status', 'status' => 'skipped', 'detail' => 'visitor_awaiting_reply'],
-        ], 'the execution log does not say the close was skipped, or why');
+            ['type' => 'set_priority', 'status' => 'applied', 'detail' => 'normal->high'],
+        ], 'the execution log does not record each stored action, in stored order, with the close skipped and why');
 });
 
 test('visitor ticket reopen automation follows the visitor reply audit', function (): void {
