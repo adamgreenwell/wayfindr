@@ -359,3 +359,16 @@ test('the breadcrumb leads to the account overview, not the operator console', f
         ], false)
         ->assertDontSee('href="'.route('operator.dashboard').'"', false);
 });
+
+test('the desktop sidebar scrolls on its own when it is taller than the window', function (): void {
+    // Sticky with no height bound: on a short window (1024x600) the Connections
+    // and Oversight links sat below the fold for the whole length of the page.
+    $owner = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Owner]);
+    $html = (string) $this->actingAs($owner)->get(route('dashboard.account.show'))->assertOk()->getContent();
+
+    preg_match('/\n        \.wf-context-nav \{([^}]*)\}/', $html, $rule);
+
+    expect($rule)->not->toBe([], 'the desktop context-nav rule did not render; this guard is checking nothing')
+        ->and(str_contains($rule[1], 'max-height: calc(100vh') && str_contains($rule[1], 'overflow-y: auto'))
+        ->toBeTrue('the sticky sidebar has no bounded height of its own, so its last links can sit below a short window');
+});

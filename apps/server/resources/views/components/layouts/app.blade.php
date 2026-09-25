@@ -1385,6 +1385,12 @@
             gap: 1px;
             position: sticky;
             top: calc(52px + var(--wf-space-5));
+            /* Its own scroll area once it is taller than the window below the
+               top bar. Sticky alone kept the last groups under a short window
+               for the whole length of a long page -- and the account sidebar
+               is the only way to those pages. */
+            max-height: calc(100vh - 52px - 2 * var(--wf-space-5));
+            overflow-y: auto;
         }
 
         .wf-context-heading {
@@ -1633,6 +1639,7 @@
 
             .wf-context-nav {
                 position: static;
+                max-height: none;
                 flex-direction: row;
                 gap: var(--wf-space-1);
                 overflow-x: auto;
