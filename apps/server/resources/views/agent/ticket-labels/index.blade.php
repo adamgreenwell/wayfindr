@@ -14,7 +14,7 @@
                 // aria-invalid. Without it one rejected rename was painted into
                 // every row and the create field, where a Save on any other row
                 // would send it as that label's new name.
-                $editingLabelId = (string) old('editing_label');
+                $editingLabelId = is_scalar(old('editing_label')) ? (string) old('editing_label') : '';
             @endphp
 
             @error('label')

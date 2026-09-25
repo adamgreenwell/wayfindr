@@ -817,3 +817,21 @@ test('restoring a reply template stays inside the same boundaries as archiving i
     expect($archived->fresh()->is_active)
         ->toBeFalse('A reply template was restored by someone who cannot manage this account\'s knowledge.');
 });
+
+test('a row discriminator sent as an array still lands on the page, not a 500', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $template = ReplyTemplate::factory()->for($account)->create();
+
+    // Laravel flashes the whole request on a validation redirect, so a crafted
+    // `editing_template[]` comes back through old() as an array.
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.reply-templates.index'))
+        ->followingRedirects()
+        ->put(route('dashboard.account.reply-templates.update', $template), [
+            'editing_template' => [(string) $template->id],
+            'name' => 'Billing status',
+            'body' => '',
+        ])
+        ->assertOk();
+});

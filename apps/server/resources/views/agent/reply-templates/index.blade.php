@@ -15,7 +15,7 @@
                 // aria-invalid. Without it one rejected edit -- or a rejected
                 // create -- was painted into every row, where a Save on any
                 // other row would send it as that row's content.
-                $editingTemplateId = (string) old('editing_template');
+                $editingTemplateId = is_scalar(old('editing_template')) ? (string) old('editing_template') : '';
             @endphp
 
             <section class="section" aria-labelledby="reply-template-standards-heading">

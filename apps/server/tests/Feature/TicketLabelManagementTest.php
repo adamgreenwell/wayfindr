@@ -767,3 +767,18 @@ function ticketLabelManagementElement(DOMXPath $xpath, string $query): DOMElemen
 
     return $nodes->item(0);
 }
+
+test('a label row discriminator sent as an array still lands on the page, not a 500', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $label = TicketLabel::factory()->for($account)->create(['name' => 'Needs Dev', 'slug' => 'needs-dev']);
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.labels.index'))
+        ->followingRedirects()
+        ->put(route('dashboard.account.labels.update', $label), [
+            'editing_label' => [(string) $label->id],
+            'label_name' => 'All',
+        ])
+        ->assertOk();
+});
