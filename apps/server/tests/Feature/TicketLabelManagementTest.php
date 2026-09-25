@@ -48,7 +48,8 @@ test('account admins can review ticket labels and usage', function (): void {
         ->assertSee('1 ticket')
         ->assertSee('In use on 1 ticket')
         ->assertSee('Billing')
-        ->assertSee('Delete unused')
+        ->assertSee('Delete label')
+        ->assertDontSee('Delete unused')
         ->assertDontSee('Other Account');
 
     $this->actingAs($agent)
@@ -81,6 +82,11 @@ test('knowledge only roles can manage labels without seeing ticket usage', funct
         ->assertOk()
         ->assertSee('Private support volume')
         ->assertSee('private-support-volume')
+        // Without ticket access the in-use branch cannot run, so this label --
+        // which IS on a ticket -- offers Delete. The button used to say
+        // "Delete unused" here, which was simply untrue; the controller
+        // refuses it with a reason instead.
+        ->assertSee('Delete label')
         ->assertDontSee('1 ticket')
         ->assertDontSee('In use on 1 ticket')
         ->assertDontSee(route('dashboard.tickets.index', [
@@ -97,8 +103,10 @@ test('ticket label management guides admins before labels exist', function (): v
     $this->actingAs($admin)
         ->get('/dashboard/account/labels')
         ->assertOk()
-        ->assertSee('No managed ticket labels yet.')
-        ->assertSee('Use labels when tickets need repeatable triage context, escalation cues, or workflow grouping.')
+        ->assertSee('No ticket labels yet.')
+        ->assertSee('Labels group tickets for triage and become filters in the ticket queue.')
+        // "Managed" was the code's word, not the reader's.
+        ->assertDontSee('No managed ticket labels yet.')
         ->assertSee('Create the first label')
         ->assertSee('href="#new-ticket-label-heading"', false);
 });
@@ -130,7 +138,7 @@ test('account admins can create reusable ticket labels from management', functio
         ->assertSee('VIP Customer')
         ->assertSee('vip-customer')
         ->assertSee('0 tickets')
-        ->assertSee('Delete unused');
+        ->assertSee('Delete label');
 });
 
 test('managed ticket labels link to the all-status ticket queue filter', function (): void {
@@ -606,3 +614,156 @@ test('an agent who reads German gets the labels page, counts included, in German
         ->assertDontSee('Create label')
         ->assertDontSee('Ticket labels');
 });
+
+test('every rename form says which label it renames', function (): void {
+    // The browser half of the binding below: the page has to SEND the id, or
+    // the error routing has nothing to route on.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $labels = TicketLabel::factory()->for($account)->count(2)->sequence(
+        ['name' => 'Needs Dev', 'slug' => 'needs-dev'],
+        ['name' => 'Billing', 'slug' => 'billing'],
+    )->create();
+
+    $xpath = ticketLabelManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.labels.index'))->assertOk()->getContent(),
+    );
+
+    foreach ($labels as $label) {
+        ticketLabelManagementElement(
+            $xpath,
+            '//form[@action="'.route('dashboard.account.labels.update', $label).'"]//input[@type="hidden" and @name="editing_label" and @value="'.$label->id.'"]',
+        );
+    }
+});
+
+test('a rejected rename comes back to the row that sent it and nowhere else', function (): void {
+    // Every rename form and the create form post the same `label_name`. Before
+    // the rows said which one they were, a rejected rename came back as a
+    // detached message at the top of the page, with the rejected value
+    // painted into the create field and EVERY row -- so a Save on any other
+    // row sent it as that label's new name.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $renamed = TicketLabel::factory()->for($account)->create(['name' => 'Needs Dev', 'slug' => 'needs-dev']);
+    $bystander = TicketLabel::factory()->for($account)->create(['name' => 'Billing', 'slug' => 'billing']);
+
+    $html = $this->actingAs($admin)
+        ->from(route('dashboard.account.labels.index'))
+        ->followingRedirects()
+        ->put(route('dashboard.account.labels.update', $renamed), [
+            'editing_label' => (string) $renamed->id,
+            'label_name' => 'All',
+        ])
+        ->assertOk()
+        ->getContent();
+
+    $xpath = ticketLabelManagementXPath($html);
+    $failed = ticketLabelManagementElement($xpath, '//input[@id="ticket-label-'.$renamed->id.'"]');
+    $message = ticketLabelManagementElement($xpath, '//p[@id="ticket-label-'.$renamed->id.'-error"]');
+    $other = ticketLabelManagementElement($xpath, '//input[@id="ticket-label-'.$bystander->id.'"]');
+    $create = ticketLabelManagementElement($xpath, '//input[@id="new-label-name"]');
+
+    expect($failed->getAttribute('value'))->toBe('All', 'the failing row lost what the agent typed')
+        ->and($failed->getAttribute('aria-invalid'))->toBe('true', 'the failing row is not marked invalid')
+        ->and($failed->getAttribute('aria-describedby'))->toBe('ticket-label-'.$renamed->id.'-error', 'the failing row is not described by its message')
+        ->and($failed->hasAttribute('autofocus'))->toBeTrue('the reloaded page does not open on the failing row')
+        ->and(trim($message->textContent))->toBe(__('ticket_labels.validation.reserved'))
+        ->and($other->getAttribute('value'))->toBe('Billing', 'the rejected rename was painted into another row')
+        ->and($other->hasAttribute('aria-invalid'))->toBeFalse('a row that was not submitted is marked invalid')
+        ->and($create->getAttribute('value'))->toBe('', 'the rejected rename was painted into the create field')
+        ->and($create->hasAttribute('aria-invalid'))->toBeFalse('the create field is marked invalid for a rename')
+        ->and($xpath->query('//p[contains(@class, "field-error")]')->length)->toBe(1, 'the message is printed more than once');
+});
+
+test('a rejected create comes back to the create field and leaves every row alone', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $existing = TicketLabel::factory()->for($account)->create(['name' => 'Needs Dev', 'slug' => 'needs-dev']);
+
+    $html = $this->actingAs($admin)
+        ->from(route('dashboard.account.labels.index'))
+        ->followingRedirects()
+        ->post(route('dashboard.account.labels.store'), [
+            'label_name' => 'All',
+        ])
+        ->assertOk()
+        ->getContent();
+
+    $xpath = ticketLabelManagementXPath($html);
+    $create = ticketLabelManagementElement($xpath, '//input[@id="new-label-name"]');
+    $message = ticketLabelManagementElement($xpath, '//p[@id="new-label-name-error"]');
+    $row = ticketLabelManagementElement($xpath, '//input[@id="ticket-label-'.$existing->id.'"]');
+
+    expect($create->getAttribute('value'))->toBe('All', 'the create field lost what the agent typed')
+        ->and($create->getAttribute('aria-invalid'))->toBe('true', 'the create field is not marked invalid')
+        ->and($create->getAttribute('aria-describedby'))->toBe('new-label-name-error', 'the create field is not described by its message')
+        ->and($create->hasAttribute('autofocus'))->toBeTrue('the reloaded page does not open on the create field')
+        ->and(trim($message->textContent))->toBe(__('ticket_labels.validation.reserved'))
+        ->and($row->getAttribute('value'))->toBe('Needs Dev', 'the rejected create was painted into a rename row')
+        ->and($row->hasAttribute('aria-invalid'))->toBeFalse('a rename row is marked invalid for a create');
+});
+
+test('label names and slugs are marked as account data, not dashboard copy', function (): void {
+    // The same label is language-reset as a chip on a ticket
+    // (components/ticket-label-chip); the page that names it has to agree, or
+    // a German agent's screen reader reads `Needs Dev` with German phonetics.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+    $label = TicketLabel::factory()->for($account)->create(['name' => 'Needs Dev', 'slug' => 'needs-dev']);
+
+    $xpath = ticketLabelManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.labels.index'))->assertOk()->getContent(),
+    );
+
+    $rename = ticketLabelManagementElement($xpath, '//input[@id="ticket-label-'.$label->id.'"]');
+
+    expect($xpath->query('//td/strong[@lang="" and normalize-space(.)="Needs Dev"]')->length)
+        ->toBe(1, 'the label name is not marked as account data')
+        ->and($xpath->query('//td/code[@lang="" and normalize-space(.)="needs-dev"]')->length)
+        ->toBe(1, 'the slug is not marked as account data')
+        ->and($rename->hasAttribute('lang') && $rename->getAttribute('lang') === '')
+        ->toBeTrue('the rename field, whose value is the label name, is not marked as account data');
+});
+
+test('the create section explains itself under its heading, and the count stays on the right', function (): void {
+    // `.section-header` is a space-between flex row. A lede that is the h2's
+    // SIBLING is pushed to the far edge -- right for a count, wrong for a
+    // sentence that explains the heading it belongs to.
+    $admin = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Admin]);
+
+    $xpath = ticketLabelManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.labels.index'))->assertOk()->getContent(),
+    );
+
+    $header = 'div[contains(concat(" ", normalize-space(@class), " "), " section-header ")]';
+
+    expect($xpath->query('//'.$header.'/div[h2[@id="new-ticket-label-heading"]]/p[@class="lede"]')->length)
+        ->toBe(1, 'the create lede is not under its heading')
+        ->and($xpath->query('//'.$header.'[h2[@id="ticket-labels-heading"]]/span[@class="lede"]')->length)
+        ->toBe(1, 'the label count left the right-hand slot');
+});
+
+function ticketLabelManagementXPath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+
+    return new DOMXPath($document);
+}
+
+/**
+ * The one element a query names. Failing on a count of zero OR two says the
+ * query is wrong before any attribute assertion can pass on the wrong node.
+ */
+function ticketLabelManagementElement(DOMXPath $xpath, string $query): DOMElement
+{
+    $nodes = $xpath->query($query);
+
+    expect($nodes === false ? 0 : $nodes->length)->toBe(1, "expected exactly one element for {$query}");
+
+    return $nodes->item(0);
+}

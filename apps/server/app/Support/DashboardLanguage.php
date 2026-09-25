@@ -248,6 +248,7 @@ final class DashboardLanguage
         'dashboard.account.reply-templates.store',
         'dashboard.account.reply-templates.update',
         'dashboard.account.reply-templates.archive',
+        'dashboard.account.reply-templates.restore',
 
         // Automation management is one translated workflow: the list and
         // execution log, the ordered rule form, and every write that can send

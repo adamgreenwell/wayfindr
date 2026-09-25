@@ -60,12 +60,12 @@ return [
         'rename' => ':name umbenennen',
         'save' => 'Label speichern',
         'in_use' => '{1} Wird für 1 Ticket verwendet|[2,*] Wird für :count Tickets verwendet',
-        'delete' => 'Ungenutztes löschen',
+        'delete' => 'Label löschen',
     ],
 
     'empty' => [
-        'heading' => 'Noch keine verwalteten Ticket-Labels.',
-        'body' => 'Verwenden Sie Labels, wenn Tickets wiederkehrenden Triage-Kontext, Eskalationshinweise oder eine Gruppierung im Arbeitsablauf brauchen. Beginnen Sie mit wenigen Labels, die Ihr Team wirklich nutzt.',
+        'heading' => 'Noch keine Ticket-Labels.',
+        'body' => 'Labels gruppieren Tickets für die Triage und dienen in der Ticket-Warteschlange als Filter.',
         'action' => 'Erstes Label erstellen',
     ],
 
