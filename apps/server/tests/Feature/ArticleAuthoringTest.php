@@ -18,6 +18,20 @@ function articleWorld(): array
     return compact('account', 'admin');
 }
 
+function articleAuthoringXPath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    return new DOMXPath($document);
+}
+
+/** An XPath predicate that matches one whole class name, not a substring of another. */
+function articleAuthoringHasClass(string $class): string
+{
+    return 'contains(concat(" ", normalize-space(@class), " "), " '.$class.' ")';
+}
+
 test('an article is created as a draft, never straight to visitors', function (): void {
     $w = articleWorld();
 
@@ -211,4 +225,195 @@ test('an agent who cannot manage the account is not shown the door', function ()
         ->get(route('dashboard.account.show'))
         ->assertOk()
         ->assertDontSee(route('dashboard.account.articles.index'), false);
+});
+
+test('the article count is a count, not a state pill', function (): void {
+    // `readiness-status` is the product's state pill: `ready` spends the accent,
+    // `manual` is the amber hold. Around a count it painted every desk with
+    // articles teal and every desk without them amber. The sibling lists
+    // render the same count as a plain lede.
+    $w = articleWorld();
+    Article::factory()->for($w['account'])->published()->create(['title' => 'Published one']);
+    Article::factory()->for($w['account'])->create(['title' => 'Draft one']);
+
+    $page = articleAuthoringXPath((string) $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.articles.index'))->assertOk()->getContent());
+
+    $header = '//section[@aria-labelledby="article-list-heading"]/div['.articleAuthoringHasClass('section-header').']';
+
+    expect($page->query($header)->length)->toBe(1, 'the list header did not render; this guard is checking nothing');
+
+    expect($page->query($header.'//*['.articleAuthoringHasClass('readiness-status').']')->length)
+        ->toBe(0, 'the article count is painted as a state pill');
+
+    $count = $page->query($header.'/span['.articleAuthoringHasClass('lede').']')->item(0);
+
+    expect($count)->not->toBeNull('the article count is not the plain lede the sibling lists use')
+        ->and(trim((string) $count?->textContent))->toBe('2 articles');
+
+    // The pills that ARE states stay: published or draft, once per row.
+    expect($page->query('//tbody//*['.articleAuthoringHasClass('readiness-status').']')->length)
+        ->toBe(2, 'the per-row published/draft pills went with the count');
+});
+
+test('a brand-new account gets the empty state, not a search box over nothing', function (): void {
+    $w = articleWorld();
+
+    $page = articleAuthoringXPath((string) $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.articles.index'))->assertOk()->getContent());
+
+    $list = '//section[@aria-labelledby="article-list-heading"]';
+    $emptyState = $page->query($list.'//div['.articleAuthoringHasClass('empty-state').']')->item(0);
+
+    expect($emptyState)->not->toBeNull('an account with no articles gets a bare sentence rather than the empty state every sibling list uses');
+
+    expect(trim((string) $page->query('./strong', $emptyState)->item(0)?->textContent))
+        ->toBe(__('articles.empty.heading'), 'the empty state has no heading');
+
+    $action = $page->query('./div['.articleAuthoringHasClass('empty-state-actions').']/a', $emptyState)->item(0);
+
+    expect($action)->not->toBeNull('the empty state offers no way to write the first article')
+        ->and($action?->getAttribute('href'))->toBe('#new-article-heading')
+        ->and(trim((string) $action?->textContent))->toBe(__('articles.empty.action'));
+
+    expect($page->query('//*[@id="new-article-heading"]')->length)
+        ->toBe(1, 'the empty-state action points at an anchor that does not exist');
+
+    expect($page->query('//input[@id="article_search"]')->length)
+        ->toBe(0, 'a search box is offered over an account with nothing to search');
+
+    expect($page->query($list.'/div['.articleAuthoringHasClass('section-header').']//*['.articleAuthoringHasClass('readiness-status').']')->length)
+        ->toBe(0, 'having no articles yet is painted as an amber warning');
+});
+
+test('a search that matches nothing keeps the search box and says what was searched', function (): void {
+    $w = articleWorld();
+    Article::factory()->for($w['account'])->create(['title' => 'Refunds']);
+
+    $page = articleAuthoringXPath((string) $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.articles.index', ['article_search' => 'zzz']))->assertOk()->getContent());
+
+    $list = '//section[@aria-labelledby="article-list-heading"]';
+
+    expect($page->query('//input[@id="article_search"]')->length)
+        ->toBe(1, 'the search box went with the results, so a search that matched nothing cannot be changed');
+
+    expect($page->query($list.'//*['.articleAuthoringHasClass('empty-state').']')->length)
+        ->toBe(0, 'a search that matched nothing is presented as an account with no articles');
+
+    expect(trim((string) $page->query($list.'//p['.articleAuthoringHasClass('empty').']')->item(0)?->textContent))
+        ->toBe('No article title matches “zzz”.');
+});
+
+test('a refused field is announced on the field itself', function (string $page, string $field, array $input): void {
+    // The errors used to print at the top of the page, attached to nothing: a
+    // screen-reader user landed on the reloaded form and no control said it
+    // was invalid or why.
+    $w = articleWorld();
+    $article = Article::factory()->for($w['account'])->create(['title' => 'Original', 'body' => 'Original body.']);
+
+    $request = $this->actingAs($w['admin'])->followingRedirects();
+
+    $response = $page === 'index'
+        ? $request->from(route('dashboard.account.articles.index'))->post(route('dashboard.account.articles.store'), $input)
+        : $request->from(route('dashboard.account.articles.show', $article))->put(route('dashboard.account.articles.update', $article), $input);
+
+    $html = articleAuthoringXPath((string) $response->assertOk()->getContent());
+
+    $controls = ['title' => '//input[@id="article_title"]', 'body' => '//textarea[@id="article_body"]'];
+    $control = $html->query($controls[$field])->item(0);
+
+    expect($control)->not->toBeNull("the {$field} control did not render; this guard is checking nothing")
+        ->and($control?->getAttribute('aria-invalid'))->toBe('true', "the refused {$field} is not marked invalid");
+
+    // Every id it names must exist, and one of them must be the error.
+    $described = array_values(array_filter(preg_split('/\s+/', (string) $control->getAttribute('aria-describedby')) ?: []));
+    $errors = [];
+
+    foreach ($described as $id) {
+        $target = $html->query('//*[@id="'.$id.'"]')->item(0);
+
+        expect($target)->not->toBeNull("the {$field} control is described by #{$id}, which does not exist");
+
+        if (in_array('field-error', explode(' ', (string) $target->getAttribute('class')), true)) {
+            $errors[] = $target;
+        }
+    }
+
+    expect($errors)->toHaveCount(1, "the {$field} error is not bound to the {$field} control");
+    expect(trim($errors[0]->textContent))->not->toBe('');
+
+    // Beside the control, not detached at the top of the page.
+    expect($errors[0]->parentNode->isSameNode($control->parentNode))
+        ->toBeTrue("the {$field} error is printed away from its control");
+
+    expect($html->query('//*['.articleAuthoringHasClass('field-error').']')->length)
+        ->toBe(1, 'an error is also printed somewhere other than beside its control');
+
+    // And only the control that failed says so.
+    $other = $html->query($controls[$field === 'title' ? 'body' : 'title'])->item(0);
+
+    expect($other?->hasAttribute('aria-invalid'))->toBeFalse('the control that passed is marked invalid too');
+})->with([
+    'the new-article title' => ['index', 'title', ['title' => '   ', 'body' => 'An answer.']],
+    'the new-article body' => ['index', 'body', ['title' => 'Refunds', 'body' => "\x01\x02"]],
+    'the edited title' => ['show', 'title', ['title' => '   ', 'body' => 'An answer.']],
+    'the edited body' => ['show', 'body', ['title' => 'Refunds', 'body' => "\x01\x02"]],
+]);
+
+test('the markup hint is styled help text and describes the body field', function (): void {
+    // `field-hint` has no rule anywhere, so the hint rendered at full body
+    // weight beside the labels. `field-help` is the class the stylesheet has.
+    $w = articleWorld();
+
+    $page = articleAuthoringXPath((string) $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.articles.index'))->assertOk()->getContent());
+
+    $hint = $page->query('//p[@id="article_body-help"]')->item(0);
+
+    expect($hint)->not->toBeNull('the markup hint did not render');
+
+    expect(in_array('field-help', explode(' ', (string) $hint?->getAttribute('class')), true))
+        ->toBeTrue('the markup hint is not styled as field help');
+
+    expect(in_array('article_body-help', explode(' ', (string) $page->query('//textarea[@id="article_body"]')->item(0)?->getAttribute('aria-describedby')), true))
+        ->toBeTrue('the markup hint does not describe the body field');
+});
+
+test('the preview reads as the article, not as a muted note about the page', function (): void {
+    // `.notice-copy` is the muted treatment for the page's own prose. On the
+    // preview it put the whole article in secondary grey under a lede that
+    // says this is exactly what a visitor sees.
+    $w = articleWorld();
+    $article = Article::factory()->for($w['account'])->create(['body' => "## Refunds\n\nWithin 14 days."]);
+
+    $html = (string) $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent();
+
+    $preview = articleAuthoringXPath($html)->query('//*['.articleAuthoringHasClass('article-preview').']')->item(0);
+
+    expect($preview)->not->toBeNull('the preview did not render; this guard is checking nothing');
+
+    expect(in_array('notice-copy', explode(' ', (string) $preview?->getAttribute('class')), true))
+        ->toBeFalse('the preview inherits the muted .notice-copy treatment');
+
+    expect(str_contains($html, '.article-preview {'))
+        ->toBeTrue('the preview has no rule of its own, so the class carries nothing');
+});
+
+test('the publish control sits in the visibility header, not in borrowed site-settings markup', function (): void {
+    $w = articleWorld();
+    $article = Article::factory()->for($w['account'])->create();
+
+    $page = articleAuthoringXPath((string) $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent());
+
+    $publish = route('dashboard.account.articles.publish', $article);
+
+    expect($page->query('//section[@aria-labelledby="article-state-heading"]/div['.articleAuthoringHasClass('section-header').']'
+        .'/div['.articleAuthoringHasClass('section-actions').']/form[@action="'.$publish.'"]/button')->length)
+        ->toBe(1, 'the publish button is not in the visibility header beside the state pill');
+
+    expect($page->query('//*[contains(@class, "desk-closure")]')->length)
+        ->toBe(0, 'the article page still borrows the site-settings desk-closure layout');
 });

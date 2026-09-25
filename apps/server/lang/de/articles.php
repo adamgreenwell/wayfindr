@@ -69,7 +69,12 @@ return [
         'column_state' => 'Zustand',
         'column_edited' => 'Zuletzt bearbeitet',
         'no_match' => 'Kein Artikeltitel passt zu „:search“.',
-        'empty' => 'Noch nichts geschrieben. Der erste Artikel ist meist die Frage, die Ihr Team am häufigsten beantwortet.',
+    ],
+
+    'empty' => [
+        'heading' => 'Noch keine Artikel.',
+        'body' => 'Der erste Artikel ist meist die Frage, die Ihr Team am häufigsten beantwortet.',
+        'action' => 'Ersten Artikel schreiben',
     ],
 
     'detail' => [

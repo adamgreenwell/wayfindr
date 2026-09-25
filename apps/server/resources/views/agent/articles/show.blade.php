@@ -14,14 +14,6 @@
                 <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
-            @error('title')
-                <p class="field-error">{{ $message }}</p>
-            @enderror
-
-            @error('body')
-                <p class="field-error">{{ $message }}</p>
-            @enderror
-
             <section class="section" aria-labelledby="article-state-heading">
                 <div class="section-header">
                     <div>
@@ -34,20 +26,22 @@
                             @endif
                         </p>
                     </div>
-                    <span class="readiness-status" data-status="{{ $article->isPublished() ? 'ready' : 'manual' }}">
-                        {{ $article->isPublished() ? __('articles.state.published') : __('articles.state.draft') }}
-                    </span>
+                    {{-- The state and the act that changes it, side by side in
+                         the header's own action slot. --}}
+                    <div class="section-actions">
+                        <span class="readiness-status" data-status="{{ $article->isPublished() ? 'ready' : 'manual' }}">
+                            {{ $article->isPublished() ? __('articles.state.published') : __('articles.state.draft') }}
+                        </span>
+
+                        <form method="POST" action="{{ route('dashboard.account.articles.publish', $article) }}">
+                            @csrf
+                            <button class="button" type="submit">{{ $article->isPublished() ? __('articles.detail.unpublish') : __('articles.detail.publish') }}</button>
+                        </form>
+                    </div>
                 </div>
 
-                <div class="desk-closure">
-                    <p class="desk-closure-state">
-                        {!! __('articles.detail.slug', ['slug' => '<code lang="">'.e($article->slug).'</code>']) !!}
-                    </p>
-
-                    <form method="POST" action="{{ route('dashboard.account.articles.publish', $article) }}">
-                        @csrf
-                        <button class="button" type="submit">{{ $article->isPublished() ? __('articles.detail.unpublish') : __('articles.detail.publish') }}</button>
-                    </form>
+                <div class="notice-copy">
+                    <p>{!! __('articles.detail.slug', ['slug' => '<code lang="">'.e($article->slug).'</code>']) !!}</p>
                 </div>
             </section>
 
@@ -65,12 +59,16 @@
                     <div class="field">
                         <label for="article_title">{{ __('articles.write.title_label') }}</label>
                         <input type="text" id="article_title" name="title" maxlength="160" required
-                            lang="" value="{{ old('title', $article->title) }}">
+                            lang="" value="{{ old('title', $article->title) }}"
+                            @error('title') aria-invalid="true" aria-describedby="article_title-error" @enderror>
+                        @error('title')<p id="article_title-error" class="field-error">{{ $message }}</p>@enderror
                     </div>
 
                     <div class="field">
                         <label for="article_body">{{ __('articles.write.body_label') }}</label>
-                        <textarea id="article_body" name="body" rows="14" maxlength="20000" required lang="">{{ old('body', $article->body) }}</textarea>
+                        <textarea id="article_body" name="body" rows="14" maxlength="20000" required lang=""
+                            @error('body') aria-invalid="true" aria-describedby="article_body-error" @enderror>{{ old('body', $article->body) }}</textarea>
+                        @error('body')<p id="article_body-error" class="field-error">{{ $message }}</p>@enderror
                     </div>
 
                     <button class="button" type="submit">{{ __('articles.detail.save') }}</button>
@@ -86,8 +84,10 @@
                 </div>
 
                 {{-- The entire preview is the article, so the reset goes on the
-                     region rather than on each block inside it. --}}
-                <div class="notice-copy article-preview" lang="">
+                     region rather than on each block inside it. Not
+                     `.notice-copy`: that is the muted treatment for the page's
+                     own notes, and a visitor reads the article at full contrast. --}}
+                <div class="article-preview" lang="">
                     @foreach ($blocks as $block)
                         @if ($block['type'] === 'heading')
                             <h3>{{ $block['text'] }}</h3>

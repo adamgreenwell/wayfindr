@@ -431,7 +431,7 @@
                                 <label for="inbound_address">{{ __('site_settings.inbound.address') }}</label>
                                 <input type="email" id="inbound_address" name="inbound_address" maxlength="255"
                                     placeholder="support@example.com" value="{{ old('inbound_address', $site->inbound_address) }}" lang="">
-                                <p class="field-hint">
+                                <p class="field-help">
                                     {{ __('site_settings.inbound.help') }}
                                 </p>
                                 @error('inbound_address')
@@ -683,7 +683,7 @@
                                 <label for="widget_accent">{{ __('site_settings.appearance.accent') }}</label>
                                 <input type="text" id="widget_accent" name="widget_accent" maxlength="9"
                                     placeholder="#7C3AED" value="{{ old('widget_accent', $appearance->accent) }}" lang="">
-                                <p class="field-hint">
+                                <p class="field-help">
                                     {!! __('site_settings.appearance.accent_help', ['site_colour' => '<a href="#site-colour-heading">'.e(__('site_settings.appearance.site_colour')).'</a>']) !!}
                                     @if ($appearance->accent)
                                         <x-translated-feedback :feedback="['key' => 'site_settings.appearance.rendered', 'parameters' => ['light' => $appearance->accentLight, 'dark' => $appearance->accentDark]]" />
@@ -702,7 +702,7 @@
                                     <option value="right" @selected(old('widget_position', $appearance->position) === 'right')>{{ __('site_settings.appearance.right') }}</option>
                                     <option value="left" @selected(old('widget_position', $appearance->position) === 'left')>{{ __('site_settings.appearance.left') }}</option>
                                 </select>
-                                <p class="field-hint">{{ __('site_settings.appearance.position_help') }}</p>
+                                <p class="field-help">{{ __('site_settings.appearance.position_help') }}</p>
                             </div>
 
                             <div class="field">
@@ -715,7 +715,7 @@
                                 <label for="widget_placeholder">{{ __('site_settings.appearance.placeholder') }}</label>
                                 <input type="text" id="widget_placeholder" name="widget_placeholder" maxlength="120"
                                     placeholder="{{ __('site_settings.appearance.composer_placeholder') }}" value="{{ old('widget_placeholder', $appearance->placeholder) }}" lang="">
-                                <p class="field-hint">{{ __('site_settings.appearance.copy_help') }}</p>
+                                <p class="field-help">{{ __('site_settings.appearance.copy_help') }}</p>
                             </div>
 
                             <button class="button" type="submit">{{ __('site_settings.appearance.save') }}</button>

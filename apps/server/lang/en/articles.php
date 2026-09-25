@@ -68,7 +68,12 @@ return [
         'column_state' => 'State',
         'column_edited' => 'Last edited',
         'no_match' => 'No article title matches “:search”.',
-        'empty' => 'Nothing written yet. The first article is usually the question your desk answers most.',
+    ],
+
+    'empty' => [
+        'heading' => 'No articles yet.',
+        'body' => 'The first article is usually the question your desk answers most.',
+        'action' => 'Write the first article',
     ],
 
     'detail' => [
