@@ -424,9 +424,10 @@ test('a cursor whose ordering values are null is a 422, not a 500', function ():
 });
 
 test('an out-of-range id on a show route is a 404, not a type error', function (): void {
-    // The route constrains shape and not range, and PHP cannot coerce a
-    // thirty-digit string into an `int` parameter -- the request died with a
-    // TypeError before the method body ran.
+    // PHP cannot coerce a thirty-digit string into an `int` parameter -- the
+    // request died with a TypeError before the method body ran, back when the
+    // route constrained shape and not range. The route now bounds the length
+    // too, and the controller still checks.
     $w = readWorld();
 
     foreach (['tickets', 'visitors'] as $collection) {

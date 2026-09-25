@@ -25,6 +25,7 @@ use App\Support\Backup\DatabaseDumper;
 use App\Support\Backup\DatabaseRestorer;
 use App\Support\Backup\PostgresDatabaseDumper;
 use App\Support\Backup\PostgresDatabaseRestorer;
+use App\Support\DatabaseKey;
 use App\Support\Release\CheckRegistry;
 use App\Support\Release\UpgradeContext;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -33,6 +34,7 @@ use Illuminate\Http\Request;
 use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password as PasswordRule;
@@ -128,7 +130,63 @@ class AppServiceProvider extends ServiceProvider
         ConversationMessage::observe(ConversationMessageObserver::class);
         Ticket::observe(TicketObserver::class);
 
+        $this->constrainRouteKeys();
         $this->configureRateLimiters();
+    }
+
+    /**
+     * A malformed id in a URL is a 404 at the router, before anything reaches
+     * the database.
+     *
+     * Implicit model binding hands the raw segment to the query. SQLite
+     * compares "abc" with an integer key and finds nothing; PostgreSQL refuses
+     * the comparison, so on every documented install a mistyped link was a 500.
+     *
+     * By parameter NAME, so every route that reuses one inherits it -- which is
+     * also why a route must not re-declare these with whereNumber(): its
+     * unbounded `[0-9]+` would replace the bounded pattern for that route.
+     *
+     * Deliberately absent, because they are not integer keys: `supportCode`
+     * (a conversation's public code), `token` (a password reset), `slug` (a
+     * widget article), `path` (the framework's local-disk file route), and the
+     * `*PublicId` UUIDs, which carry their own whereUuid(). `notification` is
+     * Laravel's database notification, whose key is a UUID column.
+     *
+     * Registered here rather than beside the routes because the router applies
+     * a global pattern when a route is created, and this provider boots before
+     * the routes are loaded.
+     */
+    private function constrainRouteKeys(): void
+    {
+        Route::patterns(array_fill_keys([
+            'agent',
+            'apiToken',
+            'article',
+            'attachment',
+            'automationMacro',
+            'automationRule',
+            'connection',
+            'conversation',
+            'conversationBulkActionRun',
+            'customRole',
+            'externalIssueProject',
+            'externalLink',
+            'grant',
+            'mapping',
+            'proactiveMessageRule',
+            'replyTemplate',
+            'site',
+            'ticket',
+            'ticketBulkActionRun',
+            'ticketLabel',
+            'visitor',
+            'visitorAttribute',
+            'visitorNote',
+            'webhookDelivery',
+            'webhookEndpoint',
+        ], DatabaseKey::ROUTE_PATTERN));
+
+        Route::pattern('notification', DatabaseKey::UUID_ROUTE_PATTERN);
     }
 
     private function configureRateLimiters(): void

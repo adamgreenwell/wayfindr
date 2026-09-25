@@ -28,6 +28,7 @@ use App\Http\Controllers\Widget\ProactiveMessageController;
 use App\Http\Controllers\Widget\VisitorSessionController;
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
+use App\Support\DatabaseKey;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/widget/presence', PresenceController::class)
@@ -56,11 +57,11 @@ Route::get('/widget/appearance', AppearanceController::class)
     ->middleware('throttle:widget-config')
     ->name('widget.appearance');
 Route::post('/widget/proactive-messages/{rulePublicId}/authorize', [ProactiveMessageController::class, 'authorizeDisplay'])
-    ->whereUuid('rulePublicId')
+    ->where('rulePublicId', DatabaseKey::UUID_ROUTE_PATTERN)
     ->middleware('throttle:widget-proactive')
     ->name('widget.proactive-messages.authorize');
 Route::post('/widget/proactive-messages/{deliveryPublicId}/outcomes', [ProactiveMessageController::class, 'recordOutcome'])
-    ->whereUuid('deliveryPublicId')
+    ->where('deliveryPublicId', DatabaseKey::UUID_ROUTE_PATTERN)
     ->middleware('throttle:widget-proactive')
     ->name('widget.proactive-messages.outcomes.store');
 
@@ -106,7 +107,6 @@ Route::middleware('throttle:widget-attachment-upload')->group(function (): void 
     Route::post('/conversations/{supportCode}/attachments', [ConversationAttachmentController::class, 'store'])
         ->name('conversations.attachments.store');
     Route::delete('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'destroy'])
-        ->whereNumber('attachment')
         ->name('conversations.attachments.destroy');
 });
 
@@ -122,11 +122,9 @@ Route::middleware('throttle:widget-attachment')->group(function (): void {
     // differently, and every download would 403 there and nowhere else.
     Route::middleware('signed:relative')
         ->get('/conversations/{supportCode}/attachments/{attachment}/file', [ConversationAttachmentController::class, 'download'])
-        ->whereNumber('attachment')
         ->name('widget.conversations.attachments.download');
 
     Route::get('/conversations/{supportCode}/attachments/{attachment}', [ConversationAttachmentController::class, 'show'])
-        ->whereNumber('attachment')
         ->name('conversations.attachments.show');
 });
 
@@ -176,10 +174,10 @@ Route::prefix('v1')
                 Route::get('/conversations/{supportCode}/messages', [ApiConversationController::class, 'messages'])->name('conversations.messages');
 
                 Route::get('/tickets', [ApiTicketController::class, 'index'])->name('tickets.index');
-                Route::get('/tickets/{ticket}', [ApiTicketController::class, 'show'])->whereNumber('ticket')->name('tickets.show');
+                Route::get('/tickets/{ticket}', [ApiTicketController::class, 'show'])->name('tickets.show');
 
                 Route::get('/visitors', [ApiVisitorController::class, 'index'])->name('visitors.index');
-                Route::get('/visitors/{visitor}', [ApiVisitorController::class, 'show'])->whereNumber('visitor')->name('visitors.show');
+                Route::get('/visitors/{visitor}', [ApiVisitorController::class, 'show'])->name('visitors.show');
             });
 
         Route::middleware(AuthenticateApiToken::class.':'.ApiToken::ABILITY_WRITE)
@@ -188,6 +186,6 @@ Route::prefix('v1')
                 Route::post('/conversations/{supportCode}/messages', [ApiConversationController::class, 'storeMessage'])->name('conversations.messages.store');
 
                 Route::post('/tickets', [ApiTicketController::class, 'store'])->name('tickets.store');
-                Route::patch('/tickets/{ticket}', [ApiTicketController::class, 'update'])->whereNumber('ticket')->name('tickets.update');
+                Route::patch('/tickets/{ticket}', [ApiTicketController::class, 'update'])->name('tickets.update');
             });
     });

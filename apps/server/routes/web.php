@@ -72,6 +72,7 @@ use App\Http\Controllers\OperatorWebPushSettingsController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
+use App\Support\DatabaseKey;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -88,7 +89,7 @@ Route::middleware('guest')->group(function () {
         ->middleware('throttle:oidc-redirect')
         ->name('oidc.redirect');
     Route::get('/sso/callback/{connectionPublicId}', [OidcSessionController::class, 'callback'])
-        ->whereUuid('connectionPublicId')
+        ->where('connectionPublicId', DatabaseKey::UUID_ROUTE_PATTERN)
         ->middleware('throttle:oidc-callback')
         ->name('oidc.callback');
     Route::get('/two-factor-challenge', [TwoFactorChallengeController::class, 'create'])
@@ -162,20 +163,16 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/account/roles', [AgentAccountCustomRoleController::class, 'store'])
         ->name('dashboard.account.roles.store');
     Route::put('/dashboard/account/roles/{customRole}', [AgentAccountCustomRoleController::class, 'update'])
-        ->whereNumber('customRole')
         ->name('dashboard.account.roles.update');
     Route::delete('/dashboard/account/roles/{customRole}', [AgentAccountCustomRoleController::class, 'destroy'])
-        ->whereNumber('customRole')
         ->name('dashboard.account.roles.destroy');
     Route::get('/dashboard/account/visitor-attributes', [AgentAccountVisitorAttributeController::class, 'index'])
         ->name('dashboard.account.visitor-attributes.index');
     Route::post('/dashboard/account/visitor-attributes', [AgentAccountVisitorAttributeController::class, 'store'])
         ->name('dashboard.account.visitor-attributes.store');
     Route::put('/dashboard/account/visitor-attributes/{visitorAttribute}', [AgentAccountVisitorAttributeController::class, 'update'])
-        ->whereNumber('visitorAttribute')
         ->name('dashboard.account.visitor-attributes.update');
     Route::delete('/dashboard/account/visitor-attributes/{visitorAttribute}', [AgentAccountVisitorAttributeController::class, 'destroy'])
-        ->whereNumber('visitorAttribute')
         ->name('dashboard.account.visitor-attributes.destroy');
     Route::get('/dashboard/account/security', [AgentAccountSecurityController::class, 'show'])
         ->name('dashboard.account.security.show');
@@ -192,7 +189,6 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/account/security/oidc/role-mappings', [AgentAccountOidcProvisioningController::class, 'storeMapping'])
         ->name('dashboard.account.security.oidc.role-mappings.store');
     Route::delete('/dashboard/account/security/oidc/role-mappings/{mapping}', [AgentAccountOidcProvisioningController::class, 'destroyMapping'])
-        ->whereNumber('mapping')
         ->name('dashboard.account.security.oidc.role-mappings.destroy');
     Route::get('/dashboard/account/integrations', [AgentAccountIntegrationsController::class, 'show'])
         ->name('dashboard.account.integrations');
@@ -201,21 +197,19 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/account/api-tokens', [AgentAccountApiTokenController::class, 'store'])
         ->name('dashboard.account.api-tokens.store');
     Route::delete('/dashboard/account/api-tokens/{apiToken}', [AgentAccountApiTokenController::class, 'destroy'])
-        // Numeric ids only. The controller takes the id raw so model binding
+        // Numeric ids only, by the global `apiToken` pattern in
+        // AppServiceProvider. The controller takes the id raw so model binding
         // cannot answer before the authority check, which means a malformed id
         // would otherwise reach `whereKey()` as a string -- and PostgreSQL
         // raises on comparing that to a bigint, turning a bad URL into a 500
         // where the point was an indistinguishable 404. SQLite accepts it, so
         // the suite could never have shown this.
-        ->whereNumber('apiToken')
         ->name('dashboard.account.api-tokens.destroy');
     Route::post('/dashboard/account/outbound-webhooks', [AgentAccountOutboundWebhookController::class, 'store'])
         ->name('dashboard.account.outbound-webhooks.store');
     Route::delete('/dashboard/account/outbound-webhooks/{webhookEndpoint}', [AgentAccountOutboundWebhookController::class, 'destroy'])
-        ->whereNumber('webhookEndpoint')
         ->name('dashboard.account.outbound-webhooks.destroy');
     Route::post('/dashboard/account/outbound-webhook-deliveries/{webhookDelivery}/retry', [AgentAccountOutboundWebhookController::class, 'retry'])
-        ->whereNumber('webhookDelivery')
         ->name('dashboard.account.outbound-webhooks.retry');
     Route::get('/dashboard/account/operator-access', [AgentAccountBreakGlassController::class, 'index'])
         ->name('dashboard.account.break-glass.index');
@@ -258,13 +252,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/account/reply-templates', [AgentReplyTemplateController::class, 'store'])
         ->name('dashboard.account.reply-templates.store');
     Route::put('/dashboard/account/reply-templates/{replyTemplate}', [AgentReplyTemplateController::class, 'update'])
-        ->whereNumber('replyTemplate')
         ->name('dashboard.account.reply-templates.update');
     Route::post('/dashboard/account/reply-templates/{replyTemplate}/archive', [AgentReplyTemplateController::class, 'archive'])
-        ->whereNumber('replyTemplate')
         ->name('dashboard.account.reply-templates.archive');
     Route::post('/dashboard/account/reply-templates/{replyTemplate}/restore', [AgentReplyTemplateController::class, 'restore'])
-        ->whereNumber('replyTemplate')
         ->name('dashboard.account.reply-templates.restore');
     Route::get('/dashboard/account/automation-rules', [AgentAutomationRuleController::class, 'index'])
         ->name('dashboard.account.automation-rules.index');
@@ -273,29 +264,22 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/account/automation-rules', [AgentAutomationRuleController::class, 'store'])
         ->name('dashboard.account.automation-rules.store');
     Route::get('/dashboard/account/automation-rules/{automationRule}/edit', [AgentAutomationRuleController::class, 'edit'])
-        ->whereNumber('automationRule')
         ->name('dashboard.account.automation-rules.edit');
     Route::put('/dashboard/account/automation-rules/{automationRule}', [AgentAutomationRuleController::class, 'update'])
-        ->whereNumber('automationRule')
         ->name('dashboard.account.automation-rules.update');
     Route::post('/dashboard/account/automation-rules/{automationRule}/preview', [AgentAutomationRuleController::class, 'preview'])
-        ->whereNumber('automationRule')
         ->name('dashboard.account.automation-rules.preview');
     Route::delete('/dashboard/account/automation-rules/{automationRule}', [AgentAutomationRuleController::class, 'destroy'])
-        ->whereNumber('automationRule')
         ->name('dashboard.account.automation-rules.destroy');
     Route::get('/dashboard/account/automation-macros/new', [AgentAutomationMacroController::class, 'create'])
         ->name('dashboard.account.automation-macros.create');
     Route::post('/dashboard/account/automation-macros', [AgentAutomationMacroController::class, 'store'])
         ->name('dashboard.account.automation-macros.store');
     Route::get('/dashboard/account/automation-macros/{automationMacro}/edit', [AgentAutomationMacroController::class, 'edit'])
-        ->whereNumber('automationMacro')
         ->name('dashboard.account.automation-macros.edit');
     Route::put('/dashboard/account/automation-macros/{automationMacro}', [AgentAutomationMacroController::class, 'update'])
-        ->whereNumber('automationMacro')
         ->name('dashboard.account.automation-macros.update');
     Route::delete('/dashboard/account/automation-macros/{automationMacro}', [AgentAutomationMacroController::class, 'destroy'])
-        ->whereNumber('automationMacro')
         ->name('dashboard.account.automation-macros.destroy');
     // Readiness is an instance report about mail, queues, storage and
     // scanning -- an operator's job, not an account's. This route predates the
@@ -342,13 +326,10 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/sites/{site}/proactive-messages', [AgentProactiveMessageRuleController::class, 'store'])
         ->name('dashboard.sites.proactive-messages.store');
     Route::get('/dashboard/sites/{site}/proactive-messages/{proactiveMessageRule}', [AgentProactiveMessageRuleController::class, 'edit'])
-        ->whereNumber('proactiveMessageRule')
         ->name('dashboard.sites.proactive-messages.edit');
     Route::put('/dashboard/sites/{site}/proactive-messages/{proactiveMessageRule}', [AgentProactiveMessageRuleController::class, 'update'])
-        ->whereNumber('proactiveMessageRule')
         ->name('dashboard.sites.proactive-messages.update');
     Route::delete('/dashboard/sites/{site}/proactive-messages/{proactiveMessageRule}', [AgentProactiveMessageRuleController::class, 'destroy'])
-        ->whereNumber('proactiveMessageRule')
         ->name('dashboard.sites.proactive-messages.destroy');
     Route::put('/dashboard/sites/{site}', [AgentSiteController::class, 'update'])
         ->name('dashboard.sites.update');
@@ -400,7 +381,6 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/conversations/bulk', [AgentConversationBulkActionController::class, 'store'])
         ->name('dashboard.conversations.bulk.store');
     Route::post('/dashboard/conversations/bulk/{conversationBulkActionRun}/undo', [AgentConversationBulkActionController::class, 'undo'])
-        ->whereNumber('conversationBulkActionRun')
         ->name('dashboard.conversations.bulk.undo');
     Route::get('/dashboard/conversations/{supportCode}', [AgentConversationController::class, 'show'])
         ->name('dashboard.conversations.show');
@@ -409,17 +389,12 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::get('/dashboard/visitors/export', [AgentVisitorController::class, 'export'])
         ->name('dashboard.visitors.export');
     Route::get('/dashboard/visitors/{visitor}', [AgentVisitorController::class, 'show'])
-        ->whereNumber('visitor')
         ->name('dashboard.visitors.show');
     Route::post('/dashboard/visitors/{visitor}/notes', [AgentVisitorNoteController::class, 'store'])
-        ->whereNumber('visitor')
         ->name('dashboard.visitors.notes.store');
     Route::delete('/dashboard/visitors/{visitor}/notes/{visitorNote}', [AgentVisitorNoteController::class, 'destroy'])
-        ->whereNumber('visitor')
-        ->whereNumber('visitorNote')
         ->name('dashboard.visitors.notes.destroy');
     Route::post('/dashboard/visitors/{visitor}/merge', AgentVisitorMergeController::class)
-        ->whereNumber('visitor')
         ->name('dashboard.visitors.merge');
     Route::post('/dashboard/conversations/{supportCode}/close', [AgentConversationController::class, 'close'])
         ->name('dashboard.conversations.close');
@@ -434,10 +409,8 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/conversations/{supportCode}/attachments', [AgentConversationAttachmentController::class, 'store'])
         ->name('dashboard.conversations.attachments.store');
     Route::get('/dashboard/conversations/{supportCode}/attachments/{attachment}', [AgentConversationAttachmentController::class, 'show'])
-        ->whereNumber('attachment')
         ->name('dashboard.conversations.attachments.show');
     Route::delete('/dashboard/conversations/{supportCode}/attachments/{attachment}', [AgentConversationAttachmentController::class, 'destroy'])
-        ->whereNumber('attachment')
         ->name('dashboard.conversations.attachments.destroy');
     Route::get('/dashboard/conversations/{supportCode}/messages', [AgentConversationController::class, 'messages'])
         ->name('dashboard.conversations.messages.index');
@@ -472,7 +445,6 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/conversations/{supportCode}/tickets', [AgentConversationController::class, 'storeTicket'])
         ->name('dashboard.conversations.tickets.store');
     Route::post('/dashboard/conversations/{supportCode}/macros/{automationMacro}', [AgentAutomationMacroRunController::class, 'conversation'])
-        ->whereNumber('automationMacro')
         ->name('dashboard.conversations.macros.run');
     Route::get('/dashboard/tickets', AgentTicketQueueController::class)
         ->name('dashboard.tickets.index');
@@ -481,7 +453,6 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/tickets/bulk', [AgentTicketBulkActionController::class, 'store'])
         ->name('dashboard.tickets.bulk.store');
     Route::post('/dashboard/tickets/bulk/{ticketBulkActionRun}/undo', [AgentTicketBulkActionController::class, 'undo'])
-        ->whereNumber('ticketBulkActionRun')
         ->name('dashboard.tickets.bulk.undo');
     Route::get('/dashboard/tickets/{ticket}', [AgentTicketController::class, 'show'])
         ->name('dashboard.tickets.show');
@@ -516,7 +487,6 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/tickets/{ticket}/escalations', [AgentTicketController::class, 'storeEscalation'])
         ->name('dashboard.tickets.escalations.store');
     Route::post('/dashboard/tickets/{ticket}/macros/{automationMacro}', [AgentAutomationMacroRunController::class, 'ticket'])
-        ->whereNumber('automationMacro')
         ->name('dashboard.tickets.macros.run');
     Route::get('/dashboard/conversations/{supportCode}/cobrowse/preview', [AgentConversationController::class, 'cobrowsePreview'])
         ->name('dashboard.conversations.cobrowse.preview');

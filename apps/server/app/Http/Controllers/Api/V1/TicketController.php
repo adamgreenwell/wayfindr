@@ -150,10 +150,11 @@ class TicketController extends Controller
     /**
      * The id arrives RAW, not coerced to `int`.
      *
-     * The route constrains shape and not range, so a thirty-digit id is
-     * accepted -- and PHP cannot coerce that into an `int` parameter, so the
-     * request dies with a TypeError before the method body runs. A 500 where
-     * the contract documents 404.
+     * The route now bounds the length (DatabaseKey::ROUTE_PATTERN), but this
+     * does not lean on it: PHP cannot coerce a thirty-digit id into an `int`
+     * parameter, so under a looser constraint the request dies with a
+     * TypeError before the method body runs. A 500 where the contract
+     * documents 404.
      */
     public function show(Request $request, string $ticket): JsonResponse
     {

@@ -9,6 +9,7 @@ use App\Models\CustomRole;
 use App\Models\OutboundWebhookEndpoint;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\DatabaseKey;
 use App\Support\Webhooks\OutboundWebhookDestination;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -730,13 +731,13 @@ test('the revoke route refuses a non-numeric id at routing', function (): void {
 
     expect($route)->not->toBeNull()
         ->and($route->wheres)->toHaveKey('apiToken')
-        ->and($route->wheres['apiToken'])->toBe('[0-9]+');
+        ->and($route->wheres['apiToken'])->toBe(DatabaseKey::ROUTE_PATTERN);
 });
 
 test('a numeric id too large to be a key is a 404, not a server error', function (): void {
-    // The route constraint allows any run of digits, and PostgreSQL raises
-    // casting a 30-digit value to a bigint. Numeric is not the same as usable,
-    // and an id too large to exist is treated exactly like one that does not.
+    // PostgreSQL raises casting a 30-digit value to a bigint. Numeric is not
+    // the same as usable, and an id too large to exist is treated exactly like
+    // one that does not -- by the route's bound, and again by the controller.
     $w = tokenAdmin();
 
     foreach (['999999999999999999999999999999', '9223372036854775808', str_repeat('9', 40)] as $tooBig) {
@@ -745,9 +746,9 @@ test('a numeric id too large to be a key is a 404, not a server error', function
             ->assertNotFound();
     }
 
-    // The largest value that IS a key still reaches the ordinary lookup.
+    // The longest id the route admits still reaches the ordinary lookup.
     $this->actingAs($w['admin'])
-        ->delete('/dashboard/account/api-tokens/'.PHP_INT_MAX)
+        ->delete('/dashboard/account/api-tokens/'.str_repeat('9', 18))
         ->assertNotFound();
 });
 
