@@ -1552,8 +1552,14 @@
                 grid-template-columns: minmax(0, 1fr);
             }
 
+            /* Relative, not static: the link labels below are visually
+               hidden with position: absolute, and against a static rail they
+               resolved to the page instead -- so this row's own overflow-x
+               never clipped them, and the last label, at its static position
+               past the edge of the phone, gave every page 478px of width at a
+               375px viewport (522px with the Operator link). */
             .wf-rail {
-                position: static;
+                position: relative;
                 height: auto;
                 flex-direction: row;
                 align-items: center;
@@ -2137,8 +2143,16 @@
             padding: 14px 20px 20px;
         }
 
+        /* Positioned so it is the containing block of what it scrolls. A
+           visually hidden label in a cell (.sr-only is position: absolute)
+           otherwise resolves against the page, so the wrapper never clips it:
+           a role select's label in the account's 2,207px agents table sat at
+           its static position, 1,263px from the left, and made the page that
+           wide on a phone -- and 1,727px wide at 1280 -- although the table
+           itself scrolled correctly inside this wrapper. */
         .table-wrap {
             overflow-x: auto;
+            position: relative;
         }
 
         /*
@@ -2526,6 +2540,14 @@
                 margin-top: 4px;
             }
 
+            /* .table-note is nowrap for a table cell; a row here is not one.
+               The home page's "next step" sentences kept their nowrap and the
+               longest one set the row's minimum width -- 472px at a 375px
+               viewport. */
+            .management-link .table-note {
+                white-space: normal;
+            }
+
             /* A state chip in a read-only row keeps its own box: the rule
                above blocks every span for the row's text lines, which
                top-aligned the chip's label, and a one-column phone row would
@@ -2636,6 +2658,18 @@
             align-items: flex-start;
             justify-content: space-between;
             gap: 16px;
+        }
+
+        /* The text column, not the row: the status chip beside it is nowrap,
+           so the text has to give, and a flex item cannot shrink below its
+           longest word. In German that word is "Wiederherstellbarkeit", and
+           beside "Bestätigung erforderlich" it pushed a phone page 11px
+           sideways. Only a word that cannot fit its line breaks. Not set on
+           the row: inherited by the button that takes the chip's slot on
+           onboarding, it let that button shrink from 160px to 135px at
+           1024px. */
+        .readiness-check-main > :first-child {
+            overflow-wrap: anywhere;
         }
 
         .readiness-check h3,
@@ -2810,6 +2844,23 @@
 
         .notice-list p {
             margin: 0;
+        }
+
+        /* A notice's own lines carry values the product generates and the
+           reader copies -- a webhook URL, a shown-once token or secret, an
+           environment setting. None has a space to break at, so each set the
+           minimum width of its block and, through the grids these sit in, of
+           the page: 462px for a webhook URL, 521px for a site identity secret,
+           567px for a new webhook signing secret, all at a 375px viewport.
+           `anywhere` rather than `break-word` because only `anywhere` lowers
+           the min-content width those grids size against; prose is untouched,
+           since it applies only to a run that cannot fit its line. Direct
+           lines only: a component nested in a notice (the alert centre's
+           meta-grid) keeps its own wrapping. */
+        .notice-copy > p,
+        .notice-copy li,
+        .notice-list > p {
+            overflow-wrap: anywhere;
         }
 
         .filter-summary {
