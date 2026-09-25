@@ -103,7 +103,7 @@
 
                 <div class="management-list">
                     @foreach ($releaseNotices as $notice)
-                        <div class="management-link" style="cursor: default;">
+                        <div class="management-link">
                             <span>
                                 <strong lang="">{{ $notice['summary'] ?? '' }}</strong>
                                 @if (($notice['detail'] ?? '') !== '')

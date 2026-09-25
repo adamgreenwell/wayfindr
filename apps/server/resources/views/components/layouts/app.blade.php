@@ -2082,7 +2082,12 @@
             border-bottom: 1px solid var(--border);
         }
 
-        .section-header h2 {
+        /* No global h3 rule exists, so an h3 heading a sub-part of a section
+           (a create form inside a list section, one role card among many)
+           would otherwise take the browser's margins and a larger size than
+           the h2 it sits under. */
+        .section-header h2,
+        .section-header h3 {
             margin: 0;
             font-size: 1rem;
         }
@@ -2241,6 +2246,17 @@
             font-size: 0.82rem;
             margin-top: 4px;
             white-space: nowrap;
+        }
+
+        /* A cell value the account chose and the product cannot bound -- a
+           2,048-character webhook destination, a list of every site by name,
+           a 120-character endpoint name beside its creator's -- wraps, and may break anywhere, so its longest run cannot set the
+           column's minimum width and push every other column off the page.
+           Every table cell is nowrap otherwise. */
+        .cell-wrap,
+        .cell-wrap .table-note {
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
 
         .proactive-rules-table th,
@@ -2479,7 +2495,11 @@
                 border-bottom: 0;
             }
 
-            .management-link:hover {
+            /* Only a row that navigates answers the pointer. The same grid
+               also lays out read-only rows (a provider connection, a grant, a
+               transcript message) as <div>s, and a hover background on those
+               promised a click that did nothing. */
+            a.management-link:hover {
                 background: var(--surface-muted);
             }
 
@@ -2490,6 +2510,15 @@
 
             .management-link .lede {
                 margin-top: 4px;
+            }
+
+            /* A state chip in a read-only row keeps its own box: the rule
+               above blocks every span for the row's text lines, which
+               top-aligned the chip's label, and a one-column phone row would
+               stretch it to the full width. */
+            .management-link .readiness-status {
+                display: inline-flex;
+                justify-self: start;
             }
 
             .management-action {
@@ -2728,6 +2757,20 @@
 
         .article-preview > :last-child {
             margin-bottom: 0;
+        }
+
+        /* A credential shown exactly once. Every other notice on a page is
+           explanation and stays muted; this one is the reader's only chance to
+           copy a secret, so it takes the hold signal and full-strength text.
+           Inset with its own radius, so the tint does not paint across the
+           rounded corners of the section it closes. */
+        .notice-copy[data-state="warning"] {
+            margin: 20px;
+            padding: 16px;
+            border: 1px solid color-mix(in srgb, var(--wf-signal-hold) 45%, var(--wf-rule));
+            border-radius: 6px;
+            background: color-mix(in srgb, var(--wf-signal-hold) 14%, var(--wf-surface));
+            color: var(--text);
         }
 
         .notice-actions {

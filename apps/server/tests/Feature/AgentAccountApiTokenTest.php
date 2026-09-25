@@ -6,8 +6,10 @@ use App\Models\Account;
 use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\CustomRole;
+use App\Models\OutboundWebhookEndpoint;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\Webhooks\OutboundWebhookDestination;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
@@ -955,4 +957,104 @@ test('the issued credential is announced as characters, not as words', function 
     expect($heading)->not->toBeNull()
         ->and($heading->hasAttribute('lang'))->toBeFalse()
         ->and(trim($heading->textContent))->toBe(__('api_tokens.issued.heading', [], 'de'));
+});
+
+/**
+ * The page as a DOM, for questions about its structure rather than its text.
+ * Named for this file: Pest helpers are global.
+ */
+function accountApiTokenPageXpath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    return new DOMXPath($document);
+}
+
+test('every checkbox group on the page is named by a legend, and every label names a real control', function (): void {
+    // Four groups -- token abilities, token sites, webhook events, webhook
+    // sites -- were headed by a <label for> pointing at an id no element
+    // carried. The group had no programmatic name at all, and clicking its
+    // heading did nothing. A group of checkboxes is named by its legend.
+    ['admin' => $admin] = tokenAdmin();
+
+    $xpath = accountApiTokenPageXpath((string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent());
+
+    $labels = $xpath->query('//label[@for]');
+
+    expect($labels->length)->toBeGreaterThan(0, 'no labels rendered; this guard is checking nothing');
+
+    foreach ($labels as $label) {
+        $for = $label->getAttribute('for');
+
+        expect($xpath->query('//*[@id="'.$for.'"]')->length)
+            ->toBe(1, "a label points at #{$for}, which no element on the page carries");
+    }
+
+    foreach ([
+        'abilities[]' => __('api_tokens.create.abilities_label'),
+        'site_ids[]' => __('api_tokens.create.sites_label'),
+        'webhook[events][]' => __('outbound_webhooks.create.events_label'),
+        'webhook[site_ids][]' => __('outbound_webhooks.create.sites_label'),
+    ] as $name => $legend) {
+        $checkboxes = $xpath->query('//input[@type="checkbox" and @name="'.$name.'"]');
+
+        expect($checkboxes->length)->toBeGreaterThan(0, "no {$name} checkboxes rendered; the fixture does not reach this group");
+
+        foreach ($checkboxes as $checkbox) {
+            $named = $xpath->query('ancestor::fieldset[1]/legend', $checkbox)->item(0);
+
+            expect($named)->not->toBeNull("the {$name} checkboxes are not grouped under a fieldset legend");
+
+            expect(trim($named->textContent))->toBe($legend, "the {$name} group is named by the wrong legend");
+        }
+    }
+});
+
+test('a secret shown once is styled as a warning, not as ordinary notice copy', function (): void {
+    // Both shown-once panels were marked data-state="warning", and nothing
+    // styled that state: they rendered exactly like the page's explanatory
+    // notices, so the one block a reader must act on now looked like the ones
+    // they can skip.
+    ['admin' => $admin, 'site' => $site] = tokenAdmin();
+    app()->instance(OutboundWebhookDestination::class, new OutboundWebhookDestination(fn (): array => ['8.8.8.8']));
+
+    $this->actingAs($admin)
+        ->post(route('dashboard.account.api-tokens.store'), ['name' => 'Sync', 'abilities' => ['read']]);
+    $tokenPage = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    $this->actingAs($admin)->post(route('dashboard.account.outbound-webhooks.store'), [
+        'webhook' => [
+            'name' => 'Listener',
+            'url' => 'https://hooks.example.test/wayfindr',
+            'events' => [OutboundWebhookEndpoint::EVENT_TICKET_CREATED],
+            'site_ids' => [$site->id],
+        ],
+    ]);
+    $webhookPage = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+
+    foreach (['api-token-issued-heading' => $tokenPage, 'webhook-secret-issued-heading' => $webhookPage] as $banner => $html) {
+        $xpath = accountApiTokenPageXpath($html);
+
+        expect($xpath->query('//section[@aria-labelledby="'.$banner.'"]//div[contains(concat(" ", normalize-space(@class), " "), " notice-copy ") and @data-state="warning"]')->length)
+            ->toBe(1, "the {$banner} panel no longer marks its notice as a warning");
+
+        // The explanatory notice on the same page stays unmarked, so the two
+        // can still be told apart.
+        expect($xpath->query('//section[@aria-labelledby="api-token-create-heading"]//div[contains(@class, "notice-copy") and @data-state]')->length)
+            ->toBe(0, 'the explanatory notice is marked as a warning too, so nothing stands out');
+
+        $stylesheet = implode("\n", array_map(
+            fn (DOMNode $style): string => $style->textContent,
+            iterator_to_array($xpath->query('//style')),
+        ));
+
+        preg_match('/\.notice-copy\[data-state="warning"\]\s*\{([^}]*)\}/', $stylesheet, $rule);
+
+        expect(str_contains($rule[1] ?? '', 'background'))
+            ->toBeTrue('nothing styles .notice-copy[data-state="warning"], so a shown-once secret renders like explanatory copy');
+    }
 });

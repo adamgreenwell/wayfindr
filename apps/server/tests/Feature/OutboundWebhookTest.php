@@ -4,6 +4,7 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Jobs\DeliverOutboundWebhook;
 use App\Models\Account;
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -647,4 +648,161 @@ test('the delivery log shows payload, response, retry state, and hides inaccessi
         ->assertSee('try later')
         ->assertSee('Retrying with backoff')
         ->assertDontSee('DO NOT SHOW');
+});
+
+/**
+ * The API and webhooks page as a DOM. Named for this file: Pest helpers are
+ * global.
+ */
+function outboundWebhookPageXpath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    return new DOMXPath($document);
+}
+
+test('webhook endpoints are listed in the same table shape as the API tokens beside them', function (): void {
+    // Tokens were a table and endpoints -- the same rank of thing, with a
+    // name, a reach, a state and one action -- were cards with the column
+    // headings inlined as bold prefixes. The catalogue still carried the
+    // table's headings, three of them referenced from nowhere.
+    //
+    // German, so the headings are proved to come from those keys rather than
+    // from a hard-coded English row.
+    $world = outboundWebhookWorld();
+    $world['admin']->update(['locale' => 'de']);
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create([
+        'name' => 'Lager listener',
+        'events' => [OutboundWebhookEndpoint::EVENT_TICKET_CREATED, OutboundWebhookEndpoint::EVENT_TICKET_CLOSED],
+    ]);
+    $endpoint->sites()->attach($world['site']);
+
+    $xpath = outboundWebhookPageXpath((string) $this->actingAs($world['admin']->fresh())
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent());
+
+    $section = $xpath->query('//section[@aria-labelledby="outbound-webhook-list-heading"]')->item(0);
+
+    expect($section)->not->toBeNull('the endpoint list did not render; this guard is checking nothing');
+
+    $headers = array_map(
+        fn (DOMNode $header): string => trim($header->textContent),
+        iterator_to_array($xpath->query('.//table/thead/tr/th', $section)),
+    );
+
+    expect($headers)->toBe([
+        __('outbound_webhooks.endpoints.column_name', [], 'de'),
+        __('outbound_webhooks.endpoints.column_events', [], 'de'),
+        __('outbound_webhooks.endpoints.column_reaches', [], 'de'),
+        __('outbound_webhooks.endpoints.column_state', [], 'de'),
+        __('outbound_webhooks.endpoints.column_action', [], 'de'),
+    ], 'webhook endpoints are not rendered as a table with the token table\'s columns');
+
+    $cells = $xpath->query('.//table/tbody/tr[1]/td', $section);
+
+    expect($cells->length)->toBe(5, 'an endpoint row does not fill the five columns')
+        ->and(trim($xpath->query('.//strong[@lang=""]', $cells->item(0))->item(0)?->textContent ?? ''))->toBe('Lager listener')
+        ->and(trim($cells->item(1)->textContent))->toContain(__('outbound_webhooks.events.ticket_closed', [], 'de'))
+        ->and(trim($cells->item(3)->textContent))->toBe(__('outbound_webhooks.state.active', [], 'de'))
+        ->and($xpath->query('.//form[contains(@action, "outbound-webhooks")]//button', $cells->item(4))->length)->toBe(1);
+
+    // No heading left inlined into a cell as a bold prefix.
+    expect(str_contains($section->textContent, __('outbound_webhooks.endpoints.column_events', [], 'de').':'))
+        ->toBeFalse('a column heading is still inlined into the row as a prefix');
+});
+
+test('a delivery summary resets only the endpoint name, not the whole line', function (): void {
+    // The summary is mixed: our event and state labels around the account's own
+    // endpoint name. Passed as a string it would escape the name's marker into
+    // visible text; passed with a language it would claim the labels too.
+    $world = outboundWebhookWorld();
+    $world['admin']->update(['locale' => 'de']);
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create(['name' => 'Lager listener']);
+    $endpoint->sites()->attach($world['site']);
+    OutboundWebhookDelivery::factory()->for($endpoint, 'endpoint')->create([
+        'site_id' => $world['site']->id,
+        'event' => OutboundWebhookEndpoint::EVENT_TICKET_CREATED,
+    ]);
+
+    $xpath = outboundWebhookPageXpath((string) $this->actingAs($world['admin']->fresh())
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent());
+
+    $summary = $xpath->query('//section[@aria-labelledby="outbound-webhook-deliveries-heading"]//details/summary')->item(0);
+
+    expect($summary)->not->toBeNull('no delivery rendered; this guard is checking nothing');
+
+    expect($summary->hasAttribute('lang'))
+        ->toBeFalse('the whole delivery summary is marked with a language, which claims the German labels too');
+
+    expect(trim($xpath->query('./span[@lang=""]', $summary)->item(0)?->textContent ?? ''))
+        ->toBe('Lager listener', 'the endpoint name in a delivery summary is not marked as account data');
+
+    expect(str_contains($summary->textContent, __('outbound_webhooks.events.ticket_created', [], 'de')))
+        ->toBeTrue('the delivery summary lost its translated event label');
+});
+
+test('a long webhook destination wraps inside its cell instead of widening the table', function (): void {
+    // The form accepts a 2,048-character destination, and every table cell is
+    // nowrap. Unwrapped, the URL set the first column's minimum width and
+    // pushed Events, Reaches, State and the action off the page.
+    $world = outboundWebhookWorld();
+    OutboundWebhookEndpoint::factory()->for($world['account'])->create([
+        'name' => 'Long listener',
+        'url' => 'https://hooks.example.test/'.str_repeat('segment', 200),
+    ]);
+
+    $html = (string) $this->actingAs($world['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+    $xpath = outboundWebhookPageXpath($html);
+    $note = $xpath->query('//section[@aria-labelledby="outbound-webhook-list-heading"]//tbody//td[1]//span[contains(concat(" ", @class, " "), " table-note ")][code]')->item(0);
+
+    expect($note)->not->toBeNull('the destination note did not render; this guard is checking nothing')
+        ->and(str_contains(' '.$note->getAttribute('class').' ', ' cell-wrap '))
+        ->toBeTrue('the destination URL sits in a nowrap note, so a long URL widens the whole table')
+        ->and((bool) preg_match('/\.cell-wrap[^{]*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/', $html))
+        ->toBeTrue('the wrapping note has no rule that lets it wrap');
+});
+
+test('a reach list naming many sites wraps in both the token and the endpoint tables', function (): void {
+    // Site names may be 255 characters and a token or endpoint may reach every
+    // site, so the comma-joined list is as unbounded as a destination URL.
+    $world = outboundWebhookWorld();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create(['name' => 'Wide listener']);
+    $endpoint->sites()->attach($world['site']);
+    $token = ApiToken::factory()->for($world['account'])->create(['name' => 'Wide token']);
+    $token->sites()->attach($world['site']);
+
+    $xpath = outboundWebhookPageXpath((string) $this->actingAs($world['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent());
+    $reaches = $xpath->query('//tbody//td/span[contains(concat(" ", @class, " "), " lede ")][span[@lang=""]]');
+
+    expect($reaches->length)->toBe(2, 'the reach lists did not render in both tables; this guard is checking nothing');
+
+    foreach ($reaches as $reach) {
+        expect(str_contains(' '.$reach->getAttribute('class').' ', ' cell-wrap '))
+            ->toBeTrue('a reach list sits in a nowrap cell, so many or long site names widen the whole table');
+    }
+});
+
+test('the name cells of both API tables wrap, so a long name or creator cannot widen them', function (): void {
+    // An endpoint name may be 120 characters and a creator's name is theirs to
+    // choose, and .table-note sets its own nowrap -- so the whole identity cell
+    // wraps, notes included.
+    $world = outboundWebhookWorld();
+    OutboundWebhookEndpoint::factory()->for($world['account'])->create(['name' => str_repeat('Listener', 15)]);
+    ApiToken::factory()->for($world['account'])->create(['name' => str_repeat('Token', 24)]);
+
+    $html = (string) $this->actingAs($world['admin'])->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent();
+    $xpath = outboundWebhookPageXpath($html);
+    $identityCells = $xpath->query('//tbody/tr/td[1][strong[@lang=""]]');
+
+    expect($identityCells->length)->toBe(2, 'the token and endpoint name cells did not render; this guard is checking nothing');
+
+    foreach ($identityCells as $cell) {
+        expect(str_contains(' '.$cell->getAttribute('class').' ', ' cell-wrap '))
+            ->toBeTrue('a name cell is nowrap, so a long name or creator widens the whole table');
+    }
+
+    expect((bool) preg_match('/\.cell-wrap\s+\.table-note[^{]*\{[^}]*white-space:\s*normal;/', $html))
+        ->toBeTrue('.table-note keeps its own nowrap inside a wrapping cell');
 });
