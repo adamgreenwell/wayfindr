@@ -430,12 +430,13 @@
                             <div class="field">
                                 <label for="inbound_address">{{ __('site_settings.inbound.address') }}</label>
                                 <input type="email" id="inbound_address" name="inbound_address" maxlength="255"
-                                    placeholder="support@example.com" value="{{ old('inbound_address', $site->inbound_address) }}" lang="">
+                                    placeholder="support@example.com" value="{{ old('inbound_address', $site->inbound_address) }}" lang=""
+                                    @error('inbound_address') aria-invalid="true" aria-describedby="inbound_address-error" @enderror>
                                 <p class="field-help">
                                     {{ __('site_settings.inbound.help') }}
                                 </p>
                                 @error('inbound_address')
-                                    <p class="field-error">{{ $message }}</p>
+                                    <p id="inbound_address-error" class="field-error">{{ $message }}</p>
                                 @enderror
                             </div>
 

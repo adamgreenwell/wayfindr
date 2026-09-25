@@ -417,3 +417,63 @@ test('the publish control sits in the visibility header, not in borrowed site-se
     expect($page->query('//*[contains(@class, "desk-closure")]')->length)
         ->toBe(0, 'the article page still borrows the site-settings desk-closure layout');
 });
+
+test('a refused new article gives the author back the body they wrote', function (): void {
+    // A title of only spaces satisfies the browser's `required` and fails on
+    // the server. The title came back; the body -- the whole article -- did not.
+    $w = articleWorld();
+    $body = "## Refunds\n\nWe refund within 14 days.\n\n- Keep the receipt.";
+
+    $html = articleAuthoringXPath((string) $this->actingAs($w['admin'])
+        ->followingRedirects()
+        ->from(route('dashboard.account.articles.index'))
+        ->post(route('dashboard.account.articles.store'), ['title' => '   ', 'body' => $body])
+        ->assertOk()->getContent());
+
+    expect(Article::query()->count())->toBe(0, 'the article was saved; this is not the refused re-render');
+
+    expect($html->query('//input[@id="article_title"]')->item(0)?->getAttribute('aria-invalid'))
+        ->toBe('true', 'the title was not refused; this guard is checking nothing');
+
+    $textarea = $html->query('//textarea[@id="article_body"]')->item(0);
+
+    expect($textarea)->not->toBeNull('the body control did not render');
+    expect($textarea?->textContent)->toBe($body, 'the refused form threw away the article body the author wrote');
+});
+
+test('the preview sets no space between a link or emphasis and the punctuation after it', function (): void {
+    // Spans are inline. Whitespace left between them in the partial is a
+    // rendered space, so "[14 days](...)." previewed as "14 days ." -- not the
+    // article the widget shows.
+    $w = articleWorld();
+    $article = Article::factory()->for($w['account'])->create([
+        'body' => "We refund within [14 days](https://example.test/refunds). Ask **now**, or run `make`!\n\n- Keep the **receipt**.",
+    ]);
+
+    $html = articleAuthoringXPath((string) $this->actingAs($w['admin'])
+        ->get(route('dashboard.account.articles.show', $article))->assertOk()->getContent());
+
+    $preview = '//*['.articleAuthoringHasClass('article-preview').']';
+    $paragraph = $html->query($preview.'/p')->item(0);
+    $item = $html->query($preview.'/ul/li')->item(0);
+
+    expect($paragraph)->not->toBeNull('the preview paragraph did not render; this guard is checking nothing')
+        ->and($item)->not->toBeNull('the preview list item did not render; this guard is checking nothing');
+
+    // Every span kind is present, so every branch of the partial is exercised.
+    foreach (['a', 'strong', 'code'] as $element) {
+        expect($html->query('./'.$element, $paragraph)->length)->toBe(1, "the paragraph has no <{$element}> span");
+    }
+
+    // As a browser lays it out: any run of whitespace is one space.
+    $rendered = fn (DOMNode $node): string => trim((string) preg_replace('/\s+/u', ' ', $node->textContent));
+
+    expect($rendered($paragraph))->toBe(
+        'We refund within 14 days. Ask now, or run make!',
+        'the preview puts a space between a span and the punctuation that follows it',
+    );
+    expect($rendered($item))->toBe(
+        'Keep the receipt.',
+        'a list item in the preview puts a space between a span and the punctuation that follows it',
+    );
+});
