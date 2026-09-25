@@ -4,6 +4,7 @@ use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Jobs\DeliverOutboundWebhook;
 use App\Models\Account;
+use App\Models\ApiToken;
 use App\Models\AuditEvent;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
@@ -756,8 +757,29 @@ test('a long webhook destination wraps inside its cell instead of widening the t
     $note = $xpath->query('//section[@aria-labelledby="outbound-webhook-list-heading"]//tbody//td[1]//span[contains(concat(" ", @class, " "), " table-note ")][code]')->item(0);
 
     expect($note)->not->toBeNull('the destination note did not render; this guard is checking nothing')
-        ->and(str_contains(' '.$note->getAttribute('class').' ', ' table-note--wrap '))
+        ->and(str_contains(' '.$note->getAttribute('class').' ', ' cell-wrap '))
         ->toBeTrue('the destination URL sits in a nowrap note, so a long URL widens the whole table')
-        ->and((bool) preg_match('/\.table-note--wrap\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/', $html))
+        ->and((bool) preg_match('/\.cell-wrap\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/', $html))
         ->toBeTrue('the wrapping note has no rule that lets it wrap');
+});
+
+test('a reach list naming many sites wraps in both the token and the endpoint tables', function (): void {
+    // Site names may be 255 characters and a token or endpoint may reach every
+    // site, so the comma-joined list is as unbounded as a destination URL.
+    $world = outboundWebhookWorld();
+    $endpoint = OutboundWebhookEndpoint::factory()->for($world['account'])->create(['name' => 'Wide listener']);
+    $endpoint->sites()->attach($world['site']);
+    $token = ApiToken::factory()->for($world['account'])->create(['name' => 'Wide token']);
+    $token->sites()->attach($world['site']);
+
+    $xpath = outboundWebhookPageXpath((string) $this->actingAs($world['admin'])
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent());
+    $reaches = $xpath->query('//tbody//td/span[contains(concat(" ", @class, " "), " lede ")][span[@lang=""]]');
+
+    expect($reaches->length)->toBe(2, 'the reach lists did not render in both tables; this guard is checking nothing');
+
+    foreach ($reaches as $reach) {
+        expect(str_contains(' '.$reach->getAttribute('class').' ', ' cell-wrap '))
+            ->toBeTrue('a reach list sits in a nowrap cell, so many or long site names widen the whole table');
+    }
 });

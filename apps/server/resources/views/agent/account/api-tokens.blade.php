@@ -128,7 +128,7 @@
                                     @elseif ($token->sites->isEmpty())
                                         <span class="lede">{{ __('api_tokens.reaches.every_site') }}</span>
                                     @else
-                                        <span class="lede">
+                                        <span class="lede cell-wrap">
                                             <span lang="">{{ $namedSites->pluck('name')->join(', ') }}</span>{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? __('api_tokens.reaches.unsupported') : '' }}
                                         </span>
                                     @endif
@@ -297,7 +297,7 @@
                                          in an unwrapping cell pushed every other column
                                          off the page. --}}
                                     <strong lang="">{{ $endpoint->name }}</strong>
-                                    <span class="table-note table-note--wrap"><code lang="">{{ $endpoint->url }}</code> · <code lang="">{{ $endpoint->secretHint() }}</code></span>
+                                    <span class="table-note cell-wrap"><code lang="">{{ $endpoint->url }}</code> · <code lang="">{{ $endpoint->secretHint() }}</code></span>
                                     <span class="table-note">
                                         @if ($endpoint->createdBy)
                                             {!! __('outbound_webhooks.endpoints.created_by', [
@@ -318,7 +318,7 @@
                                     @if ($endpoint->restricts_sites && $endpoint->sites->isEmpty())
                                         <span class="lede">{{ __('outbound_webhooks.reaches.purged') }}</span>
                                     @else
-                                        <span class="lede">
+                                        <span class="lede cell-wrap">
                                             <span lang="">{{ $namedSites->pluck('name')->join(', ') }}</span>{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? __('outbound_webhooks.reaches.unsupported') : '' }}
                                         </span>
                                     @endif

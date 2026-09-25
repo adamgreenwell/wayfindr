@@ -2248,11 +2248,12 @@
             white-space: nowrap;
         }
 
-        /* A note holding a value the account chose and the product cannot
-           bound -- a webhook destination may be 2,048 characters -- wraps, and
-           may break anywhere, so its longest run cannot set the column's
-           minimum width and push every other column off the page. */
-        .table-note--wrap {
+        /* A cell value the account chose and the product cannot bound -- a
+           2,048-character webhook destination, a list of every site by name --
+           wraps, and may break anywhere, so its longest run cannot set the
+           column's minimum width and push every other column off the page.
+           Every table cell is nowrap otherwise. */
+        .cell-wrap {
             white-space: normal;
             overflow-wrap: anywhere;
         }
