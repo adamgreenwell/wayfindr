@@ -62,6 +62,9 @@
       'attachment.fallbackName': 'Attachment',
       'sender.support': 'Support',
       'sender.visitor': 'Visitor',
+      // Beside the name on a proactive opener: words the site set up in
+      // advance, not a reply somebody typed to this visitor.
+      'sender.automated': 'Automated',
       'receipt.aria': 'Visitor message sent to support',
       'receipt.label': 'Sent to support',
       'connection.connected': 'Live updates connected.',
@@ -90,6 +93,7 @@
       'composer.rejected.infected': 'This file was rejected by a security scan.',
       'composer.rejected.unscannable': 'This file could not be scanned for malware and was not accepted. Please try again shortly.',
       'composer.rejected.unavailable': 'One or more attachments are unavailable.',
+      'composer.rejected.too_long': 'A message can be at most {max} characters long.',
       'intake.pending': 'Please answer the questions above first. Your message is still here.',
       'intake.submit': 'Continue',
       'help.label': 'Find an answer',
@@ -166,6 +170,7 @@
       'attachment.fallbackName': 'Anhang',
       'sender.support': 'Support',
       'sender.visitor': 'Besucher',
+      'sender.automated': 'Automatisch',
       'receipt.aria': 'Besuchernachricht an den Support gesendet',
       'receipt.label': 'An den Support gesendet',
       'connection.connected': 'Live-Aktualisierung verbunden.',
@@ -190,6 +195,7 @@
       'composer.rejected.infected': 'Diese Datei wurde von einer Sicherheitsprüfung abgelehnt.',
       'composer.rejected.unscannable': 'Diese Datei konnte nicht auf Schadsoftware geprüft und daher nicht angenommen werden. Bitte versuchen Sie es in Kürze erneut.',
       'composer.rejected.unavailable': 'Ein oder mehrere Anhänge sind nicht verfügbar.',
+      'composer.rejected.too_long': 'Eine Nachricht darf höchstens {max} Zeichen lang sein.',
       'intake.pending': 'Bitte beantworten Sie zuerst die Fragen oben. Ihre Nachricht bleibt erhalten.',
       'intake.submit': 'Weiter',
       'help.label': 'Antwort finden',
@@ -392,6 +398,62 @@
   // The file picker's accept hint (mobile shows the camera for image/*). The
   // server enforces the real allowlist by sniffing bytes regardless of this.
   var ATTACHMENT_ACCEPT = 'image/*,application/pdf,text/plain,.txt,.log';
+
+  // The server's limit on a message body (the widget message endpoint's
+  // `max:`), and the two have to move together. Known here so a draft that is
+  // too long is refused BEFORE a first send creates the conversation: the
+  // server can only reject the message after that request, which left an
+  // empty open conversation behind that alerted nobody.
+  var MESSAGE_BODY_MAX_CHARACTERS = 4000;
+
+  /**
+   * Is this body longer than the server will take?
+   *
+   * Counted in characters (code points), as the server's `mb_strlen` counts
+   * them -- not in `.length`, which counts an emoji twice and would refuse a
+   * message the server accepts. Trimmed first, as the server trims input
+   * before it validates.
+   */
+  function messageBodyTooLong(body) {
+    var text = String(body == null ? '' : body).trim();
+
+    // Never more characters than code units, so a short body is settled here.
+    if (text.length <= MESSAGE_BODY_MAX_CHARACTERS) {
+      return false;
+    }
+
+    var count = 0;
+
+    for (var i = 0; i < text.length; i++) {
+      var unit = text.charCodeAt(i);
+
+      // A surrogate pair is one character to the server.
+      if (unit >= 0xd800 && unit <= 0xdbff && i + 1 < text.length) {
+        var next = text.charCodeAt(i + 1);
+
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          i++;
+        }
+      }
+
+      count++;
+    }
+
+    return count > MESSAGE_BODY_MAX_CHARACTERS;
+  }
+
+  // What a too-long body is refused with, before anything is sent: the same
+  // key the server answers with, so a caller reads one failure whichever side
+  // noticed. No `status`, because no request was made.
+  function messageBodyTooLongError() {
+    var params = { max: MESSAGE_BODY_MAX_CHARACTERS };
+    var error = new Error(createTranslator(DEFAULT_LOCALE)('composer.rejected.too_long', params));
+
+    error.wayfindrKey = 'composer.rejected.too_long';
+    error.wayfindrParams = params;
+
+    return error;
+  }
 
   // A caught error still has to be findable.
   //
@@ -1594,6 +1656,14 @@
       sendFirstMessage: async function (body, details) {
         details = details || {};
 
+        // Before anything goes out. The conversation is created by its own
+        // request, so a body the server will refuse would otherwise leave an
+        // empty open conversation behind -- one no agent is ever alerted to,
+        // because alerts start from a visitor message that never arrives.
+        if (messageBodyTooLong(body)) {
+          throw messageBodyTooLongError();
+        }
+
         if (!visitorToken) {
           await this.bootstrap(details.pageUrl || null, details.context);
         }
@@ -1775,7 +1845,7 @@
       '  <p class="wayfindr-widget__connection" role="status" aria-live="polite" aria-atomic="true" hidden></p>',
       '  <form class="wayfindr-widget__form">',
       '    <label class="wayfindr-widget__label" for="wayfindr-message">' + escapeHtml(t('form.label')) + '</label>',
-      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" placeholder="' + escapeHtml(options.placeholder || t('form.placeholder')) + '"></textarea>',
+      '    <textarea id="wayfindr-message" class="wayfindr-widget__textarea" name="message" rows="4" maxlength="' + MESSAGE_BODY_MAX_CHARACTERS + '" placeholder="' + escapeHtml(options.placeholder || t('form.placeholder')) + '"></textarea>',
       '    <ul class="wayfindr-widget__attachments" aria-label="' + escapeHtml(t('attachments.aria')) + '" hidden></ul>',
       '    <input class="wayfindr-widget__file-input" type="file" accept="' + escapeHtml(ATTACHMENT_ACCEPT) + '" multiple hidden aria-hidden="true" tabindex="-1">',
       '    <div class="wayfindr-widget__actions">',
@@ -2201,6 +2271,7 @@
           message.id,
           sender.kind,
           sender.name,
+          sender.automated === true,
           message.type,
           message.body,
           message.created_at,
@@ -2279,6 +2350,22 @@
         meta.className = 'wayfindr-widget__message-meta';
         name.className = 'wayfindr-widget__message-name';
         name.textContent = sender.name || t(senderKind === 'agent' ? 'sender.support' : 'sender.visitor');
+
+        // A proactive opener answers as the site, exactly as a person on the
+        // desk does, so without this the visitor reads canned words as a
+        // reply. Only when the server says so: an API integration also
+        // answers as the site and may be relaying a person.
+        if (senderKind === 'agent' && sender.automated === true) {
+          var automated = doc.createElement('span');
+
+          automated.className = 'wayfindr-widget__message-automated';
+          automated.textContent = t('sender.automated');
+          // A real space, so the name and the tag are two words to a screen
+          // reader rather than one run-together string.
+          name.appendChild(doc.createTextNode(' '));
+          name.appendChild(automated);
+        }
+
         body.className = 'wayfindr-widget__message-body';
 
         meta.appendChild(name);
@@ -4525,7 +4612,9 @@
         engagedProactiveDeliveryId = invitation.deliveryId;
         renderMessages([{
           id: 'proactive-' + invitation.deliveryId,
-          sender: { kind: 'agent', name: t('sender.support') },
+          // Automated from the first paint, as the server's copy of this
+          // opener will say once the conversation exists.
+          sender: { kind: 'agent', name: t('sender.support'), automated: true },
           type: 'text',
           body: invitation.message,
           attachments: [],
@@ -5787,6 +5876,17 @@
         return;
       }
 
+      // `maxlength` stops typing and pasting, but not a value set by script.
+      // Refused here, before anything is sent: on a first send the
+      // conversation is created by a request of its own, and a body the
+      // server then rejects leaves an empty conversation nobody is alerted to.
+      // The text stays in the composer so the visitor can shorten it.
+      if (messageBodyTooLong(body)) {
+        status.textContent = t('composer.rejected.too_long', { max: MESSAGE_BODY_MAX_CHARACTERS });
+
+        return;
+      }
+
       setComposerBusy(true);
       status.textContent = t('status.sending');
 
@@ -6342,7 +6442,12 @@
     var senderName = sender.name || (senderKind === 'agent' ? 'Support' : 'Visitor');
     var previousSenderName = previousSender.name || (previousSenderKind === 'agent' ? 'Support' : 'Visitor');
 
-    return senderKind === previousSenderKind && senderName === previousSenderName;
+    // A proactive opener and an integration's post carry the same site name.
+    // Grouped, the second hides its name line and reads as a continuation of
+    // the first -- sitting under an "Automated" tag that is not about it.
+    return senderKind === previousSenderKind
+      && senderName === previousSenderName
+      && (sender.automated === true) === (previousSender.automated === true);
   }
 
   function parseMessageTime(value) {
@@ -8624,6 +8729,7 @@
       '.wayfindr-widget__day-label{color:var(--wf-muted);font-size:11px;line-height:1.2;background:var(--wf-surface-2);border-radius:999px;padding:2px 10px;white-space:nowrap}',
       '.wayfindr-widget__message-meta{display:flex;align-items:center;justify-content:space-between;gap:10px}',
       '.wayfindr-widget__message-name{color:var(--wf-muted);font-size:12px;line-height:1.2}',
+      '.wayfindr-widget__message-automated{margin-inline-start:2px;padding:1px 6px;border:1px solid var(--wf-rule);border-radius:999px;font-size:11px;font-weight:400;white-space:nowrap}',
       '.wayfindr-widget__message--grouped .wayfindr-widget__message-name{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}',
       '.wayfindr-widget__message--grouped .wayfindr-widget__message-meta{justify-content:flex-end}',
       '.wayfindr-widget__message-time{color:var(--wf-muted);font-size:11px;line-height:1.2;white-space:nowrap}',

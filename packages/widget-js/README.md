@@ -126,6 +126,10 @@ exactly the case that ends. Build rotation, or your integration stops working
 one lifetime after each token is issued.
 
 `sendFirstMessage` bootstraps the visitor session automatically when needed.
+It refuses a body longer than the server accepts (4,000 characters, after
+trimming) before sending anything, throwing an error whose `wayfindrKey` is
+`composer.rejected.too_long`, so a message that would be rejected never leaves
+an empty conversation behind.
 Lower-level calls such as `startConversation`, `sendMessage`,
 `fetchMessages`, and `fetchCobrowseStatus` expect the visitor to have been
 bootstrapped first.

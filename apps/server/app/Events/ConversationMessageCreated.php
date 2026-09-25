@@ -80,7 +80,7 @@ class ConversationMessageCreated implements ShouldBroadcastNow, ShouldRescue
     }
 
     /**
-     * @return array{kind: string, name: string}
+     * @return array{kind: string, name: string, automated?: true}
      */
     private function senderPayload(): array
     {
@@ -105,6 +105,10 @@ class ConversationMessageCreated implements ShouldBroadcastNow, ShouldRescue
             return [
                 'kind' => 'agent',
                 'name' => $this->message->conversation?->site?->name ?? 'Support',
+                // The same flag the widget's own transcript carries, so a live
+                // delivery and the next poll describe the sender alike. Not on
+                // the API-token branch above: an integration may relay a person.
+                'automated' => true,
             ];
         }
 

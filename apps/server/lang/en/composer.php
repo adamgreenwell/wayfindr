@@ -32,5 +32,9 @@ return [
         'infected' => 'This file was rejected by a security scan.',
         'unscannable' => 'This file could not be scanned for malware and was not accepted. Please try again shortly.',
         'unavailable' => 'One or more attachments are unavailable.',
+        // Not thrown by the upload path: the widget's message endpoint answers
+        // a body over its limit with this key, so the widget can say it in the
+        // visitor's language exactly as it does the attachment rejections.
+        'too_long' => 'A message can be at most :max characters long.',
     ],
 ];

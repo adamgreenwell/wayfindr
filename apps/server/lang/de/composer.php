@@ -21,5 +21,6 @@ return [
         'infected' => 'Diese Datei wurde von einer Sicherheitsprüfung abgelehnt.',
         'unscannable' => 'Diese Datei konnte nicht auf Schadsoftware geprüft und daher nicht angenommen werden. Bitte versuchen Sie es in Kürze erneut.',
         'unavailable' => 'Ein oder mehrere Anhänge sind nicht verfügbar.',
+        'too_long' => 'Eine Nachricht darf höchstens :max Zeichen lang sein.',
     ],
 ];
