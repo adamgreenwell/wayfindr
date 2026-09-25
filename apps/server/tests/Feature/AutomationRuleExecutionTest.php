@@ -158,7 +158,6 @@ test('visitor messages can trigger conversation actions without creating a visit
         'actions' => [
             ['type' => 'assign_agent', 'value' => $assignee->id],
             ['type' => 'set_priority', 'value' => 'high'],
-            ['type' => 'set_status', 'value' => 'closed'],
             ['type' => 'notify_agent', 'value' => $notifiedAgent->id],
         ],
     ]);
@@ -178,10 +177,9 @@ test('visitor messages can trigger conversation actions without creating a visit
 
     expect($conversation->assigned_agent_id)->toBe($assignee->id)
         ->and($conversation->priority)->toBe('high')
-        ->and($conversation->status)->toBe('closed')
+        ->and($conversation->status)->toBe('open')
         ->and($conversation->messages()->count())->toBe(1)
         ->and($conversation->messages()->sole()->is($message))->toBeTrue()
-        ->and($conversation->auditEvents()->where('action', 'conversation.closed')->count())->toBe(1)
         ->and($conversation->auditEvents()->where('action', 'conversation.assignee_updated')->sole()->metadata['source'])->toBe('automation');
 
     $execution = AutomationRuleExecution::query()->sole();
@@ -191,12 +189,63 @@ test('visitor messages can trigger conversation actions without creating a visit
         ->and(array_column($execution->action_results, 'type'))->toBe([
             'assign_agent',
             'set_priority',
-            'set_status',
             'notify_agent',
         ]);
 
     Notification::assertSentTo($notifiedAgent, AutomationRuleMatched::class);
-    Notification::assertNotSentTo($assignee, ConversationNeedsReply::class);
+    // Rules run before recipients are chosen, so the agent the rule assigned
+    // is the one the reply alert reaches.
+    Notification::assertSentTo($assignee, ConversationNeedsReply::class);
+    Notification::assertNotSentTo($notifiedAgent, ConversationNeedsReply::class);
+});
+
+test('a saved visitor message rule that closes the conversation cannot silence its reply alert', function (): void {
+    Notification::fake();
+
+    $account = Account::factory()->create();
+    $site = Site::factory()->for($account)->create();
+    $visitor = Visitor::factory()->for($site)->create();
+    $conversation = Conversation::factory()->for($site)->for($visitor)->create(['priority' => 'normal']);
+    $assignee = User::factory()->for($account)->create();
+    $bystander = User::factory()->for($account)->create();
+    // Saved before the definition refused this shape, as an older install's
+    // row would have been; the saving guard would reject it today.
+    $rule = AutomationRule::withoutEvents(fn (): AutomationRule => AutomationRule::factory()->for($account)->enabled()->create([
+        'name' => 'Close thank-you notes',
+        'event' => AutomationRuleEvent::VisitorMessageCreated,
+        'actions' => [
+            ['type' => 'assign_agent', 'value' => $assignee->id],
+            ['type' => 'set_status', 'value' => 'closed'],
+            ['type' => 'set_priority', 'value' => 'high'],
+        ],
+    ]));
+
+    $message = ConversationMessage::factory()->for($conversation)->create([
+        'sender_type' => Visitor::class,
+        'sender_id' => $visitor->id,
+        'body' => 'Thanks, but it is still broken.',
+    ]);
+    $conversation->forceFill(['last_message_at' => $message->created_at])->save();
+    event(new ConversationMessageCreated($message));
+    $conversation->refresh();
+
+    expect($conversation->status)->toBe('open', 'a saved rule closed the conversation the visitor is waiting in')
+        ->and($conversation->auditEvents()->where('action', 'conversation.closed')->exists())->toBeFalse('a saved rule recorded a close no human made')
+        ->and($conversation->isAwaitingRating())->toBeFalse('the visitor would be asked to rate a close no human made')
+        ->and(Notification::sent($assignee, ConversationNeedsReply::class))->toHaveCount(1, 'a saved close rule silenced the visitor message alert')
+        ->and(Notification::sent($bystander, ConversationNeedsReply::class))->toHaveCount(0, 'the rule still runs first, so its assignee is the one alerted')
+        ->and($conversation->assigned_agent_id)->toBe($assignee->id)
+        ->and($conversation->priority)->toBe('high', 'withholding the close must not stop the rest of the rule');
+
+    $execution = AutomationRuleExecution::query()->sole();
+
+    expect($execution->status)->toBe('succeeded')
+        ->and($execution->actions)->toBe($rule->actions, 'the execution snapshot must keep the rule as it was stored')
+        ->and($execution->action_results)->toBe([
+            ['type' => 'assign_agent', 'status' => 'applied', 'detail' => 'agent:'.$assignee->id],
+            ['type' => 'set_status', 'status' => 'skipped', 'detail' => 'visitor_awaiting_reply'],
+            ['type' => 'set_priority', 'status' => 'applied', 'detail' => 'normal->high'],
+        ], 'the execution log does not record each stored action, in stored order, with the close skipped and why');
 });
 
 test('visitor ticket reopen automation follows the visitor reply audit', function (): void {

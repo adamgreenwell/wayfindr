@@ -84,6 +84,8 @@ return [
         'result' => 'Vorschauergebnis', 'matched' => 'Würde passen', 'not_matched' => 'Würde nicht passen',
         'condition_matched' => 'Passt:', 'condition_not_matched' => 'Passt nicht:', 'actual' => 'Tatsächlicher Wert: :value',
         'would_run' => 'Aktionen, die ausgeführt würden', 'no_actions' => 'Es würden keine Aktionen ausgeführt, weil nicht alle Bedingungen passen.',
+        'withheld' => 'Aktionen, die übersprungen würden',
+        'withheld_reason' => 'Eine Regel für „:event“ kann die Unterhaltung nicht schließen: Der Besucher wartet auf eine Antwort.',
     ],
     'executions' => [
         'heading' => 'Ausführungsprotokoll', 'lede' => 'Dauerhafte Ergebnisse passender Regeln und manuell angewendeter Makros, einschließlich Fehlern und Aktionen ohne Änderung.',
@@ -92,11 +94,12 @@ return [
         'conditions' => 'Passende Bedingungen', 'actions' => 'Geplante Aktionen', 'results' => 'Aktionsergebnisse', 'error' => 'Fehlerdetail',
     ],
     'execution_statuses' => ['succeeded' => 'Erfolgreich', 'failed' => 'Fehlgeschlagen'],
-    'result_statuses' => ['applied' => 'Ausgeführt', 'noop' => 'Keine Änderung nötig', 'queued' => 'Eingereiht'],
+    'result_statuses' => ['applied' => 'Ausgeführt', 'noop' => 'Keine Änderung nötig', 'queued' => 'Eingereiht', 'skipped' => 'Übersprungen'],
     'result_details' => [
         'already_assigned' => 'Bereits diesem Agenten zugewiesen', 'already_labeled' => 'Label bereits vorhanden',
         'quiet_mode' => 'Agent verwendet den stillen Benachrichtigungsmodus', 'private_ticket_note' => 'Private Ticketnotiz gespeichert',
         'target_unavailable' => 'Zielagent ist für diesen Vorgang nicht mehr verfügbar',
+        'visitor_awaiting_reply' => 'Der Besucher wartet auf eine Antwort, daher blieb die Unterhaltung offen',
     ],
     'result_change' => ':before zu :after', 'result_already' => 'Bereits :value',
     'condition_sentence' => ':field – :operator – :value', 'action_sentence' => ':action mit Wert :value', 'result_sentence' => ':action: :status; :detail',
@@ -113,5 +116,6 @@ return [
         'heading' => 'Regeldefinition prüfen', 'choice' => 'Wählen Sie einen Wert aus der passenden Gruppe.',
         'reference' => 'Dieser Kontoeintrag ist nicht verfügbar oder hat nicht die für diese Aktion erforderliche Berechtigung.',
         'definition' => 'Diese Regeldefinition ist ungültig: :detail', 'duplicate' => 'Eine Regel mit diesem Namen ist bereits vorhanden.',
+        'visitor_message_close' => 'Regeln für „:event“ können die Unterhaltung nicht schließen: Der Besucher wartet auf eine Antwort, und das Schließen würde verhindern, dass das Supportteam benachrichtigt wird.',
     ],
 ];

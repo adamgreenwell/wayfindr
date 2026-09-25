@@ -682,7 +682,10 @@ test('final SLA alert completion locks every routing boundary before the clock',
         ->and($subjectLock)->toBeLessThan($clockLock);
 });
 
-test('a quiet assigned agent does not turn one SLA alert into a team-wide fallback', function (): void {
+// A deadline nobody hears about is not a deadline. When the assignee cannot be
+// alerted, the SLA alert routes exactly as it would for unassigned work: the
+// site roster, filtered by each agent's own preference.
+test('a quiet assignee hands conversation SLA alerts to the site roster', function (): void {
     Notification::fake();
     $world = slaWorld(['enabled' => false]);
     configureNormalSla($world['account'], response: 5);
@@ -693,6 +696,7 @@ test('a quiet assigned agent does not turn one SLA alert into a team-wide fallba
             'cadence' => User::ALERT_CADENCE_IMMEDIATE,
         ],
     ]);
+    $offRoster = User::factory()->for($world['account'])->create();
     $world['site']->supportAgents()->attach($quiet);
     $visitor = Visitor::factory()->for($world['site'])->create();
     Conversation::factory()->for($world['site'])->for($visitor)->create([
@@ -702,7 +706,32 @@ test('a quiet assigned agent does not turn one SLA alert into a team-wide fallba
     $this->travel(4)->minutes();
     Artisan::call('wayfindr:evaluate-sla-clocks');
 
-    Notification::assertNothingSent();
+    expect(Notification::sent($world['agent'], SlaDeadlineAlert::class))
+        ->toHaveCount(1, 'a quiet assignee left the conversation SLA warning with nobody alerted')
+        ->and(Notification::sent($quiet, SlaDeadlineAlert::class))->toHaveCount(0, 'quiet mode must still silence the agent who chose it')
+        ->and(Notification::sent($offRoster, SlaDeadlineAlert::class))->toHaveCount(0, 'the fallback must stay inside the site roster');
+});
+
+test('a quiet assignee hands ticket SLA alerts to the site roster', function (): void {
+    Notification::fake();
+    $world = slaWorld(['enabled' => false]);
+    configureNormalSla($world['account'], resolution: 5);
+    $quiet = User::factory()->for($world['account'])->create([
+        'alert_preferences' => [
+            'mode' => User::ALERT_MODE_QUIET,
+            'email' => false,
+            'cadence' => User::ALERT_CADENCE_IMMEDIATE,
+        ],
+    ]);
+    $world['site']->supportAgents()->attach($quiet);
+    Ticket::factory()->for($world['account'])->for($world['site'])->create(['assignee_id' => $quiet->id]);
+
+    $this->travel(4)->minutes();
+    Artisan::call('wayfindr:evaluate-sla-clocks');
+
+    expect(Notification::sent($world['agent'], SlaDeadlineAlert::class))
+        ->toHaveCount(1, 'a quiet assignee left the ticket SLA warning with nobody alerted')
+        ->and(Notification::sent($quiet, SlaDeadlineAlert::class))->toHaveCount(0, 'quiet mode must still silence the agent who chose it');
 });
 
 test('assigned-only agents do not receive SLA alerts for unassigned tickets', function (): void {

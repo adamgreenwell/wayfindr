@@ -141,6 +141,8 @@ return [
         'actual' => 'Actual value: :value',
         'would_run' => 'Actions that would run',
         'no_actions' => 'No actions would run because every condition did not match.',
+        'withheld' => 'Actions that would be skipped',
+        'withheld_reason' => 'A “:event” rule cannot close the conversation: the visitor is waiting for a reply.',
     ],
     'executions' => [
         'heading' => 'Execution log',
@@ -158,13 +160,14 @@ return [
         'error' => 'Failure detail',
     ],
     'execution_statuses' => ['succeeded' => 'Succeeded', 'failed' => 'Failed'],
-    'result_statuses' => ['applied' => 'Applied', 'noop' => 'No change needed', 'queued' => 'Queued'],
+    'result_statuses' => ['applied' => 'Applied', 'noop' => 'No change needed', 'queued' => 'Queued', 'skipped' => 'Skipped'],
     'result_details' => [
         'already_assigned' => 'Already assigned to this agent',
         'already_labeled' => 'Label already present',
         'quiet_mode' => 'Agent uses quiet alert mode',
         'private_ticket_note' => 'Private ticket note recorded',
         'target_unavailable' => 'Target agent is no longer available for this work',
+        'visitor_awaiting_reply' => 'The visitor is waiting for a reply, so the conversation stayed open',
     ],
     'result_change' => ':before to :after',
     'result_already' => 'Already :value',
@@ -189,5 +192,6 @@ return [
         'reference' => 'That account item is unavailable or lacks the access this action requires.',
         'definition' => 'This rule definition is not valid: :detail',
         'duplicate' => 'A rule with this name already exists.',
+        'visitor_message_close' => 'Rules for “:event” cannot close the conversation: the visitor is waiting for a reply, and closing it would keep the support team from being alerted.',
     ],
 ];

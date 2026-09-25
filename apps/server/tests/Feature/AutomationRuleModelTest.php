@@ -136,6 +136,19 @@ test('automation rule definitions reject unknown and event-incompatible vocabula
         ],
         'actions.0.value must be a status supported by conversation.created',
     ],
+    // Visitor-message rules run before the reply alert is decided, so a close
+    // there skips the alert, drops the conversation from the open queue, and
+    // asks the visitor to rate a close nobody made.
+    'closing the conversation a visitor message is waiting in' => [
+        [
+            'event' => AutomationRuleEvent::VisitorMessageCreated,
+            'actions' => [
+                ['type' => 'set_priority', 'value' => 'high'],
+                ['type' => 'set_status', 'value' => 'closed'],
+            ],
+        ],
+        'actions.1.value cannot close the conversation for conversation.visitor_message_created rules',
+    ],
     'unexpected action data' => [
         [
             'actions' => [['type' => 'set_priority', 'value' => 'high', 'surprise' => true]],
@@ -143,6 +156,29 @@ test('automation rule definitions reject unknown and event-incompatible vocabula
         'actions.0 must contain exactly',
     ],
 ]);
+
+test('only visitor message rules are refused a conversation close', function (): void {
+    $account = Account::factory()->create();
+
+    $refused = collect([
+        'conversation.created closed' => [AutomationRuleEvent::ConversationCreated, 'closed'],
+        'visitor message open' => [AutomationRuleEvent::VisitorMessageCreated, 'open'],
+        'ticket.updated closed' => [AutomationRuleEvent::TicketUpdated, 'closed'],
+    ])->filter(function (array $definition) use ($account): bool {
+        try {
+            AutomationRule::factory()->for($account)->create([
+                'event' => $definition[0],
+                'actions' => [['type' => 'set_status', 'value' => $definition[1]]],
+            ]);
+        } catch (InvalidArgumentException) {
+            return true;
+        }
+
+        return false;
+    })->keys()->all();
+
+    expect($refused)->toBe([], 'the visitor-message close refusal reached other events or statuses');
+});
 
 test('ticket rules accept the complete deliberately small action vocabulary in sequence', function (): void {
     $account = Account::factory()->create();

@@ -64,7 +64,9 @@ the deadline evaluator has not already recorded a breach.
 
 The scheduler advances active clocks each minute and creates one warning and
 one breach alert at most for each clock. The assigned eligible agent receives
-the alert; unassigned work falls back to eligible agents for the site. Quiet
+the alert; unassigned work falls back to eligible agents for the site, and so
+does assigned work whose assignee cannot be alerted (quiet mode, deactivation,
+missing permissions, or lost site access) rather than going to nobody. Quiet
 mode, deactivation, permissions, and current site access are rechecked. Email
 follows the agent's immediate-or-digest preference and contains support
 metadata rather than transcript or visitor content. Archived sites route no

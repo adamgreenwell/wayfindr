@@ -95,8 +95,11 @@ one-minute `php artisan schedule:run` entry or equivalent platform scheduler.
 Keep these as immediate dashboard alerts, and email them only when the agent has
 enabled immediate email delivery:
 
-- a visitor message on an assigned conversation;
-- a visitor message on an unassigned conversation for agents who support that site;
+- a visitor message on an assigned conversation, for its assignee;
+- a visitor message on an unassigned conversation for agents who support that site,
+  and on an assigned one whose assignee cannot be alerted (quiet mode, no alert
+  permission, deactivated, or off the site) — quiet mode silences the agent who
+  chose it, never the visitor;
 - a ticket newly assigned to the agent;
 - an SLA first-response or resolution deadline approaching or breached;
 - an explicit manual escalation to the agent or team;

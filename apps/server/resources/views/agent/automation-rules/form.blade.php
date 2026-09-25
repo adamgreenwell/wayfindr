@@ -164,12 +164,27 @@
                         </ol>
                     @endif
                     @if ($preview['matched'])
-                        <strong>{{ __('automation_rules.preview.would_run') }}</strong>
-                        <ol class="automation-definition-list">
-                            @foreach ($preview['actions'] as $action)
-                                <li>{{ $presenter->action($action, $preview['event'], $referenceLabels ?? []) }}</li>
-                            @endforeach
-                        </ol>
+                        @if ($preview['actions'] !== [])
+                            <strong>{{ __('automation_rules.preview.would_run') }}</strong>
+                            <ol class="automation-definition-list">
+                                @foreach ($preview['actions'] as $action)
+                                    <li>{{ $presenter->action($action, $preview['event'], $referenceLabels ?? []) }}</li>
+                                @endforeach
+                            </ol>
+                        @endif
+                        {{-- An older rule may still hold an action its event now
+                             refuses. The live run skips it and logs why; the dry
+                             run has to say the same, or a close-only rule reads
+                             as "matched, and nothing happens". --}}
+                        @if (($preview['withheld_actions'] ?? []) !== [])
+                            <strong>{{ __('automation_rules.preview.withheld') }}</strong>
+                            <p class="lede">{{ __('automation_rules.preview.withheld_reason', ['event' => __('automation_rules.events.conversation_visitor_message_created')]) }}</p>
+                            <ol class="automation-definition-list">
+                                @foreach ($preview['withheld_actions'] as $action)
+                                    <li>{{ $presenter->action($action, $preview['event'], $referenceLabels ?? []) }}</li>
+                                @endforeach
+                            </ol>
+                        @endif
                     @else
                         <p class="lede">{{ __('automation_rules.preview.no_actions') }}</p>
                     @endif

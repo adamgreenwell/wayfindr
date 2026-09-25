@@ -23,7 +23,8 @@ final class AutomationRuleEvaluator
      *     event: string,
      *     matched: true,
      *     conditions: list<array{field: string, operator: string, expected: mixed, actual: mixed, matched: bool}>,
-     *     actions: list<array{type: string, value: mixed}>
+     *     actions: list<array{type: string, value: mixed}>,
+     *     withheld_actions: list<array{type: string, value: mixed}>
      * }>
      */
     public function plan(
@@ -55,7 +56,8 @@ final class AutomationRuleEvaluator
      *     event: string,
      *     matched: bool,
      *     conditions: list<array{field: string, operator: string, expected: mixed, actual: mixed, matched: bool}>,
-     *     actions: list<array{type: string, value: mixed}>
+     *     actions: list<array{type: string, value: mixed}>,
+     *     withheld_actions: list<array{type: string, value: mixed}>
      * }
      */
     public function preview(
@@ -70,7 +72,20 @@ final class AutomationRuleEvaluator
             throw new InvalidArgumentException('The automation rule and subject must belong to the same account.');
         }
 
-        AutomationRuleDefinition::assertValid($event, $rule->conditions, $rule->actions);
+        // A withheld action is one the definition now refuses but an older
+        // rule may still hold. It is left out of what would run -- here and
+        // live, since the engine runs exactly this list -- instead of failing
+        // the whole rule on every event it sees.
+        $actions = array_values(array_filter(
+            $rule->actions,
+            fn (mixed $action): bool => ! AutomationRuleDefinition::withholdsAction($event, $action),
+        ));
+        $withheldActions = array_values(array_filter(
+            $rule->actions,
+            fn (mixed $action): bool => AutomationRuleDefinition::withholdsAction($event, $action),
+        ));
+
+        AutomationRuleDefinition::assertValid($event, $rule->conditions, $actions);
 
         $conditions = array_map(function (array $condition) use ($subject, $message): array {
             $field = AutomationRuleConditionField::from($condition['field']);
@@ -94,7 +109,8 @@ final class AutomationRuleEvaluator
             'event' => $event->value,
             'matched' => $matched,
             'conditions' => $conditions,
-            'actions' => $matched ? $rule->actions : [],
+            'actions' => $matched ? $actions : [],
+            'withheld_actions' => $matched ? $withheldActions : [],
         ];
     }
 
