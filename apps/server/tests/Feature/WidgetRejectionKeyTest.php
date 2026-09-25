@@ -189,3 +189,13 @@ test('the length limit counts characters, as the widget does, not bytes', functi
         'four thousand emoji were refused as too long, so the server is not counting characters: '.$response->json('message'));
     expect($f['conversation']->messages()->count())->toBe(1);
 });
+
+test('the body limit is measured after trimming, the same as the widget measures it', function (): void {
+    // The widget checks a trimmed copy before a first send. The server must
+    // measure the same thing -- TrimStrings is global middleware -- or padding
+    // would pass the widget's check and then be refused after the conversation
+    // was created, leaving it empty and unalerted.
+    $f = rejectionFixture();
+
+    rejectionKeyMessageSend($f, ' '.str_repeat('a', 4000)."\n")->assertCreated();
+});
