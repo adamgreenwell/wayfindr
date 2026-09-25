@@ -31,8 +31,9 @@ final class DatabaseKey
      * through to a bigint comparison, and an `int` controller parameter threw a
      * TypeError on it -- on either engine.
      *
-     * Exactly 0..PHP_INT_MAX (which is also PostgreSQL's largest bigint): any
-     * run of up to eighteen digits, or nineteen digits no greater than
+     * Exactly 0..PHP_INT_MAX (which is also PostgreSQL's largest bigint), after
+     * any leading zeroes -- which isValid() strips and PostgreSQL casts away:
+     * any run of up to eighteen digits, or nineteen digits no greater than
      * 9223372036854775807. A plain eighteen-digit cap refused real ids an
      * import or an advanced sequence can hold, which isValid() accepts; this
      * admits the same numbers isValid() does, written out as a regex because a
@@ -40,7 +41,7 @@ final class DatabaseKey
      * for each position, the bound's prefix, then any smaller digit, then any
      * digits for the rest.
      */
-    public const ROUTE_PATTERN = '(?:[0-9]{1,18}'
+    public const ROUTE_PATTERN = '0*(?:[0-9]{1,18}'
         .'|[0-8][0-9]{18}'
         .'|9[0-1][0-9]{17}'
         .'|92[0-1][0-9]{16}'

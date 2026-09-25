@@ -151,6 +151,8 @@ test('the bounds admit a long real id and refuse what no key can be', function (
     // hold; one past it is not. An eighteen-digit cap refused the first.
     expect($matched('GET', '/dashboard/sites/'.PHP_INT_MAX))
         ->toBe('dashboard.sites.show', 'The largest bigint no longer reaches its route, so the bound refuses a record PostgreSQL can hold.')
+        ->and($matched('GET', '/dashboard/sites/00000000000000000001'))
+        ->toBe('dashboard.sites.show', 'An id padded with leading zeroes no longer reaches its route, though it names a real record.')
         ->and($matched('GET', '/dashboard/sites/9223372036854775808'))
         ->toBeNull('One past the largest bigint reached the route, and PostgreSQL raises casting it.');
 
@@ -172,6 +174,8 @@ test('the route bound admits exactly the ids DatabaseKey::isValid admits', funct
             ? (string) (PHP_INT_MAX - mt_rand(0, 10 ** 7))
             : sprintf('%019d', mt_rand(0, PHP_INT_MAX));
         $value = substr_replace($value, (string) mt_rand(0, 9), mt_rand(0, 18), 1);
+        // Leading zeroes change neither the number nor the answer.
+        $value = str_repeat('0', mt_rand(0, 3) === 0 ? mt_rand(1, 6) : 0).$value;
 
         expect((bool) preg_match($pattern, $value))
             ->toBe(DatabaseKey::isValid($value), "The route bound and isValid() disagree on {$value}.");
