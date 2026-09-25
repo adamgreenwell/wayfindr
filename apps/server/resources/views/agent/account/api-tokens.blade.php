@@ -199,8 +199,11 @@
                     @enderror
                 </div>
 
-                <div class="field">
-                    <label for="api_token_abilities">{{ __('api_tokens.create.abilities_label') }}</label>
+                {{-- A group of checkboxes is named by its legend. A <label for>
+                     here pointed at an id nothing carried, so the group had no
+                     name at all and clicking the heading did nothing. --}}
+                <fieldset class="field">
+                    <legend>{{ __('api_tokens.create.abilities_label') }}</legend>
                     <label for="api_token_read">
                         <input type="checkbox" id="api_token_read" name="abilities[]" value="read"
                             @checked(in_array(\App\Models\ApiToken::ABILITY_READ, $grantableAbilities, true))
@@ -216,7 +219,7 @@
                     @if (count($grantableAbilities) < count(\App\Models\ApiToken::ABILITIES))
                         <p class="field-help">{{ __('api_tokens.create.abilities_limited') }}</p>
                     @endif
-                </div>
+                </fieldset>
 
                 <div class="field">
                     <label for="api_token_expires">{{ __('api_tokens.create.expires_label') }}</label>
@@ -229,8 +232,8 @@
                 </div>
 
                 @if ($sites->isNotEmpty())
-                    <div class="field">
-                        <label for="api_token_sites">{{ __('api_tokens.create.sites_label') }}</label>
+                    <fieldset class="field">
+                        <legend>{{ __('api_tokens.create.sites_label') }}</legend>
                         @foreach ($sites as $site)
                             <label for="api_token_site_{{ $site->id }}">
                                 <input type="checkbox" id="api_token_site_{{ $site->id }}" name="site_ids[]" value="{{ $site->id }}">
@@ -243,7 +246,7 @@
                                  it, and it does not widen later as the account grows. --}}
                             {!! __('api_tokens.create.sites_help', ['today' => '<strong>'.e(__('api_tokens.create.sites_help_today')).'</strong>']) !!}
                         </p>
-                    </div>
+                    </fieldset>
                 @endif
 
                 <button class="button" type="submit">{{ __('api_tokens.create.submit') }}</button>
@@ -263,53 +266,81 @@
         @if ($webhookEndpoints->isEmpty())
             <div class="notice-copy"><p>{{ __('outbound_webhooks.endpoints.empty') }}</p></div>
         @else
-            <div class="management-list">
-                @foreach ($webhookEndpoints as $endpoint)
-                    @php
-                        $namedSites = $endpoint->sites->whereIn('id', $visibleSiteIds);
-                        $hiddenSiteCount = $endpoint->sites->count() - $namedSites->count();
-                        $eventLabels = collect($endpoint->events)->map(
-                            fn (string $event): string => __('outbound_webhooks.events.'.str_replace('.', '_', $event))
-                        );
-                    @endphp
-                    <div class="management-link">
-                        <span>
-                            <strong lang="">{{ $endpoint->name }}</strong>
-                            <span class="lede"><code lang="">{{ $endpoint->url }}</code> · <code lang="">{{ $endpoint->secretHint() }}</code></span>
-                            <span class="lede"><strong>{{ __('outbound_webhooks.endpoints.column_events') }}:</strong> {{ $eventLabels->join(', ') }}</span>
-                            <span class="lede">
-                                <strong>{{ __('outbound_webhooks.endpoints.column_reaches') }}:</strong>
-                                @if ($endpoint->restricts_sites && $endpoint->sites->isEmpty())
-                                    {{ __('outbound_webhooks.reaches.purged') }}
-                                @else
-                                    <span lang="">{{ $namedSites->pluck('name')->join(', ') }}</span>{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? __('outbound_webhooks.reaches.unsupported') : '' }}
-                                @endif
-                            </span>
-                            <span class="lede">
-                                @if ($endpoint->createdBy)
-                                    {!! __('outbound_webhooks.endpoints.created_by', [
-                                        'when' => e($endpoint->created_at->diffForHumans()),
-                                        'name' => '<span lang="">'.e($endpoint->createdBy->name).'</span>',
-                                    ]) !!}
-                                @else
-                                    {{ __('outbound_webhooks.endpoints.created', ['when' => $endpoint->created_at->diffForHumans()]) }}
-                                @endif
-                            </span>
-                        </span>
-                        <span class="management-action">
-                            <strong>{{ $endpoint->isEnabled()
-                                ? __('outbound_webhooks.state.active')
-                                : __('outbound_webhooks.state.disabled', ['when' => $endpoint->disabled_at->diffForHumans()]) }}</strong>
-                            @if ($endpoint->isEnabled())
-                                <form method="POST" action="{{ route('dashboard.account.outbound-webhooks.destroy', $endpoint) }}">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button class="button secondary" type="submit">{{ __('outbound_webhooks.endpoints.disable') }}</button>
-                                </form>
-                            @endif
-                        </span>
-                    </div>
-                @endforeach
+            {{-- The same shape as the token table above: both are account-level
+                 credentials with a name, a reach, a state and one action, and
+                 rendering one as a table and the other as cards made two things
+                 of the same rank read as different kinds of thing. --}}
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">{{ __('outbound_webhooks.endpoints.column_name') }}</th>
+                            <th scope="col">{{ __('outbound_webhooks.endpoints.column_events') }}</th>
+                            <th scope="col">{{ __('outbound_webhooks.endpoints.column_reaches') }}</th>
+                            <th scope="col">{{ __('outbound_webhooks.endpoints.column_state') }}</th>
+                            <th scope="col">{{ __('outbound_webhooks.endpoints.column_action') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($webhookEndpoints as $endpoint)
+                            @php
+                                $namedSites = $endpoint->sites->whereIn('id', $visibleSiteIds);
+                                $hiddenSiteCount = $endpoint->sites->count() - $namedSites->count();
+                                $eventLabels = collect($endpoint->events)->map(
+                                    fn (string $event): string => __('outbound_webhooks.events.'.str_replace('.', '_', $event))
+                                );
+                            @endphp
+                            <tr>
+                                <td>
+                                    {{-- Stacked lines rather than the token table's
+                                         inline ones: a destination URL beside the name
+                                         in an unwrapping cell pushed every other column
+                                         off the page. --}}
+                                    <strong lang="">{{ $endpoint->name }}</strong>
+                                    <span class="table-note"><code lang="">{{ $endpoint->url }}</code> · <code lang="">{{ $endpoint->secretHint() }}</code></span>
+                                    <span class="table-note">
+                                        @if ($endpoint->createdBy)
+                                            {!! __('outbound_webhooks.endpoints.created_by', [
+                                                'when' => e($endpoint->created_at->diffForHumans()),
+                                                'name' => '<span lang="">'.e($endpoint->createdBy->name).'</span>',
+                                            ]) !!}
+                                        @else
+                                            {{ __('outbound_webhooks.endpoints.created', ['when' => $endpoint->created_at->diffForHumans()]) }}
+                                        @endif
+                                    </span>
+                                </td>
+                                <td>
+                                    @foreach ($eventLabels as $subscribedEvent)
+                                        {{ $subscribedEvent }}@unless ($loop->last)<br>@endunless
+                                    @endforeach
+                                </td>
+                                <td>
+                                    @if ($endpoint->restricts_sites && $endpoint->sites->isEmpty())
+                                        <span class="lede">{{ __('outbound_webhooks.reaches.purged') }}</span>
+                                    @else
+                                        <span class="lede">
+                                            <span lang="">{{ $namedSites->pluck('name')->join(', ') }}</span>{{ $namedSites->isNotEmpty() && $hiddenSiteCount > 0 ? ', ' : '' }}{{ $hiddenSiteCount > 0 ? __('outbound_webhooks.reaches.unsupported') : '' }}
+                                        </span>
+                                    @endif
+                                </td>
+                                <td>
+                                    {{ $endpoint->isEnabled()
+                                        ? __('outbound_webhooks.state.active')
+                                        : __('outbound_webhooks.state.disabled', ['when' => $endpoint->disabled_at->diffForHumans()]) }}
+                                </td>
+                                <td>
+                                    @if ($endpoint->isEnabled())
+                                        <form method="POST" action="{{ route('dashboard.account.outbound-webhooks.destroy', $endpoint) }}">
+                                            @csrf
+                                            @method('DELETE')
+                                            <button class="button secondary" type="submit">{{ __('outbound_webhooks.endpoints.disable') }}</button>
+                                        </form>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
             </div>
             <p class="lede">{{ __('outbound_webhooks.endpoints.disabled_keeps') }}</p>
         @endif
@@ -340,8 +371,8 @@
                 @error('webhook.url')<p class="field-error">{{ $message }}</p>@enderror
             </div>
 
-            <div class="field">
-                <label for="webhook_events">{{ __('outbound_webhooks.create.events_label') }}</label>
+            <fieldset class="field">
+                <legend>{{ __('outbound_webhooks.create.events_label') }}</legend>
                 @foreach ($grantableWebhookEvents as $event)
                     <label for="webhook_event_{{ str_replace('.', '_', $event) }}">
                         <input type="checkbox" id="webhook_event_{{ str_replace('.', '_', $event) }}"
@@ -352,11 +383,11 @@
                 @endforeach
                 <p class="field-help">{{ __('outbound_webhooks.create.events_help') }}</p>
                 @error('webhook.events')<p class="field-error">{{ $message }}</p>@enderror
-            </div>
+            </fieldset>
 
             @if ($sites->isNotEmpty())
-                <div class="field">
-                    <label for="webhook_sites">{{ __('outbound_webhooks.create.sites_label') }}</label>
+                <fieldset class="field">
+                    <legend>{{ __('outbound_webhooks.create.sites_label') }}</legend>
                     @foreach ($sites as $site)
                         <label for="webhook_site_{{ $site->id }}">
                             <input type="checkbox" id="webhook_site_{{ $site->id }}" name="webhook[site_ids][]" value="{{ $site->id }}"
@@ -365,7 +396,7 @@
                         </label>
                     @endforeach
                     <p class="field-help">{!! __('outbound_webhooks.create.sites_help', ['today' => '<strong>'.e(__('outbound_webhooks.create.sites_help_today')).'</strong>']) !!}</p>
-                </div>
+                </fieldset>
             @endif
 
             <button class="button" type="submit">{{ __('outbound_webhooks.create.submit') }}</button>
@@ -393,49 +424,52 @@
                             default => __('outbound_webhooks.deliveries.pending'),
                         };
                     @endphp
-                    <details class="details-disclosure">
-                        <summary class="details-disclosure__summary">
+                    <x-details-disclosure>
+                        {{-- A slot rather than the `summary` prop: the summary is
+                             mixed, our event and state labels around the account's
+                             own endpoint name, and only the name is reset. The
+                             `summaryLang` prop would mark the whole line, and a
+                             string prop would escape the name's marker into text. --}}
+                        <x-slot:summary>
                             {{ $eventLabel }} · <span lang="">{{ $delivery->endpoint->name }}</span> · {{ $stateLabel }}
-                        </summary>
-                        <div class="details-disclosure__body">
-                            <div class="meta-grid">
-                                <div class="meta-item">
-                                    <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_event') }}</span>
-                                    <span class="meta-value">{{ __('outbound_webhooks.deliveries.sequence', ['number' => \App\Support\ReaderNumber::count($delivery->sequence)]) }}</span>
-                                    <span class="lede"><code lang="">{{ $delivery->public_id }}</code></span>
-                                </div>
-                                <div class="meta-item">
-                                    <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_endpoint') }}</span>
-                                    <span class="meta-value" lang="">{{ $delivery->endpoint->name }}</span>
-                                    @if ($delivery->site)<span class="lede" lang="">{{ $delivery->site->name }}</span>@endif
-                                </div>
-                                <div class="meta-item">
-                                    <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_response') }}</span>
-                                    @if ($delivery->response_status)
-                                        <span class="meta-value">{{ __('outbound_webhooks.deliveries.status', ['status' => $delivery->response_status]) }}</span>
-                                        <span class="lede" lang="">{{ $delivery->response_body ?? __('outbound_webhooks.deliveries.response_omitted') }}</span>
-                                    @else
-                                        <span class="meta-value">{{ __('outbound_webhooks.deliveries.no_response') }}</span>
-                                    @endif
-                                </div>
-                                <div class="meta-item">
-                                    <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_state') }}</span>
-                                    <span class="meta-value">{{ $stateLabel }}</span>
-                                    <span class="lede">{{ trans_choice('outbound_webhooks.deliveries.attempts', $delivery->attempts, ['count' => \App\Support\ReaderNumber::count($delivery->attempts)]) }}</span>
-                                    @if ($delivery->failed_at && $delivery->endpoint->isEnabled())
-                                        <form method="POST" action="{{ route('dashboard.account.outbound-webhooks.retry', $delivery) }}">
-                                            @csrf
-                                            <button class="button secondary" type="submit">{{ __('outbound_webhooks.deliveries.retry') }}</button>
-                                        </form>
-                                    @endif
-                                </div>
+                        </x-slot:summary>
+                        <div class="meta-grid">
+                            <div class="meta-item">
+                                <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_event') }}</span>
+                                <span class="meta-value">{{ __('outbound_webhooks.deliveries.sequence', ['number' => \App\Support\ReaderNumber::count($delivery->sequence)]) }}</span>
+                                <span class="lede"><code lang="">{{ $delivery->public_id }}</code></span>
                             </div>
-                            <div>
-                                <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_sent') }}</span>
-                                <pre><code lang="">{{ json_encode($delivery->payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</code></pre>
+                            <div class="meta-item">
+                                <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_endpoint') }}</span>
+                                <span class="meta-value" lang="">{{ $delivery->endpoint->name }}</span>
+                                @if ($delivery->site)<span class="lede" lang="">{{ $delivery->site->name }}</span>@endif
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_response') }}</span>
+                                @if ($delivery->response_status)
+                                    <span class="meta-value">{{ __('outbound_webhooks.deliveries.status', ['status' => $delivery->response_status]) }}</span>
+                                    <span class="lede" lang="">{{ $delivery->response_body ?? __('outbound_webhooks.deliveries.response_omitted') }}</span>
+                                @else
+                                    <span class="meta-value">{{ __('outbound_webhooks.deliveries.no_response') }}</span>
+                                @endif
+                            </div>
+                            <div class="meta-item">
+                                <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_state') }}</span>
+                                <span class="meta-value">{{ $stateLabel }}</span>
+                                <span class="lede">{{ trans_choice('outbound_webhooks.deliveries.attempts', $delivery->attempts, ['count' => \App\Support\ReaderNumber::count($delivery->attempts)]) }}</span>
+                                @if ($delivery->failed_at && $delivery->endpoint->isEnabled())
+                                    <form method="POST" action="{{ route('dashboard.account.outbound-webhooks.retry', $delivery) }}">
+                                        @csrf
+                                        <button class="button secondary" type="submit">{{ __('outbound_webhooks.deliveries.retry') }}</button>
+                                    </form>
+                                @endif
                             </div>
                         </div>
-                    </details>
+                        <div>
+                            <span class="meta-label">{{ __('outbound_webhooks.deliveries.column_sent') }}</span>
+                            <pre><code lang="">{{ json_encode($delivery->payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) }}</code></pre>
+                        </div>
+                    </x-details-disclosure>
                 @endforeach
             </div>
             <p class="lede">{{ __('outbound_webhooks.deliveries.scope') }}</p>

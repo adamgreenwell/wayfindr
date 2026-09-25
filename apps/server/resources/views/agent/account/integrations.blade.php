@@ -48,15 +48,19 @@
         @endunless
 
         @if ($canManageIntegrations)
-            <div class="notice-copy notice-copy-bordered" aria-labelledby="integration-setup-order-heading">
-                <p><strong id="integration-setup-order-heading">{{ __('integrations.connections.setup.heading') }}</strong></p>
-                <div class="notice-list">
-                    <p><strong>{{ __('integrations.connections.setup.save_title') }}</strong> {{ __('integrations.connections.setup.save_body') }}</p>
-                    <p><strong>{{ __('integrations.connections.setup.copy_title') }}</strong> {{ __('integrations.connections.setup.copy_body') }}</p>
-                    <p><strong>{{ __('integrations.connections.setup.configure_title') }}</strong> {!! __('integrations.connections.setup.configure_body', ['providers' => $setupProviders]) !!}</p>
-                    <p><strong>{{ __('integrations.connections.setup.map_title') }}</strong> {{ __('integrations.connections.setup.map_body') }}</p>
-                </div>
-                <p>{{ __('integrations.connections.setup.outbound_only') }}</p>
+            {{-- The order matters once, before the first connection exists. After
+                 that it is reference, and left open it put the same four steps
+                 above the data on every visit. --}}
+            <div class="notice-copy notice-copy-bordered">
+                <x-details-disclosure :summary="__('integrations.connections.setup.heading')" :open="$providerConnections->isEmpty()">
+                    <div class="notice-list">
+                        <p><strong>{{ __('integrations.connections.setup.save_title') }}</strong> {{ __('integrations.connections.setup.save_body') }}</p>
+                        <p><strong>{{ __('integrations.connections.setup.copy_title') }}</strong> {{ __('integrations.connections.setup.copy_body') }}</p>
+                        <p><strong>{{ __('integrations.connections.setup.configure_title') }}</strong> {!! __('integrations.connections.setup.configure_body', ['providers' => $setupProviders]) !!}</p>
+                        <p><strong>{{ __('integrations.connections.setup.map_title') }}</strong> {{ __('integrations.connections.setup.map_body') }}</p>
+                    </div>
+                    <p>{{ __('integrations.connections.setup.outbound_only') }}</p>
+                </x-details-disclosure>
             </div>
         @endif
 
@@ -94,7 +98,10 @@
                                 @endif
                             </span>
                         </span>
-                        <span class="management-action">{{ $connection->is_enabled
+                        {{-- A state, not a destination. `.management-action` is the
+                             accent-coloured verb of a row that navigates, and this
+                             row does not. --}}
+                        <span class="readiness-status" data-status="{{ $connection->is_enabled ? 'ready' : 'manual' }}">{{ $connection->is_enabled
                             ? __('integrations.connections.enabled')
                             : __('integrations.connections.disabled') }}</span>
                     </div>
@@ -150,30 +157,37 @@
                             @if ($canManageIntegrations)
                                 <p class="lede"><strong>{{ __('integrations.webhook.generated_url') }}</strong></p>
                                 <p class="lede"><code lang="">{{ $connection->inboundWebhookUrl() }}</code></p>
-                                <span id="connection_{{ $connection->id }}_webhook_settings_label" class="sr-only">{{ __('integrations.webhook.settings_aria') }}</span>
-                                <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_webhook_settings_label connection_{{ $connection->id }}_name">
-                                    <p><strong>{{ __('integrations.webhook.provider_destination_title') }}</strong> {{ __('integrations.webhook.provider_destination_body') }}</p>
-                                    @switch($connection->provider)
-                                        @case('github')
-                                            <p><strong>{{ __('integrations.webhook.github_title') }}</strong> {!! __('integrations.webhook.github_body', [
-                                                'content_type' => $unknownLanguage('application/json', 'code'),
-                                                'issues' => $unknownLanguage('Issues', 'strong'),
-                                                'comments' => $unknownLanguage('Issue comments', 'strong'),
-                                            ]) !!}</p>
-                                            @break
-                                        @case('gitlab')
-                                            <p><strong>{{ __('integrations.webhook.gitlab_title') }}</strong> {!! __('integrations.webhook.gitlab_body', [
-                                                'secret_token' => $unknownLanguage('Secret token'),
-                                                'issues' => $unknownLanguage('Issues events', 'strong'),
-                                                'comments' => $unknownLanguage('Comments', 'strong'),
-                                            ]) !!}</p>
-                                            @break
-                                        @case('jira')
-                                            <p><strong>{{ __('integrations.webhook.jira_title') }}</strong> {{ __('integrations.webhook.jira_body') }}</p>
-                                            @break
-                                    @endswitch
-                                    <p><strong>{{ __('integrations.webhook.shared_secret_title') }}</strong> {{ __('integrations.webhook.shared_secret_body') }}</p>
-                                </div>
+                                {{-- Instructions for the provider's side, needed until a
+                                     signed delivery proves that side is configured and
+                                     reference afterwards. The URL above and the secret
+                                     form below stay outside it: they are the values,
+                                     not the instructions. --}}
+                                <x-details-disclosure :open="! ($connection->hasWebhookSecret() && $connection->hasVerifiedInboundWebhook())">
+                                    <x-slot:summary><span id="connection_{{ $connection->id }}_webhook_settings_label">{{ __('integrations.webhook.settings_aria') }}</span></x-slot:summary>
+                                    <div class="notice-list" aria-labelledby="connection_{{ $connection->id }}_webhook_settings_label connection_{{ $connection->id }}_name">
+                                        <p><strong>{{ __('integrations.webhook.provider_destination_title') }}</strong> {{ __('integrations.webhook.provider_destination_body') }}</p>
+                                        @switch($connection->provider)
+                                            @case('github')
+                                                <p><strong>{{ __('integrations.webhook.github_title') }}</strong> {!! __('integrations.webhook.github_body', [
+                                                    'content_type' => $unknownLanguage('application/json', 'code'),
+                                                    'issues' => $unknownLanguage('Issues', 'strong'),
+                                                    'comments' => $unknownLanguage('Issue comments', 'strong'),
+                                                ]) !!}</p>
+                                                @break
+                                            @case('gitlab')
+                                                <p><strong>{{ __('integrations.webhook.gitlab_title') }}</strong> {!! __('integrations.webhook.gitlab_body', [
+                                                    'secret_token' => $unknownLanguage('Secret token'),
+                                                    'issues' => $unknownLanguage('Issues events', 'strong'),
+                                                    'comments' => $unknownLanguage('Comments', 'strong'),
+                                                ]) !!}</p>
+                                                @break
+                                            @case('jira')
+                                                <p><strong>{{ __('integrations.webhook.jira_title') }}</strong> {{ __('integrations.webhook.jira_body') }}</p>
+                                                @break
+                                        @endswitch
+                                        <p><strong>{{ __('integrations.webhook.shared_secret_title') }}</strong> {{ __('integrations.webhook.shared_secret_body') }}</p>
+                                    </div>
+                                </x-details-disclosure>
                                 <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.webhook-secret.update', $connection) }}">
                                     @csrf
                                     @method('PUT')
@@ -198,12 +212,15 @@
         @endif
 
         @if ($canManageIntegrations)
-            <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.store') }}">
+            <form class="section-form" method="POST" action="{{ route('dashboard.external-issue-provider-connections.store') }}" aria-labelledby="integration-create-heading">
                 @csrf
                 <input type="hidden" name="return_to" value="integrations">
 
+                {{-- A heading element, so a reader moving by headings reaches the
+                     form. An h3 because it is part of Provider connections, not a
+                     section beside it. --}}
                 <div class="section-header">
-                    <strong>{{ __('integrations.create.heading') }}</strong>
+                    <h3 id="integration-create-heading">{{ __('integrations.create.heading') }}</h3>
                     <span class="lede">{{ __('integrations.create.available') }}</span>
                 </div>
 

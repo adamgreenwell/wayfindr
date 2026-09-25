@@ -741,3 +741,182 @@ test('an admin cannot set a webhook secret on another account\'s connection', fu
         ])
         ->assertNotFound();
 });
+
+/**
+ * The integrations page as a DOM. Named for this file: Pest helpers are global.
+ */
+function accountIntegrationsPageXpath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    return new DOMXPath($document);
+}
+
+/**
+ * Every inline stylesheet on the page, joined, with comments removed so a
+ * comment above a rule cannot be read as part of its selector.
+ */
+function accountIntegrationsPageStylesheet(DOMXPath $xpath): string
+{
+    return (string) preg_replace('#/\*.*?\*/#s', '', implode("\n", array_map(
+        fn (DOMNode $style): string => $style->textContent,
+        iterator_to_array($xpath->query('//style')),
+    )));
+}
+
+test('a connection row shows its state as a chip, not as a navigation verb', function (): void {
+    // The provider-connection row is a <div>: it goes nowhere. Its
+    // Enabled/Disabled state sat in `.management-action`, the accent-coloured
+    // verb that on every other row names where a click takes you.
+    $fixture = integrationsAccount();
+    $enabled = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Engineering GitHub', 'provider' => 'github']);
+    $disabled = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['name' => 'Legacy tracker', 'provider' => 'other', 'is_enabled' => false]);
+
+    $xpath = accountIntegrationsPageXpath((string) $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    foreach ([[$enabled, 'ready', 'Enabled'], [$disabled, 'manual', 'Disabled']] as [$connection, $status, $label]) {
+        $row = $xpath->query('//*[@id="connection_'.$connection->id.'_name"]/ancestor::div[contains(@class, "management-link")][1]')->item(0);
+
+        expect($row)->not->toBeNull("the {$connection->name} row did not render; this guard is checking nothing");
+
+        expect($xpath->query('.//*[contains(@class, "management-action")]', $row)->length)
+            ->toBe(0, "the {$connection->name} row still shows its state as a navigation verb");
+
+        $chip = $xpath->query('.//*[contains(@class, "readiness-status")]', $row)->item(0);
+
+        expect($chip)->not->toBeNull("the {$connection->name} row does not show its state as a chip");
+
+        expect($chip->getAttribute('data-status'))->toBe($status, "the {$connection->name} chip carries the wrong tone")
+            ->and(trim($chip->textContent))->toBe($label);
+    }
+
+    // The row blocks every span for its text lines (`.management-link span`),
+    // which outranks `.readiness-status` and would top-align the chip's label.
+    preg_match('/\.management-link \.readiness-status\s*\{([^}]*)\}/', accountIntegrationsPageStylesheet($xpath), $rule);
+
+    expect(str_contains($rule[1] ?? '', 'display: inline-flex'))
+        ->toBeTrue('nothing restores the chip\'s own box inside a management row, so the row\'s span rule blocks it');
+});
+
+test('only a management row that navigates reacts to the pointer', function (): void {
+    // `.management-link` lays out rows that navigate (<a>) and rows that do not
+    // (<div>). The hover background applied to both, so a read-only row lit up
+    // under the cursor like a link and clicking it did nothing.
+    $fixture = integrationsAccount();
+    ExternalIssueProviderConnection::factory()->for($fixture['account'])->create(['provider' => 'github']);
+
+    $xpath = accountIntegrationsPageXpath((string) $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    // Both kinds are on this page, so the rule has something to spare.
+    expect($xpath->query('//div[contains(@class, "management-link")]')->length)->toBeGreaterThan(0)
+        ->and($xpath->query('//a[contains(@class, "management-link")]')->length)->toBeGreaterThan(0);
+
+    preg_match_all('/([^{}]*\.management-link:hover[^{]*)\{/', accountIntegrationsPageStylesheet($xpath), $rules);
+
+    expect($rules[1])->not->toBe([], 'no hover rule for management rows was found; this guard is checking nothing');
+
+    foreach ($rules[1] as $selectorList) {
+        foreach (array_map('trim', explode(',', $selectorList)) as $selector) {
+            if (! str_contains($selector, '.management-link:hover')) {
+                continue;
+            }
+
+            expect(preg_match('/(^|\s)a\.management-link:hover$/', $selector))
+                ->toBe(1, "the hover rule `{$selector}` paints management rows that are not links");
+        }
+    }
+});
+
+test('the add-connection form is reachable by heading', function (): void {
+    // Its heading was a <strong>, so a reader moving by headings went from
+    // Provider connections straight to Site project mappings and never met
+    // the form.
+    $fixture = integrationsAccount();
+
+    $xpath = accountIntegrationsPageXpath((string) $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    $heading = $xpath->query('//form[@aria-labelledby="integration-create-heading"]//h3[@id="integration-create-heading"]')->item(0);
+
+    expect($heading)->not->toBeNull('the add-connection form has no heading element naming it');
+
+    expect(trim($heading->textContent))->toBe('Add provider connection');
+
+    // There is no global h3 rule; without the section-header one the heading
+    // takes the browser's margins and outsizes the h2 it sits under.
+    preg_match('/([^{}]*)\{\s*margin:\s*0;\s*font-size:\s*1rem;\s*\}/', accountIntegrationsPageStylesheet($xpath), $rule);
+
+    expect(in_array('.section-header h3', array_map('trim', explode(',', $rule[1] ?? '')), true))
+        ->toBeTrue('no rule sizes an h3 inside .section-header, so the new heading renders at the browser default');
+});
+
+test('setup guidance is open only while it is needed', function (): void {
+    // Four setup steps, then provider instructions for every connection, all
+    // permanently open: three connections put about 350 words of setup prose
+    // above the data on every visit. The order matters before the first
+    // connection exists; a connection's provider instructions matter until a
+    // signed delivery proves the provider side is configured.
+    $fixture = integrationsAccount();
+
+    $setupOrder = function (DOMXPath $xpath): ?DOMElement {
+        return $xpath->query('//details[summary[normalize-space(.)="'.__('integrations.connections.setup.heading').'"]]')->item(0);
+    };
+    $providerInstructions = function (DOMXPath $xpath, ExternalIssueProviderConnection $connection): ?DOMElement {
+        return $xpath->query('//*[@id="connection_'.$connection->id.'_webhook_settings_label"]/ancestor::details[1]')->item(0);
+    };
+    $page = fn (): DOMXPath => accountIntegrationsPageXpath((string) $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+
+    $xpath = $page();
+
+    expect($setupOrder($xpath))->not->toBeNull('the setup order is not a disclosure');
+
+    expect($setupOrder($xpath)->hasAttribute('open'))
+        ->toBeTrue('the setup order is collapsed before the first connection exists, when it is the next thing to do');
+
+    $unverified = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Engineering GitHub',
+        'provider' => 'github',
+    ]);
+    // A secret saved on our side proves nothing about the provider's side, so
+    // this one still needs the instructions.
+    $configured = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Platform GitLab',
+        'provider' => 'gitlab',
+        'credentials' => ['token' => 'token', 'webhook_secret' => 'secret'],
+    ]);
+    $verified = ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Ops Jira',
+        'provider' => 'jira',
+        'credentials' => ['token' => 'token', 'webhook_secret' => 'secret'],
+        'settings' => ['inbound_webhook' => ['verified' => true, 'event' => 'jira:issue_updated', 'status_code' => 202]],
+        'last_checked_at' => now()->subMinutes(3),
+    ]);
+
+    $xpath = $page();
+
+    expect($setupOrder($xpath)->hasAttribute('open'))
+        ->toBeFalse('the setup order stays open once connections exist, above the data on every visit');
+
+    expect($providerInstructions($xpath, $unverified))->not->toBeNull('provider instructions are not in a disclosure');
+
+    expect($providerInstructions($xpath, $unverified)->hasAttribute('open'))
+        ->toBeTrue('provider instructions are collapsed while the provider side is still unconfigured');
+
+    expect($providerInstructions($xpath, $configured)->hasAttribute('open'))
+        ->toBeTrue('provider instructions are collapsed once a secret is saved, before any signed delivery proved the provider side');
+
+    expect($providerInstructions($xpath, $verified)->hasAttribute('open'))
+        ->toBeFalse('provider instructions stay open after a signed delivery proved the provider side works');
+
+    // The instructions are inside the disclosure; the URL and the secret form
+    // they refer to are not.
+    $details = $providerInstructions($xpath, $unverified);
+
+    expect(str_contains($details->textContent, __('integrations.webhook.github_title')))->toBeTrue('the GitHub instructions left the disclosure')
+        ->and(str_contains($details->textContent, $unverified->inboundWebhookUrl()))->toBeFalse('the generated URL is hidden inside the disclosure')
+        ->and($xpath->query('.//form', $details)->length)->toBe(0, 'the webhook secret form is hidden inside the disclosure');
+});
