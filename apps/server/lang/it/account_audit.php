@@ -25,7 +25,7 @@ return [
     ],
 
     'filters' => [
-        'heading' => 'Filtri',
+        'region' => 'Filtra gli eventi del registro',
         'filtered' => 'Filtrato',
         'all' => 'Tutte le attività visibili',
         'action' => 'Azione',
@@ -34,7 +34,6 @@ return [
         'any_site' => 'Qualsiasi sito visibile',
         'search' => 'Cerca',
         'search_placeholder' => 'Autore, oggetto, sito, azione',
-        'log' => 'Registro attività',
         'apply' => 'Applica filtri',
         'clear' => 'Cancella filtri',
     ],

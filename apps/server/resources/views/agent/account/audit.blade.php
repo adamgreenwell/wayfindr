@@ -17,43 +17,45 @@
                 </div>
             </section>
 
-            <section class="section" aria-labelledby="audit-filters-heading">
-                <div class="section-header">
-                    <h2 id="audit-filters-heading">{{ __('account_audit.filters.heading') }}</h2>
-                    <span class="lede">{{ $auditAction || $auditSearch || $auditSiteId ? __('account_audit.filters.filtered') : __('account_audit.filters.all') }}</span>
+            {{-- The house filter bar (ADR 0014), as on alerts, conversations and
+                 tickets: it sits on the page above the list it filters rather
+                 than in a card of its own. It used to be built from the
+                 metadata DISPLAY grid, which needed a fourth cell for the
+                 buttons and filled it with a label that labelled nothing. --}}
+            <form class="wf-filters" method="GET" action="{{ route('dashboard.account.audit.index') }}" aria-label="{{ __('account_audit.filters.region') }}">
+                <div class="wf-filter">
+                    <label for="audit_action">{{ __('account_audit.filters.action') }}</label>
+                    <select id="audit_action" name="audit_action">
+                        <option value="">{{ __('account_audit.filters.any_action') }}</option>
+                        @foreach ($auditActions as $actionValue => $actionOption)
+                            <option value="{{ $actionValue }}" @if ($actionOption['language'] !== null) lang="{{ $actionOption['language'] }}" @endif @selected($auditAction === $actionValue)>{{ $actionOption['label'] }}</option>
+                        @endforeach
+                    </select>
                 </div>
-                <form class="section-form" method="GET" action="{{ route('dashboard.account.audit.index') }}">
-                    <div class="meta-grid">
-                        <div class="meta-item">
-                            <label class="meta-label" for="audit_action">{{ __('account_audit.filters.action') }}</label>
-                            <select id="audit_action" name="audit_action">
-                                <option value="">{{ __('account_audit.filters.any_action') }}</option>
-                                @foreach ($auditActions as $actionValue => $actionOption)
-                                    <option value="{{ $actionValue }}" @if ($actionOption['language'] !== null) lang="{{ $actionOption['language'] }}" @endif @selected($auditAction === $actionValue)>{{ $actionOption['label'] }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="meta-item">
-                            <label class="meta-label" for="audit_site">{{ __('account_audit.filters.site') }}</label>
-                            <select id="audit_site" name="audit_site">
-                                <option value="">{{ __('account_audit.filters.any_site') }}</option>
-                                @foreach ($auditSites as $site)
-                                    <option value="{{ $site->id }}" lang="" @selected($auditSiteId === $site->id)>{{ $site->name }}</option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="meta-item">
-                            <label class="meta-label" for="audit_search">{{ __('account_audit.filters.search') }}</label>
-                            <input id="audit_search" name="audit_search" type="search" value="{{ $auditSearch }}" @if ($auditSearch !== '') lang="" @endif placeholder="{{ __('account_audit.filters.search_placeholder') }}">
-                        </div>
-                        <div class="meta-item">
-                            <span class="meta-label">{{ __('account_audit.filters.log') }}</span>
-                            <button class="button" type="submit">{{ __('account_audit.filters.apply') }}</button>
-                            <a class="button secondary" href="{{ route('dashboard.account.audit.index') }}">{{ __('account_audit.filters.clear') }}</a>
-                        </div>
-                    </div>
-                </form>
-            </section>
+
+                <div class="wf-filter">
+                    <label for="audit_site">{{ __('account_audit.filters.site') }}</label>
+                    <select id="audit_site" name="audit_site">
+                        <option value="">{{ __('account_audit.filters.any_site') }}</option>
+                        @foreach ($auditSites as $site)
+                            <option value="{{ $site->id }}" lang="" @selected($auditSiteId === $site->id)>{{ $site->name }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
+                <div class="wf-filter wf-filter-search">
+                    <label for="audit_search">{{ __('account_audit.filters.search') }}</label>
+                    <input id="audit_search" name="audit_search" type="search" value="{{ $auditSearch }}" @if ($auditSearch !== '') lang="" @endif placeholder="{{ __('account_audit.filters.search_placeholder') }}">
+                </div>
+
+                <div class="wf-filter-actions">
+                    <button class="button" type="submit">{{ __('account_audit.filters.apply') }}</button>
+                    @if ($auditAction !== '' || $auditSearch !== '' || $auditSiteId !== null)
+                        <a class="button secondary" href="{{ route('dashboard.account.audit.index') }}">{{ __('account_audit.filters.clear') }}</a>
+                    @endif
+                    <span class="wf-filter-help">{{ $auditAction !== '' || $auditSearch !== '' || $auditSiteId !== null ? __('account_audit.filters.filtered') : __('account_audit.filters.all') }}</span>
+                </div>
+            </form>
 
             <section class="section" aria-labelledby="audit-events-heading">
                 <div class="section-header">

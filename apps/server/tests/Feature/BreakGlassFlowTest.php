@@ -33,6 +33,37 @@ function breakGlassFlowWorld(): array
     return compact('account', 'operator', 'site', 'visitor', 'conversation');
 }
 
+/**
+ * The element that holds the control with this form action or link target,
+ * as `tag.class`. Named for this file: Pest helpers are global.
+ */
+function breakGlassFlowActionContainer(string $html, string $target): string
+{
+    $document = new DOMDocument;
+    $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+    $control = (new DOMXPath($document))->query('//form[@action="'.$target.'"] | //a[@href="'.$target.'"]')?->item(0);
+
+    if (! $control instanceof DOMElement || ! $control->parentNode instanceof DOMElement) {
+        return 'missing';
+    }
+
+    return $control->parentNode->tagName.'.'.$control->parentNode->getAttribute('class');
+}
+
+/**
+ * `.management-link span` is display:block and outranks `.section-actions`
+ * (0,1,1 against 0,1,0), so the class alone is not the fix: a span carrying it
+ * still stacks its controls. Only a non-span container lets them sit in a row.
+ */
+function breakGlassFlowAssertActionsInOneRow(string $html, array $targets): void
+{
+    foreach ($targets as $name => $target) {
+        $container = breakGlassFlowActionContainer($html, $target);
+
+        expect($container)->toBe('div.section-actions', "the {$name} control sits in {$container}: `.compact-actions` has no rule and `.management-link span` blockifies any span, so the page's actions stack vertically instead of sitting in one row");
+    }
+}
+
 // --- Operator console ---------------------------------------------------------
 
 test('the operator console break-glass page renders the request form', function (): void {
@@ -705,6 +736,68 @@ test('an account admin revokes an active grant', function (): void {
         ->assertRedirect(route('dashboard.account.break-glass.index'));
 
     expect($grant->fresh()->status)->toBe(BreakGlassGrant::STATUS_CLOSED);
+});
+
+test('approve, deny and revoke sit in one row of actions on the account page', function (): void {
+    $w = breakGlassFlowWorld();
+    $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
+    $pending = BreakGlassGrant::factory()
+        ->scopedToConversation($w['conversation'])
+        ->create(['requester_id' => $w['operator']->id, 'account_id' => $w['account']->id]);
+    $active = BreakGlassGrant::factory()->activeFor($w['account'], $w['operator'])->create();
+
+    $html = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->getContent();
+
+    breakGlassFlowAssertActionsInOneRow($html, [
+        'approve' => route('dashboard.account.break-glass.approve', $pending),
+        'deny' => route('dashboard.account.break-glass.deny', $pending),
+        'revoke' => route('dashboard.account.break-glass.close', $active),
+    ]);
+});
+
+test('self-approve, open and close sit in one row of actions on the operator console', function (): void {
+    $w = breakGlassFlowWorld(); // the operator is the account's only owner, so self-approval is offered
+    $pending = BreakGlassGrant::factory()
+        ->scopedToConversation($w['conversation'])
+        ->create(['requester_id' => $w['operator']->id, 'account_id' => $w['account']->id]);
+    $active = BreakGlassGrant::factory()->activeFor($w['account'], $w['operator'])->create();
+
+    $html = (string) $this->actingAs($w['operator'])
+        ->get(route('operator.break-glass.index'))
+        ->assertOk()
+        ->getContent();
+
+    breakGlassFlowAssertActionsInOneRow($html, [
+        'self-approve' => route('operator.break-glass.approve', $pending),
+        'open' => route('operator.break-glass.show', $active),
+        'close' => route('operator.break-glass.close', $active),
+    ]);
+});
+
+test('the account operator access page empty states share one shape and its tab matches its heading', function (): void {
+    $w = breakGlassFlowWorld();
+    $admin = User::factory()->for($w['account'])->create(['account_role' => AccountRole::Admin]);
+
+    $document = new DOMDocument;
+    $document->loadHTML((string) $this->actingAs($admin)
+        ->get(route('dashboard.account.break-glass.index'))
+        ->assertOk()
+        ->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+    $xpath = new DOMXPath($document);
+
+    foreach (['pending', 'active', 'history'] as $state) {
+        $copy = __('operator_access.'.$state.'.empty');
+
+        expect($xpath->query('//p[@class="empty" and normalize-space(.)="'.$copy.'"]')?->length)
+            ->toBe(1, "the {$state} empty state is not the passive <p class=\"empty\"> the rest of the account pages use");
+    }
+
+    // The browser tab and the page heading name the same page in the same case.
+    expect(trim((string) $xpath->query('//title')?->item(0)?->textContent))
+        ->toBe(trim((string) $xpath->query('//h1')?->item(0)?->textContent), 'the document title and the <h1> disagree');
 });
 
 test('an old pending request never scrolls out behind newer history rows', function (): void {

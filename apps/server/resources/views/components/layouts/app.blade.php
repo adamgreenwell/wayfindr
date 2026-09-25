@@ -989,6 +989,17 @@
             color: var(--wf-muted);
         }
 
+        /* A filter bar standing between two cards belongs to the list below
+           it. Without these it sat 12px under the card above and 44px over the
+           list it filters, and read as part of the wrong one. */
+        .section + .wf-filters {
+            margin-top: 16px;
+        }
+
+        .wf-filters + .section {
+            margin-top: 0;
+        }
+
         .wf-queue-summary {
             margin: 0 0 var(--wf-space-3);
             font-size: 12.5px;
@@ -2086,6 +2097,25 @@
 
         .section-actions .lede {
             margin-top: 0;
+        }
+
+        /* One of several items listed inside a single .section card. Nesting a
+           .section there drew a bordered card 28px down inside the card that
+           lists it; items share their card's border and are ruled off from
+           each other instead. */
+        .section-item + .section-item {
+            border-top: 1px solid var(--border);
+        }
+
+        .section-item > .section-header {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .section-item-body {
+            display: grid;
+            gap: 14px;
+            padding: 14px 20px 20px;
         }
 
         .table-wrap {

@@ -13,11 +13,11 @@
         <div class="meta-grid">
             <div class="meta-item">
                 <span class="meta-label">{{ __('two_factor.policy.enabled_label') }}</span>
-                <span class="meta-value">{{ $enabledCount }}</span>
+                <span class="meta-value">{{ \App\Support\ReaderNumber::count($enabledCount) }}</span>
             </div>
             <div class="meta-item">
                 <span class="meta-label">{{ __('two_factor.policy.missing_label') }}</span>
-                <span class="meta-value">{{ $missingCount }}</span>
+                <span class="meta-value">{{ \App\Support\ReaderNumber::count($missingCount) }}</span>
             </div>
         </div>
     </section>
@@ -139,7 +139,7 @@
                             @foreach ($oidcConnection->roleMappings as $mapping)
                                 <tr>
                                     <td><code lang="">{{ $mapping->claim_value }}</code></td>
-                                    <td>
+                                    <td @if ($mapping->customRole) lang="" @endif>
                                         {{ $mapping->customRole?->name ?? __('oidc.provisioning.roles.'.$mapping->built_in_role?->value) }}
                                     </td>
                                     <td>
@@ -169,7 +169,7 @@
                         <option value="built_in:agent" @selected(old('role_target') === 'built_in:agent')>{{ __('oidc.provisioning.roles.agent') }}</option>
                         <option value="built_in:admin" @selected(old('role_target') === 'built_in:admin')>{{ __('oidc.provisioning.roles.admin') }}</option>
                         @foreach ($oidcCustomRoles as $role)
-                            <option value="custom:{{ $role->id }}" @selected(old('role_target') === 'custom:'.$role->id)>{{ $role->name }}</option>
+                            <option value="custom:{{ $role->id }}" @selected(old('role_target') === 'custom:'.$role->id) lang="">{{ $role->name }}</option>
                         @endforeach
                     </select>
                     @error('role_target')<p class="field-error">{{ $message }}</p>@enderror

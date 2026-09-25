@@ -13,7 +13,7 @@
  */
 
 return [
-    'document_title' => 'Account Audit',
+    'document_title' => 'Account audit',
     'title' => 'Account audit',
     'subtitle' => 'Search account-level activity without exposing raw event metadata.',
     'back' => 'Back to account',
@@ -28,7 +28,7 @@ return [
     ],
 
     'filters' => [
-        'heading' => 'Filters',
+        'region' => 'Filter audit events',
         'filtered' => 'Filtered',
         'all' => 'All visible activity',
         'action' => 'Action',
@@ -37,7 +37,6 @@ return [
         'any_site' => 'Any visible site',
         'search' => 'Search',
         'search_placeholder' => 'Actor, subject, site, action',
-        'log' => 'Audit log',
         'apply' => 'Apply filters',
         'clear' => 'Clear filters',
     ],

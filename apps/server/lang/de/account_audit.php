@@ -25,7 +25,7 @@ return [
     ],
 
     'filters' => [
-        'heading' => 'Filter',
+        'region' => 'Auditereignisse filtern',
         'filtered' => 'Gefiltert',
         'all' => 'Alle sichtbaren Aktivitäten',
         'action' => 'Aktion',
@@ -34,7 +34,6 @@ return [
         'any_site' => 'Beliebige sichtbare Website',
         'search' => 'Suchen',
         'search_placeholder' => 'Ausführende Person, Gegenstand, Website, Aktion',
-        'log' => 'Auditprotokoll',
         'apply' => 'Filter anwenden',
         'clear' => 'Filter löschen',
     ],

@@ -34,9 +34,19 @@ final class AgentAccountCustomRoleController extends Controller
         $actor = $request->user();
         $this->authorizeRoleManagement($actor);
 
+        // Each role's edit form is collapsed, so the page has to say which one
+        // opens. A failed save names its role in the flashed input -- every
+        // update error is keyed `name` or `permissions`, the same keys the
+        // create form uses, so without this the message would render under the
+        // create form and the role it belongs to would stay shut. A successful
+        // create or update already redirects back naming the role in `?role=`.
+        $failedRoleId = $this->roleIdFrom($request->old('role_id'));
+
         return view('agent.account.roles', [
             'account' => $actor->account()->firstOrFail(),
             'agent' => $actor,
+            'failedRoleId' => $failedRoleId,
+            'openRoleId' => $failedRoleId ?? $this->roleIdFrom($request->query('role')),
             'permissionGroups' => $this->permissionGroups(),
             'roles' => CustomRole::query()
                 ->where('account_id', $actor->account_id)
@@ -242,6 +252,15 @@ final class AgentAccountCustomRoleController extends Controller
     private function throwDuplicateNameValidation(): never
     {
         throw ValidationException::withMessages(['name' => __('account_roles.errors.duplicate')]);
+    }
+
+    /**
+     * Only ever compared with the ids of roles already loaded for this account,
+     * so it chooses which form renders open and nothing else.
+     */
+    private function roleIdFrom(mixed $value): ?int
+    {
+        return is_string($value) && ctype_digit($value) ? (int) $value : null;
     }
 
     private function roleForActor(User $actor, string $roleId, bool $lock = false): CustomRole
