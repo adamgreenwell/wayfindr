@@ -2088,6 +2088,25 @@
             margin-top: 0;
         }
 
+        /* One of several items listed inside a single .section card. Nesting a
+           .section there drew a bordered card 28px down inside the card that
+           lists it; items share their card's border and are ruled off from
+           each other instead. */
+        .section-item + .section-item {
+            border-top: 1px solid var(--border);
+        }
+
+        .section-item > .section-header {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .section-item-body {
+            display: grid;
+            gap: 14px;
+            padding: 14px 20px 20px;
+        }
+
         .table-wrap {
             overflow-x: auto;
         }

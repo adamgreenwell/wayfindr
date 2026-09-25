@@ -36,6 +36,22 @@ function roleArticleMarkup(string $html, int $roleId): string
     return $end === false ? substr($html, $start) : substr($html, $start, $end - $start);
 }
 
+function customRoleManagementXpath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+
+    return new DOMXPath($document);
+}
+
+/** How many open or closed disclosures hold this role's edit form. */
+function customRoleManagementEditForms(DOMXPath $xpath, CustomRole $role, bool $open): int
+{
+    $state = $open ? '@open' : 'not(@open)';
+
+    return (int) $xpath->query('//details['.$state.']//form[@action="'.route('dashboard.account.roles.update', $role).'"]')?->length;
+}
+
 test('owners can create update and delete an unassigned custom role with audit history', function (): void {
     $account = Account::factory()->create();
     $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
@@ -365,6 +381,130 @@ test('the roles list disables delete for a role an sso claim still maps to', fun
     // The control group: without a mapping the button stays live. Without this
     // half the test would pass against a view that disabled every delete.
     expect($freeBlock)->not->toContain('disabled');
+});
+
+test('an account with no custom roles is pointed at the create form', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $xpath = customRoleManagementXpath((string) $this->actingAs($owner)
+        ->get(route('dashboard.account.roles.index'))
+        ->assertOk()
+        ->getContent());
+
+    expect($xpath->query('//div[contains(concat(" ", @class, " "), " empty-state ")][strong[normalize-space(.)="'.__('account_roles.existing.empty').'"]]//a[@href="#create-role-heading"]')?->length)
+        ->toBe(1, 'the first-run roles state carries no action to the create form')
+        ->and($xpath->query('//h2[@id="create-role-heading"]')?->length)
+        ->toBe(1, 'the empty-state action points at an id that does not exist');
+});
+
+test('the roles roster lists each role as one line, its permissions collapsed', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $roles = collect(['Auditor', 'Support lead'])->map(fn (string $name): CustomRole => CustomRole::factory()
+        ->for($account)
+        ->create(['name' => $name, 'name_key' => strtolower($name)]));
+
+    $xpath = customRoleManagementXpath((string) $this->actingAs($owner)
+        ->get(route('dashboard.account.roles.index'))
+        ->assertOk()
+        ->getContent());
+
+    expect($xpath->query('//article[contains(concat(" ", normalize-space(@class), " "), " section ")]')?->length)
+        ->toBe(0, 'a role renders as a .section card nested inside the card that lists it');
+
+    foreach ($roles as $role) {
+        expect($xpath->query('//article[@id="role-'.$role->id.'" and @class="section-item"]')?->length)
+            ->toBe(1, "{$role->name} is not an item of the roles card");
+        expect(customRoleManagementEditForms($xpath, $role, open: false))
+            ->toBe(1, "{$role->name}'s nineteen permissions render expanded instead of behind a disclosure");
+
+        // Collapsing the edit form must not take the role's name or its delete
+        // control with it.
+        expect($xpath->query('//article[@id="role-'.$role->id.'"]//h3[not(ancestor::details) and normalize-space(.)="'.$role->name.'"]')?->length)
+            ->toBe(1, "{$role->name}'s name is hidden inside the disclosure")
+            ->and($xpath->query('//form[@action="'.route('dashboard.account.roles.destroy', $role).'" and not(ancestor::details)]')?->length)
+            ->toBe(1, "{$role->name}'s delete control is hidden inside the disclosure");
+    }
+});
+
+test('the role a save returns to opens its edit form and no other', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $auditor = CustomRole::factory()->for($account)->create(['name' => 'Auditor', 'name_key' => 'auditor']);
+    $lead = CustomRole::factory()->for($account)->create(['name' => 'Support lead', 'name_key' => 'support lead']);
+
+    $xpath = customRoleManagementXpath((string) $this->actingAs($owner)
+        ->followingRedirects()
+        ->put(route('dashboard.account.roles.update', $auditor), [
+            'name' => 'Auditor',
+            'permissions' => [AccountPermission::ViewAudit->value],
+        ])
+        ->assertOk()
+        ->getContent());
+
+    expect(customRoleManagementEditForms($xpath, $auditor, open: true))
+        ->toBe(1, 'the role just saved came back collapsed, so its saved permissions are out of sight')
+        ->and(customRoleManagementEditForms($xpath, $lead, open: false))
+        ->toBe(1, 'a role nobody touched opened too');
+});
+
+test('a failed role edit reopens that role with its error and what was typed, and leaves the create form alone', function (): void {
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $auditor = CustomRole::factory()->for($account)->create([
+        'name' => 'Auditor',
+        'name_key' => 'auditor',
+        'permissions' => [AccountPermission::ViewAudit->value],
+    ]);
+    $lead = CustomRole::factory()->for($account)->create(['name' => 'Support lead', 'name_key' => 'support lead']);
+
+    $auditorForm = '//form[@action="'.route('dashboard.account.roles.update', $auditor).'"]';
+    $createForm = '//form[@action="'.route('dashboard.account.roles.store').'"]';
+
+    // Submit what the rendered form carries, as a browser would. The hidden
+    // field is how the page learns which role a failed save came from.
+    $hidden = [];
+
+    foreach (customRoleManagementXpath((string) $this->actingAs($owner)
+        ->get(route('dashboard.account.roles.index'))
+        ->getContent())->query($auditorForm.'//input[@type="hidden"]') ?? [] as $input) {
+        $hidden[$input->getAttribute('name')] = $input->getAttribute('value');
+    }
+
+    // Renaming onto an existing name fails on `name` -- the key the create form
+    // renders its own errors under.
+    $xpath = customRoleManagementXpath((string) $this->actingAs($owner)
+        ->from(route('dashboard.account.roles.index'))
+        ->followingRedirects()
+        ->put(route('dashboard.account.roles.update', $auditor), [
+            ...$hidden,
+            'name' => 'Support lead',
+            'permissions' => [AccountPermission::ViewAudit->value, AccountPermission::ViewReports->value],
+        ])
+        ->assertOk()
+        ->getContent());
+
+    expect(customRoleManagementEditForms($xpath, $auditor, open: true))
+        ->toBe(1, 'the failed edit left its role collapsed, hiding the error so the change looks silently lost')
+        ->and(customRoleManagementEditForms($xpath, $lead, open: false))
+        ->toBe(1, 'a role nobody touched opened too')
+        ->and($xpath->query($auditorForm.'//p[@class="field-error" and normalize-space(.)="'.__('account_roles.errors.duplicate').'"]')?->length)
+        ->toBe(1, 'the edit error does not render inside the role it belongs to')
+        ->and($xpath->query($createForm.'//p[@class="field-error"]')?->length)
+        ->toBe(0, 'the edit error renders under the create form')
+        ->and($xpath->query($createForm.'//input[@name="name" and @value!=""]')?->length)
+        ->toBe(0, 'the create form is prefilled with the failed edit')
+        ->and($xpath->query($createForm.'//input[@type="checkbox" and @checked]')?->length)
+        ->toBe(0, 'the create form is ticked with the failed edit')
+        ->and($xpath->query($auditorForm.'//input[@name="name" and @value="Support lead"]')?->length)
+        ->toBe(1, 'the role form lost the name that was typed')
+        ->and($xpath->query($auditorForm.'//input[@name="name" and @autofocus]')?->length)
+        ->toBe(1, 'the failed role takes no focus, so the page reloads at the top with its error out of sight')
+        ->and($xpath->query($auditorForm.'//input[@type="checkbox" and @checked and @value="'.AccountPermission::ViewReports->value.'"]')?->length)
+        ->toBe(1, 'the role form lost the permission that was ticked');
+
+    expect($auditor->fresh()->name)->toBe('Auditor');
 });
 
 test('site management permission cannot be removed from a sites only assigned manager', function (): void {
