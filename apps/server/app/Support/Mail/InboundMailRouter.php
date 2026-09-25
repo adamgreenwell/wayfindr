@@ -124,10 +124,11 @@ final class InboundMailRouter
         // yet -- or act on a message a rollback then removed.
         //
         // Failures here are logged and swallowed, and that is the difference
-        // between a late notification and a duplicated conversation. These
-        // listeners are synchronous -- `ConversationMessageCreated` is
-        // `ShouldBroadcastNow` -- so an unreachable Reverb or a refused SMTP
-        // connection throws PAST the commit. Letting it escape answers the
+        // between a missed notification and a duplicated conversation. These
+        // listeners are synchronous, so a refused SMTP connection throws PAST
+        // the commit. (An unreachable Reverb no longer does: the event is
+        // `ShouldRescue`, because the broadcast runs before the listeners and
+        // used to skip the agent alert entirely.) Letting it escape answers the
         // provider with a 5xx for a message that is already stored, and the
         // provider then redelivers it. Mail carrying no `Message-Id` has
         // nothing for `alreadyAccepted()` to match on, so the redelivery is

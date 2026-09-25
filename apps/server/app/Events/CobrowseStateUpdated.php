@@ -11,10 +11,11 @@ use App\Support\CobrowseTransportPressure;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Broadcasting\ShouldRescue;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class CobrowseStateUpdated implements ShouldBroadcastNow
+class CobrowseStateUpdated implements ShouldBroadcastNow, ShouldRescue
 {
     use Dispatchable;
     use InteractsWithSockets;
