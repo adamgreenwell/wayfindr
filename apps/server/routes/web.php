@@ -258,9 +258,14 @@ Route::middleware(['auth', 'auth.session', EnsureAgentIsActive::class, EnsureTwo
     Route::post('/dashboard/account/reply-templates', [AgentReplyTemplateController::class, 'store'])
         ->name('dashboard.account.reply-templates.store');
     Route::put('/dashboard/account/reply-templates/{replyTemplate}', [AgentReplyTemplateController::class, 'update'])
+        ->whereNumber('replyTemplate')
         ->name('dashboard.account.reply-templates.update');
     Route::post('/dashboard/account/reply-templates/{replyTemplate}/archive', [AgentReplyTemplateController::class, 'archive'])
+        ->whereNumber('replyTemplate')
         ->name('dashboard.account.reply-templates.archive');
+    Route::post('/dashboard/account/reply-templates/{replyTemplate}/restore', [AgentReplyTemplateController::class, 'restore'])
+        ->whereNumber('replyTemplate')
+        ->name('dashboard.account.reply-templates.restore');
     Route::get('/dashboard/account/automation-rules', [AgentAutomationRuleController::class, 'index'])
         ->name('dashboard.account.automation-rules.index');
     Route::get('/dashboard/account/automation-rules/new', [AgentAutomationRuleController::class, 'create'])

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Visitor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
@@ -81,8 +82,12 @@ test('reply template management guides admins before templates exist', function 
     $this->actingAs($admin)
         ->get('/dashboard/account/reply-templates')
         ->assertOk()
-        ->assertSee('No managed reply templates yet.')
-        ->assertSee('Built-in helpers stay available in reply composers until your team adds account templates.')
+        ->assertSee('No reply templates yet.')
+        // Still says what an empty page does NOT mean: the composer falls back
+        // to the built-in helpers until an active account template exists.
+        ->assertSee('Add a template when agents keep rewriting the same answer; until then, reply composers offer the built-in helpers.')
+        // "Managed" was the code's word, not the reader's.
+        ->assertDontSee('No managed reply templates yet.')
         ->assertSee('Create the first template')
         ->assertSee('href="#new-reply-template-heading"', false);
 });
@@ -136,9 +141,16 @@ test('reply template management stays inside account admin boundaries', function
         ->post("/dashboard/account/reply-templates/{$otherTemplate->id}/archive")
         ->assertNotFound();
 
+    $otherTemplate->forceFill(['is_active' => false])->save();
+
+    $this->actingAs($admin)
+        ->post("/dashboard/account/reply-templates/{$otherTemplate->id}/restore")
+        ->assertNotFound();
+
     $this->assertDatabaseHas('reply_templates', [
         'id' => $otherTemplate->id,
         'name' => 'Other account helper',
+        'is_active' => false,
     ]);
 });
 
@@ -152,10 +164,13 @@ test('reply template mutations reauthorize a stale custom role under the account
         'account_role' => AccountRole::Agent,
         'custom_role_id' => $knowledgeRole->id,
     ]);
+    // Restoring an ACTIVE template changes nothing, so a leaked restore would
+    // pass unseen; that case starts from an archived one.
+    $initiallyActive = $action !== 'restore';
     $template = ReplyTemplate::factory()->for($account)->create([
         'name' => 'Original helper',
         'body' => 'Original reply body.',
-        'is_active' => true,
+        'is_active' => $initiallyActive,
     ]);
 
     $this->actingAs($manager);
@@ -172,6 +187,7 @@ test('reply template mutations reauthorize a stale custom role under the account
             'body' => 'This update must not land.',
         ]),
         'archive' => $this->post(route('dashboard.account.reply-templates.archive', $template)),
+        'restore' => $this->post(route('dashboard.account.reply-templates.restore', $template)),
     };
 
     $action === 'create'
@@ -181,8 +197,8 @@ test('reply template mutations reauthorize a stale custom role under the account
     expect(ReplyTemplate::query()->count())->toBe(1)
         ->and($template->fresh()->name)->toBe('Original helper')
         ->and($template->fresh()->body)->toBe('Original reply body.')
-        ->and($template->fresh()->is_active)->toBeTrue();
-})->with(['create', 'update', 'archive']);
+        ->and($template->fresh()->is_active)->toBe($initiallyActive, "a stale role's {$action} changed whether the template is active");
+})->with(['create', 'update', 'archive', 'restore']);
 
 test('reply template management rejects blank trimmed input', function (): void {
     $admin = User::factory()->for(Account::factory())->create([
@@ -508,3 +524,364 @@ test('an agent who reads German gets the page in German', function (): void {
         ->assertDontSee('Reply templates')
         ->assertDontSee('Template standards');
 });
+
+test('the row controls reach a German agent in German', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+    ReplyTemplate::factory()->for($account)->create(['name' => 'Rückfrage']);
+    ReplyTemplate::factory()->for($account)->archived()->create(['name' => 'Alte Hilfe']);
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.reply-templates.index'))
+        ->assertOk()
+        ->assertSeeText('„Rückfrage“ bearbeiten')
+        ->assertSee('Archivieren')
+        ->assertSee('Wiederherstellen')
+        ->assertDontSee('Edit template')
+        ->assertDontSee('>Restore<', false);
+});
+
+test('each template row keeps its editor folded behind a disclosure', function (): void {
+    // The Body column already shows the text. The editor used to be a full,
+    // padded form in every row -- twenty templates were twenty stacked
+    // editors -- so it waits behind one line until someone opens it.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $template = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Billing follow-up',
+        'body' => str_repeat('I will check the billing details and follow up shortly. ', 4),
+    ]);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+
+    $disclosure = replyTemplateManagementElement(
+        $xpath,
+        '//td/details[.//form[@action="'.route('dashboard.account.reply-templates.update', $template).'"]]',
+    );
+    $summary = replyTemplateManagementElement($xpath, '//td/details/summary');
+
+    expect($disclosure->hasAttribute('open'))->toBeFalse('the row editor is open before anyone asked for it')
+        ->and(trim($summary->textContent))->toBe('Edit “Billing follow-up”')
+        // The scannable preview stays.
+        ->and($xpath->query('//td[normalize-space(.)="'.trim(Str::limit($template->body, 120)).'"]')->length)
+        ->toBe(1, 'the truncated body preview is gone');
+});
+
+test('every template edit form says which template it edits', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $templates = ReplyTemplate::factory()->for($account)->count(2)->sequence(
+        ['name' => 'Billing follow-up'],
+        ['name' => 'Shipping update'],
+    )->create();
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+
+    foreach ($templates as $template) {
+        replyTemplateManagementElement(
+            $xpath,
+            '//form[@action="'.route('dashboard.account.reply-templates.update', $template).'"]//input[@type="hidden" and @name="editing_template" and @value="'.$template->id.'"]',
+        );
+    }
+});
+
+test('a rejected edit comes back open, to the row that sent it and nowhere else', function (): void {
+    // Every edit form and the create form post the same `name` and `body`.
+    // Before the rows said which one they were, a rejected edit came back as a
+    // detached message at the top of the page with the rejected values
+    // painted into the create form and EVERY row -- so a Save on any other
+    // row sent them as that row's content.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $edited = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Billing follow-up',
+        'body' => 'I will check the billing details.',
+    ]);
+    $bystander = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Shipping update',
+        'body' => 'Your parcel is on its way.',
+    ]);
+
+    $html = $this->actingAs($admin)
+        ->from(route('dashboard.account.reply-templates.index'))
+        ->followingRedirects()
+        ->put(route('dashboard.account.reply-templates.update', $edited), [
+            'editing_template' => (string) $edited->id,
+            'name' => 'Billing status',
+            'body' => '',
+        ])
+        ->assertOk()
+        ->getContent();
+
+    $xpath = replyTemplateManagementXPath($html);
+    $editedDisclosure = replyTemplateManagementElement($xpath, '//details[.//form[@action="'.route('dashboard.account.reply-templates.update', $edited).'"]]');
+    $bystanderDisclosure = replyTemplateManagementElement($xpath, '//details[.//form[@action="'.route('dashboard.account.reply-templates.update', $bystander).'"]]');
+    $name = replyTemplateManagementElement($xpath, '//input[@id="reply-template-'.$edited->id.'-name"]');
+    $body = replyTemplateManagementElement($xpath, '//textarea[@id="reply-template-'.$edited->id.'-body"]');
+    replyTemplateManagementElement($xpath, '//p[@id="reply-template-'.$edited->id.'-body-error"]');
+    $otherName = replyTemplateManagementElement($xpath, '//input[@id="reply-template-'.$bystander->id.'-name"]');
+    $otherBody = replyTemplateManagementElement($xpath, '//textarea[@id="reply-template-'.$bystander->id.'-body"]');
+    $createName = replyTemplateManagementElement($xpath, '//input[@id="new-template-name"]');
+    $createBody = replyTemplateManagementElement($xpath, '//textarea[@id="new-template-body"]');
+
+    expect($editedDisclosure->hasAttribute('open'))->toBeTrue('the failing row came back folded, hiding its own error')
+        ->and($bystanderDisclosure->hasAttribute('open'))->toBeFalse('a row that was not submitted opened')
+        ->and($name->getAttribute('value'))->toBe('Billing status', 'the failing row lost what the agent typed')
+        ->and($name->hasAttribute('aria-invalid'))->toBeFalse('a valid field in the failing row is marked invalid')
+        ->and($body->getAttribute('aria-invalid'))->toBe('true', 'the failing field is not marked invalid')
+        ->and($body->getAttribute('aria-describedby'))->toBe('reply-template-'.$edited->id.'-body-error', 'the failing field is not described by its message')
+        ->and($body->hasAttribute('autofocus'))->toBeTrue('the reloaded page does not open on the failing field')
+        ->and($otherName->getAttribute('value'))->toBe('Shipping update', 'the rejected edit was painted into another row')
+        ->and(trim($otherBody->textContent))->toBe('Your parcel is on its way.', 'the rejected edit blanked another row')
+        ->and($otherBody->hasAttribute('aria-invalid'))->toBeFalse('a row that was not submitted is marked invalid')
+        ->and($createName->getAttribute('value'))->toBe('', 'the rejected edit was painted into the create form')
+        ->and($createBody->hasAttribute('aria-invalid'))->toBeFalse('the create form is marked invalid for an edit')
+        ->and($xpath->query('//p[contains(@class, "field-error")]')->length)->toBe(1, 'the message is printed more than once');
+});
+
+test('a rejected create comes back to the create form and leaves every row alone', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $existing = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Billing follow-up',
+        'body' => 'I will check the billing details.',
+    ]);
+
+    $html = $this->actingAs($admin)
+        ->from(route('dashboard.account.reply-templates.index'))
+        ->followingRedirects()
+        ->post(route('dashboard.account.reply-templates.store'), [
+            'name' => '',
+            'body' => '',
+        ])
+        ->assertOk()
+        ->getContent();
+
+    $xpath = replyTemplateManagementXPath($html);
+    $createName = replyTemplateManagementElement($xpath, '//input[@id="new-template-name"]');
+    $createBody = replyTemplateManagementElement($xpath, '//textarea[@id="new-template-body"]');
+    replyTemplateManagementElement($xpath, '//p[@id="new-template-name-error"]');
+    replyTemplateManagementElement($xpath, '//p[@id="new-template-body-error"]');
+    $rowName = replyTemplateManagementElement($xpath, '//input[@id="reply-template-'.$existing->id.'-name"]');
+    $rowBody = replyTemplateManagementElement($xpath, '//textarea[@id="reply-template-'.$existing->id.'-body"]');
+    $rowDisclosure = replyTemplateManagementElement($xpath, '//details[.//form[@action="'.route('dashboard.account.reply-templates.update', $existing).'"]]');
+
+    expect($createName->getAttribute('aria-invalid'))->toBe('true', 'the create name is not marked invalid')
+        ->and($createName->getAttribute('aria-describedby'))->toBe('new-template-name-error', 'the create name is not described by its message')
+        ->and($createBody->getAttribute('aria-invalid'))->toBe('true', 'the create body is not marked invalid')
+        ->and($createBody->getAttribute('aria-describedby'))->toBe('new-template-body-error', 'the create body is not described by its message')
+        // Two invalid fields, one focus: the first of them.
+        ->and($createName->hasAttribute('autofocus'))->toBeTrue('the reloaded page does not open on the first failing field')
+        ->and($createBody->hasAttribute('autofocus'))->toBeFalse('two fields claim the page focus')
+        ->and($rowName->getAttribute('value'))->toBe('Billing follow-up', 'the rejected create was painted into a row')
+        ->and(trim($rowBody->textContent))->toBe('I will check the billing details.', 'the rejected create blanked a row')
+        ->and($rowName->hasAttribute('aria-invalid'))->toBeFalse('a row is marked invalid for a create')
+        ->and($rowDisclosure->hasAttribute('open'))->toBeFalse('a row opened for a create');
+});
+
+test('an archived template can be restored, and archiving is not styled as deletion', function (): void {
+    // Archiving keeps the record and only takes the template out of the reply
+    // helpers -- the same kind of step as unpublishing an article. It was a
+    // danger button and one-way, with a working Save form on a row nobody
+    // could bring back.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $active = ReplyTemplate::factory()->for($account)->create(['name' => 'Billing follow-up']);
+    $archived = ReplyTemplate::factory()->for($account)->archived()->create(['name' => 'Old helper']);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+
+    $archive = replyTemplateManagementElement($xpath, '//form[@action="'.route('dashboard.account.reply-templates.archive', $active).'"]//button');
+    $restore = replyTemplateManagementElement($xpath, '//form[@action="'.route('dashboard.account.reply-templates.restore', $archived).'"]//button');
+
+    expect($archive->getAttribute('class'))->toBe('button secondary', 'archiving is styled as something other than a reversible step')
+        ->and($restore->getAttribute('class'))->toBe('button secondary')
+        ->and(trim($restore->textContent))->toBe('Restore')
+        ->and($xpath->query('//form[@action="'.route('dashboard.account.reply-templates.restore', $active).'"]')->length)
+        ->toBe(0, 'an active template offers Restore')
+        ->and($xpath->query('//form[@action="'.route('dashboard.account.reply-templates.archive', $archived).'"]')->length)
+        ->toBe(0, 'an archived template offers Archive');
+
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.reply-templates.index'))
+        ->post(route('dashboard.account.reply-templates.restore', $archived))
+        ->assertRedirect(route('dashboard.account.reply-templates.index'))
+        ->assertSessionHas('status', 'reply_templates.flash.restored');
+
+    expect($archived->fresh()->is_active)->toBeTrue('restoring did not bring the template back')
+        ->and($active->fresh()->is_active)->toBeTrue();
+
+    $this->actingAs($admin)
+        ->get(route('dashboard.account.reply-templates.index'))
+        ->assertOk()
+        ->assertSee('Reply template restored.');
+});
+
+test('template names and bodies are marked as account data, not dashboard copy', function (): void {
+    // The composer already language-resets the same name and body
+    // (ReplyTemplateOptions::forAgent); the page that manages them has to
+    // agree.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create([
+        'account_role' => AccountRole::Admin,
+        'locale' => 'de',
+    ]);
+    $template = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Billing follow-up',
+        'body' => 'I will check the billing details.',
+    ]);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+
+    $name = replyTemplateManagementElement($xpath, '//input[@id="reply-template-'.$template->id.'-name"]');
+    $body = replyTemplateManagementElement($xpath, '//textarea[@id="reply-template-'.$template->id.'-body"]');
+
+    expect($xpath->query('//td/strong[@lang="" and normalize-space(.)="Billing follow-up"]')->length)
+        ->toBe(1, 'the template name is not marked as account data')
+        ->and($xpath->query('//td[@lang="" and normalize-space(.)="I will check the billing details."]')->length)
+        ->toBe(1, 'the body preview is not marked as account data')
+        ->and($name->hasAttribute('lang') && $name->getAttribute('lang') === '')
+        ->toBeTrue('the name field, whose value is account data, is not marked as such')
+        ->and($body->hasAttribute('lang') && $body->getAttribute('lang') === '')
+        ->toBeTrue('the body field, whose value is account data, is not marked as such');
+});
+
+test('explanatory ledes sit under their headings, and the count stays on the right', function (): void {
+    // `.section-header` is a space-between flex row. A lede that is the h2's
+    // SIBLING is pushed to the far edge -- right for a count, wrong for a
+    // sentence that explains the heading it belongs to.
+    $admin = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Admin]);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+
+    $header = 'div[contains(concat(" ", normalize-space(@class), " "), " section-header ")]';
+
+    foreach (['reply-template-standards-heading', 'new-reply-template-heading'] as $heading) {
+        expect($xpath->query('//'.$header.'/div[h2[@id="'.$heading.'"]]/p[@class="lede"]')->length)
+            ->toBe(1, "the {$heading} lede is not under its heading");
+    }
+
+    expect($xpath->query('//'.$header.'[h2[@id="reply-templates-heading"]]/span[@class="lede"]')->length)
+        ->toBe(1, 'the template count left the right-hand slot');
+});
+
+function replyTemplateManagementXPath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+
+    return new DOMXPath($document);
+}
+
+/**
+ * The one element a query names. Failing on a count of zero OR two says the
+ * query is wrong before any attribute assertion can pass on the wrong node.
+ */
+function replyTemplateManagementElement(DOMXPath $xpath, string $query): DOMElement
+{
+    $nodes = $xpath->query($query);
+
+    expect($nodes === false ? 0 : $nodes->length)->toBe(1, "expected exactly one element for {$query}");
+
+    return $nodes->item(0);
+}
+
+test('restoring a reply template stays inside the same boundaries as archiving it', function (): void {
+    $account = Account::factory()->create();
+    $otherAccount = Account::factory()->create();
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+    $outsider = User::factory()->for($otherAccount)->create(['account_role' => AccountRole::Admin]);
+    $archived = ReplyTemplate::factory()->for($account)->create(['is_active' => false]);
+
+    $this->actingAs($outsider)
+        ->post(route('dashboard.account.reply-templates.restore', $archived))
+        ->assertNotFound();
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.account.reply-templates.restore', $archived))
+        ->assertNotFound();
+
+    expect($archived->fresh()->is_active)
+        ->toBeFalse('A reply template was restored by someone who cannot manage this account\'s knowledge.');
+});
+
+test('a row discriminator sent as an array still lands on the page, not a 500', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $template = ReplyTemplate::factory()->for($account)->create();
+
+    // Laravel flashes the whole request on a validation redirect, so a crafted
+    // `editing_template[]` comes back through old() as an array.
+    $this->actingAs($admin)
+        ->from(route('dashboard.account.reply-templates.index'))
+        ->followingRedirects()
+        ->put(route('dashboard.account.reply-templates.update', $template), [
+            'editing_template' => [(string) $template->id],
+            'name' => 'Billing status',
+            'body' => '',
+        ])
+        ->assertOk();
+});
+
+test('each template editor is named for its own row', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    ReplyTemplate::factory()->for($account)->create(['name' => 'Billing follow-up']);
+    ReplyTemplate::factory()->for($account)->create(['name' => 'Shipping update']);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+    $summaries = collect(iterator_to_array($xpath->query('//td/details/summary')))
+        ->map(fn (DOMNode $summary): string => trim($summary->textContent))
+        ->all();
+
+    expect($summaries)->toEqualCanonicalizing(['Edit “Billing follow-up”', 'Edit “Shipping update”'], 'every row editor has the same accessible name, so a screen reader cannot tell them apart')
+        ->and($xpath->query('//td/details/summary/span[@lang=""]')->length)->toBe(2, 'the template name inside the translated label does not keep its own language');
+});
+
+test('archive and restore controls name the template they act on', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $active = ReplyTemplate::factory()->for($account)->create(['name' => 'Billing follow-up']);
+    $archived = ReplyTemplate::factory()->for($account)->archived()->create(['name' => 'Shipping update']);
+
+    $xpath = replyTemplateManagementXPath(
+        $this->actingAs($admin)->get(route('dashboard.account.reply-templates.index'))->assertOk()->getContent(),
+    );
+    $archive = replyTemplateManagementElement($xpath, '//form[@action="'.route('dashboard.account.reply-templates.archive', $active).'"]//button');
+    $restore = replyTemplateManagementElement($xpath, '//form[@action="'.route('dashboard.account.reply-templates.restore', $archived).'"]//button');
+
+    expect($archive->getAttribute('aria-label'))->toBe('Archive “Billing follow-up”', 'every Archive button has the same accessible name')
+        ->and($restore->getAttribute('aria-label'))->toBe('Restore “Shipping update”', 'every Restore button has the same accessible name')
+        // Label in name: the visible word is inside the accessible name, so
+        // voice control still finds the button by what it shows.
+        ->and(str_contains($restore->getAttribute('aria-label'), trim($restore->textContent)))->toBeTrue();
+});
+
+test('a malformed reply template id is a 404, not a database error', function (string $method, string $suffix): void {
+    // Without a numeric constraint the route matches, and PostgreSQL refuses to
+    // compare the string with a bigint key while binding the model.
+    $admin = User::factory()->for(Account::factory())->create(['account_role' => AccountRole::Admin]);
+
+    $this->actingAs($admin)
+        ->call($method, '/dashboard/account/reply-templates/not-a-number'.$suffix, ['name' => 'x', 'body' => 'y'])
+        ->assertNotFound();
+})->with([
+    'update' => ['PUT', ''],
+    'archive' => ['POST', '/archive'],
+    'restore' => ['POST', '/restore'],
+]);

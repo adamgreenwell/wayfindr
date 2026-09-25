@@ -6,9 +6,16 @@
                 <p class="status-message">{{ __(session('status')) }}</p>
             @endif
 
-            @error('label_name')
-                <p class="field-error">{{ $message }}</p>
-            @enderror
+            @php
+                // The create form and every row's rename form all post
+                // `label_name`, so the flashed input cannot say which of them
+                // failed. Each row form names its label, and only the form that
+                // was submitted gets back the typed value, the message and
+                // aria-invalid. Without it one rejected rename was painted into
+                // every row and the create field, where a Save on any other row
+                // would send it as that label's new name.
+                $editingLabelId = is_scalar(old('editing_label')) ? (string) old('editing_label') : '';
+            @endphp
 
             @error('label')
                 <p class="field-error">{{ $message }}</p>
@@ -16,8 +23,10 @@
 
             <section class="section" aria-labelledby="new-ticket-label-heading">
                 <div class="section-header">
-                    <h2 id="new-ticket-label-heading">{{ __('ticket_labels.create.heading') }}</h2>
-                    <span class="lede">{{ __('ticket_labels.create.lede') }}</span>
+                    <div>
+                        <h2 id="new-ticket-label-heading">{{ __('ticket_labels.create.heading') }}</h2>
+                        <p class="lede">{{ __('ticket_labels.create.lede') }}</p>
+                    </div>
                 </div>
 
                 <form class="section-form" method="POST" action="{{ route('dashboard.account.labels.store') }}">
@@ -25,7 +34,10 @@
 
                     <div class="field">
                         <label for="new-label-name">{{ __('ticket_labels.create.name') }}</label>
-                        <input id="new-label-name" name="label_name" type="text" value="{{ old('label_name') }}" maxlength="64" placeholder="{{ __('ticket_labels.create.name_placeholder') }}" required>
+                        <input id="new-label-name" name="label_name" type="text" value="{{ $editingLabelId === '' ? old('label_name') : '' }}" maxlength="64" placeholder="{{ __('ticket_labels.create.name_placeholder') }}" @if ($editingLabelId === '') @error('label_name') aria-invalid="true" aria-describedby="new-label-name-error" autofocus @enderror @endif required>
+                        @if ($editingLabelId === '')
+                            @error('label_name')<p id="new-label-name-error" class="field-error">{{ $message }}</p>@enderror
+                        @endif
                     </div>
 
                     <button class="button" type="submit">{{ __('ticket_labels.create.submit') }}</button>
@@ -61,6 +73,9 @@
                             </thead>
                             <tbody>
                                 @foreach ($ticketLabels as $ticketLabel)
+                                    @php
+                                        $isEditingLabel = $editingLabelId === (string) $ticketLabel->id;
+                                    @endphp
                                     @if ($canManageTickets)
                                         @php
                                             $labelTicketsUrl = route('dashboard.tickets.index', [
@@ -70,8 +85,8 @@
                                         @endphp
                                     @endif
                                     <tr>
-                                        <td><strong>{{ $ticketLabel->name }}</strong></td>
-                                        <td><code>{{ $ticketLabel->slug }}</code></td>
+                                        <td><strong lang="">{{ $ticketLabel->name }}</strong></td>
+                                        <td><code lang="">{{ $ticketLabel->slug }}</code></td>
                                         @if ($canManageTickets)
                                             <td>
                                                 {{ trans_choice('ticket_labels.usage.tickets', $ticketLabel->tickets_count, ['count' => \App\Support\ReaderNumber::count($ticketLabel->tickets_count)]) }}
@@ -86,10 +101,14 @@
                                             <form class="compact-form" method="POST" action="{{ route('dashboard.account.labels.update', $ticketLabel) }}">
                                                 @csrf
                                                 @method('PUT')
+                                                <input type="hidden" name="editing_label" value="{{ $ticketLabel->id }}">
                                                 <label class="sr-only" for="ticket-label-{{ $ticketLabel->id }}">{{ __('ticket_labels.manage.rename', ['name' => $ticketLabel->name]) }}</label>
-                                                <input id="ticket-label-{{ $ticketLabel->id }}" name="label_name" value="{{ old('label_name', $ticketLabel->name) }}" maxlength="64" required>
+                                                <input id="ticket-label-{{ $ticketLabel->id }}" name="label_name" value="{{ $isEditingLabel ? old('label_name') : $ticketLabel->name }}" maxlength="64" @if ($isEditingLabel) @error('label_name') aria-invalid="true" aria-describedby="ticket-label-{{ $ticketLabel->id }}-error" autofocus @enderror @endif lang="" required>
                                                 <button class="button secondary" type="submit">{{ __('ticket_labels.manage.save') }}</button>
                                             </form>
+                                            @if ($isEditingLabel)
+                                                @error('label_name')<p id="ticket-label-{{ $ticketLabel->id }}-error" class="field-error">{{ $message }}</p>@enderror
+                                            @endif
                                             @if ($canManageTickets && $ticketLabel->tickets_count > 0)
                                                 <span class="lede">{{ trans_choice('ticket_labels.manage.in_use', $ticketLabel->tickets_count, ['count' => \App\Support\ReaderNumber::count($ticketLabel->tickets_count)]) }}</span>
                                             @else

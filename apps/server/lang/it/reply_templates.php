@@ -35,6 +35,7 @@ return [
         'created' => 'Modello di risposta creato.',
         'updated' => 'Modello di risposta aggiornato.',
         'archived' => 'Modello di risposta archiviato.',
+        'restored' => 'Modello di risposta ripristinato.',
     ],
 
     'standards' => [
@@ -67,16 +68,20 @@ return [
     ],
 
     'empty' => [
-        'heading' => 'Nessun modello di risposta gestito.',
-        'body' => 'Gli assistenti di risposta integrati restano disponibili nei campi di risposta finché il suo team non aggiunge modelli propri. Ne aggiunga uno quando gli agenti continuano a riscrivere la stessa risposta pacata e utile.',
+        'heading' => 'Ancora nessun modello di risposta.',
+        'body' => 'Aggiunga un modello di risposta quando gli agenti continuano a riscrivere la stessa risposta; fino ad allora, i campi di risposta offrono gli assistenti di risposta integrati.',
         'action' => 'Crea il primo modello',
     ],
 
     'manage' => [
+        'edit' => 'Modifica «:name»',
         'name' => 'Nome',
         'body' => 'Testo',
         'save' => 'Salva modello',
         'archive' => 'Archivia',
+        'restore' => 'Ripristina',
+        'archive_named' => 'Archivia «:name»',
+        'restore_named' => 'Ripristina «:name»',
         'archived_note' => 'I modelli archiviati non compaiono tra gli assistenti di risposta.',
     ],
 

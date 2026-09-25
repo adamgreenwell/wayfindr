@@ -35,6 +35,7 @@ return [
         'created' => 'Antwortvorlage erstellt.',
         'updated' => 'Antwortvorlage aktualisiert.',
         'archived' => 'Antwortvorlage archiviert.',
+        'restored' => 'Antwortvorlage wiederhergestellt.',
     ],
 
     'standards' => [
@@ -67,16 +68,20 @@ return [
     ],
 
     'empty' => [
-        'heading' => 'Noch keine verwalteten Antwortvorlagen.',
-        'body' => 'Die eingebauten Antworthilfen bleiben in den Antwortfeldern verfügbar, bis Ihr Team eigene Kontovorlagen anlegt. Legen Sie eine an, sobald Agenten dieselbe ruhige, hilfreiche Antwort immer wieder neu schreiben.',
+        'heading' => 'Noch keine Antwortvorlagen.',
+        'body' => 'Legen Sie eine Antwortvorlage an, wenn Agenten dieselbe Antwort immer wieder neu schreiben; bis dahin bieten die Antwortfelder die eingebauten Antworthilfen.',
         'action' => 'Erste Vorlage erstellen',
     ],
 
     'manage' => [
+        'edit' => '„:name“ bearbeiten',
         'name' => 'Name',
         'body' => 'Text',
         'save' => 'Vorlage speichern',
         'archive' => 'Archivieren',
+        'restore' => 'Wiederherstellen',
+        'archive_named' => '„:name“ archivieren',
+        'restore_named' => '„:name“ wiederherstellen',
         'archived_note' => 'Archivierte Vorlagen erscheinen nicht in den Antworthilfen.',
     ],
 

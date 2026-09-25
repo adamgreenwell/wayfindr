@@ -24,6 +24,7 @@ return [
         'created' => 'Reply template created.',
         'updated' => 'Reply template updated.',
         'archived' => 'Reply template archived.',
+        'restored' => 'Reply template restored.',
     ],
 
     'standards' => [
@@ -60,16 +61,25 @@ return [
     ],
 
     'empty' => [
-        'heading' => 'No managed reply templates yet.',
-        'body' => 'Built-in helpers stay available in reply composers until your team adds account templates. Add one when agents keep rewriting the same calm, useful answer.',
+        'heading' => 'No reply templates yet.',
+        // One sentence, and it still has to carry the fallback: with no active
+        // template of its own the account gets the built-in helpers, so an
+        // empty page does not mean an empty composer.
+        'body' => 'Add a template when agents keep rewriting the same answer; until then, reply composers offer the built-in helpers.',
         'action' => 'Create the first template',
     ],
 
     'manage' => [
+        // The disclosure each row's editor sits behind. The Body column already
+        // shows the text, so the form stays folded until someone asks for it.
+        'edit' => 'Edit “:name”',
         'name' => 'Name',
         'body' => 'Body',
         'save' => 'Save template',
         'archive' => 'Archive',
+        'restore' => 'Restore',
+        'archive_named' => 'Archive “:name”',
+        'restore_named' => 'Restore “:name”',
         'archived_note' => 'Archived templates stay out of reply helpers.',
     ],
 

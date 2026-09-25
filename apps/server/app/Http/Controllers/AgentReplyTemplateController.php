@@ -76,23 +76,38 @@ class AgentReplyTemplateController extends Controller
 
     public function archive(Request $request, ReplyTemplate $replyTemplate): RedirectResponse
     {
+        return $this->setActive($request, $replyTemplate, false, 'reply_templates.flash.archived');
+    }
+
+    /**
+     * Archiving takes a template out of the reply helpers and keeps the record,
+     * so it has to be undoable -- without this the page offered a one-way
+     * button and a Save form on a row nobody could bring back.
+     */
+    public function restore(Request $request, ReplyTemplate $replyTemplate): RedirectResponse
+    {
+        return $this->setActive($request, $replyTemplate, true, 'reply_templates.flash.restored');
+    }
+
+    private function setActive(Request $request, ReplyTemplate $replyTemplate, bool $active, string $status): RedirectResponse
+    {
         $agent = $request->user();
 
         $this->authorizeManageReplyTemplate($agent, $replyTemplate);
 
-        DB::transaction(function () use ($agent, $replyTemplate): void {
+        DB::transaction(function () use ($agent, $replyTemplate, $active): void {
             $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $replyTemplate->account_id);
             $replyTemplate = $this->lockedReplyTemplate($replyTemplate);
             $this->authorizeManageReplyTemplate($lockedAgent, $replyTemplate);
 
             $replyTemplate->forceFill([
-                'is_active' => false,
+                'is_active' => $active,
             ])->save();
         });
 
         return redirect()
             ->route('dashboard.account.reply-templates.index')
-            ->with('status', 'reply_templates.flash.archived');
+            ->with('status', $status);
     }
 
     private function authorizeManageReplyTemplate(mixed $agent, ReplyTemplate $replyTemplate): void

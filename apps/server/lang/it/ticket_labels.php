@@ -61,12 +61,12 @@ return [
         'rename' => 'Rinomina :name',
         'save' => 'Salva etichetta',
         'in_use' => '{1} In uso su 1 ticket|[2,*] In uso su :count ticket',
-        'delete' => 'Elimina inutilizzata',
+        'delete' => 'Elimina etichetta',
     ],
 
     'empty' => [
-        'heading' => 'Nessuna etichetta dei ticket gestita.',
-        'body' => 'Usi le etichette quando i ticket hanno bisogno di contesto di triage ripetibile, segnali di escalation o raggruppamenti di flusso. Inizi con poche etichette che il suo team userà davvero.',
+        'heading' => 'Ancora nessuna etichetta dei ticket.',
+        'body' => 'Le etichette raggruppano i ticket per il triage e fanno da filtri nella coda dei ticket.',
         'action' => 'Crea la prima etichetta',
     ],
 

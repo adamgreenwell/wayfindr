@@ -57,12 +57,16 @@ return [
         'rename' => 'Rename :name',
         'save' => 'Save label',
         'in_use' => '{1} In use on 1 ticket|[2,*] In use on :count tickets',
-        'delete' => 'Delete unused',
+        // Names its object, like every other destructive button in the group.
+        // "Delete unused" read as a bulk action in a per-row button, and it
+        // was not even true: an agent without ticket access sees this on every
+        // label, and the controller refuses one still in use with a reason.
+        'delete' => 'Delete label',
     ],
 
     'empty' => [
-        'heading' => 'No managed ticket labels yet.',
-        'body' => 'Use labels when tickets need repeatable triage context, escalation cues, or workflow grouping. Start with a few labels your team will actually use.',
+        'heading' => 'No ticket labels yet.',
+        'body' => 'Labels group tickets for triage and become filters in the ticket queue.',
         'action' => 'Create the first label',
     ],
 
