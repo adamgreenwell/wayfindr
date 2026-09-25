@@ -29,6 +29,14 @@ use Illuminate\Validation\ValidationException;
 
 class ConversationMessageController extends Controller
 {
+    /**
+     * The longest message a visitor may send, counted the way `max:` counts a
+     * string: characters, not bytes. The widget carries the same number (its
+     * composer `maxlength` and the check that runs before a first send), so the
+     * two have to move together.
+     */
+    private const BODY_MAX_CHARACTERS = 4000;
+
     public function index(
         Request $request,
         string $supportCode,
@@ -135,8 +143,20 @@ class ConversationMessageController extends Controller
 
         App::setLocale(WidgetLanguage::forVisitor($request->input('locale'), $conversation->site));
 
+        // Too long is a rejection the visitor can correct, so it is answered
+        // the way an attachment rejection is: with a KEY beside the sentence.
+        // The framework's own `max:` message carries no key the widget knows,
+        // so the widget fell back to its generic "could not be sent" and a
+        // Retry that resent the same text into the same rejection, forever --
+        // without ever saying what was wrong.
+        $rawBody = $request->input('body');
+
+        if (is_string($rawBody) && mb_strlen($rawBody) > self::BODY_MAX_CHARACTERS) {
+            return $this->bodyTooLongResponse();
+        }
+
         $validated = $request->validate([
-            'body' => ['nullable', 'string', 'max:4000'],
+            'body' => ['nullable', 'string', 'max:'.self::BODY_MAX_CHARACTERS],
             'client_message_id' => ['nullable', 'string', 'max:128'],
             'attachment_ids' => ['nullable', 'array'],
             'attachment_ids.*' => ['integer', 'min:1'],
@@ -248,6 +268,29 @@ class ConversationMessageController extends Controller
         event(new ConversationPresenceUpdated($conversation));
 
         return $this->storedMessageResponse($conversation, $message->load('attachments'));
+    }
+
+    /**
+     * The same four fields `AttachmentRejected::toWidgetResponse()` answers
+     * with, because the widget reads them from one place: the sentence for any
+     * client that is not the widget, and the key and its numbers for the widget
+     * to say in the language it is actually speaking.
+     *
+     * Not an `AttachmentRejected`: nothing here is an attachment, and that class
+     * says so in its name and its docblock.
+     */
+    private function bodyTooLongResponse(): JsonResponse
+    {
+        $key = 'composer.rejected.too_long';
+        $parameters = ['max' => self::BODY_MAX_CHARACTERS];
+        $message = __($key, $parameters);
+
+        return response()->json([
+            'message' => $message,
+            'errors' => ['body' => [$message]],
+            'error_key' => $key,
+            'error_params' => (object) $parameters,
+        ], 422);
     }
 
     private function storedMessageResponse(Conversation $conversation, ConversationMessage $message): JsonResponse
@@ -381,6 +424,11 @@ class ConversationMessageController extends Controller
             return [
                 'kind' => 'agent',
                 'name' => $message->conversation?->site?->name ?? 'Support',
+                // A canned opener nobody typed for this visitor, and the widget
+                // says so beside the name. Only here: an API token also answers
+                // as the site, but an integration may be relaying a person, so
+                // calling it automated could be the claim that is untrue.
+                'automated' => true,
             ];
         }
 
