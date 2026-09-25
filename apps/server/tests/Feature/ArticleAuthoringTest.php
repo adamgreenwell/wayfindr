@@ -477,3 +477,14 @@ test('the preview sets no space between a link or emphasis and the punctuation a
         'a list item in the preview puts a space between a span and the punctuation that follows it',
     );
 });
+
+test('an article of nothing but blank formatted runs is refused as empty', function (): void {
+    $w = articleWorld();
+
+    $this->actingAs($w['admin'])
+        ->post(route('dashboard.account.articles.store'), ['title' => 'Blank', 'body' => '** ** ** **'])
+        ->assertSessionHasErrors('body');
+
+    expect(Article::query()->where('title', 'Blank')->exists())
+        ->toBeFalse('an article whose every run is blank was saved, and renders as an empty panel');
+});

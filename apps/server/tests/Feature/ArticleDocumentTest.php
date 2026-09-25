@@ -139,3 +139,11 @@ test('whitespace at either end of a block is still dropped', function (): void {
     expect($spans[0])->toBe(['text' => 'Bold', 'strong' => true])
         ->and(implode('', array_map(fn (array $span): string => $span['text'], $spans)))->toBe('Bold trailing');
 });
+
+test('a block of nothing but blank formatted runs stays empty', function (): void {
+    // Keeping the space between runs must not turn blank runs into content:
+    // `** ** ** **` would otherwise read as one space, pass the empty-body
+    // check, and save an article whose paragraph renders blank.
+    expect(ArticleDocument::text('** ** ** **'))
+        ->toBe('', 'a body of nothing but blank formatted runs reads as content, so an empty article saves');
+});

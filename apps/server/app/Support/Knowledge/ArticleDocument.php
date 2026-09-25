@@ -187,16 +187,22 @@ final class ArticleDocument
         // end of the block, but between two runs it is the boundary itself:
         // `**First** **second**` is two strong runs and a space, and dropping
         // the space rendered "Firstsecond" in the widget and the preview alike.
-        $last = count($spans) - 1;
         $kept = [];
+        $separatorPending = false;
 
-        foreach ($spans as $index => $span) {
+        foreach ($spans as $span) {
             if (trim($span['text']) === '') {
-                if ($index === 0 || $index === $last) {
-                    continue;
-                }
+                // A boundary only if something visible comes before AND after
+                // it -- so a block of nothing but blank runs (`** ** **`) stays
+                // empty, and is refused as empty, rather than saving a space.
+                $separatorPending = $kept !== [];
 
-                $span = ['text' => ' '];
+                continue;
+            }
+
+            if ($separatorPending) {
+                $kept[] = ['text' => ' '];
+                $separatorPending = false;
             }
 
             $kept[] = $span;
