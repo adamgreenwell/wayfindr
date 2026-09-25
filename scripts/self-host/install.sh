@@ -14,6 +14,15 @@
 # https:// URL, FrankenPHP obtains TLS certificates automatically — DNS for
 # the hostname must already point at this machine and ports 80/443 must be
 # free. Re-running converges; `--upgrade` pulls the newer image and restarts.
+
+# The whole script is one compound command, closed on the last line, so bash
+# reads every byte before it runs any of it. Piped from curl, bash otherwise
+# executes as it reads: an early `die` -- no Docker yet, a mistyped flag --
+# exits with most of the file unread, and curl prints "(23) Failure writing
+# output" under the real error, on exactly the machine that has never run this
+# before. It also means a download cut off midway runs nothing rather than a
+# prefix. A brace group, not a function, so $@, $0 and exit keep their meaning.
+{
 set -euo pipefail
 
 RAW_BASE_DEFAULT="https://raw.githubusercontent.com/adamgreenwell/wayfindr"
@@ -2125,3 +2134,4 @@ case "$(env_value CADDY_SERVER_EXTRA_DIRECTIVES)" in
 CERT
         ;;
 esac
+}
