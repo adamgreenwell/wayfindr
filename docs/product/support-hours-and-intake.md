@@ -228,11 +228,10 @@ used.
 
 A conversation opened while the desk is away is now marked, when it is
 created, to be answered by email as well. Every reply an agent sends to it —
-from the conversation page, or through the API — also goes to the visitor's
-address. A visitor whose address was already known is marked the same way:
-the question is waived for them, but they were told the same thing. A reply
-written from a linked ticket's page is not emailed; that path has never called
-the mailer, for conversations that arrived by email either.
+from the conversation page, from a linked ticket's page, or through the API —
+also goes to the visitor's address. A visitor whose address was already known
+is marked the same way: the question is waived for them, but they were told
+the same thing.
 
 - **The widget reply is not replaced.** The message still appears in the
   widget; the email is how it reaches somebody who has left.
@@ -243,9 +242,10 @@ the mailer, for conversations that arrived by email either.
   queued. This is the same assessment the operator's send-test makes, so the
   two cannot disagree about whether mail leaves the server. Until mail is set
   up, the promise in the default away message is kept only in the widget.
-- **The agent is told either way.** Beside the reply box, a conversation opened
-  while away shows **Also emailed to** with the address, or **Not emailed**
-  with the reason. The address shown is the one the email goes to.
+- **The agent is told either way.** Beside the conversation page's reply box,
+  a conversation opened while away shows **Also emailed to** with the address,
+  or **Not emailed** with the reason. The address shown is the one the email
+  goes to. A linked ticket's reply form does not show it yet.
 - **Where the conversation continues.** If the site has an
   [inbound address](../self-hosting/inbound-mail.md), that is the email's
   Reply-To, and a reply threads back onto the same conversation. If it has

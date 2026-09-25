@@ -212,6 +212,7 @@ return [
             'email_sent_detail' => 'Die Nachricht kam außerhalb der Supportzeiten, daher gehen hier gesendete Antworten auch an diese Adresse. Sie wurde vom Besucher eingegeben und nicht geprüft.',
             'email_unsent' => 'Nicht per E-Mail',
             'email_unsent_detail' => 'Diese Adresse wurde außerhalb der Supportzeiten hinterlassen, aber in dieser Installation ist kein E-Mail-Versand eingerichtet. Hier gesendete Antworten erreichen den Besucher daher nur bei einer Rückkehr in den Chat.',
+            'email_channel_unsent_detail' => 'Diese Unterhaltung kam per E-Mail, aber in dieser Installation ist kein E-Mail-Versand eingerichtet. Hier gesendete Antworten erreichen den Besucher daher nicht.',
         ],
 
         'copilot' => [

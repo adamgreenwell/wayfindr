@@ -3,6 +3,7 @@
 use App\Enums\AccountRole;
 use App\Enums\AutomationRuleEvent;
 use App\Events\ConversationMessageCreated;
+use App\Jobs\SendConversationReplyDelivery;
 use App\Mail\ConversationReplyMessage;
 use App\Models\Account;
 use App\Models\AutomationRule;
@@ -54,6 +55,17 @@ function mailPayload(array $overrides = []): array
         'text' => 'It was due on Tuesday.',
         'message_id' => '<first@example.test>',
     ], $overrides);
+}
+
+/**
+ * An install whose mailer can deliver, as the reply rule reads it. The suite's
+ * own mailer is `array`, which delivers nothing, and an email conversation is
+ * not answered through a mailer that cannot. Set just before a reply: the sync
+ * queue fires JobProcessing, which returns config to its baseline.
+ */
+function inboundMailDeliveringMailer(): void
+{
+    config()->set('mail.default', 'smtp');
 }
 
 test('an email becomes a conversation for a visitor nobody had met', function (): void {
@@ -321,6 +333,7 @@ test('an agent replying to an email conversation sends an email back', function 
     $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
     $site->supportAgents()->syncWithoutDetaching($agent->id);
 
+    inboundMailDeliveringMailer();
     $this->actingAs($agent)
         ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
             'body' => 'We have found it and it ships today.',
@@ -343,20 +356,36 @@ test('an agent reply to an email conversation is actually delivered, not only ha
     // view. The view read `$message`, which the mailer overwrites with its own
     // Illuminate\Mail\Message, so every real send threw -- and no reply by email
     // was ever delivered while the suite stayed green.
-    config()->set('mail.default', 'array');
     $site = mailSite();
     $inbound = deliver(mailPayload());
 
     $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
     $site->supportAgents()->syncWithoutDetaching($agent->id);
 
+    // Decided on a mailer that delivers, then sent by the job production
+    // queues -- run here against the real `array` transport.
+    Queue::fake();
+    inboundMailDeliveringMailer();
     $this->actingAs($agent)
         ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
             'body' => "We've found it and it ships today.",
         ])
         ->assertRedirect();
 
-    $sent = app('mailer')->getSymfonyTransport()->messages();
+    config()->set('mail.default', 'array');
+    $thrown = null;
+
+    try {
+        foreach (ConversationReplyDelivery::query()->pluck('id') as $deliveryId) {
+            (new SendConversationReplyDelivery($deliveryId))->handle();
+        }
+    } catch (Throwable $exception) {
+        $thrown = $exception::class.': '.$exception->getMessage();
+    }
+
+    expect($thrown)->toBeNull('The agent reply was never delivered: rendering the reply email failed: '.$thrown);
+
+    $sent = Mail::mailer('array')->getSymfonyTransport()->messages();
 
     expect($sent)->toHaveCount(1, 'The agent reply was never delivered: rendering the reply email failed.');
 
@@ -386,6 +415,8 @@ test('a queue outage does not turn a durably stored agent reply into a resubmit-
         ->once()
         ->andThrow(new RuntimeException('Redis unavailable.'));
 
+    inboundMailDeliveringMailer();
+
     try {
         $this->actingAs($agent)
             ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
@@ -411,6 +442,41 @@ test('a queue outage does not turn a durably stored agent reply into a resubmit-
             && $context['conversation_reply_delivery_id'] === $delivery->id);
 });
 
+test('an email conversation is not answered through a mailer that cannot deliver, and the agent is told so', function (string $mailer): void {
+    // `log` and `array` accept every message and deliver none. The out-of-hours
+    // path already refused them; this channel queued the reply anyway and
+    // marked it accepted, so the one visitor who can ONLY be answered by email
+    // received nothing while the agent read "Reply sent."
+    Mail::fake();
+    $site = mailSite();
+    $inbound = deliver(mailPayload());
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    config()->set('mail.default', $mailer);
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), ['body' => 'We have found it.'])
+        ->assertRedirect()
+        ->assertSessionHasNoErrors();
+
+    expect(ConversationReplyDelivery::query()->count())
+        ->toBe(0, "an email conversation's reply was queued through the non-delivering {$mailer} mailer and recorded as sent");
+    Mail::assertNothingSent();
+
+    config()->set('mail.default', $mailer);
+    $html = $this->actingAs($agent)
+        ->get(route('dashboard.conversations.show', $inbound->conversation->support_code))
+        ->assertOk()
+        ->getContent();
+
+    expect(str_contains($html, 'data-reply-by-email="not_emailed"'))
+        ->toBeTrue('the agent answering an email conversation was not told its replies are not emailed');
+    expect(str_contains($html, 'They wrote in by email, but email is not set up on this install'))
+        ->toBeTrue('the agent is not told why an email conversation is not answered by email');
+    expect(str_contains($html, 'while the desk was away'))
+        ->toBeFalse('an email conversation is explained to the agent as an out-of-hours one');
+})->with(['log', 'array']);
+
 test('a widget conversation is not also emailed', function (): void {
     // The visitor is already being answered where they are.
     Mail::fake();
@@ -421,6 +487,9 @@ test('a widget conversation is not also emailed', function (): void {
     $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
     $site->supportAgents()->syncWithoutDetaching($agent->id);
 
+    // On a mailer that delivers. On the suite's own `array` mailer nothing is
+    // emailed anyway, and this would pass with every widget reply mailed.
+    inboundMailDeliveringMailer();
     $this->actingAs($agent)
         ->post(route('dashboard.conversations.messages.store', $conversation->support_code), ['body' => 'Hello.'])
         ->assertRedirect();
@@ -438,6 +507,7 @@ test('the visitor’s reply threads onto the agent’s email', function (): void
     $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
     $site->supportAgents()->syncWithoutDetaching($agent->id);
 
+    inboundMailDeliveringMailer();
     $this->actingAs($agent)
         ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), ['body' => 'Shipping today.'])
         ->assertRedirect();
@@ -585,6 +655,7 @@ test('the files an agent attaches travel with the emailed reply', function (): v
         $agent,
     );
 
+    inboundMailDeliveringMailer();
     $this->actingAs($agent)
         ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
             'body' => 'Here is the label.',

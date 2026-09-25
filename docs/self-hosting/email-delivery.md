@@ -11,9 +11,9 @@ traffic is flowing:
 - **Replies to visitors** — agent replies to a conversation that arrived by
   email ([inbound-mail.md](inbound-mail.md)), and to one a visitor opened while
   the desk was away, sent to the address they left
-  ([support-hours-and-intake.md](../product/support-hours-and-intake.md)). The
-  second is skipped entirely while the mailer cannot deliver, and the agent is
-  told so beside the reply box.
+  ([support-hours-and-intake.md](../product/support-hours-and-intake.md)). Both
+  are skipped entirely while the mailer cannot deliver, and the agent is told
+  so beside the conversation's reply box.
 
 If the mailer is left in `log` mode, none of this leaves the app — digests
 pile up as log lines and agents never hear that a visitor is waiting. So a real

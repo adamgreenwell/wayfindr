@@ -230,6 +230,9 @@ return [
             'email_sent_detail' => 'They wrote while the desk was away, so replies sent here also go to this address. The visitor typed it, and it has not been verified.',
             'email_unsent' => 'Not emailed',
             'email_unsent_detail' => 'They left this address while the desk was away, but email is not set up on this install, so replies sent here reach them only if they come back to the chat.',
+            // The same label on a conversation that arrived by email, where the
+            // chat is no way back to them at all.
+            'email_channel_unsent_detail' => 'They wrote in by email, but email is not set up on this install, so replies sent here do not reach them.',
         ],
 
         'copilot' => [
