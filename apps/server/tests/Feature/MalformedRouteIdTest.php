@@ -159,6 +159,12 @@ test('the bounds admit a long real id and refuse what no key can be', function (
     expect($matched('POST', '/dashboard/alerts/'.Str::uuid()->toString().'/read'))
         ->toBe('dashboard.alerts.read', 'A well-formed alert id no longer reaches its route.');
 
+    // Laravel compiles route patterns in UTF-8 mode, where \d also matches
+    // non-ASCII digits such as the Arabic-Indic one below; PostgreSQL's uuid
+    // input takes ASCII hex only, so such a value must not reach the query.
+    expect($matched('POST', '/dashboard/alerts/'.substr_replace(Str::uuid()->toString(), '١', 0, 1).'/read'))
+        ->toBeNull('An alert id with a non-ASCII digit reached the route, and PostgreSQL raises casting it to uuid.');
+
     expect($matched('POST', '/dashboard/alerts/not-a-uuid/read'))
         ->toBeNull('An alert id that is not a UUID reached the route, and PostgreSQL raises comparing it with the uuid key.');
 });
@@ -179,5 +185,31 @@ test('the route bound admits exactly the ids DatabaseKey::isValid admits', funct
 
         expect((bool) preg_match($pattern, $value))
             ->toBe(DatabaseKey::isValid($value), "The route bound and isValid() disagree on {$value}.");
+    }
+});
+
+test('every uuid route takes ascii hex only, not any unicode digit', function (): void {
+    // whereUuid() spells a hex digit as \d, which the UTF-8 route regex lets
+    // match an Arabic-Indic digit. The columns behind these are PostgreSQL uuid,
+    // which refuse it, so the pattern has to.
+    $routes = Route::getRoutes();
+    $matched = fn (string $method, string $uri): ?string => rescue(
+        fn () => $routes->match(Request::create($uri, $method))->getName(),
+        null,
+        report: false,
+    );
+    $uuid = Str::uuid()->toString();
+    $unicode = substr_replace($uuid, '١', 0, 1);
+
+    foreach ([
+        ['POST', '/dashboard/alerts/%s/read', 'dashboard.alerts.read'],
+        ['GET', '/sso/callback/%s', 'oidc.callback'],
+        ['POST', '/api/widget/proactive-messages/%s/authorize', 'widget.proactive-messages.authorize'],
+        ['POST', '/api/widget/proactive-messages/%s/outcomes', 'widget.proactive-messages.outcomes.store'],
+    ] as [$method, $uri, $name]) {
+        expect($matched($method, sprintf($uri, $uuid)))
+            ->toBe($name, "A well-formed uuid no longer reaches {$name}.")
+            ->and($matched($method, sprintf($uri, $unicode)))
+            ->toBeNull("{$name} accepted a uuid with a non-ASCII digit, which PostgreSQL refuses to cast.");
     }
 });

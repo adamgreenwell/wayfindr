@@ -61,6 +61,16 @@ final class DatabaseKey
         .'|922337203685477580[0-6]'
         .'|9223372036854775807)';
 
+    /**
+     * The route constraint for a UUID key, in ASCII hex only.
+     *
+     * Not Laravel's whereUuid(), whose `\d` matches any Unicode decimal digit
+     * because routes compile as UTF-8 patterns: an Arabic-Indic digit in an
+     * otherwise UUID-shaped segment reached a PostgreSQL uuid column, which
+     * refuses it -- the same 500 the integer bound exists to prevent.
+     */
+    public const UUID_ROUTE_PATTERN = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+
     public static function isValid(string $value): bool
     {
         if ($value === '' || ! ctype_digit($value)) {

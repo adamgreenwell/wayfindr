@@ -28,6 +28,7 @@ use App\Http\Controllers\Widget\ProactiveMessageController;
 use App\Http\Controllers\Widget\VisitorSessionController;
 use App\Http\Middleware\AuthenticateApiToken;
 use App\Models\ApiToken;
+use App\Support\DatabaseKey;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/widget/presence', PresenceController::class)
@@ -56,11 +57,11 @@ Route::get('/widget/appearance', AppearanceController::class)
     ->middleware('throttle:widget-config')
     ->name('widget.appearance');
 Route::post('/widget/proactive-messages/{rulePublicId}/authorize', [ProactiveMessageController::class, 'authorizeDisplay'])
-    ->whereUuid('rulePublicId')
+    ->where('rulePublicId', DatabaseKey::UUID_ROUTE_PATTERN)
     ->middleware('throttle:widget-proactive')
     ->name('widget.proactive-messages.authorize');
 Route::post('/widget/proactive-messages/{deliveryPublicId}/outcomes', [ProactiveMessageController::class, 'recordOutcome'])
-    ->whereUuid('deliveryPublicId')
+    ->where('deliveryPublicId', DatabaseKey::UUID_ROUTE_PATTERN)
     ->middleware('throttle:widget-proactive')
     ->name('widget.proactive-messages.outcomes.store');
 

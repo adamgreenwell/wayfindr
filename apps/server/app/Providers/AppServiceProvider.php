@@ -186,7 +186,7 @@ class AppServiceProvider extends ServiceProvider
             'webhookEndpoint',
         ], DatabaseKey::ROUTE_PATTERN));
 
-        Route::pattern('notification', '[\da-fA-F]{8}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{4}-[\da-fA-F]{12}');
+        Route::pattern('notification', DatabaseKey::UUID_ROUTE_PATTERN);
     }
 
     private function configureRateLimiters(): void

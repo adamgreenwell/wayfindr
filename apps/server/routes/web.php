@@ -72,6 +72,7 @@ use App\Http\Controllers\OperatorWebPushSettingsController;
 use App\Http\Middleware\EnsureAgentIsActive;
 use App\Http\Middleware\EnsurePlatformOperator;
 use App\Http\Middleware\EnsureTwoFactorPolicy;
+use App\Support\DatabaseKey;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -88,7 +89,7 @@ Route::middleware('guest')->group(function () {
         ->middleware('throttle:oidc-redirect')
         ->name('oidc.redirect');
     Route::get('/sso/callback/{connectionPublicId}', [OidcSessionController::class, 'callback'])
-        ->whereUuid('connectionPublicId')
+        ->where('connectionPublicId', DatabaseKey::UUID_ROUTE_PATTERN)
         ->middleware('throttle:oidc-callback')
         ->name('oidc.callback');
     Route::get('/two-factor-challenge', [TwoFactorChallengeController::class, 'create'])
