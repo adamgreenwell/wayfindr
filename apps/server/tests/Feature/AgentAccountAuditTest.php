@@ -322,6 +322,53 @@ test('generated break glass references are localized separately from their store
         ->assertDontSee('Site (out of scope)');
 });
 
+test('the audit filter bar is the house filter component, every label labels a control, and the tab matches the heading', function (): void {
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $site = Site::factory()->for($account)->create(['name' => 'VIP Portal']);
+    $site->supportAgents()->attach($admin);
+
+    $page = function (array $query) use ($admin): DOMXPath {
+        $document = new DOMDocument;
+        $document->loadHTML((string) $this->actingAs($admin)
+            ->get(route('dashboard.account.audit.index', $query))
+            ->assertOk()
+            ->getContent(), LIBXML_NOERROR | LIBXML_NOWARNING);
+
+        return new DOMXPath($document);
+    };
+
+    $xpath = $page([]);
+    $bar = '//form[@class="wf-filters" and @aria-label="'.__('account_audit.filters.region').'"]';
+
+    expect($xpath->query($bar)?->length)
+        ->toBe(1, 'the audit filters are not the named wf-filters region the other filtered queues use');
+
+    foreach (['audit_action', 'audit_site', 'audit_search'] as $control) {
+        expect($xpath->query($bar.'/div[contains(concat(" ", @class, " "), " wf-filter ")]/label[@for="'.$control.'"]')?->length)
+            ->toBe(1, "{$control} is not a labelled wf-filter")
+            ->and($xpath->query('//*[@id="'.$control.'"]')?->length)
+            ->toBe(1, "the {$control} label points at no control");
+    }
+
+    // The display grid used to supply the layout, and its fourth cell carried
+    // "Audit log" in label styling above the buttons -- labelling nothing.
+    expect($xpath->query($bar.'//*[contains(@class, "meta-")]')?->length)
+        ->toBe(0, 'the filter bar is still built from the metadata display grid')
+        ->and($xpath->query($bar.'//*[(self::span or self::p or self::strong) and not(@class="wf-filter-help") and normalize-space(.)!=""]')?->length)
+        ->toBe(0, 'the filter bar carries label-styled text that labels no control');
+
+    // Nothing to clear until something is filtered.
+    $clear = $bar.'//a[@href="'.route('dashboard.account.audit.index').'"]';
+
+    expect($xpath->query($clear)?->length)->toBe(0, 'an unfiltered log offers to clear filters it does not have')
+        ->and($page(['audit_site' => $site->id])->query($clear)?->length)->toBe(1, 'a filtered log offers no way back to everything');
+
+    // The browser tab and the page heading name the same page in the same case.
+    expect(trim((string) $xpath->query('//title')?->item(0)?->textContent))
+        ->toBe(trim((string) $xpath->query('//h1')?->item(0)?->textContent), 'the document title and the <h1> disagree');
+});
+
 test('regular agents cannot view or export account audit activity', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([

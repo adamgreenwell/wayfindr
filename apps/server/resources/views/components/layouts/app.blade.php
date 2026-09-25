@@ -989,6 +989,17 @@
             color: var(--wf-muted);
         }
 
+        /* A filter bar standing between two cards belongs to the list below
+           it. Without these it sat 12px under the card above and 44px over the
+           list it filters, and read as part of the wrong one. */
+        .section + .wf-filters {
+            margin-top: 16px;
+        }
+
+        .wf-filters + .section {
+            margin-top: 0;
+        }
+
         .wf-queue-summary {
             margin: 0 0 var(--wf-space-3);
             font-size: 12.5px;
