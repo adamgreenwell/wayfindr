@@ -26,7 +26,6 @@
 return [
     'title' => 'Articoli',
     'subtitle' => 'Risposte che un visitatore può trovare senza chiedere.',
-    'back_to_account' => 'Torna all\'account',
     'back_to_articles' => 'Torna agli articoli',
 
     'flash' => [

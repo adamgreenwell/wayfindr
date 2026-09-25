@@ -1,5 +1,5 @@
-<x-layouts.app :title="__('reply_templates.title')" :agent="$agent" :account="$account">
-            <x-page-header :title="__('reply_templates.title')" :subtitle="__('reply_templates.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('reply_templates.back')" />
+<x-layouts.account :title="__('reply_templates.title')">
+            <x-page-header :title="__('reply_templates.title')" :subtitle="__('reply_templates.subtitle')" />
 
             @if (session('status'))
                 {{-- A catalogue key rather than a sentence, so it is translated in
@@ -155,4 +155,4 @@
                     </div>
                 @endif
             </section>
-</x-layouts.app>
+</x-layouts.account>

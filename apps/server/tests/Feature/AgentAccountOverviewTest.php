@@ -67,7 +67,9 @@ test('agent can inspect their account role and same-account roster', function ()
         ->assertSee('Acme Support')
         ->assertSee('Your role')
         ->assertSee('Agent')
-        ->assertSee('Role changes are limited to account owners')
+        // The role rules live on the Roles page now, which this agent cannot
+        // open -- see `the role rules are the roles page's lede`.
+        ->assertDontSee('Role changes are limited to account owners')
         ->assertSee('Olive Owner')
         ->assertSee('olive@example.test')
         ->assertSee('Owner')
@@ -83,7 +85,11 @@ test('agent can inspect their account role and same-account roster', function ()
         ->assertDontSee('Restricted Store');
 });
 
-test('account overview gives admins a section map for management work', function (): void {
+test('account overview leaves navigation to the account sidebar and keeps every admin section', function (): void {
+    // The overview used to open with an in-page "Account map" of jump links
+    // and carry a second directory of management pages further down. The
+    // account sidebar replaces both (AccountContextSidebarTest); what stays is
+    // the account's own state.
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $admin = User::factory()->for($account)->create([
         'account_role' => AccountRole::Admin,
@@ -94,26 +100,22 @@ test('account overview gives admins a section map for management work', function
     $this->actingAs($admin)
         ->get('/dashboard/account')
         ->assertOk()
-        ->assertSee('Account map')
-        ->assertSee('href="#account-context-heading"', false)
-        ->assertSee('Account boundary')
-        ->assertSee('href="#role-boundary-heading"', false)
-        ->assertSee('Role boundary')
-        ->assertSee('href="#site-access-matrix"', false)
-        ->assertSee('Site access')
-        ->assertSee('href="#external-issue-readiness-heading"', false)
-        ->assertSee('External issue readiness')
-        ->assertSee('href="#account-activity-heading"', false)
-        ->assertSee('Account activity')
-        ->assertSee('href="#add-agent-heading"', false)
-        ->assertSee('Add agent')
-        ->assertSee('href="#team-alert-readiness-heading"', false)
-        ->assertSee('Team alert readiness')
-        ->assertSee('href="#agents"', false)
-        ->assertSee('Agents');
+        ->assertSee('aria-label="Account sections"', false)
+        ->assertDontSee('Account map')
+        ->assertDontSee('id="account-map-heading"', false)
+        ->assertDontSee('id="account-management-heading"', false)
+        ->assertDontSee('class="management-list"', false)
+        ->assertDontSee('id="role-boundary-heading"', false)
+        ->assertSee('id="account-context-heading"', false)
+        ->assertSee('id="site-access-matrix"', false)
+        ->assertSee('id="external-issue-readiness-heading"', false)
+        ->assertSee('id="account-activity-heading"', false)
+        ->assertSee('id="add-agent-heading"', false)
+        ->assertSee('id="team-alert-readiness-heading"', false)
+        ->assertSee('id="agents"', false);
 });
 
-test('account overview section map hides admin only sections from regular agents', function (): void {
+test('account overview hides admin only sections from regular agents', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);
     $agent = User::factory()->for($account)->create([
         'account_role' => AccountRole::Agent,
@@ -124,15 +126,56 @@ test('account overview section map hides admin only sections from regular agents
     $this->actingAs($agent)
         ->get('/dashboard/account')
         ->assertOk()
-        ->assertSee('Account map')
-        ->assertSee('href="#account-context-heading"', false)
-        ->assertSee('href="#role-boundary-heading"', false)
-        ->assertSee('href="#site-access-matrix"', false)
-        ->assertSee('href="#account-activity-heading"', false)
-        ->assertSee('href="#agents"', false)
-        ->assertDontSee('href="#external-issue-readiness-heading"', false)
-        ->assertDontSee('href="#add-agent-heading"', false)
-        ->assertDontSee('href="#team-alert-readiness-heading"', false);
+        ->assertSee('id="account-context-heading"', false)
+        ->assertSee('id="site-access-matrix"', false)
+        ->assertSee('id="account-activity-heading"', false)
+        ->assertSee('id="agents"', false)
+        ->assertDontSee('id="external-issue-readiness-heading"', false)
+        ->assertDontSee('id="add-agent-heading"', false)
+        ->assertDontSee('id="team-alert-readiness-heading"', false);
+});
+
+test('the data responsibility reminder is a closed disclosure on the overview', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $agent = User::factory()->for($account)->create(['account_role' => AccountRole::Agent]);
+
+    $html = (string) $this->actingAs($agent)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertDontSee('id="data-responsibility-heading"', false)
+        ->getContent();
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+    $xpath = new DOMXPath($document);
+    $disclosure = $xpath->query('//details[contains(@class, "details-disclosure")][summary[normalize-space(.)="Data responsibility"]]')->item(0);
+
+    expect($disclosure)->toBeInstanceOf(DOMElement::class, 'the data responsibility reminder is not a disclosure')
+        ->and($disclosure->hasAttribute('open'))->toBeFalse('the data responsibility disclosure renders open')
+        ->and($disclosure->textContent)->toContain('Retaining visitor-supplied data may create privacy, security, and legal obligations.')
+        ->and($xpath->query('.//a[@href="'.config('wayfindr.data_responsibility.docs_url').'"]', $disclosure)->length)->toBe(1, 'the data responsibility docs link left the disclosure');
+});
+
+test('the role rules are the roles page\'s lede, not an overview card', function (): void {
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+
+    $this->actingAs($owner)
+        ->get('/dashboard/account')
+        ->assertOk()
+        ->assertDontSee('Role boundary')
+        ->assertDontSee('Role changes are limited to account owners')
+        ->assertDontSee('Manage custom roles');
+
+    $this->actingAs($owner)
+        ->get(route('dashboard.account.roles.index'))
+        ->assertOk()
+        ->assertSeeInOrder([
+            '<h1>Custom roles</h1>',
+            'Role changes are limited to account owners. Owners cannot change their own role, and every role change is audited.',
+            'Owners and admins can suspend access without deleting account history.',
+            'id="create-role-heading"',
+        ], false);
 });
 
 test('agent can inspect visible site access from the account overview', function (): void {
@@ -1379,7 +1422,7 @@ test('account overview follows the reader language through populated management 
 
     $response->assertOk()
         ->assertSee('<html lang="'.$locale.'">', false)
-        ->assertSee($copy['map'])
+        ->assertSee('aria-label="'.$copy['sections'].'"', false)
         ->assertSee($copy['sites'])
         ->assertSee($copy['external'])
         ->assertSee($copy['attention'])
@@ -1389,7 +1432,7 @@ test('account overview follows the reader language through populated management 
         ->assertSee($copy['create'])
         ->assertSee($copy['alerts'])
         ->assertSee($copy['workload'])
-        ->assertDontSee('Account map')
+        ->assertDontSee('Account sections')
         ->assertDontSee('Site access matrix')
         ->assertDontSee('External issue readiness')
         ->assertDontSee('Recent account activity')
@@ -1419,13 +1462,13 @@ test('account overview follows the reader language through populated management 
             ->toBeGreaterThan(0, "{$value} is not marked as language-neutral account data");
     }
 
-    $heading = $xpath->query('//*[@id="account-map-heading"]')->item(0);
+    $heading = $xpath->query('//*[@id="site-access-matrix-heading"]')->item(0);
 
     expect($heading)->toBeInstanceOf(DOMElement::class)
         ->and($heading->hasAttribute('lang'))->toBeFalse('translated account copy was reset to an unknown language');
 })->with([
     'German' => ['de', [
-        'map' => 'Kontoübersicht',
+        'sections' => 'Kontobereiche',
         'sites' => 'Matrix für Website-Zugriff',
         'external' => 'Bereitschaft für externe Issues',
         'attention' => 'Erfordert Aufmerksamkeit',
@@ -1437,7 +1480,7 @@ test('account overview follows the reader language through populated management 
         'workload' => 'Arbeitslast',
     ]],
     'Italian' => ['it', [
-        'map' => 'Mappa dell’account',
+        'sections' => 'Sezioni dell’account',
         'sites' => 'Matrice di accesso ai siti',
         'external' => 'Prontezza delle segnalazioni esterne',
         'attention' => 'Richiede attenzione',

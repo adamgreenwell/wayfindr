@@ -16,7 +16,6 @@ return [
     'document_title' => 'Account audit',
     'title' => 'Account audit',
     'subtitle' => 'Search account-level activity without exposing raw event metadata.',
-    'back' => 'Back to account',
     'shown' => '{1} :count shown|[2,*] :count shown',
     'export_csv' => 'Export CSV',
 

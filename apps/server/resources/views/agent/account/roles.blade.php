@@ -1,8 +1,12 @@
-<x-layouts.app :title="__('account_roles.document_title')" :agent="$agent" :account="$account">
+<x-layouts.account :title="__('account_roles.document_title')">
     <x-page-header :title="__('account_roles.heading')" :subtitle="__('account_roles.subtitle')">
-        <x-slot:actions>
-            <a class="button secondary" href="{{ route('dashboard.account.show') }}">{{ __('account_roles.back') }}</a>
-        </x-slot:actions>
+        {{-- What a role does and does not decide. This was the account
+             overview's "Role boundary" card, where most of the people reading
+             it could not act on it; the subtitle above already says that site
+             assignments decide visibility, so only the rules it does not cover
+             moved here. --}}
+        <p class="lede">{{ __('account_roles.boundary.changes') }}</p>
+        <p class="lede">{{ __('account_roles.boundary.suspension') }}</p>
     </x-page-header>
 
     @if (session('status'))
@@ -134,4 +138,4 @@
             @endforeach
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.account>

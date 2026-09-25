@@ -27,7 +27,6 @@
 return [
     'title' => 'API and webhooks',
     'subtitle' => "Scoped API access and signed event delivery for this account's integrations.",
-    'back' => 'Back to account',
 
     // Usable rather than merely un-revoked: a token past its expiry is refused
     // at authentication and labelled Expired in the table, so counting it as

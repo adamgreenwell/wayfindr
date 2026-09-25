@@ -1,7 +1,7 @@
 @php($presenter = app(\App\Support\Automation\AutomationRulePresenter::class))
 
-<x-layouts.app :title="__('automation_rules.title')" :agent="$agent" :account="$account">
-    <x-page-header :title="__('automation_rules.title')" :subtitle="__('automation_rules.subtitle')" :back-href="route('dashboard.account.show')" :back-label="__('automation_rules.back')">
+<x-layouts.account :title="__('automation_rules.title')">
+    <x-page-header :title="__('automation_rules.title')" :subtitle="__('automation_rules.subtitle')">
         <x-slot:actions>
             <a class="button secondary" href="{{ route('dashboard.account.automation-macros.create') }}">{{ __('automation_macros.create.action') }}</a>
             <a class="button" href="{{ route('dashboard.account.automation-rules.create') }}">{{ __('automation_rules.create.action') }}</a>
@@ -266,4 +266,4 @@
             </section>
         </x-tab-panel>
     </x-tabs>
-</x-layouts.app>
+</x-layouts.account>

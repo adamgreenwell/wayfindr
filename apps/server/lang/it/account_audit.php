@@ -13,7 +13,6 @@ return [
     'document_title' => 'Registro account',
     'title' => 'Registro account',
     'subtitle' => 'Cerchi le attività a livello di account senza esporre i metadati grezzi degli eventi.',
-    'back' => 'Torna all’account',
     'shown' => '{1} :count visualizzato|[2,*] :count visualizzati',
     'export_csv' => 'Esporta CSV',
 

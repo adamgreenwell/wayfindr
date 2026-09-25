@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('integrations.title')" :agent="$agent" :account="$account">
+<x-layouts.account :title="__('integrations.title')">
     @php
         $selectedCapabilities = collect(old('capabilities', ['create_issue']))
             ->filter(fn ($value) => is_string($value))
@@ -25,8 +25,6 @@
     <x-page-header
         :title="__('integrations.title')"
         :subtitle="__('integrations.subtitle')"
-        :back-href="route('dashboard.account.show')"
-        :back-label="__('integrations.back')"
     />
 
     @if (session('status'))
@@ -347,4 +345,4 @@
             </div>
         @endif
     </section>
-</x-layouts.app>
+</x-layouts.account>

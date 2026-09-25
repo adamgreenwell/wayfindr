@@ -4,7 +4,6 @@ return [
     'document_title' => 'SLA-Richtlinien',
     'title' => 'SLA-Richtlinien',
     'subtitle' => 'Zusagen für Antwort und Lösung dieses Kontos.',
-    'back' => 'Zurück zum Konto',
     'priority' => 'Priorität',
     'change_priority' => 'Priorität der Unterhaltung',
     'save_priority' => 'Priorität speichern',

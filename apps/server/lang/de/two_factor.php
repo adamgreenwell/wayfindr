@@ -55,8 +55,6 @@ return [
         'save' => 'Sicherheitsrichtlinie speichern',
         'admin_must_enrol' => 'Richten Sie zuerst Ihren eigenen Authenticator ein, bevor Sie die Zwei-Faktor-Authentifizierung vorschreiben.',
         'enrol_required' => 'Ihr Konto schreibt die Zwei-Faktor-Authentifizierung vor. Schließen Sie die Einrichtung hier ab, um fortzufahren.',
-        'link_label' => 'Kontosicherheit',
-        'link_detail' => 'Bereitschaft zur Zwei-Faktor-Einrichtung und die kontoübergreifende Anmeldevorgabe.',
     ],
     'flash' => [
         'enrolment_started' => 'Zwei-Faktor-Einrichtung gestartet.',

@@ -3,7 +3,6 @@
 return [
     'title' => 'Automazioni',
     'subtitle' => 'Esegua sequenze esplicite di azioni tramite eventi corrispondenti o un clic dell’agente.',
-    'back' => 'Torna all’account',
     'status' => ['enabled' => 'Attiva', 'draft' => 'Bozza'],
     'flash' => [
         'created' => 'Bozza della regola di automazione creata.',

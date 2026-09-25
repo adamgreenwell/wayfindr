@@ -4,7 +4,6 @@ return [
     'document_title' => 'SLA policies',
     'title' => 'SLA policies',
     'subtitle' => 'Response and resolution commitments for this account.',
-    'back' => 'Back to account',
     'priority' => 'Priority',
     'change_priority' => 'Conversation priority',
     'save_priority' => 'Save priority',

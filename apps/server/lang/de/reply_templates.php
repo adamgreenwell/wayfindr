@@ -29,7 +29,6 @@
 return [
     'title' => 'Antwortvorlagen',
     'subtitle' => 'Kontoweite Antworthilfen für häufige Besuchermeldungen verwalten.',
-    'back' => 'Zurück zum Konto',
 
     'flash' => [
         'created' => 'Antwortvorlage erstellt.',

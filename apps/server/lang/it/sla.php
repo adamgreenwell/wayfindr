@@ -4,7 +4,6 @@ return [
     'document_title' => 'Criteri SLA',
     'title' => 'Criteri SLA',
     'subtitle' => 'Impegni di risposta e risoluzione per questo account.',
-    'back' => 'Torna all’account',
     'priority' => 'Priorità',
     'change_priority' => 'Priorità della conversazione',
     'save_priority' => 'Salva priorità',

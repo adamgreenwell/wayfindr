@@ -17,7 +17,6 @@ return [
     'document_title' => 'Accesso del gestore',
     'title' => 'Accesso del gestore',
     'subtitle' => 'Quando un gestore della piattaforma deve vedere i dati di supporto di questo account, deve farne richiesta. Approvi, rifiuti o termini qui l’accesso.',
-    'back' => 'Torna all’account',
 
     'banner' => [
         'title' => 'L’accesso del gestore della piattaforma è attivo',

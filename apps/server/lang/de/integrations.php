@@ -16,7 +16,6 @@
 return [
     'title' => 'Integrationen',
     'subtitle' => 'Kontoweite Anbieter-Verbindungen und die externen Issues, an die jede Website übergibt.',
-    'back' => 'Zurück zum Konto',
 
     'flash' => [
         'connection_saved' => 'Anbieter-Verbindung gespeichert.',

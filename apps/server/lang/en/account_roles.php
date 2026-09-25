@@ -4,7 +4,10 @@ return [
     'document_title' => 'Custom roles',
     'heading' => 'Custom roles',
     'subtitle' => 'Combine only the account permissions each teammate needs. Site assignments still decide where support work is visible.',
-    'back' => 'Back to account',
+    'boundary' => [
+        'changes' => 'Role changes are limited to account owners. Owners cannot change their own role, and every role change is audited.',
+        'suspension' => 'Owners and admins can suspend access without deleting account history. Admins can only suspend agents; owners can manage any other same-account user.',
+    ],
     'fields' => ['name' => 'Role name'],
     'groups' => [
         'team' => 'Team access',

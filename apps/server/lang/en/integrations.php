@@ -16,7 +16,6 @@
 return [
     'title' => 'Integrations',
     'subtitle' => 'Account-wide provider connections and where each site sends external issues.',
-    'back' => 'Back to account',
 
     'flash' => [
         'connection_saved' => 'Provider connection saved.',

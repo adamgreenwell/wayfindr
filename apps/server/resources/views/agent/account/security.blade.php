@@ -1,4 +1,4 @@
-<x-layouts.app :title="__('two_factor.policy.document_title')" :agent="$agent" :account="$account">
+<x-layouts.account :title="__('two_factor.policy.document_title')">
     <x-page-header :title="__('two_factor.policy.heading')" :subtitle="__('two_factor.policy.subtitle')" />
 
     @if (session('status'))
@@ -178,4 +178,4 @@
             </form>
         </section>
     @endif
-</x-layouts.app>
+</x-layouts.account>

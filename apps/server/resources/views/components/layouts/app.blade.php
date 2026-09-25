@@ -1398,6 +1398,13 @@
             color: var(--wf-muted);
         }
 
+        /* The account sidebar groups its destinations; a group's heading
+           needs air above it to read as the start of the next run of links,
+           not the end of the previous one. */
+        .wf-context-link + .wf-context-heading {
+            margin-top: var(--wf-space-4);
+        }
+
         .wf-context-link {
             padding: 6px var(--wf-space-3);
             border-radius: var(--wf-radius);
@@ -3569,6 +3576,11 @@
             // rail is extracted.
             $commandNavigationItems = collect($workItems)->concat($manageItems)->values();
             $currentLabel = $commandNavigationItems->firstWhere('active')['label'] ?? $title;
+            // Where the middle crumb goes when a surface has sections of its
+            // own. It was hard-coded to the operator console while that was
+            // the only such surface, which would have sent the account's
+            // "Account" crumb -- for agents who are not operators -- to a 403.
+            $currentHref = $commandNavigationItems->firstWhere('active')['href'] ?? route('dashboard');
         @endphp
 
         <div class="wf-app">
@@ -3621,7 +3633,7 @@
                         <a href="{{ route('dashboard') }}" lang="">{{ $account->name }}</a>
                         <x-icon name="chevron-right" :size="13" />
                         @if ($crumb)
-                            <a href="{{ route('operator.dashboard') }}">{{ $currentLabel }}</a>
+                            <a href="{{ $currentHref }}">{{ $currentLabel }}</a>
                             <x-icon name="chevron-right" :size="13" />
                             <span class="wf-crumb-current">{{ $crumb }}</span>
                         @else

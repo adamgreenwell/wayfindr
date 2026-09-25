@@ -4,7 +4,10 @@ return [
     'document_title' => 'Benutzerdefinierte Rollen',
     'heading' => 'Benutzerdefinierte Rollen',
     'subtitle' => 'Kombinieren Sie nur die Kontoberechtigungen, die jede Person benötigt. Website-Zuweisungen bestimmen weiterhin, wo Supportarbeit sichtbar ist.',
-    'back' => 'Zurück zum Konto',
+    'boundary' => [
+        'changes' => 'Rollenänderungen sind Kontoinhabern vorbehalten. Inhaber können ihre eigene Rolle nicht ändern, und jede Rollenänderung wird protokolliert.',
+        'suspension' => 'Inhaber und Administratoren können den Zugriff sperren, ohne den Kontoverlauf zu löschen. Administratoren können nur Agenten sperren; Inhaber können alle anderen Personen desselben Kontos verwalten.',
+    ],
     'fields' => ['name' => 'Rollenname'],
     'groups' => ['team' => 'Teamzugriff', 'support' => 'Supportarbeit', 'content' => 'Wissen', 'account' => 'Kontoeinstellungen'],
     'create' => ['heading' => 'Rolle erstellen', 'lede' => 'Nicht ausgewählte Berechtigungen werden verweigert', 'submit' => 'Rolle erstellen'],

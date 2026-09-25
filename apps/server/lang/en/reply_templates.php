@@ -18,7 +18,6 @@
 return [
     'title' => 'Reply templates',
     'subtitle' => 'Manage account-wide helper replies for common visitor updates.',
-    'back' => 'Back to account',
 
     'flash' => [
         'created' => 'Reply template created.',

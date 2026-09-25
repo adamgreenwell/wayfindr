@@ -5,7 +5,6 @@ return [
     'document_title' => 'Attributi dei visitatori',
     'heading' => 'Attributi dei visitatori',
     'subtitle' => 'Trasforma il contesto selezionato dell’host in dati di contatto denominati e tipizzati che gli agenti possono comprendere e filtrare.',
-    'back' => 'Torna all’account',
     'boundary' => [
         'heading' => 'Confine dei dati',
         'lede' => 'Le definizioni non raccolgono nuovi dati',

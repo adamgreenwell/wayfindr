@@ -20,22 +20,6 @@ return [
         'help' => 'Share this password securely. It is shown once and should be changed by the agent after sign-in.',
     ],
 
-    'map' => [
-        'heading' => 'Account map',
-        'count' => '{1} :count section|[2,*] :count sections',
-        'open' => 'Open',
-        'items' => [
-            'account' => ['label' => 'Account boundary', 'detail' => 'Role, site count, visible scope, and support assignments.'],
-            'role' => ['label' => 'Role boundary', 'detail' => 'How account authority differs from site-level access.'],
-            'sites' => ['label' => 'Site access', 'detail' => 'Which support sites and queues are visible to the roster.'],
-            'external' => ['label' => 'External issue readiness', 'detail' => 'Provider routing health for ticket handoff.'],
-            'activity' => ['label' => 'Account activity', 'detail' => 'Recent account access, roster, and support-scope changes.'],
-            'add_agent' => ['label' => 'Add agent', 'detail' => 'Invite a teammate with a generated temporary password.'],
-            'alerts' => ['label' => 'Team alert readiness', 'detail' => 'Whether your active agents can actually receive notifications.'],
-            'agents' => ['label' => 'Agents', 'detail' => 'Roster, role, support scope, workload, and delivery state.'],
-        ],
-    ],
-
     'context' => [
         'boundary' => 'Account boundary',
         'your_role' => 'Your role',
@@ -44,16 +28,6 @@ return [
         'visible' => 'Visible to you',
         'assignments' => 'Support assignments',
         'assignment_count' => '{1} :count support assignment|[2,*] :count support assignments',
-    ],
-
-    'role_boundary' => [
-        'heading' => 'Role boundary',
-        'owner_enabled' => 'Owner controls enabled',
-        'read_only' => 'Read-only for your role',
-        'authority' => 'Account roles describe authority. Site access still decides which support queues an agent can work.',
-        'changes' => 'Role changes are limited to account owners. Owners cannot change their own role here, and every role change is audited.',
-        'suspension' => 'Owners and admins can suspend access without deleting account history. Admins can only suspend agents; owners can manage any other same-account user.',
-        'manage_custom_roles' => 'Manage custom roles',
     ],
 
     'site_access' => [
@@ -141,25 +115,6 @@ return [
             'status' => 'Status :status',
             'unknown_project' => 'Unknown project',
             'details_withheld' => 'Provider details withheld',
-        ],
-    ],
-
-    'management' => [
-        'heading' => 'Management',
-        'lede' => 'Account-wide settings',
-        'actions' => ['manage' => 'Manage', 'view' => 'View', 'open' => 'Open', 'review' => 'Review'],
-        'items' => [
-            'integrations' => ['label' => 'Integrations', 'detail' => 'External issue providers and where each site hands tickets off.'],
-            'sites' => ['label' => 'Sites', 'detail' => 'Connected sites, widget install health, and per-site settings.'],
-            'sla' => ['label' => 'SLA policies', 'detail' => 'Response and resolution targets by support priority.'],
-            'visitor_attributes' => ['label' => 'Visitor attributes', 'detail' => 'Name and type the safe host context agents use to understand contacts.'],
-            'articles' => ['label' => 'Articles', 'detail' => 'Answers a visitor can search for themselves, before they ask.'],
-            'replies' => ['label' => 'Reply templates', 'detail' => 'Saved replies agents can insert into conversations.'],
-            'labels' => ['label' => 'Ticket labels', 'detail' => 'Shared labels for organizing and filtering tickets.'],
-            'automations' => ['label' => 'Automations', 'detail' => 'Event-driven rules and one-click macros with shared actions and execution history.'],
-            'audit' => ['label' => 'Audit log', 'detail' => 'Search account activity and export safe audit records.'],
-            'tokens' => ['label' => 'API and webhooks', 'detail' => 'Scoped read and write access plus signed event delivery for integrations.'],
-            'operator_access' => ['label' => 'Operator access', 'detail' => 'Requests from platform operators to see this account\'s support data.'],
         ],
     ],
 
