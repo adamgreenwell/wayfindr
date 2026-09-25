@@ -338,6 +338,41 @@ test('an agent replying to an email conversation sends an email back', function 
     expect($reply->email_message_id)->not->toBeNull();
 });
 
+test('an agent reply to an email conversation is actually delivered, not only handed to a fake', function (): void {
+    // Every other reply test fakes the mailer, and a fake never renders the
+    // view. The view read `$message`, which the mailer overwrites with its own
+    // Illuminate\Mail\Message, so every real send threw -- and no reply by email
+    // was ever delivered while the suite stayed green.
+    config()->set('mail.default', 'array');
+    $site = mailSite();
+    $inbound = deliver(mailPayload());
+
+    $agent = User::factory()->for($site->account)->create(['account_role' => AccountRole::Admin]);
+    $site->supportAgents()->syncWithoutDetaching($agent->id);
+
+    $this->actingAs($agent)
+        ->post(route('dashboard.conversations.messages.store', $inbound->conversation->support_code), [
+            'body' => "We've found it and it ships today.",
+        ])
+        ->assertRedirect();
+
+    $sent = app('mailer')->getSymfonyTransport()->messages();
+
+    expect($sent)->toHaveCount(1, 'The agent reply was never delivered: rendering the reply email failed.');
+
+    $text = $sent->first()->getOriginalMessage()->getTextBody();
+
+    // Plain text, so nothing may be HTML-escaped: "We&#039;ve" in an inbox is
+    // the agent's words mangled.
+    expect(str_contains($text, "We've found it and it ships today."))
+        ->toBeTrue("The delivered email does not carry the agent's words verbatim: {$text}");
+
+    $reply = $inbound->conversation->fresh()->messages()->where('sender_type', User::class)->firstOrFail();
+
+    expect(ConversationReplyDelivery::query()->where('conversation_message_id', $reply->id)->value('accepted_at'))
+        ->not->toBeNull();
+});
+
 test('a queue outage does not turn a durably stored agent reply into a resubmit-inducing error', function (): void {
     Event::fake([ConversationMessageCreated::class]);
     Log::spy();

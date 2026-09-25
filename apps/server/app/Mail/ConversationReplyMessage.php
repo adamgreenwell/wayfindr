@@ -59,7 +59,14 @@ class ConversationReplyMessage extends Mailable
 
     public function content(): Content
     {
-        return new Content(text: 'mail.conversation-reply');
+        return new Content(
+            text: 'mail.conversation-reply',
+            // Not `$message`: the mailer hands every mail view its own
+            // Illuminate\Mail\Message under that name, overwriting this
+            // class's property. A view reading `$message->body` threw on every
+            // send, so no reply by email was ever delivered.
+            with: ['reply' => $this->message],
+        );
     }
 
     /**
