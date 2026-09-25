@@ -147,9 +147,33 @@ test('the bounds admit a long real id and refuse what no key can be', function (
     expect($matched('GET', '/dashboard/sites/'.str_repeat('9', 19)))
         ->toBeNull('A nineteen-digit id reached the route; 9999999999999999999 is past the largest bigint and fails there.');
 
+    // The largest bigint is a real id an import or an advanced sequence can
+    // hold; one past it is not. An eighteen-digit cap refused the first.
+    expect($matched('GET', '/dashboard/sites/'.PHP_INT_MAX))
+        ->toBe('dashboard.sites.show', 'The largest bigint no longer reaches its route, so the bound refuses a record PostgreSQL can hold.')
+        ->and($matched('GET', '/dashboard/sites/9223372036854775808'))
+        ->toBeNull('One past the largest bigint reached the route, and PostgreSQL raises casting it.');
+
     expect($matched('POST', '/dashboard/alerts/'.Str::uuid()->toString().'/read'))
         ->toBe('dashboard.alerts.read', 'A well-formed alert id no longer reaches its route.');
 
     expect($matched('POST', '/dashboard/alerts/not-a-uuid/read'))
         ->toBeNull('An alert id that is not a UUID reached the route, and PostgreSQL raises comparing it with the uuid key.');
+});
+
+test('the route bound admits exactly the ids DatabaseKey::isValid admits', function (): void {
+    // The pattern is a regex spelled out digit by digit, so check it against
+    // the arithmetic it stands for, around the bound and across the range.
+    $pattern = '/^'.DatabaseKey::ROUTE_PATTERN.'$/';
+    mt_srand(1038);
+
+    for ($i = 0; $i < 20000; $i++) {
+        $value = $i % 2 === 0
+            ? (string) (PHP_INT_MAX - mt_rand(0, 10 ** 7))
+            : sprintf('%019d', mt_rand(0, PHP_INT_MAX));
+        $value = substr_replace($value, (string) mt_rand(0, 9), mt_rand(0, 18), 1);
+
+        expect((bool) preg_match($pattern, $value))
+            ->toBe(DatabaseKey::isValid($value), "The route bound and isValid() disagree on {$value}.");
+    }
 });
