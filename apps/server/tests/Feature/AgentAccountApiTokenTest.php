@@ -1012,6 +1012,70 @@ test('every checkbox group on the page is named by a legend, and every label nam
     }
 });
 
+/** Every inline stylesheet on the page, comments removed. Named for this file. */
+function accountApiTokenPageStylesheet(DOMXPath $xpath): string
+{
+    return (string) preg_replace('#/\*.*?\*/#s', '', implode("\n", array_map(
+        fn (DOMNode $style): string => $style->textContent,
+        iterator_to_array($xpath->query('//style')),
+    )));
+}
+
+test('every checkbox in a group sits on one line with its words, as a check row', function (): void {
+    // The labels were bare, so `.field input { width: 100% }` stretched each
+    // checkbox across the form: it sat centred on a line of its own, with its
+    // words on the next. Integrations lays the same kind of list out as check
+    // rows.
+    ['admin' => $admin] = tokenAdmin();
+
+    $xpath = accountApiTokenPageXpath((string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent());
+
+    foreach (['abilities[]', 'site_ids[]', 'webhook[events][]', 'webhook[site_ids][]'] as $name) {
+        $checkboxes = $xpath->query('//fieldset[contains(concat(" ", normalize-space(@class), " "), " field ")]//input[@type="checkbox" and @name="'.$name.'"]');
+
+        expect($checkboxes->length)->toBeGreaterThan(0, "no {$name} checkboxes rendered; the fixture does not reach this group");
+
+        foreach ($checkboxes as $checkbox) {
+            $label = $checkbox->parentNode;
+
+            expect($label->nodeName)->toBe('label', "a {$name} checkbox is not inside its label")
+                ->and(str_contains(' '.$label->getAttribute('class').' ', ' check-row '))
+                ->toBeTrue("a {$name} checkbox is not laid out as a check row, so it stretches to the width of the form")
+                ->and(trim($xpath->query('span', $label)->item(0)?->textContent ?? ''))
+                ->not->toBe('', "a {$name} checkbox's words are not the check row's text");
+        }
+    }
+
+    // `.field label` (0,1,1) outranks `.check-row` (0,1,0): without a rule of
+    // its own inside a group, each option renders as a block caption.
+    preg_match('/(^|[\s,}])fieldset\.field \.check-row\s*\{([^}]*)\}/', accountApiTokenPageStylesheet($xpath), $rule);
+
+    expect(str_contains($rule[2] ?? '', 'display: flex'))
+        ->toBeTrue('inside a fieldset.field, `.field label` still decides how a check row is laid out');
+});
+
+test('a checkbox group\'s legend lines up with the labels of the fields around it', function (): void {
+    // fieldset.field reset the UA border and padding but kept the UA's 2px side
+    // margin, so every legend sat 2px to the right of the labels above and
+    // below it -- here, on Profile, Site settings and a conversation's ticket
+    // form alike.
+    ['admin' => $admin] = tokenAdmin();
+
+    $xpath = accountApiTokenPageXpath((string) $this->actingAs($admin)
+        ->get(route('dashboard.account.api-tokens.index'))->assertOk()->getContent());
+
+    expect($xpath->query('//fieldset[contains(concat(" ", normalize-space(@class), " "), " field ")]/legend')->length)
+        ->toBeGreaterThan(0, 'no fieldset.field legend rendered; this guard is checking nothing');
+
+    preg_match('/(^|[\s,}])fieldset\.field\s*\{([^}]*)\}/', accountApiTokenPageStylesheet($xpath), $rule);
+    $declarations = $rule[2] ?? '';
+
+    expect(preg_match('/margin-inline:\s*0(px)?\s*;/', $declarations) === 1
+        || (preg_match('/margin-left:\s*0(px)?\s*;/', $declarations) === 1 && preg_match('/margin-right:\s*0(px)?\s*;/', $declarations) === 1))
+        ->toBeTrue('fieldset.field keeps the browser\'s 2px side margin, so its legend sits right of the labels around it');
+});
+
 test('a secret shown once is styled as a warning, not as ordinary notice copy', function (): void {
     // Both shown-once panels were marked data-state="warning", and nothing
     // styled that state: they rendered exactly like the page's explanatory

@@ -34,6 +34,7 @@ return [
         'heading' => 'Defined attributes',
         'count' => '{0} No definitions|{1} :count definition|[2,*] :count definitions',
         'empty' => 'No visitor attributes have been defined yet.',
+        'empty_action' => 'Define the first attribute',
         'save' => 'Save definition',
         'delete' => 'Delete definition',
     ],

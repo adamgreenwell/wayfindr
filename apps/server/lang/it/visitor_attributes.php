@@ -26,6 +26,7 @@ return [
         'heading' => 'Attributi definiti',
         'count' => '{0} Nessuna definizione|{1} :count definizione|[2,*] :count definizioni',
         'empty' => 'Non è stato ancora definito alcun attributo dei visitatori.',
+        'empty_action' => 'Definisci il primo attributo',
         'save' => 'Salva definizione',
         'delete' => 'Elimina definizione',
     ],

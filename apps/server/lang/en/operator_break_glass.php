@@ -10,7 +10,7 @@
  */
 
 return [
-    'document_title' => 'Operator Access',
+    'document_title' => 'Operator access',
     'title' => 'Operator access',
     'introduction' => 'You cannot see any account’s conversations or tickets by default. Ask here when you need to, for one conversation, one site or one account. The account sees your reason, approves or denies it, and can end it at any point. Access is read-only and expires on its own, and every page you open is recorded for them.',
 
@@ -70,7 +70,7 @@ return [
     ],
 
     'grant' => [
-        'document_title' => 'Operator Access',
+        'document_title' => 'Operator access',
         'back' => 'Back to operator access',
         'summary' => 'Read-only access until :until (:elapsed). Every view is recorded and visible to :account.',
         'conversations' => [
@@ -90,7 +90,7 @@ return [
     ],
 
     'conversation' => [
-        'document_title' => 'Conversation Transcript',
+        'document_title' => 'Conversation transcript',
         'back' => 'Back to grant',
         'summary' => 'Read-only transcript · :site · access expires :elapsed.',
         'transcript' => [
@@ -117,7 +117,7 @@ return [
     ],
 
     'ticket' => [
-        'document_title' => 'Ticket Record',
+        'document_title' => 'Ticket record',
         'reference' => 'Ticket #:id',
         'back' => 'Back to grant',
         'heading' => 'Ticket #:id — :subject',

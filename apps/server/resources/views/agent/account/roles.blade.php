@@ -40,7 +40,13 @@
                     @foreach ($permissions as $permission)
                         <label class="check-row" for="new-permission-{{ $permission->value }}">
                             <input id="new-permission-{{ $permission->value }}" name="permissions[]" type="checkbox" value="{{ $permission->value }}" @checked($failedRoleId === null && in_array($permission->value, old('permissions', []), true))>
-                            <span><strong>{{ __('account_roles.permissions.'.$permission->value.'.label') }}</strong><span class="lede">{{ __('account_roles.permissions.'.$permission->value.'.detail') }}</span></span>
+                            {{-- Two parts, and whitespace between them: the checkbox's
+                                 accessible name is this text run together, so without
+                                 it a screen reader read "Manage agentsAdd teammates". --}}
+                            <span>
+                                <strong>{{ __('account_roles.permissions.'.$permission->value.'.label') }}</strong>
+                                <span class="lede">{{ __('account_roles.permissions.'.$permission->value.'.detail') }}</span>
+                            </span>
                         </label>
                     @endforeach
                 </fieldset>
@@ -101,7 +107,10 @@
                                         @foreach ($permissions as $permission)
                                             <label class="check-row" for="role-{{ $role->id }}-permission-{{ $permission->value }}">
                                                 <input id="role-{{ $role->id }}-permission-{{ $permission->value }}" name="permissions[]" type="checkbox" value="{{ $permission->value }}" @checked($roleEditFailed ? in_array($permission->value, old('permissions', []), true) : $role->hasPermission($permission))>
-                                                <span><strong>{{ __('account_roles.permissions.'.$permission->value.'.label') }}</strong><span class="lede">{{ __('account_roles.permissions.'.$permission->value.'.detail') }}</span></span>
+                                                <span>
+                                                    <strong>{{ __('account_roles.permissions.'.$permission->value.'.label') }}</strong>
+                                                    <span class="lede">{{ __('account_roles.permissions.'.$permission->value.'.detail') }}</span>
+                                                </span>
                                             </label>
                                         @endforeach
                                     </fieldset>

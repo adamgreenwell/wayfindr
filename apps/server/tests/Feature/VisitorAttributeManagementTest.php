@@ -252,6 +252,65 @@ test('a contacts-only role can use assigned visitor records without gaining supp
         ->assertForbidden();
 });
 
+/** The attributes page as a DOM. Named for this file: Pest helpers are global. */
+function visitorAttributeManagementXpath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$html);
+
+    return new DOMXPath($document);
+}
+
+test('each definition is an item of the list card, not a card nested inside it', function (): void {
+    // Every definition was an <article class="section">: a bordered card 28px
+    // down inside the card listing it, with Delete flush against its edge.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $definitions = collect(['plan', 'seats'])->map(fn (string $key): VisitorAttributeDefinition => VisitorAttributeDefinition::factory()
+        ->for($account)
+        ->create(['key' => $key, 'label' => ucfirst($key)]));
+
+    $xpath = visitorAttributeManagementXpath((string) $this->actingAs($admin)
+        ->get(route('dashboard.account.visitor-attributes.index'))
+        ->assertOk()
+        ->getContent());
+
+    expect($xpath->query('//section//*[contains(concat(" ", normalize-space(@class), " "), " section ")]')->length)
+        ->toBe(0, 'a card is nested inside another card');
+
+    foreach ($definitions as $definition) {
+        $item = $xpath->query('//section[@aria-labelledby="defined-attributes-heading"]/article[@id="attribute-'.$definition->id.'"]')->item(0);
+
+        expect($item)->not->toBeNull("the {$definition->key} definition is not listed in the defined-attributes card")
+            ->and($item->getAttribute('class'))->toBe('section-item', "the {$definition->key} definition is not an item of the card");
+
+        // Update and destroy share a URL; the spoofed method tells them apart.
+        foreach (['PUT' => 'save form', 'DELETE' => 'delete control'] as $method => $control) {
+            expect($xpath->query('div[@class="section-item-body"]/form[@action="'.route('dashboard.account.visitor-attributes.update', $definition).'"][input[@name="_method" and @value="'.$method.'"]]', $item)->length)
+                ->toBe(1, "the {$definition->key} definition's {$control} sits outside the item's body, against its edge");
+        }
+    }
+});
+
+test('an account with no visitor attributes is pointed at the create form', function (): void {
+    // It was a bare <p class="empty-state">: no padding, so it sat flush on
+    // the card's edge, and no way on to the form that fills the list.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+
+    $xpath = visitorAttributeManagementXpath((string) $this->actingAs($admin)
+        ->get(route('dashboard.account.visitor-attributes.index'))
+        ->assertOk()
+        ->getContent());
+
+    $empty = $xpath->query('//section[@aria-labelledby="defined-attributes-heading"]/div[contains(concat(" ", normalize-space(@class), " "), " empty ") and contains(concat(" ", normalize-space(@class), " "), " empty-state ")]')->item(0);
+
+    expect($empty)->not->toBeNull('the empty list is not the house empty state')
+        ->and(trim($xpath->query('strong', $empty)->item(0)?->textContent ?? ''))->toBe(__('visitor_attributes.existing.empty'))
+        ->and($xpath->query('.//a[@href="#create-attribute-heading"]', $empty)->length)->toBe(1, 'the empty state carries no action to the create form')
+        ->and($xpath->query('//h2[@id="create-attribute-heading"]')->length)->toBe(1, 'the empty-state action points at an id that does not exist');
+});
+
 test('an unprivileged custom role cannot manage attributes or open visitor records', function (): void {
     $account = Account::factory()->create();
     $role = CustomRole::factory()->for($account)->create(['permissions' => []]);

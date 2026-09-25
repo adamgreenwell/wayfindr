@@ -96,7 +96,9 @@
                                     @endphp
                                     <tr>
                                         <td><strong lang="">{{ $replyTemplate->name }}</strong></td>
-                                        <td lang="">{{ \Illuminate\Support\Str::limit($replyTemplate->body, 120) }}</td>
+                                        {{-- Up to 120 characters of the account's prose: in a
+                                             nowrap cell it set the table wider than its card. --}}
+                                        <td class="cell-wrap" lang="">{{ \Illuminate\Support\Str::limit($replyTemplate->body, 120) }}</td>
                                         <td>{{ $replyTemplate->is_active ? __('reply_templates.list.active') : __('reply_templates.list.archived') }}</td>
                                         <td>
                                             {{-- The Body column already shows the text, so the editor

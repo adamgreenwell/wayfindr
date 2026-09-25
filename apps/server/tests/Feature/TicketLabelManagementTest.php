@@ -2,7 +2,9 @@
 
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
+use App\Enums\AutomationRuleActionType;
 use App\Models\Account;
+use App\Models\AutomationRule;
 use App\Models\CustomRole;
 use App\Models\Site;
 use App\Models\Ticket;
@@ -781,4 +783,93 @@ test('a label row discriminator sent as an array still lands on the page, not a 
             'label_name' => 'All',
         ])
         ->assertOk();
+});
+
+/**
+ * What a row's Delete button submits, read off the rendered form rather than
+ * restated here, so a field the form stops carrying fails the test.
+ */
+function ticketLabelManagementDeleteFields(DOMXPath $xpath, TicketLabel $label): array
+{
+    $form = ticketLabelManagementElement($xpath, '//form[@action="'.route('dashboard.account.labels.destroy', $label).'"][input[@name="_method" and @value="DELETE"]]');
+    $fields = [];
+
+    foreach ($xpath->query('.//input[@type="hidden"]', $form) as $input) {
+        $fields[$input->getAttribute('name')] = $input->getAttribute('value');
+    }
+
+    unset($fields['_token'], $fields['_method']);
+
+    return $fields;
+}
+
+test('a refused delete comes back on the row whose Delete sent it', function (): void {
+    // The refusal printed at the top of the page and named no label: "Remove
+    // this label from every automation rule and macro before deleting it."
+    // With several labels in use, nobody could tell which one it meant.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $used = TicketLabel::factory()->for($account)->create(['name' => 'Needs Dev', 'slug' => 'needs-dev']);
+    $bystander = TicketLabel::factory()->for($account)->create(['name' => 'Billing', 'slug' => 'billing']);
+    AutomationRule::factory()->for($account)->create([
+        'actions' => [['type' => AutomationRuleActionType::AddLabel->value, 'value' => $used->id]],
+    ]);
+
+    $index = route('dashboard.account.labels.index');
+    $fields = ticketLabelManagementDeleteFields(ticketLabelManagementXPath((string) $this->actingAs($admin)->get($index)->assertOk()->getContent()), $used);
+
+    $xpath = ticketLabelManagementXPath((string) $this->actingAs($admin)
+        ->from($index)
+        ->followingRedirects()
+        ->delete(route('dashboard.account.labels.destroy', $used), $fields)
+        ->assertOk()
+        ->getContent());
+
+    $message = ticketLabelManagementElement($xpath, '//p[contains(@class, "field-error")]');
+    $row = ticketLabelManagementElement($xpath, '//tr[td/strong[normalize-space(.)="Needs Dev"]]');
+    $button = ticketLabelManagementElement($xpath, '//tr[td/strong[normalize-space(.)="Needs Dev"]]//form[input[@name="_method" and @value="DELETE"]]//button');
+
+    expect(trim($message->textContent))->toBe(__('ticket_labels.validation.in_use_automation'))
+        ->and($xpath->query('ancestor::tr[1]', $message)->item(0)?->isSameNode($row))
+        ->toBeTrue('the refusal is not on the row of the label it refused, so it names no label')
+        ->and($message->getAttribute('id'))->toBe('ticket-label-'.$used->id.'-delete-error')
+        ->and($button->getAttribute('aria-describedby'))->toBe($message->getAttribute('id'), 'the refused Delete button is not described by its refusal')
+        ->and($xpath->query('//tr[td/strong[normalize-space(.)="Billing"]]//*[@aria-describedby]')->length)
+        ->toBe(0, 'a row whose Delete was not pressed is described by the refusal');
+
+    $this->assertDatabaseHas('ticket_labels', ['id' => $used->id]);
+    $this->assertDatabaseHas('ticket_labels', ['id' => $bystander->id]);
+});
+
+test('a refused delete lands on the refused label, whatever the form claims', function (): void {
+    // The row comes from the label in the route. A crafted request that names
+    // another label -- or an array, or a label that does not exist -- must not
+    // move the refusal onto a different row, where it would send an
+    // administrator to remove automation from the wrong label.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $used = TicketLabel::factory()->for($account)->create(['name' => 'Needs Dev', 'slug' => 'needs-dev']);
+    $other = TicketLabel::factory()->for($account)->create(['name' => 'Billing', 'slug' => 'billing']);
+    AutomationRule::factory()->for($account)->create([
+        'actions' => [['type' => AutomationRuleActionType::AddLabel->value, 'value' => $used->id]],
+    ]);
+
+    foreach ([[], ['deleting_label' => (string) $other->id], ['deleting_label' => [(string) $other->id]], ['deleting_label' => '999999']] as $fields) {
+        $xpath = ticketLabelManagementXPath((string) $this->actingAs($admin)
+            ->from(route('dashboard.account.labels.index'))
+            ->followingRedirects()
+            ->delete(route('dashboard.account.labels.destroy', $used), $fields)
+            ->assertOk()
+            ->getContent());
+
+        $messages = $xpath->query('//p[contains(@class, "field-error")]');
+
+        expect($messages->length)->toBe(1, 'the refusal vanished or doubled');
+
+        $row = $xpath->query('ancestor::tr[1]', $messages->item(0))->item(0);
+
+        expect($row)->not->toBeNull('the refusal is not on a row')
+            ->and(trim($xpath->query('td/strong', $row)->item(0)?->textContent ?? ''))
+            ->toBe('Needs Dev', 'a crafted form moved the refusal onto another label\'s row');
+    }
 });

@@ -103,6 +103,24 @@ class AgentTicketLabelController extends Controller
 
         $this->authorizeManageLabel($agent, $ticketLabel);
 
+        try {
+            $this->deleteUnusedLabel($agent, $ticketLabel);
+        } catch (ValidationException $refusal) {
+            // The refusal belongs to the label in the ROUTE -- the one that was
+            // refused -- recorded here rather than read back from a form field,
+            // which a crafted request could point at another label's row.
+            $request->session()->flash('refused_label_delete', $ticketLabel->id);
+
+            throw $refusal;
+        }
+
+        return redirect()
+            ->route('dashboard.account.labels.index')
+            ->with('status', 'ticket_labels.flash.deleted');
+    }
+
+    private function deleteUnusedLabel(mixed $agent, TicketLabel $ticketLabel): void
+    {
         DB::transaction(function () use ($agent, $ticketLabel): void {
             $lockedAgent = $this->lockedKnowledgeManager($agent, (int) $ticketLabel->account_id);
             $ticketLabel = $this->lockedTicketLabel($ticketLabel);
@@ -130,10 +148,6 @@ class AgentTicketLabelController extends Controller
 
             $ticketLabel->delete();
         });
-
-        return redirect()
-            ->route('dashboard.account.labels.index')
-            ->with('status', 'ticket_labels.flash.deleted');
     }
 
     private function authorizeManageLabel(mixed $agent, TicketLabel $ticketLabel): void

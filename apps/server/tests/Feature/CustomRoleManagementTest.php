@@ -774,3 +774,43 @@ test('ticket managers without assignment permission do not see or use assignment
         ->put(route('dashboard.tickets.assignee.update', $ticket), ['assignee_id' => $agent->id])
         ->assertNotFound();
 });
+
+test('each permission reads as its name and then its explanation, in the create and edit forms', function (): void {
+    // The name and its explanation were adjacent inline elements with nothing
+    // between them, so they rendered -- and were announced as the checkbox's
+    // name -- as one run-on: "Manage agentsAdd teammates and suspend
+    // ordinary agents."
+    $account = Account::factory()->create();
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $role = CustomRole::factory()->for($account)->create(['name' => 'Auditor', 'name_key' => 'auditor']);
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$this->actingAs($owner)
+        ->get(route('dashboard.account.roles.index'))
+        ->assertOk()
+        ->getContent());
+    $xpath = new DOMXPath($document);
+
+    foreach (['create' => 'new-permission-', 'edit' => 'role-'.$role->id.'-permission-'] as $form => $prefix) {
+        $labels = $xpath->query('//label[contains(concat(" ", normalize-space(@class), " "), " check-row ") and starts-with(@for, "'.$prefix.'")]');
+
+        expect($labels->length)->toBeGreaterThan(0, "the {$form} form rendered no permissions; this guard is checking nothing");
+
+        foreach ($labels as $label) {
+            $permission = substr($label->getAttribute('for'), strlen($prefix));
+            $expected = __('account_roles.permissions.'.$permission.'.label').' '.__('account_roles.permissions.'.$permission.'.detail');
+            $read = trim((string) preg_replace('/\s+/u', ' ', $label->textContent));
+
+            expect($read)->toBe($expected, "the {$form} form's {$permission} checkbox reads \"{$read}\": its name and explanation run together");
+        }
+    }
+
+    $stylesheet = (string) preg_replace('#/\*.*?\*/#s', '', implode("\n", array_map(
+        fn (DOMNode $style): string => $style->textContent,
+        iterator_to_array($xpath->query('//style')),
+    )));
+    preg_match('/(^|[\s,}])\.check-row \.lede\s*\{([^}]*)\}/', $stylesheet, $rule);
+
+    expect(str_contains($rule[2] ?? '', 'display: block'))
+        ->toBeTrue('a permission\'s explanation is not a line of its own under its name');
+});

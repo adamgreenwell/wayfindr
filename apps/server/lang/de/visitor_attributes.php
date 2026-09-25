@@ -26,6 +26,7 @@ return [
         'heading' => 'Definierte Attribute',
         'count' => '{0} Keine Definitionen|{1} :count Definition|[2,*] :count Definitionen',
         'empty' => 'Noch wurden keine Besucherattribute definiert.',
+        'empty_action' => 'Erstes Attribut definieren',
         'save' => 'Definition speichern',
         'delete' => 'Definition löschen',
     ],

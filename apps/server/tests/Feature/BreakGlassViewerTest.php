@@ -486,3 +486,41 @@ test('the read-only operator viewers localize product copy and mark customer con
             ->toBeGreaterThan(0, "{$value} is not marked as language-neutral unknown data");
     }
 });
+
+/** One operator viewer page as a DOM. Named for this file: Pest helpers are global. */
+function breakGlassViewerXpath(string $html): DOMXPath
+{
+    $document = new DOMDocument;
+    $document->loadHTML($html, LIBXML_NOERROR | LIBXML_NOWARNING);
+
+    return new DOMXPath($document);
+}
+
+test('each operator access page names its tab in sentence case, like its headings', function (): void {
+    // The tabs read "Operator Access", "Conversation Transcript" and "Ticket
+    // Record" over headings reading "Operator access" and "Ticket record".
+    $w = breakGlassViewerWorld();
+    $ticket = Ticket::factory()->for($w['account'])->for($w['site'])->for($w['conversation'])->create();
+
+    $pages = [
+        'index' => [route('operator.break-glass.index'), 'Operator access', '//h1'],
+        'grant' => [route('operator.break-glass.show', $w['grant']), 'Operator access', null],
+        'transcript' => [route('operator.break-glass.conversations.show', [$w['grant'], $w['conversation']]), 'Conversation transcript', null],
+        'ticket' => [route('operator.break-glass.tickets.show', [$w['grant'], $ticket]), 'Ticket record', '//h2[@id="break-glass-ticket-heading"]'],
+    ];
+
+    foreach ($pages as $page => [$url, $title, $sameWordsHeading]) {
+        $xpath = breakGlassViewerXpath((string) $this->actingAs($w['operator'])->get($url)->assertOk()->getContent());
+
+        // Where the page heads itself with the tab's words, hold the tab to
+        // that heading; the grant and transcript pages head themselves with a
+        // scope and a support code instead.
+        if ($sameWordsHeading !== null) {
+            expect(trim($xpath->query($sameWordsHeading)->item(0)?->textContent ?? ''))
+                ->toBe($title, "the {$page} heading changed; the tab is compared with the wrong words");
+        }
+
+        expect(trim($xpath->query('//title')->item(0)?->textContent ?? ''))
+            ->toBe($title, "the {$page} tab is not in the sentence case its headings use");
+    }
+});
