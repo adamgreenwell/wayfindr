@@ -11,11 +11,13 @@
 use App\Enums\AccountPermission;
 use App\Enums\AccountRole;
 use App\Models\Account;
+use App\Models\BreakGlassGrant;
 use App\Models\CustomRole;
 use App\Models\ExternalIssueProviderConnection;
 use App\Models\Site;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Symfony\Component\CssSelector\CssSelectorConverter;
 
 uses(RefreshDatabase::class);
 
@@ -792,8 +794,8 @@ test('a connection row shows its state as a chip, not as a navigation verb', fun
             ->and(trim($chip->textContent))->toBe($label);
     }
 
-    // The row blocks every span for its text lines (`.management-link span`),
-    // which outranks `.readiness-status` and would top-align the chip's label.
+    // The row used to block every span inside it (`.management-link span`),
+    // which outranked `.readiness-status` and top-aligned the chip's label.
     preg_match('/\.management-link \.readiness-status\s*\{([^}]*)\}/', accountIntegrationsPageStylesheet($xpath), $rule);
 
     expect(str_contains($rule[1] ?? '', 'display: inline-flex'))
@@ -827,6 +829,76 @@ test('only a management row that navigates reacts to the pointer', function (): 
             expect(preg_match('/(^|\s)a\.management-link:hover$/', $selector))
                 ->toBe(1, "the hover rule `{$selector}` paints management rows that are not links");
         }
+    }
+});
+
+/**
+ * Whether any `display: block` rule aimed at management rows matches this
+ * node, evaluated against the page's own stylesheet and DOM rather than by
+ * matching the selector's spelling.
+ */
+function accountIntegrationsPageRowRuleBlocks(DOMXPath $xpath, DOMNode $node): bool
+{
+    preg_match_all('/([^{}]+)\{([^{}]*)\}/', accountIntegrationsPageStylesheet($xpath), $rules, PREG_SET_ORDER);
+    $converter = new CssSelectorConverter;
+
+    foreach ($rules as [, $selectorList, $declarations]) {
+        if (! preg_match('/(^|;)\s*display:\s*block\s*(;|$)/', trim($declarations))) {
+            continue;
+        }
+
+        foreach (array_map('trim', explode(',', $selectorList)) as $selector) {
+            if (! str_contains($selector, '.management-link')) {
+                continue;
+            }
+
+            foreach ($xpath->query($converter->toXPath($selector)) as $matched) {
+                if ($matched->isSameNode($node)) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
+test('a value inside a management row\'s text line stays inline with the words around it', function (): void {
+    // `.management-link span { display: block }` meant the row's text lines,
+    // and also blocked every span INSIDE them: a connection's lede put its
+    // provider, its URL and its capabilities on three lines, and a grant's
+    // summary broke around the site it names.
+    $fixture = integrationsAccount();
+    $owner = User::factory()->for($fixture['account'])->create(['account_role' => AccountRole::Owner]);
+    ExternalIssueProviderConnection::factory()->for($fixture['account'])->create([
+        'name' => 'Engineering GitHub',
+        'provider' => 'github',
+        'base_url' => 'https://github.example.test',
+    ]);
+    $operator = User::factory()->create(['platform_role' => 'operator']);
+    BreakGlassGrant::factory()->scopedToSite($fixture['site'])->create(['requester_id' => $operator->id]);
+
+    $integrations = accountIntegrationsPageXpath((string) $this->actingAs($fixture['admin'])
+        ->get(route('dashboard.account.integrations'))->assertOk()->getContent());
+    $operatorAccess = accountIntegrationsPageXpath((string) $this->actingAs($owner)
+        ->get(route('dashboard.account.break-glass.index'))->assertOk()->getContent());
+
+    $cases = [
+        'the connection URL' => [$integrations, '//*[contains(@class, "management-link")]/span/span[contains(@class, "lede")]', 'span[@lang="" and normalize-space()="https://github.example.test"]'],
+        'the granted site' => [$operatorAccess, '//*[contains(@class, "management-link")]/span/strong', 'span[@lang="" and normalize-space()="Acme Docs"]'],
+    ];
+
+    foreach ($cases as $case => [$xpath, $linePath, $valuePath]) {
+        $value = $xpath->query($linePath.'//'.$valuePath)->item(0);
+
+        expect($value)->not->toBeNull("{$case} did not render inside a row's text line; this guard is checking nothing");
+
+        $line = $xpath->query('ancestor::*[parent::span[parent::*[contains(@class, "management-link")]]][1]', $value)->item(0);
+
+        expect(accountIntegrationsPageRowRuleBlocks($xpath, $line))
+            ->toBeTrue("the text line holding {$case} is no longer a line of its own")
+            ->and(accountIntegrationsPageRowRuleBlocks($xpath, $value))
+            ->toBeFalse("{$case} is blocked onto a line of its own, breaking the sentence it sits in");
     }
 });
 

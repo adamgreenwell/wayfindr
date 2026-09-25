@@ -67,10 +67,10 @@
                                     ]) !!}</span>
                                     <span class="lede">{{ __('operator_access.grant.requested', ['elapsed' => $item['requested_at']]) }}</span>
                                 </span>
-                                {{-- A <div>, not a <span>: `.management-link span` sets
-                                     display:block at higher specificity than
-                                     .section-actions, so a span here would stack
-                                     Approve over Deny whatever class it carried. --}}
+                                {{-- A <div>, not a <span>: it holds forms, which a
+                                     span cannot. A span here also once stacked
+                                     Approve over Deny, when the row blocked every
+                                     span inside it. --}}
                                 <div class="section-actions">
                                     <form class="compact-form" method="POST" action="{{ route('dashboard.account.break-glass.approve', $item['grant']) }}">
                                         @csrf

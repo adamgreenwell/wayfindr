@@ -15,11 +15,21 @@
                 // every row and the create field, where a Save on any other row
                 // would send it as that label's new name.
                 $editingLabelId = is_scalar(old('editing_label')) ? (string) old('editing_label') : '';
+
+                // A refused delete ("remove this label from …") belongs to the
+                // row whose Delete sent it. At the top of the page it named no
+                // label, so with several in use nobody could tell which one it
+                // meant. It stays up here only when no row claims it.
+                $deletingLabelId = is_scalar(old('deleting_label')) ? (string) old('deleting_label') : '';
+                $deleteRefusalOnRow = $deletingLabelId !== ''
+                    && $ticketLabels->contains(fn ($ticketLabel): bool => (string) $ticketLabel->id === $deletingLabelId);
             @endphp
 
-            @error('label')
-                <p class="field-error">{{ $message }}</p>
-            @enderror
+            @unless ($deleteRefusalOnRow)
+                @error('label')
+                    <p class="field-error">{{ $message }}</p>
+                @enderror
+            @endunless
 
             <section class="section" aria-labelledby="new-ticket-label-heading">
                 <div class="section-header">
@@ -75,6 +85,7 @@
                                 @foreach ($ticketLabels as $ticketLabel)
                                     @php
                                         $isEditingLabel = $editingLabelId === (string) $ticketLabel->id;
+                                        $isRefusedDelete = $deleteRefusalOnRow && $deletingLabelId === (string) $ticketLabel->id && $errors->has('label');
                                     @endphp
                                     @if ($canManageTickets)
                                         @php
@@ -115,8 +126,14 @@
                                                 <form class="compact-form" method="POST" action="{{ route('dashboard.account.labels.destroy', $ticketLabel) }}">
                                                     @csrf
                                                     @method('DELETE')
-                                                    <button class="button danger" type="submit">{{ __('ticket_labels.manage.delete') }}</button>
+                                                    <input type="hidden" name="deleting_label" value="{{ $ticketLabel->id }}">
+                                                    <button class="button danger" type="submit" @if ($isRefusedDelete) aria-describedby="ticket-label-{{ $ticketLabel->id }}-delete-error" autofocus @endif>{{ __('ticket_labels.manage.delete') }}</button>
                                                 </form>
+                                            @endif
+                                            @if ($isRefusedDelete)
+                                                {{-- A sentence in a nowrap cell: without cell-wrap it ran
+                                                     past the card's edge instead of under the button. --}}
+                                                <p id="ticket-label-{{ $ticketLabel->id }}-delete-error" class="field-error cell-wrap">{{ $errors->first('label') }}</p>
                                             @endif
                                         </td>
                                     </tr>

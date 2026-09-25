@@ -151,10 +151,9 @@
                                 @endif
                             </span>
                         </span>
-                        {{-- A <div>, not a <span>: `.management-link span` sets
-                             display:block at higher specificity than
-                             .section-actions, so a span here would stack these
-                             controls whatever class it carried. --}}
+                        {{-- A <div>, not a <span>: it holds forms, which a span
+                             cannot. A span here also once stacked these controls,
+                             when the row blocked every span inside it. --}}
                         <div class="section-actions">
                             @if ($hint && $hint['can_self_approve'])
                                 <form class="compact-form" method="POST" action="{{ route('operator.break-glass.approve', $grant) }}">

@@ -51,16 +51,17 @@ function breakGlassFlowActionContainer(string $html, string $target): string
 }
 
 /**
- * `.management-link span` is display:block and outranks `.section-actions`
- * (0,1,1 against 0,1,0), so the class alone is not the fix: a span carrying it
- * still stacks its controls. Only a non-span container lets them sit in a row.
+ * The controls sit in the house action cluster, and in a <div>: they are
+ * forms, which a span cannot hold. When the row blocked every span inside it
+ * (`.management-link span`, since narrowed to the row's text lines), a span
+ * carrying the class also stacked them.
  */
 function breakGlassFlowAssertActionsInOneRow(string $html, array $targets): void
 {
     foreach ($targets as $name => $target) {
         $container = breakGlassFlowActionContainer($html, $target);
 
-        expect($container)->toBe('div.section-actions', "the {$name} control sits in {$container}: `.compact-actions` has no rule and `.management-link span` blockifies any span, so the page's actions stack vertically instead of sitting in one row");
+        expect($container)->toBe('div.section-actions', "the {$name} control sits in {$container}: `.compact-actions` has no rule, and a span cannot hold the forms, so the page's actions do not sit in one row");
     }
 }
 

@@ -1795,11 +1795,14 @@
         }
 
         /* A fieldset groups the radios for assistive technology, but its UA
-           border and padding are a browser default rather than a choice, and
-           its intrinsic min-width breaks flex and grid parents. */
+           border, padding and 2px side margin are a browser default rather
+           than a choice -- the margin sat every legend 2px right of the labels
+           above it -- and its intrinsic min-width breaks flex and grid
+           parents. */
         fieldset.field {
             border: 0;
             padding: 0;
+            margin-inline: 0;
             min-width: 0;
         }
 
@@ -1875,6 +1878,26 @@
         .check-row input {
             width: 16px;
             height: 16px;
+        }
+
+        /* An option that explains itself: its name, then the explanation on a
+           line of its own. Inline, the two ran together into one sentence
+           ("Manage agentsAdd teammates…"). */
+        .check-row .lede {
+            display: block;
+            margin-top: 2px;
+        }
+
+        /* In a group of options the legend is the label, and each check row
+           is one option. `.field label` (0,1,1) outranks `.check-row` (0,1,0),
+           so every option rendered as a bold block caption styled like the
+           legend above it. A lone check row in a div.field IS that field's
+           label, and keeps the label styling. */
+        fieldset.field .check-row {
+            display: flex;
+            margin-bottom: 0;
+            font-size: inherit;
+            font-weight: inherit;
         }
 
         .button {
@@ -2531,8 +2554,14 @@
                 background: var(--surface-muted);
             }
 
-            .management-link strong,
-            .management-link span {
+            /* The row's text lines -- its title and the ledes and notes under
+               it -- and nothing inside them. Written as `.management-link
+               span`, this also blocked every inline span WITHIN a line: the
+               lang="" values in an integration's provider · URL · capabilities
+               lede, and the scope and person names inside a grant summary,
+               each broke onto a line of its own. */
+            .management-link > span > strong,
+            .management-link > span > span {
                 display: block;
             }
 
@@ -2548,9 +2577,9 @@
                 white-space: normal;
             }
 
-            /* A state chip in a read-only row keeps its own box: the rule
-               above blocks every span for the row's text lines, which
-               top-aligned the chip's label, and a one-column phone row would
+            /* A state chip in a read-only row keeps its own box. The display
+               was needed while the row blocked every span inside it, which
+               top-aligned the chip's label; a one-column phone row would still
                stretch it to the full width. */
             .management-link .readiness-status {
                 display: inline-flex;

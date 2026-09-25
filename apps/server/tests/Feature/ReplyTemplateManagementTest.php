@@ -885,3 +885,27 @@ test('a malformed reply template id is a 404, not a database error', function (s
     'archive' => ['POST', '/archive'],
     'restore' => ['POST', '/restore'],
 ]);
+
+test('a template\'s body preview wraps inside its column', function (): void {
+    // The preview is up to 120 characters of the account's prose, and every
+    // table cell is nowrap unless it says otherwise: at 1440px one long body
+    // made the table 1,332px wide inside a 934px card.
+    $account = Account::factory()->create();
+    $admin = User::factory()->for($account)->create(['account_role' => AccountRole::Admin]);
+    $template = ReplyTemplate::factory()->for($account)->create([
+        'name' => 'Refund policy',
+        'body' => str_repeat('We can refund any order within thirty days of delivery. ', 4),
+    ]);
+
+    $html = (string) $this->actingAs($admin)
+        ->get(route('dashboard.account.reply-templates.index'))
+        ->assertOk()
+        ->getContent();
+    $xpath = replyTemplateManagementXPath($html);
+    $preview = replyTemplateManagementElement($xpath, '//td[normalize-space(.)="'.Str::limit($template->body, 120).'"]');
+
+    expect(str_contains(' '.$preview->getAttribute('class').' ', ' cell-wrap '))
+        ->toBeTrue('the body preview is a nowrap cell, so one long template widens the table past its card')
+        ->and((bool) preg_match('/\.cell-wrap[^{]*\{[^}]*white-space:\s*normal;/', $html))
+        ->toBeTrue('.cell-wrap no longer lets a cell wrap');
+});

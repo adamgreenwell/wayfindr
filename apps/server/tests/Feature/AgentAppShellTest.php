@@ -183,8 +183,33 @@ test('the breadcrumb falls back to the page title outside the rail', function ()
     $this->actingAs($agent)
         ->get('/dashboard/profile')
         ->assertOk()
-        ->assertSee('wf-crumb-current">Agent Profile', false);
+        ->assertSee('wf-crumb-current">Agent profile', false);
 });
+
+test('a page outside the account area names its tab in the same case as its heading', function (string $page): void {
+    // These tabs read "Agent Profile", "Add Site" and "Site Tester" over
+    // headings reading "Agent profile", "Add site" and "… tester": one page
+    // named two ways on one screen, and on Profile the crumb repeated it.
+    $account = Account::factory()->create(['name' => 'Acme Support']);
+    $owner = User::factory()->for($account)->create(['account_role' => AccountRole::Owner]);
+    $site = Site::factory()->for($account)->create(['name' => 'Acme Docs']);
+
+    [$url, $title, $heading] = match ($page) {
+        'profile' => [route('dashboard.profile.show'), 'Agent profile', 'Agent profile'],
+        'add site' => [route('dashboard.sites.create'), 'Add site', 'Add site'],
+        'site tester' => [route('dashboard.sites.tester', $site), 'Site tester', 'Acme Docs tester'],
+    };
+
+    $document = new DOMDocument;
+    @$document->loadHTML('<?xml encoding="utf-8"?>'.$this->actingAs($owner)->get($url)->assertOk()->getContent());
+    $xpath = new DOMXPath($document);
+
+    $renderedHeading = trim((string) preg_replace('/\s+/', ' ', $xpath->query('//h1')->item(0)?->textContent ?? ''));
+
+    expect($renderedHeading)->toBe($heading, "the {$page} heading changed; this guard is comparing against the wrong words")
+        ->and(trim($xpath->query('//title')->item(0)?->textContent ?? ''))
+        ->toBe($title, "the {$page} tab is not in the sentence case its heading uses");
+})->with(['profile', 'add site', 'site tester']);
 
 test('every navigation item keeps a text label for assistive technology', function (): void {
     $account = Account::factory()->create(['name' => 'Acme Support']);

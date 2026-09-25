@@ -204,16 +204,19 @@
                      name at all and clicking the heading did nothing. --}}
                 <fieldset class="field">
                     <legend>{{ __('api_tokens.create.abilities_label') }}</legend>
-                    <label for="api_token_read">
+                    {{-- Check rows, as on Integrations: a bare label here took
+                         `.field input { width: 100% }`, so each checkbox sat
+                         centred on a line of its own above its words. --}}
+                    <label class="check-row" for="api_token_read">
                         <input type="checkbox" id="api_token_read" name="abilities[]" value="read"
                             @checked(in_array(\App\Models\ApiToken::ABILITY_READ, $grantableAbilities, true))
                             @disabled(! in_array(\App\Models\ApiToken::ABILITY_READ, $grantableAbilities, true))>
-                        {{ __('api_tokens.create.ability_read') }}
+                        <span>{{ __('api_tokens.create.ability_read') }}</span>
                     </label>
-                    <label for="api_token_write">
+                    <label class="check-row" for="api_token_write">
                         <input type="checkbox" id="api_token_write" name="abilities[]" value="write"
                             @disabled(! in_array(\App\Models\ApiToken::ABILITY_WRITE, $grantableAbilities, true))>
-                        {{ __('api_tokens.create.ability_write') }}
+                        <span>{{ __('api_tokens.create.ability_write') }}</span>
                     </label>
                     <p class="field-help">{{ __('api_tokens.create.abilities_help') }}</p>
                     @if (count($grantableAbilities) < count(\App\Models\ApiToken::ABILITIES))
@@ -235,7 +238,7 @@
                     <fieldset class="field">
                         <legend>{{ __('api_tokens.create.sites_label') }}</legend>
                         @foreach ($sites as $site)
-                            <label for="api_token_site_{{ $site->id }}">
+                            <label class="check-row" for="api_token_site_{{ $site->id }}">
                                 <input type="checkbox" id="api_token_site_{{ $site->id }}" name="site_ids[]" value="{{ $site->id }}">
                                 <span lang="">{{ $site->name }}</span>
                             </label>
@@ -374,11 +377,11 @@
             <fieldset class="field">
                 <legend>{{ __('outbound_webhooks.create.events_label') }}</legend>
                 @foreach ($grantableWebhookEvents as $event)
-                    <label for="webhook_event_{{ str_replace('.', '_', $event) }}">
+                    <label class="check-row" for="webhook_event_{{ str_replace('.', '_', $event) }}">
                         <input type="checkbox" id="webhook_event_{{ str_replace('.', '_', $event) }}"
                             name="webhook[events][]" value="{{ $event }}"
                             @checked(in_array($event, old('webhook.events', $grantableWebhookEvents), true))>
-                        {{ __('outbound_webhooks.events.'.str_replace('.', '_', $event)) }}
+                        <span>{{ __('outbound_webhooks.events.'.str_replace('.', '_', $event)) }}</span>
                     </label>
                 @endforeach
                 <p class="field-help">{{ __('outbound_webhooks.create.events_help') }}</p>
@@ -389,7 +392,7 @@
                 <fieldset class="field">
                     <legend>{{ __('outbound_webhooks.create.sites_label') }}</legend>
                     @foreach ($sites as $site)
-                        <label for="webhook_site_{{ $site->id }}">
+                        <label class="check-row" for="webhook_site_{{ $site->id }}">
                             <input type="checkbox" id="webhook_site_{{ $site->id }}" name="webhook[site_ids][]" value="{{ $site->id }}"
                                 @checked(in_array($site->id, old('webhook.site_ids', [])))>
                             <span lang="">{{ $site->name }}</span>

@@ -1,12 +1,11 @@
 <?php
 
 return [
-    // The browser tab and breadcrumb. Shipped as "Agent Profile" while the
-    // page heading says "Agent profile" -- the same page named two ways on one
-    // screen. Preserved exactly rather than tidied, because an extraction that
-    // quietly edits copy is an extraction nobody can trust; filed to be fixed
-    // on purpose instead.
-    'document_title' => 'Agent Profile',
+    // The browser tab and breadcrumb. Extraction preserved it as "Agent
+    // Profile" over a heading reading "Agent profile" -- the same page named
+    // two ways on one screen -- rather than tidy copy in passing; it is now
+    // sentence case like the heading, on purpose.
+    'document_title' => 'Agent profile',
     'title' => 'Agent profile',
     'subtitle' => 'Keep your agent identity and sign-in password current.',
 

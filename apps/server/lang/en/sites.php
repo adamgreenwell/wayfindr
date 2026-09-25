@@ -179,7 +179,7 @@ return [
     ],
 
     'create' => [
-        'document_title' => 'Add Site',
+        'document_title' => 'Add site',
         'title' => 'Add site',
         'subtitle' => 'Create a new Wayfindr install target for :account.',
         'back' => 'Back to dashboard',
@@ -196,7 +196,7 @@ return [
     ],
 
     'tester' => [
-        'document_title' => 'Site Tester',
+        'document_title' => 'Site tester',
         'title' => ':site tester',
         'subtitle' => 'Hosted sample page for this site\'s widget, chat loop, and cobrowse masking.',
         'back' => 'Back to site settings',

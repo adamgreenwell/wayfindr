@@ -1,11 +1,7 @@
 <?php
 
 return [
-    // The browser tab and breadcrumb. Shipped as "Agent Profile" while the
-    // page heading says "Agent profile" -- the same page named two ways on one
-    // screen. Preserved exactly rather than tidied, because an extraction that
-    // quietly edits copy is an extraction nobody can trust; filed to be fixed
-    // on purpose instead.
+    // The browser tab and breadcrumb; the same words as the page heading.
     'document_title' => 'Agentenprofil',
     'title' => 'Agentenprofil',
     'subtitle' => 'Halten Sie Ihre Agentendaten und Ihr Anmeldepasswort aktuell.',
