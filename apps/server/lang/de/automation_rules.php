@@ -13,10 +13,15 @@ return [
     ],
     'safety' => [
         'heading' => 'Sichere Automatisierung',
-        'lede' => 'Kontoweite Änderungen an Supportvorgängen',
         'drafts' => 'Neue Regeln und Makros beginnen als Entwurf. Testen Sie Regeln vor der Aktivierung; Makros erscheinen erst, wenn sie aktiviert sind.',
-        'order' => 'Niedrigere Ausführungsnummern werden zuerst verarbeitet. Bedingungen und Aktionen laufen von oben nach unten.',
-        'visitor' => 'Diese Aktionen senden keine Nachricht an Besucher. Interne Notizen bleiben für das Supportteam privat.',
+        'visitor' => 'Regeln und Makros senden nie eine Nachricht an Besuchende; das tun nur proaktive Nachrichten. Interne Notizen bleiben für das Supportteam privat.',
+    ],
+    'tabs' => [
+        'label' => 'Automatisierungsbereiche',
+        'rules' => 'Regeln',
+        'macros' => 'Makros',
+        'proactive' => 'Proaktive Nachrichten',
+        'executions' => 'Ausführungsprotokoll',
     ],
     'list' => [
         'heading' => 'Regeln', 'count' => '{0} Keine Regeln|{1} :count Regel|[2,*] :count Regeln',
@@ -38,7 +43,7 @@ return [
     'edit' => [
         'title' => 'Automatisierungsregel bearbeiten', 'title_named' => ':name bearbeiten',
         'subtitle' => 'Speichern Sie die geordnete Definition, testen Sie die gespeicherte Version und aktivieren Sie sie, wenn das Ergebnis stimmt.',
-        'back' => 'Zurück zu Automatisierungsregeln', 'save' => 'Regel speichern',
+        'back' => 'Zurück zu Automatisierungen', 'save' => 'Regel speichern',
     ],
     'fields' => [
         'name' => 'Regelname', 'name_help' => 'Verwenden Sie einen Namen, der das beabsichtigte Ergebnis erklärt.',
@@ -78,7 +83,6 @@ return [
     'preview' => [
         'heading' => 'Testvorschau',
         'lede' => 'Prüft die zuletzt gespeicherte Definition mit aktuellen Vorgängen. Es werden keine Aktionen, Hinweise, Notizen oder Statusänderungen ausgeführt.',
-        'no_changes' => 'Keine Änderungen',
         'no_subjects' => 'Für Sie sind keine passenden aktuellen Vorgänge sichtbar. Für eine Vorschau ist auch die entsprechende Unterhaltungs- oder Ticketberechtigung erforderlich.',
         'subject' => 'Aktueller Supportvorgang', 'choose' => 'Vorgang zum Testen auswählen', 'run' => 'Vorschau ausführen',
         'result' => 'Vorschauergebnis', 'matched' => 'Würde passen', 'not_matched' => 'Würde nicht passen',

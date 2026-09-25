@@ -2385,6 +2385,16 @@
             border-top: 1px solid var(--border);
         }
 
+        /* Stands between the page header and the tabs, outside any section,
+           so it takes the section rhythm itself. */
+        .automation-safety {
+            margin-top: 28px;
+        }
+
+        .automation-safety p {
+            margin: 0;
+        }
+
         .automation-definition-list {
             margin: 8px 0 0;
             padding-left: 22px;
@@ -2620,12 +2630,14 @@
             color: var(--danger);
         }
 
-        .break-glass-banner {
+        .break-glass-banner,
+        .automation-validation {
             background: color-mix(in srgb, var(--danger) 5%, var(--surface));
             border-color: color-mix(in srgb, var(--danger) 32%, var(--border));
         }
 
-        .break-glass-banner h2 {
+        .break-glass-banner h2,
+        .automation-validation h2 {
             color: var(--danger);
         }
 

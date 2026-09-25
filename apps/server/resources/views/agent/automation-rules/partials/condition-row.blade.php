@@ -38,13 +38,16 @@
             <option value="">{{ __('automation_rules.values.choose') }}</option>
             <optgroup label="{{ __('automation_rules.value_groups.sites') }}" data-choice-group="site">
                 @foreach ($sites as $site)
-                    <option value="site:{{ $site->id }}" @selected($selectValue === 'site:'.$site->id)>{{ $site->name }}</option>
+                    <option lang="" value="site:{{ $site->id }}" @selected($selectValue === 'site:'.$site->id)>{{ $site->name }}</option>
                 @endforeach
             </optgroup>
             <optgroup label="{{ __('automation_rules.value_groups.agents') }}" data-choice-group="agent">
                 <option value="agent:none" @selected($selectValue === 'agent:none')>{{ __('automation_rules.values.unassigned') }}</option>
                 @foreach ($agents as $optionAgent)
-                    <option value="agent:{{ $optionAgent->id }}" @selected($selectValue === 'agent:'.$optionAgent->id)>{{ $optionAgent->name }}{{ $optionAgent->isDeactivated() ? ' — '.__('automation_rules.values.deactivated') : '' }}</option>
+                    {{-- An option holds text only, so a name carrying the
+                         translated "deactivated" suffix cannot reset just the
+                         name; that one keeps the page language. --}}
+                    <option @unless ($optionAgent->isDeactivated()) lang="" @endunless value="agent:{{ $optionAgent->id }}" @selected($selectValue === 'agent:'.$optionAgent->id)>{{ $optionAgent->name }}{{ $optionAgent->isDeactivated() ? ' — '.__('automation_rules.values.deactivated') : '' }}</option>
                 @endforeach
             </optgroup>
             <optgroup label="{{ __('automation_rules.value_groups.priorities') }}" data-choice-group="priority">

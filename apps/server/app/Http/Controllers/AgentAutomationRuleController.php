@@ -186,8 +186,11 @@ final class AgentAutomationRuleController extends Controller
         $preview = $evaluator->preview($automationRule, $subject, $message);
         $preview['subject_label'] = $this->subjectLabel($subject, $message);
 
+        // The fragment names the focusable result container: navigating to it
+        // scrolls to the verdict and moves focus there (see the form view).
         return redirect()
             ->route('dashboard.account.automation-rules.edit', $automationRule)
+            ->withFragment('automation-preview-result')
             ->with('automation_preview', $preview)
             ->with('status', 'automation_rules.flash.previewed');
     }

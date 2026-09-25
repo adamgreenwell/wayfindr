@@ -29,12 +29,13 @@
             <option value="">{{ __('automation_rules.values.choose') }}</option>
             <optgroup label="{{ __('automation_rules.value_groups.agents') }}" data-choice-group="agent">
                 @foreach ($agents as $optionAgent)
-                    <option value="agent:{{ $optionAgent->id }}" @selected($selectValue === 'agent:'.$optionAgent->id)>{{ $optionAgent->name }}{{ $optionAgent->isDeactivated() ? ' — '.__('automation_rules.values.deactivated') : '' }}</option>
+                    {{-- See condition-row: the deactivated suffix is ours. --}}
+                    <option @unless ($optionAgent->isDeactivated()) lang="" @endunless value="agent:{{ $optionAgent->id }}" @selected($selectValue === 'agent:'.$optionAgent->id)>{{ $optionAgent->name }}{{ $optionAgent->isDeactivated() ? ' — '.__('automation_rules.values.deactivated') : '' }}</option>
                 @endforeach
             </optgroup>
             <optgroup label="{{ __('automation_rules.value_groups.labels') }}" data-choice-group="label">
                 @foreach ($labels as $label)
-                    <option value="label:{{ $label->id }}" @selected($selectValue === 'label:'.$label->id)>{{ $label->name }}</option>
+                    <option lang="" value="label:{{ $label->id }}" @selected($selectValue === 'label:'.$label->id)>{{ $label->name }}</option>
                 @endforeach
             </optgroup>
             <optgroup label="{{ __('automation_rules.value_groups.priorities') }}" data-choice-group="priority">

@@ -12,10 +12,16 @@ return [
         'previewed' => 'Anteprima completata senza modificare il lavoro di assistenza.',
     ],
     'safety' => [
-        'heading' => 'Sicurezza dell’automazione', 'lede' => 'Modifiche al lavoro di assistenza per tutto l’account',
+        'heading' => 'Sicurezza dell’automazione',
         'drafts' => 'Le nuove regole e macro iniziano come bozze. Provi le regole prima di attivarle; le macro compaiono solo dopo l’attivazione.',
-        'order' => 'I numeri di esecuzione più bassi vengono elaborati per primi. Condizioni e azioni procedono dall’alto verso il basso.',
-        'visitor' => 'Queste azioni non inviano messaggi visibili ai visitatori. Le note interne restano private per il team di assistenza.',
+        'visitor' => 'Regole e macro non inviano mai messaggi visibili ai visitatori; lo fanno solo i messaggi proattivi. Le note interne restano private per il team di assistenza.',
+    ],
+    'tabs' => [
+        'label' => 'Sezioni delle automazioni',
+        'rules' => 'Regole',
+        'macros' => 'Macro',
+        'proactive' => 'Messaggi proattivi',
+        'executions' => 'Registro delle esecuzioni',
     ],
     'list' => [
         'heading' => 'Regole', 'count' => '{0} Nessuna regola|{1} :count regola|[2,*] :count regole',
@@ -37,7 +43,7 @@ return [
     'edit' => [
         'title' => 'Modifica regola di automazione', 'title_named' => 'Modifica :name',
         'subtitle' => 'Salvi la definizione ordinata, provi la versione salvata e la attivi quando il risultato è corretto.',
-        'back' => 'Torna alle regole di automazione', 'save' => 'Salva regola',
+        'back' => 'Torna alle automazioni', 'save' => 'Salva regola',
     ],
     'fields' => [
         'name' => 'Nome della regola', 'name_help' => 'Usi un nome che spieghi il risultato desiderato.',
@@ -77,7 +83,6 @@ return [
     'preview' => [
         'heading' => 'Anteprima di prova',
         'lede' => 'Valuta l’ultima definizione salvata sul lavoro recente. Non esegue azioni, avvisi, note o modifiche al ciclo di vita.',
-        'no_changes' => 'Nessuna modifica',
         'no_subjects' => 'Non vede lavoro recente compatibile. Per un’anteprima serve anche il relativo permesso per conversazioni o ticket.',
         'subject' => 'Lavoro di assistenza recente', 'choose' => 'Scelga il lavoro da provare', 'run' => 'Esegui anteprima',
         'result' => 'Risultato dell’anteprima', 'matched' => 'Corrisponderebbe', 'not_matched' => 'Non corrisponderebbe',
