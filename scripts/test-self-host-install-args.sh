@@ -152,9 +152,21 @@ if [ "${suggestion_count:-0}" -lt 1 ]; then
     failures=$((failures + 1))
 fi
 
+# Piped the way the README runs it, an early refusal must still consume the whole
+# script. bash executes a pipe as it reads it, so a `die` in the first few
+# kilobytes used to leave the rest unread, and the writer -- curl, for an
+# operator -- died of SIGPIPE and printed "curl: (23) Failure writing output"
+# beneath the real error. `cat` stands in for curl; 141 is its SIGPIPE status.
+pipe_status="$(set +e; cat "$INSTALLER" | bash -s -- --not-an-option >/dev/null 2>&1; echo "${PIPESTATUS[0]}")"
+
+if [ "$pipe_status" != "0" ]; then
+    echo "FAIL: piped into bash, install.sh exited before reading itself (writer status $pipe_status), which makes curl report '(23) Failure writing output'." >&2
+    failures=$((failures + 1))
+fi
+
 if [ "$failures" -ne 0 ]; then
     echo "$failures installer argument check(s) failed." >&2
     exit 1
 fi
 
-echo "Installer refuses reserved --app-url hostnames, allows real ones, still upgrades, and suggests nothing it rejects."
+echo "Installer refuses reserved --app-url hostnames, allows real ones, still upgrades, suggests nothing it rejects, and reads itself whole when piped."
