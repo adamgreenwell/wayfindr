@@ -2662,6 +2662,32 @@
             border-bottom: 1px solid var(--border);
         }
 
+        /* An article preview is the article, not a note about the page, so it
+           keeps the body's full-contrast text rather than .notice-copy's muted
+           prose, and the widget's block rhythm: headings at body size, a gap
+           after every block. */
+        .article-preview {
+            padding: 20px;
+        }
+
+        .article-preview h3 {
+            margin: 12px 0 4px;
+            font-size: 1rem;
+        }
+
+        .article-preview p,
+        .article-preview ul {
+            margin: 0 0 8px;
+        }
+
+        .article-preview > :first-child {
+            margin-top: 0;
+        }
+
+        .article-preview > :last-child {
+            margin-bottom: 0;
+        }
+
         .notice-actions {
             display: flex;
             align-items: center;

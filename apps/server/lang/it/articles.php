@@ -71,7 +71,12 @@ return [
         'column_state' => 'Stato',
         'column_edited' => 'Ultima modifica',
         'no_match' => 'Nessun titolo di articolo corrisponde a “:search”.',
-        'empty' => 'Non è ancora stato scritto nulla. Il primo articolo è di solito la domanda a cui il suo team risponde più spesso.',
+    ],
+
+    'empty' => [
+        'heading' => 'Ancora nessun articolo.',
+        'body' => 'Il primo articolo è di solito la domanda a cui il suo team risponde più spesso.',
+        'action' => 'Scrivi il primo articolo',
     ],
 
     'detail' => [
